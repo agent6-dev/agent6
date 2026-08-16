@@ -104,13 +104,14 @@ Pin it with `extra_body.provider` ([routing docs](https://openrouter.ai/docs/fea
 [providers.openrouter]
 api_format = "openai"
 base_url = "https://openrouter.ai/api/v1"
-extra_body = { provider = { sort = "throughput" } }  # prefer fast, caching backends
+extra_body = { provider = { sort = "throughput" } }  # prefer fast backends
 # Alternatives: { order = ["DeepInfra"], allow_fallbacks = true }
 #               { max_price = { prompt = 1, completion = 2 } }
 ```
 
 ```bash
-agent6 config set providers.openrouter.extra_body '{ provider = { sort = "throughput" } }'
+agent6 config set providers.openrouter.extra_body \
+  '{ provider = { sort = "throughput" } }'
 ```
 
 Caching matters more than payload size: the large per-call input is the same prefix every turn.
@@ -128,7 +129,13 @@ Role routing. **`worker`** drives `run`/`resume` (its pricing also drives the US
 `planner`/`reviewer` fall back to `worker`.
 Cross-vendor mixes are fine.
 
-<!-- the three roles are the same shape, so the table is rendered once --> <!-- config-table: models.worker -->
+<!-- the three roles are the same shape, so the table is rendered once -->
+| Field | Default | Meaning |
+|---|---|---|
+| `provider` | *(required)* | A `[providers.*]` name. |
+| `model` | *(required)* | Model id at that provider. |
+| `temperature` | `0.0` | Pinned per call (`0.0` to `2.0`). `0.0` keeps tool use stable. |
+| `thinking` | none | Reasoning effort: `off`/`low`/`medium`/`high`. Anthropic maps it to a thinking budget (≈ 4k/8k/16k tokens); non-reasoning models ignore it. |
 
 ## `[sandbox]`
 
@@ -271,7 +278,10 @@ preset = "myteam"
 [presets.myteam.review]
 trigger = "before_finish"
 decision = "veto"
-seats = ["security@anthropic/claude-opus-4-8", "correctness@openrouter/moonshotai/kimi-k2"]
+seats = [
+  "security@anthropic/claude-opus-4-8",
+  "correctness@openrouter/moonshotai/kimi-k2",
+]
 ```
 
 ### `[workflow.metric]` (optional)

@@ -66,26 +66,26 @@ Where "always-on" agents hand the LLM the *control flow* (so the same inputs tak
 ## 4. The format
 
 A machine is a single TOML file, suffix `.asm.toml` ("agent6 state machine").
-TOML because the project already standardizes on it, it is parsed by `tomllib` (stdlib, no new dependency), and it is comfortable to hand-edit and diff.
+TOML because the project already standardizes on it, `tomllib` parses it with no new dependency, and it is comfortable to hand-edit and diff.
 The parsed document is validated by a pydantic v2 model at the trust boundary (`extra="forbid", frozen=True`), exactly like `Config`.
 
-> **Naming.** The suffix is `.asm.toml` ("agent state machine"; > deliberately vendor-neutral like `AGENTS.md`, so other tools can adopt > it).
-The suffix is a convention, not a parser requirement: > `load_machine` accepts any path; shell completion globs `*.asm.toml`.
+> **Naming.** The suffix is `.asm.toml` ("agent state machine"), deliberately vendor-neutral like `AGENTS.md` so other tools can adopt it.
+> The suffix is a convention: `load_machine` accepts any path, and shell completion globs `*.asm.toml`.
 
 ### 4.1 Top-level shape
 
 ```toml
-machine = "item-classifier"                # stable id, used in <state-dir>/<repo-id>/machines/<id>/
-version = 1                                # schema version; bumped only on real shape changes
+machine = "item-classifier"                # stable id; names the instance dir
+version = 1                                # schema version; bumped on changes
 initial = "poll"                           # name of the entry state
 
 [budget]
-max_usd        = 25.0     # optional cap on metered spend (see below)
+max_usd         = 25.0    # optional cap on metered spend (see below)
 max_transitions = 100000  # hard stop on total edges taken (runaway guard)
 
 # The blackboard is three subtables, named by WHO may write each variable.
 # The subtable header is the owner; there is no per-entry discriminator.
-[vars.operator]           # written by the human at author time; immutable at runtime
+[vars.operator]           # written at author time; immutable at runtime
 inbox_dir = { type = "str", value = "/srv/inbox" }
 poll_secs = { type = "int", value = 300 }
 
@@ -163,16 +163,17 @@ This is the key to determinism: the edge taken is a pure function of a small, cl
 
 ```toml
 [states.classify]
-kind  = "agent"
-model = "inherit"                # default: the configured worker model; or pin any provider model
+kind   = "agent"
+model  = "inherit"               # the configured worker model, or pin one
 prompt = """
 Classify the item at path {{ cursor }}.
 Call finish_session with JSON {label, confidence}.
 """
-output_schema = "classification"   # named schema in [schemas.*]; validates finish_session payload
-capture = { finish_json = "verdict" }   # parsed finish_session payload -> blackboard var `verdict`
+output_schema = "classification"   # a [schemas.*] entry; validates the payload
+capture = { finish_json = "verdict" }   # payload -> blackboard var `verdict`
 timeout_secs = 600
-on = { ok = "route", failed = "poll", budget_exhausted = "halt", timeout = "poll" }
+on = { ok = "route", failed = "poll", timeout = "poll",
+       budget_exhausted = "halt" }
 
 # mode = "agent"                   # "agent" (default, read-only) | "run"
 # Optional per-state overrides (inherit the effective config when unset):
@@ -208,8 +209,9 @@ Connection secrets are never expressed here, only a `provider` *name* that must 
 [states.scan]
 kind = "tool"
 command = ["scan-inbox", "--dir", "{{ inbox_dir }}", "--since", "{{ cursor }}"]
-output_schema = "scan_result"          # types `result` so its fields are navigable
-capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
+output_schema = "scan_result"          # types `result` so fields are navigable
+capture = { set = {
+  pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
 timeout_secs = 60
 on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 ```
@@ -249,7 +251,7 @@ A `tool` references one by a relative path whose first segment is `scripts/`, e.
 A bare binary in `command[0]` resolves against the jail PATH (the baseline plus standard bin dirs, the same set `machine check` probes and `run_command` uses), never the host `PATH`; use an absolute path for anything installed elsewhere.
 `machine check` validates the bundle: every entry under `scripts/` must resolve *inside* the bundle (symlinks that escape via `..`/absolute are rejected) and every static `scripts/...` command reference must exist and stay inside the bundle.
 Under strict isolation the bundle (the `.asm.toml` + `scripts/`) is RO-bound in every jail, so a tool or agent cannot rewrite its own machine logic or bundled scripts mid-run.
-On hardened the cwd is blanket read-write (no mount namespace to carve), so the bundle is writable there; the surrounding container is the blast radius.
+On hardened the cwd is blanket read-write (no mount namespace to carve), so the bundle is writable there and the surrounding container bounds the damage.
 
 A `tool` script that needs to persist data across iterations writes to `$AGENT6_MACHINE_DATA_DIR`, a per-machine writable directory under the per-repo state dir (`<state-dir>/<repo-id>/machines/<id>/data/`, out of the workspace) granted RW in every tool jail.
 Under `hardened` isolation the repo cwd is also blanket read-write, so the persisted-data dir is just the durable home for cross-iteration state; the journal records every transition either way.
@@ -273,7 +275,7 @@ In v1 the process blocks in-process until the instant (or an external `signal`, 
 ```toml
 [states.park]
 kind = "wait"
-on = { signal = "handle" }        # no timer: a forever wait declares only `signal`
+on = { signal = "handle" }        # no timer: a forever wait declares `signal`
 ```
 
 A no-timer wait can never `tick`, so it declares only `signal`; declaring a `tick` edge is a load error (an unreachable edge).
@@ -291,7 +293,8 @@ On replay the journaled payload reproduces the identical input.
 [states.route]
 kind = "branch"
 when = [
-  { if = "verdict.label == 'urgent' and verdict.confidence >= 0.7", goto = "record"  },
+  { if = "verdict.label == 'urgent' and verdict.confidence >= 0.7",
+    goto = "record" },
   { else = true, goto = "poll" },
 ]
 ```
@@ -340,7 +343,7 @@ Emission is at-least-once across a crash: a resume re-enters the current state a
 
 Two independent channels render it.
 Device-present front-ends (`agent6 web`, the TUI Machines page, `agent6 attach`) show an ephemeral notification.
-For out-of-band delivery (a phone in a pocket), set the operator notify hook `[machine.notify].on_event` (see [config.md](config.md)): an operator argv run on the host, outside the jail, on every `machine.notify` and `machine.end`, so you fan out to your own push channel (ntfy/Pushover/email/Telegram).
+For out-of-band delivery, set the operator notify hook `[machine.notify].on_event` (see [config.md](config.md)): an operator argv run on the host, outside the jail, on every `machine.notify` and `machine.end`, so you fan out to your own push channel (ntfy/Pushover/email/Telegram).
 agent6 owns no push infrastructure.
 
 ### 4.4 Templating and list-splicing
@@ -387,7 +390,7 @@ Three consequences, each a `machine check` error:
 
 - **Global uniqueness across owners.** A name may be declared in exactly one of the three subtables.
   Declaring `positions` in both `[vars.code]` and `[vars.agent]` is rejected: *"variable `positions` declared in both `[vars.code]` and `[vars.agent]`; the three owner subtables share one read namespace"*.
-  Because a bare reference would otherwise be ambiguous, this is forbidden, not resolved by precedence.
+  A bare reference is forbidden rather than resolved by precedence.
 - **No bare top-level vars.** Every variable must live under one of the three owner subtables.
   A key written directly under `[vars]` (i.e. `vars.positions`) has no declared owner and is rejected: *"`vars.positions` has no owner subtable; put it in `[vars.operator]`, `[vars.code]`, or `[vars.agent]`"*.
   It is never silently ignored.
@@ -518,7 +521,7 @@ Mirrors the existing per-run layout under the per-repo state dir, out of the wor
   agent_transcripts/<ts>.json  # full lossless conversation per agent-state run
   states/<seq>-<state>/logs.jsonl  # per-execution event stream (role.*/tool.*),
                                    #   the watchable live view; pruned to recent
-  data/                      # persistent writable scratch ($AGENT6_MACHINE_DATA_DIR)
+  data/                      # writable scratch ($AGENT6_MACHINE_DATA_DIR)
   machine.lock               # single-writer guard (one process per machine)
 ```
 
@@ -655,7 +658,7 @@ initial = "poll"
 max_usd         = 25.0
 max_transitions = 100000
 
-[vars.operator]                   # operator inputs, fixed for the life of the machine
+[vars.operator]                   # operator inputs, fixed for the machine's life
 inbox_dir = { type = "str", value = "/srv/inbox" }
 poll_secs = { type = "int", value = 300 }
 
@@ -664,13 +667,13 @@ pending = { type = "list[str]", default = [] }  # set by the scan tool
 cursor  = { type = "str",       default = "" }  # set by the scan tool
 
 [vars.agent]                      # set by an agent state's finish_session
-verdict = { type = "classification", default = {} }  # set by classify's finish_session
+verdict = { type = "classification", default = {} }  # set by classify
 
 [schemas.classification]          # validates the agent's finish_session payload
 label      = { type = "str", enum = ["urgent", "normal", "spam"] }
 confidence = "float"
 
-[schemas.scan_result]             # types the scan tool's stdout so fields are navigable
+[schemas.scan_result]             # types the scan tool's stdout
 pending = "list[str]"
 cursor  = "str"
 
@@ -683,7 +686,8 @@ on = { tick = "scan", signal = "scan" }
 kind = "tool"
 command = ["scan-inbox", "--dir", "{{ inbox_dir }}", "--since", "{{ cursor }}"]
 output_schema = "scan_result"
-capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
+capture = { set = {
+  pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
 timeout_secs = 60
 on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 
@@ -695,7 +699,7 @@ when = [
 ]
 
 [states.classify]
-kind  = "agent"
+kind   = "agent"
 prompt = """
 Classify these pending items: {{ pending | json }}
 Call finish_session with JSON {label:"urgent"|"normal"|"spam", confidence:0..1}.
@@ -703,12 +707,14 @@ Call finish_session with JSON {label:"urgent"|"normal"|"spam", confidence:0..1}.
 output_schema = "classification"
 capture = { finish_json = "verdict" }
 timeout_secs = 600
-on = { ok = "route", failed = "poll", budget_exhausted = "halt", timeout = "poll" }
+on = { ok = "route", failed = "poll", timeout = "poll",
+       budget_exhausted = "halt" }
 
 [states.route]
 kind = "branch"
 when = [
-  { if = "verdict.label == 'urgent' and verdict.confidence >= 0.7", goto = "record" },
+  { if = "verdict.label == 'urgent' and verdict.confidence >= 0.7",
+    goto = "record" },
   { else = true, goto = "poll" },
 ]
 
@@ -725,22 +731,22 @@ status = "failed"
 reason = "machine budget exhausted"
 ```
 
-Rendered control flow (what `agent6 machine graph` would emit):
+Control flow, condensed. `agent6 machine graph` prints the same shape with one edge per transition and each `on` key verbatim:
 
 ```mermaid
 stateDiagram-v2
     [*] --> poll
-    poll --> scan: tick/signal
+    poll --> scan: tick
     scan --> have_items: ok
-    scan --> poll: nonzero/timeout
+    scan --> poll: nonzero or timeout
     have_items --> poll: no items
     have_items --> classify: else
     classify --> route: ok
-    classify --> poll: failed/timeout
+    classify --> poll: failed or timeout
     classify --> halt: budget_exhausted
-    route --> record: urgent & conf>=.7
+    route --> record: urgent and confident
     route --> poll: else
-    record --> poll
+    record --> poll: done
     halt --> [*]
 ```
 

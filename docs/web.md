@@ -2,20 +2,23 @@
 
 `agent6 web` serves a browser front-end for driving agent6 from a desktop or a phone: watch a run stream, steer it, approve prompts, answer questions, read the conversation, and browse, create, run, and watch state machines.
 
-<video controls muted loop playsinline preload="metadata" class="no-lightbox"> <source src="/screenshots/out/web-desktop.webm" type="video/webm"> </video>
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/web-desktop.webm" type="video/webm">
+</video>
 
 The same UI on a phone (single column, bottom nav):
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox"
        style="max-width: 390px">
-<source src="/screenshots/out/web-phone.webm" type="video/webm"> </video>
+  <source src="/screenshots/out/web-phone.webm" type="video/webm">
+</video>
 
 ## Run it
 
 ```bash
-agent6 web            # serve the hub on http://127.0.0.1:7658
-agent6 web <session-id>   # open a session on load
-agent6 web <machine>  # open a machine instance on load
+agent6 web              # serve the hub on http://127.0.0.1:7658
+agent6 web <session-id> # open a session on load
+agent6 web <machine>    # open a machine instance on load
 ```
 
 `--host` / `--port` override the [`[web]`](config.md#web) config for one invocation.
@@ -59,12 +62,12 @@ To reach a phone that is not open on the page, point the operator notify hook `[
 The page reads the same wire form as `agent6 attach --json`:
 
 ```bash
-curl -s localhost:7658/api/hub                 # runs + machines + machine files
-curl -s localhost:7658/api/session/<id>            # a run's state, as JSON
-curl -s localhost:7658/api/session/<id>/conversation # the folded conversation items
-curl -s localhost:7658/api/machine/<name>      # a machine's state, as JSON
-curl -s localhost:7658/api/config              # effective config (no secrets)
-curl -sN localhost:7658/api/session/<id>/events    # SSE: a fresh snapshot per change
+curl -s localhost:7658/api/hub                       # hub state
+curl -s localhost:7658/api/session/<id>              # a run's state, as JSON
+curl -s localhost:7658/api/session/<id>/conversation # the folded conversation
+curl -s localhost:7658/api/machine/<name>            # a machine's state, as JSON
+curl -s localhost:7658/api/config                    # effective config
+curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per change
 ```
 
 `curl /api/session/<id>` returns what `agent6 attach <id> --json` prints, plus the manifest's branch and compare facts.
@@ -78,8 +81,8 @@ The server binds `127.0.0.1` by default and has no app-level auth.
 For remote access, put [Tailscale](https://tailscale.com) in front of the loopback bind:
 
 ```bash
-agent6 web                       # keep it on 127.0.0.1:7658
-tailscale serve --bg 7658        # HTTPS + WireGuard, reachable on your tailnet
+agent6 web                # keep it on 127.0.0.1:7658
+tailscale serve --bg 7658 # HTTPS + WireGuard, reachable on your tailnet
 ```
 
 The tailnet (WireGuard) identity is the access control: only devices on your tailnet reach it, over an encrypted tunnel, and `tailscale serve` terminates HTTPS.

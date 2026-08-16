@@ -58,13 +58,13 @@ agent6 requires **Python 3.12+** and the sandbox only supports **Linux** (x86_64
 Other platforms run without the sandbox behind a warning.
 See [installation](https://agent6.dev/installation/) for the full requirements and building from source.
 
-## Quick start
+## Usage
 
 ```bash
 # Connect a provider (stored in ~/.config/agent6/, key in a 0600 secrets file).
 # If already connected, skip both; `agent6 check` verifies it.
 agent6 connect                # interactive: pick provider, paste API key
-agent6 model worker anthropic claude-sonnet-4-6
+agent6 model worker anthropic claude-sonnet-5
 
 # Run the agent on a task, create a plan, or ask a question.
 cd your-repo
@@ -72,10 +72,10 @@ agent6 run "add a --json output mode to the CLI"
 agent6 plan "how to add a --json output mode to the CLI"
 agent6 ask "how to add a --json output mode to the CLI"
 
-# Watch and drive runs from a terminal, a full-screen TUI, a browser, or an editor.
-agent6 attach <session-id>    # follow + answer a run live (default: conversation view; --raw for the event stream)
+# Watch and drive runs from a terminal, a TUI, a browser, or an editor.
+agent6 attach <session-id>    # follow + answer a run live (--raw for events)
 agent6 tui                    # full-screen dashboard hub
-agent6 web                    # browser UI on http://127.0.0.1:7658 (desktop and mobile)
+agent6 web                    # browser UI on http://127.0.0.1:7658
 agent6 acp                    # speak ACP on stdio; an editor spawns this
 
 # Audit the effective config, check the sandbox, resume or fork a run.
@@ -87,7 +87,7 @@ agent6 fork <session-id> --at-turn 7
 # See all commands with `agent6 --help` or `agent6 <command> --help`.
 ```
 
-See [getting started](https://agent6.dev/getting-started/) for the full command tour, [the web UI](https://agent6.dev/web/) for driving runs from a phone, [configuration](https://agent6.dev/config/) for every field, and the [security model](https://agent6.dev/security/) for what the sandbox enforces.
+See [usage](https://agent6.dev/usage/) for the full command tour, [the web UI](https://agent6.dev/web/) for driving runs from a phone, [configuration](https://agent6.dev/config/) for every field, and the [security model](https://agent6.dev/security/) for what the sandbox enforces.
 
 Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (in the state dir, out of the workspace, per-machine, never committed), then `--config FILE`.
 `agent6 config show` prints every effective value with the layer that set it.

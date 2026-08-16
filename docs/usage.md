@@ -1,6 +1,6 @@
-# Getting started
+# Usage
 
-This assumes agent6 is already installed (see [installation](installation.md)).
+Assumes agent6 is installed (see [installation](installation.md)).
 
 ## Connect a provider
 
@@ -57,16 +57,16 @@ Pin one in the per-repo config, or with `agent6 init`, to make it deterministic.
 Every session id is a positional argument (an exact id or an unambiguous prefix); omit it for the most recent run.
 
 ```sh
-agent6 attach              # follow the conversation live; --raw, --tui, or --json instead
-agent6 sessions show          # status, iteration, elapsed, cost; --json for scripts
+agent6 attach                 # follow the conversation live; --raw, --tui, --json
+agent6 sessions show          # status, iteration, elapsed, cost; --json to script
 agent6 sessions diff          # the git diff the run produced
 agent6 sessions commits       # the run's per-step commits
-agent6 sessions merge         # land the run's work on your branch (squash/merge/ff)
-agent6 sessions prune         # delete safely-merged agent6/* run branches; report the rest
-agent6 sessions dir           # where this repo's run history lives (one line, scriptable)
-agent6 sessions rm            # delete one run's history; --asks clears every saved ask
-agent6 sessions compare <id> <id> ...  # advisory ranked comparison across >=2 runs
-agent6 sessions transcript    # the full conversation, every tool call with its I/O
+agent6 sessions merge         # land the run's work on your branch
+agent6 sessions prune         # delete merged agent6/* branches; report the rest
+agent6 sessions dir           # where this repo's run history lives (scriptable)
+agent6 sessions rm            # delete one run's history; --asks clears saved asks
+agent6 sessions compare <ids> # ranked comparison, >=2 runs
+agent6 sessions transcript    # the full conversation, every tool call with I/O
 agent6 sessions graph         # the persisted task graph
 ```
 
@@ -75,8 +75,8 @@ agent6 sessions graph         # the persisted task graph
 ## When a run goes wrong
 
 ```sh
-agent6 resume <session-id>                 # continue from the last snapshot
-agent6 fork <session-id> --at-turn 7       # branch a new run from turn 7; --steer "try X" seeds the new direction
+agent6 resume <session-id>           # continue from the last snapshot
+agent6 fork <session-id> --at-turn 7 # new run from turn 7 (--steer seeds it)
 ```
 
 State is snapshotted before each model call and checkpointed per turn.
@@ -97,9 +97,9 @@ Exit codes for `agent6 run` and `resume`, for scripts to branch on:
 ## Plan, review, and ask
 
 ```sh
-agent6 plan "refactor the config loader"      # edit-free plan; run with --from-plan
-agent6 plan edit <session-id>                 # answer the plan's open questions in plan.md
-agent6 resume <session-id> --steer "answered" # the planner re-reads plan.md and revises
+agent6 plan "refactor the config loader"      # edit-free plan; run --from-plan
+agent6 plan edit <session-id>                 # answer the plan's open questions
+agent6 resume <session-id> --steer "answered" # the planner re-reads and revises
 agent6 review --base origin/main --head HEAD  # read-only diff review
 agent6 ask "how does the task-graph curator work?"
 ```

@@ -5,7 +5,8 @@ Every image is from a recorded run; click to enlarge.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox"
        poster="/screenshots/out/01-hub.png">
-<source src="/screenshots/out/tour.webm" type="video/webm"> </video>
+  <source src="/screenshots/out/tour.webm" type="video/webm">
+</video>
 
 ## Hub
 
@@ -49,22 +50,28 @@ The config page shows every setting, its effective value, and where that value c
 
 ## Watching a state machine
 
-Beyond one-shot runs, agent6 runs editable state machines: a `.asm.toml` of tool, branch, agent, and wait states driven over a journal.
+agent6 also runs editable state machines: a `.asm.toml` of tool, branch, agent, and wait states driven over a journal.
 Author one, read its graph, and watch it execute.
 Here `code-fixer` runs a fix-loop: an agent state edits the repo to make a failing check pass, a tool state re-runs the check, and the machine routes on the result until it is green or the attempt budget is spent, with the agent's reasoning streamed live like a run.
 
-<video controls muted loop playsinline preload="metadata" class="no-lightbox"> <source src="/screenshots/out/machine-demo.webm" type="video/webm"> </video>
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/machine-demo.webm" type="video/webm">
+</video>
 
 The same machine from the browser: start it on the Machines page and watch the current state stream, with the run's approvals and questions answerable in place.
 
-<video controls muted loop playsinline preload="metadata" class="no-lightbox"> <source src="/screenshots/out/web-machine.webm" type="video/webm"> </video>
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/web-machine.webm" type="video/webm">
+</video>
 
 ## From the terminal
 
-For terminal-first workflows, `agent6 run` executes in the foreground: steer it with Ctrl-C, no TUI required (the pause menu Tab-completes its commands; Up recalls and Ctrl-R searches the session's past messages).
+`agent6 run` executes in the foreground: steer it with Ctrl-C, no TUI required (the pause menu Tab-completes its commands; Up recalls and Ctrl-R searches the session's past messages).
 Runs started from the TUI or web hub are detached instead, and `agent6 attach` attaches to either kind: the run's conversation by default, `--raw` for a no-deps line tail, `--tui` for the full-screen TUI, `--json` for a one-shot snapshot of the same state.
 
-<video controls muted loop playsinline preload="metadata" class="no-lightbox"> <source src="/screenshots/out/temps-demo.webm" type="video/webm"> </video>
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/temps-demo.webm" type="video/webm">
+</video>
 
 ---
 

@@ -35,7 +35,8 @@ Restart the shell afterwards.
 
 ## Shell completion
 
-One command installs tab-completion, detecting the shell you are running, you can also specify the shell explicitly.
+One command installs tab-completion.
+It detects the shell you are running, or takes the name of one.
 Rerunning it is safe and refreshes the completion.
 
 ```sh
@@ -50,20 +51,27 @@ Fish and xonsh get a file in their auto-loaded native locations (`fish/completio
 
 ```sh
 agent6 --version
-agent6 check                # sandbox probes, config, provider keys, and MCP servers
+agent6 check                # sandbox, config, keys, MCP, verify, boundaries
 ```
 
 `agent6 check sandbox` runs the jail through live probes and reports the isolation level a run will use on your kernel.
 
 ## Requirements
 
-| | |
-|---|---|
-| Python | 3.12 or newer |
-| Provider | an API key for at least one |
-| Sandbox | Linux on x86_64 or aarch64 |
-| `strict` isolation | unprivileged user namespaces |
-| Building from source | a Rust toolchain (the PyPI wheels bundle `agent6-jail`) |
+Python
+:   3.12 or newer
+
+A provider
+:   an API key for at least one
+
+The sandbox
+:   Linux on x86_64 or aarch64
+
+`strict` isolation
+:   unprivileged user namespaces
+
+Building from source
+:   a Rust toolchain (the PyPI wheels bundle `agent6-jail`)
 
 The jail uses Landlock, seccomp, and user namespaces, and its seccomp filter exists for x86_64 and aarch64.
 

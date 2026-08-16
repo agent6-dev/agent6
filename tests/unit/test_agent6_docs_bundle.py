@@ -30,8 +30,8 @@ def test_every_bundled_doc_source_exists() -> None:
 
 def test_the_advertised_docs_are_bundled() -> None:
     """Every doc name the tool description offers as an example must ship;
-    the usage promise (machines, the CLI, budgets) rides on GETTING-STARTED
-    and STATE-MACHINES being present."""
+    the usage promise (machines, the CLI, budgets) rides on USAGE and
+    STATE-MACHINES being present."""
     names = {Path(dest).stem for dest in _bundled().values()}
     import re
 
@@ -39,4 +39,19 @@ def test_the_advertised_docs_are_bundled() -> None:
     advertised -= {"OWN", "USE", "CLI"}  # emphasis and prose, not doc names
     missing = advertised - names
     assert not missing, f"description advertises unbundled docs: {sorted(missing)}"
-    assert {"GETTING-STARTED", "STATE-MACHINES", "ACP", "INSTALLATION", "WEB"} <= names
+    assert {"USAGE", "STATE-MACHINES", "ACP", "INSTALLATION", "WEB"} <= names
+
+
+def test_the_reader_serves_every_bundled_doc() -> None:
+    """The reader's name list covers the bundle.
+
+    The wheel shipped ten docs while `AGENT6_DOC_FILES` held five, so a model
+    asking for the STATE-MACHINES or INSTALLATION the description offers got
+    "missing" for a file sitting right there in the wheel."""
+    from agent6.tools._agent6_docs import AGENT6_DOC_FILES
+
+    bundled = {Path(dest).name for dest in _bundled().values()}
+    assert bundled == set(AGENT6_DOC_FILES), (
+        f"bundle and reader disagree: only bundled {sorted(bundled - set(AGENT6_DOC_FILES))}, "
+        f"only in the reader {sorted(set(AGENT6_DOC_FILES) - bundled)}"
+    )

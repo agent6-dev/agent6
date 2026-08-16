@@ -131,7 +131,7 @@ extra:
 nav:
   - Home: index.md
   - Installation: installation.md
-  - Getting started: getting-started.md
+  - Usage: usage.md
   - Tour: tour.md
   - Web UI: web.md
   - Editor integration: acp.md

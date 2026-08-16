@@ -11,7 +11,7 @@ hide:
 <p class="a6-tagline">A coding agent that jails model commands and uses editable state machines for long-running tasks.</p>
 
 <div class="a6-cta" markdown>
-[Get started](getting-started.md){ .md-button .md-button--primary }
+[Usage](usage.md){ .md-button .md-button--primary }
 [:material-github: GitHub](https://github.com/agent6-dev/agent6){ .md-button }
 [:simple-pypi: PyPI](https://pypi.org/project/agent6/){ .md-button }
 </div>
@@ -86,7 +86,7 @@ The [tour](tour.md) has a still of each screen.
 It binds `127.0.0.1`; put `tailscale serve` in front for encrypted remote access.
 See [the web UI](web.md).
 
-## Get started
+## Usage
 
 ```sh
 uv tool install agent6                 # or: pipx install agent6
@@ -98,4 +98,4 @@ agent6 run "add a --json output mode to the CLI"
 ```
 
 [Installation](installation.md) covers requirements, shell completion, and building from source.
-[Getting started](getting-started.md) covers the first run, inspecting it, and recovering one that went wrong.
+[Usage](usage.md) covers the first run, inspecting it, and recovering one that went wrong.

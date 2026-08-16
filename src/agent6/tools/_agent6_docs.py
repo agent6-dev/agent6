@@ -6,11 +6,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Canonical (uppercase) doc names the tool exposes. The wheel bundles all five
-# under these names in agent6/_docs/. In a dev checkout README/AGENTS sit at the
-# repo root under these names too, while the reference docs live lowercase under
+# Canonical (uppercase) doc names the tool exposes, one per doc the wheel
+# bundles into agent6/_docs/ (pyproject's force-include list, pinned by
+# tests/unit/test_agent6_docs_bundle.py). In a dev checkout README/AGENTS sit at
+# the repo root under these names, while the reference docs live lowercase under
 # docs/ (the site's convention) -- _locate() handles that case difference.
-AGENT6_DOC_FILES = ("README.md", "CONFIG.md", "SECURITY.md", "AGENTS.md", "ARCHITECTURE.md")
+AGENT6_DOC_FILES = (
+    "README.md",
+    "AGENTS.md",
+    "USAGE.md",
+    "INSTALLATION.md",
+    "CONFIG.md",
+    "SECURITY.md",
+    "ARCHITECTURE.md",
+    "STATE-MACHINES.md",
+    "ACP.md",
+    "WEB.md",
+)
 
 
 def agent6_docs_dirs() -> list[Path]:

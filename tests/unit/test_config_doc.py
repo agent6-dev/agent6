@@ -48,3 +48,23 @@ def test_every_leaf_has_a_description() -> None:
     gen = _load_generator()
     undescribed = sorted(path for path, (_, desc) in gen.leaves().items() if not desc.strip())
     assert not undescribed, f"config leaves with no Field(description=...): {undescribed}"
+
+
+def test_every_leaf_reaches_the_page() -> None:
+    """Every config leaf appears as a row in the rendered page.
+
+    The staleness pin above compares the page against a re-render of the same
+    template, so it cannot see a `<!-- config-table: ... -->` marker that stops
+    matching: both sides then lose the same rows. That happened to
+    `models.worker`, dropping ten documented fields off the page while every
+    check stayed green. A leaf is documented or this fails.
+    """
+    gen = _load_generator()
+    page = (_ROOT / "docs" / "config.md").read_text(encoding="utf-8")
+
+    def documented(path: str) -> bool:
+        parts = path.split(".")
+        return any(f"`{'.'.join(parts[i:])}`" in page for i in range(len(parts)))
+
+    missing = sorted(path for path in gen.leaves() if not documented(path))
+    assert not missing, f"config leaves with no row on the page: {missing}"

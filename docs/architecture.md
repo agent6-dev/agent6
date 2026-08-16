@@ -49,7 +49,7 @@ stateDiagram-v2
     llm_call --> dispatch: model emits tool calls
     llm_call --> [*]: budget exhausted
     dispatch --> snapshot: non-terminal tool
-    dispatch --> commit: run_verify_command (exit 0)
+    dispatch --> commit: verify green
     commit --> snapshot
     dispatch --> [*]: finish_session
 ```
@@ -152,21 +152,11 @@ As a diagram:
 
 ```mermaid
 flowchart TD
-    LLM[LLM choice of tool] --> Tools[tools/dispatch.py]
-    Tools -->|apply_edit, apply_patch, read, list, outline| FS[(workspace fs)]
-    Tools -->|run_verify_command, run_metric_command, run_command| Jail[agent6-jail]
-    Jail --> NS[user/mount/pid/ipc/uts/net NS]
-    Jail --> Pivot[pivot_root into minimal rootfs]
-    Jail --> ROBinds[strict only: RO bind .git]
-    Jail --> Land[Landlock FS rules]
-    Jail --> Sec[seccomp filter]
-    Jail --> Caps[NO_NEW_PRIVS]
-    Land -.-> Child[child process]
-    Sec -.-> Child
-    ROBinds -.-> Child
-    Caps -.-> Child
-    Workflow[workflow git_ops.py] -->|outside jail| Git[(.git)]
-    Workflow -. blocks .-> Push[push / --force / reset --hard]
+    LLM[LLM tool call] --> Tools[tools/dispatch.py]
+    Tools -->|apply_edit, apply_patch,<br/>read, list, outline| FS[(workspace fs)]
+    Tools -->|run_command, run_verify_command,<br/>run_metric_command| Jail[agent6-jail]
+    Jail --> Layers["namespaces, pivot_root,<br/>read-only .git under strict,<br/>Landlock, seccomp, NO_NEW_PRIVS"]
+    Layers --> Child[child process]
 ```
 
 - `git_ops.py` runs outside the jail (the agent's own process), so the RO bind of `.git` does not stop the workflow from committing.
