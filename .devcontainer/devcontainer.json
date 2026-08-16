@@ -1,12 +1,9 @@
-// agent6 devcontainer. See ./Dockerfile for the image recipe and the
-// rationale for NOT using devcontainer "features".
 {
 	"name": "agent6",
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
 	"remoteUser": "vscode",
-	"postCreateCommand": "uv sync",
 	"customizations": {
 		"vscode": {
 			"settings": {
