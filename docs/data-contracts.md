@@ -193,4 +193,4 @@ Pure event-fold: list[event_dict] -> SessionState.
 
 - **Written by:** viewmodel/{machine_state, state}
 - **Read by:** ui/cli/{_steer_menu, plan_watch}, ui/tui/{app, conversation, logview, modals}, viewmodel/__init__
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (6 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (7 test files exercise it)
