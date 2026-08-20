@@ -898,7 +898,9 @@ def test_plumb_merge_conflict_moves_nothing(tmp_path: Path) -> None:
     main_tip = status(tmp_path).head_sha
     res = plumb_merge(tmp_path, "main", theirs, strategy="merge", message=None)
     assert res.conflicted
-    assert "README.md" in res.conflicts
+    # The conflicted PATHS only: merge-tree's informational lines ("Auto-merging
+    # README.md", "CONFLICT (content): ...") follow a blank line and stay out.
+    assert res.conflicts == ("README.md",)
     assert _rev(tmp_path, "main") == main_tip  # nothing moved
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "main change\n"
 

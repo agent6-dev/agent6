@@ -1155,7 +1155,14 @@ def plumb_merge(
             res = _run(path, "merge-tree", "--write-tree", "--name-only", ours, theirs, check=False)
             lines = res.stdout.splitlines()
             if res.returncode == 1:
-                return MergeResult("", True, tuple(p for p in lines[1:] if p.strip()))
+                # The tree oid, the conflicted paths, a blank line, then git's
+                # informational messages ("Auto-merging f", "CONFLICT (content) ...").
+                paths: list[str] = []
+                for line in lines[1:]:
+                    if not line.strip():
+                        break
+                    paths.append(line)
+                return MergeResult("", True, tuple(paths))
             if res.returncode != 0 or not lines:
                 raise GitError(f"merge-tree failed: {res.stderr.strip() or 'exit'}")
             tree = lines[0].strip()
