@@ -54,9 +54,9 @@ from agent6.ui.tui.modals import HistorySearchModal, RestateModal
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
 from agent6.viewmodel import restate
+from agent6.viewmodel.events import SESSION_START_EVENTS
 from agent6.viewmodel.format import spinner_frame
 from agent6.viewmodel.policy import session_policy
-from agent6.viewmodel.state import SESSION_START_EVENTS
 from agent6.viewmodel.tail import LogTail, tail_events
 from agent6.viewmodel.transcript import (
     TranscriptFold,

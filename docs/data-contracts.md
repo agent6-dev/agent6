@@ -115,7 +115,7 @@ Typed read model for the logs.jsonl event families the SessionState fold consume
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionUndone`, `RawEvent`
 
 - **Written by:** viewmodel/events
-- **Read by:** ui/cli/_console_view, ui/tui/machines, viewmodel/{__init__, listing, state, transcript}
+- **Read by:** ui/cli/{_console_view, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, state, transcript}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (4 test files exercise it)
 
 ## MachineSpec
@@ -193,5 +193,5 @@ Pure event-fold: list[event_dict] -> SessionState.
 **session_state_as_dict** &mdash; The JSON-able wire form of a SessionState, stable field names: what `agent6 attach --json` and a web client serialize.
 
 - **Written by:** viewmodel/{machine_state, state}
-- **Read by:** ui/cli/{_steer_menu, plan_watch}, ui/tui/{app, conversation, logview, modals, prompts}, viewmodel/{__init__, snapshot}
+- **Read by:** ui/cli/_steer_menu, ui/tui/{app, logview, modals, prompts}, viewmodel/{__init__, snapshot}
 - **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (7 test files exercise it)

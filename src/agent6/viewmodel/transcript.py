@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from agent6.types import SESSION_KINDS
-from agent6.viewmodel.events import event_epoch, tool_result_ok
+from agent6.viewmodel.events import SESSION_START_EVENTS, event_epoch, tool_result_ok
 
 # Terminal control sequences in MODEL-AUTHORED text and command output.
 # Default-deny, not a CSI-only blocklist: stripping CSI alone left OSC intact
@@ -336,8 +336,8 @@ class TranscriptFold:
             self._last_ep = ep
             if self._first_ep is None:
                 self._first_ep = ep
-        if etype == "session.start":
-            self._mode = str(event.get("mode", ""))
+        if etype in SESSION_START_EVENTS:
+            self._mode = str(event.get("mode", "")) or self._mode
         if etype == "budget.update":
             self._usd = float(event.get("usd_total", 0) or 0)
             return True

@@ -491,3 +491,12 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
     run = [{**ask[0], "mode": "run"}, *ask[1:]]
     done = next(it for it in fold_transcript(run) if it.kind == "done")
     assert done.detail == "1 tool · 0 commits"
+    # A resumed leg starts with loop.resume.start (never a second
+    # session.start): the mode rides on it too, or the resumed plan's receipt
+    # reads "0 commits".
+    resumed_plan = [
+        {"type": "loop.resume.start", "mode": "plan", "iteration": 3},
+        {"type": "session.end", "reason": "finish_planning", "all_passed": False},
+    ]
+    done = next(it for it in fold_transcript(resumed_plan) if it.kind == "done")
+    assert done.detail == "0 tools"

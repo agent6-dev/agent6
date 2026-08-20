@@ -98,6 +98,7 @@ from agent6.ui.tui.theme import (
     status_style,
 )
 from agent6.viewmodel import manifest_branches, restate, session_compare
+from agent6.viewmodel.events import SESSION_START_EVENTS
 from agent6.viewmodel.format import (
     TASK_STATUS_GLYPH,
     format_compare,
@@ -108,7 +109,6 @@ from agent6.viewmodel.format import (
 from agent6.viewmodel.listing import LIVE_STATUS_WORDS, status_for_session_dir, task_snippet
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
-    SESSION_START_EVENTS,
     STREAM_DELTA_EVENTS,
     SessionState,
     ToolCallView,

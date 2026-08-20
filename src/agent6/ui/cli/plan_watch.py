@@ -50,8 +50,8 @@ from agent6.viewmodel import (
     status_for_session_dir,
     tail_events,
 )
+from agent6.viewmodel.events import SESSION_START_EVENTS
 from agent6.viewmodel.format import format_branch, format_compare, format_cost
-from agent6.viewmodel.state import SESSION_START_EVENTS
 
 
 def _resolve_plan_session_id(session_id: str) -> str | None:

@@ -28,6 +28,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+# A run SESSION begins: a fresh run() emits session.start; a resumed leg emits only
+# loop.resume.start (never a second session.start). Per-process state that restarts
+# at a session boundary -- the prompt-id counters (approval-1/question-1 again),
+# a screen's live/finished tracking, the receipt's mode -- must key on BOTH;
+# keying on session.start alone made every resumed leg invisible to that state
+# (swallowed modals, a steer bar that mislabeled a live leg). One definition so
+# the folds can't drift.
+SESSION_START_EVENTS = frozenset({"session.start", "loop.resume.start"})
+
 
 def event_epoch(value: object) -> float | None:
     """Parse an event `ts` to epoch seconds, or None if unparseable.
