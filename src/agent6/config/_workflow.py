@@ -90,6 +90,23 @@ class WorkflowConfig(BaseModel):
             "model-chosen `run_command` is not (see `command_checkin_s`)."
         ),
     )
+    # Bounds one LEG: a resume gets a fresh allowance (numbering continues),
+    # so a standing run is not capped by the sum of its legs.
+    max_iterations: int = Field(
+        default=200,
+        description=(
+            "Assistant turns one leg may take before the run stops with reason "
+            "`max_iterations`; -1 is unlimited. A resumed leg gets a fresh allowance."
+        ),
+    )
+
+    @field_validator("max_iterations")
+    @classmethod
+    def _iterations_unlimited_is_exactly_minus_one(cls, v: int) -> int:
+        if v == 0 or v < -1:
+            raise ValueError("max_iterations is >= 1, or exactly -1 for unlimited")
+        return v
+
     # How long a run_command may run before the model is handed it back as a
     # background job. NOT a timeout: nothing is killed, the command keeps
     # running and the model decides whether to wait, poll or stop it -- a

@@ -526,3 +526,56 @@ def test_stagnation_notice_zero_disables(tmp_path: Path) -> None:
     result = wf.run("look around")
     assert result.completed is True
     assert _stagnation_blocks(_final_messages(provider)) == []
+
+
+def test_unlimited_iterations_is_minus_one(tmp_path: Path) -> None:
+    """[workflow].max_iterations = -1 runs unbounded. The pre-knob loop fed -1
+    into range(start, 0), which is EMPTY: the run exited max_iterations at
+    zero iterations without a single provider call."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        *(_resp_with_tool("read_file", {"path": f"x{i}.txt"}, tu_id=f"t{i}") for i in range(12)),
+        _resp_text("ok"),
+    ]
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
+
+    wf = _build_wf(repo, provider, dispatcher)
+    wf.max_iterations = -1
+    result = wf.run("read the files")
+
+    assert result.completed is True
+    assert provider.call.call_count == 13
+
+
+def test_resume_leg_rearms_the_iteration_allowance(tmp_path: Path) -> None:
+    """A resumed leg gets a fresh max_iterations window relative to its own
+    start. The counter used to be absolute: a run capped at max_iterations
+    resumed into range(cap+1, cap+1) and made ZERO provider calls (observed
+    live: a standing run's resume leg ended instantly)."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [_resp_text("done")]
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
+
+    wf = _build_wf(repo, provider, dispatcher)
+    wf.max_iterations = 5
+    wf.resume_state_path = tmp_path / "loop_state.json"
+    from agent6.workflows.loop import _LoopState  # pyright: ignore[reportPrivateUsage]
+
+    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        messages=[],
+        tool_calls=0,
+        next_iteration=6,
+        root_task_id=None,
+        state=_LoopState(original_task="t", tool_calls=0),
+    )
+    result = wf.resume()
+
+    assert result.completed is True
+    assert provider.call.call_count == 1

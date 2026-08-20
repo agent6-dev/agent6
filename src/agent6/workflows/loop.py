@@ -9,6 +9,7 @@ auto-commit, so the chain records each tree a verify certified.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import random
@@ -555,9 +556,10 @@ class Workflow:
     # advances; resume-from-git, sessions diff/merge, and /parallel dispatch
     # from a changed tree degrade, and the work stays only in the worktree.
     commit_per_step: bool = True
-    # Hard cap on assistant turns. Each turn = one provider.call. With the
-    # default tool-use-loop pattern, agents take 30-100 turns on a non-
-    # trivial task; 200 is well above that without being unbounded.
+    # Cap on assistant turns for THIS leg (config [workflow].max_iterations;
+    # -1 unlimited). Each turn = one provider.call. A resumed leg re-arms the
+    # allowance: the cap is relative to its start_iteration, so a standing
+    # run is bounded per leg, never by the sum of its history.
     max_iterations: int = 200
     # Per-call max_tokens for the LLM response. NOT the bench's total
     # output budget (that's BudgetTracker's job). Sized for ONE turn:
@@ -1003,7 +1005,13 @@ class Workflow:
         state.root_task_id = root_task_id  # steer-boundary phases parent DAG nodes here
         state.system = system  # ... and snapshot with it (see _dispatch_parallel)
         self._seed_carryover(state, conversation, resume_from)
-        for iteration in range(start_iteration, self.max_iterations + 1):
+        # This LEG's allowance: start..start-1+max (-1 = unbounded); a resumed
+        # leg re-arms rather than inheriting a spent absolute counter.
+        for iteration in (
+            range(start_iteration, start_iteration + self.max_iterations)
+            if self.max_iterations >= 0
+            else itertools.count(start_iteration)
+        ):
             self.iterations_reached = iteration
             # A resume seeded with `--steer` queues the operator's follow-up
             # BEFORE the loop starts (resume.py write_steer_answer). Consume it
@@ -1126,18 +1134,18 @@ class Workflow:
                 return outcome
 
         self._log(f"LOOP: max_iterations={self.max_iterations} reached")
-        self._final_checkpoint(self.max_iterations)
+        self._final_checkpoint(self.iterations_reached)
         self._emit(
             "session.end",
             reason="max_iterations",
-            iterations=self.max_iterations,
+            iterations=self.iterations_reached,
             all_passed=False,
         )
         return SessionResult(
             completed=False,
             reason="max_iterations",
             summary=f"max_iterations={self.max_iterations} reached without finish_session",
-            iterations=self.max_iterations,
+            iterations=self.iterations_reached,
             tool_calls=state.tool_calls,
         )
 

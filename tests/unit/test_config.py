@@ -943,3 +943,26 @@ def test_model_git_control_requires_git_writes(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
     ok = load_config(_write(tmp_path, body.replace("protect_git = true", "protect_git = false")))
     assert ok.git.control == "model"
+
+
+def test_max_iterations_defaults_to_200(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.workflow.max_iterations == 200
+
+
+def test_max_iterations_unlimited_is_minus_one(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        'verify_command = ["true"]\nmax_iterations = -1',
+    )
+    assert load_config(_write(tmp_path, body)).workflow.max_iterations == -1
+
+
+def test_max_iterations_zero_is_rejected(tmp_path: Path) -> None:
+    """0 would end every leg before its first call; the sentinel is exactly -1."""
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        'verify_command = ["true"]\nmax_iterations = 0',
+    )
+    with pytest.raises(ConfigError, match="exactly -1 for unlimited"):
+        load_config(_write(tmp_path, body))

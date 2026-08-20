@@ -441,6 +441,7 @@ def run_one(
         commit_trailer=render_commit_trailer(
             cfg.git.commit.trailer, models=(rm.model if rm is not None else "",)
         ),
+        max_iterations=cfg.workflow.max_iterations,
         provider=provider,
         summariser_provider=summariser_provider,
         dispatcher=dispatcher,
