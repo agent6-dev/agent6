@@ -302,3 +302,24 @@ def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
     usd, partial = bt.estimate_usd()
     assert usd == pytest.approx(0.60)  # not dropped to 0.0
     assert partial is True  # and flagged as an under-estimate
+
+
+def test_a_sub_cent_cap_prints_at_the_spends_precision() -> None:
+    """`--max-usd 0.004` printed as "$0.00" beside a "$0.0046" spend, and the
+    exhaustion reason read "~$0.0046 >= $0.00"; cap and spend share one
+    formatter (cents at >= $1, four decimals below)."""
+    from agent6.budget import format_usd
+
+    assert format_usd(0.004) == "$0.0040"
+    assert format_usd(10.0) == "$10.00"
+    bt = BudgetTracker(max_usd=0.004, max_tokens_fallback=-1)
+    bt.record(
+        model="claude-haiku-4-5",
+        input_tokens=5000,
+        output_tokens=2000,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+    )
+    summary = bt.format_summary()
+    assert "of $0.0040" in summary
+    assert "$0.00 " not in summary and ">= $0.00" not in summary

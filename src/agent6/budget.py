@@ -91,6 +91,12 @@ class _ModelCost:
     partial: bool = False
 
 
+def format_usd(usd: float) -> str:
+    """A dollar figure as every surface prints it: cents at >= $1, four
+    decimals below (a sub-cent cap or spend is never "$0.00")."""
+    return f"${usd:.2f}" if usd >= 0.995 else f"${usd:.4f}"
+
+
 def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | None:
     """Per-model USD cost: the ONE owner of the pricing arithmetic, shared by
     `_estimate_usd_locked` (the enforced USD ceiling) and `format_summary`
@@ -237,7 +243,7 @@ class BudgetTracker:
                 cost, _ = self._estimate_usd_locked()
                 if cost >= self.max_usd:
                     self._exceeded_reason = (
-                        f"USD budget exhausted: ~${cost:.4f} >= ${self.max_usd:.2f}"
+                        f"USD budget exhausted: ~{format_usd(cost)} >= {format_usd(self.max_usd)}"
                         " (includes cache_read/cache_creation cost)"
                     )
             if not metered and self.max_tokens_fallback == 0:
@@ -377,7 +383,7 @@ class BudgetTracker:
                     note = " (reported)"
                 else:
                     note = ""
-                cost_str = f"${cost.usd:.4f}{note}"
+                cost_str = f"{format_usd(cost.usd)}{note}"
             lines.append(
                 f"  {model}: "
                 f"in={totals.input_tokens} out={totals.output_tokens} "
@@ -385,10 +391,10 @@ class BudgetTracker:
                 f"cache_c={totals.cache_creation_tokens} "
                 f"calls={totals.calls} {cost_str}"
             )
-        usd_cap = "unlimited" if snap.max_usd == -1 else f"${snap.max_usd:.2f}"
+        usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)
         budget_line = (
             f"  TOTAL: in={snap.input_total} out={snap.output_total} "
-            f"cost~${total_usd:.4f} of {usd_cap}"
+            f"cost~{format_usd(total_usd)} of {usd_cap}"
         )
         if snap.unmetered_tokens:
             fb_cap = (

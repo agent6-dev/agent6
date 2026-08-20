@@ -13,6 +13,7 @@ from __future__ import annotations
 import time
 from typing import Literal
 
+from agent6.budget import format_usd
 from agent6.sessions.manifest import CompareStamp
 
 # Task-node status glyphs. Text characters (not graphics) so every terminal font
@@ -42,12 +43,11 @@ def format_when(epoch: float) -> str:
 
 
 def format_cost(usd: float, *, partial: bool = False) -> str:
-    """Render a USD cost identically on every surface: cents at >= $1, four
-    decimals below (so small runs aren't all '$0.00'), with a leading '~' when
-    the figure is a known under-estimate (a model without price data). The web
-    SPA mirrors this in client.js's fmtUsd."""
-    prefix = "~" if partial else ""
-    return f"{prefix}${usd:.2f}" if usd >= 0.995 else f"{prefix}${usd:.4f}"
+    """Render a USD cost identically on every surface (`budget.format_usd`:
+    cents at >= $1, four decimals below), with a leading '~' when the figure is
+    a known under-estimate (a model without price data). The web SPA mirrors
+    this in client.js's fmtUsd."""
+    return ("~" if partial else "") + format_usd(usd)
 
 
 def machine_state_mark(*, is_current: bool, is_visited: bool) -> str:
