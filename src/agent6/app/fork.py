@@ -26,11 +26,12 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import shutil
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agent6.app._setup import SandboxOverrides, session_config
 from agent6.app.manifest import write_session_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.resume import resumable_bucket_dirs
@@ -346,6 +347,8 @@ def create_fork(  # noqa: PLR0911
     at_turn: int | None = None,
     new_session_id: str = "",
     cwd: Path,
+    sandbox_overrides: SandboxOverrides | None = None,
+    refuse_continuation: Callable[[Config, str], str | None] | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, int]:
     """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
@@ -355,6 +358,14 @@ def create_fork(  # noqa: PLR0911
     lineage) WITHOUT starting it. Returns `(child_id, 0)` on success, else
     `("", rc)` after printing the reason. The caller (`ui/cli/fork.py`) then
     either reports the created id (`--no-run`) or continues it over resume.
+
+    The child's config is built as its continuation builds it (the source's
+    preset, the mode clamp, this invocation's *sandbox_overrides*), so the
+    manifest stamps the policy the fork runs under. *refuse_continuation*,
+    given that config and the mode, returns why the continuation would refuse
+    (`headless_approval_refusal` for `agent6 fork` without `--no-run`) or None;
+    a reason refuses BEFORE anything is created, the order `run` keeps, so no
+    never-started fork stays listed and its id stays free.
     """
     state_dir = resolved_state_dir(cwd)
     src = _resolve_source(state_dir, source_session_id, reporter=reporter)
@@ -402,10 +413,19 @@ def create_fork(  # noqa: PLR0911
         # so the child manifest's models/workflow stamp must be derived from
         # the SAME preset-resolved config or `sessions show` reports a model the forked
         # run never uses.
-        cfg = load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config
+        cfg = session_config(
+            load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config,
+            src_mode,
+            sandbox_overrides,
+        )
     except ConfigError as exc:
         reporter.error(str(exc))
         return "", 2
+    if refuse_continuation is not None:
+        refusal = refuse_continuation(cfg, src_mode)
+        if refusal is not None:
+            reporter.refuse(refusal)
+            return "", 2
 
     # Stamp the child's preset like the run/resume paths (`preset or cfg.preset`):
     # a FLAG-selected source replays its flag name (replay_preset), a CONFIG-

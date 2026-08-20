@@ -6,12 +6,16 @@ path."""
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 from agent6.app._setup import BudgetOverrides, SandboxOverrides
 from agent6.app.fork import create_fork
-from agent6.ui.cli.resume import _cmd_resume
+from agent6.app.preflight import headless_approval_refusal
+from agent6.app.resume import resume_task
+from agent6.config import Config
+from agent6.ui.cli.run import session_frontend
 
 
 def _cmd_fork(
@@ -39,12 +43,25 @@ def _cmd_fork(
             file=sys.stderr,
         )
         return 2
+    frontend = session_frontend(config_path)
+
+    def refuse_continuation(cfg: Config, mode: str) -> str | None:
+        # The resume below would refuse the same way, after the fork existed.
+        return headless_approval_refusal(
+            cfg,
+            tui_enabled=frontend.should_spawn_tui(tui, False, mode),
+            away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
+            can_ask=frontend.capabilities.can_ask,
+        )
+
     child_id, rc = create_fork(
         config_path,
         source_session_id,
         at_turn=at_turn,
         new_session_id=new_session_id,
         cwd=Path.cwd(),
+        sandbox_overrides=None if no_run else sandbox_overrides,
+        refuse_continuation=None if no_run else refuse_continuation,
     )
     if rc != 0:
         return rc
@@ -58,9 +75,10 @@ def _cmd_fork(
     # cloned the checkpoint (its head_sha) and cut agent6/<child> at that same
     # sha, so the resume head guard passes by construction; force stays off so a
     # real mismatch (a broken fork) still refuses.
-    return _cmd_resume(
+    return resume_task(
         config_path,
         child_id,
+        frontend=frontend,
         force=False,
         tui=tui,
         budget_overrides=budget_overrides,

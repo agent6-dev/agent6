@@ -23,6 +23,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agent6.app._setup import SandboxOverrides
 from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import chain_ref_for
 from agent6.graph.storage import list_checkpoint_turns
@@ -769,11 +770,51 @@ def test_fork_continue_resumes_without_force(
         captured["session_id"] = session_id
         return 0
 
-    monkeypatch.setattr("agent6.ui.cli.fork._cmd_resume", _fake_resume)
-    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22")  # default: continue
+    monkeypatch.setattr("agent6.ui.cli.fork.resume_task", _fake_resume)
+    rc = _cmd_fork(  # default: continue; approvable headless, so the continuation is reached
+        None,
+        "src",
+        new_session_id="child-BBBB22",
+        sandbox_overrides=SandboxOverrides(auto_approve=True),
+    )
     assert rc == 0
     assert captured["force"] is False
     assert captured["session_id"] == "child-BBBB22"
+
+
+def test_fork_refuses_an_unanswerable_continuation_before_creating_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A continuing fork under run_commands = "ask" with no terminal, no TUI and
+    no away-mode refuses like `run` does: BEFORE the fork exists. Refused after
+    materializing, a never-started fork stayed listed with its branch cut, and
+    the retry with the fix made a second one. `--no-run` continues nothing, so
+    it still creates the fork."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    state_dir = resolved_state_dir(repo)
+    _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
+    child = SessionLayout(state_dir=state_dir, session_id="child-BBBB22", subdir="runs")
+
+    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22")
+    assert rc == 2
+    assert "needs someone to answer" in capsys.readouterr().err
+    assert not child.session_dir.exists()
+    assert not (state_dir / "lineage.jsonl").exists()
+    refs = sp.run(
+        ["git", "for-each-ref", "refs/heads/agent6/", "refs/agent6/"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "child-BBBB22" not in refs
+
+    assert _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True) == 0
+    assert child.session_dir.is_dir()
 
 
 def test_fork_without_id_and_no_runs_errors_cleanly(
@@ -861,7 +902,7 @@ def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.Monke
         return 0
 
     monkeypatch.setattr(fork_cli, "create_fork", _fake_fork)
-    monkeypatch.setattr(fork_cli, "_cmd_resume", _capture_resume)
+    monkeypatch.setattr(fork_cli, "resume_task", _capture_resume)
     rc = fork_cli._cmd_fork(  # pyright: ignore[reportPrivateUsage]
         None, "src-run", steer="try the lock-free design instead"
     )
