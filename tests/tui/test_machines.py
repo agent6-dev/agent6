@@ -136,6 +136,43 @@ def test_machines_menu_items_all_resolve(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_watch_screen_carries_the_menu_bar_and_its_items_resolve(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """The watch screen has the chrome every other screen has (a menu bar,
+    `?` help), and every menu item resolves to an action."""
+    from textual.widgets import Footer
+
+    from agent6.machine import load_machine
+    from agent6.ui.tui.menubar import MenuBar
+
+    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    spec = load_machine(f)
+    instance = tmp_path / "instance"
+    instance.mkdir()
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            assert screen.query(MenuBar) and screen.query(Footer)
+            for menu in screen.MENUS:
+                for item in menu.items:
+                    assert getattr(screen, f"action_{item.action}", None) or getattr(
+                        app, f"action_{item.action}", None
+                    ), f"no handler for {item.action}"
+
+    asyncio.run(scenario())
+
+
 def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypatch: object) -> None:
     """The Machines watch screen renders the state overview (current marked `>`,
     visited `.`), the transition in the log, and the ended status -- the in-TUI

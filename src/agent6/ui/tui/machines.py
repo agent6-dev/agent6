@@ -124,7 +124,7 @@ _ANSWER_LOST = (
 )
 
 
-class MachineWatchScreen(Screen[None]):
+class MachineWatchScreen(ScreenChrome, Screen[None]):
     """Live view of a running (or finished) machine: the state overview with the
     current state marked, each transition as it lands, and the active agent
     state's reasoning streamed from its per-state logs.jsonl -- the in-TUI
@@ -136,12 +136,34 @@ class MachineWatchScreen(Screen[None]):
     message (a poke payload) to a waiting machine, and a `machine.notify` (or the
     machine's completion) fires a desktop + in-app notification."""
 
+    HELP_TITLE: ClassVar = "agent6 machine — keys & actions"
+    MENUS: ClassVar = (
+        Menu("File", (MenuItem("Back", "close"),)),
+        Menu(
+            "Machine",
+            (
+                MenuItem("Steer the running state", "steer", "s"),
+                MenuItem("Message a waiting machine", "poke", "m"),
+                MenuItem("Stop at the next transition", "stop", "x"),
+            ),
+        ),
+        Menu(
+            "Help",
+            (
+                MenuItem("Keys & actions", "help", "question_mark"),
+                MenuItem("Command palette", "command_palette", "ctrl+p"),
+            ),
+        ),
+    )
+    COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
     BINDINGS: ClassVar = [
         Binding("s", "steer", "Steer"),
         Binding("m", "poke", "Message"),
         Binding("x", "stop", "Stop"),
+        Binding("question_mark", "help", "Help"),
         Binding("escape", "close", "Back", key_display="Esc/q"),
         Binding("q", "close", "Back", show=False),
+        *menu_bindings(MENUS),
     ]
     CSS = (
         PALETTE_CSS
@@ -167,6 +189,7 @@ class MachineWatchScreen(Screen[None]):
         self._steer_open = False
 
     def compose(self) -> ComposeResult:
+        yield MenuBar(self.MENUS)
         yield Static(id="mw-head")
         with Horizontal():
             yield DataTable(id="mw-states", cursor_type="none")
