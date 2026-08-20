@@ -17,10 +17,10 @@ from agent6.ui.tui.machines import (
     MachineDetailScreen,
     MachinesScreen,
     MachineWatchScreen,
-    find_machine_files,
     machine_detail_text,
 )
 from agent6.ui.tui.modals import ConfirmModal
+from agent6.viewmodel import machine_files
 
 # A no-I/O machine that reaches a terminal immediately (branch -> terminal), so a
 # `machine run` produces a finished instance with no model/jail needed.
@@ -82,12 +82,12 @@ def _write(path: Path, body: str = WAITER) -> Path:
     return path
 
 
-def test_find_machine_files_cwd_and_subdir(tmp_path: Path) -> None:
+def test_machine_files_cwd_and_subdir(tmp_path: Path) -> None:
     _write(tmp_path / "a.asm.toml")
     (tmp_path / "machines").mkdir()
     _write(tmp_path / "machines" / "b.asm.toml")
     (tmp_path / "not-a-machine.toml").write_text("x = 1\n", encoding="utf-8")
-    names = {p.name for p in find_machine_files(tmp_path)}
+    names = {p.name for p in machine_files(tmp_path)}
     assert names == {"a.asm.toml", "b.asm.toml"}
 
 

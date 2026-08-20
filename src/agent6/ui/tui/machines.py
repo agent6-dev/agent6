@@ -52,7 +52,7 @@ from agent6.sessions.ipc import (
     worker_is_alive,
     write_steer_answer,
 )
-from agent6.sessions.layout import LOGS_NAME, bucket_dir
+from agent6.sessions.layout import LOGS_NAME, bucket_dir, machines_root
 from agent6.ui.notify import desktop_notify
 from agent6.ui.spawn import agent6_argv, spawn_and_confirm, spawn_and_locate
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
@@ -74,21 +74,12 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     fold_machine,
     fold_session,
+    machine_files,
     machine_word_for_dir,
     newest_state_log,
     tail_events,
 )
 from agent6.viewmodel.events import tool_result_ok
-
-
-def find_machine_files(repo_cwd: Path) -> list[Path]:
-    """Authored .asm.toml machine files: the cwd top level (where `machine create`
-    writes by default) plus a conventional machines/ subdir. Sorted by path."""
-    found: set[Path] = set(repo_cwd.glob("*.asm.toml"))
-    sub = repo_cwd / "machines"
-    if sub.is_dir():
-        found.update(sub.glob("*.asm.toml"))
-    return sorted(found)
 
 
 def _list_drafts(agent6_dir: Path) -> list[Path]:
@@ -638,7 +629,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
     def _reload(self) -> None:
         table = self.query_one("#machines", DataTable)
         table.clear()
-        self._machines = find_machine_files(self.repo_cwd)
+        self._machines = machine_files(self.repo_cwd)
         for path in self._machines:
             name, states, status = _machine_row(path)
             table.add_row(Text(name), states, status, Text(path.name))
@@ -688,7 +679,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
             # (it does so right after taking the machine lock). A refusal (lock
             # held, network refusal, bad bundle) exits nonzero before that and
             # its stderr surfaces here instead of a watch screen on nothing.
-            instance = self.agent6_dir / "machines" / spec.machine
+            instance = machines_root(self.agent6_dir) / spec.machine
             argv = agent6_argv(self.config_path)
             err = spawn_and_confirm(
                 [*argv, "machine", "run", str(path)],
@@ -715,7 +706,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         except MachineError as exc:
             self.app.notify(f"cannot load {path.name}: {exc}", severity="error", timeout=8.0)
             return
-        instance = self.agent6_dir / "machines" / spec.machine
+        instance = machines_root(self.agent6_dir) / spec.machine
         self.app.push_screen(MachineWatchScreen(instance, spec))
 
     def action_create(self) -> None:

@@ -188,11 +188,6 @@ def all_session_dirs(repo_root: Path) -> list[Path]:
     return dirs
 
 
-def _machines_dir(repo_root: Path) -> Path:
-    """The `machines/` directory under the per-repo state dir."""
-    return _state_dir(repo_root) / "machines"
-
-
 def resolve_session_layout(
     repo_root: Path, query: str, *, allow_husk: bool = False
 ) -> SessionLayout:

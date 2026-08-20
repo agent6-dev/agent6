@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
+from agent6.sessions.layout import machines_root
 from agent6.ui.cli.parser import (
     _inject_default_verb,  # pyright: ignore[reportPrivateUsage]
     build_parser,
@@ -120,7 +121,6 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     # pid: a live worker.pid from an already-running machine (lock held) must
     # not read as "this spawn started".
     from agent6.sessions.ipc import write_worker_pid
-    from agent6.ui.web import model
 
     mf = tmp_path / "tiny.asm.toml"
     mf.write_text(TINY, encoding="utf-8")
@@ -143,7 +143,7 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     assert ok is True and msg == "started"
     assert captured_argv[-1][1:] == ["machine", "run", str(mf)]
     started = started_fns[-1]
-    instance = model.machines_root(tmp_path) / "tiny"
+    instance = machines_root(resolved_state_dir(tmp_path)) / "tiny"
     instance.mkdir(parents=True)
     assert started(4242) is False  # no worker.pid yet
     write_worker_pid(instance, 4242)

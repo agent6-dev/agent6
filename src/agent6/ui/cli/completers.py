@@ -22,12 +22,12 @@ from agent6.config.layer import (
     leaf_keys,
     load_effective,
     preset_catalog,
+    resolved_state_dir,
 )
 from agent6.config.write import PROVIDER_DEFAULTS
 from agent6.models.choices import config_value_choices
-from agent6.sessions.layout import session_layout
+from agent6.sessions.layout import machines_root, session_layout
 from agent6.ui.cli._common import (
-    _machines_dir,
     _plans_dir,
     _state_dir,
     session_bucket_dirs,
@@ -296,7 +296,7 @@ def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
 @_never_raises
 def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: live machine instance ids (dirs under the per-repo state dir's machines/)."""
-    base = _machines_dir(Path.cwd())
+    base = machines_root(resolved_state_dir(Path.cwd()))
     if not base.is_dir():
         return []
     return sorted(p.name for p in base.iterdir() if p.is_dir() and p.name.startswith(prefix))
@@ -314,7 +314,7 @@ def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: machine `*.asm.toml` files under cwd and the machines dir."""
     out: set[str] = set()
-    for base in (Path.cwd(), _machines_dir(Path.cwd())):
+    for base in (Path.cwd(), machines_root(resolved_state_dir(Path.cwd()))):
         if base.is_dir():
             out.update(str(p) for p in base.rglob("*.asm.toml"))
     return sorted(p for p in out if p.startswith(prefix))

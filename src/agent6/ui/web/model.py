@@ -19,7 +19,13 @@ from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
 from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.models.choices import config_value_choices
-from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir, is_safe_session_id
+from agent6.sessions.layout import (
+    HUB_BUCKETS,
+    LOGS_NAME,
+    bucket_dir,
+    is_safe_session_id,
+    machines_root,
+)
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
     fold_machine,
@@ -27,6 +33,7 @@ from agent6.viewmodel import (
     fold_transcript,
     is_session_husk,
     is_winner,
+    machine_files,
     machine_state_as_dict,
     machine_word_for_dir,
     newest_state_log,
@@ -42,12 +49,6 @@ from agent6.viewmodel import (
 from agent6.viewmodel.config_view import render_show
 from agent6.viewmodel.format import status_label, status_level
 from agent6.viewmodel.transcript_style import item_lines
-
-# --- directory layout --------------------------------------------------------
-
-
-def machines_root(cwd: Path) -> Path:
-    return resolved_state_dir(cwd) / "machines"
 
 
 def session_dir_for(cwd: Path, session_id: str) -> Path | None:
@@ -73,7 +74,7 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
 def machine_dir_for(cwd: Path, name: str) -> Path | None:
     if not is_safe_session_id(name):
         return None
-    d = machines_root(cwd) / name
+    d = machines_root(resolved_state_dir(cwd)) / name
     return d if d.is_dir() else None
 
 
@@ -126,7 +127,7 @@ def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
 def _list_machines(cwd: Path) -> list[dict[str, Any]]:
     """Machine instances under the state machines/ dir, newest first. Each is a
     watchable run of an authored machine (holds machine.asm.toml + journal)."""
-    root = machines_root(cwd)
+    root = machines_root(resolved_state_dir(cwd))
     if not root.is_dir():
         return []
     out: list[dict[str, Any]] = []
@@ -174,13 +175,8 @@ def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
 
 
 def list_machine_files(cwd: Path) -> list[dict[str, str]]:
-    """Authored .asm.toml machine source files (cwd top level + machines/ subdir):
-    the ones a user can run or use as a create starting point."""
-    found: set[Path] = set(cwd.glob("*.asm.toml"))
-    sub = cwd / "machines"
-    if sub.is_dir():
-        found.update(sub.glob("*.asm.toml"))
-    return [{"path": str(p), "name": p.name} for p in sorted(found)]
+    """The hub's machine-file rows (`viewmodel.machine_files`)."""
+    return [{"path": str(p), "name": p.name} for p in machine_files(cwd)]
 
 
 def hub_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:

@@ -18,6 +18,7 @@ from typing import Any
 
 from agent6.app.fork import undo_fork
 from agent6.app.reporter import Reporter
+from agent6.config.layer import resolved_state_dir
 from agent6.directive import parse_compact
 from agent6.machine import (
     JournalError,
@@ -35,7 +36,7 @@ from agent6.sessions.ipc import (
     write_answer,
     write_question_answers,
 )
-from agent6.sessions.layout import is_safe_session_id
+from agent6.sessions.layout import is_safe_session_id, machines_root
 from agent6.ui.spawn import (
     agent6_argv,
     run_cli_capture,
@@ -83,7 +84,7 @@ def spawn_machine_run(
         spec = load_machine(Path(machine_file))
     except MachineError as exc:
         return False, f"invalid machine file: {exc}"
-    instance = model.machines_root(cwd) / spec.machine
+    instance = machines_root(resolved_state_dir(cwd)) / spec.machine
     err = spawn_and_confirm(
         [*agent6_argv(config_path), "machine", "run", machine_file],
         cwd,

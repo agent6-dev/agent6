@@ -73,6 +73,7 @@ from agent6.machine import (
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
+from agent6.sessions.layout import machines_root
 from agent6.tools.policy import jail_policy, passthrough_env
 from agent6.types import CommandResult, IsolationLevel, JailPolicy, NetworkMode
 from agent6.viewmodel.format import format_cost
@@ -350,7 +351,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     reporter.err(f"ERROR: {exc}")
                     return 2
                 commit_identity = CommitIdentity(name=name, email=email)
-            root = resolved_state_dir(cwd) / "machines" / spec.machine
+            root = machines_root(resolved_state_dir(cwd)) / spec.machine
             # The engine is a host-netns supervisor; each agent state runs in
             # its own subprocess.
             agent_runner = build_machine_agent_runner(
@@ -371,7 +372,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             )
     warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
-    root = resolved_state_dir(cwd) / "machines" / spec.machine
+    root = machines_root(resolved_state_dir(cwd)) / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)
     # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).
     data_dir = root / "data"

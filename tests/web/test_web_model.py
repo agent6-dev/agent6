@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.sessions.layout import bucket_dir
+from agent6.sessions.layout import bucket_dir, machines_root
 from agent6.ui.web import model
 
 
@@ -170,7 +170,7 @@ def test_conversation_payload_empty_without_log(tmp_path: Path) -> None:
 
 
 def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> None:
-    md = model.machines_root(tmp_path) / "m2"
+    md = machines_root(resolved_state_dir(tmp_path)) / "m2"
     (md / "states" / "0001-work").mkdir(parents=True)
     (md / "states" / "0001-work" / "logs.jsonl").write_text(
         json.dumps({"type": "loop.steer.injected", "text": "hello"}) + "\n", encoding="utf-8"
@@ -179,7 +179,9 @@ def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> N
     assert payload["state_dir"] == "0001-work"
     (item,) = payload["items"]
     assert item["kind"] == "operator"
-    assert model.machine_conversation_payload(model.machines_root(tmp_path) / "nope") == {
+    assert model.machine_conversation_payload(
+        machines_root(resolved_state_dir(tmp_path)) / "nope"
+    ) == {
         "state_dir": "",
         "items": [],
     }
@@ -208,7 +210,7 @@ def test_machine_snapshot_carries_the_dir_status_word(tmp_path: Path) -> None:
     """The machine wire payload stamps `status` (machine_word_for_dir), so a
     client can gate Steer and the prompt boxes on liveness -- with only
     `ended` it cannot tell a parked machine from a running one."""
-    md = model.machines_root(tmp_path) / "m3"
+    md = machines_root(resolved_state_dir(tmp_path)) / "m3"
     md.mkdir(parents=True)
     (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
     (md / "journal.jsonl").write_text("", encoding="utf-8")
@@ -220,7 +222,7 @@ def test_machine_snapshot_carries_the_dir_status_word(tmp_path: Path) -> None:
 def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: Path) -> None:
     """A failed machine's hub entry carries the reason label (failed · why), like
     run and draft rows, not a bare 'failed' word."""
-    md = model.machines_root(tmp_path) / "m-fail"
+    md = machines_root(resolved_state_dir(tmp_path)) / "m-fail"
     md.mkdir(parents=True)
     (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
     (md / "journal.jsonl").write_text(
@@ -246,7 +248,7 @@ def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: Path) -> None:
 
 def test_reasoning_snapshot_empty_without_state_log(tmp_path: Path) -> None:
     # A machine dir with no states/ subtree has no agent reasoning to fold.
-    md = model.machines_root(tmp_path) / "m1"
+    md = machines_root(resolved_state_dir(tmp_path)) / "m1"
     md.mkdir(parents=True)
     assert model.machine_reasoning_snapshot(md) == {}
 
@@ -271,7 +273,7 @@ def test_run_dir_for_rejects_traversal(tmp_path: Path) -> None:
 
 
 def test_machine_dir_for_rejects_traversal(tmp_path: Path) -> None:
-    (model.machines_root(tmp_path) / "m1").mkdir(parents=True)
+    (machines_root(resolved_state_dir(tmp_path)) / "m1").mkdir(parents=True)
     assert model.machine_dir_for(tmp_path, "m1") is not None
     for bad in ("..", "../m1", "a/b", ""):
         assert model.machine_dir_for(tmp_path, bad) is None

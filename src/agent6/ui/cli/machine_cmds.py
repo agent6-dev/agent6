@@ -40,6 +40,7 @@ from agent6.config.io import upsert_toml_leaf
 from agent6.config.layer import (
     load_effective_with_overlay,
     repo_config_path_for,
+    resolved_state_dir,
 )
 from agent6.errors import OperatorError, read_operator_file
 from agent6.machine import (
@@ -64,8 +65,8 @@ from agent6.paths import chown_to_real_user
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import jail_search_path
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
+from agent6.sessions.layout import machines_root
 from agent6.types import IsolationLevel
-from agent6.ui.cli._common import _machines_dir
 from agent6.ui.cli.plan_watch import format_plain_event
 from agent6.ui.notify import desktop_notify
 from agent6.viewmodel import (
@@ -354,7 +355,7 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
     dead-ends at "no machine instance at .../greet.asm.toml". When the argument is
     an `.asm.toml` file, read its `machine` name and suggest that instance id;
     else offer the closest existing instance name."""
-    machines = _machines_dir(cwd)
+    machines = machines_root(resolved_state_dir(cwd))
     existing = sorted(p.name for p in machines.iterdir() if p.is_dir()) if machines.is_dir() else []
     candidate = Path(machine_id)
     if machine_id.endswith(".asm.toml") or candidate.is_file():
@@ -393,7 +394,7 @@ def _cmd_machine_run(
 
 def _cmd_machine_replay(machine_id: str) -> int:
     cwd = Path.cwd()
-    root = _machines_dir(cwd) / machine_id
+    root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
         print(
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
@@ -439,7 +440,7 @@ def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | 
 
 def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     cwd = Path.cwd()
-    root = _machines_dir(cwd) / machine_id
+    root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
         print(
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
@@ -520,7 +521,7 @@ def _cmd_machine_poke(
     machine_id: str, *, data: str | None = None, message: str | None = None
 ) -> int:
     cwd = Path.cwd()
-    root = _machines_dir(cwd) / machine_id
+    root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
         print(
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
@@ -571,7 +572,7 @@ def _cmd_machine_stop(machine_id: str) -> int:
     is not running gets a refusal, not a marker that would ambush the next
     `machine run`."""
     cwd = Path.cwd()
-    root = _machines_dir(cwd) / machine_id
+    root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
         print(
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
@@ -640,7 +641,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR09
     and the current agent state's live reasoning (its per-state logs.jsonl). Exits
     when the machine ends/waits, or on Ctrl-C. Read-only."""
     cwd = Path.cwd()
-    root = _machines_dir(cwd) / machine_id
+    root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
         print(
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",

@@ -194,6 +194,17 @@ def machine_is_parked(machine_dir: Path) -> bool:
         return True
 
 
+def machine_files(cwd: Path) -> list[Path]:
+    """The authored `.asm.toml` files a hub offers to run or create from: the
+    cwd top level (where `machine create` writes by default) plus a
+    conventional `machines/` subdir, sorted by path."""
+    found: set[Path] = set(cwd.glob("*.asm.toml"))
+    sub = cwd / "machines"
+    if sub.is_dir():
+        found.update(sub.glob("*.asm.toml"))
+    return sorted(found)
+
+
 def machine_word_for_dir(ms: MachineState, machine_dir: Path) -> str:
     """THE status word for a machine instance with a dir on disk:
     :func:`machine_status_word` fed the two dir probes (armed wait, worker

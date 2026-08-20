@@ -59,6 +59,7 @@ def test_an_unresolvable_state_dir_does_not_reach_the_shell(
         raise ConfigError("config is not valid TOML")
 
     monkeypatch.setattr(completers, "_state_dir", _boom)
+    monkeypatch.setattr(completers, "resolved_state_dir", _boom)
     monkeypatch.setattr(_common, "_state_dir", _boom)
 
     fn = getattr(completers, name)

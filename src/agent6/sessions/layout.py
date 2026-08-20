@@ -146,6 +146,13 @@ SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machines")
 HUB_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks")
 
 
+def machines_root(state_dir: Path) -> Path:
+    """The directory of machine INSTANCES (`<state>/machines/<machine>`: source
+    copy, journal, per-state agent sessions). `machine create` drafts are
+    sessions and live under `bucket_dir(state_dir, "machines")` instead."""
+    return state_dir / "machines"
+
+
 def bucket_dir(state_dir: Path, bucket: str) -> Path:
     """The directory holding sessions of one bucket: the one owner of that
     arithmetic, so a layout change lands in one place."""
