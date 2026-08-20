@@ -35,13 +35,13 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPa
 def _t(*, fallback: int = 100) -> BudgetTracker:
     # model "m" is unpriced in the fixture cache, so its tokens land in the
     # fallback ledger; max_usd stays unlimited to keep the tests single-ledger.
-    return BudgetTracker(max_usd=-1, max_tokens_fallback=fallback)
+    return BudgetTracker(max_usd=-1, max_tokens_fallback=fallback, max_percent=-1)
 
 
 def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
     # Token caps huge (never fire) + fresh input ~0, but cache_creation alone
     # costs > $1: the USD ceiling must catch the overspend the token caps miss.
-    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=-1)
+    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_percent=-1)
     # sonnet-4 input $3/M; cache_creation surcharge 1.25x -> $3.75/M.
     # 300k * 3.75/1e6 = $1.125 > $1.
     t.record(
@@ -58,7 +58,7 @@ def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
 
 def test_usd_ceiling_off_when_unlimited() -> None:
     # max_usd = -1 (unlimited): the same heavy-cache call trips nothing.
-    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
+    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     t.record(
         model="claude-sonnet-4-20250514",
         input_tokens=10,
@@ -188,7 +188,7 @@ def test_the_caps_have_one_home() -> None:
     from agent6.config import BudgetConfig
 
     params = inspect.signature(BudgetTracker).parameters
-    for name in ("max_usd", "max_tokens_fallback"):
+    for name in ("max_usd", "max_tokens_fallback", "max_percent"):
         assert params[name].default is inspect.Parameter.empty, name
 
     cfg = BudgetConfig()
@@ -201,3 +201,56 @@ def test_the_caps_have_one_home() -> None:
             row_tokens = line
     assert f"`{cfg.max_usd}`" in row_usd, row_usd
     assert f"`{cfg.max_tokens_fallback}`" in row_tokens, row_tokens
+
+
+def test_percent_meter_sawtooth_and_cap() -> None:
+    """Plan-metered calls: the first reading is the baseline, rises are the
+    run's consumption, a drop (window reset) counts from zero, and the call
+    that reaches max_percent trips check(). Plan calls never drain the
+    fallback ledger and report an authoritative $0."""
+    from agent6.budget import PlanUsage
+
+    t = BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=10.0)
+
+    def rec(pct: float) -> None:
+        t.record(
+            model="gpt-5.6-sol",
+            input_tokens=1000,
+            output_tokens=50,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            plan_usage=PlanUsage(used_percent=pct, window_minutes=10080, resets_at=2e9),
+        )
+
+    rec(37.0)  # baseline
+    rec(40.0)  # +3
+    rec(2.0)  # reset: +2
+    rec(5.0)  # +3 -> consumed 8
+    t.check()  # under the cap of 10
+    snap = t.snapshot()
+    assert snap.plan_consumed == pytest.approx(8.0)
+    assert snap.plan_latest is not None and snap.plan_latest.used_percent == 5.0
+    assert snap.unmetered_tokens == 0  # percent-metered, never fallback
+    usd, partial = t.estimate_usd()
+    assert usd == 0.0 and partial is False  # authoritative $0, not unpriced
+    rec(8.0)  # +3 -> consumed 11 >= 10
+    with pytest.raises(BudgetExceeded, match="plan budget exhausted"):
+        t.check()
+    assert "plan usage: 8% of the 7-day window" in t.format_summary()
+    assert "(subscription)" in t.format_summary()
+
+
+def test_percent_zero_refuses_plan_metered_calls() -> None:
+    from agent6.budget import PlanUsage
+
+    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=0)
+    t.record(
+        model="gpt-5.6-sol",
+        input_tokens=10,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        plan_usage=PlanUsage(used_percent=1.0, window_minutes=300, resets_at=2e9),
+    )
+    with pytest.raises(BudgetExceeded, match="percent budget is 0"):
+        t.check()

@@ -114,6 +114,7 @@ agent6 model worker chatgpt gpt-5-codex
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
 - Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs, never a static list), and its context windows size compaction.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at `oauth_issuer` (best effort) and the tokens leave `secrets.toml`.
+- Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show `plan usage: N% of the 7-day window`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run). Dollar figures stay an authoritative $0.
 
 ### OpenRouter routing and caching (`extra_body`)
 
@@ -325,6 +326,7 @@ Both: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 |---|---|---|
 | `max_usd` | `10.0` | Cap on the metered spend of one run (provider-reported cost, else price times tokens at the model's fetched rates, cache-aware). Hitting it ends the run resumably (`budget_exhausted`); each resumed leg gets a fresh budget. `-1`: unlimited; `0`: refuse every metered call. `--max-usd` overrides per run. |
 | `max_tokens_fallback` | `2000000` | Token cap (input plus output) for the calls the run cannot price: local models, a model with no price data. `-1`: unlimited; `0`: never run an unmeterable model. `--max-tokens-fallback` overrides per run. |
+| `max_percent` | `-1` | Cap on the plan percentage points one run may consume on a subscription provider (the rise in the account's reported used-percent across the run, accumulated across window resets, so values above 100 are meaningful). The reading is account-global: a concurrent run's spend counts toward whichever run observes it next. `-1` (default): unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per run. |
 
 `--max-usd` / `--max-tokens-fallback` override per run; an explicit `--max-usd` refuses to start when the worker has no price data.
 Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its OpenRouter listing.

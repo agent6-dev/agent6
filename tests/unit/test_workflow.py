@@ -2033,7 +2033,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
     )
     # Fresh budget with huge ceilings -> fraction_remaining stays ~1.0, well
     # above the final-slice threshold, so the plateau never becomes terminal.
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     max_iters = 12
     wf = _wf(
         root=tmp_path,
@@ -2103,7 +2103,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0, well above the final slice.
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -2275,7 +2275,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
     )
     # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard
     # the early-finish guard would reject the finish here.
-    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     wf = _wf(
         root=tmp_path,
         config=config,

@@ -140,6 +140,7 @@ def build_session_providers(
 ) -> SessionProviders:
     budget = BudgetTracker(
         max_usd=cfg.budget.max_usd,
+        max_percent=cfg.budget.max_percent,
         max_tokens_fallback=cfg.budget.max_tokens_fallback,
     )
     inner = build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)

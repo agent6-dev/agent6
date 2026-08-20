@@ -312,11 +312,12 @@ class Config(BaseModel):
         *,
         max_usd: float | None = None,
         max_tokens_fallback: int | None = None,
+        max_percent: float | None = None,
     ) -> Config:
         """Return a copy with budget fields overridden (the per-run CLI flags,
         each writing the config field of the same name). `None` keeps the
         existing value."""
-        if max_usd is None and max_tokens_fallback is None:
+        if max_usd is None and max_tokens_fallback is None and max_percent is None:
             return self
         data = self.model_dump(mode="python")
         budget = data.setdefault("budget", {})
@@ -324,6 +325,8 @@ class Config(BaseModel):
             budget["max_usd"] = max_usd
         if max_tokens_fallback is not None:
             budget["max_tokens_fallback"] = max_tokens_fallback
+        if max_percent is not None:
+            budget["max_percent"] = max_percent
         return Config.model_validate(data)
 
     def with_sandbox_overrides(

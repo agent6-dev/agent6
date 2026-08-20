@@ -89,6 +89,7 @@ def rank(
         sink = TranscriptSink(transcript_dir)
         budget = BudgetTracker(
             max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
+            max_percent=cfg.budget.max_percent,
             max_tokens_fallback=cfg.budget.max_tokens_fallback,
         )
         try:

@@ -175,6 +175,12 @@ class BudgetUpdate:
     usd_cap: float
     tokens_unmetered: int
     tokens_fallback_cap: int
+    # Subscription plan usage (percent-metered providers); 0s when absent,
+    # and on logs written before the fields existed.
+    plan_used_percent: float = 0.0
+    plan_consumed: float = 0.0
+    plan_cap: float = 0.0
+    plan_resets_at: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -413,6 +419,10 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
                 usd_cap=float(raw.get("usd_cap", 0.0)),
                 tokens_unmetered=int(raw.get("tokens_unmetered", 0)),
                 tokens_fallback_cap=int(raw.get("tokens_fallback_cap", 0)),
+                plan_used_percent=float(raw.get("plan_used_percent", 0.0)),
+                plan_consumed=float(raw.get("plan_consumed", 0.0)),
+                plan_cap=float(raw.get("plan_cap", 0.0)),
+                plan_resets_at=float(raw.get("plan_resets_at", 0.0)),
             )
         case "approval.prompt":
             return ApprovalPrompt(

@@ -337,6 +337,7 @@ class InstrumentedProvider:
             return
         snap = self.budget.snapshot()
         usd_total, usd_partial = self.budget.estimate_usd()
+        plan = snap.plan_latest
         self.events.emit(
             "budget.update",
             input_total=snap.input_total,
@@ -346,6 +347,10 @@ class InstrumentedProvider:
             usd_cap=snap.max_usd,
             tokens_unmetered=snap.unmetered_tokens,
             tokens_fallback_cap=snap.max_tokens_fallback,
+            plan_used_percent=plan.used_percent if plan else 0.0,
+            plan_consumed=snap.plan_consumed,
+            plan_cap=snap.max_percent,
+            plan_resets_at=plan.resets_at if plan else 0.0,
         )
 
 

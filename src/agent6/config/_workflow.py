@@ -476,8 +476,10 @@ class BudgetConfig(BaseModel):
 
     A call the runtime can meter (provider-reported cost, else price x tokens
     at the model's fetched rates, cache-aware) counts against `max_usd`; a
-    call it cannot price counts its input+output tokens against
-    `max_tokens_fallback`. Both fields share one rule: `-1` = unlimited,
+    subscription call carrying a plan-usage reading counts consumed
+    percentage points against `max_percent`; a call with neither counts its
+    input+output tokens against `max_tokens_fallback`. The fields share one
+    rule: `-1` = unlimited,
     `0` = refuse calls in that ledger up front (`max_tokens_fallback = 0`
     means never run an unmeterable model), `> 0` = the cap. Hitting a cap
     ends the run resumably (`budget_exhausted`); each resumed leg gets a
@@ -505,11 +507,23 @@ class BudgetConfig(BaseModel):
         ),
     )
 
-    @field_validator("max_usd")
+    max_percent: float = Field(
+        default=-1,
+        description=(
+            "Cap on the plan percentage points one run may consume on a subscription provider "
+            "(the rise in the account's reported used-percent across the run, accumulated across "
+            "window resets, so values above 100 are meaningful). The reading is account-global: "
+            "a concurrent run's spend counts toward whichever run observes it next. `-1` "
+            "(default): unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per "
+            "run."
+        ),
+    )
+
+    @field_validator("max_usd", "max_percent")
     @classmethod
     def _usd_unlimited_is_exactly_minus_one(cls, v: float) -> float:
         # Non-finite never binds (nan fails every comparison; inf exceeds any
         # spend), which would silently disable the hard budget.
         if not math.isfinite(v) or (v < 0 and v != -1):
-            raise ValueError("max_usd is a finite cap >= 0, or exactly -1 for unlimited")
+            raise ValueError("a budget cap is finite and >= 0, or exactly -1 for unlimited")
         return v

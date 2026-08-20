@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -27,7 +28,7 @@ from typing import Any
 
 import httpx2
 
-from agent6.budget import BudgetTracker
+from agent6.budget import BudgetTracker, PlanUsage
 from agent6.providers._openai_recovery import lenient_json_object
 from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
 from agent6.providers._transport import ProviderCall
@@ -249,6 +250,32 @@ def _unreachable_hook(data: dict[str, Any]) -> Any:
     raise ProviderError("chatgpt provider is stream-only")  # pragma: no cover
 
 
+def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
+    """The primary rate-limit window off a response's `x-codex-*` headers.
+
+    The percent budget and every plan-usage surface read this one parse;
+    None when the backend sent no reading (absent or malformed)."""
+    try:
+        used = float(headers.get("x-codex-primary-used-percent", ""))
+    except (TypeError, ValueError):
+        return None
+
+    def _num(name: str) -> float:
+        try:
+            return float(headers.get(name) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    resets_at = _num("x-codex-primary-reset-at")
+    if not resets_at:
+        resets_at = time.time() + _num("x-codex-primary-reset-after-seconds")
+    return PlanUsage(
+        used_percent=used,
+        window_minutes=int(_num("x-codex-primary-window-minutes")),
+        resets_at=resets_at,
+    )
+
+
 def _stream_error(evt: dict[str, Any]) -> ProviderError:
     """A `response.failed` / `error` frame -> a classified ProviderError."""
     response = evt.get("response")
@@ -418,6 +445,7 @@ class ChatGPTProvider:
         items: list[Any] = []
         delta_text: list[str] = []
         usage: dict[str, Any] = {}
+        plan_usage: PlanUsage | None = None
         stop_reason = ""
         done = False
 
@@ -434,7 +462,8 @@ class ChatGPTProvider:
         )
 
         def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: PLR0912
-            nonlocal usage, stop_reason, done
+            nonlocal usage, stop_reason, done, plan_usage
+            plan_usage = _plan_usage_of(resp.headers)
             for raw_line in bounded_lines(resp):
                 line = raw_line.strip()
                 if not line or line.startswith(":") or not line.startswith("data:"):
@@ -503,6 +532,7 @@ class ChatGPTProvider:
                 cache_read_tokens=billed.cache_read_tokens,
                 cache_creation_tokens=0,
                 cost_usd=0.0,
+                plan_usage=plan_usage,
             )
 
         try:
@@ -555,5 +585,6 @@ class ChatGPTProvider:
                 cache_read_tokens=parsed.cache_read_tokens,
                 cache_creation_tokens=0,
                 cost_usd=0.0,
+                plan_usage=plan_usage,
             )
         return parsed

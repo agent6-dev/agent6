@@ -52,7 +52,7 @@ from typing import Any
 
 import httpx2
 
-from agent6.budget import BudgetTracker
+from agent6.budget import BudgetTracker, PlanUsage
 from agent6.providers._transport import granular_timeout
 from agent6.providers.types import (
     ProviderAborted,
@@ -160,6 +160,7 @@ def record_billed_usage(
     cache_read_tokens: int = 0,
     cache_creation_tokens: int = 0,
     cost_usd: float = 0.0,
+    plan_usage: PlanUsage | None = None,
 ) -> None:
     """Record what a call that did NOT complete already cost.
 
@@ -184,6 +185,7 @@ def record_billed_usage(
         cache_read_tokens=cache_read_tokens,
         cache_creation_tokens=cache_creation_tokens,
         cost_usd=cost_usd,
+        plan_usage=plan_usage,
     )
 
 

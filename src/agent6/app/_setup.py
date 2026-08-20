@@ -69,12 +69,14 @@ class BudgetOverrides:
 
     max_usd: float | None = None
     max_tokens_fallback: int | None = None
+    max_percent: float | None = None
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> BudgetOverrides:
         return cls(
             max_usd=getattr(args, "max_usd", None),
             max_tokens_fallback=getattr(args, "max_tokens_fallback", None),
+            max_percent=getattr(args, "max_percent", None),
         )
 
     def apply(self, cfg: Config) -> Config:
@@ -82,6 +84,7 @@ class BudgetOverrides:
             return cfg.with_budget_overrides(
                 max_usd=self.max_usd,
                 max_tokens_fallback=self.max_tokens_fallback,
+                max_percent=self.max_percent,
             )
         except ValidationError as exc:
             # The schema speaks in config keys; the operator typed a flag. Name

@@ -1228,6 +1228,17 @@ function paintRun(cards, s) {
     const fbText = `${b.tokens_unmetered}${fbCap > 0 ? ' / ' + fbCap : (fbCap === -1 ? ' (unlimited)' : '')} tokens`;
     cards.budget.appendChild(barRow('unmetered', fbFrac, fbText));
   }
+  if (b.plan_used_percent > 0) {
+    // Subscription plan usage: the account's window fill; the bar meters this
+    // run's consumed points against max_percent when one is set, else the
+    // account percent itself. Mirrors ui/tui/app.py render_heartbeat.
+    const planCap = b.plan_cap || 0;
+    const planFrac = planCap > 0 ? Math.min(1, (b.plan_consumed || 0) / planCap)
+                                 : Math.min(1, b.plan_used_percent / 100);
+    const planText = `${b.plan_used_percent}%`
+      + (planCap > 0 ? ` · run ${(b.plan_consumed || 0).toFixed(1)} / ${planCap} pt` : '');
+    cards.budget.appendChild(barRow('plan', planFrac, planText));
+  }
   // The context-window fill at the last model call (the TUI's `ctx: N%`, the
   // pause menu's readout): the fold's one rule, served as context_pct.
   const ctxPct = typeof s.context_pct === 'number' ? ` · context ${s.context_pct}%` : '';

@@ -95,6 +95,7 @@ agent6 model worker chatgpt gpt-5-codex
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
 - Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs, never a static list), and its context windows size compaction.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at `oauth_issuer` (best effort) and the tokens leave `secrets.toml`.
+- Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show `plan usage: N% of the 7-day window`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run). Dollar figures stay an authoritative $0.
 
 ### OpenRouter routing and caching (`extra_body`)
 

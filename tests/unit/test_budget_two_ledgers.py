@@ -38,7 +38,7 @@ def _rec(bt: BudgetTracker, model: str, tokens_in: int, tokens_out: int, cost: f
 def test_unmetered_calls_count_only_against_the_fallback() -> None:
     # local-model is unpriced and reports no cost: its tokens land in the
     # fallback ledger; the USD meter stays at $0 and never trips.
-    bt = BudgetTracker(max_usd=0.01, max_tokens_fallback=1_000)
+    bt = BudgetTracker(max_usd=0.01, max_tokens_fallback=1_000, max_percent=-1)
     _rec(bt, "local-model", 400, 300)
     bt.check()  # 700 < 1000 and $0 < $0.01: both ledgers have room
     _rec(bt, "local-model", 200, 200)
@@ -48,7 +48,7 @@ def test_unmetered_calls_count_only_against_the_fallback() -> None:
 
 def test_metered_calls_count_only_against_max_usd() -> None:
     # A priced model never touches the fallback ledger, however many tokens.
-    bt = BudgetTracker(max_usd=1.0, max_tokens_fallback=100)
+    bt = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     _rec(bt, "claude-sonnet-4-5", 5_000, 5_000)  # >> fallback cap, but metered
     bt.check()  # fallback ledger untouched; ~$0.09 < $1
     _rec(bt, "claude-sonnet-4-5", 250_000, 20_000)  # ~$1.05 more -> over $1 total
@@ -59,13 +59,13 @@ def test_metered_calls_count_only_against_max_usd() -> None:
 def test_reported_cost_makes_an_unpriced_model_metered() -> None:
     # A gateway-reported per-call cost is real billing: the call is metered
     # even with no table price, so the fallback ledger stays empty.
-    bt = BudgetTracker(max_usd=1.0, max_tokens_fallback=100)
+    bt = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     _rec(bt, "exotic-model", 5_000, 5_000, cost=0.02)
     bt.check()
 
 
 def test_minus_one_means_unlimited_in_both_ledgers() -> None:
-    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
+    bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     _rec(bt, "claude-sonnet-4-5", 10_000_000, 1_000_000)  # ~$45 metered
     _rec(bt, "local-model", 50_000_000, 1_000_000)  # 51M unmetered tokens
     bt.check()
@@ -74,7 +74,7 @@ def test_minus_one_means_unlimited_in_both_ledgers() -> None:
 def test_zero_fallback_refuses_any_unmetered_call() -> None:
     # max_tokens_fallback = 0: zero unmetered tokens allowed -- the strict
     # "never run an unmeterable model" promise, enforced as a runtime backstop.
-    bt = BudgetTracker(max_usd=10.0, max_tokens_fallback=0)
+    bt = BudgetTracker(max_usd=10.0, max_tokens_fallback=0, max_percent=-1)
     _rec(bt, "local-model", 1, 0)
     with pytest.raises(BudgetExceeded, match="unmetered"):
         bt.check()
@@ -82,13 +82,13 @@ def test_zero_fallback_refuses_any_unmetered_call() -> None:
 
 def test_zero_usd_refuses_any_metered_call() -> None:
     # max_usd = 0: a run-nothing-metered policy (local-only rig).
-    bt = BudgetTracker(max_usd=0.0, max_tokens_fallback=1_000_000)
+    bt = BudgetTracker(max_usd=0.0, max_tokens_fallback=1_000_000, max_percent=-1)
     _rec(bt, "claude-sonnet-4-5", 10, 10)
     with pytest.raises(BudgetExceeded, match="USD"):
         bt.check()
 
 
 def test_fraction_remaining_tracks_the_tighter_ledger() -> None:
-    bt = BudgetTracker(max_usd=1.0, max_tokens_fallback=1_000)
+    bt = BudgetTracker(max_usd=1.0, max_tokens_fallback=1_000, max_percent=-1)
     _rec(bt, "local-model", 500, 400)  # fallback 90% used; USD 0%
     assert bt.fraction_remaining() == pytest.approx(0.1, abs=0.01)

@@ -376,7 +376,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(monkeypatch: Any, capsys
         personas="security,correctness,tests",
         model_override="",
         transcript_sink=cast(Any, object()),  # only handed to the mocked seat builder
-        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
     )
     out, _err = capsys.readouterr()
     assert "VERDICT: PASS" not in out
@@ -432,7 +432,7 @@ def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys
             personas="security",
             model_override="",
             transcript_sink=cast(Any, object()),
-            budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
+            budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         )
         capsys.readouterr()
         return rc

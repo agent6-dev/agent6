@@ -168,3 +168,28 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     monkeypatch.setattr(_setup, "list_models", fake_list)
     assert _setup.check_provider_keys(cfg) is None
     assert listed == ["chatgpt"]  # the signed-in path refreshes the listing
+
+
+def test_plan_metered_routes_skip_the_fallback_note(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A model routed through a ChatGPT plan is percent-metered: the
+    unpriced-fallback note must not claim the token ledger bounds it, and
+    max_percent = 0 refuses it up front like the sibling zeros."""
+    from agent6.app.preflight import budget_preflight
+
+    cfg = _cfg("gpt-5.6-sol", {"chatgpt": {"api_format": "chatgpt"}})
+    assert budget_preflight(cfg) is None
+    out = capsys.readouterr().err
+    assert "fallback tokens" not in out
+    assert "draws on the ChatGPT plan" in out
+
+    refused = Config.model_validate(
+        {
+            "providers": {"chatgpt": {"api_format": "chatgpt"}},
+            "models": {"worker": {"provider": "chatgpt", "model": "gpt-5.6-sol"}},
+            "budget": {"max_percent": 0},
+        }
+    )
+    err = budget_preflight(refused)
+    assert err is not None and "max_percent is 0" in err

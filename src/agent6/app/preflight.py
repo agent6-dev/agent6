@@ -21,7 +21,7 @@ from agent6.app.providers import (
 )
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
-from agent6.config import Config
+from agent6.config import ChatGPTProviderEntry, Config
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
@@ -66,12 +66,28 @@ def budget_preflight(cfg: Config, extra_models: Iterable[str] = ()) -> str | Non
     one-line notice naming the fallback bound that covers it. Models chosen
     later (a `/parallel` lane spec) are caught by the tracker's runtime
     backstop instead."""
-    models = {rm.model for rm in cfg.models.configured().values()}
+    routes = {(rm.provider, rm.model) for rm in cfg.models.configured().values()}
     for spec in cfg.review.seats:
-        _persona, _provider, seat_model = parse_seat_spec(spec)
+        _persona, seat_provider, seat_model = parse_seat_spec(spec)
         if seat_model:
-            models.add(seat_model)
-    models.update(m for m in extra_models if m)
+            routes.add((seat_provider, seat_model))
+    routes.update(("", m) for m in extra_models if m)
+
+    def _plan_metered(provider: str) -> bool:
+        return isinstance(cfg.providers.get(provider), ChatGPTProviderEntry)
+
+    # Plan-metered routes (ChatGPT subscription) live in the percent ledger:
+    # they are never "unpriced fallback" spend, and their own zero-refusal
+    # mirrors the siblings below.
+    plan_models = sorted({m for prov, m in routes if _plan_metered(prov)})
+    models = {m for prov, m in routes if not _plan_metered(prov)}
+    if cfg.budget.max_percent == 0.0 and plan_models:
+        return (
+            "[budget].max_percent is 0 (plan-metered calls refused), but "
+            f"{', '.join(repr(m) for m in plan_models)} route"
+            f"{'s' if len(plan_models) == 1 else ''} through a ChatGPT plan."
+            " Raise max_percent or reroute those roles."
+        )
     unpriced = sorted(m for m in models if lookup_price(m) is None)
     priced = sorted(m for m in models if lookup_price(m) is not None)
     if cfg.budget.max_tokens_fallback == 0 and unpriced:
@@ -93,6 +109,15 @@ def budget_preflight(cfg: Config, extra_models: Iterable[str] = ()) -> str | Non
             f"[agent6] NOTE: {', '.join(repr(m) for m in unpriced)} ha"
             f"{'s' if len(unpriced) == 1 else 've'} no price data: that spend is not"
             f" metered by max_usd and is bounded by {bound} instead.",
+            file=sys.stderr,
+        )
+    if plan_models:
+        pct = cfg.budget.max_percent
+        bound = "the plan itself" if pct == -1 else f"max_percent {pct:g} points per run"
+        print(
+            f"[agent6] NOTE: {', '.join(repr(m) for m in plan_models)} draw"
+            f"{'s' if len(plan_models) == 1 else ''} on the ChatGPT plan"
+            f" (no dollars; bounded by {bound}).",
             file=sys.stderr,
         )
     return None

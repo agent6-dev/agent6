@@ -238,6 +238,7 @@ def _cmd_review(  # noqa: PLR0911
     budget = BudgetTracker(
         max_usd=cfg.budget.max_usd,
         max_tokens_fallback=cfg.budget.max_tokens_fallback,
+        max_percent=cfg.budget.max_percent,
     )
     layout_root = resolved_state_dir(root) / "reviews"
     layout_root.mkdir(parents=True, exist_ok=True)

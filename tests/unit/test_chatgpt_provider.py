@@ -349,7 +349,9 @@ def test_401_refreshes_the_credential_once_and_retries(
 
 def test_budgeted_call_requires_usage(signed_in: ChatGPTCredential) -> None:
     lines = _evt({"type": "response.completed", "response": {"id": "r", "status": "completed"}})
-    provider = _provider(signed_in, budget=BudgetTracker(max_usd=-1, max_tokens_fallback=1_000_000))
+    provider = _provider(
+        signed_in, budget=BudgetTracker(max_usd=-1, max_tokens_fallback=1_000_000, max_percent=-1)
+    )
     with (
         mock.patch(
             "httpx2.stream",
@@ -399,3 +401,31 @@ def test_responses_input_drops_blank_name_calls_and_their_results() -> None:
         ]
     )
     assert items == []
+
+
+def test_plan_usage_headers_feed_the_percent_budget(signed_in: ChatGPTCredential) -> None:
+    """The x-codex primary-window headers ride each response into the budget:
+    plan-metered (no fallback drain, $0 authoritative) with the account
+    percent observable in the snapshot."""
+    provider = _provider(
+        signed_in, budget=BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1)
+    )
+
+    def stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        resp = _FakeStreamResponse(status_code=200, lines=_happy_stream())
+        resp.headers = {
+            "x-codex-primary-used-percent": "37",
+            "x-codex-primary-window-minutes": "10080",
+            "x-codex-primary-reset-at": "2000000000",
+        }
+        return resp
+
+    with mock.patch("httpx2.stream", side_effect=stream):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+    assert provider.budget is not None
+    snap = provider.budget.snapshot()
+    assert snap.plan_latest is not None
+    assert snap.plan_latest.used_percent == 37.0
+    assert snap.plan_latest.window_minutes == 10080
+    assert snap.unmetered_tokens == 0
+    assert "plan usage: 37% of the 7-day window" in provider.budget.format_summary()

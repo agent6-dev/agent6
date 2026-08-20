@@ -56,7 +56,7 @@ def _commit(path: Path, name: str, body: str, msg: str) -> str:
 
 
 def _budget() -> BudgetTracker:
-    return BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
+    return BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
 
 
 def test_hook_pauses_the_console_heartbeat_while_prompting(

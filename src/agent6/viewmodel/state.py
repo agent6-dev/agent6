@@ -105,6 +105,13 @@ class BudgetView:
     usd_cap: float = 0.0  # [budget].max_usd for this leg (-1 unlimited, 0 unknown)
     tokens_unmetered: int = 0  # input+output tokens of calls the meter could not price
     tokens_fallback_cap: int = 0  # [budget].max_tokens_fallback (-1 unlimited, 0 unknown)
+    # Subscription plan usage (percent-metered providers), leg-local like the
+    # caps: the account's reported percent, this leg's consumed points, and
+    # [budget].max_percent. 0s when no percent-metered call has run.
+    plan_used_percent: float = 0.0
+    plan_consumed: float = 0.0
+    plan_cap: float = 0.0
+    plan_resets_at: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -446,6 +453,10 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             usd_cap=ucap,
             tokens_unmetered=unmet,
             tokens_fallback_cap=fcap,
+            plan_used_percent=plan_pct,
+            plan_consumed=plan_used,
+            plan_cap=plan_cap,
+            plan_resets_at=plan_resets,
         ):
             # The event's usd_total is the current LEG's; the view's is
             # cumulative. usd_partial is sticky: unpriced spend in any prior
@@ -461,6 +472,10 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                     usd_cap=ucap,
                     tokens_unmetered=unmet,
                     tokens_fallback_cap=fcap,
+                    plan_used_percent=plan_pct,
+                    plan_consumed=plan_used,
+                    plan_cap=plan_cap,
+                    plan_resets_at=plan_resets,
                 ),
             )
 

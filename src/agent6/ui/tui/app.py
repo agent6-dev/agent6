@@ -556,6 +556,10 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         if s.budget.tokens_unmetered and s.budget.tokens_fallback_cap > 0:
             unmet = min(s.budget.tokens_unmetered / s.budget.tokens_fallback_cap, 1.0)
             budget += f"   unmetered: {unmet:.0%}"
+        if s.budget.plan_used_percent > 0:
+            budget += f"   plan: {s.budget.plan_used_percent:g}%"
+            if s.budget.plan_cap > 0:
+                budget += f" (run {s.budget.plan_consumed:g}/{s.budget.plan_cap:g}pt)"
         pct = tui.context_pct()
         ctx = f"   ctx: {pct}%" if pct is not None else ""
         self.query_one("#top", Static).update(

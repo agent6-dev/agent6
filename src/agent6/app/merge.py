@@ -206,6 +206,7 @@ def _model_squash_message(
             if budget is not None
             else BudgetTracker(
                 max_usd=cfg.budget.max_usd,
+                max_percent=cfg.budget.max_percent,
                 max_tokens_fallback=cfg.budget.max_tokens_fallback,
             )
         )

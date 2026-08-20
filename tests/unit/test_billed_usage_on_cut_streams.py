@@ -77,7 +77,7 @@ def test_anthropic_records_what_a_cut_stream_already_cost(
         "content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "partial"}}
     )
 
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1)
+    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
         mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=9)),
@@ -116,7 +116,7 @@ def test_openai_records_a_cut_stream_and_keeps_the_cached_split() -> None:
     )
     lines += chunk({"choices": [{"index": 0, "delta": {"content": " more"}}]})
 
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1)
+    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
     with (
         mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=6)),
@@ -141,7 +141,7 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
     any usage arrived must leave the ledger untouched."""
     lines = _sse("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}})
 
-    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1)
+    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
         mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=1)),

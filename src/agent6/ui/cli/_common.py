@@ -62,6 +62,16 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         help="Override [budget].max_usd for this run (-1 unlimited, 0 refuses metered calls).",
     )
     parser.add_argument(
+        "--max-percent",
+        type=float,
+        default=None,
+        metavar="PCT",
+        help=(
+            "Override [budget].max_percent for this run: the plan percentage points a"
+            " subscription run may consume (-1 unlimited, 0 refuses plan-metered calls)."
+        ),
+    )
+    parser.add_argument(
         "--max-tokens-fallback",
         type=int,
         default=None,
