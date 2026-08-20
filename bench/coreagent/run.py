@@ -177,12 +177,14 @@ USER_SUFFIX: dict[str, str] = {
 }
 
 
-def _provider_block(provider: str, model: str, verify: list[str]) -> str:
+def _provider_block(provider: str, model: str, verify: list[str], effort: str = "") -> str:
     """Per-run base config: pin all three roles to the test model, wire verify,
     allow run_command. Providers + secrets come from the layered global config."""
     verify_toml = "[" + ", ".join(json.dumps(a) for a in verify) + "]"
+    effort_line = f"effort = {json.dumps(effort)}\n" if effort else ""
     roles = "\n".join(
         f"[models.{role}]\nprovider = {json.dumps(provider)}\nmodel = {json.dumps(model)}\n"
+        + effort_line
         for role in ("worker", "planner", "reviewer")
     )
     # [workflow] is deliberately the LAST section: a condition fragment
@@ -329,7 +331,15 @@ def _tampered(task: str, workdir: Path) -> bool:
 
 
 def one_run(
-    *, task: str, model: str, provider: str, condition: str, rep: int, budget: float, label: str
+    *,
+    task: str,
+    model: str,
+    provider: str,
+    condition: str,
+    rep: int,
+    budget: float,
+    label: str,
+    effort: str = "",
 ) -> dict[str, Any]:
     module = TASKS[task]
     session_id = f"{task}-{condition}-r{rep}-{uuid.uuid4().hex[:6]}"
@@ -350,7 +360,7 @@ def one_run(
     cfg.write_text(
         # `bash verify.sh` (not ./verify.sh): the jail PATH is /usr/bin:/bin and
         # an exec-bit-less script can't be run directly, but bash can read it.
-        _provider_block(provider, model, ["bash", "verify.sh"])
+        _provider_block(provider, model, ["bash", "verify.sh"], effort)
         + CONDITIONS[condition].format(ROOT=ROOT),
         encoding="utf-8",
     )
@@ -450,6 +460,7 @@ def main() -> None:
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--parallel", type=int, default=4)
     ap.add_argument("--budget", type=float, default=0.60)
+    ap.add_argument("--effort", default="", help="pin [models.*].effort for every role")
     ap.add_argument("--label", required=True)
     args = ap.parse_args()
 
@@ -473,6 +484,7 @@ def main() -> None:
             rep=r,
             budget=args.budget,
             label=args.label,
+            effort=args.effort,
         )
         for t in tasks
         for c in conditions
