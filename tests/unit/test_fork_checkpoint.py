@@ -967,6 +967,31 @@ def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
     assert versions == [1]
 
 
+def test_a_past_turn_fork_reopens_without_a_lost_tail_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The rebuild undoes the mutations stamped after the forked turn; a node
+    kept its newer stamp, so the fork's curator read its (correctly shorter)
+    journal as one that lost its tail, warned so on every open, and resumed
+    numbering from the source's future. Stamps clamp to the forked version."""
+    from agent6.graph.curator import GraphCurator
+    from agent6.graph.storage import load_graph
+
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    assert _cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True) == 0
+
+    dst = SessionLayout(state_dir=state_dir, session_id="kid-CCCC33")
+    assert [n.graph_version for n in load_graph(dst).values()] == [1]
+    capsys.readouterr()
+    curator = GraphCurator(dst)
+    assert "lost its tail" not in capsys.readouterr().err
+    assert curator.graph_version == 1
+
+
 def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

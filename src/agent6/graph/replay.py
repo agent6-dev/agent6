@@ -125,6 +125,10 @@ def graph_at_version(
                 "commit_sha": commit.get(nid, "" if nid in born else node.commit_sha),
                 "depends_on": tuple(d for d in node.depends_on if d not in deps_after.get(nid, ())),
                 "children": _children_at(node.children, kept),
+                # A stamp past *version* names a mutation this rebuild undid;
+                # left in place, the curator reads the rebuilt journal as a
+                # lost tail on every open of the fork.
+                "graph_version": min(node.graph_version, version),
             }
         )
         for nid, node in kept.items()
