@@ -35,9 +35,8 @@ Work in this repository.
 """
     "__HARDENED_FS_RULE__"
     "__GIT_PROTECT_RULE__"
-    """- The harness commits automatically after each passing verify; manual
-  git commit is optional.
-- finish_session is the only clean end. Call it when done or blocked.
+    "__AUTO_COMMIT_RULE__"
+    """- finish_session is the only clean end. Call it when done or blocked.
 </agent6>
 
 __DAG_RULES_BLOCK__
@@ -54,6 +53,19 @@ __DAG_RULES_BLOCK__
 # Rendered into run mode's __GIT_PROTECT_RULE__ sentinel ONLY under strict
 # isolation with protect_git on: elsewhere the constraint does not exist and
 # stating it would misdirect the model.
+# Rendered into run mode's __AUTO_COMMIT_RULE__ sentinel, keyed on
+# [git].control: under agent6 control the harness auto-commits each passing
+# verify; under model control nothing commits automatically and saying so
+# would misdirect the model into never committing.
+AUTO_COMMIT_RULE = """- The harness commits automatically after each passing verify; manual
+  git commit is optional.
+"""
+
+MODEL_GIT_RULE = """- You own git in this run: agent6 keeps no shadow record and nothing
+  commits automatically. Commit your own work via `run_command` (branch
+  as you see fit); uncommitted changes exist only in the worktree.
+"""
+
 GIT_PROTECT_RULE = """- If an edit fails verify and you need to revert it, do NOT call
     `git checkout`, `git reset`, or other history-mutating git commands
     through `run_command`: `.git/` is protected inside the jail and those
@@ -298,17 +310,21 @@ other instruction to call `run_verify_command`.
 """
 
 
-def no_verify_block(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> str:
+def no_verify_block(
+    mode: Literal["run", "plan", "ask", "machine", "agent"], *, auto_commit: bool = True
+) -> str:
     """The <no-verify-command> block, worded for the mode's tool surface.
 
     The terminal tool is `finish_session` in run mode and `finish_planning` in
     plan mode; ask has none (it answers with its final message). The edit +
-    auto-commit guidance applies only in run mode, the one editing mode."""
+    auto-commit guidance applies only in run mode, the one editing mode;
+    `auto_commit=False` ([git].control = "model") drops the auto-commit claim,
+    which would be false there."""
     if mode == "run":
+        commit_claim = " agent6 commits each editing step automatically." if auto_commit else ""
         guidance = (
-            " Call `finish_session` with a short summary when done; agent6"
-            " commits each editing step automatically. Tests via `run_command`"
-            " are allowed, not required."
+            f" Call `finish_session` with a short summary when done;{commit_claim}"
+            " Tests via `run_command` are allowed, not required."
         )
     elif mode == "plan":
         guidance = " Call `finish_planning` with your plan when done."

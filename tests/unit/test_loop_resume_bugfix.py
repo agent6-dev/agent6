@@ -29,9 +29,10 @@ from agent6.workflows.loop import (
 # The `[git]` surface the loop reads: the checkpoint message and the commit
 # identity (`_commit_identity`), empty as a real Config carries it unset.
 _GIT_STUB = SimpleNamespace(
+    control="agent6",
     commit=SimpleNamespace(
         checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
-    )
+    ),
 )
 
 

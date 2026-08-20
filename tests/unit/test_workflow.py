@@ -27,9 +27,10 @@ from agent6.workflows.loop import Workflow
 # identity (`_commit_identity`), which the real Config carries as empty
 # strings when the operator sets neither.
 _GIT_STUB = SimpleNamespace(
+    control="agent6",
     commit=SimpleNamespace(
         checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
-    )
+    ),
 )
 
 

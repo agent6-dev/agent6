@@ -439,3 +439,39 @@ def test_agents_md_section_absent_when_repo_has_none(tmp_path: Path) -> None:
     out = build_system_prompt(config=_cfg(verify=True), repo=repo, mode="run", skills=None)
     assert "AGENTS.md (project conventions):" not in out
     assert "(empty)" not in out
+
+
+def test_prompt_git_rules_match_git_control(tmp_path: Path) -> None:
+    """The prompt states the world that exists: under [git].control = "model"
+    the auto-commit chain does not run, so claiming "the harness commits
+    automatically" (base block and gateless block both did) misdirects the
+    model into never committing."""
+    repo = _repo(tmp_path)
+    agent6_cfg = Config.model_validate({"workflow": {"verify_command": ["true"]}})
+    model_cfg = Config.model_validate(
+        {
+            "workflow": {"verify_command": ["true"]},
+            "git": {"control": "model"},
+            "sandbox": {"protect_git": False},
+        }
+    )
+    agent6_prompt = build_system_prompt(config=agent6_cfg, repo=repo, mode="run", skills=None)
+    model_prompt = build_system_prompt(config=model_cfg, repo=repo, mode="run", skills=None)
+    assert "The harness commits automatically" in agent6_prompt
+    assert "You own git" not in agent6_prompt
+    assert "The harness commits automatically" not in model_prompt
+    assert "You own git" in model_prompt
+
+    gateless_cfg = Config.model_validate(
+        {"git": {"control": "model"}, "sandbox": {"protect_git": False}}
+    )
+    gateless = build_system_prompt(
+        config=gateless_cfg,
+        repo=repo,
+        mode="run",
+        skills=None,
+    )
+    start = gateless.index("<no-verify-command>")
+    block = gateless[start : gateless.index("</no-verify-command>", start)]
+    assert "finish_session" in block
+    assert "commits each editing step" not in block

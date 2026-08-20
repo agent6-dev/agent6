@@ -21,9 +21,11 @@ from agent6.memory import INDEX_INJECT_CAP
 from agent6.prompts.loop import (
     AGENT_SYSTEM_PROMPT_BASE,
     ASK_SYSTEM_PROMPT_BASE,
+    AUTO_COMMIT_RULE,
     GIT_PROTECT_RULE,
     HARDENED_FS_RULE,
     MACHINE_SYSTEM_PROMPT_BASE,
+    MODEL_GIT_RULE,
     PLAN_SYSTEM_PROMPT_BASE,
     SKILLS_HEADER,
     SYSTEM_PROMPT_BASE,
@@ -268,6 +270,12 @@ def build_system_prompt(
         "__GIT_PROTECT_RULE__",
         GIT_PROTECT_RULE if isolation == "strict" and config.sandbox.protect_git else "",
     )
+    # Auto-commit is the agent6-control chain; under [git].control = "model"
+    # nothing commits automatically and the model owns the record.
+    base = base.replace(
+        "__AUTO_COMMIT_RULE__",
+        MODEL_GIT_RULE if config.git.control == "model" else AUTO_COMMIT_RULE,
+    )
     parts = [base]
 
     # When the bench harness sets
@@ -316,7 +324,7 @@ def build_system_prompt(
             )
         )
     else:
-        parts.append(no_verify_block(mode))
+        parts.append(no_verify_block(mode, auto_commit=config.git.control != "model"))
 
     # Run mode only: plan/ask do not expose `run_metric_command`, and the
     # "harness automatically runs this metric" behaviour is the run loop's.
