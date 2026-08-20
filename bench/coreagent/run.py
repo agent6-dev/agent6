@@ -112,6 +112,11 @@ CONDITIONS: dict[str, str] = {
     # proves the prompt channel delivers (canary gate, not a hypothesis).
     # Measured 2026-07-10: appended at the base's END, BOTH qwen3-coder-30b and
     # mistral-small-3.2 ignored it completely (0/12, 0/27 prose turns).
+    # brief: the run-mode base rewritten as a complete operating brief (a
+    # workflow, the tool map, the constraints; ~2.2k chars vs the shipped 1.0k
+    # mechanics-only base). Same sentinels as the base, so isolation-specific
+    # rules render identically in both arms.
+    "brief": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/brief.md"\n',
     "moose": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/moose.md"\n',
     "moose_top": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/moose_top.md"\n',
     # moose_user: same marker instruction as a TASK-PROMPT suffix (see
