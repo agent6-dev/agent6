@@ -1069,6 +1069,9 @@ function paintPrompts(cards, s) {
       // One or more related questions answered together; option buttons FILL that
       // question's field, and a single Submit posts all answers (review first).
       const box = el('div', 'prompt-box');
+      // agent6's own start question (the fold says so): name the asker, since the
+      // box otherwise reads as the model's.
+      if (q.from_harness) box.appendChild(el('div', 'sub muted', 'agent6 asks'));
       const qs = q.questions || [];
       const inputs = [];
       qs.forEach((sub, qi) => {

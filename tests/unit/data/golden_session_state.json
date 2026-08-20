@@ -108,7 +108,8 @@
       "answers": [
         "hello",
         "yes"
-      ]
+      ],
+      "from_harness": false
     }
   ],
   "log_tail": [

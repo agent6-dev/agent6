@@ -43,7 +43,8 @@ class PromptDispatcher:
         for qp in state.pending_questions:
             if not qp.answered and self._first(session_dir, qp.id):
                 self._app.push_screen(
-                    QuestionModal(qp.id, qp.questions), self._on_question(session_dir, qp.id)
+                    QuestionModal(qp.id, qp.questions, from_harness=qp.from_harness),
+                    self._on_question(session_dir, qp.id),
                 )
 
     def _first(self, session_dir: Path, prompt_id: str) -> bool:

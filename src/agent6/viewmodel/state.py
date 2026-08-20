@@ -147,12 +147,16 @@ class Question:
 @dataclass(frozen=True, slots=True)
 class QuestionPrompt:
     """An agent->user `ask_user` prompt: one or more related questions the operator
-    answers together (reviewing before submitting). `answers` align to `questions`."""
+    answers together (reviewing before submitting). `answers` align to `questions`.
+    `from_harness`: agent6 itself asked (a start gate such as the dirty-tree
+    question), decided by when it was asked: before the session started or
+    after it finished, no model is running to ask anything."""
 
     id: str
     questions: tuple[Question, ...] = ()
     answered: bool = False
     answers: tuple[str, ...] = ()
+    from_harness: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,7 +481,9 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
 
         case events.QuestionPrompt(id=qid, questions=qs):
             questions = tuple(Question(question=q.question, options=q.options) for q in qs)
-            qp = QuestionPrompt(id=qid, questions=questions)
+            qp = QuestionPrompt(
+                id=qid, questions=questions, from_harness=not state.started or state.finished
+            )
             return replace(state, pending_questions=(*state.pending_questions, qp))
 
         case events.QuestionAnswer(id=wanted, answers=answers):

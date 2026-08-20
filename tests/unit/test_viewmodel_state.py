@@ -713,3 +713,23 @@ def test_fold_is_total_for_wrong_shaped_containers(bad: dict[str, Any]) -> None:
         ]
     )
     assert state.finished  # the fold survived the bad line and kept folding
+
+
+def test_a_question_asked_while_no_model_runs_is_the_harness_s() -> None:
+    """agent6 asks its own start questions (the dirty-tree gate) before
+    session.start, and again before a resumed leg starts (after the last
+    session.end); a question while the model runs is the model's. The TUI
+    modal and the web prompt box name the asker from this flag."""
+    q = {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]}
+    before = fold_session([q])
+    assert before.pending_questions[0].from_harness is True
+    during = fold_session([{"type": "session.start", "user_task": "t"}, q])
+    assert during.pending_questions[0].from_harness is False
+    after = fold_session(
+        [
+            {"type": "session.start", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {**q, "id": "question-2"},
+        ]
+    )
+    assert after.pending_questions[-1].from_harness is True

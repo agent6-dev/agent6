@@ -449,16 +449,21 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
         Binding("escape", "skip", "Skip", show=True),
     ]
 
-    def __init__(self, question_id: str, questions: tuple[Question, ...]) -> None:
+    def __init__(
+        self, question_id: str, questions: tuple[Question, ...], *, from_harness: bool = False
+    ) -> None:
         super().__init__()
         self.question_id = question_id
         self.questions = questions
+        self.from_harness = from_harness
 
     def compose(self) -> ComposeResult:
         multi = len(self.questions) > 1
         with Vertical(id="question-box"):
             head = Text()
-            head.append("The agent is asking", style="bold")
+            head.append(
+                "agent6 is asking" if self.from_harness else "The agent is asking", style="bold"
+            )
             head.append(". Answer, then Submit (ctrl+s):" if multi else ":")
             yield Static(head)
             with VerticalScroll(id="question-list"):
