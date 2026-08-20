@@ -644,6 +644,13 @@ def clear_steer_answer(session_dir: Path) -> None:
         (session_dir / STEER_ANSWER_FILE).unlink()
 
 
+def take_steer_answer(session_dir: Path) -> str | None:
+    """Consume a steer answer that is already on disk (a `resume --steer`
+    seed, an end-of-session follow-up, a front-end's answer that landed before
+    the boundary), or None: the tty prompt asks nothing it was already told."""
+    return _consume_answer(session_dir / STEER_ANSWER_FILE)
+
+
 def steer_answer_is_abort(session_dir: Path) -> bool:
     """Non-blocking peek: True if a pending steer answer is a stop. Lets a long
     streaming model turn bail immediately instead of only at the between-step

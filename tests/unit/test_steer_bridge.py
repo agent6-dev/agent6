@@ -20,6 +20,7 @@ from agent6.events import EventSink
 from agent6.sessions.ipc import (
     request_steer,
     steer_request_pending,
+    submit_steer,
     write_steer_answer,
 )
 from agent6.ui.cli._steer import file_bridge_steer, install_steer_sigint, make_steer_state
@@ -142,6 +143,31 @@ def test_sigint_at_the_pause_prompt_stops(tmp_path: Path, monkeypatch: pytest.Mo
             steer.prompt()
     finally:
         steer.restore()
+
+
+def test_a_seeded_steer_is_the_answer_on_the_terminal_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`resume --steer` and the end-of-session follow-up seed the answer file
+    before the loop's first boundary; the terminal steer path consumed only a
+    live front-end's answer and otherwise opened the pause menu, so the text
+    the operator had just typed was asked for again."""
+    monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: True)
+
+    def no_menu(session_dir: Path, **_kw: object) -> str | None:
+        pytest.fail("the menu opened over a seeded steer")
+
+    monkeypatch.setattr("agent6.ui.cli._steer.pause_menu", no_menu)
+    events = EventSink(tmp_path / "logs.jsonl")
+    submit_steer(tmp_path, "also add a test that mul(2, 0) == 0")
+    steer = install_steer_sigint(events, tmp_path)
+    try:
+        assert steer.requested()
+        assert steer.prompt() == "also add a test that mul(2, 0) == 0"
+        steer.clear()
+    finally:
+        steer.restore()
+    assert not (tmp_path / "steer.answer").exists()
 
 
 def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -29,6 +29,7 @@ from agent6.sessions.ipc import (
     read_steer_answer,
     steer_answer_is_abort,
     steer_request_pending,
+    take_steer_answer,
 )
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._menu_input import menu_capable
@@ -319,6 +320,13 @@ def install_steer_sigint(
         clear_steer_request(session_dir)
 
     def prompt() -> str | None:
+        # An answer already on disk (a `resume --steer` seed, the end-of-session
+        # follow-up, a front-end's answer that landed first) IS the steer: the
+        # terminal menu is for an unanswered request only. Without this the
+        # follow-up typed at "next:" opened the pause menu asking for it again.
+        seeded = take_steer_answer(session_dir)
+        if seeded is not None:
+            return seeded
         # TUI live: the user answers a modal; read its file-bridge result.
         if frontend_is_live(session_dir):
             answer = read_steer_answer(session_dir)
