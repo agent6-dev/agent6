@@ -124,13 +124,24 @@ def test_bench_container_config_template_validates() -> None:
         "AGENT6_SB_STRUCTURAL_PRIORS": "",
     }
 
-    def _sub(mo: re.Match[str]) -> str:
-        name = mo.group(1) or mo.group(2)
-        default = mo.group(3)
-        val = stub.get(name, "")
-        return val if val else (default or "")
+    def _render(env: dict[str, str]) -> str:
+        def _sub(mo: re.Match[str]) -> str:
+            name = mo.group(1) or mo.group(2)
+            op, text = mo.group(3), mo.group(4)
+            val = env.get(name, "")
+            if op == "+":  # ${VAR:+text}: text (with \" unescaped) iff VAR set
+                return text.replace('\\"', '"') if val else ""
+            return val if val else (text or "")
 
-    rendered = re.sub(r"\$(?:([A-Z0-9_]+)|\{([A-Z0-9_]+)(?::-([^}]*))?\})", _sub, m.group(1))
-    data = tomllib.loads(rendered)
-    data.pop("agent6", None)
-    Config.model_validate(data)
+        out = m.group(1)
+        for _ in range(2):  # ${VAR:+...$VAR...} nests one level
+            out = re.sub(r"\$(?:([A-Z0-9_]+)|\{([A-Z0-9_]+)(?::([-+])([^}]*))?\})", _sub, out)
+        return out
+
+    for env in (stub, {**stub, "AGENT6_SB_EFFORT": "medium"}):
+        rendered = _render(env)
+        data = tomllib.loads(rendered)
+        data.pop("agent6", None)
+        Config.model_validate(data)
+        if env.get("AGENT6_SB_EFFORT"):
+            assert data["models"]["worker"]["effort"] == "medium"

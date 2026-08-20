@@ -40,6 +40,8 @@ uv tool install --python 3.14 "$WHL" >/dev/null 2>&1
 # An unused block is inert; keys resolve from the mounted secrets.
 if [[ "$MODEL" == claude-* ]]; then
   PROVIDER=anthropic
+elif [[ "$MODEL" == gpt-* ]]; then
+  PROVIDER=chatgpt
 else
   PROVIDER=openrouter
 fi
@@ -47,6 +49,9 @@ PROVIDER_BLOCK='[providers.anthropic]
 api_format = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
+
+[providers.chatgpt]
+api_format = "chatgpt"
 
 [providers.openrouter]
 api_format = "openai"
@@ -113,6 +118,7 @@ $PROVIDER_BLOCK
 [models.worker]
 provider = "$PROVIDER"
 model = "$MODEL"
+${AGENT6_SB_EFFORT:+effort = \"$AGENT6_SB_EFFORT\"}
 
 [models.reviewer]
 provider = "$PROVIDER"
@@ -151,6 +157,7 @@ $REVIEW_LINES
 [budget]
 max_usd = $MAX_USD
 max_tokens_fallback = 2000000
+max_percent = ${AGENT6_SB_MAX_PERCENT:-30}
 EOF
 
 cd /testbed
