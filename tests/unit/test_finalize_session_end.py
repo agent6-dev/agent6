@@ -618,7 +618,12 @@ def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
     hint = stash_recovery_hint(repo, session_id="r9", base_branch="main")
     assert hint is not None
     assert "git stash pop" not in hint  # positional restores the wrong stash
-    assert "git stash apply " in hint and "git checkout main" in hint
+    # The chain never moves the checkout: on main, no `git checkout main` prefix.
+    assert hint.startswith("git stash apply ")
+    subprocess.run(["git", "checkout", "-q", "-b", "elsewhere"], cwd=repo, check=True)
+    away = stash_recovery_hint(repo, session_id="r9", base_branch="main")
+    assert away is not None and away.startswith("git checkout main && git stash apply ")
+    subprocess.run(["git", "checkout", "-q", "main"], cwd=repo, check=True)
     sha = hint.rsplit(" ", 1)[1]
     assert len(sha) == 40
     # The sha names the RUN's stash, not the newest one.

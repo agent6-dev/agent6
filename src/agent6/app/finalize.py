@@ -483,25 +483,30 @@ def finalize_auto_merge(
         )
 
 
-def _stash_apply_cmd(sha: str, base_branch: str, *, needs_checkout: bool) -> str:
+def _stash_apply_cmd(cwd: Path, sha: str, base_branch: str) -> str:
     """The manual-recovery command for a stash, worded once for every caller.
 
     Always apply-by-SHA: a positional `pop 'stash@{N}'` printed now but run
     later restores whatever sits at that position by then, which is how a
-    bystander's stash got applied and the pre-run work stayed hidden."""
+    bystander's stash got applied and the pre-run work stayed hidden. The
+    chain never moves the checkout, so a `git checkout <base>` prefix appears
+    only when the operator is on some other branch right now."""
     apply = f"git stash apply {sha}"
-    return f"git checkout {base_branch} && {apply}" if needs_checkout else apply
+    current = ""
+    with contextlib.suppress(GitError):
+        current = git_status(cwd).branch
+    return f"git checkout {base_branch} && {apply}" if current != base_branch else apply
 
 
 def stash_recovery_hint(cwd: Path, *, session_id: str, base_branch: str) -> str | None:
     """How to restore this run's pre-run auto-stash by hand, or None when the
     run pushed no stash. For callers that must tell the operator where their
-    work went without restoring it (a detached run keeps the checkout on its
-    run branch, so the stash has to wait)."""
+    work went without restoring it (a detached continuation: the run is still
+    going, so the stash has to wait)."""
     entry = find_stash(cwd, auto_stash_message(session_id))
     if entry is None:
         return None
-    return _stash_apply_cmd(entry.sha, base_branch, needs_checkout=True)
+    return _stash_apply_cmd(cwd, entry.sha, base_branch)
 
 
 def finalize_auto_stash(
@@ -535,7 +540,7 @@ def finalize_auto_stash(
         return
     # apply-by-sha is identity-stable; drop it yourself once you've confirmed.
     apply = f"git stash apply {entry.sha}"
-    recover = _stash_apply_cmd(entry.sha, base_branch, needs_checkout=bool(run_branch))
+    recover = _stash_apply_cmd(cwd, entry.sha, base_branch)
     if not auto_pop:
         reporter.note(f"pre-run changes are stashed; restore them with: {recover}")
         return
