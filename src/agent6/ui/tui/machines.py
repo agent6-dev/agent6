@@ -50,8 +50,6 @@ from agent6.sessions.ipc import (
     request_steer,
     unregister_frontend,
     worker_is_alive,
-    write_answer,
-    write_question_answers,
     write_steer_answer,
 )
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
@@ -59,12 +57,11 @@ from agent6.ui.notify import desktop_notify
 from agent6.ui.spawn import agent6_argv, spawn_and_confirm, spawn_and_locate
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
-    ApprovalModal,
     ConfirmModal,
-    QuestionModal,
     SteerModal,
     TextInputModal,
 )
+from agent6.ui.tui.prompts import PromptDispatcher
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.theme import (
     PALETTE_CSS,
@@ -168,9 +165,7 @@ class MachineWatchScreen(Screen[None]):
         self._pending = ""  # accumulated thinking/answer text, flushed in readable chunks
         self._ended = False
         self._was_steerable = True  # the footer's Steer key tracks _steerable() flips
-        # Dedup prompts by (per-state dir, id): a new agent state resets its ids
-        # to approval-1/question-1, so a bare-id set would mask the second state's.
-        self._seen_prompt_keys: set[str] = set()
+        self._prompts = PromptDispatcher(self.app, answerable=self._steerable, lost=_ANSWER_LOST)
         self._end_notified = False
         self._steer_open = False
 
@@ -401,45 +396,9 @@ class MachineWatchScreen(Screen[None]):
         state_dir = self._state_dir()
         if state_dir is None:
             return
-        rs = fold_session(tail_events(state_dir / LOGS_NAME, follow=False))
-        for ap in rs.pending_approvals:
-            key = f"{state_dir}|{ap.id}"
-            if not ap.answered and key not in self._seen_prompt_keys:
-                self._seen_prompt_keys.add(key)
-                self.app.push_screen(
-                    ApprovalModal(ap.id, ap.prompt, standing=ap.standing),
-                    self._on_approval(state_dir, ap.id),
-                )
-        for qp in rs.pending_questions:
-            key = f"{state_dir}|{qp.id}"
-            if not qp.answered and key not in self._seen_prompt_keys:
-                self._seen_prompt_keys.add(key)
-                self.app.push_screen(
-                    QuestionModal(qp.id, qp.questions),
-                    self._on_question(state_dir, qp.id),
-                )
-
-    def _on_approval(self, state_dir: Path, prompt_id: str) -> Callable[[str | None], None]:
-        def cb(answer: str | None) -> None:
-            # The machine can stop while the modal is open; say the answer went
-            # nowhere instead of writing a file the dead state will never read.
-            if not self._steerable():
-                self.app.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
-                return
-            write_answer(state_dir, prompt_id, answer or "no")
-
-        return cb
-
-    def _on_question(
-        self, state_dir: Path, question_id: str
-    ) -> Callable[[tuple[str, ...] | None], None]:
-        def cb(answers: tuple[str, ...] | None) -> None:
-            if not self._steerable():
-                self.app.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
-                return
-            write_question_answers(state_dir, question_id, answers or ())
-
-        return cb
+        self._prompts.dispatch(
+            state_dir, fold_session(tail_events(state_dir / LOGS_NAME, follow=False))
+        )
 
     def _render_log_lines(self, log: RichLog, *, live: bool) -> None:
         """Render new complete lines of the current state log: accumulate

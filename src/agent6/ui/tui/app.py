@@ -66,8 +66,6 @@ from agent6.sessions.ipc import (
     request_stop,
     submit_steer,
     unregister_frontend,
-    write_answer,
-    write_question_answers,
 )
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
@@ -85,12 +83,11 @@ from agent6.ui.tui.conversation import (
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
-    ApprovalModal,
     ConfirmModal,
-    QuestionModal,
     RestateModal,
     ToolCallDetailModal,
 )
+from agent6.ui.tui.prompts import PromptDispatcher
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import (
@@ -113,8 +110,6 @@ from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     SESSION_START_EVENTS,
     STREAM_DELTA_EVENTS,
-    ApprovalPrompt,
-    QuestionPrompt,
     SessionState,
     ToolCallView,
     apply_event,
@@ -737,8 +732,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.from_hub = from_hub
         self.logs_path = session_dir / LOGS_NAME
         self.state: SessionState = initial_state()
-        self._seen_approval_ids: set[str] = set()
-        self._seen_question_ids: set[str] = set()
+        self._prompts = PromptDispatcher(
+            self, answerable=self.session_controllable, lost=_ANSWER_LOST
+        )
         self._seen_steer = 0
         self._dirty = False  # a structural event arrived; _tick coalesces the repaint
         self._light_dirty = False  # only stream deltas / heartbeat: light repaint
@@ -884,8 +880,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             # prompt id counters at approval-1/question-1; a stale seen-set
             # would swallow the new session's first prompts and the run would
             # block forever on a modal that never opens.
-            self._seen_approval_ids.clear()
-            self._seen_question_ids.clear()
+            self._prompts.reset()
             # The task is known once the boundary folds: retitle the menu bar
             # (the conversation screen stamps its own title while on top).
             if self.screen is self._dash:
@@ -934,16 +929,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         # answer into a file nobody polls. Skipped ids are NOT marked seen, so
         # a prompt that outlives a stale probe still pops on the next tick.
         if self.session_controllable():
-            for ap in self.state.pending_approvals:
-                if not ap.answered and ap.id not in self._seen_approval_ids:
-                    self._seen_approval_ids.add(ap.id)
-                    self.push_screen(
-                        ApprovalModal(ap.id, ap.prompt, standing=ap.standing), self._on_approval(ap)
-                    )
-            for qp in self.state.pending_questions:
-                if not qp.answered and qp.id not in self._seen_question_ids:
-                    self._seen_question_ids.add(qp.id)
-                    self.push_screen(QuestionModal(qp.id, qp.questions), self._on_question(qp))
+            self._prompts.dispatch(self.session_dir, self.state)
         # Route an external steer request to the composer bar, once per Ctrl-C
         # (steer_requests is monotonic).
         if self.state.steer_requests > self._seen_steer:
@@ -997,26 +983,6 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
                 timeout=8.0,
             )
             self._dirty = True
-
-    def _on_approval(self, ap: ApprovalPrompt):  # type: ignore[no-untyped-def]
-        def cb(answer: str | None) -> None:
-            # The worker can die while the modal is open; say the answer went
-            # nowhere instead of silently writing a file the next resume drops.
-            if not self.session_controllable():
-                self.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
-                return
-            write_answer(self.session_dir, ap.id, answer or "no")
-
-        return cb
-
-    def _on_question(self, qp: QuestionPrompt):  # type: ignore[no-untyped-def]
-        def cb(answers: tuple[str, ...] | None) -> None:
-            if not self.session_controllable():
-                self.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
-                return
-            write_question_answers(self.session_dir, qp.id, answers or ())
-
-        return cb
 
     # --- run control (dispatched from the composer bars, keys, and menus) --
 

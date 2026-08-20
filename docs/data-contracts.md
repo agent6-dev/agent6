@@ -193,5 +193,5 @@ Pure event-fold: list[event_dict] -> SessionState.
 **session_state_as_dict** &mdash; The JSON-able wire form of a SessionState, stable field names: what `agent6 attach --json` and a web client serialize.
 
 - **Written by:** viewmodel/{machine_state, state}
-- **Read by:** ui/cli/{_steer_menu, plan_watch}, ui/tui/{app, conversation, logview, modals}, viewmodel/__init__
+- **Read by:** ui/cli/{_steer_menu, plan_watch}, ui/tui/{app, conversation, logview, modals, prompts}, viewmodel/__init__
 - **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (7 test files exercise it)
