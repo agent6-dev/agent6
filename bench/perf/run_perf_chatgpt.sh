@@ -200,8 +200,12 @@ in_tok=$(cat $combined 2>/dev/null | grep -oE 'TOTAL: in=[0-9]+' | tail -1 | sed
 out_tok=$(cat $combined 2>/dev/null | grep -oE 'out=[0-9]+/' | tail -1 | tr -d '/' | sed 's/out=//')
 [ -z "$out_tok" ] && out_tok=0
 
+# branch_per_run puts the work on the agent6 run branch; HEAD stays at
+# the baseline. Score the branch the summary names, or HEAD if none.
+run_ref=$(cat $combined 2>/dev/null | grep -oE 'changes are on agent6/[A-Za-z0-9_-]+' | tail -1 | sed 's/^changes are on //')
+
 bash "$REPO/bench/perf/score.sh" "$WORKDIR" "$LABEL" \
-  "$wall_s" "$cost" "$in_tok" "$out_tok" "$ag_exit" "$start_cycles" \
+  "$wall_s" "$cost" "$in_tok" "$out_tok" "$ag_exit" "$start_cycles" "${run_ref:-HEAD}" \
   > "$BENCH_ROOT/result_agent6.json"
 
 cat "$BENCH_ROOT/result_agent6.json"

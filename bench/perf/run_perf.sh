@@ -256,8 +256,12 @@ out_tok=$(cat $combined 2>/dev/null | grep -oE 'out=[0-9]+/' | tail -1 | tr -d '
 [ -z "$out_tok" ] && out_tok=0
 
 # --- post-hoc scoring (this is what we trust) ------------------------------
+# branch_per_run puts the work on the agent6 run branch; HEAD stays at
+# the baseline. Score the branch the summary names, or HEAD if none.
+run_ref=$(cat $combined 2>/dev/null | grep -oE 'changes are on agent6/[A-Za-z0-9_-]+' | tail -1 | sed 's/^changes are on //')
+
 bash "$REPO/bench/perf/score.sh" "$WORKDIR" "agent6" \
-  "$wall_s" "$cost" "$in_tok" "$out_tok" "$ag_exit" "$start_cycles" \
+  "$wall_s" "$cost" "$in_tok" "$out_tok" "$ag_exit" "$start_cycles" "${run_ref:-HEAD}" \
   > "$BENCH_ROOT/result_agent6.json"
 
 cat "$BENCH_ROOT/result_agent6.json"
