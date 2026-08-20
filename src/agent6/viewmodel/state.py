@@ -619,6 +619,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             salient = f"{len(nodes)} tasks" if isinstance(nodes, dict) else ""
         case "diff.updated":
             salient = f"{len(str(event.get('patch', '')).splitlines())} lines"
+        case "loop.auto_commit":
+            salient = f"{str(event.get('sha', ''))[:12]} {event.get('subject', '')}".strip()
         case "tool.call":
             salient = f"{event.get('name', '')}({_render_args(_as_dict(event.get('args')))})"
         case "tool.result":
@@ -703,7 +705,9 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "session.start":
             salient = str(event.get("user_task", ""))[:80]
         case "verify.end":
-            salient = f"exit={event.get('exit_code')} dur={event.get('duration_s')}s"
+            dur = event.get("duration_s")
+            dur_s = f"{dur:.1f}s" if isinstance(dur, (int, float)) else f"{dur}s"
+            salient = f"exit={event.get('exit_code')} dur={dur_s}"
         case "approval.prompt":
             salient = str(event.get("prompt", ""))[:80]
         case "approval.answer":

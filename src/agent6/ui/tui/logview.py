@@ -13,7 +13,8 @@ the file (a live run keeps appending).
 Two deliberate choices:
 - Ephemeral streaming deltas are skipped (see STREAM_DELTA_EVENTS): a reasoning
   model emits thousands of contentless `role.thinking_delta` events, which are
-  noise in an audit log (the reasoning itself is in the conversation view).
+  noise in an audit log (the reasoning itself is in the conversation view). So
+  are the loop-side mirrors (LOG_NOISE_EVENTS), as in the dashboard's log tail.
 - The body is a `Static` inside a `VerticalScroll`, not a `RichLog`. A `RichLog`
   renders as line Strips, which the framework's text selection can't extract, so
   its text is not copyable; a `Static` renders as `Content` and is selectable.
@@ -43,7 +44,7 @@ from agent6.ui.tui.menubar import (
     menu_bindings,
 )
 from agent6.ui.tui.screen_chrome import ScreenChrome
-from agent6.viewmodel.state import STREAM_DELTA_EVENTS, format_log_line
+from agent6.viewmodel.state import LOG_NOISE_EVENTS, STREAM_DELTA_EVENTS, format_log_line
 from agent6.viewmodel.tail import LogTail
 
 
@@ -114,7 +115,7 @@ class LogScreen(ScreenChrome, Screen[None]):
     def _append(self, events: list[dict[str, object]]) -> bool:
         added = False
         for event in events:
-            if event.get("type") in STREAM_DELTA_EVENTS:
+            if event.get("type") in STREAM_DELTA_EVENTS or event.get("type") in LOG_NOISE_EVENTS:
                 continue
             self._text.append(format_log_line(event) + "\n")
             added = True

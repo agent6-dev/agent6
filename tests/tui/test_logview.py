@@ -86,6 +86,32 @@ def test_logscreen_skips_streaming_deltas(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_logscreen_skips_the_loop_mirrors_like_the_dashboard_tail(tmp_path: Path) -> None:
+    """loop.tool.call / loop.budget mirror events already rendered (the tool
+    call carries the args, budget.update the totals) and format to an empty
+    detail; the dashboard's log tail drops them, so the full log view does too."""
+    logs = tmp_path / "logs.jsonl"
+    _write_log(
+        logs,
+        [
+            {"type": "loop.tool.call", "iteration": 1, "ts": "t"},
+            {"type": "tool.call", "name": "read_file", "args": {"path": "a"}, "ts": "t"},
+            {"type": "loop.budget", "iteration": 1, "ts": "t"},
+            {"type": "budget.update", "input_total": 1, "output_total": 2, "ts": "t"},
+        ],
+    )
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            lines = _lines(app.screen)  # type: ignore[arg-type]
+            assert len(lines) == 2
+            assert not any("loop." in ln for ln in lines)
+
+    asyncio.run(scenario())
+
+
 def test_logscreen_reload_picks_up_appended_lines(tmp_path: Path) -> None:
     logs = tmp_path / "logs.jsonl"
     _write_log(logs, [{"type": "session.start", "mode": "run", "user_task": "x", "ts": "t"}])
