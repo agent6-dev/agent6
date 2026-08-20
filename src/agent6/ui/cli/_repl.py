@@ -28,14 +28,15 @@ from agent6.ui.cli.plan_watch import (
     format_plain_event,
 )
 from agent6.ui.cli.sessions_cmds import _cmd_diff
+from agent6.viewmodel.state import LOG_NOISE_EVENTS, STREAM_DELTA_EVENTS
 
 REPL_HELP = (
     "  /continue  (empty enter) - let the agent take another iteration\n"
     "  /cost                    - print the running token + USD summary\n"
-    "  /diff                    - git diff: base_sha -> this run's HEAD\n"
-    "                              (read-only; same as `agent6 sessions diff`)\n"
-    "  /watch                   - print the last 20 events from this run\n"
-    "                              (snapshot; not a live tail)\n"
+    "  /diff                    - git diff: base_sha -> the run branch's tip\n"
+    "                              (read-only; `agent6 sessions diff`, no pager)\n"
+    "  /watch                   - print the last 20 audit events from this run\n"
+    "                              (snapshot, no streaming deltas; not a live tail)\n"
     "  /mcp                     - list MCP servers + tools currently wired\n"
     "                              into the agent's tool surface\n"
     "  /init                    - run the `agent6 init` setup wizard in the\n"
@@ -166,7 +167,18 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
                 session_start_ts = event_epoch(obj0.get("ts"))
         except json.JSONDecodeError:
             session_start_ts = None
-    tail = lines[-n:]
+
+    # The audit-log lines every other log view shows: streaming deltas and the
+    # loop's mirrors would fill the window with fragments of one turn.
+    def _audit_line(raw: str) -> bool:
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            return False
+        etype = obj.get("type") if isinstance(obj, dict) else None
+        return etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS
+
+    tail = [raw for raw in lines if _audit_line(raw)][-n:]
     print(f"[agent6] /watch: last {len(tail)} events from {session_id}", file=sys.stderr)
     for raw in tail:
         print(format_plain_event(raw, session_start_ts=session_start_ts))

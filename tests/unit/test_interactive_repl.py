@@ -260,3 +260,38 @@ def test_steer_prompt_keeps_marker_on_real_answer(
         assert not steer_request_pending(session_dir)
     finally:
         state.restore()
+
+
+def test_watch_shows_audit_events_not_streaming_fragments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`/watch` printed the last N raw log lines, mostly one-word
+    role.thinking_delta fragments of a single turn; it shows the audit lines
+    every other log view shows (deltas and the loop's mirrors skipped)."""
+    import json
+
+    from agent6.config.layer import resolved_state_dir
+    from agent6.sessions.layout import SessionLayout
+    from agent6.ui.cli._repl import repl_show_recent_events
+
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    layout = SessionLayout(
+        state_dir=resolved_state_dir(tmp_path), session_id="watchy-run-AAAAAA", subdir="runs"
+    )
+    layout.session_dir.mkdir(parents=True)
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "ts": "2026-01-01T00:00:00Z", "user_task": "t"},
+        {"type": "tool.call", "ts": "2026-01-01T00:00:01Z", "name": "read_file", "args": {}},
+        {"type": "loop.tool.call", "ts": "2026-01-01T00:00:01Z", "name": "read_file"},
+        *(
+            {"type": "role.thinking_delta", "ts": "2026-01-01T00:00:02Z", "text": f"w{i}"}
+            for i in range(30)
+        ),
+        {"type": "tool.result", "ts": "2026-01-01T00:00:03Z", "name": "read_file", "ok": True},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    repl_show_recent_events(tmp_path, "watchy-run-AAAAAA", n=20)
+    out = capsys.readouterr()
+    assert "thinking_delta" not in out.out and "loop.tool.call" not in out.out
+    assert "tool.call" in out.out and "tool.result" in out.out and "session.start" in out.out
+    assert "last 3 events" in out.err
