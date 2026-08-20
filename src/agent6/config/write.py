@@ -406,6 +406,7 @@ def provider_choices() -> dict[str, list[str]]:
 # Advanced deployments (vertex/azure/token_command) are hand-edited per docs/config.md.
 PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "anthropic": {"api_format": "anthropic"},
+    "chatgpt": {"api_format": "chatgpt"},
     "openai": {"api_format": "openai", "base_url": "https://api.openai.com/v1"},
     "openrouter": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
     "ollama": {"api_format": "openai", "base_url": "http://localhost:11434/v1"},

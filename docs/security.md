@@ -38,7 +38,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 **Does not hold**
 
 - The agent process's own egress is unbounded.
-  agent6 reaches the configured providers, and nothing stops the process reaching elsewhere.
+  agent6 reaches the configured providers (each `[providers.*].base_url` host, plus a chatgpt provider's `oauth_issuer` for token grants), and nothing stops the process reaching elsewhere.
   A jailed command's egress is bounded ([Network](#5-network)).
 - On `hardened`, a command can hand work to a user daemon already running (tmux, `systemd --user`): unix sockets have no Landlock hook and stay nameable without a mount namespace.
   `strict` does not expose them.
@@ -300,6 +300,8 @@ Under `none` isolation nothing is enforced or refused.
 - They are absent from transcripts, redacted in `config show`, and masked from the jail: the config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
 - `agent6 connect` prompts locally (`getpass`) and writes config and secrets.
   It makes one read-only `GET` to the provider's key endpoint to confirm auth (status only; `--no-verify` skips it) and executes nothing a remote returns.
+- `agent6 connect chatgpt` is a PKCE OAuth sign-in: a browser hits the `oauth_issuer` authorize page, the code returns on `localhost:1455` (or is pasted, state-checked either way), and the token exchange and refreshes `POST` only to `<oauth_issuer>/oauth/token`.
+  The resulting tokens live in `secrets.toml` under the same `0600` rules; the same executes-nothing rule holds.
 
 ### 9. State and locks
 

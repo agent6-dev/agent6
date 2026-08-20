@@ -4,24 +4,43 @@
 
 from __future__ import annotations
 
+import contextlib
 import getpass
+import http.server
+import os
 import re
+import secrets as pysecrets
 import sys
+import threading
+import time
+import webbrowser
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
 from agent6.config import (
     AnthropicProviderEntry,
+    ChatGPTProviderEntry,
     OpenAIProviderEntry,
     ProviderEntry,
     validate_base_url,
 )
-from agent6.config.layer import repo_config_path_for
+from agent6.config.layer import load_effective, repo_config_path_for
 from agent6.config.write import PROVIDER_DEFAULTS, ConfigLeafValue, set_config_leaves
 from agent6.models.cache import probe_provider_key
 from agent6.paths import global_config_path
-from agent6.secrets import SecretsError, save_secret
+from agent6.providers.chatgpt_oauth import (
+    CALLBACK_PORT,
+    authorize_url,
+    exchange_code,
+    parse_callback,
+    pkce_pair,
+    plan_type_of,
+    tokens_from_grant,
+)
+from agent6.providers.types import ProviderError
+from agent6.secrets import SecretsError, save_oauth_tokens, save_secret
 
 
 def _prompt_api_key(name: str) -> str:
@@ -141,6 +160,160 @@ def _verify_key(*, api_format: str, base_url: str, api_key: str) -> None:
         )
 
 
+class _CallbackServer:
+    """One-shot localhost receiver for the OAuth redirect.
+
+    Binds 127.0.0.1:1455 (the client registration pins the port) and serves
+    until the `/auth/callback` hit arrives; every other path 404s. The
+    authorization code is held in memory only, never logged.
+    """
+
+    def __init__(self, state: str, *, port: int = CALLBACK_PORT) -> None:
+        self._code: str | None = None
+        self._got = threading.Event()
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # BaseHTTPRequestHandler API name
+                parts = urlsplit(self.path)
+                if parts.path != "/auth/callback":
+                    self.send_error(404)
+                    return
+                try:
+                    outer._code = parse_callback(parts.query, state=state)
+                    body = b"<html><body>Signed in. Return to the terminal.</body></html>"
+                    status = 200
+                except ValueError as exc:
+                    body = f"<html><body>{exc}</body></html>".encode()
+                    status = 400
+                self.send_response(status)
+                self.send_header("content-type", "text/html")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                if status == 200:
+                    outer._got.set()
+
+            def log_message(self, format: str, *args: object) -> None:
+                del format, args  # silent: the code must not reach the terminal
+
+        self._server = http.server.HTTPServer(("127.0.0.1", port), Handler)
+        self._thread = threading.Thread(
+            target=self._server.serve_forever, name="agent6-oauth-callback", daemon=True
+        )
+        self._thread.start()
+
+    @property
+    def port(self) -> int:
+        return int(self._server.server_address[1])
+
+    def wait(self, timeout_s: float) -> str | None:
+        """The code, or None on timeout. Polls so Ctrl-C lands promptly."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if self._got.wait(0.25):
+                return self._code
+        return None
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+
+def _gui_browser_available() -> bool:
+    """Auto-open the sign-in URL only where a GUI browser can take it.
+
+    On a display-less Linux box `webbrowser.open` falls back to a console
+    browser (w3m/lynx), which takes over the very terminal the sign-in
+    prompt lives on; there the printed URL is the flow.
+    """
+    if sys.platform in ("darwin", "win32"):
+        return True
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _chatgpt_oauth_fields(name: str) -> tuple[str, str]:
+    """The (issuer, client_id) to sign in with: the configured entry's when
+    `[providers.<name>]` is already a chatgpt block, else the defaults."""
+    with contextlib.suppress(Exception):
+        entry = load_effective(Path.cwd()).config.providers.get(name)
+        if isinstance(entry, ChatGPTProviderEntry):
+            return entry.oauth_issuer, entry.oauth_client_id
+    fresh = ChatGPTProviderEntry(api_format="chatgpt")
+    return fresh.oauth_issuer, fresh.oauth_client_id
+
+
+def _chatgpt_sign_in(name: str) -> int:
+    """The ChatGPT OAuth sign-in: browser + localhost callback, paste fallback.
+
+    Never executes anything the remote returns; the only inputs read back are
+    the authorization code (state-checked) and the token JSON.
+    """
+    issuer, client_id = _chatgpt_oauth_fields(name)
+    verifier, challenge = pkce_pair()
+    state = pysecrets.token_urlsafe(24)
+    url = authorize_url(issuer, client_id, challenge=challenge, state=state)
+    print("Open this URL to sign in with your ChatGPT account:\n\n  " + url + "\n")
+
+    code: str | None = None
+    server: _CallbackServer | None = None
+    if sys.stdin.isatty():
+        try:
+            server = _CallbackServer(state)
+        except OSError as exc:
+            print(f"(no local callback: port {CALLBACK_PORT} unavailable: {exc})")
+    if server is not None:
+        if _gui_browser_available():
+            with contextlib.suppress(Exception):
+                webbrowser.open(url)
+        print(f"Waiting for the sign-in redirect on localhost:{CALLBACK_PORT}")
+        print("(Ctrl-C to paste the callback URL by hand instead)")
+        try:
+            code = server.wait(timeout_s=300.0)
+        except KeyboardInterrupt:
+            print()
+        finally:
+            server.close()
+    if code is None:
+        try:
+            pasted = input("Paste the callback URL the browser landed on: ").strip()
+        except EOFError:
+            print("ERROR: no callback input.", file=sys.stderr)
+            return 2
+        try:
+            code = parse_callback(pasted, state=state)
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+
+    try:
+        grant = exchange_code(issuer, client_id, code=code, verifier=verifier)
+    except ProviderError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    tokens = tokens_from_grant(grant)
+    try:
+        saved = save_oauth_tokens(name, tokens)
+    except SecretsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    plan = plan_type_of(grant)
+    print(f"Signed in{f' ({plan} plan)' if plan else ''}; tokens saved to {saved} (0600).")
+    if not tokens.account_id:
+        print(
+            "WARNING: the sign-in carried no ChatGPT account id; runs will refuse until a"
+            " sign-in with a ChatGPT plan succeeds.",
+            file=sys.stderr,
+        )
+    print(
+        "\nNote: whether these conversations train OpenAI's models follows the ChatGPT\n"
+        "account's own data controls (Settings > Data controls > 'Improve the model for\n"
+        "everyone'); agent6 cannot change that setting, and it never sends feedback or\n"
+        "ratings, which would opt those turns in regardless of it."
+    )
+    return 0
+
+
 def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  # noqa: PLR0911, PLR0912
     """Interactively add a provider + API key.
 
@@ -160,13 +333,14 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
     if not api_format:
         try:
             api_format = (
-                input(f"API format for {name!r} [anthropic/openai]: ").strip() or "anthropic"
+                input(f"API format for {name!r} [anthropic/openai/chatgpt]: ").strip()
+                or "anthropic"
             )
         except EOFError:
             return 2
-    if api_format not in ("anthropic", "openai"):
+    if api_format not in ("anthropic", "openai", "chatgpt"):
         print(
-            f"ERROR: unknown api_format {api_format!r} (expected anthropic or openai).",
+            f"ERROR: unknown api_format {api_format!r} (expected anthropic, openai, or chatgpt).",
             file=sys.stderr,
         )
         return 2
@@ -178,10 +352,16 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
 
-    try:
-        api_key = _prompt_api_key(name)
-    except EOFError:
+    if api_format == "chatgpt":
+        rc = _chatgpt_sign_in(name)
+        if rc != 0:
+            return rc
         api_key = ""
+    else:
+        try:
+            api_key = _prompt_api_key(name)
+        except EOFError:
+            api_key = ""
     if api_key:
         try:
             saved = save_secret(name, api_key)
@@ -200,7 +380,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
             f"  [providers.{name}] is written but not usable yet; rerun"
             " `agent6 connect`\n  (or set the api_key_env var) before `agent6 run`."
         )
-    else:
+    elif api_format == "openai":
         print("No key entered; assuming an unauthenticated/local endpoint.")
 
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()

@@ -99,6 +99,21 @@ api_key_env = "AZURE_OPENAI_API_KEY"
 extra_query = { "api-version" = "2024-06-01" }
 ```
 
+### ChatGPT subscription (`api_format = "chatgpt"`)
+
+Uses a ChatGPT plan (Plus/Pro/Business) instead of an API key, over the Codex Responses backend.
+
+```bash
+agent6 connect chatgpt      # browser sign-in (paste fallback when headless)
+agent6 model worker chatgpt gpt-5-codex
+```
+
+- `agent6 connect chatgpt` runs a PKCE OAuth sign-in against `oauth_issuer` and stores the tokens in `secrets.toml` (0600); they refresh automatically.
+- Usage draws on the plan's own limits; cost meters show $0 (nothing is billed per token) while token counts still feed the budget caps.
+- Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
+  agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
+- Model names come from the ChatGPT plan (e.g. the current gpt-5 Codex family); agent6 does not pin a list.
+
 ### OpenRouter routing and caching (`extra_body`)
 
 OpenRouter's default routing is not deterministic, so prompt caching may or may not engage call-to-call.

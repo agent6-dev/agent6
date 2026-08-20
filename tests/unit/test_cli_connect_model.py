@@ -497,3 +497,114 @@ def test_config_path_runs(iso: Path, capsys: pytest.CaptureFixture[str]) -> None
     out = capsys.readouterr().out
     assert "global config" in out
     assert "secrets" in out
+
+
+def _grant_jwt() -> str:
+    import base64
+    import json as _json
+
+    claims = {
+        "https://api.openai.com/auth": {
+            "chatgpt_account_id": "acct-7",
+            "chatgpt_plan_type": "plus",
+        }
+    }
+    payload = base64.urlsafe_b64encode(_json.dumps(claims).encode()).rstrip(b"=").decode()
+    return f"h.{payload}.s"
+
+
+class _TokenResp:
+    status_code = 200
+    text = ""
+
+    @staticmethod
+    def json() -> dict[str, object]:
+        return {
+            "access_token": _grant_jwt(),
+            "refresh_token": "RT1",
+            "expires_in": 3600,
+            "id_token": "",
+        }
+
+
+def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Headless connect: paste the callback URL, exchange the code, store
+    tokens 0600, write the provider block, print the training-data notice.
+    Never executes a subprocess and never opens a browser."""
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli.connect.pysecrets.token_urlsafe", lambda n=24: "STATE1")
+    exchanges: list[dict[str, str]] = []
+
+    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _TokenResp:
+        exchanges.append(data)
+        return _TokenResp()
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", fake_post)
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=STATE1",
+    )
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", opened.append)
+    execs: list[object] = []
+
+    def record_run(*args: object, **kwargs: object) -> None:
+        execs.append(args)
+
+    monkeypatch.setattr("subprocess.run", record_run)
+
+    rc = main(["connect", "chatgpt"])
+    assert rc == 0
+    assert opened == [] and execs == []
+    assert exchanges[0]["grant_type"] == "authorization_code"
+    assert exchanges[0]["code"] == "C1"
+
+    sp = tmp_path / "g" / "secrets.toml"
+    assert stat.S_IMODE(sp.stat().st_mode) == 0o600
+    tokens = secrets.load_oauth_tokens("chatgpt")
+    assert tokens is not None and tokens.account_id == "acct-7"
+
+    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    assert "[providers.chatgpt]" in gc and 'api_format = "chatgpt"' in gc
+    out = capsys.readouterr().out
+    assert "Signed in (plus plan)" in out
+    assert "Data controls" in out and "never sends feedback" in out
+
+
+def test_connect_chatgpt_state_mismatch_refuses(iso: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli.connect.pysecrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=EVIL",
+    )
+    rc = main(["connect", "chatgpt"])
+    assert rc == 2
+    assert secrets.load_oauth_tokens("chatgpt") is None
+
+
+def test_oauth_callback_server_round_trip() -> None:
+    """The localhost receiver answers the redirect, hands over the code, and
+    404s every other path; a state-mismatch hit is a 400, not a capture."""
+    import urllib.error
+    import urllib.request
+
+    from agent6.ui.cli.connect import _CallbackServer  # pyright: ignore[reportPrivateUsage]
+
+    srv = _CallbackServer("S1", port=0)
+    try:
+        base = f"http://127.0.0.1:{srv.port}"
+        with pytest.raises(urllib.error.HTTPError) as e404:
+            urllib.request.urlopen(f"{base}/favicon.ico", timeout=5)
+        assert e404.value.code == 404
+        with pytest.raises(urllib.error.HTTPError) as e400:
+            urllib.request.urlopen(f"{base}/auth/callback?code=X&state=EVIL", timeout=5)
+        assert e400.value.code == 400
+        assert srv.wait(timeout_s=0.3) is None
+        with urllib.request.urlopen(f"{base}/auth/callback?code=OK&state=S1", timeout=5) as resp:
+            assert resp.status == 200
+        assert srv.wait(timeout_s=5.0) == "OK"
+    finally:
+        srv.close()
