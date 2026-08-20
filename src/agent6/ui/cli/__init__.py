@@ -500,7 +500,7 @@ def _dispatch_web(args: argparse.Namespace) -> int:
 
 def _dispatch_prompt(args: argparse.Namespace) -> int:
     if args.prompt_command == "show":
-        return _cmd_prompt_show(args.config, mode=args.mode)
+        return _cmd_prompt_show(args.config, mode=args.mode, as_json=args.json)
     raise AssertionError("unreachable")  # pragma: no cover -- prompt subparser is required
 
 

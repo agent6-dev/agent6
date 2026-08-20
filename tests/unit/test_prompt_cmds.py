@@ -81,3 +81,30 @@ def test_prompt_show_includes_recorded_memories(
     assert _cmd_prompt_show(None, mode="run") == 0
     out = capsys.readouterr().out
     assert "the deploy script needs sudo" in out
+
+
+def test_prompt_show_prints_the_tools_and_the_first_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The system prompt is half of what the model receives: the tool
+    definitions travel in the API's `tools` field and the task rides a
+    first-message header. `prompt show` printed the system prompt alone, so
+    an operator reading it saw no run_command guidance and judged the model
+    blind. It prints all three now, and `--json` the same as one object,
+    with the tool list this config actually exposes."""
+    import json
+
+    repo = _git_repo(tmp_path)
+    _isolate(tmp_path, monkeypatch, repo)
+    assert _cmd_prompt_show(None, mode="run") == 0
+    out = capsys.readouterr().out
+    assert "=== tools (" in out and "--- run_command" in out and "--- finish_session" in out
+    assert "=== first user message ===" in out and "call `finish_session` when done" in out
+
+    assert _cmd_prompt_show(None, mode="ask", as_json=True) == 0
+    exchange = json.loads(capsys.readouterr().out)
+    names = [t["name"] for t in exchange["tools"]]
+    assert "read_file" in names and "agent6_docs" in names
+    assert "apply_edit" not in names and "finish_session" not in names  # ask has no edit/finish
+    assert set(exchange) == {"mode", "system", "tools", "first_message", "mcp_tools_pending"}
+    assert all("input_schema" in t and "description" in t for t in exchange["tools"])

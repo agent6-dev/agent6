@@ -559,29 +559,40 @@ def mode_tools(mode: str) -> ModeTools:
     )
 
 
-def _strip_titles(node: Any) -> Any:
+def _strip_titles(node: Any, *, keys_are_names: bool = False) -> Any:
     """Drop pydantic's auto "title" keys: they duplicate the field name in
     Title Case and carry no signal on the wire (~1.6k chars across the
-    surface)."""
+    surface). Only schema-level titles go: inside a `properties` (or `$defs`)
+    map the keys are field names, and a field NAMED title (add_task's) stays."""
     if isinstance(node, dict):
-        return {k: _strip_titles(v) for k, v in node.items() if k != "title"}
+        out: dict[str, Any] = {}
+        for k, v in node.items():
+            if k == "title" and not keys_are_names and isinstance(v, str):
+                continue
+            out[k] = _strip_titles(v, keys_are_names=k in ("properties", "$defs"))
+        return out
     if isinstance(node, list):
         return [_strip_titles(v) for v in node]
     return node
 
 
+def wire_schema(cls: type[_ToolInput]) -> dict[str, Any]:
+    """The JSON schema of *cls* as the model receives it: pydantic's, minus the
+    title noise, with "type" present (the API wants the schema bare, not
+    wrapped). The one builder behind the loop's tool list and the descriptor
+    dump below, so what tests pin is what the model gets."""
+    schema = _strip_titles(cls.model_json_schema())
+    schema.setdefault("type", "object")
+    return schema
+
+
 def schemas_as_provider_tools() -> list[dict[str, Any]]:
     """Emit Anthropic-API-shape tool descriptors. (kept dict-typed to avoid circular import)"""
-    out: list[dict[str, Any]] = []
-    for cls in ALL_TOOLS:
-        schema = _strip_titles(cls.model_json_schema())
-        # Anthropic wants the schema directly, not wrapped, with "type" present.
-        schema.setdefault("type", "object")
-        out.append(
-            {
-                "name": cls.TOOL_NAME,
-                "description": cls.TOOL_DESCRIPTION,
-                "input_schema": schema,
-            }
-        )
-    return out
+    return [
+        {
+            "name": cls.TOOL_NAME,
+            "description": cls.TOOL_DESCRIPTION,
+            "input_schema": wire_schema(cls),
+        }
+        for cls in ALL_TOOLS
+    ]

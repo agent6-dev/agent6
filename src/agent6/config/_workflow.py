@@ -254,7 +254,7 @@ class PromptConfig(BaseModel):
             "Path of a file that replaces run mode's built-in base system prompt (the dynamic "
             "blocks still append). The tool contracts become yours to state; a file missing the "
             "core tool names is warned about at startup. Empty: the built-in base. `agent6 prompt "
-            "show` prints the assembled prompt."
+            "show` prints the assembled prompt, the tool definitions, and the first message."
         ),
     )
     # Include the structural-prior blocks in the run-mode <repo-priors>: hot

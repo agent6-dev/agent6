@@ -130,3 +130,35 @@ def test_add_task_parent_id_carries_the_ulid_constraint() -> None:
         DagAddTaskInput(title="t", parent_id="")
     with pytest.raises(ValidationError):
         DagAddTaskInput(title="t", parent_id="short")
+
+
+def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> None:
+    """The loop's tool list and the descriptor dump share one schema builder;
+    it drops pydantic's schema-level "title" noise and nothing else. The old
+    stripper dropped every "title" key, add_task's `title` FIELD included (the
+    descriptor dump alone had it, so tests pinned a schema the model never
+    saw and the model would have seen add_task without its one required
+    field once the loop shared it)."""
+    from agent6.tools.schema import DagAddTaskInput, ReadFileInput, wire_schema
+    from agent6.workflows._toolset import tool_definitions
+
+    add_task = wire_schema(DagAddTaskInput)
+    assert "title" in add_task["properties"] and add_task["required"] == ["title"]
+    assert "title" not in add_task and "title" not in add_task["properties"]["title"]
+    read_file = wire_schema(ReadFileInput)
+    assert "title" not in read_file["properties"]["path"]
+
+    class _Dispatcher:
+        def available_tool_names(self) -> tuple[str, ...]:
+            return ("read_file",)
+
+        def skills_available(self) -> bool:
+            return False
+
+        def mcp_descriptors(self) -> tuple[object, ...]:
+            return ()
+
+    definitions = tool_definitions(_Dispatcher(), mode="run")  # type: ignore[arg-type]
+    by_name = {d.name: d for d in definitions}
+    assert by_name["read_file"].input_schema == read_file
+    assert by_name["add_task"].input_schema == add_task

@@ -216,16 +216,22 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         prompt_sub,
         "show",
         help=(
-            "Print the exact system prompt the worker receives: the static"
-            " structural blocks plus the per-repo <repo-priors> block (repo map"
-            " + AGENTS.md + recent commits)."
+            "Print everything the model receives on a run's first call here: the"
+            " system prompt (static blocks + the per-repo <repo-priors> block), the"
+            " tool definitions this config exposes (the API's `tools` field), and"
+            " the first user message around the task."
         ),
     )
     prompt_show.add_argument(
         "--mode",
         choices=("run", "plan", "ask", "machine", "agent"),
         default="run",
-        help="Which mode's prompt to assemble (default: run).",
+        help="Which mode's exchange to assemble (default: run).",
+    )
+    prompt_show.add_argument(
+        "--json",
+        action="store_true",
+        help="One JSON object (system, tools, first_message) instead of text.",
     )
 
     _add_resume_parser(sub)

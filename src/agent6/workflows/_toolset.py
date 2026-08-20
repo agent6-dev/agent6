@@ -14,7 +14,7 @@ from typing import Any, Literal
 from agent6.providers import ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.results import ToolResult
-from agent6.tools.schema import UseSkillInput, mode_tools
+from agent6.tools.schema import UseSkillInput, mode_tools, wire_schema
 from agent6.types import session_kind
 from agent6.workflows._review import ReviewDispatch
 
@@ -56,13 +56,11 @@ def tool_definitions(
             # tool rather than offer one that can only error, matching the
             # LSP-gating pattern.
             continue
-        schema = cls.model_json_schema()
-        schema.setdefault("type", "object")
         out.append(
             ToolDefinition(
                 name=cls.TOOL_NAME,
                 description=cls.TOOL_DESCRIPTION,
-                input_schema=schema,
+                input_schema=wire_schema(cls),
             )
         )
     # Any MCP tools the dispatcher's manager discovered get
