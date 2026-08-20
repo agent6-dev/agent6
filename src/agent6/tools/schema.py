@@ -143,7 +143,11 @@ class EditPair(BaseModel):
         # nowhere depending on str.count semantics); reject it loud so the
         # model gets a clear error instead of a silent corruption.
         if self.kind == "replace" and self.old_string == "":
-            raise ValueError("old_string must be non-empty for kind='replace'")
+            raise ValueError(
+                "old_string must be non-empty for kind='replace' (to add at the end of a"
+                " file, use its last line as old_string; kind='overwrite' rewrites the file"
+                " whole)"
+            )
         # A whole-file kind ignores old_string; reject a non-empty value to
         # catch the common LLM mistake of pasting context into the wrong field.
         if self.kind in WHOLE_FILE_KINDS and self.old_string != "":

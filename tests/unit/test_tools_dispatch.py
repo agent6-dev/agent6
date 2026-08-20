@@ -712,9 +712,10 @@ def test_invalid_arguments_read_as_one_line(tmp_path: Path) -> None:
             "apply_edit",
             {"path": "f.py", "edits": [{"old_string": "", "new_string": "y\n"}]},
         )
-    assert str(caught.value) == (
-        "invalid arguments: edits.0: old_string must be non-empty for kind='replace'"
+    assert str(caught.value).startswith(
+        "invalid arguments: edits.0: old_string must be non-empty for kind='replace' (to add"
     )
+    assert "\n" not in str(caught.value)
     with pytest.raises(ToolError, match=r"^invalid arguments: edits: Field required$"):
         d.dispatch("apply_edit", {"path": "f.py"})
 
