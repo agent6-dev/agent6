@@ -18,7 +18,7 @@ from agent6.config.layer import load_effective, repo_config_path_for
 from agent6.config.write import ConfigLeafValue, set_config_table
 from agent6.models.choices import provider_model_choices
 from agent6.paths import global_config_path
-from agent6.secrets import resolve_api_key
+from agent6.secrets import load_oauth_tokens, resolve_api_key
 
 
 def _safe_input(prompt: str) -> str | None:
@@ -134,6 +134,14 @@ def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
         )
         return
     if entry.auth_style == "none" or entry.token_command:
+        return
+    if entry.api_format == "chatgpt":
+        if load_oauth_tokens(provider) is None:
+            print(
+                f"note: provider {provider!r} has no ChatGPT sign-in;"
+                " run `agent6 connect chatgpt` before using it.",
+                file=sys.stderr,
+            )
         return
     if resolve_api_key(provider, entry.api_key_env) is None:
         remedy = (
