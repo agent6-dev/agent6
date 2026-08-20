@@ -163,8 +163,8 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     resume_p.add_argument(
         "--force",
         action="store_true",
-        help="Resume even if the workspace HEAD diverged from the run's last snapshot "
-        "(a rebase, reset, or a commit on another line; plain forward movement resumes "
+        help="Resume even if the run's commit chain diverged from its last snapshot "
+        "(a rewritten or replaced agent6/<id> ref; the run's own forward commits resume "
         "without this flag).",
     )
     resume_p.add_argument(
