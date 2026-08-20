@@ -82,3 +82,31 @@ def test_styled_status_colors_stale_red_and_parked_yellow() -> None:
     assert "\x1b[1;31m" in stale  # the error level, like failed: the run header + web pill agree
     parked, _ = styled_status("parked", "resume to start", color=True)
     assert "\x1b[33m" in parked  # yellow: attention, not a neutral done
+
+
+def test_runs_list_columns_stay_aligned_with_a_machine_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `machine create` draft lists with mode `machine`, wider than the
+    fixed four-column mode cell; every row's cost column must still start
+    where the header's does."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _run(_runs_dir(repo), "runny-one-AAAAAA")
+    draft = _runs_dir(repo).parent / "machines" / "drafty-two-BBBBBB"
+    draft.mkdir(parents=True)
+    (draft / "manifest.json").write_text(json.dumps({"mode": "machine"}), encoding="utf-8")
+    (draft / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "machine", "user_task": "draft it"})
+        + "\n"
+        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + "\n",
+        encoding="utf-8",
+    )
+    assert _cmd_list() == 0
+    lines = capsys.readouterr().out.splitlines()
+    id_col = lines[0].index("  id  ") + 2
+    assert lines[1].index("drafty-two-BBBBBB") == id_col
+    assert lines[2].index("runny-one-AAAAAA") == id_col

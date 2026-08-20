@@ -105,13 +105,17 @@ def _cmd_list() -> int:
             )
         )
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
+    mode_w = max(4, *(len(r[3]) for r in rows))  # a `machine` draft is wider than run/plan/ask
     id_w = max(2, *(len(r[5]) for r in rows))
     print(
-        f"{'updated':<11}  {'status':<{status_w}}  {'mode':<4}  {'cost':<8}  {'id':<{id_w}}  task"
+        f"{'updated':<11}  {'status':<{status_w}}  {'mode':<{mode_w}}  {'cost':<8}"
+        f"  {'id':<{id_w}}  task"
     )
     for when, styled, plain, mode, cost, session_id, task in rows:
         pad = " " * (status_w - len(plain))
-        print(f"{when:<11}  {styled}{pad}  {mode:<4}  {cost:<8}  {session_id:<{id_w}}  {task}")
+        print(
+            f"{when:<11}  {styled}{pad}  {mode:<{mode_w}}  {cost:<8}  {session_id:<{id_w}}  {task}"
+        )
     return 0
 
 
