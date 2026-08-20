@@ -78,3 +78,14 @@ def test_resolve_reference_into_non_record_raises() -> None:
 def test_unbalanced_braces_is_error() -> None:
     with pytest.raises(TemplateError):
         parse_template("{{ a }} and {{ b")
+
+
+def test_an_expression_in_an_interpolation_is_refused_naming_the_grammar() -> None:
+    """`{{ not result.passed }}` is the shape a drafting model keeps trying; the
+    error states what an interpolation holds (one dotted name, at most one
+    filter) so the fix is in the message, not the docs."""
+    with pytest.raises(TemplateError) as exc:
+        parse_template("{{ not result.passed }}")
+    msg = str(exc.value)
+    assert "'not result.passed' is not a valid reference" in msg
+    assert "one dotted name" in msg and "json, len" in msg and "no operators" in msg

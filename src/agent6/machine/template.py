@@ -97,7 +97,12 @@ def _parse_interp(body: str, whole: str) -> Interp:
     else:
         raise TemplateError(f"at most one filter is allowed per interpolation in {whole!r}")
     if not _REF_RE.match(ref_text):
-        raise TemplateError(f"{ref_text!r} is not a valid reference in {whole!r}")
+        raise TemplateError(
+            f"{ref_text!r} is not a valid reference in {whole!r}: an interpolation holds"
+            " one dotted name (a variable, or result.<field>) plus at most one filter"
+            f" ({', '.join(sorted(FILTERS))}); no operators or literals (branch on the"
+            " captured value instead)"
+        )
     segments = ref_text.split(".")
     return Interp(ref=Reference(root=segments[0], path=tuple(segments[1:])), filt=filt)
 
