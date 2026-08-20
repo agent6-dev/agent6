@@ -57,6 +57,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6.app.fork import undo_fork
 from agent6.app.reporter import Reporter
+from agent6.config.layer import available_preset_names
 from agent6.directive import parse_compact
 from agent6.models.registry import context_window
 from agent6.sessions.ipc import (
@@ -76,7 +77,9 @@ from agent6.ui.spawn import agent6_argv, run_cli_capture, spawn_and_locate, spaw
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.conversation import (
     RUN_MENU,
+    ComposerMode,
     ConversationScreen,
+    ResumePreset,
     SteerInput,
     SteerSuggest,
     open_history_search,
@@ -271,8 +274,9 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         *menu_bindings(MENUS),
     ]
 
-    def __init__(self) -> None:
+    def __init__(self, *, presets: list[str] | None = None) -> None:
         super().__init__()
+        self._presets = presets if presets is not None else []
         # Select a task in the #plan tree to filter tools/log/diff to it; re-select
         # to clear. _log_filter tracks what the RichLog currently shows so a filter
         # change forces one full re-render (it is append-only otherwise).
@@ -340,6 +344,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             with _ScrollPane(id="diff"):
                 yield Static("", id="diff-body")
         yield SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
+        yield ResumePreset(self._presets, id="dash-preset")  # shown while the composer resumes
         yield SteerInput(id="dash-input")
         yield Footer()
 
@@ -443,8 +448,12 @@ class DashboardScreen(ScreenChrome, Screen[None]):
 
     def on_screen_resume(self) -> None:
         # The conversation stamps its own sub_title; re-stamp ours when the
-        # toggle (or a closing viewer) brings the dashboard back on top.
+        # toggle (or a closing viewer) brings the dashboard back on top, and
+        # repaint the light parts (the composer's mode and preset picker can
+        # have moved while the conversation was on top).
         self.app.sub_title = self._tui.run_title()
+        with contextlib.suppress(NoMatches):
+            self.render_heartbeat()
 
     # --- command palette ---------------------------------------------
 
@@ -499,9 +508,9 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         s = tui.state
         # Relabel every paint: mode flips on finished, and the context readout
         # in the subtitle moves with the run.
-        self.query_one("#dash-input", SteerInput).set_mode(
-            mode="steer" if tui.session_controllable() else "resume", ctx_pct=tui.context_pct()
-        )
+        mode: ComposerMode = "steer" if tui.session_controllable() else "resume"
+        self.query_one("#dash-input", SteerInput).set_mode(mode=mode, ctx_pct=tui.context_pct())
+        self.query_one("#dash-preset", ResumePreset).show(mode == "resume")
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
         # the run is active. Silent thinking / the resume gap now visibly tick.
@@ -800,8 +809,14 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         # (provider, model) -> context window (None = unknown); the registry
         # lookup can touch the model-listing cache file, so ask it once.
         self._ctx_windows: dict[tuple[str, str], int | None] = {}
-        self._dash = DashboardScreen()
-        self._conv = ConversationScreen(self.logs_path, title=self.screen_title, primary=True)
+        # The preset a resume from a composer continues under ("" = as
+        # recorded); both run views' pickers read and write it.
+        self.resume_preset = ""
+        presets = available_preset_names(Path.cwd(), config_path)
+        self._dash = DashboardScreen(presets=presets)
+        self._conv = ConversationScreen(
+            self.logs_path, title=self.screen_title, primary=True, presets=presets
+        )
 
     def _task_lead(self) -> str:
         """What names this run in a title: the TASK (clipped), the pet name
@@ -1099,10 +1114,15 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         state clear; a pre-seed here would be wiped by that clear). The new
         session's steer poll injects the text at its first boundary."""
         err = spawn_detached_resume(
-            Path.cwd(), self.session_dir.name, steer=text, config_path=self.config_path
+            Path.cwd(),
+            self.session_dir.name,
+            steer=text,
+            preset=self.resume_preset,
+            config_path=self.config_path,
         )
+        under = f" under preset {self.resume_preset}" if self.resume_preset else ""
         self.notify(
-            err or f"resuming {self.session_dir.name} with your instruction…",
+            err or f"resuming {self.session_dir.name}{under} with your instruction…",
             severity="error" if err else "information",
         )
 

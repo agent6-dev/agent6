@@ -31,13 +31,13 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.geometry import Offset
 from textual.message import Message
 from textual.screen import Screen
 from textual.timer import Timer
-from textual.widgets import Footer, Static, TextArea
+from textual.widgets import Footer, Select, Static, TextArea
 
 from agent6.directive import STEER_COMMANDS
 from agent6.sessions.ipc import clear_steer_answer, request_steer, write_steer_answer
@@ -241,6 +241,54 @@ class _JumpButton(Static):
 
 _INPUT_MAX_ROWS = 6  # the steer bar grows to this many rows, then scrolls internally
 
+# The preset picker's first entry: "" => resume under the preset the run
+# recorded (no --preset).
+RECORDED_PRESET_LABEL = "(as recorded)"
+
+
+class ResumePreset(Horizontal):
+    """The row above a resume composer: pick the config preset the next leg
+    continues under (`agent6 resume --preset`). A preset touches any setting,
+    so it changes only between legs; the picker shows only while the composer
+    resumes, and the choice lives on the host app (`resume_preset`), so the
+    conversation and the dashboard composers agree."""
+
+    DEFAULT_CSS = """
+    ResumePreset { display: none; height: 3; padding: 0 1; }
+    ResumePreset .resume-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
+    ResumePreset Select { width: 1fr; max-width: 40; }
+    """
+
+    def __init__(self, presets: list[str], **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._presets = presets
+
+    def compose(self) -> ComposeResult:
+        yield Static("continue under preset", classes="resume-label")
+        yield Select(
+            [(RECORDED_PRESET_LABEL, ""), *((p, p) for p in self._presets)],
+            value="",
+            allow_blank=False,
+        )
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        setattr(self.app, "resume_preset", str(event.value))  # noqa: B010
+
+    def show(self, shown: bool) -> None:
+        if self.display != shown:
+            self.display = shown
+        if shown:
+            # After the refresh: on the first paint the Select is not mounted
+            # yet, and a value written before its mount leaves its label blank.
+            self.call_after_refresh(self._sync)
+
+    def _sync(self) -> None:
+        wanted = getattr(self.app, "resume_preset", "")
+        for picker in self.query(Select):
+            if picker.value != wanted and wanted in ("", *self._presets):
+                picker.value = wanted
+
+
 # The run-control menu, shared verbatim by the two run views (this primary
 # conversation and the dashboard) so they cannot drift. Every action resolves on
 # the Agent6TUI app (the menu bar's dispatcher falls back to app actions).
@@ -438,15 +486,22 @@ class ConversationScreen(ScreenChrome, Screen[None]):
     )
 
     def __init__(
-        self, logs_path: Path, *, title: Callable[[str], str], primary: bool = False
+        self,
+        logs_path: Path,
+        *,
+        title: Callable[[str], str],
+        primary: bool = False,
+        presets: list[str] | None = None,
     ) -> None:
         """*primary* marks the run app's main screen (Esc leaves the app, Ctrl+D
         toggles the dashboard); pushed read-only viewers (the hub, the dashboard)
-        leave it False, where Esc just dismisses."""
+        leave it False, where Esc just dismisses. *presets* are the config
+        presets a resume may continue under (the primary view's picker)."""
         super().__init__()
         self._logs_path = logs_path
         self._title = title
         self._primary = primary
+        self._presets = presets if presets is not None else []
         # The instance's menus (MENUS stays the class-level viewer shape, which
         # menu_bindings derives the Alt+letter openers from -- same titles).
         self._menus: tuple[Menu, ...] = self.MENUS
@@ -491,6 +546,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
                 yield Static(id="conv-tail", classes="conv-chunk")
             yield _ChromeStatic("", id="conv-live")  # chrome: not part of a selection
         yield SteerSuggest(id="conv-suggest")  # command hints while typing `/…`
+        yield ResumePreset(self._presets, id="conv-preset")  # shown while the composer resumes
         yield SteerInput(id="conv-input")  # steer bar (hidden unless the run is live)
         yield _JumpButton(_JUMP_LABEL, id="conv-jump")  # floats; shown when scrolled up
         yield Footer()  # Footer is ALLOW_SELECT=False in textual already
@@ -730,15 +786,14 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             shown = self._bar_shown()
             if bar.display != shown:  # a same-value write still costs a relayout
                 bar.display = shown
+            mode: ComposerMode = "steer" if self._host_live() else "resume"
+            self.query_one("#conv-preset", ResumePreset).show(shown and mode == "resume")
             if bar.display:
                 if not bar.policy:  # folded once: the manifest does not change mid-run
                     bar.policy = session_policy(self._logs_path.parent).short()
                 pct_fn = getattr(self.app, "context_pct", None)
                 pct = pct_fn() if callable(pct_fn) else None
-                bar.set_mode(
-                    mode="steer" if self._host_live() else "resume",
-                    ctx_pct=pct if isinstance(pct, int) else None,
-                )
+                bar.set_mode(mode=mode, ctx_pct=pct if isinstance(pct, int) else None)
 
     def refresh_liveness(self) -> None:
         """Relabel the composer for a liveness change that came with no event

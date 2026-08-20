@@ -80,7 +80,9 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
 
     spawned: list[tuple[str, str]] = []
 
-    def _fake_resume(_cwd: Path, rid: str, *, steer: str = "", config_path: object = None) -> str:
+    def _fake_resume(
+        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+    ) -> str:
         spawned.append((rid, steer))
         return ""
 
@@ -105,6 +107,53 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
             )
             app.submit_instruction("go ahead")
             assert spawned == [("parked1", "go ahead")]
+
+    asyncio.run(scenario())
+
+
+def test_a_resume_from_the_composer_carries_the_picked_preset(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A run that is not live shows the preset picker above its composer (both
+    views); the pick rides the detached resume as `--preset`, and "(as
+    recorded)" sends none."""
+    from textual.widgets import Select
+
+    from agent6.ui.tui import app as app_mod
+    from agent6.ui.tui.conversation import ResumePreset
+
+    spawned: list[tuple[str, str, str]] = []
+
+    def _fake_resume(
+        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+    ) -> str:
+        spawned.append((rid, steer, preset))
+        return ""
+
+    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+
+    def _presets(_cwd: Path, _cp: object) -> list[str]:
+        return ["quick", "ultra"]
+
+    monkeypatch.setattr(app_mod, "available_preset_names", _presets)
+    _mk_parked(tmp_path / "parked2")
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path / "parked2")
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _wait_for(pilot, lambda: app.screen is app._conv, "the conversation screen")
+            picker = app._conv.query_one("#conv-preset", ResumePreset)
+            await _wait_for(pilot, lambda: picker.display, "the preset picker")
+            picker.query_one(Select).value = "quick"
+            await pilot.pause()
+            assert app.resume_preset == "quick"
+            app.submit_instruction("go ahead")
+            assert spawned == [("parked2", "go ahead", "quick")]
+            # The dashboard's picker shows the same choice.
+            await _open_dash(app, pilot)
+            dash_picker = app._dash.query_one("#dash-preset", ResumePreset)
+            await _wait_for(pilot, lambda: dash_picker.display, "the dashboard's picker")
+            assert dash_picker.query_one(Select).value == "quick"
 
     asyncio.run(scenario())
 

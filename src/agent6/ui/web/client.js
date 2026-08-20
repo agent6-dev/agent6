@@ -708,6 +708,24 @@ function makeComposer(id) {
   const root = el('div', 'composer');
   const ta = el('textarea', 'field');
   const hint = el('div', 'hint');
+  // The preset the next leg continues under (`agent6 resume --preset`): a
+  // preset touches any setting, so it changes only between legs; the picker
+  // shows only while the composer resumes, filled once from the same list the
+  // config editor offers for the `preset` leaf.
+  const presetRow = el('div', 'row');
+  presetRow.style.display = 'none';
+  presetRow.appendChild(el('span', 'sub muted', 'continue under preset'));
+  const preset = el('select', 'field'); preset.style.flex = '0 0 auto'; preset.style.width = 'auto';
+  const asRecorded = el('option', null, '(as recorded)'); asRecorded.value = ''; preset.appendChild(asRecorded);
+  presetRow.appendChild(preset);
+  let presetsFilled = false;
+  const fillPresets = () => {
+    if (presetsFilled) return;
+    presetsFilled = true;
+    getJSON('/api/config/suggest/preset').then(d => {
+      for (const p of (d.values || [])) { const o = el('option', null, p); o.value = p; preset.appendChild(o); }
+    }).catch(() => {});
+  };
   let finished = null; // unknown until the first SSE frame
   // A run the AGENT ended has nothing to continue, so resume takes an
   // instruction or is refused; every other ending resumes bare.
@@ -717,6 +735,8 @@ function makeComposer(id) {
   const models = attachParallelSuggest(ta, root); // the spec token after `/parallel `
   const apply = () => {
     ta.disabled = busy;
+    presetRow.style.display = finished ? '' : 'none';
+    if (finished) fillPresets();
     if (busy) { hint.textContent = 'resuming…'; return; }
     if (finished && needsWork) {
       ta.placeholder = 'what should it do next…';
@@ -732,8 +752,8 @@ function makeComposer(id) {
   const resume = async (text) => {
     busy = true; apply();
     try {
-      await postJSON('/api/session/' + encodeURIComponent(id) + '/resume', { text });
-      toast('resuming the run…');
+      await postJSON('/api/session/' + encodeURIComponent(id) + '/resume', { text, preset: preset.value });
+      toast(preset.value ? 'resuming the run under preset ' + preset.value + '…' : 'resuming the run…');
       // The resume is a detached spawn: wait for it to come LIVE, then re-open
       // the view so the SSE stream and controls come back. Waiting on
       // `finished === false` declared takeover on the first poll, because the
@@ -813,7 +833,7 @@ function makeComposer(id) {
       resume(text);
     }
   };
-  root.appendChild(growGrip(ta)); root.appendChild(ta); root.appendChild(hint);
+  root.appendChild(growGrip(ta)); root.appendChild(presetRow); root.appendChild(ta); root.appendChild(hint);
   // `live` is the dir-aware truth (a parked or stale run is not live even
   // though the fold says unfinished); fall back to the fold for a payload
   // that predates it.

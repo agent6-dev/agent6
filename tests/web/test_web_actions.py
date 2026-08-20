@@ -325,7 +325,14 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     )
     spawned: list[str] = []
 
-    def _spawn(_cwd: Path, _session_id: str, *, steer: str = "", config_path: object = None) -> str:
+    def _spawn(
+        _cwd: Path,
+        _session_id: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        config_path: object = None,
+    ) -> str:
         spawned.append(steer)
         return ""
 

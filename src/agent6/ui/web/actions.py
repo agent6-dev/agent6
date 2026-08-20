@@ -164,10 +164,16 @@ def undo_session(cwd: Path, session_id: str) -> tuple[dict[str, str] | None, str
 
 
 def resume_run(
-    cwd: Path, session_id: str, text: str = "", config_path: Path | None = None
+    cwd: Path,
+    session_id: str,
+    text: str = "",
+    *,
+    preset: str = "",
+    config_path: Path | None = None,
 ) -> tuple[bool, str]:
     """Resume a finished/stopped run detached, optionally seeding *text* as the
-    first steering instruction (the composer's Enter on a finished run). Refused
+    first steering instruction (the composer's Enter on a finished run) and
+    continuing under *preset* (`resume --preset`; "" = as recorded). Refused
     while the run's worker is alive: a live run is steered, not resumed."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
@@ -179,7 +185,9 @@ def resume_run(
         # land on a process nobody is reading and the composer would report
         # "resuming" for a run that never started.
         return False, needs_new_work_refusal(session_id)
-    err = spawn_detached_resume(cwd, session_dir.name, steer=text, config_path=config_path)
+    err = spawn_detached_resume(
+        cwd, session_dir.name, steer=text, preset=preset, config_path=config_path
+    )
     return (err == ""), (err or "resuming")
 
 

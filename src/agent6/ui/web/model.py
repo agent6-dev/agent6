@@ -351,7 +351,8 @@ def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> 
     the TUI config page and CLI TAB completion use: `models.<role>.provider`
     offers the configured provider names, `models.<role>.model` the role's
     provider's model ids (cache-first, refreshed from the live listing; the
-    fetch dials only that operator-configured provider's base_url). Enum leaves
+    fetch dials only that operator-configured provider's base_url), `preset`
+    the preset names (built-ins plus the user's `[presets.*]`). Enum leaves
     already carry their choices in the config payload; everything else (and any
     error) suggests nothing -- suggestions are best-effort, never a failure.
 
@@ -362,6 +363,8 @@ def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> 
     blocks the server on the network."""
     if key == "parallel.models":
         return _parallel_model_suggestions(cwd, config_path)
+    if key == "preset":
+        return available_preset_names(cwd, config_path)
     parts = key.split(".")
     if len(parts) != 3 or parts[0] != "models" or parts[2] not in ("provider", "model"):
         return []
