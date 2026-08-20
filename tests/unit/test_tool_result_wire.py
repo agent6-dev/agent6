@@ -289,7 +289,17 @@ def test_wire_run_command(tmp_path: Path) -> None:
     )
 
 
-def test_wire_run_metric_appends_score(tmp_path: Path) -> None:
+def test_wire_run_command_clip_names_dropped_chars(tmp_path: Path) -> None:
+    """Output over the 20k cap reached the model as a bare tail, reading as
+    the complete output; the clip now leads with a marker naming the dropped
+    char count (the read_background rendering's shape)."""
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    big = "x" * 25_000
+    with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout=big)):
+        out = d.dispatch("run_command", {"argv": ["echo", "hi"]})
+    stdout = _wire(out)["stdout"]
+    assert stdout.startswith("... 5000 earlier chars clipped ...\n")
+    assert stdout.endswith("x" * 100) and len(stdout) < 20_100
     extra = (
         "\n[workflow.metric]\n"
         'command = ["/usr/bin/true"]\n'

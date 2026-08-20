@@ -217,6 +217,15 @@ def _output_tails(name: str, result: ToolResult) -> dict[str, Any]:
     return {}
 
 
+def _clip_tail(text: str, limit: int = 20_000) -> str:
+    """The last `limit` chars, prefixed by a marker naming what was dropped
+    (the read_background rendering does the same per line); an unmarked clip
+    reads as the complete output."""
+    if len(text) <= limit:
+        return text
+    return f"... {len(text) - limit} earlier chars clipped ...\n" + text[-limit:]
+
+
 class Approver(Protocol):
     """Asks the operator, and says what an "allow all" would cover.
 
@@ -904,8 +913,8 @@ class ToolDispatcher:
         if isinstance(outcome, CommandResult):
             return ExecResult(
                 returncode=outcome.returncode,
-                stdout=outcome.stdout[-20_000:],
-                stderr=outcome.stderr[-20_000:],
+                stdout=_clip_tail(outcome.stdout),
+                stderr=_clip_tail(outcome.stderr),
                 duration_s=outcome.duration_s,
                 exec_failed=outcome.exec_failed,
             )
@@ -913,8 +922,8 @@ class ToolDispatcher:
         self._emit("command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s)
         return ExecResult(
             returncode=None,
-            stdout=outcome.stdout[-20_000:],
-            stderr=outcome.stderr[-20_000:],
+            stdout=_clip_tail(outcome.stdout),
+            stderr=_clip_tail(outcome.stderr),
             duration_s=outcome.duration_s,
             exec_failed=False,
             background_id=view.id,
@@ -1195,8 +1204,8 @@ class ToolDispatcher:
         res: CommandResult = outcome
         return ExecResult(
             returncode=res.returncode,
-            stdout=res.stdout[-20_000:],
-            stderr=res.stderr[-20_000:],
+            stdout=_clip_tail(res.stdout),
+            stderr=_clip_tail(res.stderr),
             duration_s=res.duration_s,
             exec_failed=res.exec_failed,
             timeout_s=policy.timeout_s,
