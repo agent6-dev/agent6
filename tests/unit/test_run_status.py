@@ -289,6 +289,31 @@ def test_status_shows_usage_from_budget_update_event(
     assert obj["input_tokens"] == 4200 and obj["cost_usd"] == 0.0456
 
 
+def test_status_names_the_pins_in_force(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run's pinned instructions (--pin, /pin) bind for the whole run; the
+    show page names them, one per line, and the JSON carries the list. The
+    leg-start announcement replaces the list, /pin appends (the fold's rule)."""
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start"},
+            {"ts": _ts(30), "type": "loop.pin.restored", "pins": ["never touch tests"]},
+            {"ts": _ts(20), "type": "loop.pin.added", "text": "keep the API stable"},
+        ],
+    )
+    _cmd_status("winsome-dawn-YWH5ZS")
+    out = capsys.readouterr().out
+    assert "pins:       never touch tests\n            keep the API stable\n" in out
+    _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
+    assert json.loads(capsys.readouterr().out)["pins"] == [
+        "never touch tests",
+        "keep the API stable",
+    ]
+
+
 def test_status_cost_cumulative_and_unfinished_across_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

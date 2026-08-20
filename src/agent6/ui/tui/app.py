@@ -164,7 +164,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
     CSS = """
     /* Top row: the task graph is usually a few nodes, so it stays compact beside
        the model's live output. */
-    #top { height: auto; max-height: 6; padding: 0 1; }
+    #top { height: auto; max-height: 7; padding: 0 1; }
     #head { height: 28%; }
     #plan { width: 32%; border: round $primary; }
     #stream { width: 1fr; border: round $primary; padding: 0 1; }
@@ -302,6 +302,12 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             return ""  # no manifest yet (a launching run); don't cache
         self._branch_line = f"\nbranch: {line}"
         return self._branch_line
+
+    @staticmethod
+    def _pins_top(s: SessionState) -> str:
+        """The operator's pinned instructions in force, for the header (the web
+        header's and `sessions show`'s line)."""
+        return f"\npins: {' | '.join(s.pins)}" if s.pins else ""
 
     def _serving_top(self) -> str:
         """What the run is serving, for the header: the ports its network
@@ -544,7 +550,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             f"   {finished}\n"
             f"task: {escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))}"
             f"{escape(self._lineage_top())}{escape(self._branch_top())}"
-            f"{escape(self._serving_top())}{escape(self._compare_top())}"
+            f"{escape(self._pins_top(s))}{escape(self._serving_top())}"
+            f"{escape(self._compare_top())}"
         )
 
         # Live reasoning / response pane. Built as rich Text so model output is

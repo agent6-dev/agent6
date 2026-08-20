@@ -1144,6 +1144,7 @@ function paintRun(cards, s) {
   // branches, which is invisible without this line.
   if (s.forked_from) add('forked from', s.forked_from);
   if (s.branch_line) add('branch', s.branch_line);
+  if (s.pins && s.pins.length) add('pins', s.pins.join(' | '));
   // What the run is serving: a dev server the agent started is reachable only
   // through `agent6 forward` (the run's network has no way in from outside).
   if (s.ports && s.ports.length) {

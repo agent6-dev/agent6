@@ -71,6 +71,29 @@ async def _open_dash(app: Agent6TUI, pilot: Any) -> None:
     await pilot.pause()
 
 
+def test_the_header_names_the_pins_in_force(tmp_path: Path) -> None:
+    """The pinned instructions bind for the whole run; the dashboard header
+    lists them (the web header's and `sessions show`'s line), so an operator
+    watching a run sees what --pin or /pin set without reading the log."""
+    d = tmp_path / "pinned1"
+    d.mkdir()
+    evs = [
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "loop.pin.restored", "pins": ["never touch tests"], "count": 1},
+        {"type": "loop.pin.added", "text": "keep the API stable", "chars": 19, "count": 2},
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            top = str(app._dash.query_one("#top", Static).render())
+            assert "pins: never touch tests | keep the API stable" in top
+
+    asyncio.run(scenario())
+
+
 def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: Any) -> None:
     """A parked run's dashboard leads with the hub's words ("parked · checkout
     busy"), the stream pane says parked (never the "(waiting for the model…)"

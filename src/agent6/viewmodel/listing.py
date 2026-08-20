@@ -358,6 +358,7 @@ class LogScan:
     last_type: str | None = None  # last event's type
     operator_blocked: bool = False  # a prompt is still unanswered on this leg
     last_verify_rc: int | None = None  # this leg's last verify.end exit code
+    pins: tuple[str, ...] = ()  # the operator's pinned instructions in force
 
     def verify_verdict(self) -> bool | None:
         """The gate verdict from the gate FACTS, for judging candidates: True =
@@ -453,6 +454,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     # bit: Ctrl-C emits session.steer_requested while an approval still waits.
     pending_prompts: set[str] = set()
     last_verify_rc: int | None = None
+    pins: list[str] = []
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
@@ -520,6 +522,12 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     rc = ev.get("exit_code")
                     if isinstance(rc, int) and not isinstance(rc, bool):
                         last_verify_rc = rc
+                elif etype == "loop.pin.added":
+                    pins.append(str(ev.get("text", "")))
+                elif etype == "loop.pin.restored":
+                    # The full list in force at leg start (the typed fold's rule).
+                    raw_pins = ev.get("pins")
+                    pins = [str(p) for p in raw_pins] if isinstance(raw_pins, list) else []
                 elif etype == "budget.update":
                     saw_budget = True
                     usd_leg = _tolerant_usd(ev.get("usd_total"), usd_leg)
@@ -547,6 +555,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         last_type=last_type,
         operator_blocked=bool(pending_prompts),
         last_verify_rc=last_verify_rc,
+        pins=tuple(pins),
     )
 
 

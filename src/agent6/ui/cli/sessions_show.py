@@ -159,6 +159,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "run_branch": manifest.run_branch or None,
                     "base_branch": manifest.base_branch or None,
                     "merged_into": changes.merged_into or None,
+                    "pins": list(scan.pins),
                 }
             )
         )
@@ -201,6 +202,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         print(f"usage:      {tokens}{leg_s}{cost_s}")
     if changes.line:
         print(f"changes:    {changes.line}")
+    for i, pin in enumerate(scan.pins):
+        print(f"{'pins:' if i == 0 else '':<12}{pin}")
     _print_listening_ports(target)
     _print_task_tree(target)
     return 0
