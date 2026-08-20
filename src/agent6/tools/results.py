@@ -190,17 +190,31 @@ class PatchResult(ToolResult):
     path: str
     bytes_written: int
     files: tuple[tuple[str, int], ...] = ()
+    # Paths this patch DELETED (unified `+++ /dev/null` or V4A
+    # `*** Delete File:`); disjoint from the written `files` rows.
+    deleted: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
         wire: dict[str, Any] = {"path": self.path, "bytes_written": self.bytes_written}
         if self.files:
             wire["files"] = [{"path": p, "bytes_written": b} for p, b in self.files]
+        if self.deleted:
+            wire["deleted"] = list(self.deleted)
         return wire
 
     def summary(self) -> str:
-        if self.files:
-            return f"patched {len(self.files)} files bytes={self.bytes_written}"
-        return f"patched path={self.path} bytes={self.bytes_written}"
+        if not self.deleted:
+            if self.files:
+                return f"patched {len(self.files)} files bytes={self.bytes_written}"
+            return f"patched path={self.path} bytes={self.bytes_written}"
+        if not self.files:
+            if len(self.deleted) == 1:
+                return f"deleted path={self.deleted[0]}"
+            return f"deleted {len(self.deleted)} files"
+        return (
+            f"patched {len(self.files)} files, deleted {len(self.deleted)}"
+            f" bytes={self.bytes_written}"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +229,9 @@ class PreviewResult(ToolResult):
     bytes_after: int
     truncated: bool
     would_apply: tuple[str, ...] | None = None
+    # Multi-file apply_patch preview: every previewed path, in patch order
+    # (`path` holds the first). Empty for a single-file preview.
+    files: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -228,6 +245,8 @@ class PreviewResult(ToolResult):
         }
         if self.would_apply is not None:
             out["would_apply"] = list(self.would_apply)
+        if self.files:
+            out["files"] = list(self.files)
         return out
 
 

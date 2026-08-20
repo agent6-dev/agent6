@@ -94,10 +94,17 @@ def test_missing_file_errors() -> None:
         apply_patch_text(patch, None)
 
 
-def test_delete_via_plus_dev_null_rejected() -> None:
-    patch = "--- a/f.py\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-a\n"
-    with pytest.raises(PatchError, match="deletion"):
-        apply_patch_text(patch, "a\n")
+def test_delete_via_plus_dev_null() -> None:
+    """`+++ /dev/null` deletes: new_content None, path from the `---` header.
+    The hunks must remove the ENTIRE on-disk content (the patch asserts what
+    it deletes); surviving content is a hard error, and file-vs-patch
+    mismatch fails the ordinary context check."""
+    assert apply_patch_text("--- a/f.py\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-a\n", "a\n") == (
+        "f.py",
+        None,
+    )
+    with pytest.raises(PatchError, match="entire file"):
+        apply_patch_text("--- a/f.py\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-a\n", "a\nb\n")
 
 
 def test_multi_file_patch_rejected() -> None:
@@ -267,9 +274,17 @@ def test_v4a_multi_file_rejected() -> None:
         apply_v4a_text(patch, "x\n")
 
 
-def test_v4a_delete_rejected() -> None:
-    with pytest.raises(PatchError, match="deletion"):
-        apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n*** End Patch", "x\n")
+def test_v4a_delete() -> None:
+    """`*** Delete File:` deletes by name (that format asserts no content):
+    bare directive only, and the file must exist."""
+    assert apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n*** End Patch", "x\n") == (
+        "a.py",
+        None,
+    )
+    with pytest.raises(PatchError, match="no such file"):
+        apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n*** End Patch", None)
+    with pytest.raises(PatchError, match="bare directive"):
+        apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n@@\n-x\n*** End Patch", "x\n")
 
 
 def test_v4a_partial_line_match_rejected_not_spliced() -> None:

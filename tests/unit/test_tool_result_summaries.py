@@ -99,6 +99,16 @@ CASES: list[tuple[str, ToolResult, str]] = [
     ),
     ("apply_patch", PatchResult(path="f.py", bytes_written=5), "patched path=f.py bytes=5"),
     (
+        "apply_patch_delete",
+        PatchResult(path="f.py", bytes_written=0, deleted=("f.py",)),
+        "deleted path=f.py",
+    ),
+    (
+        "apply_patch_multi_mixed",
+        PatchResult(path="a.py", bytes_written=2, files=(("a.py", 2),), deleted=("old.py",)),
+        "patched 1 files, deleted 1 bytes=2",
+    ),
+    (
         "preview",
         PreviewResult(
             path="f.py",

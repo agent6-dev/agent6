@@ -1995,3 +1995,88 @@ def test_apply_patch_multi_file_path_arg_rejected(tmp_path: Path) -> None:
                 ),
             },
         )
+
+
+def test_apply_patch_deletes_a_file(tmp_path: Path) -> None:
+    """Deletion via patch (unified `+++ /dev/null` asserts the full content;
+    V4A `*** Delete File:` deletes by name). One-file-per-op with a
+    run_command rm fallback was the pre-1.0 placeholder."""
+    cfg = _config(tmp_path)
+    (tmp_path / "gone.py").write_text("a\nb\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch(
+        "apply_patch",
+        {"patch": "--- a/gone.py\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-a\n-b\n"},
+    ).to_wire()
+    assert out == {"path": "gone.py", "bytes_written": 0, "deleted": ["gone.py"]}
+    assert not (tmp_path / "gone.py").exists()
+
+
+def test_apply_patch_v4a_delete_in_multi_file(tmp_path: Path) -> None:
+    """An update + a delete in one V4A patch apply all-or-nothing."""
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    (tmp_path / "old.py").write_text("junk\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch(
+        "apply_patch",
+        {
+            "patch": (
+                "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
+                "*** Delete File: old.py\n*** End Patch"
+            ),
+        },
+    ).to_wire()
+    assert out["files"] == [{"path": "a.py", "bytes_written": 2}]
+    assert out["deleted"] == ["old.py"]
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "y\n"
+    assert not (tmp_path / "old.py").exists()
+
+
+def test_apply_patch_delete_missing_file_refused(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="no such file"):
+        d.dispatch(
+            "apply_patch",
+            {"patch": "*** Begin Patch\n*** Delete File: ghost.py\n*** End Patch"},
+        )
+
+
+def test_apply_patch_delete_protected_path_refused(tmp_path: Path) -> None:
+    """Deletion runs the same protected-path guard as writes."""
+    cfg = _config(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("[core]\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match=r"\.git"):
+        d.dispatch(
+            "apply_patch",
+            {"patch": "*** Begin Patch\n*** Delete File: .git/config\n*** End Patch"},
+        )
+    assert (tmp_path / ".git" / "config").exists()
+
+
+def test_apply_patch_multi_file_preview_concatenates(tmp_path: Path) -> None:
+    """preview=true over a multi-file patch returns every file's diff and
+    writes nothing (it refused before)."""
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("p\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch(
+        "apply_patch",
+        {
+            "preview": True,
+            "patch": (
+                "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
+                "*** Update File: b.py\n@@\n-p\n+q\n*** End Patch"
+            ),
+        },
+    ).to_wire()
+    assert out["preview"] is True
+    assert out["files"] == ["a.py", "b.py"]
+    assert "a/a.py" in out["diff"] and "a/b.py" in out["diff"]
+    assert out["hunks"] == 2
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "x\n"
+    assert (tmp_path / "b.py").read_text(encoding="utf-8") == "p\n"

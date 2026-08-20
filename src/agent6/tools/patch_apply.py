@@ -24,7 +24,9 @@ Design choices (pre-1.0):
   hunk fails to apply, no change is written (all-or-nothing).
 - `--- /dev/null` is allowed and means "create a new file"; the target
   file must not already exist.
-- `+++ /dev/null` (file delete) is rejected. Use a different tool.
+- `+++ /dev/null` deletes the file; the hunk body must remove the entire
+  on-disk content (the patch asserts what it deletes). V4A
+  `*** Delete File:` deletes by name, per that format's grammar.
 - The `\\ No newline at end of file` marker is honoured: when present
   on the `-` side, the original file must lack a trailing newline; on
   the `+` side, the result is written without one.
@@ -67,11 +69,15 @@ class ParsedPatch:
     """A successfully-parsed single-file unified diff."""
 
     # Path from the `+++` header with the leading `b/` (if any) stripped.
-    # For file creation (`--- /dev/null`), this is the new file's path.
+    # For file creation (`--- /dev/null`), this is the new file's path; for
+    # deletion (`+++ /dev/null`), the old file's path from the `---` header.
     target_path: str
     # True if the patch creates a new file (i.e. `--- /dev/null`).
     is_create: bool
     hunks: tuple[_Hunk, ...]
+    # True if the patch deletes the file (i.e. `+++ /dev/null`); the applied
+    # result must be empty, and the caller unlinks instead of writing.
+    is_delete: bool = False
 
 
 # ---------- parsing ----------
@@ -109,10 +115,11 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
     i += 1
 
     is_create = minus_header == "/dev/null"
-    if plus_header == "/dev/null":
-        raise PatchError("File deletion (`+++ /dev/null`) is not supported")
+    is_delete = plus_header == "/dev/null"
+    if is_create and is_delete:
+        raise PatchError("a patch cannot both create and delete (`/dev/null` on both sides)")
 
-    target_path = _strip_ab_prefix(plus_header)
+    target_path = _strip_ab_prefix(minus_header if is_delete else plus_header)
     if not target_path or target_path == "/dev/null":
         raise PatchError(f"Invalid target path in `+++` header: {plus_header!r}")
 
@@ -229,7 +236,9 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
 
     if not hunks:
         raise PatchError("Patch contains no hunks")
-    return ParsedPatch(target_path=target_path, is_create=is_create, hunks=tuple(hunks))
+    return ParsedPatch(
+        target_path=target_path, is_create=is_create, hunks=tuple(hunks), is_delete=is_delete
+    )
 
 
 # ---------- application ----------
@@ -340,10 +349,19 @@ def _render_lines(lines: list[str]) -> str:
     return "\n".join(f"  {i + 1}| {ln}" for i, ln in enumerate(lines))
 
 
-def apply_patch_text(patch_text: str, original: str | None) -> tuple[str, str]:
-    """Convenience: parse + apply. Returns (target_path, new_content)."""
+def apply_patch_text(patch_text: str, original: str | None) -> tuple[str, str | None]:
+    """Convenience: parse + apply. Returns (target_path, new_content);
+    new_content None means the patch deletes the file (its hunks removed
+    the entire content, verified)."""
     patch = parse_patch(patch_text)
     new_content = apply_parsed_patch(patch, original)
+    if patch.is_delete:
+        if new_content != "":
+            raise PatchError(
+                "a deletion patch (`+++ /dev/null`) must remove the entire file; "
+                f"{len(new_content)} chars of content survive the hunks"
+            )
+        return patch.target_path, None
     return patch.target_path, new_content
 
 
@@ -408,11 +426,16 @@ def patch_target_path(text: str) -> str:
             if d is not None:
                 return d[1]
         raise PatchError("V4A patch has no `*** Add/Update/Delete File:` directive")
+    minus = ""
     for ln in text.splitlines():
+        if ln.startswith("--- ") and not minus:
+            minus = ln[4:].strip()
         if ln.startswith("+++ "):
             header = ln[4:].strip()
-            if header == "/dev/null":
-                raise PatchError("File deletion (`+++ /dev/null`) is not supported")
+            if header == "/dev/null":  # deletion: the path lives in the `---` header
+                if minus and minus != "/dev/null":
+                    return _strip_ab_prefix(minus)
+                raise PatchError("deletion patch has no `--- ` header to take a path from")
             return _strip_ab_prefix(header)
     raise PatchError("patch has no `+++ ` header to take a path from")
 
@@ -426,12 +449,25 @@ def _v4a_file_directive(line: str) -> tuple[str, str] | None:
     return None
 
 
-def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  # noqa: PLR0912
+def _v4a_delete(path: str, section: list[str], original: str | None) -> tuple[str, None]:
+    """`*** Delete File:` is the bare directive: no content, file must exist."""
+    if any(ln.strip() for ln in section):
+        raise PatchError(
+            f"V4A `*** Delete File: {path}` carries content; a deletion is the bare directive"
+        )
+    if original is None:
+        raise PatchError(f"V4A `*** Delete File: {path}` but no such file exists")
+    return path, None
+
+
+def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str | None]:  # noqa: PLR0912
     """Parse and apply a single-file OpenAI V4A patch.
 
-    Returns `(target_path, new_content)`. Raises `PatchError` on a malformed
-    envelope, a multi-file patch, a missing/ambiguous context, or a file
-    create/update mismatch. All-or-nothing: the caller writes the returned text.
+    Returns `(target_path, new_content)`; None content means `*** Delete
+    File:` (that format deletes by name, no content assertion). Raises
+    `PatchError` on a malformed envelope, a multi-file patch, a
+    missing/ambiguous context, or a file create/update mismatch.
+    All-or-nothing: the caller writes (or unlinks) from the returned value.
     """
     raw = patch_text.strip().splitlines()
     if not raw or raw[0].strip() != "*** Begin Patch":
@@ -451,8 +487,6 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  #
     start_idx, (verb, path) = file_starts[0]
     if not path:
         raise PatchError("V4A file directive is missing a path")
-    if verb == "Delete":
-        raise PatchError("V4A file deletion (`*** Delete File:`) is not supported")
     section = body[start_idx + 1 :]
     # Drop a `*** Move to:` line (rename; we only honour the content change at the
     # original path) and the optional `*** End of File` marker GPT emits for a
@@ -462,6 +496,9 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  #
         for ln in section
         if not ln.startswith("*** Move to:") and ln.strip() != "*** End of File"
     ]
+
+    if verb == "Delete":
+        return _v4a_delete(path, section, original)
 
     if verb == "Add":
         if original is not None:
