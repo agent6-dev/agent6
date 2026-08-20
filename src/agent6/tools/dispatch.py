@@ -785,12 +785,20 @@ class ToolDispatcher:
                 f"{name} not approved (set [mcp.servers.{server}].approve = 'yes' to stop asking)"
             )
 
+    def _not_approved(self, name: str) -> ToolDenied:
+        """The gate cannot tell a human "no" from an unattended run's auto-deny,
+        so the message blames neither and names the knob; a stop requested
+        while the approval waited is the one cause it can name."""
+        if self._session_dir is not None and stop_request_pending(self._session_dir):
+            return ToolDenied(f"{name} not run: the run was asked to stop while awaiting approval")
+        return ToolDenied(f"{name} not approved (sandbox.run_commands='ask')")
+
     def _run_verify(self, _raw: dict[str, Any]) -> ExecResult:
         argv = tuple(self._config.workflow.verify_command)
         if self.command_policy() == "ask" and not self._approver(
             f"Allow run_verify_command: {shlex.join(argv)}", scope=COMMAND_SCOPE
         ):
-            raise ToolDenied("run_verify_command not approved (sandbox.run_commands='ask')")
+            raise self._not_approved("run_verify_command")
         # per-call timeout from config. Defaults to the jail's
         # general 600s but bench configs crank it down so infinite-loop
         # edits fail fast instead of burning ~10 min of wall per attempt.
@@ -829,10 +837,7 @@ class ToolDispatcher:
             # is approving a command, so show it the way they would type it.
             ok = self._approver(f"Allow run_command: {shlex.join(args.argv)}", scope=COMMAND_SCOPE)
             if not ok:
-                # The gate can't tell a human "no" from the policy auto-deny of
-                # an unattended run, so the message blames neither and names
-                # the knob.
-                raise ToolDenied("run_command not approved (sandbox.run_commands='ask')")
+                raise self._not_approved("run_command")
         if args.background:
             return self._start_detached(args.argv)
         return self._run_model_command(args.argv)

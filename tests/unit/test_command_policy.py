@@ -139,3 +139,25 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     assert d.dispatch("run_command", {"argv": ["true"]}).to_wire()["returncode"] == 0
     assert d.command_policy() == "ask"
     assert not session_deny_set(tmp_path, COMMAND_SCOPE)
+
+
+def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: Path) -> None:
+    """`sessions stop` reaches a run blocked on an approval by breaking the
+    wait; the tool result then said "not approved (run_commands='ask')" as
+    if the policy had refused. With a stop request pending it names the stop."""
+    from agent6.sessions.ipc import request_stop
+
+    cfg = Config.model_validate(
+        {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
+    )
+    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
+
+    def _wait_broken(_p: str, /, *, scope: str | None = None) -> bool:
+        request_stop(tmp_path)  # the stop lands while the approval waits
+        return False
+
+    d._approver = _wait_broken  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(Exception, match="asked to stop while awaiting approval"):
+        d.dispatch("run_command", {"argv": ["true"]})
+    with pytest.raises(Exception, match="asked to stop while awaiting approval"):
+        d.dispatch("run_verify_command", {})
