@@ -146,6 +146,12 @@ def _print_next_session(layout: SessionLayout, *, reporter: Reporter) -> None:
         mode = read_manifest(layout.session_dir).mode
         session_id = layout.session_id
         if mode == "plan":
+            # The plan is the deliverable, printed like an ask prints its
+            # answer; the path alone sent the operator to `plan show`.
+            with contextlib.suppress(OSError):
+                plan = (layout.session_dir / "plan.md").read_text(encoding="utf-8").rstrip()
+                if plan:
+                    reporter.out(f"\n{plan}")
             reporter.out(f"\nedit:     agent6 plan edit {session_id}")
             reporter.out(
                 f'revise:   agent6 resume {session_id} --steer "answered the open questions"'

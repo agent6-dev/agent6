@@ -668,11 +668,14 @@ def test_a_session_that_ends_holding_work_names_the_next_step(
     (layout.session_dir / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": mode}), encoding="utf-8"
     )
+    (layout.session_dir / "plan.md").write_text("# The plan\n\n1. do it\n", encoding="utf-8")
     _print_next_session(layout, reporter=STDIO_REPORTER)
     out = capsys.readouterr().out
     for line in expected:
         assert line in out
     assert ("agent6" in out) is bool(expected)
+    # A plan is the deliverable: printed whole, before the next-step lines.
+    assert ("# The plan\n\n1. do it" in out) is (mode == "plan")
 
 
 def test_the_end_of_run_block_goes_through_the_reporter(
