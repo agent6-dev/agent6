@@ -361,7 +361,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 reporter.err(f"  {clash}")
             reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
             reporter.out(payload.removesuffix("\n"))
-            return 1
+            return 2
     # The writes decide the outcome, so session.end waits for them.
     try:
         target.parent.mkdir(parents=True, exist_ok=True)

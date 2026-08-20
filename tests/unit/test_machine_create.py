@@ -367,7 +367,7 @@ def test_create_refuses_to_overwrite_default_path(
         ],
     )
     code = main(["machine", "create", "Greet the user"])
-    assert code == 1
+    assert code == 2  # a refusal
     out = capsys.readouterr()
     # untouched
     assert existing.read_text(encoding="utf-8") == "# do not clobber\n"
@@ -395,7 +395,7 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
             )
         ],
     )
-    assert main(["machine", "create", "Greet the user"]) == 1
+    assert main(["machine", "create", "Greet the user"]) == 2  # a refusal
     capsys.readouterr()
     logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     assert len(logs) == 1
@@ -797,7 +797,7 @@ def test_create_refuses_to_overwrite_existing_script(
         ],
     )
     code = main(["machine", "create", "Run a script"])
-    assert code == 1
+    assert code == 2  # a refusal
     out = capsys.readouterr()
     assert "REFUSING to overwrite" in out.err
     assert "scripts/run.py" in out.err  # the clashing path is named

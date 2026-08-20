@@ -839,7 +839,7 @@ def test_resume_diverged_branch_refuses_without_checkout(
     state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "divg-AAAA11", head_sha=new_head, turns=(1,))
     rc = _cmd_resume(None, "divg-AAAA11", force=False)
-    assert rc == 1
+    assert rc == 2  # a refusal
     assert "diverged" in capsys.readouterr().err
     assert _current_branch(repo) == "main"
 

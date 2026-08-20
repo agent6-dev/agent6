@@ -431,7 +431,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(f"  resume onto:   {onto_head}")
             if not force:
                 reporter.err("REFUSING to resume. Re-run with --force to override.")
-                return 1
+                return 2
 
         try:
             effective = load_session_config(
