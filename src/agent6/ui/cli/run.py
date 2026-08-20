@@ -9,7 +9,6 @@ import functools
 import os
 import sys
 from pathlib import Path
-from typing import Literal
 
 from agent6.app._setup import (
     BudgetOverrides,
@@ -35,7 +34,7 @@ from agent6.models.validate import (
 from agent6.paths import data_dir
 from agent6.sessions.layout import bucket_dir, layout_of
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
-from agent6.types import session_kind
+from agent6.types import ResumableMode, session_kind
 from agent6.ui.cli._ask import (
     build_ask_session_digest,
     run_ask_repl,
@@ -256,7 +255,7 @@ def _cmd_run(  # noqa: PLR0911
     interactive: bool = False,
     tui: bool = False,
     decompose: bool = False,
-    mode: Literal["run", "plan", "ask"] = "run",
+    mode: ResumableMode = "run",
     seed_from: str = "",
     skills: tuple[str, ...] = (),
     budget_overrides: BudgetOverrides | None = None,

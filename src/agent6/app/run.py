@@ -115,7 +115,7 @@ from agent6.sessions.lock import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.types import session_bucket, session_kind
+from agent6.types import ResumableMode, session_bucket, session_kind
 from agent6.workflows._context import agents_md_notices
 from agent6.workflows._session_state import SessionEndReason
 from agent6.workflows.loop import SessionResult, Workflow
@@ -140,7 +140,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     session_id: str = "",
     interactive: bool = False,
     tui: bool = False,
-    mode: Literal["run", "plan", "ask"] = "run",
+    mode: ResumableMode = "run",
     standing_goal: str = "",
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,

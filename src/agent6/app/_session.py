@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import agent6
 from agent6.app._setup import detect_env
@@ -46,7 +45,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
-from agent6.types import IsolationLevel
+from agent6.types import IsolationLevel, ResumableMode
 from agent6.workflows.review import ReviewSeat
 
 
@@ -185,7 +184,7 @@ def build_session_tools(
     state_dir: Path,
     layout: SessionLayout,
     isolation: IsolationLevel,
-    mode: Literal["run", "plan", "ask"],
+    mode: ResumableMode,
     events: EventSink,
     approver: Approver,
     questioner: Callable[[tuple[UserQuestion, ...]], tuple[str, ...]],
