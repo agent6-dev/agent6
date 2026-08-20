@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The headless loop logger must FLUSH each line.
+"""The headless loop logger must FLUSH each line; the live one drops narration.
 
 A `nohup agent6 run > log` (or any run whose stdout/stderr is a pipe, not a TTY)
 is block-buffered: without an explicit flush the whole LOOP trace only lands
@@ -11,8 +11,14 @@ line arrives BEFORE the process ends.
 
 from __future__ import annotations
 
+import io
 import subprocess
 import sys
+
+import pytest
+
+from agent6.ui.cli._console_view import ConsoleView
+from agent6.ui.cli._live import loop_logger
 
 
 def _drive(mode: str, stream: str) -> bool:
@@ -54,3 +60,22 @@ def test_headless_run_logger_flushes_each_line() -> None:
 def test_ask_logger_flushes_each_line() -> None:
     # ask keeps stdout for the answer and logs to stderr; that must flush too.
     assert _drive("ask", "stderr")
+
+
+def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On the live console the loop's state narration (LOOP: transitions, a
+    compaction, the thresholds compaction will fire at) is noise between the
+    glyphs; genuine notices pass. `AGENT6_DEBUG=1` shows everything."""
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    out = io.StringIO()
+    log = loop_logger("run", ConsoleView(out, color=False))
+    log("[agent6] LOOP: LOAD_CONTEXT")
+    log("compaction: dropped 3 old tool results")
+    log("compaction thresholds: drop at 471,859 chars, summarise at 983,040 [adaptive]")
+    log("[agent6] auto-commit: 2 files")
+    assert out.getvalue().strip() == "[agent6] auto-commit: 2 files"
+    monkeypatch.setenv("AGENT6_DEBUG", "1")
+    out = io.StringIO()
+    log = loop_logger("run", ConsoleView(out, color=False))
+    log("compaction thresholds: drop at 1 chars, summarise at 2 [fixed]")
+    assert "compaction thresholds" in out.getvalue()

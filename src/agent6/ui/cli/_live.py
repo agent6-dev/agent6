@@ -23,8 +23,9 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
     notices go THROUGH it (`console_view.notice`) so each clears the spinner
     line first and writes to the same stream under the same lock -- otherwise a
     notice printed to stdout while the stderr spinner is up garbles the line. The
-    loop's internal state narration (`LOOP: LOAD_CONTEXT`, `compaction: …`)
-    is pure noise on the glyph stream, so it is suppressed unless
+    loop's internal state narration (`LOOP: LOAD_CONTEXT`, `compaction: …`,
+    `compaction thresholds: …`) is pure noise on the glyph stream (`config
+    show` prints the resolved thresholds), so it is suppressed unless
     `AGENT6_DEBUG=1`; genuine notices (auto-commit, tool errors, review
     decisions) pass. Headless/`ask` keep the full trace on their own stream (the
     log, not a live stream)."""
@@ -39,7 +40,7 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
 
     def _filtered(msg: str) -> None:
         stripped = msg.removeprefix("[agent6] ")
-        if not debug and ("LOOP:" in msg or stripped.startswith("compaction:")):
+        if not debug and ("LOOP:" in msg or stripped.startswith("compaction")):
             return
         console_view.notice(msg)
 
