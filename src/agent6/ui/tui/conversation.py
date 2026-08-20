@@ -27,6 +27,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
+from rich.markup import escape
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
@@ -342,7 +343,10 @@ class SteerInput(TextArea):
         # The run's policy sits where the eye already goes for status, from the
         # same fold the CLI banner and the web header read.
         policy = f"{self.policy} · " if self.policy else ""
-        subtitle = f"{policy}{ctx}{keys}"
+        # Border titles are markup: `[focus]` in a label or a bracket in a
+        # model id would vanish (or crash) unescaped.
+        title = escape(title)
+        subtitle = escape(f"{policy}{ctx}{keys}")
         if self.border_title != title:
             self.border_title = title
         if self.border_subtitle != subtitle:

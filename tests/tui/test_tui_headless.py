@@ -1399,3 +1399,28 @@ def test_a_prompt_with_no_scope_shows_no_allow_session_button() -> None:
             assert app.screen is modal, "'a' dismissed a modal that offers no session answer"
 
     asyncio.run(scenario())
+
+
+def test_the_composer_title_shows_its_brackets(tmp_path: Path) -> None:
+    """A border title is markup: the live composer's `/compact [focus]` hint
+    lost its `[focus]` (rendered as "/compact )") the way `[git]` vanished from
+    a toast, so the title is escaped where it is set."""
+    import os
+
+    from rich.markup import escape
+
+    from agent6.sessions.ipc import write_worker_pid
+    from agent6.ui.tui.conversation import SteerInput, composer_labels
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        write_worker_pid(tmp_path, os.getpid())
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            bar = app._conv.query_one("#conv-input", SteerInput)
+            title, _keys = composer_labels("steer")
+            assert "[focus]" in title
+            assert bar.border_title == escape(title)
+
+    asyncio.run(scenario())

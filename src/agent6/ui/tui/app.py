@@ -577,7 +577,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # is the unfiltered live view; the border titles show which task when set.
         sel = self._selected_task_id
         sel_title = next((t.title for t in s.tasks if t.id == sel), "") if sel else ""
-        filt = f" · task: {sel_title[:28]}" if sel else ""
+        # A border title is markup; the task title is the model's or the user's.
+        filt = f" · task: {escape(sel_title[:28])}" if sel else ""
 
         # Task DAG: the worker's live add_task/update_task breakdown (graph.update
         # snapshots), indented by depth, cursor marked. Rebuilt only when the
