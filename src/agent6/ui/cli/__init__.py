@@ -105,12 +105,11 @@ from agent6.ui.cli.sessions_cmds import (
     _cmd_compare,
     _cmd_diff,
     _cmd_list,
-    _cmd_merge,
-    _cmd_prune,
     _cmd_sessions_dir,
     _cmd_sessions_rm,
     _cmd_stop,
 )
+from agent6.ui.cli.sessions_merge import _cmd_merge, _cmd_prune
 from agent6.ui.cli.skills_cmds import (
     _cmd_skills_disable,
     _cmd_skills_enable,

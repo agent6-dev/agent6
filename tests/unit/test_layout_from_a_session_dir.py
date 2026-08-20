@@ -72,9 +72,9 @@ def test_prune_can_confirm_a_forked_plans_branch(tmp_path: Path) -> None:
     """A forked PLAN cuts `agent6/<id>` like any other session but lives in
     plans/. A runs/-only manifest read returned "" -- which prune reads as
     "never merged", so the branch was kept forever."""
-    from agent6.ui.cli import sessions_cmds
+    from agent6.ui.cli import sessions_merge
 
-    _manifest_merged_into = sessions_cmds._manifest_merged_into  # pyright: ignore[reportPrivateUsage]
+    _manifest_merged_into = sessions_merge._manifest_merged_into  # pyright: ignore[reportPrivateUsage]
 
     layout = SessionLayout(state_dir=tmp_path, session_id="brave-oak-AAAAAA", subdir="plans")
     layout.ensure()
@@ -104,6 +104,7 @@ def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:
         # `sessions diff|merge|commits` with no id means the most recent RUN:
         # these verbs are about a run's branch, which no other mode has.
         "ui/cli/sessions_cmds.py",
+        "ui/cli/sessions_merge.py",
         # The owner of "this directory's layout" -- it passes the bucket it read
         # off the path, and a literal `subdir=` here would be circular.
         "sessions/layout.py",

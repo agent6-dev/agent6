@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The merge engine shared by `sessions merge` and `git.auto_merge`.
 
-`cli.sessions_cmds` validates + resolves a run, then calls `execute_merge`; the run
+`cli.sessions_merge` validates + resolves a run, then calls `execute_merge`; the run
 finalizer (`app.finalize.finalize_auto_merge`) calls it directly with the run
 context it already holds. Landing is pure ref plumbing (`git_ops.plumb_merge`):
 no checkout, no clean-tree requirement -- the worktree that necessarily carries

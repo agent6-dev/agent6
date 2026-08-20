@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from agent6.ui.cli import sessions_cmds
+from agent6.ui.cli import sessions_merge
 
 
 def test_merge_planner_passes_the_explicit_config_path(
@@ -25,9 +25,9 @@ def test_merge_planner_passes_the_explicit_config_path(
 
     def fake_load(cwd: Path, explicit: Path | None) -> Any:
         seen.append(explicit)
-        raise sessions_cmds.ConfigError("stop here")
+        raise sessions_merge.ConfigError("stop here")
 
-    monkeypatch.setattr(sessions_cmds, "load_effective", fake_load)
+    monkeypatch.setattr(sessions_merge, "load_effective", fake_load)
 
     # A resolvable path must flow through unchanged when the planner DOES
     # reach the load; drive it far enough by stubbing resolution to succeed.
@@ -39,7 +39,7 @@ def test_merge_planner_passes_the_explicit_config_path(
     def _dead(d: Path) -> bool:
         return False
 
-    monkeypatch.setattr(sessions_cmds, "worker_is_alive", _dead)
+    monkeypatch.setattr(sessions_merge, "worker_is_alive", _dead)
 
     class _Manifest:
         base_branch = "main"
@@ -52,10 +52,10 @@ def test_merge_planner_passes_the_explicit_config_path(
     def _exists(cwd: Path, b: str) -> bool:
         return True
 
-    monkeypatch.setattr(sessions_cmds, "_resolve_session_manifest", _resolved)
-    monkeypatch.setattr(sessions_cmds, "branch_exists", _exists)
+    monkeypatch.setattr(sessions_merge, "_resolve_session_manifest", _resolved)
+    monkeypatch.setattr(sessions_merge, "branch_exists", _exists)
     explicit = tmp_path / "special.toml"
-    rc = sessions_cmds._plan_merge(  # pyright: ignore[reportPrivateUsage]
+    rc = sessions_merge._plan_merge(  # pyright: ignore[reportPrivateUsage]
         tmp_path, "sid", None, None, config_path=explicit
     )
     assert rc == 2  # the stubbed ConfigError surfaced as the exit path
