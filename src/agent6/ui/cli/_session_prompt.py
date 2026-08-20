@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from agent6.app._setup import BudgetOverrides, SandboxOverrides
 from agent6.ui.cli.resume import _cmd_resume
 
 # Free text is the next leg's operator instruction (what `--steer` carries);
@@ -45,15 +46,17 @@ def end_of_session_prompt(
     session_id: str,
     ask: Callable[[str], str],
     config_path: Path | None = None,
+    budget_overrides: BudgetOverrides | None = None,
+    sandbox_overrides: SandboxOverrides | None = None,
 ) -> int:
     """Keep the session going from the terminal until `/exit`.
 
     Each answer runs one resume leg carrying that text as the operator's
-    instruction, so continuing needs no `agent6 resume <id>` retyping.
-    `/exit` (or EOF) stops asking and prints the line that picks the session
-    back up: nothing is sealed, and a finished session stays resumable like any
-    other. A leg that refuses returns its own code rather than re-prompting
-    over the failure.
+    instruction, under the invocation's own flag overrides, so continuing needs
+    no `agent6 resume <id>` retyping. `/exit` (or EOF) stops asking and prints
+    the line that picks the session back up: nothing is sealed, and a finished
+    session stays resumable like any other. A leg that refuses returns its own
+    code rather than re-prompting over the failure.
     """
     while True:
         try:
@@ -65,6 +68,13 @@ def end_of_session_prompt(
             return rc
         if not answer:
             continue
-        rc = _cmd_resume(config_path, session_id, force=False, steer=answer)
+        rc = _cmd_resume(
+            config_path,
+            session_id,
+            force=False,
+            steer=answer,
+            budget_overrides=budget_overrides,
+            sandbox_overrides=sandbox_overrides,
+        )
         if rc != 0:
             return rc

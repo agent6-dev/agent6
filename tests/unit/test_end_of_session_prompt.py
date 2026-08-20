@@ -4,11 +4,13 @@
 
 from __future__ import annotations
 
+import argparse
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from agent6.app._setup import BudgetOverrides, SandboxOverrides
 from agent6.config.layer import resolved_state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import _session_prompt as prompt_mod
@@ -31,6 +33,20 @@ def _seed_session(
     return layout
 
 
+def _run_args(**overrides: object) -> argparse.Namespace:
+    """`agent6 run` flags as argparse hands them over, defaults unless overridden."""
+    fields: dict[str, object] = {
+        "config": None,
+        "max_usd": None,
+        "max_tokens_fallback": None,
+        "dangerously_disable_sandbox": False,
+        "auto_approve": False,
+        "no_commands": False,
+    }
+    fields.update(overrides)
+    return argparse.Namespace(**fields)
+
+
 def _seen_resumes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     calls: list[tuple[str, str]] = []
 
@@ -40,6 +56,34 @@ def _seen_resumes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
 
     monkeypatch.setattr(prompt_mod, "_cmd_resume", fake_resume)
     return calls
+
+
+def test_follow_up_legs_run_under_the_invocations_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`agent6 run --max-usd 0.10 ...` then a follow-up at "next:": the leg
+    carries the same overrides. Dropping them ran the follow-up under the
+    config's $10 default, silently, after the operator capped the run."""
+    from agent6.ui import cli
+
+    layout = _seed_session(tmp_path, monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    seen: list[dict[str, object]] = []
+
+    def fake_resume(_cfg: Path | None, session_id: str, **kw: object) -> int:
+        seen.append(dict(kw))
+        return 0
+
+    monkeypatch.setattr(prompt_mod, "_cmd_resume", fake_resume)
+    answers = iter(["and a test", "/exit"])
+    monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
+    args = _run_args(max_usd=0.10, auto_approve=True)
+    assert cli._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
+    (leg,) = seen
+    assert leg["steer"] == "and a test"
+    assert leg["budget_overrides"] == BudgetOverrides.from_args(args)
+    assert leg["sandbox_overrides"] == SandboxOverrides.from_args(args)
 
 
 def test_free_text_becomes_the_next_leg_then_exit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -117,7 +161,7 @@ def test_no_terminal_ends_the_session_as_before(
         return 0
 
     monkeypatch.setattr(cli, "end_of_session_prompt", spy)
-    assert _prompt_for_the_next_input(None, 0, layout.session_id) == 0
+    assert _prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0
     assert not called
 
 
@@ -167,4 +211,4 @@ def test_a_refused_runs_discarded_id_ends_quietly(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
-    assert cli._prompt_for_the_next_input(None, 2, "gone-run-QQQQQQ") == 2  # pyright: ignore[reportPrivateUsage]
+    assert cli._prompt_for_the_next_input(_run_args(), 2, "gone-run-QQQQQQ") == 2  # pyright: ignore[reportPrivateUsage]

@@ -257,7 +257,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
     # so neither hands the terminal back to a prompt.
     if getattr(args, "parallel", "") or args.tui:
         return rc
-    return _prompt_for_the_next_input(args.config, rc, session_id)
+    return _prompt_for_the_next_input(args, rc, session_id)
 
 
 def _minted_session_id(explicit: str, mode: str) -> str:
@@ -273,7 +273,7 @@ def _minted_session_id(explicit: str, mode: str) -> str:
     return unused_session_id(resolved_state_dir(Path.cwd()), session_bucket(mode))
 
 
-def _prompt_for_the_next_input(config_path: Path | None, rc: int, session_id: str) -> int:
+def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: str) -> int:
     """Ask for the next input instead of ending, when someone is there to type.
 
     `run` and `plan` sessions end this way; `ask` does not (a one-shot question
@@ -283,7 +283,10 @@ def _prompt_for_the_next_input(config_path: Path | None, rc: int, session_id: st
     Only ever THIS invocation's session, and only once it exists on disk: the
     refusal paths above return before any session is created, and resolving the
     repo's newest one instead offered to continue -- then continued -- a
-    session this run had nothing to do with.
+    session this run had nothing to do with. Every follow-up leg runs under
+    this invocation's flags (`--max-usd`, `--auto-approve`, ...): the operator
+    set them for the run, and a leg that dropped them ran under the config's
+    defaults instead.
     """
     if not prompting_is_possible():
         return rc
@@ -296,7 +299,12 @@ def _prompt_for_the_next_input(config_path: Path | None, rc: int, session_id: st
     if layout is None or not layout.session_dir.is_dir():
         return rc
     return end_of_session_prompt(
-        rc=rc, session_id=layout.session_id, ask=input, config_path=config_path
+        rc=rc,
+        session_id=layout.session_id,
+        ask=input,
+        config_path=args.config,
+        budget_overrides=BudgetOverrides.from_args(args),
+        sandbox_overrides=SandboxOverrides.from_args(args),
     )
 
 
@@ -321,7 +329,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         sandbox_overrides=SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
     )
-    return _prompt_for_the_next_input(args.config, rc, session_id)
+    return _prompt_for_the_next_input(args, rc, session_id)
 
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
