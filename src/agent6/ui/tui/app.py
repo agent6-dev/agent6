@@ -106,7 +106,12 @@ from agent6.viewmodel.format import (
     spinner_frame,
     status_label,
 )
-from agent6.viewmodel.listing import LIVE_STATUS_WORDS, status_for_session_dir, task_snippet
+from agent6.viewmodel.listing import (
+    LIVE_STATUS_WORDS,
+    finished_needs_new_work,
+    status_for_session_dir,
+    task_snippet,
+)
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     STREAM_DELTA_EVENTS,
@@ -1253,9 +1258,20 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
 
     def action_resume(self) -> None:
         """Resume a finished/stopped run: it continues in the background (appending
-        to the same log) and this dashboard follows straight through."""
+        to the same log) and this dashboard follows straight through. A run the
+        agent ENDED has nothing to continue: the refusal `agent6 resume` would
+        print lands here instead of on a detached child's stderr (the composer
+        below gives it new work)."""
         if self.session_controllable():
             self.notify("nothing to resume: the session is still going", severity="warning")
+            return
+        if finished_needs_new_work(self.session_dir):
+            self.notify(
+                "this run finished; type what to do next below (Enter resumes it with the"
+                " instruction)",
+                severity="warning",
+            )
+            self._focus_composer()
             return
         err = spawn_detached_resume(Path.cwd(), self.session_dir.name, config_path=self.config_path)
         self.notify(

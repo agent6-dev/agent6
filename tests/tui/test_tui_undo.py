@@ -203,3 +203,62 @@ def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
             assert app.session_controllable()
 
     asyncio.run(scenario())
+
+
+def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Run > Resume on a run the agent ended spawned a detached `agent6 resume`
+    that refused ("already finished; give it new work") on a stderr nobody
+    read, while the toast said "resuming…". The refusal lands here; the
+    composer below is how it gets new work. A stopped/crashed run still
+    resumes."""
+    spawned: list[tuple[str, str]] = []
+
+    def _fake_resume(
+        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+    ) -> str:
+        spawned.append((rid, steer))
+        return ""
+
+    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    run = tmp_path / "done-run-AAAAAA"
+    run.mkdir()
+    evs = [
+        {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    notes: list[str] = []
+
+    async def scenario() -> None:
+        app = Agent6TUI(run)
+        original = app.notify
+
+        def spy(message: Any, *a: Any, **k: Any) -> None:
+            notes.append(str(message))
+            original(message, *a, **k)
+
+        monkeypatch.setattr(app, "notify", spy)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            app.action_resume()
+            await pilot.pause()
+            assert spawned == []
+            assert any("type what to do next" in n for n in notes)
+            # Stopped by the operator: resume is the continuation.
+            (run / "logs.jsonl").write_text(
+                "".join(
+                    json.dumps(e) + "\n"
+                    for e in (
+                        evs[0],
+                        {"type": "session.end", "reason": "steer_abort", "all_passed": False},
+                    )
+                ),
+                encoding="utf-8",
+            )
+            app.action_resume()
+            assert spawned == [(run.name, "")]
+
+    asyncio.run(scenario())
