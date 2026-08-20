@@ -325,6 +325,14 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     parked = capsys.readouterr().err
     assert "PARKED" in parked and "agent6 sessions merge prior-run-AAAAAA" in parked, parked
 
+    # A commit that landed on the base since (another file) does not hide the
+    # match: the comparison is per modified file, not whole-tree.
+    (repo / "other.txt").write_text("later\n", encoding="utf-8")
+    _git(repo, "add", "other.txt")
+    _git(repo, "commit", "-q", "-m", "later work on main")
+    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
+    assert "the unmerged work of run prior-run-AAAAAA" in capsys.readouterr().err
+
     # A further edit of the operator's own is not the run's work.
     (repo / "seed.txt").write_text("edited by the prior run\nand by me\n", encoding="utf-8")
     assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]

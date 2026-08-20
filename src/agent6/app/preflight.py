@@ -7,8 +7,9 @@ terminal) and are injected by the front-end."""
 
 from __future__ import annotations
 
+import contextlib
 import sys
-from collections.abc import Callable, Collection, Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -25,12 +26,12 @@ from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
-    chain_dirty,
     chain_ref_for,
     chain_tip,
     is_git_repo,
     run_branch_for,
     verify_git_identity,
+    worktree_matches,
 )
 from agent6.git_ops import (
     status as git_status,
@@ -38,6 +39,7 @@ from agent6.git_ops import (
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import effective_run_commands
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 from agent6.viewmodel.listing import session_dirs
@@ -196,25 +198,31 @@ DIRTY_TREE_OPTIONS: tuple[str, ...] = ("stash", "include", "cancel")
 
 
 def unmerged_run_holding_the_tree(
-    cwd: Path, state_dir: Path, *, except_id: str, exclude: Collection[str] = ()
+    cwd: Path, state_dir: Path, *, except_id: str, modified: Sequence[str]
 ) -> str:
-    """The id of the newest earlier run whose chain tip IS the working tree's
-    content, else "". A run's edits sit uncommitted on the checkout until its
-    branch is merged, so the next run's dirty-tree question would otherwise
-    call agent6's own last work "uncommitted changes" as if the operator had
-    left them; naming the run points at the merge instead."""
-    for d in session_dirs(state_dir, buckets=("runs",)):
+    """The id of the newest earlier unmerged run whose chain tip holds exactly
+    the working tree's content of the *modified* files, else "". A run's
+    edits sit uncommitted on the checkout until its branch is merged, so the
+    next run's dirty-tree question would otherwise call agent6's own last
+    work "uncommitted changes" as if the operator had left them; naming the
+    run points at the merge instead. Compared per file, so a commit that
+    landed on the base since (any other file) does not hide the match."""
+    if not modified:
+        return ""
+    for d in session_dirs(state_dir, buckets=("runs",))[:10]:
         if d.name == except_id:
             continue
-        ref = chain_ref_for(d.name)
-        try:
-            if chain_tip(cwd, ref) is None:
+        with contextlib.suppress(ManifestError):
+            if read_manifest(d).merged is not None:
                 continue
-            if not chain_dirty(cwd, ref, None, exclude=exclude):
+        tip = chain_tip(cwd, chain_ref_for(d.name))
+        if tip is None:
+            continue
+        try:
+            if worktree_matches(cwd, tip, modified):
                 return d.name
         except GitError:
             return ""
-        return ""  # the newest run with a chain decides; an older one cannot own the tree
     return ""
 
 

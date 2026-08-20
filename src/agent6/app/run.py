@@ -303,11 +303,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         modified = modified_paths(cwd) if mode == "run" else []
         must_ask = bool(modified) and not cfg.git.auto_stash and cfg.git.require_clean_worktree
         answerable = frontend.capabilities.can_ask or away_mode(layout.session_dir) == "wait"
-        # Untracked files never enter a chain tree, so the tree comparison
-        # leaves out the ones present now (the same set the run records below).
         unmerged_run = (
             unmerged_run_holding_the_tree(
-                cwd, state_dir, except_id=effective_session_id, exclude=untracked_paths(cwd)
+                cwd, state_dir, except_id=effective_session_id, modified=modified
             )
             if must_ask
             else ""

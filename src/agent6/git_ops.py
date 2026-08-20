@@ -907,6 +907,13 @@ def _worktree_tree(path: Path, seed: str | None, exclude: Collection[str]) -> st
 _EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
+def worktree_matches(path: Path, ref: str, paths: Collection[str]) -> bool:
+    """True when the worktree's content of *paths* equals *ref*'s
+    (`git diff --quiet <ref> -- <paths>`); the shared index is not consulted."""
+    res = _run(path, "diff", "--quiet", ref, "--", *sorted(paths), check=False)
+    return res.returncode == 0
+
+
 def chain_dirty(
     path: Path, ref: str, fallback_parent: str | None, *, exclude: Collection[str] = ()
 ) -> bool:
