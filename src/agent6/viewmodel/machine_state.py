@@ -20,8 +20,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
+from agent6.machine import MachineError, load_machine
 from agent6.machine.journal import (
     AgentFact,
     JournalError,
@@ -203,6 +204,63 @@ def machine_files(cwd: Path) -> list[Path]:
     if sub.is_dir():
         found.update(sub.glob("*.asm.toml"))
     return sorted(found)
+
+
+MachineVerb = Literal["stop", "poke", "steer", "answer"]
+
+
+def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str:
+    """Why *verb* cannot reach machine *name* now, or "" when it can. One
+    reading of the instance (its dir, the journal's end, the worker, a wait
+    state) and one wording per state and verb, for the CLI, the TUI, and the
+    web: an unknown machine is named as unknown (not as stopped); an ended
+    one consumes no signal; a stopped one has no state polling a marker (a
+    poke still wakes it); a live one in a wait state reads no steer (a poke
+    wakes it) but takes a stop and an answer."""
+    if not machine_dir.is_dir():
+        return f"no machine {name!r}"
+    try:
+        events = MachineJournal(machine_dir).read()
+    except JournalError as exc:
+        return f"machine {name!r}: {exc}"
+    end = events[-1] if events and isinstance(events[-1], MachineEnd) else None
+    if end is not None:
+        ended = f"machine {name!r} already ended in {end.state!r} ({end.status}: {end.reason})"
+        return {
+            "stop": f"{ended}; nothing to stop",
+            "poke": f"{ended}; a poke would never be consumed",
+            "steer": f"{ended}; there is no state to steer",
+            "answer": f"{ended}; the prompt is closed",
+        }[verb]
+    if verb != "poke" and not worker_is_alive(machine_dir):
+        return {
+            "stop": (
+                f"machine {name!r} is not running; nothing to stop (a parked instance resumes"
+                " with `agent6 machine run`)"
+            ),
+            "steer": (
+                f"machine {name!r} is not running, so no agent state would read a steer"
+                " (poke it to wake a waiting machine)"
+            ),
+            "answer": f"machine {name!r} is not running; poke it to wake a waiting machine",
+        }[verb]
+    if verb == "steer" and _in_wait_state(machine_dir, events):
+        return f"machine {name!r} is waiting; a wait state reads no steer (poke it to wake it)"
+    return ""
+
+
+def _in_wait_state(machine_dir: Path, events: Sequence[object]) -> bool:
+    """A live machine's current state is a wait: an armed `--exit-on-wait`
+    wait, or the fold's current state of kind `wait`. An unloadable source
+    reads as not waiting; the operation's own error then says what is wrong."""
+    if machine_is_parked(machine_dir):
+        return True
+    try:
+        spec = load_machine(machine_dir / "machine.asm.toml")
+    except MachineError:
+        return False
+    ms = fold_machine(spec, events)
+    return next((st.kind for st in ms.states if st.is_current), None) == "wait"
 
 
 def machine_word_for_dir(ms: MachineState, machine_dir: Path) -> str:

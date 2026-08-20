@@ -232,3 +232,39 @@ def test_machine_state_as_dict_is_json_serializable(tmp_path: Path) -> None:
     assert d["states"][0]["name"] == "route"  # tuple -> list, dataclass -> dict
     assert d["ended"]["status"] == "ok"
     json.dumps(d)  # the wire form must serialize
+
+
+def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: Path) -> None:
+    """The one gate every surface's stop/poke/steer/answer runs: an unknown
+    machine is named as unknown; an ended one takes nothing; a stopped one
+    takes only a poke (it wakes it); a live one in a wait state takes a stop
+    and an answer but reads no steer; a running one takes everything."""
+    from agent6.viewmodel.machine_state import machine_verb_refusal
+
+    verbs = ("stop", "poke", "steer", "answer")
+    missing = tmp_path / "ghost"
+    assert all(machine_verb_refusal(missing, "ghost", v) == "no machine 'ghost'" for v in verbs)
+
+    d = tmp_path / "inst"
+    d.mkdir()
+    (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    journal = MachineJournal(d)
+    journal.begin(machine="tiny", version=1)
+    # Stopped: no worker, no wait. Only a poke goes through.
+    assert machine_verb_refusal(d, "tiny", "poke") == ""
+    for verb in ("stop", "steer", "answer"):
+        assert "is not running" in machine_verb_refusal(d, "tiny", verb), verb
+    # Live in an armed wait: a stop and an answer reach it; a steer does not.
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    journal.write_pending_wait(PendingWait(state="route", wake_epoch=None))
+    assert machine_verb_refusal(d, "tiny", "stop") == ""
+    assert machine_verb_refusal(d, "tiny", "answer") == ""
+    assert "reads no steer" in machine_verb_refusal(d, "tiny", "steer")
+    journal.clear_pending_wait()
+    # Running: everything reaches it.
+    assert all(machine_verb_refusal(d, "tiny", v) == "" for v in verbs)
+    # Ended: nothing does, and the end is named.
+    journal.append(MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1))
+    for verb in verbs:
+        msg = machine_verb_refusal(d, "tiny", verb)
+        assert "already ended in 'done' (ok: routed)" in msg, (verb, msg)

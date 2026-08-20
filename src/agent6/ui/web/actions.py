@@ -32,7 +32,6 @@ from agent6.sessions.ipc import (
     request_compact,
     request_stop,
     submit_steer,
-    worker_is_alive,
     write_answer,
     write_question_answers,
 )
@@ -45,8 +44,9 @@ from agent6.ui.spawn import (
     spawn_detached_resume,
 )
 from agent6.ui.web import model
-from agent6.viewmodel import machine_snapshot, newest_state_log, session_is_live
+from agent6.viewmodel import machine_verb_refusal, newest_state_log, session_is_live
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
+from agent6.viewmodel.machine_state import MachineVerb
 
 
 # Modes `agent6 web` can start as new work, mapped 1:1 to the CLI subcommand.
@@ -239,30 +239,18 @@ def _machine_state_dir(cwd: Path, name: str, state: str = "") -> Path | None:
     return log.parent if log is not None else None
 
 
-def _machine_has_ended(cwd: Path, name: str) -> bool:
-    """True when the instance's journal records a MachineEnd. Poking or steering
-    an ended machine would report success while nothing will ever read the
-    signal; an unreadable journal reads as not-ended so the real error surfaces
-    from the operation itself."""
-    machine_dir = model.machine_dir_for(cwd, name)
-    if machine_dir is None:
-        return False
-    try:
-        return machine_snapshot(machine_dir).get("ended") is not None
-    except (MachineError, OSError):
-        return False
+def _machine_dir_or_missing(cwd: Path, name: str) -> Path:
+    """The instance dir the verb refusal reads: a missing one is still a Path,
+    so `machine_verb_refusal` names an unknown machine as unknown."""
+    return model.machine_dir_for(cwd, name) or machines_root(resolved_state_dir(cwd)) / name
 
 
 def machine_stop(cwd: Path, name: str) -> tuple[bool, str]:
     """Write the durable stop marker for a running machine (parks at its next
     transition boundary; resumable). Not-running is a refusal, not a marker."""
-    machine_dir = model.machine_dir_for(cwd, name)
-    if machine_dir is None:
-        return False, f"no machine {name!r}"
-    if _machine_has_ended(cwd, name):
-        return False, f"machine {name!r} has ended; nothing to stop"
-    if not worker_is_alive(machine_dir):
-        return False, f"machine {name!r} is not running; nothing to stop"
+    machine_dir = _machine_dir_or_missing(cwd, name)
+    if refusal := machine_verb_refusal(machine_dir, name, "stop"):
+        return False, refusal
     write_stop_request(machine_dir)
     return True, "stop requested; the machine parks at its next transition boundary"
 
@@ -270,11 +258,9 @@ def machine_stop(cwd: Path, name: str) -> tuple[bool, str]:
 def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -> tuple[bool, str]:
     """Poke a waiting machine, optionally carrying a payload the next tool reads.
     `data` (any JSON) wins over `message` (a string); neither is a bare wake."""
-    machine_dir = model.machine_dir_for(cwd, name)
-    if machine_dir is None:
-        return False, f"no machine {name!r}"
-    if _machine_has_ended(cwd, name):
-        return False, f"machine {name!r} has ended; nothing is waiting to wake"
+    machine_dir = _machine_dir_or_missing(cwd, name)
+    if refusal := machine_verb_refusal(machine_dir, name, "poke"):
+        return False, refusal
     payload: Any = data if data is not None else (message or None)
     try:
         MachineJournal(machine_dir).poke(payload)
@@ -283,25 +269,16 @@ def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -
     return True, "poked"
 
 
-def _machine_unavailable(cwd: Path, name: str, *, ended: str, stopped: str) -> str:
-    """Why *name* cannot receive an answer, or "" when it can.
-
-    Ordered so the message names the real state: an unknown machine is not a
-    stopped one. Reading a missing instance dir as LIVE sent the caller past
-    this gate to fail on "no active agent state", pointing the operator at a
-    state belonging to a machine that never existed.
-
-    The newest state dir of a parked or stopped machine is a FINISHED agent
-    state whose loop has exited, so a marker written there is polled by nobody.
-    """
-    machine_dir = model.machine_dir_for(cwd, name)
-    if machine_dir is None:
-        return f"no machine {name!r}"
-    if _machine_has_ended(cwd, name):
-        return ended
-    if not worker_is_alive(machine_dir):
-        return stopped
-    return ""
+def _state_dir_for_verb(
+    cwd: Path, name: str, verb: MachineVerb, state: str
+) -> Path | tuple[bool, str]:
+    """The agent-state dir a prompt answer or a steer lands in, or the refusal."""
+    if refusal := machine_verb_refusal(_machine_dir_or_missing(cwd, name), name, verb):
+        return False, refusal
+    state_dir = _machine_state_dir(cwd, name, state)
+    if state_dir is None:
+        return False, f"no active agent state for machine {name!r}"
+    return state_dir
 
 
 def machine_approve(
@@ -309,18 +286,10 @@ def machine_approve(
 ) -> tuple[bool, str]:
     """Answer a pending approval in the agent state the prompt was rendered from
     (`state`; newest when absent)."""
-    refusal = _machine_unavailable(
-        cwd,
-        name,
-        ended=f"machine {name!r} has ended; the prompt is closed",
-        stopped=f"machine {name!r} is not running; poke it to wake a waiting machine",
-    )
-    if refusal:
-        return False, refusal
-    state_dir = _machine_state_dir(cwd, name, state)
-    if state_dir is None:
-        return False, f"no active agent state for machine {name!r}"
-    write_answer(state_dir, prompt_id, answer)
+    target = _state_dir_for_verb(cwd, name, "answer", state)
+    if not isinstance(target, Path):
+        return target
+    write_answer(target, prompt_id, answer)
     return True, "answered"
 
 
@@ -329,39 +298,20 @@ def machine_answer(
 ) -> tuple[bool, str]:
     """Answer a pending `ask_user` prompt in the agent state the prompt was rendered
     from (`state`; newest when absent). One answer per question, by index."""
-    refusal = _machine_unavailable(
-        cwd,
-        name,
-        ended=f"machine {name!r} has ended; the prompt is closed",
-        stopped=f"machine {name!r} is not running; poke it to wake a waiting machine",
-    )
-    if refusal:
-        return False, refusal
-    state_dir = _machine_state_dir(cwd, name, state)
-    if state_dir is None:
-        return False, f"no active agent state for machine {name!r}"
-    write_question_answers(state_dir, question_id, answers)
+    target = _state_dir_for_verb(cwd, name, "answer", state)
+    if not isinstance(target, Path):
+        return target
+    write_question_answers(target, question_id, answers)
     return True, "answered"
 
 
 def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[bool, str]:
     """Steer the agent state the operator is viewing (`state`; newest when
     absent). Same contract as a run steer."""
-    refusal = _machine_unavailable(
-        cwd,
-        name,
-        ended=f"machine {name!r} has ended; there is no state to steer",
-        stopped=(
-            f"machine {name!r} is not running, so no agent state would read a steer"
-            " (poke it to wake a waiting machine)"
-        ),
-    )
-    if refusal:
-        return False, refusal
-    state_dir = _machine_state_dir(cwd, name, state)
-    if state_dir is None:
-        return False, f"no active agent state for machine {name!r}"
-    submit_steer(state_dir, text)
+    target = _state_dir_for_verb(cwd, name, "steer", state)
+    if not isinstance(target, Path):
+        return target
+    submit_steer(target, text)
     return True, "steer requested"
 
 

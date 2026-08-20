@@ -815,7 +815,8 @@ def test_machine_stop_marks_a_running_worker_and_refuses_a_dead_one(
     """`machine stop` writes the durable marker only for a live worker; a
     parked/dead instance gets a refusal, never a marker that would ambush the
     next `machine run` at its first boundary."""
-    from agent6.ui.cli import machine_cmds
+
+    from agent6.viewmodel import machine_state as machine_state_mod
 
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
@@ -838,7 +839,7 @@ def test_machine_stop_marks_a_running_worker_and_refuses_a_dead_one(
     def _alive(_root: Path) -> bool:
         return True
 
-    monkeypatch.setattr(machine_cmds, "worker_is_alive", _alive)
+    monkeypatch.setattr(machine_state_mod, "worker_is_alive", _alive)  # the verb gate's owner
     assert main(["machine", "stop", "waiter_delayed"]) == 0
     assert "stop requested" in capsys.readouterr().out
     assert (wroot / "stop").is_file()

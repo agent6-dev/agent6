@@ -47,7 +47,6 @@ from agent6.machine import (
     DryRunReport,
     EngineError,
     JournalError,
-    MachineEnd,
     MachineError,
     MachineJournal,
     MachineSpec,
@@ -74,6 +73,7 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     event_epoch,
     fold_machine,
+    machine_verb_refusal,
     machine_word_for_dir,
 )
 from agent6.viewmodel.format import format_cost, format_transition, machine_state_mark
@@ -528,22 +528,12 @@ def _cmd_machine_poke(
             file=sys.stderr,
         )
         return 1
-    journal = MachineJournal(root)
-    try:
-        events = journal.read()
-    except JournalError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
     # An ended machine consumes no signals: a poke would sit unread, so the
     # "it will wake on its next signal check" reply would be a lie. Refuse.
-    if events and isinstance(events[-1], MachineEnd):
-        end = events[-1]
-        print(
-            f"ERROR: {machine_id} already ended in {end.state!r} ({end.status}: {end.reason});"
-            " a poke would never be consumed.",
-            file=sys.stderr,
-        )
+    if refusal := machine_verb_refusal(root, machine_id, "poke"):
+        print(f"ERROR: {refusal}", file=sys.stderr)
         return 1
+    journal = MachineJournal(root)
     if message is not None:
         payload: Any = message
     elif data is not None:
@@ -579,25 +569,8 @@ def _cmd_machine_stop(machine_id: str) -> int:
             file=sys.stderr,
         )
         return 1
-    try:
-        events = MachineJournal(root).read()
-    except JournalError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    if events and isinstance(events[-1], MachineEnd):
-        end = events[-1]
-        print(
-            f"ERROR: {machine_id} already ended in {end.state!r} ({end.status}: {end.reason});"
-            " nothing to stop.",
-            file=sys.stderr,
-        )
-        return 1
-    if not worker_is_alive(root):
-        print(
-            f"ERROR: {machine_id} is not running; nothing to stop."
-            " A parked instance resumes with `agent6 machine run`.",
-            file=sys.stderr,
-        )
+    if refusal := machine_verb_refusal(root, machine_id, "stop"):
+        print(f"ERROR: {refusal}", file=sys.stderr)
         return 1
     write_stop_request(root)
     print(f"stop requested: {machine_id} parks at its next transition boundary")

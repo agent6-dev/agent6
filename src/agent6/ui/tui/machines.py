@@ -49,7 +49,6 @@ from agent6.sessions.ipc import (
     register_frontend,
     request_steer,
     unregister_frontend,
-    worker_is_alive,
     write_steer_answer,
 )
 from agent6.sessions.layout import LOGS_NAME, bucket_dir, machines_root
@@ -75,6 +74,7 @@ from agent6.viewmodel import (
     fold_machine,
     fold_session,
     machine_files,
+    machine_verb_refusal,
     machine_word_for_dir,
     newest_state_log,
     tail_events,
@@ -157,7 +157,7 @@ class MachineWatchScreen(Screen[None]):
         self._pending = ""  # accumulated thinking/answer text, flushed in readable chunks
         self._ended = False
         self._was_steerable = True  # the footer's Steer key tracks _steerable() flips
-        self._prompts = PromptDispatcher(self.app, answerable=self._steerable, lost=_ANSWER_LOST)
+        self._prompts = PromptDispatcher(self.app, answerable=self._answerable, lost=_ANSWER_LOST)
         self._end_notified = False
         self._steer_open = False
 
@@ -217,35 +217,24 @@ class MachineWatchScreen(Screen[None]):
         # offers a control that would drop into a dead instance dir (matches the
         # web, which disables both buttons once the machine has ended).
         del parameters
-        if action == "steer" and not self._steerable():
-            return False
-        if action == "stop" and not worker_is_alive(self._root):
-            return False
-        return not (action in ("steer", "poke", "stop") and self._ended)
+        if action in ("steer", "poke", "stop"):
+            return not machine_verb_refusal(self._root, self._root.name, action)
+        return True
 
     def _steerable(self) -> bool:
-        """A steer only reaches an agent state the worker is actively running. A
-        parked, stopped, foreground-waiting, or ended machine's newest state polls
-        no marker, so a poke -- not a steer -- wakes it. Gate on the shared status
-        word; an unreadable journal is not steerable."""
-        try:
-            ms = fold_machine(self._spec, self._journal.read())
-        except JournalError:
-            return False
-        return machine_word_for_dir(ms, self._root) == "running"
+        """A steer only reaches an agent state the worker is actively running
+        (`machine_verb_refusal`): the footer's Steer key and the answer gate
+        read this."""
+        return not machine_verb_refusal(self._root, self._root.name, "steer")
+
+    def _answerable(self) -> bool:
+        return not machine_verb_refusal(self._root, self._root.name, "answer")
 
     def action_steer(self) -> None:
         """Steer the current agent state: drop a request marker + open the steer
         box; the state picks it up at its next safe boundary. No-op if none runs."""
-        if self._ended:
-            self.app.notify("machine ended; cannot steer", timeout=4.0)
-            return
-        if not self._steerable():
-            self.app.notify(
-                "machine is not running, so no agent state would read a steer"
-                " (poke it to wake a waiting machine)",
-                timeout=6.0,
-            )
+        if refusal := machine_verb_refusal(self._root, self._root.name, "steer"):
+            self.app.notify(refusal, timeout=6.0)
             return
         state_dir = self._current_state_dir()
         if state_dir is None or self._steer_open:
@@ -266,8 +255,8 @@ class MachineWatchScreen(Screen[None]):
     def action_stop(self) -> None:
         """Ask the running machine to park at its next transition boundary
         (the durable stop marker; the instance stays resumable)."""
-        if not worker_is_alive(self._root):
-            self.app.notify("machine is not running; nothing to stop", timeout=4.0)
+        if refusal := machine_verb_refusal(self._root, self._root.name, "stop"):
+            self.app.notify(refusal, timeout=6.0)
             return
         write_stop_request(self._root)
         self.app.notify("stop requested; the machine parks at its next boundary", timeout=4.0)

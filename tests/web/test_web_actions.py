@@ -353,6 +353,8 @@ def test_machine_stop_refuses_ended_and_marks_a_live_one(tmp_path: Path) -> None
     trip over later; a live worker gets the durable stop marker."""
     from unittest.mock import patch
 
+    from agent6.viewmodel import machine_state as machine_state_mod
+
     inst = _ended_machine(tmp_path, "tiny")
     ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert not ok and "ended" in msg
@@ -364,7 +366,7 @@ def test_machine_stop_refuses_ended_and_marks_a_live_one(tmp_path: Path) -> None
     )
     ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert not ok and "not running" in msg
-    with patch.object(actions, "worker_is_alive", return_value=True):
+    with patch.object(machine_state_mod, "worker_is_alive", return_value=True):  # the gate's owner
         ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert ok and "stop requested" in msg
     assert (inst / "stop").is_file()
