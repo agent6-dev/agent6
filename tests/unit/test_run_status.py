@@ -15,7 +15,7 @@ import pytest
 
 from agent6.sessions.ipc import worker_is_alive, write_worker_pid
 from agent6.ui.cli._common import _runs_dir  # pyright: ignore[reportPrivateUsage]
-from agent6.ui.cli.plan_watch import _cmd_status  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.sessions_show import _cmd_status  # pyright: ignore[reportPrivateUsage]
 
 
 def _ts(off_s: float) -> str:

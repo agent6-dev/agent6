@@ -35,7 +35,7 @@ def test_the_end_of_run_task_tree_renders_for_a_plan(
     """It rebuilt the layout from the dir NAME, so a plan's graph was read from
     runs/ -- and the whole block sits under `suppress(Exception)`, so it failed
     by printing nothing at all."""
-    from agent6.ui.cli.plan_watch import _print_task_tree  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.sessions_show import _print_task_tree  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
     session = bucket_dir(tmp_path / "state", "plans") / "brave-oak-AAAAAA"

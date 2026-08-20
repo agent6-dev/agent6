@@ -91,7 +91,6 @@ from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_par
 from agent6.ui.cli.plan_watch import (
     _cmd_plan_edit,
     _cmd_plan_show,
-    _cmd_status,
     _cmd_tui,
     _most_recent_plan_session_id,
     _resolve_plan_session_id,
@@ -110,6 +109,7 @@ from agent6.ui.cli.sessions_cmds import (
     _cmd_stop,
 )
 from agent6.ui.cli.sessions_merge import _cmd_merge, _cmd_prune
+from agent6.ui.cli.sessions_show import _cmd_status
 from agent6.ui.cli.skills_cmds import (
     _cmd_skills_disable,
     _cmd_skills_enable,

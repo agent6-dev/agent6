@@ -11,17 +11,12 @@ import shlex
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.app.finalize import merge_stamp_holds
 from agent6.config.layer import resolved_state_dir
 from agent6.errors import read_operator_file
-from agent6.git_ops import branch_exists
 from agent6.sessions.id import SessionIdError, resolve_session_id
 from agent6.sessions.ipc import (
-    pid_alive,
-    read_worker_pid,
     register_frontend,
     unregister_frontend,
     worker_is_alive,
@@ -29,18 +24,15 @@ from agent6.sessions.ipc import (
     write_question_answers,
 )
 from agent6.sessions.layout import LOGS_NAME
-from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import (
     _plans_dir,
-    print_no_session_match,
     print_nothing_yet,
     resolve_or_newest_layout,
 )
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
 from agent6.viewmodel import (
-    LogScan,
     StatusFacts,
     event_epoch,
     scan_session_log,
@@ -51,7 +43,6 @@ from agent6.viewmodel import (
     tail_events,
 )
 from agent6.viewmodel.events import SESSION_START_EVENTS
-from agent6.viewmodel.format import format_branch, format_compare, format_cost
 
 
 def _resolve_plan_session_id(session_id: str) -> str | None:
@@ -186,253 +177,6 @@ def _resolve_session_dir(repo_root: Path, session_id: str) -> Path | None:
     except SessionIdError:
         return None
     return layout.session_dir if layout is not None else None
-
-
-def _fmt_dur(seconds: float | None) -> str:
-    if seconds is None:
-        return "-"
-    s = int(seconds)
-    if s < 60:
-        return f"{s}s"
-    if s < 3600:
-        return f"{s // 60}m{s % 60:02d}s"
-    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
-
-
-def _print_fork_lineage(manifest: SessionManifest) -> None:
-    """Print the fork-lineage line for a run created by `agent6 fork` (no-op
-    otherwise)."""
-    parent = manifest.parent_session_id
-    if not parent:
-        return
-    sha = manifest.forked_from_sha
-    sha_note = f" ({sha[:12]})" if sha else ""
-    print(f"forked from: {parent}@turn {manifest.forked_from_turn}{sha_note}")
-
-
-def _print_parallel_compare(manifest: SessionManifest) -> None:
-    """Print the fan-out compare outcome for a lane (no-op for a non-lane run):
-    where it placed, whether it won, judged or mechanical, and the judge's
-    rationale when there is one."""
-    formatted = format_compare(manifest.compare)
-    if formatted is None:
-        return
-    headline, rationale = formatted
-    print(f"compare:    {headline}")
-    if rationale:
-        print(f"  judge: {rationale}")
-
-
-def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -> str:
-    """The one-line state `sessions show` prints (and emits as --json "state").
-
-    Leads with the LISTING's word -- `status_for_session_dir`, the one decision
-    every surface feeds -- then appends this surface's diagnostic detail (what
-    to do, or why the word applies). The pre-unification words lied twice: a
-    crashed run led with "stopped" (the hub's word for an OPERATOR stop) and a
-    launching run with "running" (the hub said "starting")."""
-    word, reason = status_for_session_dir(session_dir, scan.status_facts())
-    if scan.finished:
-        # An ask ends "answered": the reason repeats the word.
-        return word if scan.end_reason == word else f"{word} ({scan.end_reason})"
-    detail = {
-        "waiting": "needs answer; attach to respond",
-        "stale": "no worker, no session.end: likely crashed or killed",
-        "parked": f"{reason}; resume to start" if reason else "resume to start",
-        # "no events yet" was claimed unconditionally, over logs that HAD
-        # events (a worker that died launching writes preflight events).
-        "created": "no events yet" if scan.last_type is None else "never started",
-    }.get(word, "")
-    if word == "running" and last_age is not None and last_age > 120:
-        detail = "long step, likely a provider call"
-    return f"{word} ({detail})" if detail else word
-
-
-def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
-    """One-shot liveness + progress summary for a run, then exit (no follower).
-
-    Answers "is this run still alive, and what is it doing?" from the run dir
-    alone: the worker.pid (probed with signal 0, so liveness is known even while
-    the worker is blocked in a long provider call that emits no events) plus the
-    last event, current iteration, and elapsed time from logs.jsonl. For a quick
-    or scripted check; `agent6 attach` is the live follower.
-    """
-    try:
-        layout = resolve_or_newest_layout(Path.cwd(), session_id)
-    except SessionIdError as exc:
-        # An ambiguous prefix names its candidates (as attach and runs stop do);
-        # swallowing it printed "no session matches <id>", which is false when
-        # several do.
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
-    target = layout.session_dir if layout is not None else None
-    if target is None or not target.is_dir():
-        print_no_session_match(session_id, resolved_state_dir(Path.cwd()))
-        return 2
-
-    loaded: SessionManifest | None = None
-    with contextlib.suppress(ManifestError):
-        loaded = read_manifest(target)
-    # A missing/corrupt manifest still renders (defaults), but `mode` reads "?"
-    # rather than the model default so a manifest-less run isn't shown as "run".
-    manifest = loaded or SessionManifest()
-    mode_display = loaded.mode if loaded is not None else None
-
-    logs = target / LOGS_NAME
-    scan = scan_session_log(logs) if logs.is_file() else LogScan()
-
-    pid = read_worker_pid(target)
-    alive = worker_is_alive(target)
-    last_age = (time.time() - scan.last_ep) if scan.last_ep is not None else None
-    elapsed = (
-        (scan.last_ep - scan.start_ep)
-        if scan.last_ep is not None and scan.start_ep is not None
-        else None
-    )
-
-    state = _status_state(target, scan, last_age=last_age)
-
-    driver = manifest.models.driver
-    model = (driver.model if driver else "") or "?"
-    compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
-    changes = _changes(target.name, manifest)
-
-    if as_json:
-        print(
-            json.dumps(
-                {
-                    "session_id": target.name,
-                    "mode": mode_display,
-                    "model": model,
-                    "state": state,
-                    "alive": alive,
-                    "pid": pid,
-                    "iteration": scan.iteration,
-                    "last_event": scan.last_type,
-                    "last_event_age_s": round(last_age, 1) if last_age is not None else None,
-                    "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
-                    "reason": scan.end_reason if scan.finished else None,
-                    "input_tokens": scan.input_tokens,
-                    "output_tokens": scan.output_tokens,
-                    "cost_usd": scan.cost_usd,
-                    # cost_usd is an under-estimate when some spend was
-                    # unpriced; the text render marks it, so the JSON must too.
-                    "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
-                    "parent_session_id": manifest.parent_session_id,
-                    "forked_from_turn": manifest.forked_from_turn,
-                    "forked_from_sha": manifest.forked_from_sha,
-                    "compare": compare_json,
-                    "run_branch": manifest.run_branch or None,
-                    "base_branch": manifest.base_branch or None,
-                    "merged_into": changes.merged_into or None,
-                }
-            )
-        )
-        return 0
-
-    pid_note = ""
-    if alive:
-        pid_note = f"  (worker pid {pid} alive)"
-    elif pid is not None and not scan.finished:
-        # Liveness matches the recorded start time, so a pid the OS has since
-        # handed to something else reads dead -- correctly. Saying "not running"
-        # about a number the operator can look up is still false.
-        pid_note = (
-            f"  (worker pid {pid} was recycled)"
-            if pid_alive(pid)
-            else f"  (worker pid {pid} not running)"
-        )
-    print(f"session:    {target.name}  (mode={mode_display or '?'})")
-    _print_fork_lineage(manifest)
-    _print_parallel_compare(manifest)
-    print(f"model:      {model}")
-    print(f"state:      {state}{pid_note}")
-    print(f"iteration:  {scan.iteration if scan.iteration is not None else '-'}")
-    print(
-        f"last event: {scan.last_type or '-'}"
-        f"{f'  ({_fmt_dur(last_age)} ago)' if last_age is not None else ''}"
-    )
-    print(f"elapsed:    {_fmt_dur(elapsed)}")
-    if scan.input_tokens is not None or scan.cost_usd is not None:
-        # Token counters are per-leg, cost is banked across legs; on a resumed
-        # run say so, or $0.03 next to the last leg's 10k tokens reads wrong.
-        leg_s = " (latest leg)" if scan.legs > 1 else ""
-        cost_s = (
-            f"  cost {format_cost(scan.cost_usd, partial=scan.usd_partial)}"
-            + (f" (all {scan.legs} legs)" if scan.legs > 1 else "")
-            if scan.cost_usd is not None
-            else ""
-        )
-        tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
-        print(f"usage:      {tokens}{leg_s}{cost_s}")
-    if changes.line:
-        print(f"changes:    {changes.line}")
-    _print_listening_ports(target)
-    _print_task_tree(target)
-    return 0
-
-
-@dataclass(frozen=True, slots=True)
-class _Changes:
-    line: str  # the text row; "" for a session with no run branch
-    merged_into: str  # the base the run branch is merged into, else ""
-
-
-def _changes(session_id: str, manifest: SessionManifest) -> _Changes:
-    """Where the run's work lives, checked against git as the end-of-run
-    footer checks it: merged into the base (the stamp still describes the
-    branch), on the run branch awaiting `sessions merge`, or a branch no
-    commit ever reached."""
-    run_branch = manifest.run_branch or ""
-    if not run_branch:
-        return _Changes("", "")
-    stamp = manifest.merged
-    if stamp is not None and merge_stamp_holds(run_branch, stamp.tip):
-        into = stamp.into or manifest.base_branch
-        return _Changes(format_branch(run_branch, manifest.base_branch, into), into)
-    if not branch_exists(Path.cwd(), run_branch):
-        return _Changes(f"{run_branch} (no commits)", "")
-    line = format_branch(run_branch, manifest.base_branch, "")
-    return _Changes(f"{line}; merge with: agent6 sessions merge {session_id}", "")
-
-
-def _print_listening_ports(session_dir: Path) -> None:
-    """What the run is serving, and how to reach it.
-
-    A run's commands share a network with no way in from outside, so a dev
-    server the agent started is invisible here -- including the port it is on.
-    This is where someone asks "what is it doing", so it is where the answer
-    belongs, with the command that opens it.
-    """
-    from agent6.ui.cli.net_cmds import listening_ports  # noqa: PLC0415
-
-    with contextlib.suppress(Exception):
-        ports = listening_ports(session_dir)
-        if not ports:
-            return
-        listed = ", ".join(str(p) for p in ports)
-        print(f"serving:    {listed} (inside the run)")
-        print(f"            open one: agent6 forward {session_dir.name} {ports[0]}")
-
-
-def _print_task_tree(session_dir: Path) -> None:
-    """Show the run's task DAG when it decomposed into subtasks. Makes the plan
-    visible for a headless run (no TUI #plan pane), the decompose case the user
-    could not see. A single root (no decomposition) is not worth the block."""
-    from agent6.graph.storage import load_graph  # noqa: PLC0415
-    from agent6.sessions.layout import layout_of  # noqa: PLC0415
-    from agent6.ui.cli._task_tree import task_tree_lines  # noqa: PLC0415
-
-    with contextlib.suppress(Exception):
-        layout = layout_of(session_dir)
-        nodes = load_graph(layout)
-        if len(nodes) <= 1:
-            return
-        lines = task_tree_lines(nodes, show_commit=True)
-        if lines:
-            print("\nplan:")
-            for line in lines:
-                print(f"  {line}")
 
 
 def _cmd_tui(config_path: Path | None = None) -> int:

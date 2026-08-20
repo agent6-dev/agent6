@@ -242,7 +242,7 @@ def test_runs_show_reports_a_parked_run_as_parked(
     resumable submission -- never "unknown (no events yet)", which reads as a
     broken husk and hides the one action that starts it."""
     from agent6.app.run import run_task
-    from agent6.ui.cli.plan_watch import _cmd_status  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.sessions_show import _cmd_status  # pyright: ignore[reportPrivateUsage]
 
     state = resolved_state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
