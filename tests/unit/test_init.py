@@ -103,6 +103,12 @@ def test_init_detects_ecosystem_for_gitignore(tmp_path: Path) -> None:
     init_workspace(rust)
     assert "target/" in (rust / ".gitignore").read_text(encoding="utf-8")
 
+    # No manifest, no guess: the secret entries only (`--ecosystem` picks).
+    bare = _repo(tmp_path, "bare")
+    init_workspace(bare)
+    ignored = (bare / ".gitignore").read_text(encoding="utf-8")
+    assert ".env" in ignored and "__pycache__/" not in ignored and "target/" not in ignored
+
 
 def test_init_never_overwrites_or_writes_suggested(tmp_path: Path) -> None:
     repo = _repo(tmp_path)

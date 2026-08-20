@@ -275,7 +275,8 @@ def init_workspace(
 
     # 3. .gitignore (idempotent).
     if ask("Add secret + build-artifact entries to .gitignore?", True):
-        print("  " + _update_gitignore(root, ecosystem=detected or "py"))
+        # No manifest, no guess: the secret entries alone; --ecosystem picks.
+        print("  " + _update_gitignore(root, ecosystem=detected))
     else:
         print("  skipped .gitignore")
 
