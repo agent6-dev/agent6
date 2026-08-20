@@ -18,6 +18,7 @@ import pytest
 
 from agent6.events import EventSink
 from agent6.sessions.ipc import COMMAND_SCOPE
+from agent6.tools.schema import UserQuestion
 from agent6.ui.cli import _interact as interactmod
 from agent6.ui.cli import _live as livemod
 
@@ -399,6 +400,33 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     approve = interactmod.build_approver(tmp_path, events)
     assert approve("ls", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
+
+
+def test_a_stop_request_ends_an_away_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`sessions stop` drops the stop marker; a run blocked in an away-wait
+    (a pre-start question, an approval nobody attached to answer) has no step
+    to stop after, so the marker breaks the wait: the questioner returns empty
+    answers and the run parks or denies instead of waiting on forever."""
+    import threading
+    import time
+
+    from agent6.sessions.ipc import request_stop, set_away_mode
+
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
+    set_away_mode(tmp_path, "wait")
+
+    def stop_it() -> None:
+        time.sleep(0.3)
+        request_stop(tmp_path)
+
+    threading.Thread(target=stop_it, daemon=True).start()
+    ask = interactmod.build_questioner(tmp_path, events)
+    started = time.monotonic()
+    answers = ask((UserQuestion(question="stash?", options=("stash", "cancel")),))
+    assert answers == ("",)
+    assert time.monotonic() - started < 10
 
 
 def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: Path) -> None:
