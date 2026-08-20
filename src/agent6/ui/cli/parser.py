@@ -56,8 +56,7 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
 }
 
 # The groups whose default verb takes no positional: a bare word after them is
-# a mistyped verb, left for argparse to name the choices (injecting the verb
-# made `skills show` read "unrecognized arguments: show").
+# a mistyped verb, left for argparse to name the choices.
 _BARE_DEFAULT_GROUPS: frozenset[str] = frozenset({"skills", "memory", "mcp", "prompt", "machine"})
 
 

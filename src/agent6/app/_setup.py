@@ -90,8 +90,7 @@ class BudgetOverrides:
 
     def argv(self) -> list[str]:
         """These overrides as the flags that set them, for a continuation
-        this invocation spawns (a detached resume): a leg that dropped them
-        ran under the config's defaults."""
+        this invocation spawns (a detached resume)."""
         out: list[str] = []
         if self.max_usd is not None:
             out += ["--max-usd", str(self.max_usd)]
