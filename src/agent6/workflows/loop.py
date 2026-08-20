@@ -81,7 +81,7 @@ from agent6.tools.schema import (
     FinishSessionInput,
 )
 from agent6.types import RepoSummary
-from agent6.verify_infer import infer_verify_command
+from agent6.verify_infer import infer_verify_command, read_agents_md
 from agent6.workflows._compaction import (
     DROP_BLOCKS_AT_CHARS,
     KEEP_RECENT_CHARS,
@@ -1552,14 +1552,7 @@ class Workflow:
         run_verify_command, and the resume snapshot all read the adopted
         command. The model is told, so the gate flip is never silent; first
         adoption wins (the config gaining a command ends the gateless branch)."""
-        agents_md = ""
-        agents_path = self.root / "AGENTS.md"
-        if agents_path.is_file():
-            try:
-                agents_md = agents_path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                agents_md = ""
-        inferred = infer_verify_command(self.root, agents_md, llm_call=None)
+        inferred = infer_verify_command(self.root, read_agents_md(self.root), llm_call=None)
         if inferred is None:
             return
         if not self.dispatcher.adopt_verify_command(inferred.argv):

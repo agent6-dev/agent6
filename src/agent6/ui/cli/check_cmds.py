@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -40,6 +41,7 @@ from agent6.sandbox.detect import (
 from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
 from agent6.tools.policy import Workspace, resolve_network, workspace_for
 from agent6.types import CommandResult, IsolationLevel, JailPolicy, SandboxReport
+from agent6.verify_infer import infer_verify_command, read_agents_md
 
 # Mirrors SYSTEM_BINDS in src/agent6/jail/src/main.rs (the strict rootfs's
 # read-only host binds); tests/security pins the two against each other.
@@ -577,10 +579,19 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     """
     argv = list(cfg.workflow.verify_command)
     if not argv:
-        # Optional now: `agent6 run`/`plan` infer one (AGENTS.md -> repo signals
-        # -> LLM), falling back to a gateless run. Advisory, not a failure.
-        print("[INFO] verify.argv: unset; will be inferred per run (or run gateless)")
-        return [_DoctorCheck(name="verify.argv", status="INFO", detail="unset (inferred per run)")]
+        # Optional: `agent6 run`/`plan` infer one (AGENTS.md -> repo signals ->
+        # LLM), else run gateless. Say what THIS repo infers, from the
+        # deterministic tiers (the LLM tier is a run's own call). Advisory.
+        cwd = Path.cwd()
+        inferred = infer_verify_command(cwd, read_agents_md(cwd), llm_call=None)
+        detail = (
+            f"unset; a run here infers {shlex.join(inferred.argv)} (from {inferred.source})"
+            if inferred is not None
+            else "unset; nothing here to infer from (a run asks the reviewer model over the"
+            " manifests, else goes gateless)"
+        )
+        print(f"[INFO] verify.argv: {detail}")
+        return [_DoctorCheck(name="verify.argv", status="INFO", detail=detail)]
     head = argv[0]
     resolved = shutil.which(head)
     ok = resolved is not None

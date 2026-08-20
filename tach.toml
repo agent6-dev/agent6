@@ -99,7 +99,7 @@ depends_on = [
   "agent6.sessions.ipc",
   "agent6.sessions.manifest",
   "agent6.ui.mcp_server",
-  "agent6.machine", "agent6.models.choices",]
+  "agent6.machine", "agent6.models.choices", "agent6.verify_infer",]
 
 [[modules]]
 path = "agent6.workflows"

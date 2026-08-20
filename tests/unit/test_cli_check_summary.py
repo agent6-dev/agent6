@@ -38,3 +38,20 @@ def test_check_summary_carries_info_through(
     assert "[INFO] verify.argv" in summary
     assert "[PASS]" not in summary
     assert "—" not in out
+
+
+def test_check_verify_says_what_this_repo_infers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With verify_command unset, `check verify` names the command a run here
+    would infer (the deterministic tiers) rather than "inferred per run", and
+    says when there is nothing to infer from."""
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["check", "verify"]) == 0
+    assert "unset; nothing here to infer from" in capsys.readouterr().out
+    (tmp_path / "verify.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (tmp_path / "verify.sh").chmod(0o755)
+    assert main(["check", "verify"]) == 0
+    assert "unset; a run here infers ./verify.sh (from verify.sh)" in capsys.readouterr().out

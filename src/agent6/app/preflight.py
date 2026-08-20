@@ -41,7 +41,7 @@ from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import effective_run_commands
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.schema import UserQuestion
-from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
+from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command, read_agents_md
 from agent6.viewmodel.listing import session_dirs
 from agent6.workflows.review import parse_seat_spec
 
@@ -411,13 +411,7 @@ def infer_verify_if_unset(
     """
     if mode not in ("run", "plan") or cfg.workflow.verify_command:
         return cfg
-    agents_md = ""
-    agents_path = cwd / "AGENTS.md"
-    if agents_path.is_file():
-        try:
-            agents_md = agents_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            agents_md = ""
+    agents_md = read_agents_md(cwd)
 
     def _llm_call(context: str) -> str:
         inner = build_role_provider(cfg, "reviewer", transcript_sink=transcript_sink, budget=budget)

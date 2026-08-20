@@ -97,6 +97,17 @@ def _first_fenced_block(lines: list[str], start: int) -> list[str] | None:
     return None
 
 
+def read_agents_md(repo_root: Path) -> str:
+    """The repo's AGENTS.md text for inference; "" when absent or unreadable."""
+    path = repo_root / "AGENTS.md"
+    if not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
     """Parse a verify command out of AGENTS.md.
 
