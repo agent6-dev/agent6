@@ -58,7 +58,7 @@ Every session id is a positional argument (an exact id or an unambiguous prefix)
 
 ```sh
 agent6 attach                 # follow the conversation live; --raw, --tui, --json
-agent6 sessions show          # status, iteration, elapsed, cost; --json to script
+agent6 sessions show          # status, iteration, elapsed, cost, where the changes are; --json to script
 agent6 sessions diff          # the git diff the run produced
 agent6 sessions commits       # the run's per-step commits
 agent6 sessions merge         # land the run's work on your branch

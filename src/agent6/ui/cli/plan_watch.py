@@ -11,10 +11,13 @@ import shlex
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.app.finalize import merge_stamp_holds
 from agent6.config.layer import resolved_state_dir
 from agent6.errors import read_operator_file
+from agent6.git_ops import branch_exists
 from agent6.sessions.id import SessionIdError, resolve_session_id
 from agent6.sessions.ipc import (
     pid_alive,
@@ -229,7 +232,8 @@ def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -
     launching run with "running" (the hub said "starting")."""
     word, reason = status_for_session_dir(session_dir, scan.status_facts())
     if scan.finished:
-        return f"{word} ({scan.end_reason})"
+        # An ask ends "answered": the reason repeats the word.
+        return word if scan.end_reason == word else f"{word} ({scan.end_reason})"
     detail = {
         "waiting": "needs answer; attach to respond",
         "stale": "no worker, no session.end: likely crashed or killed",
@@ -290,6 +294,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     driver = manifest.models.driver
     model = (driver.model if driver else "") or "?"
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
+    changes = _changes(target.name, manifest)
 
     if as_json:
         print(
@@ -316,6 +321,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "forked_from_turn": manifest.forked_from_turn,
                     "forked_from_sha": manifest.forked_from_sha,
                     "compare": compare_json,
+                    "run_branch": manifest.run_branch or None,
+                    "base_branch": manifest.base_branch or None,
+                    "merged_into": changes.merged_into or None,
                 }
             )
         )
@@ -356,9 +364,35 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         )
         tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
         print(f"usage:      {tokens}{leg_s}{cost_s}")
+    if changes.line:
+        print(f"changes:    {changes.line}")
     _print_listening_ports(target)
     _print_task_tree(target)
     return 0
+
+
+@dataclass(frozen=True, slots=True)
+class _Changes:
+    line: str  # the text row; "" for a session with no run branch
+    merged_into: str  # the base the run branch is merged into, else ""
+
+
+def _changes(session_id: str, manifest: SessionManifest) -> _Changes:
+    """Where the run's work lives, checked against git as the end-of-run
+    footer checks it: merged into the base (the stamp still describes the
+    branch), on the run branch awaiting `sessions merge`, or a branch no
+    commit ever reached."""
+    run_branch = manifest.run_branch or ""
+    if not run_branch:
+        return _Changes("", "")
+    stamp = manifest.merged
+    if stamp is not None and merge_stamp_holds(run_branch, stamp.tip):
+        into = stamp.into or manifest.base_branch
+        return _Changes(f"{run_branch} (merged into {into})", into)
+    if not branch_exists(Path.cwd(), run_branch):
+        return _Changes(f"{run_branch} (no commits)", "")
+    base = f" → merges into {manifest.base_branch}" if manifest.base_branch else ""
+    return _Changes(f"{run_branch}{base}; merge with: agent6 sessions merge {session_id}", "")
 
 
 def _print_listening_ports(session_dir: Path) -> None:

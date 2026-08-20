@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -541,3 +542,74 @@ def test_a_start_event_is_never_readable_before_the_pid_file(
     monkeypatch.setattr(EventSink, "emit", spy)
     emit_session_start(EventSink(sdir / "logs.jsonl"), sdir, "session.start", mode="run")
     assert pid_present_at_emit == [True]
+
+
+def _stamp_manifest(d: Path, **fields: Any) -> None:
+    (d / "manifest.json").write_text(
+        json.dumps({"mode": "run", "models": {"driver": {"model": "m"}}, **fields})
+    )
+
+
+def test_status_says_where_the_changes_are(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions show` carries the run's branch fact the web header shows and
+    the end-of-run footer said: on the run branch awaiting its merge (with
+    the command), merged into the base, or a branch no commit reached. The
+    JSON carries run_branch / base_branch / merged_into."""
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=Path.cwd(), check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "--allow-empty", "-m", "base"],
+        cwd=Path.cwd(),
+        check=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        },
+    )
+    branch = "agent6/winsome-dawn-YWH5ZS"
+
+    def show() -> str:
+        assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+        return capsys.readouterr().out
+
+    _stamp_manifest(d, run_branch=branch, base_branch="main")
+    assert f"changes:    {branch} (no commits)" in show()
+    subprocess.run(["git", "branch", branch], cwd=Path.cwd(), check=True)
+    assert (
+        f"changes:    {branch} → merges into main; merge with: agent6 sessions merge"
+        " winsome-dawn-YWH5ZS"
+    ) in show()
+    tip = subprocess.run(
+        ["git", "rev-parse", branch], cwd=Path.cwd(), check=True, capture_output=True, text=True
+    ).stdout.strip()
+    _stamp_manifest(
+        d, run_branch=branch, base_branch="main", merged={"into": "main", "sha": tip, "tip": tip}
+    )
+    assert f"changes:    {branch} (merged into main)" in show()
+    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert (obj["run_branch"], obj["base_branch"], obj["merged_into"]) == (branch, "main", "main")
+    _stamp_manifest(d, mode="ask")
+    assert "changes:" not in show()
+
+
+def test_status_of_an_ask_does_not_repeat_its_word(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An ask ends with reason "answered", the listing word too: one word, no
+    "answered (answered)"."""
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(9), "type": "session.start", "mode": "ask"},
+            {"ts": _ts(5), "type": "session.end", "reason": "answered", "all_passed": False},
+        ],
+    )
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert "state:      answered\n" in capsys.readouterr().out

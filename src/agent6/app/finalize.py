@@ -95,9 +95,7 @@ def stranded_edits(result: SessionResult, layout: SessionLayout) -> bool:
     with contextlib.suppress(ManifestError):
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
-        merged = manifest.merged is not None and _stamp_covers_branch(
-            run_branch, manifest.merged.tip
-        )
+        merged = manifest.merged is not None and merge_stamp_holds(run_branch, manifest.merged.tip)
     if not run_branch or merged or branch_exists(Path.cwd(), run_branch):
         return False
     dirty = False
@@ -228,7 +226,7 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(argv)}")
 
 
-def _stamp_covers_branch(run_branch: str, merged_tip: str) -> bool:
+def merge_stamp_holds(run_branch: str, merged_tip: str) -> bool:
     """Does the merged stamp still describe the branch? A resumed run keeps
     committing on its branch under a PRIOR leg's stamp (and this leg's
     auto-merge may have conflicted): "changes merged" holds only while the
@@ -307,7 +305,7 @@ def _print_run_branch_footer(
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
-        if manifest.merged is not None and _stamp_covers_branch(run_branch, manifest.merged.tip):
+        if manifest.merged is not None and merge_stamp_holds(run_branch, manifest.merged.tip):
             merged_into = manifest.merged.into or base_branch
     if result.completed and run_branch and merged_into:
         # auto_merge already merged this branch into the base (and auto_prune may
