@@ -50,6 +50,21 @@ def format_cost(usd: float, *, partial: bool = False) -> str:
     return f"{prefix}${usd:.2f}" if usd >= 0.995 else f"{prefix}${usd:.4f}"
 
 
+def machine_state_mark(*, is_current: bool, is_visited: bool) -> str:
+    """The mark before a machine state in the overview: the current state,
+    a visited one, or none. Text glyphs (the task-status set's), mirrored by
+    the web SPA."""
+    return "▸" if is_current else ("·" if is_visited else " ")
+
+
+def format_transition(seq: int, state: str, label: str, goto: str, detail: str = "") -> str:
+    """One journaled machine transition as every surface prints it:
+    `[seq] state --label--> goto`, the failure evidence appended when there is
+    any. The web SPA mirrors the shape."""
+    line = f"[{seq}] {state} --{label}--> {goto}"
+    return f"{line} -- {detail}" if detail else line
+
+
 # The fan-out winner marker, shown on listing rows (a lane the auto-compare
 # ranked first). Text glyph so every terminal font renders it; the web SPA
 # mirrors it in page.py.

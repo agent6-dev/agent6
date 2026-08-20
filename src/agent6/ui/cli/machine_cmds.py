@@ -76,7 +76,7 @@ from agent6.viewmodel import (
     fold_machine,
     machine_word_for_dir,
 )
-from agent6.viewmodel.format import format_cost
+from agent6.viewmodel.format import format_cost, format_transition, machine_state_mark
 
 
 def _fail(path: Path, problems: list[str], label: str = "") -> int:
@@ -513,7 +513,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     if step_events:
         print("  recent steps:")
         for event in step_events[-5:]:
-            print(f"    [{event.seq}] {event.state!r} --{event.label}--> {event.goto!r}")
+            print(f"    {format_transition(event.seq, event.state, event.label, event.goto)}")
     return 0
 
 
@@ -605,11 +605,11 @@ def _cmd_machine_stop(machine_id: str) -> int:
 
 
 def _render_overview(ms: MachineState) -> str:
-    """The state list with the current state marked (`>`) and visited ones (`.`)
-    -- the at-a-glance overview, rendered from the shared fold."""
+    """The state list with the current state and the visited ones marked
+    (`machine_state_mark`): the at-a-glance overview, rendered from the shared fold."""
     lines = [f"machine: {ms.machine} (v{ms.version})  initial={ms.initial}", "states:"]
     for s in ms.states:
-        mark = ">" if s.is_current else ("." if s.is_visited else " ")
+        mark = machine_state_mark(is_current=s.is_current, is_visited=s.is_visited)
         lines.append(f"  {mark} {s.name:<22} [{s.kind}]")
     return "\n".join(lines)
 
@@ -689,8 +689,9 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return 1
             for t in cursor.new_transitions(ms):
-                tail = f" -- {t.detail}" if t.detail else ""
-                print(f"  [{t.seq:>3}] {t.state} --{t.label}--> {t.goto}{tail}", flush=True)
+                print(
+                    f"  {format_transition(t.seq, t.state, t.label, t.goto, t.detail)}", flush=True
+                )
             for n in cursor.new_notifications(ms):
                 # Ring the bell + fire a desktop notification (if notify-send is
                 # present) so an operator watching over ssh is alerted.

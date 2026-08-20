@@ -337,8 +337,8 @@ def test_watch_finished_instance_shows_overview_and_end(
     assert code == 0
     out = capsys.readouterr().out
     assert "machine: tiny" in out
-    assert "> done" in out  # current state marked
-    assert ". route" in out  # a visited state marked
+    assert "▸ done" in out  # current state marked (machine_state_mark)
+    assert "· route" in out  # a visited state marked
     assert "OK: ended in 'done'" in out
 
 

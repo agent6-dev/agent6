@@ -1486,7 +1486,8 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
 
   pathBody.innerHTML = '';
   const path = el('div', 'tree');
-  for (const t of m.transitions || []) path.appendChild(el('div', 'node', `${t.seq}. ${t.state} —${t.label}→ ${t.goto}${t.detail ? ' — ' + t.detail : ''}`));
+  // Mirrors viewmodel.format.format_transition: `[seq] state --label--> goto -- detail`.
+  for (const t of m.transitions || []) path.appendChild(el('div', 'node', `[${t.seq}] ${t.state} --${t.label}--> ${t.goto}${t.detail ? ' -- ' + t.detail : ''}`));
   if (!(m.transitions||[]).length) path.appendChild(el('div', 'muted', 'no transitions yet'));
   pathBody.appendChild(path);
   if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));

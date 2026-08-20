@@ -80,6 +80,7 @@ from agent6.viewmodel import (
     tail_events,
 )
 from agent6.viewmodel.events import tool_result_ok
+from agent6.viewmodel.format import format_transition, machine_state_mark
 
 
 def _list_drafts(agent6_dir: Path) -> list[Path]:
@@ -321,7 +322,7 @@ class MachineWatchScreen(Screen[None]):
         )
         table = self.query_one("#mw-states", DataTable)
         for s in ms.states:
-            mark = ">" if s.is_current else ("·" if s.is_visited else " ")
+            mark = machine_state_mark(is_current=s.is_current, is_visited=s.is_visited)
             table.update_cell(s.name, "mark", mark)
 
         # Mark ended BEFORE rendering the log so a terminal instance's final
@@ -338,7 +339,9 @@ class MachineWatchScreen(Screen[None]):
         # New transitions.
         for t in self._cursor.new_transitions(ms):
             self._flush_pending()
-            log.write(Text(f"[{t.seq}] {t.state} --{t.label}--> {t.goto}", style="bold"))
+            log.write(
+                Text(format_transition(t.seq, t.state, t.label, t.goto, t.detail), style="bold")
+            )
 
         # The current agent state's reasoning (switch logs as states change).
         newest, switched = self._cursor.advance_log(self._root)

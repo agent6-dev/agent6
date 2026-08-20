@@ -165,7 +165,7 @@ def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypat
             assert isinstance(screen, MachineWatchScreen)
             table = screen.query_one("#mw-states", DataTable)
             assert table.row_count == len(spec.states)
-            assert table.get_cell("done", "mark") == ">"  # current (terminal) state
+            assert table.get_cell("done", "mark") == "▸"  # current (terminal) state
             assert table.get_cell("route", "mark") == "·"  # visited
             from textual.widgets import RichLog
 
