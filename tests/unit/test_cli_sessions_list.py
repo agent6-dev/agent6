@@ -81,6 +81,6 @@ def test_styled_status_colors_stale_red_and_parked_yellow() -> None:
     from agent6.ui.cli.sessions_cmds import _styled_status  # pyright: ignore[reportPrivateUsage]
 
     stale, _ = _styled_status("stale", "", color=True)
-    assert "\x1b[31m" in stale  # red, like the run header + web pill
+    assert "\x1b[1;31m" in stale  # the error level, like failed: the run header + web pill agree
     parked, _ = _styled_status("parked", "resume to start", color=True)
     assert "\x1b[33m" in parked  # yellow: attention, not a neutral done

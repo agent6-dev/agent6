@@ -46,6 +46,7 @@ from agent6.ui.tui.theme import (
     MuxPointerShapes,
     PlainNotify,
     setup_theme,
+    status_style,
 )
 from agent6.viewmodel import (
     SessionSummary,
@@ -60,28 +61,11 @@ from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 # The hub re-asks on this cadence (matching the web hub's poll rate), so a
 # session that ends while you watch stops reading as running.
 _HUB_POLL_S = 4.0
-# Colors for the shared status words, so a dead run cannot read as a neutral
-# "done" in the listing. Unlisted words ("finished", "created") render plain
-# on purpose: neutral outcomes carry no signal worth a color.
-_STATUS_STYLE = {
-    "starting": "cyan",  # launching (pre-loop): in progress, lighter than running
-    "running": "bold cyan",
-    "waiting": "yellow",  # blocked on the operator (approval / question)
-    # The run header and the web pill flag a crashed run red; "dim" here made
-    # it the one hub row that faded into the background.
-    "stale": "red",
-    "parked": "yellow",  # needs a resume to start: attention, not a neutral done
-    "passed": "green",
-    "answered": "green",  # an ask that answered is terminal success
-    "planned": "#b48ead",  # informational mauve (matches the web pill); not green, not red
-    "stopped": "yellow",
-    "failed": "bold red",
-}
 
 
 def _status_cell(summary: SessionSummary) -> Text:
     label = status_label(summary.status, summary.reason)
-    return Text(label, style=_STATUS_STYLE.get(summary.status, ""))
+    return Text(label, style=status_style(summary.status))
 
 
 def _cost_cell(cost_usd: float, *, partial: bool) -> str:

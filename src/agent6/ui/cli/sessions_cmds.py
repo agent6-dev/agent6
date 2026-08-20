@@ -80,31 +80,33 @@ from agent6.viewmodel import (
     task_snippet,
     worker_models,
 )
-from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
+from agent6.viewmodel.format import (
+    WINNER_GLYPH,
+    StatusLevel,
+    format_cost,
+    status_label,
+    status_level,
+)
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import SubrunError
 
-# ANSI styles for the shared status words (viewmodel.status_word), tty only:
-# a listing where a provider_error death reads as plain text is how dead runs
-# went unnoticed.
-_STATUS_SGR = {
-    "starting": "36",  # launching (pre-loop): in progress, lighter than running
-    "running": "1;36",
-    "waiting": "33",  # blocked on the operator (approval / question)
-    "stale": "31",  # a lost worker: red, like the TUI/web (a crash is not neutral)
-    "parked": "33",  # needs a resume to start: attention yellow, not a neutral done
-    "passed": "32",
-    "answered": "32",  # an ask that answered is terminal success
-    "planned": "35",  # informational magenta (mauve on the TUI/web); not green, not red
-    "stopped": "33",
-    "failed": "1;31",
+# The ANSI SGR for each `viewmodel.format.status_level`, tty only: a listing
+# where a provider_error death reads as plain text is how dead runs went
+# unnoticed. The TUI's Rich map and the web's pill classes are the siblings.
+_LEVEL_SGR: dict[StatusLevel, str] = {
+    "ok": "32",
+    "info": "35",  # magenta (mauve on the TUI/web)
+    "active": "1;36",
+    "warn": "33",
+    "error": "1;31",
+    "neutral": "",
 }
 
 
 def _styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
     """(possibly-colored label, plain label) -- the plain form drives width math."""
     label = status_label(status, reason)
-    sgr = _STATUS_SGR.get(status)
+    sgr = _LEVEL_SGR[status_level(status)]
     if color and sgr:
         return f"\x1b[{sgr}m{label}\x1b[0m", label
     return label, label

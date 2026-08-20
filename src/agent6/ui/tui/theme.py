@@ -40,6 +40,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6.ui.tui.clipboard import mux_passthrough
 from agent6.ui.tui.settings import DEFAULT_THEME, get_theme, save_theme
 from agent6.ui.tui.widgets import FORM_CSS, ChoiceField
+from agent6.viewmodel.format import StatusLevel, status_level
 
 # Branded defaults: a deep, low-saturation dark and a soft light, both with a
 # green focus accent over a blue selection primary.
@@ -256,6 +257,23 @@ class ThinScrollBarRender(ScrollBarRender):
                 meta = before if right < start else after
                 segments.append(Segment(" ", Style(bgcolor=back_color, meta=meta)))
         return Segments([*segments, Segment.line()] * thickness, new_lines=False)
+
+
+# The Rich style for each `viewmodel.format.status_level`; the CLI's SGR map
+# and the web's pill classes are the sibling palettes.
+STATUS_LEVEL_STYLE: dict[StatusLevel, str] = {
+    "ok": "green",
+    "info": "#b48ead",  # mauve, matching the web pill
+    "active": "bold cyan",
+    "warn": "yellow",
+    "error": "bold red",
+    "neutral": "",
+}
+
+
+def status_style(status: str) -> str:
+    """The Rich style a status word renders in, on every TUI surface."""
+    return STATUS_LEVEL_STYLE[status_level(status)]
 
 
 class PlainNotify:

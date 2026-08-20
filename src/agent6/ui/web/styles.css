@@ -92,23 +92,13 @@ main { padding: 0; }
 .wrap { flex-wrap: wrap; }
 .muted { color: var(--muted); }
 .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
-/* An ask that answered is terminal success, same green as passed. */
-.pill.ok, .pill.passed, .pill.answered { color: var(--ok); border-color: var(--ok); }
-/* A completed plan verifies nothing, so it is informational (mauve), not the
-   green "passed". */
-.pill.planned { color: var(--accent2); border-color: var(--accent2); }
-/* A launching run (alive, still in preflight before its first loop turn):
-   in-progress, so the accent hue -- the word says it has not started work yet. */
-.pill.starting, .pill.running { color: var(--accent); border-color: var(--accent); }
-.pill.waiting { color: var(--warn); border-color: var(--warn); }
-/* A parked submission needs a resume to ever start: attention, never the same
-   neutral chrome as a clean finish. */
-.pill.parked { color: var(--warn); border-color: var(--warn); }
-.pill.stopped { color: var(--warn); border-color: var(--warn); }
-.pill.stale, .pill.failed { color: var(--err); border-color: var(--err); }
-/* A corrupt machine source/journal ("unreadable"): a problem, not a neutral
-   finish -- flag it red like a failure, not the bare .pill chrome. */
-.pill.unreadable { color: var(--err); border-color: var(--err); }
+/* One class per `viewmodel.format.status_level`; the server stamps the level
+   beside the label on every hub row, so no status word is mapped here. */
+.pill.ok { color: var(--ok); border-color: var(--ok); }
+.pill.info { color: var(--accent2); border-color: var(--accent2); }
+.pill.active { color: var(--accent); border-color: var(--accent); }
+.pill.warn { color: var(--warn); border-color: var(--warn); }
+.pill.error { color: var(--err); border-color: var(--err); }
 
 .list { display: flex; flex-direction: column; }
 .item {

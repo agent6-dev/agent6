@@ -10,6 +10,8 @@ characters in ui/web/client.js; keep them in sync.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from agent6.sessions.manifest import CompareStamp
 
 # Task-node status glyphs. Text characters (not graphics) so every terminal font
@@ -76,3 +78,31 @@ def status_label(status: str, reason: str = "") -> str:
     ("failed · provider error"). Shared by every hub listing, the run header, and
     the web wire form, so the same run reads the same on every surface."""
     return status if not reason else f"{status} · {reason.replace('_', ' ')}"
+
+
+StatusLevel = Literal["ok", "info", "active", "warn", "error", "neutral"]
+
+# How a status word (a run's from `listing.status_word`, a machine's from
+# `machine_status_word`, the hub's pre-start words) reads: the level, decided
+# once here; each surface maps a level to its own palette (Rich style, ANSI
+# SGR, CSS class). A word not listed is neutral and renders plain: a clean
+# finish carries no signal worth a colour, while a lost worker or a parked
+# submission must never fade into the listing.
+STATUS_LEVEL: dict[str, StatusLevel] = {
+    "starting": "active",
+    "running": "active",
+    "waiting": "warn",  # blocked on the operator (approval / question)
+    "parked": "warn",  # needs a resume to start
+    "stopped": "warn",  # the operator's own act, not a failure
+    "stale": "error",  # a lost worker: a crash is not neutral
+    "failed": "error",
+    "unreadable": "error",  # a corrupt machine source or journal
+    "passed": "ok",
+    "answered": "ok",  # an ask that answered is terminal success
+    "ok": "ok",  # a machine's clean end
+    "planned": "info",  # a completed plan verifies nothing: informational
+}
+
+
+def status_level(status: str) -> StatusLevel:
+    return STATUS_LEVEL.get(status, "neutral")

@@ -98,6 +98,7 @@ from agent6.ui.tui.theme import (
     MuxPointerShapes,
     PlainNotify,
     setup_theme,
+    status_style,
 )
 from agent6.viewmodel import restate, session_compare
 from agent6.viewmodel.format import (
@@ -119,7 +120,6 @@ from agent6.viewmodel.state import (
     apply_event,
     fold_session,
     initial_state,
-    session_status_label,
     status_facts,
 )
 from agent6.viewmodel.tail import tail_events
@@ -145,28 +145,6 @@ _STATUS_NOW_EVENTS = SESSION_START_EVENTS | {
     "question.prompt",
     "question.answer",
 }
-
-# A DELIBERATE end that simply lacks a green verify (an operator stop, a plan,
-# an answered ask, a gateless settle, a finish over red) is not a failure;
-# red would call a correct outcome broken. Involuntary ends
-# (provider_error, went_quiet, budget_exhausted, stuck) stay red.
-_DELIBERATE_END_REASONS = frozenset(
-    {
-        "steer_abort",
-        "interrupted",
-        "interactive_stop",
-        "settled",
-        "answered",
-        "finish_planning",
-        "finish_session",
-        "gate_red_at_base",
-    }
-)
-
-
-def _end_color(all_passed: bool | None, end_reason: str) -> str:
-    return "green" if all_passed else "yellow" if end_reason in _DELIBERATE_END_REASONS else "red"
-
 
 # Dashboard exit code meaning "quit the whole hub" (vs 0 == back to the hub).
 QUIT_HUB_CODE = 99
@@ -481,21 +459,14 @@ class DashboardScreen(ScreenChrome, Screen[None]):
 
     # --- rendering ---------------------------------------------------
 
-    def _end_label(self, s: SessionState) -> str:
+    def _end_label(self) -> str:
         """The top-line status label, from THE dir decision (status_for_session_dir,
-        the same word the hub row shows): coloured end words for a finished run
-        (green passed, yellow deliberate end, red involuntary), red "stale" for
-        a lost worker, yellow "parked · <cause>", dim created/starting
-        pre-start; empty while running (the heartbeat line carries live
-        activity)."""
+        the same word the hub row shows), in the word's shared colour; empty
+        while running (the heartbeat line carries live activity)."""
         word, reason = self._tui.dir_status
         if word == "running":
             return ""
-        if s.finished:
-            color = _end_color(s.all_passed, s.end_reason)
-        else:
-            color = {"stale": "red", "parked": "yellow", "waiting": "yellow"}.get(word, "dim")
-        return f"[b {color}]{escape(status_label(word, reason))}[/]"
+        return f"[b {status_style(word)}]{escape(status_label(word, reason))}[/]"
 
     def render_heartbeat(self) -> None:
         """The CHEAP once-a-second repaint: the top status line, the composer
@@ -523,7 +494,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         role_line = f"{role.role} / {role.model}{beat}" if role else "(idle)"
         done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
-        finished = self._end_label(s)
+        finished = self._end_label()
         cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
         # Consumption of the binding ledger: THIS leg's metered spend vs its
         # usd_cap (resume re-arms the cap while usd_total stays cumulative),
@@ -561,8 +532,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         )
         if s.finished:
             # The end story, not a stale "idle": how it ended + the closing summary.
-            color = _end_color(s.all_passed, s.end_reason)
-            st.append(session_status_label(s) + "\n", style=f"bold {color}")
+            word, reason = tui.dir_status
+            st.append(status_label(word, reason) + "\n", style=f"bold {status_style(word)}")
             if s.finish_summary:
                 st.append(s.finish_summary, style="dim")
         elif streaming:

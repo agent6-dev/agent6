@@ -93,7 +93,7 @@ function closeLive() {
   hbState.active = false;
 }
 function closeOverlay() { if (activeOverlayClose) activeOverlayClose(); }
-function pill(status, label) { const p = el('span', 'pill ' + esc(status), esc(label || status)); return p; }
+function pill(level, label) { return el('span', 'pill ' + esc(level || 'neutral'), esc(label)); }
 
 // One owner for anything clickable that is not a native control: a keyboard
 // user gets the same activation (Tab to focus, Enter/Space to fire) and a
@@ -309,7 +309,7 @@ function sessionsCard(sessions) {
     // hub rows; an all-unpriced ~$0 still shows (spend happened, price unknown).
     const cost = (!r.usd && !r.usd_partial) ? '' : ' · ' + fmtUsd(r.usd, r.usd_partial);
     g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id)} · ${when(r.mtime)}${cost}`));
-    it.appendChild(pill(r.status, r.label || r.status)); // the server's one shared label
+    it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   });
   const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
   prune.onclick = async () => { try { const d = await postJSON('/api/sessions/prune', {}); toast(d.message || 'pruned'); route(); } catch (e) { toast(e.message, true); } };
@@ -330,7 +330,7 @@ function machinesCard(machines) {
     it.onclick = () => location.hash = '#/machine/' + encodeURIComponent(m.name);
     g.appendChild(el('div', 'title', m.machine || m.name));
     g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${when(m.mtime)}`));
-    it.appendChild(pill(m.status, m.label || m.status)); // keep the reason (failed · why)
+    it.appendChild(pill(m.level, m.label || m.status)); // keep the reason (failed · why)
   });
 }
 
@@ -339,7 +339,7 @@ function draftsCard(drafts) {
     it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.id);
     g.appendChild(el('div', 'title', d.task || d.id));
     g.appendChild(el('div', 'sub', `draft · ${esc(d.id)} · ${when(d.mtime)}`));
-    it.appendChild(pill(d.status, d.label || d.status)); // keep the reason (failed · provider_error)
+    it.appendChild(pill(d.level, d.label || d.status)); // keep the reason (failed · provider_error)
   });
 }
 

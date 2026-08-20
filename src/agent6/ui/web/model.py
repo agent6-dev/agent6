@@ -40,7 +40,7 @@ from agent6.viewmodel import (
     task_snippet,
 )
 from agent6.viewmodel.config_view import render_show
-from agent6.viewmodel.format import status_label
+from agent6.viewmodel.format import status_label, status_level
 from agent6.viewmodel.transcript_style import item_lines
 
 # --- directory layout --------------------------------------------------------
@@ -107,9 +107,10 @@ def _session_summary(session_dir: Path) -> dict[str, Any]:
         "task": task_snippet(s.task, max_chars=100),
         "status": s.status,
         "reason": s.reason,
-        # The one shared human label; the client renders it verbatim instead
-        # of keeping a JS copy of status_label's formatting.
+        # The one shared human label and its colour level; the client renders
+        # both verbatim instead of keeping JS copies of the status maps.
         "label": status_label(s.status, s.reason),
+        "level": status_level(s.status),
         "mtime": s.mtime,
         "usd": s.cost_usd,
         "usd_partial": s.usd_partial,
@@ -132,7 +133,7 @@ def _list_machines(cwd: Path) -> list[dict[str, Any]]:
     for d in root.iterdir():
         if not d.is_dir() or not (d / "machine.asm.toml").is_file():
             continue
-        entry: dict[str, Any] = {"name": d.name, "mtime": _machine_mtime(d), "status": "—"}
+        entry: dict[str, Any] = {"name": d.name, "mtime": _machine_mtime(d)}
         try:
             spec = load_machine(d / "machine.asm.toml")
             ms = fold_machine(spec, MachineJournal(d).read())
@@ -148,6 +149,7 @@ def _list_machines(cwd: Path) -> list[dict[str, Any]]:
             # Keep the failure reason on the pill, like run/draft rows.
             if ms.ended is not None and ms.ended.status == "failed":
                 entry["label"] = f"failed · {ms.ended.reason}"
+        entry["level"] = status_level(entry["status"])
         out.append(entry)
     out.sort(key=lambda e: e["mtime"], reverse=True)
     return out
