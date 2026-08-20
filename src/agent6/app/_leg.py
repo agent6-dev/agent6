@@ -15,7 +15,7 @@ missing from the other.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,7 +39,7 @@ from agent6.app.finalize import (
     session_exit_code,
     stranded_edits,
 )
-from agent6.app.frontend import SessionFrontend
+from agent6.app.frontend import SessionFrontend, approval_scopes
 from agent6.app.providers import build_prompt_reviser_provider, role_temperature
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
@@ -50,10 +50,12 @@ from agent6.paths import chown_to_real_user
 from agent6.providers import TranscriptSink
 from agent6.sandbox.jail import SessionNetwork
 from agent6.sessions.ipc import (
+    COMMAND_SCOPE,
     clear_compact_request,
     clear_session_netns_pid,
     clear_stop_request,
     read_compact_request,
+    session_allow_set,
     stop_request_pending,
     write_session_netns_pid,
 )
@@ -109,6 +111,32 @@ class LegEnd:
 
     rc: int
     detach_requested: bool = False
+
+
+def detach_to_background(
+    *,
+    frontend: SessionFrontend,
+    cfg: Config,
+    layout: SessionLayout,
+    cwd: Path,
+    flags: Sequence[str],
+    reporter: Reporter,
+) -> None:
+    """Hand a detached leg to a background `resume` under this invocation's
+    *flags*, once the caller has released the run's locks: first ask how
+    approvals are answered while nothing watches (`run_commands = "ask"` with
+    no session-wide grant), then spawn, then print the reattach line, so
+    "continues in the background" is said only of a spawn that happened."""
+    if cfg.sandbox.run_commands == "ask" and not session_allow_set(
+        layout.session_dir, COMMAND_SCOPE
+    ):
+        frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
+    err = frontend.spawn_detached_resume(cwd, layout.session_id, flags)
+    if err:
+        reporter.note(err)
+        return
+    reporter.out(f"\n[agent6] detached: {layout.session_id} continues in the background.")
+    reporter.out(f"          reattach:  agent6 attach {layout.session_id}")
 
 
 def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per ending
@@ -380,9 +408,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
         return LegEnd(0)
     if result.reason == "detached":
         # Keep going in the background: the caller releases this run's worker
-        # lock, then spawns a detached `resume` that picks it up.
-        reporter.out(f"\n[agent6] detached: {layout.session_id} continues in the background.")
-        reporter.out(f"          reattach:  agent6 attach {layout.session_id}")
+        # lock, then hands the run to `detach_to_background`.
         return LegEnd(0, detach_requested=True)
 
     print_session_end(

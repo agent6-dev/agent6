@@ -49,3 +49,8 @@ def test_both_lifecycles_detach_under_the_invocations_flags() -> None:
     waited on its first approval with nobody attached."""
     assert _calls(agent6.app.run, "override_flags") == 1
     assert _calls(agent6.app.resume, "override_flags") == 1
+
+
+def test_both_lifecycles_hand_a_detach_to_the_one_helper() -> None:
+    assert _calls(agent6.app.run, "detach_to_background") == 1
+    assert _calls(agent6.app.resume, "detach_to_background") == 1

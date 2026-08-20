@@ -15,7 +15,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from agent6.app._leg import LegInputs, run_leg
+from agent6.app._leg import LegInputs, detach_to_background, run_leg
 from agent6.app._session import (
     select_isolation,
     warn_install_inside_workspace,
@@ -74,12 +74,10 @@ from agent6.sessions.id import (
     validate_explicit_session_id,
 )
 from agent6.sessions.ipc import (
-    COMMAND_SCOPE,
     away_mode,
     clear_away_mode,
     clear_pending_answers,
     clear_worker_pid,
-    session_allow_set,
     submit_steer,
     write_worker_pid,
 )
@@ -519,15 +517,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             release_single_writer(repo_lock_fd)
             release_single_writer(worker_lock_fd)
         if detach_requested:
-            # Ask how to handle approvals while away BEFORE spawning, so the marker is
-            # set when the background run reads it. The worker lock is released now, so
-            # the detached `resume` acquires it.
-            if cfg.sandbox.run_commands == "ask" and not session_allow_set(
-                layout.session_dir, COMMAND_SCOPE
-            ):
-                frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
-            err = frontend.spawn_detached_resume(
-                cwd, layout.session_id, override_flags(budget_overrides, sandbox_overrides)
+            # The worker lock is released now, so the detached `resume` acquires it.
+            detach_to_background(
+                frontend=frontend,
+                cfg=cfg,
+                layout=layout,
+                cwd=cwd,
+                flags=override_flags(budget_overrides, sandbox_overrides),
+                reporter=reporter,
             )
-            if err:
-                reporter.note(err)
