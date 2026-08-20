@@ -187,7 +187,16 @@ def cli_main(argv: list[str] | None = None) -> int:
         return 1
 
 
-def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
+def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
+    if args.interactive and not sys.stdin.isatty():
+        # -i is explicit and needs the terminal its help names; run on a pipe,
+        # the REPL's first prompt reads EOF and stops the run mid-task after
+        # the first commit.
+        print(
+            "ERROR: -i needs a TTY on stdin (the REPL reads it); drop -i for a headless run.",
+            file=sys.stderr,
+        )
+        return 2
     if getattr(args, "parallel", "") and (args.interactive or args.tui):
         print(
             "ERROR: --parallel cannot combine with -i or --tui"
@@ -533,6 +542,13 @@ def _dispatch_prompt(args: argparse.Namespace) -> int:
 
 
 def _dispatch_resume(args: argparse.Namespace) -> int:
+    if getattr(args, "interactive", False) and not sys.stdin.isatty():
+        # Same terminal need as `run -i` (the REPL reads stdin).
+        print(
+            "ERROR: -i needs a TTY on stdin (the REPL reads it); drop -i for a headless resume.",
+            file=sys.stderr,
+        )
+        return 2
     rc = _cmd_resume(
         args.config,
         args.session_id,
