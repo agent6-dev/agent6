@@ -15,17 +15,13 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from agent6.app._setup import check_provider_keys, detect_env
-from agent6.app.confine import (
-    check_hide_paths_support,
-    check_network_support,
-    warn_cleartext_credential_endpoints,
-    warn_sandbox_gaps,
-)
+from agent6.app._session import select_isolation
+from agent6.app._setup import check_provider_keys
 from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.app.machine_agent import build_machine_agent_runner
+from agent6.app.preflight import SessionRefused
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.events import EventSink
@@ -42,7 +38,6 @@ from agent6.machine import (
     load_machine,
 )
 from agent6.portable import atomic_write
-from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.id import unused_session_id
 from agent6.sessions.ipc import emit_session_start
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
@@ -137,7 +132,8 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     cwd = Path.cwd()
     try:
-        cfg = load_effective(cwd, config_path).config
+        eff = load_effective(cwd, config_path)
+        cfg = eff.config
         cfg.require_runnable("worker")
     except ConfigError as exc:
         reporter.err(f"ERROR: {exc}")
@@ -146,22 +142,18 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     if missing is not None:
         reporter.err(missing)
         return 2
-    env = detect_env()
     try:
-        isolation = resolve_isolation(cfg.sandbox.isolation, env)
-    except IsolationUnavailableError as exc:
-        reporter.err(f"REFUSING: {exc}")
-        return 2
-    net_err = check_network_support(cfg, isolation)
-    if net_err is not None:
-        reporter.err(f"REFUSING: {net_err}")
-        return 2
-    hide_err = check_hide_paths_support(cfg, isolation)
-    if hide_err is not None:
-        reporter.err(f"REFUSING: {hide_err}")
-        return 2
-    warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
-    warn_cleartext_credential_endpoints(cfg, reporter=reporter)
+        # The run lifecycle's own preflight; a create session withholds the
+        # command tools, so the unconfined-autorun confirmation has nothing to
+        # confirm.
+        isolation = select_isolation(
+            cfg,
+            confirm_unconfined=lambda _isolation, _cfg: True,
+            reporter=reporter,
+            explicit_leaves=eff.explicit_leaves,
+        )
+    except SessionRefused as refusal:
+        return refusal.rc
 
     state_dir = resolved_state_dir(cwd)
     bucket = session_bucket("machine")

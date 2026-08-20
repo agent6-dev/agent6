@@ -906,6 +906,7 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     `protect_git = true` warned and ran instead of refusing (docs/security.md
     states the refusal without qualification). Both lifecycles now run
     `config_refusal`."""
+    from agent6.app import _session as session_mod
     from agent6.app.machine import run as run_mod
 
     cfg_home = tmp_path / "cfg"
@@ -925,7 +926,7 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     def _hardened(_req: str, _env: object) -> str:
         return "hardened"
 
-    monkeypatch.setattr(run_mod, "resolve_isolation", _hardened)
+    monkeypatch.setattr(session_mod, "resolve_isolation", _hardened)
     f = workspace / "probe.asm.toml"
     f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 2
@@ -939,6 +940,7 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     """`agent6 run` refuses a state base inside the workspace (jailed commands
     could read transcripts, and commits would stage them); `machine run` did
     not, so the same config ran there."""
+    from agent6.app import _session as session_mod
     from agent6.app.machine import run as run_mod
 
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -953,7 +955,7 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     def _strict(_req: str, _env: object) -> str:
         return "strict"
 
-    monkeypatch.setattr(run_mod, "resolve_isolation", _strict)
+    monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
     f = tmp_path / "probe.asm.toml"
     f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 2

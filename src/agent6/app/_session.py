@@ -39,7 +39,7 @@ from agent6.config import Config, RoleModel, RoleName
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.providers import Provider, TranscriptSink
-from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
+from agent6.sandbox.detect import Environment, IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import SessionNetwork
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import Approver, ToolDispatcher
@@ -47,6 +47,19 @@ from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel, ResumableMode
 from agent6.workflows.review import ReviewSeat
+
+
+def resolve_isolation_or_refuse(
+    cfg: Config, env: Environment, *, reporter: Reporter
+) -> IsolationLevel:
+    """The isolation level *cfg* resolves to on this host, or a REFUSING line
+    and :class:`SessionRefused` when an explicit level is unavailable here (an
+    `auto` degrades inside `resolve_isolation`)."""
+    try:
+        return resolve_isolation(cfg.sandbox.isolation, env)
+    except IsolationUnavailableError as exc:
+        reporter.err(f"REFUSING: {exc}")
+        raise SessionRefused(2) from exc
 
 
 def select_isolation(
@@ -61,11 +74,7 @@ def select_isolation(
     (network mode, strict egress, budget) or a workspace no tool could read.
     Raises :class:`SessionRefused`."""
     env = detect_env()
-    try:
-        selected = resolve_isolation(cfg.sandbox.isolation, env)
-    except IsolationUnavailableError as exc:
-        reporter.err(f"REFUSING: {exc}")
-        raise SessionRefused(2) from exc
+    selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
     warn_sandbox_gaps(selected, env, cfg, reporter=reporter)
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     if not confirm_unconfined(selected, cfg):

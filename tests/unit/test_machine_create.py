@@ -148,17 +148,19 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
             models=SimpleNamespace(resolve=_resolve),
             cleartext_credential_endpoints=lambda: (),
         )
-        return SimpleNamespace(config=cfg)
+        return SimpleNamespace(config=cfg, explicit_leaves=frozenset())
 
     def _keys_ok(_cfg: object) -> str | None:
         return None
 
-    def _profile(_profile_name: object, _env: object) -> object:
-        return object()
+    def _no_preflight(_cfg: object, **_kw: object) -> str:
+        # The isolation preflight is the run lifecycle's (select_isolation),
+        # tested there; a stand-in config has none of what it reads.
+        return "none"
 
     monkeypatch.setattr(_create, "load_effective", _load)
     monkeypatch.setattr(_create, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(_create, "resolve_isolation", _profile)
+    monkeypatch.setattr(_create, "select_isolation", _no_preflight)
 
 
 def _stub_runner(monkeypatch: pytest.MonkeyPatch, results: Iterable[AgentExecResult]) -> None:
@@ -1071,3 +1073,56 @@ def test_create_stamps_a_liveness_marker_on_the_draft(
     pids = list((tmp_path / "state").glob("**/sessions/machines/*/worker.pid"))
     assert pids, "the draft recorded no liveness marker"
     assert pids[0].read_text(encoding="utf-8").split()[0] == str(os.getpid())
+
+
+def test_create_runs_the_shared_isolation_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`machine create` goes through the run lifecycle's preflight
+    (select_isolation), so the shared refusal list applies: a state base
+    inside the workspace refuses here as it does for `agent6 run` and
+    `machine run`. Its own copy checked only the network and hidden paths."""
+    from agent6.app import _session as session_mod
+    from agent6.config import Config, ModelsConfig, OpenAIProviderEntry, RoleModel
+    from agent6.config.layer import EffectiveConfig
+    from agent6.sandbox.detect import Environment, KernelInfo
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "inside-state"))
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(
+        providers={
+            "openrouter": OpenAIProviderEntry(
+                api_format="openai", base_url="https://openrouter.ai/api/v1"
+            )
+        },
+        models=ModelsConfig(worker=RoleModel(provider="openrouter", model="kimi")),
+    )
+
+    def _load(*_a: object, **_k: object) -> EffectiveConfig:
+        return EffectiveConfig(config=cfg, sources={}, layers=())
+
+    def _keys_ok(*_a: object, **_k: object) -> None:
+        return None
+
+    def _env() -> Environment:
+        return Environment(
+            in_container=False,
+            container_signals=(),
+            kernel=KernelInfo(raw="6.14.0", major=6, minor=14),
+            userns_supported=True,
+            landlock_abi=4,
+            seccomp_arch_supported=True,
+            sandbox_available=True,
+        )
+
+    def _strict(_req: object, _env: object) -> str:
+        return "strict"
+
+    monkeypatch.setattr(_create, "load_effective", _load)
+    monkeypatch.setattr(_create, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(session_mod, "detect_env", _env)
+    monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
+    assert main(["machine", "create", "a nightly loop"]) == 2
+    err = capsys.readouterr().err
+    assert "REFUSING" in err and "private directory" in err

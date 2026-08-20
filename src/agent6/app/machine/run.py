@@ -21,6 +21,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
+from agent6.app._session import resolve_isolation_or_refuse
 from agent6.app._setup import check_provider_keys, detect_env
 from agent6.app.confine import (
     check_hide_paths_support,
@@ -39,7 +40,7 @@ from agent6.app.machine._preflight import (
 from agent6.app.machine._spend import book_crashed_attempt, machine_spend
 from agent6.app.machine_agent import build_machine_agent_runner, clone_at_machine_chain
 from agent6.app.parallel import subordinate_workdir_root
-from agent6.app.preflight import budget_preflight
+from agent6.app.preflight import SessionRefused, budget_preflight
 from agent6.app.reporter import Reporter
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
@@ -70,7 +71,6 @@ from agent6.machine import (
     machine_lock,
     write_bundle,
 )
-from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
 from agent6.sessions.layout import machines_root
@@ -303,10 +303,9 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(f"ERROR: {exc}")
             return 2
         try:
-            isolation = resolve_isolation(cfg.sandbox.isolation, env)
-        except IsolationUnavailableError as exc:
-            reporter.err(f"REFUSING: {exc}")
-            return 2
+            isolation = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
+        except SessionRefused as refusal:
+            return refusal.rc
         snapshot_keep = cfg.machine.snapshot_keep
         refusal = machine_network_refusal(cfg, isolation, tool_states) or check_hide_paths_support(
             cfg, isolation
