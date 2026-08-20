@@ -15,6 +15,7 @@ tailers feed the same `TranscriptFold` one event at a time.
 
 from __future__ import annotations
 
+import difflib
 import re
 import shlex
 from collections.abc import Callable, Iterable
@@ -171,10 +172,17 @@ def _call_preview(name: str, args: Any) -> str:
         return ""
     old = str(first.get("old_string", ""))
     new = str(first.get("new_string", ""))
-    # Per-LINE clips: the preview is multi-line by design (the tail renders
-    # line-structured), while _clip's one-line contract caps each row.
-    lines = [_clip(f"- {ln}", 120) for ln in old.splitlines()[:3]]
-    lines += [_clip(f"+ {ln}", 120) for ln in new.splitlines()[:3]]
+    # The changed lines only (an anchor line the edit re-emits unchanged is
+    # not news), each clipped: the preview is multi-line by design (the tail
+    # renders line-structured), while _clip's one-line contract caps each row.
+    changed = [
+        ln
+        for ln in difflib.ndiff(old.splitlines(), new.splitlines())
+        if ln[:1] in "+-" and ln[2:].strip()
+    ]
+    lines = [_clip(ln, 120) for ln in changed[:4]]
+    if len(changed) > 4:
+        lines.append(f"…(+{len(changed) - 4} more changed lines)")
     more = len(edits) - 1
     if more > 0:
         lines.append(f"…(+{more} more edit{'' if more == 1 else 's'})")

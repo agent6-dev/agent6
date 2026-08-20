@@ -442,6 +442,32 @@ def test_tool_items_carry_bounded_previews() -> None:
     assert tools[2].tail == ""  # an old journal: no preview fields, no tail
 
 
+def test_edit_preview_shows_the_changed_lines_only() -> None:
+    """An append re-emits its anchor lines in both old_string and new_string;
+    the preview is the diff, so the anchor is not shown twice as - and +."""
+    events = [
+        {
+            "type": "tool.call",
+            "name": "apply_edit",
+            "args": {
+                "path": "calc.py",
+                "edits": [
+                    {
+                        "old_string": "def sub(a, b):\n    return a - b\n",
+                        "new_string": (
+                            "def sub(a, b):\n    return a - b\n\n\n"
+                            "def mul(a, b):\n    return a * b\n"
+                        ),
+                    }
+                ],
+            },
+        },
+        {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
+    ]
+    (tool,) = [it for it in fold_transcript(events) if it.kind == "tool"]
+    assert tool.tail == "+ def mul(a, b):\n+ return a * b"
+
+
 def test_salient_arg_is_always_one_line() -> None:
     """A multi-line arg value (a raw-arguments blob with embedded newlines)
     split the tool head across lines on every skin; the clip flattens
