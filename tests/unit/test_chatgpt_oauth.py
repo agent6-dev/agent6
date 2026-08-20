@@ -204,3 +204,56 @@ def test_credential_adopts_a_sibling_process_rotation(
     clock["now"] = 4800.0
     save_oauth_tokens("chatgpt", OAuthTokens("rotated", "RT2", 9000.0, "acct"))
     assert cred.token() == "rotated"
+
+
+def test_device_auth_start_and_poll(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The device flow: usercode POST starts it (404 = disabled -> None),
+    the poll treats 403/pending codes as waiting and slow_down as back-off,
+    and success exchanges the issuer-minted code with the DEVICE redirect."""
+    from agent6.providers.chatgpt_oauth import poll_device_auth, start_device_auth
+
+    posts: list[tuple[str, dict[str, str]]] = []
+    replies = [
+        _Resp(200, {"device_auth_id": "da_1", "user_code": "AB-12", "interval": "5"}),
+        _Resp(403, "pending"),
+        _Resp(400, {"error": {"code": "deviceauth_authorization_pending"}}),
+        _Resp(400, {"error": {"code": "slow_down"}}),
+        _Resp(200, {"authorization_code": "AC", "code_verifier": "SERVER-V"}),
+    ]
+
+    def fake_json(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        posts.append((url, data))
+        return replies.pop(0)
+
+    exchanges: list[dict[str, str]] = []
+
+    def fake_form(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        exchanges.append(data)
+        return _Resp(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": 60})
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_json", fake_json)
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", fake_form)
+    naps: list[float] = []
+
+    device = start_device_auth("https://auth.example", "app_X")
+    assert device is not None and device.user_code == "AB-12" and device.interval_s == 5.0
+    grant = poll_device_auth("https://auth.example", "app_X", device, sleep=naps.append)
+    assert grant.access_token == "AT"
+    assert posts[0] == (
+        "https://auth.example/api/accounts/deviceauth/usercode",
+        {"client_id": "app_X"},
+    )
+    assert posts[1][1] == {"device_auth_id": "da_1", "user_code": "AB-12"}
+    assert naps == [5.0, 5.0, 10.0]  # two pendings, then slow_down backs off
+    assert exchanges[0]["code_verifier"] == "SERVER-V"
+    assert exchanges[0]["redirect_uri"] == "https://auth.example/deviceauth/callback"
+
+
+def test_device_auth_disabled_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent6.providers.chatgpt_oauth import start_device_auth
+
+    def gone(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        return _Resp(404, "not enabled")
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_json", gone)
+    assert start_device_auth("https://auth.example", "app_X") is None

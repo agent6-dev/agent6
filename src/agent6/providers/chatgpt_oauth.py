@@ -23,6 +23,7 @@ import json
 import secrets as pysecrets
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit
@@ -34,6 +35,13 @@ from agent6.secrets import OAuthTokens, load_oauth_tokens, save_oauth_tokens
 
 REDIRECT_URI = "http://localhost:1455/auth/callback"
 CALLBACK_PORT = 1455
+# The device flow's fixed pieces: where the person enters the code, and the
+# redirect the issuer pairs with device-issued authorization codes.
+DEVICE_VERIFY_PATH = "/codex/device"
+_DEVICE_USERCODE_PATH = "/api/accounts/deviceauth/usercode"
+_DEVICE_TOKEN_PATH = "/api/accounts/deviceauth/token"  # noqa: S105 - a URL path, not a secret
+_DEVICE_REDIRECT_PATH = "/deviceauth/callback"
+_DEVICE_TIMEOUT_S = 15 * 60.0
 OAUTH_SCOPE = "openid profile email offline_access"
 # The namespaced JWT claim OpenAI tokens carry the ChatGPT identity under.
 _CLAIMS_KEY = "https://api.openai.com/auth"
@@ -125,6 +133,11 @@ def _post_form(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Respo
     )
 
 
+def _post_json(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Response:
+    """Device-endpoint POST seam: tests stub this name, never `httpx2` globally."""
+    return httpx2.post(url, json=data, timeout=timeout_s)
+
+
 def _grant_from_response(resp: httpx2.Response, *, operation: str) -> TokenGrant:
     try:
         data: Any = resp.json()
@@ -170,9 +183,12 @@ def exchange_code(
     *,
     code: str,
     verifier: str,
+    redirect_uri: str = REDIRECT_URI,
     timeout_s: float = _TOKEN_TIMEOUT_S,
 ) -> TokenGrant:
-    """Exchange an authorization code for the token grant."""
+    """Exchange an authorization code for the token grant. *redirect_uri*
+    must match the flow that minted the code (the localhost callback, or the
+    issuer's device-flow callback)."""
     url = f"{issuer.rstrip('/')}/oauth/token"
     try:
         resp = _post_form(
@@ -180,7 +196,7 @@ def exchange_code(
             {
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": redirect_uri,
                 "client_id": client_id,
                 "code_verifier": verifier,
             },
@@ -191,6 +207,99 @@ def exchange_code(
     if resp.status_code >= 400:
         raise _token_error(resp, operation="exchange")
     return _grant_from_response(resp, operation="exchange")
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceAuth:
+    """A started device-code sign-in: what the person types, how we poll."""
+
+    device_auth_id: str
+    user_code: str
+    interval_s: float
+
+
+def start_device_auth(issuer: str, client_id: str) -> DeviceAuth | None:
+    """Begin the code-entry sign-in; None when the issuer has it disabled
+    (a 404 -- the caller falls back to pasting the callback URL)."""
+    url = f"{issuer.rstrip('/')}{_DEVICE_USERCODE_PATH}"
+    try:
+        resp = _post_json(url, {"client_id": client_id}, _TOKEN_TIMEOUT_S)
+    except httpx2.HTTPError as exc:
+        raise ProviderError(f"could not reach {url}: {exc}") from exc
+    if resp.status_code == 404:
+        return None
+    if resp.status_code >= 400:
+        raise ProviderError(f"device sign-in refused: HTTP {resp.status_code}: {resp.text[:200]}")
+    try:
+        data: Any = resp.json()
+        return DeviceAuth(
+            device_auth_id=str(data["device_auth_id"]),
+            user_code=str(data["user_code"]),
+            interval_s=max(5.0, float(data.get("interval") or 5.0)),
+        )
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ProviderError(f"device sign-in response was malformed: {exc!r}") from exc
+
+
+def poll_device_auth(
+    issuer: str,
+    client_id: str,
+    device: DeviceAuth,
+    *,
+    timeout_s: float = _DEVICE_TIMEOUT_S,
+    sleep: Callable[[float], None] = time.sleep,
+) -> TokenGrant:
+    """Wait for the person to enter the code, then exchange the grant.
+
+    The issuer answers pending as 403/404 or `deviceauth_authorization_pending`
+    and hands back `{authorization_code, code_verifier}` once approved; the
+    exchange then runs with the issuer's own verifier and device redirect.
+    Raises ProviderError on refusal or when the code expires unentered.
+    """
+    url = f"{issuer.rstrip('/')}{_DEVICE_TOKEN_PATH}"
+    deadline = time.monotonic() + timeout_s
+    interval = device.interval_s
+    while time.monotonic() < deadline:
+        try:
+            resp = _post_json(
+                url,
+                {"device_auth_id": device.device_auth_id, "user_code": device.user_code},
+                _TOKEN_TIMEOUT_S,
+            )
+        except httpx2.HTTPError as exc:
+            raise ProviderError(f"could not reach {url}: {exc}") from exc
+        if resp.status_code < 400:
+            try:
+                data: Any = resp.json()
+                code = str(data["authorization_code"])
+                verifier = str(data["code_verifier"])
+            except (ValueError, KeyError, TypeError) as exc:
+                raise ProviderError(f"device sign-in response was malformed: {exc!r}") from exc
+            return exchange_code(
+                issuer,
+                client_id,
+                code=code,
+                verifier=verifier,
+                redirect_uri=f"{issuer.rstrip('/')}{_DEVICE_REDIRECT_PATH}",
+            )
+        detail = _error_code_of(resp)
+        if resp.status_code in (403, 404) or detail == "deviceauth_authorization_pending":
+            sleep(interval)
+            continue
+        if detail == "slow_down":
+            interval += 5.0
+            sleep(interval)
+            continue
+        raise ProviderError(f"device sign-in failed: HTTP {resp.status_code}: {resp.text[:200]}")
+    raise ProviderError("device sign-in expired before the code was entered; run connect again")
+
+
+def _error_code_of(resp: httpx2.Response) -> str:
+    try:
+        err = resp.json().get("error")
+    except (ValueError, AttributeError):
+        return ""
+    return str(err.get("code") if isinstance(err, dict) else err or "")
 
 
 def refresh_grant(

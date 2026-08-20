@@ -32,12 +32,16 @@ from agent6.models.cache import probe_provider_key
 from agent6.paths import global_config_path
 from agent6.providers.chatgpt_oauth import (
     CALLBACK_PORT,
+    DEVICE_VERIFY_PATH,
+    TokenGrant,
     authorize_url,
     exchange_code,
     parse_callback,
     pkce_pair,
     plan_type_of,
+    poll_device_auth,
     revoke_tokens,
+    start_device_auth,
     tokens_from_grant,
 )
 from agent6.providers.types import ProviderError
@@ -250,11 +254,61 @@ def _chatgpt_oauth_fields(name: str) -> tuple[str, str]:
     return fresh.oauth_issuer, fresh.oauth_client_id
 
 
-def _chatgpt_sign_in(name: str) -> int:
-    """The ChatGPT OAuth sign-in: browser + localhost callback, paste fallback.
+def _code_via_callback_server(url: str, state: str) -> str | None:
+    """The GUI path: open the browser, wait on localhost for the redirect.
+    None on timeout, Ctrl-C, or an unbindable port (the caller falls back)."""
+    try:
+        server = _CallbackServer(state)
+    except OSError as exc:
+        print(f"(no local callback: port {CALLBACK_PORT} unavailable: {exc})")
+        return None
+    with contextlib.suppress(Exception):
+        webbrowser.open(url)
+    print(f"Waiting for the sign-in redirect on localhost:{CALLBACK_PORT}")
+    print("(Ctrl-C to paste the callback URL by hand instead)")
+    try:
+        return server.wait(timeout_s=300.0)
+    except KeyboardInterrupt:
+        print()
+        return None
+    finally:
+        server.close()
 
-    Never executes anything the remote returns; the only inputs read back are
-    the authorization code (state-checked) and the token JSON.
+
+def _grant_via_device_code(issuer: str, client_id: str) -> TokenGrant | None:
+    """The no-display path: show a short code, poll while the person enters
+    it at the issuer's device page from any browser (nothing to forward over
+    SSH). None when the issuer has the flow disabled, on refusal, or on
+    Ctrl-C -- the caller falls back to pasting the callback URL."""
+    try:
+        device = start_device_auth(issuer, client_id)
+    except ProviderError as exc:
+        print(f"(device sign-in unavailable: {exc})")
+        return None
+    if device is None:
+        return None
+    print(f"On any device, open  {issuer.rstrip('/')}{DEVICE_VERIFY_PATH}")
+    print(f"and enter the code:  {device.user_code}")
+    print("(waiting; Ctrl-C to paste the callback URL by hand instead)")
+    try:
+        return poll_device_auth(issuer, client_id, device)
+    except KeyboardInterrupt:
+        print()
+        return None
+    except ProviderError as exc:
+        print(f"(device sign-in failed: {exc})")
+        return None
+
+
+def _chatgpt_sign_in(name: str) -> int:
+    """The ChatGPT OAuth sign-in.
+
+    Three ways in, picked by the environment: a GUI machine gets the browser
+    + localhost callback; a display-less terminal gets the code-entry device
+    flow; pasting the callback URL always works (and is the whole flow for a
+    piped stdin). Never executes anything the remote returns; the only
+    inputs read back are the authorization code (state-checked) and the
+    token JSON.
     """
     issuer, client_id = _chatgpt_oauth_fields(name)
     verifier, challenge = pkce_pair()
@@ -262,26 +316,13 @@ def _chatgpt_sign_in(name: str) -> int:
     url = authorize_url(issuer, client_id, challenge=challenge, state=state)
     print("Open this URL to sign in with your ChatGPT account:\n\n  " + url + "\n")
 
+    grant: TokenGrant | None = None
     code: str | None = None
-    server: _CallbackServer | None = None
-    if sys.stdin.isatty():
-        try:
-            server = _CallbackServer(state)
-        except OSError as exc:
-            print(f"(no local callback: port {CALLBACK_PORT} unavailable: {exc})")
-    if server is not None:
-        if _gui_browser_available():
-            with contextlib.suppress(Exception):
-                webbrowser.open(url)
-        print(f"Waiting for the sign-in redirect on localhost:{CALLBACK_PORT}")
-        print("(Ctrl-C to paste the callback URL by hand instead)")
-        try:
-            code = server.wait(timeout_s=300.0)
-        except KeyboardInterrupt:
-            print()
-        finally:
-            server.close()
-    if code is None:
+    if sys.stdin.isatty() and _gui_browser_available():
+        code = _code_via_callback_server(url, state)
+    elif sys.stdin.isatty():
+        grant = _grant_via_device_code(issuer, client_id)
+    if grant is None and code is None:
         try:
             pasted = input("Paste the callback URL the browser landed on: ").strip()
         except EOFError:
@@ -293,11 +334,13 @@ def _chatgpt_sign_in(name: str) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
 
-    try:
-        grant = exchange_code(issuer, client_id, code=code, verifier=verifier)
-    except ProviderError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+    if grant is None:
+        assert code is not None
+        try:
+            grant = exchange_code(issuer, client_id, code=code, verifier=verifier)
+        except ProviderError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
     tokens = tokens_from_grant(grant)
     try:
         saved = save_oauth_tokens(name, tokens)
