@@ -53,6 +53,19 @@ def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
     assert done.detail == "0 tools · 0 commits"
 
 
+def test_a_plans_finish_summary_pairs_with_its_done_line() -> None:
+    """finish_planning ends a plan (reason finish_planning); its summary is the
+    plan's own deliverable line and paired like a run's, not dropped as if the
+    end were a failure (every surface showed a bare "done" for plans)."""
+    events = [
+        {"type": "tool.call", "name": "finish_planning", "args": {"summary": "Plan seeded."}},
+        {"type": "tool.result", "name": "finish_planning", "ok": True, "summary": "ok"},
+        {"type": "session.end", "all_passed": True, "reason": "finish_planning"},
+    ]
+    (done,) = fold_transcript(events)
+    assert done.kind == "done" and done.ok is True and done.body == "Plan seeded."
+
+
 def test_failed_tool_keeps_a_tail() -> None:
     events = [
         {"type": "tool.call", "name": "run_command", "args": {"command": "ls /nope"}},

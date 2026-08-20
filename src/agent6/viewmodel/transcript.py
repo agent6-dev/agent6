@@ -456,10 +456,11 @@ class TranscriptFold:
             out = self._flush_message()
             counts = self._receipt_detail()
             reason = str(event.get("reason", ""))
-            # Pair the finish summary with the done line ONLY on a clean finish.
-            # On a failure/stop the summary is from an EARLIER finish_session call and
+            # Pair the finish summary with the done line ONLY on a clean finish
+            # (a run's finish_session, a plan's finish_planning). On a
+            # failure/stop the summary is from an EARLIER finish call and
             # pairing it (e.g. "provider error  Plan seeded.") misreads as success.
-            body = self._finish if reason in ("", "finish_session") else ""
+            body = self._finish if reason in ("", "finish_session", "finish_planning") else ""
             out.append(
                 TranscriptItem(
                     "done",
