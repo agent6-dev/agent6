@@ -193,3 +193,21 @@ def test_plan_metered_routes_skip_the_fallback_note(
     )
     err = budget_preflight(refused)
     assert err is not None and "max_percent is 0" in err
+
+
+def test_machine_pins_carry_their_provider_into_the_notes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A per-state (provider, model) pin routes the note correctly: a
+    chatgpt-pinned model is plan-metered, never 'bounded by fallback
+    tokens' (the pin's provider was dropped and the note lied)."""
+    from agent6.app.preflight import budget_preflight
+
+    cfg = _cfg(
+        "anthropic-model",
+        {"anthropic": {"api_format": "anthropic"}, "chatgpt": {"api_format": "chatgpt"}},
+    )
+    assert budget_preflight(cfg, extra_routes=[("chatgpt", "gpt-5.6-sol")]) is None
+    err = capsys.readouterr().err
+    assert "'gpt-5.6-sol' draws on the ChatGPT plan" in err
+    assert "gpt-5.6-sol' ha" not in err.replace("draws on", "")  # not in the fallback note

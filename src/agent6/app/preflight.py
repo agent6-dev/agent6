@@ -55,10 +55,11 @@ class SessionRefused(Exception):
         self.rc = rc
 
 
-def budget_preflight(cfg: Config, extra_models: Iterable[str] = ()) -> str | None:
+def budget_preflight(cfg: Config, extra_routes: Iterable[tuple[str, str]] = ()) -> str | None:
     """Budget refusals + notices over every statically reachable model,
     before any spend: the resolved role models, any model a `[review].seats`
-    spec pins, and *extra_models* (a machine's per-state pins).
+    spec pins, and *extra_routes* (a machine's per-state `(provider, model)`
+    pins; an unknown provider rides as "" and is judged by price data alone).
 
     `max_tokens_fallback = 0` refuses when a reachable model cannot be
     metered (zero unmetered tokens allowed); `max_usd = 0` refuses when one
@@ -71,7 +72,7 @@ def budget_preflight(cfg: Config, extra_models: Iterable[str] = ()) -> str | Non
         _persona, seat_provider, seat_model = parse_seat_spec(spec)
         if seat_model:
             routes.add((seat_provider, seat_model))
-    routes.update(("", m) for m in extra_models if m)
+    routes.update((prov, m) for prov, m in extra_routes if m)
 
     def _plan_metered(provider: str) -> bool:
         return isinstance(cfg.providers.get(provider), ChatGPTProviderEntry)

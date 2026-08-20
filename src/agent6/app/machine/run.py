@@ -327,13 +327,15 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # that state fires wasted the run up to it.
             agent_states = [s for s in spec.states.values() if isinstance(s, AgentState)]
             pinned_providers = [s.provider for s in agent_states if s.provider]
-            pinned_models = [s.model for s in agent_states if s.model != "inherit"]
+            pinned_routes = [
+                (s.provider or "", s.model) for s in agent_states if s.model != "inherit"
+            ]
             missing = check_provider_keys(cfg, extra_providers=pinned_providers)
             if missing is not None:
                 reporter.err(missing)
                 return 2
             # After check_provider_keys so the price cache has been refreshed.
-            budget_err = budget_preflight(cfg, extra_models=pinned_models)
+            budget_err = budget_preflight(cfg, extra_routes=pinned_routes)
             if budget_err is not None:
                 reporter.refuse(budget_err)
                 return 2
