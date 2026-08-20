@@ -101,6 +101,26 @@ def test_repo_signal_cargo_and_go(tmp_path: Path) -> None:
     assert verify_from_repo_signals(tmp_path) == (("go", "test", "./..."), "go.mod")
 
 
+def test_repo_signal_verify_sh_wins(tmp_path: Path) -> None:
+    """A root verify.sh is the operator's own gate: it beats every manifest,
+    runs directly when executable and through sh when not."""
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    script = tmp_path / "verify.sh"
+    script.write_text("#!/bin/sh\npython3 -m pytest -q\n", encoding="utf-8")
+    assert verify_from_repo_signals(tmp_path) == (("sh", "verify.sh"), "verify.sh")
+    script.chmod(0o755)
+    assert verify_from_repo_signals(tmp_path) == (("./verify.sh",), "verify.sh")
+
+
+def test_repo_signal_loose_python_tests_come_last(tmp_path: Path) -> None:
+    """test_*.py at the root or under tests/ means pytest, but only when no
+    manifest says otherwise: a Go repo's tests/ dir stays `go test`."""
+    (tmp_path / "test_calc.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
+    assert verify_from_repo_signals(tmp_path) == (("python3", "-m", "pytest", "-q"), "tests")
+    (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
+    assert verify_from_repo_signals(tmp_path) == (("go", "test", "./..."), "go.mod")
+
+
 def test_repo_signal_none(tmp_path: Path) -> None:
     assert verify_from_repo_signals(tmp_path) is None
 

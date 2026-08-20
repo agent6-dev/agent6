@@ -8,8 +8,9 @@ infers one, cheapest source first:
 
   1. the `## Verify command` (or `## Test`) section of AGENTS.md, or an
      inline `Verify:`/`Test:` line -- explicit, human-authored intent;
-  2. deterministic repo signals (package.json `scripts.test`, a Makefile
-     `test`/`check` target, pyproject/pytest, Cargo, go.mod);
+  2. deterministic repo signals (a root `verify.sh`, package.json
+     `scripts.test`, a Makefile `test`/`check` target, pyproject/pytest,
+     Cargo, go.mod, loose `test_*.py` files);
   3. an LLM call (injected, so this module stays provider-agnostic) given the
      repo's manifest files + AGENTS.md.
 
@@ -27,6 +28,7 @@ already-synced venv; the sandbox cannot sync).
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 from collections.abc import Callable
@@ -120,43 +122,99 @@ def _has_make_target(text: str, target: str) -> bool:
     return any(m.group(1) == target for m in _MAKE_TARGET.finditer(text))
 
 
-def verify_from_repo_signals(repo_root: Path) -> tuple[tuple[str, ...], str] | None:
-    """Deterministic detection from manifest files. Returns (argv, source)."""
+def _python(repo_root: Path) -> str:
+    """The interpreter a pytest gate runs with: the project's `.venv/bin/python`
+    when it exists (symlinks into /usr, so jail-visible per the documented
+    convention), else `python3` on PATH, which is the correct interpreter in
+    containers and system-/conda-python setups that have no `.venv`
+    (hardcoding the missing `.venv/bin/python` there silently breaks verify).
+    The operator can pin one."""
+    return ".venv/bin/python" if (repo_root / ".venv" / "bin" / "python").exists() else "python3"
+
+
+Signal = tuple[tuple[str, ...], str]  # (argv, source)
+
+
+def _verify_sh(repo_root: Path) -> Signal | None:
+    script = repo_root / "verify.sh"
+    if not script.is_file():
+        return None
+    argv = ("./verify.sh",) if os.access(script, os.X_OK) else ("sh", "verify.sh")
+    return (argv, "verify.sh")
+
+
+def _package_json(repo_root: Path) -> Signal | None:
     pkg = repo_root / "package.json"
-    if pkg.is_file():
-        try:
-            data = json.loads(pkg.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = {}
-        scripts = data.get("scripts") if isinstance(data, dict) else None
-        if isinstance(scripts, dict) and isinstance(scripts.get("test"), str):
-            return (("npm", "test", "--silent"), "package.json")
+    if not pkg.is_file():
+        return None
+    try:
+        data = json.loads(pkg.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    scripts = data.get("scripts") if isinstance(data, dict) else None
+    if isinstance(scripts, dict) and isinstance(scripts.get("test"), str):
+        return (("npm", "test", "--silent"), "package.json")
+    return None
+
+
+def _makefile(repo_root: Path) -> Signal | None:
     for mk in ("Makefile", "makefile", "GNUmakefile"):
         p = repo_root / mk
-        if p.is_file():
-            try:
-                txt = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                txt = ""
-            for target in ("test", "check"):
-                if _has_make_target(txt, target):
-                    return (("make", target), f"Makefile:{target}")
-    if any(
-        (repo_root / f).is_file()
-        for f in ("pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg", "setup.py")
-    ):
-        # Prefer a project `.venv/bin/python` WHEN IT EXISTS (symlinks into /usr,
-        # so jail-visible per the documented convention); otherwise fall back to
-        # `python3` on PATH, which is the correct interpreter in containers and
-        # system-/conda-python setups that have no `.venv` (hardcoding the missing
-        # `.venv/bin/python` there silently breaks verify). Operator can pin one.
-        py = ".venv/bin/python" if (repo_root / ".venv" / "bin" / "python").exists() else "python3"
-        return ((py, "-m", "pytest", "-q"), "pyproject")
-    if (repo_root / "Cargo.toml").is_file():
-        return (("cargo", "test", "--quiet"), "Cargo.toml")
-    if (repo_root / "go.mod").is_file():
-        return (("go", "test", "./..."), "go.mod")
+        if not p.is_file():
+            continue
+        try:
+            txt = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            txt = ""
+        for target in ("test", "check"):
+            if _has_make_target(txt, target):
+                return (("make", target), f"Makefile:{target}")
     return None
+
+
+def _python_manifest(repo_root: Path) -> Signal | None:
+    manifests = ("pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg", "setup.py")
+    if any((repo_root / f).is_file() for f in manifests):
+        return ((_python(repo_root), "-m", "pytest", "-q"), "pyproject")
+    return None
+
+
+def _cargo(repo_root: Path) -> Signal | None:
+    return (
+        (("cargo", "test", "--quiet"), "Cargo.toml")
+        if (repo_root / "Cargo.toml").is_file()
+        else None
+    )
+
+
+def _go(repo_root: Path) -> Signal | None:
+    return (("go", "test", "./..."), "go.mod") if (repo_root / "go.mod").is_file() else None
+
+
+def _loose_python_tests(repo_root: Path) -> Signal | None:
+    if any(repo_root.glob("test_*.py")) or any((repo_root / "tests").glob("test_*.py")):
+        return ((_python(repo_root), "-m", "pytest", "-q"), "tests")
+    return None
+
+
+# In order: a root `verify.sh` first (an operator wrote it for exactly this),
+# then the manifests, then loose Python tests (`test_*.py` at the root or under
+# `tests/`) last, so a Rust or Go repo's `tests/` dir never reads as pytest.
+_REPO_SIGNALS = (
+    _verify_sh,
+    _package_json,
+    _makefile,
+    _python_manifest,
+    _cargo,
+    _go,
+    _loose_python_tests,
+)
+
+
+def verify_from_repo_signals(repo_root: Path) -> Signal | None:
+    """Deterministic detection from the repo's own files (`_REPO_SIGNALS`, in
+    order). Returns (argv, source)."""
+    return next((found for probe in _REPO_SIGNALS if (found := probe(repo_root))), None)
 
 
 # Files whose contents most strongly signal the test command, fed to the LLM.

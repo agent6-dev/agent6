@@ -43,7 +43,7 @@ Finishing leaves the session resumable like any other.
 Without a terminal (CI, a detached run) the resume line is printed instead.
 
 The verify command is the success gate.
-When the repo has not set `workflow.verify_command`, agent6 infers one per run and prints what it picked, reading AGENTS.md, then the repo's manifest files, then a model call over those manifests.
+When the repo has not set `workflow.verify_command`, agent6 infers one per run and prints what it picked, reading AGENTS.md, then a root `verify.sh`, the repo's manifest files, and loose `test_*.py` files, then a model call over those manifests.
 A run that can infer nothing still proceeds, committing every editing step as an ungated checkpoint.
 Pin one in the per-repo config, or with `agent6 init`, to make it deterministic.
 

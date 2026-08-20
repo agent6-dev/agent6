@@ -68,9 +68,10 @@ class WorkflowConfig(BaseModel):
         description=(
             "The command that decides whether a step succeeded, as argv (no shell; wrap a pipeline "
             'as `["sh", "-c", "a && b"]`). Set it to pin the gate. Unset: each run infers one and '
-            "prints it (an AGENTS.md `## Verify command` block first, then the repo's manifest "
-            "files, then a model call over those manifests); a run that can infer none starts "
-            "gateless and adopts the first gate a recognizable project created mid-run yields."
+            "prints it (an AGENTS.md `## Verify command` block first, then a root `verify.sh`, "
+            "the repo's manifest files, and loose `test_*.py` files, then a model call over "
+            "those manifests); a run that can infer none starts gateless and adopts the first "
+            "gate a recognizable project created mid-run yields."
         ),
     )
     # per-call timeout for verify_command (and metric_command) in
