@@ -422,7 +422,7 @@ def test_run_refuses_uncommitted_machine(
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     code = main(["machine", "run", str(f)])
-    assert code == 1
+    assert code == 2  # a refusal, like every REFUSING
     err = capsys.readouterr().err
     assert "uncommitted" in err and "committed machine" in err
     # Refused before touching the state dir: no instance journal was created.
@@ -494,7 +494,7 @@ def test_first_run_records_the_bundle_and_drift_refuses_continuation(
 
     (scripts / "do.py").write_text("print('changed')\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qam", "edit"], check=True)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 1
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 2  # a refusal
     err = capsys.readouterr().err
     assert "scripts/do.py" in err and "archive the instance" in err
 
@@ -519,7 +519,7 @@ def test_continuation_refuses_an_edited_machine_file(
     capsys.readouterr()
     f.write_text(WAITER_DELAYED.replace('reason = "ticked"', 'reason = "changed"'), "utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qam", "edit"], check=True)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 1
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 2  # a refusal
     err = capsys.readouterr().err
     assert "differs from the recorded" in err and "archive the instance" in err
 
@@ -542,7 +542,7 @@ def test_run_refuses_rerun_of_ended_instance(
     sentinel = 10**9
     write_worker_pid(root, sentinel)
     code = main(["machine", "run", str(f)])
-    assert code == 1
+    assert code == 2  # a refusal
     assert "already ended" in capsys.readouterr().err
     # worker.pid was NOT re-stamped with the (live) rerun process pid.
     assert read_worker_pid(root) == sentinel

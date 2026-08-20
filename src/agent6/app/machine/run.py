@@ -254,7 +254,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     uncommitted = uncommitted_refusal(path, cwd)
     if uncommitted is not None:
         reporter.refuse(uncommitted)
-        return 1
+        return 2
     states = list(spec.states.values())
     has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
     # mode="run" agent states edit + commit; they need a resolved git identity.
@@ -392,7 +392,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     " Replay it with `agent6 machine replay`, or archive the"
                     " instance directory to start fresh."
                 )
-                return 1
+                return 2
             if journal.exists():
                 # A live instance runs the bundle it recorded: continuation
                 # holds the working bundle to those bytes, so an edit can
@@ -404,7 +404,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                         " recorded; archive the instance directory to start"
                         " fresh with the edited machine."
                     )
-                    return 1
+                    return 2
             data_dir.mkdir(parents=True, exist_ok=True)
             # A leftover stop marker from a prior invocation would park this
             # one at its first boundary; starting the machine is the answer to
