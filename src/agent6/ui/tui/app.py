@@ -815,8 +815,13 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         # Header task line for a run with no session.start yet (parked/created):
         # the fold has no user_task, but the manifest knows the work.
         self.fallback_task = ""
+        # The session's mode (run / plan / ask): the dashboard's title word, as
+        # the web panel heading states it; "run" for a manifest-less dir.
+        self.mode = "run"
         with contextlib.suppress(ManifestError):
-            self.fallback_task = read_manifest(session_dir).user_task
+            manifest = read_manifest(session_dir)
+            self.fallback_task = manifest.user_task
+            self.mode = manifest.mode or "run"
         # Live heartbeat: a run can be silent for a whole reasoning turn (or the
         # resume context-rebuild gap). Track when the last event landed and
         # repaint ~1/s while active so an elapsed timer + spinner visibly tick --
@@ -851,7 +856,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         return f"{context} · {self._task_lead()}"
 
     def run_title(self) -> str:
-        return self.screen_title("run")
+        return self.screen_title(self.mode)
 
     def on_mount(self) -> None:
         setup_theme(self)  # apply the saved theme before the first paint

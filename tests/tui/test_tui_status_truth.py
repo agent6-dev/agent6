@@ -71,6 +71,38 @@ async def _open_dash(app: Agent6TUI, pilot: Any) -> None:
     await pilot.pause()
 
 
+def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: Path) -> None:
+    """The menu-bar title led with a fixed "run" for every session; a plan read
+    "run · <task> · planned". The word is the manifest's mode, as the web
+    panel heading states it."""
+    d = tmp_path / "plan1"
+    d.mkdir()
+    (d / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": d.name, "mode": "plan", "user_task": "lay it out"}),
+        encoding="utf-8",
+    )
+    (d / "logs.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "session.start",
+                "session_id": d.name,
+                "mode": "plan",
+                "user_task": "lay it out",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            assert app.run_title().startswith("plan · lay it out")
+
+    asyncio.run(scenario())
+
+
 def test_the_header_names_the_pins_in_force(tmp_path: Path) -> None:
     """The pinned instructions bind for the whole run; the dashboard header
     lists them (the web header's and `sessions show`'s line), so an operator
