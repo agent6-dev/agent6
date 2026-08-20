@@ -79,19 +79,17 @@ def _plan_merge(  # noqa: PLR0911
     if isinstance(res, int):
         return res
     layout, manifest = res
-    # A live run keeps the shared checkout on its run branch and its tree is
-    # clean for the whole duration of every provider call, so every guard below
-    # passes mid-run -- and execute_merge would then switch the checkout to the
-    # base branch under the worker, whose next auto-commit lands mid-run WIP
-    # directly on it. The gate is the raw pid, NOT session_is_live: this is a
-    # checkout mutex, and after session.end the worker's finalizer may still be
-    # switching branches. The run's own end-of-run finalize_auto_merge is
-    # unaffected (it calls execute_merge directly, not this planner).
+    # A live run's chain keeps growing and its edits sit in the worktree; a
+    # merge now would land a prefix of its work and bring the operator's index
+    # forward under the worker. The gate is the raw pid, NOT session_is_live:
+    # after session.end the worker's finalizer may still be at work. The run's
+    # own end-of-run finalize_auto_merge is unaffected (it calls execute_merge
+    # directly, not this planner).
     if worker_is_alive(layout.session_dir):
         print(
-            f"REFUSING: run {session_id!r} is still live; merging now would switch the"
-            " shared checkout out from under the worker and its next auto-commit"
-            " would land on the base branch. Stop it first:\n"
+            f"REFUSING: run {session_id!r} is still live; a merge now lands only the"
+            " commits so far (its later ones need another merge) and moves your"
+            " index while the worker still edits. Stop it first:\n"
             f"    agent6 sessions stop {session_id}",
             file=sys.stderr,
         )
@@ -204,11 +202,12 @@ def _cmd_merge(
         print(f"ERROR: {outcome.error}", file=sys.stderr)
         return 1
     if outcome.status == "conflict":
+        squash = " --squash" if plan.strategy == "squash" else ""
         print(
             f"CONFLICT: merging {plan.run_branch} into {plan.target} hit conflicts in "
             f"{', '.join(outcome.conflicts)}. The tree was left clean (no partial merge); "
             f"resolve it by hand if you want:\n"
-            f"    git checkout {plan.target} && git merge {plan.run_branch}",
+            f"    git checkout {plan.target} && git merge{squash} {plan.run_branch}",
             file=sys.stderr,
         )
         return 1
