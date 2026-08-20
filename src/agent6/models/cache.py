@@ -29,7 +29,12 @@ from urllib.parse import urlsplit
 
 import httpx2
 
-from agent6.config import AnthropicProviderEntry, OpenAIProviderEntry, ProviderEntry
+from agent6.config import (
+    AnthropicProviderEntry,
+    ChatGPTProviderEntry,
+    OpenAIProviderEntry,
+    ProviderEntry,
+)
 from agent6.paths import cache_dir
 from agent6.providers.types import ProviderError
 from agent6.providers.wire import auth_header
@@ -218,10 +223,16 @@ def probe_provider_key(
     with a public `/models` would report a false `ok` -- the negative
     (auth_failed) is the trustworthy signal.
     """
-    if getattr(entry, "deployment", "direct") != "direct":
-        return KeyProbeResult(
-            ok=True, status="unsupported", detail="no /models listing for this deployment"
+    if (
+        isinstance(entry, ChatGPTProviderEntry)
+        or getattr(entry, "deployment", "direct") != "direct"
+    ):
+        detail = (
+            "ChatGPT signs in via OAuth, not a key"
+            if isinstance(entry, ChatGPTProviderEntry)
+            else "no /models listing for this deployment"
         )
+        return KeyProbeResult(ok=True, status="unsupported", detail=detail)
     try:
         url, headers = _models_endpoint(entry, api_key)
     except ProviderError as exc:
@@ -289,6 +300,8 @@ def fetch_models_live(
     fresh evidence from a stale fallback -- `models.validate` hard-refuses only
     on a listing this returned. The TTL-gated read-through is `list_models`.
     """
+    if isinstance(entry, ChatGPTProviderEntry):
+        return None  # the subscription backend has no public /models listing
     try:
         models, pricing, context = _fetch(entry, api_key, timeout_s)
     except (httpx2.HTTPError, ValueError, OSError, ProviderError):

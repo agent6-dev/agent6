@@ -17,6 +17,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.child_env import curated_env
 from agent6.config import (
     AnthropicProviderEntry,
+    ChatGPTProviderEntry,
     Config,
     ConfigError,
     MCPServerEntry,
@@ -28,7 +29,7 @@ from agent6.models.cache import list_models, refresh_pricing_catalog
 from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
 from agent6.sandbox.jail import SessionNetwork
-from agent6.secrets import SecretsError, load_secrets, resolve_api_key
+from agent6.secrets import SecretsError, load_oauth_tokens, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
 from agent6.tools.policy import jail_policy
@@ -247,6 +248,13 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
         )
     for name, entry in cfg.providers.items():
         if name not in needed:
+            continue
+        if isinstance(entry, ChatGPTProviderEntry):
+            if load_oauth_tokens(name, secrets=secrets) is None:
+                return (
+                    f"no ChatGPT sign-in stored for [providers.{name}];"
+                    " run `agent6 connect chatgpt`."
+                )
             continue
         key = resolve_api_key(name, entry.api_key_env, secrets=secrets)
         if key:

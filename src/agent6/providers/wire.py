@@ -4,8 +4,8 @@
 
 agent6 separates three concerns:
 
-- **api_format** (`anthropic` | `openai`) selects the wire dialect; that
-  lives in the two provider modules (body shaping, response parsing, SSE).
+- **api_format** (`anthropic` | `openai` | `chatgpt`) selects the wire dialect;
+  that lives in the provider modules (body shaping, response parsing, SSE).
 - **deployment** (`direct` | `vertex` | `azure`) is a named profile that
   decides the request URL shape and whether the model id rides in the URL path
   vs the JSON body. Adding a deployment (e.g. `bedrock`) is a new branch here
@@ -27,7 +27,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from agent6.providers.types import ProviderError
 
-ApiFormat = Literal["anthropic", "openai"]
+ApiFormat = Literal["anthropic", "openai", "chatgpt"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
@@ -105,6 +105,8 @@ def request_url(
         url, model_in_body = f"{base}/openai/deployments/{seg}/chat/completions", False
     elif api_format == "anthropic":
         url, model_in_body = f"{base}/messages", True
+    elif api_format == "chatgpt":
+        url, model_in_body = f"{base}/responses", True
     else:
         url, model_in_body = f"{base}/chat/completions", True
     return _merge_query(url, extra_query or {}), model_in_body

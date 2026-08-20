@@ -142,3 +142,21 @@ def test_budget_preflight_prices_a_seat_pinned_model() -> None:
     )
     err = budget_preflight(cfg)
     assert err is not None and "very-unpriced-model" in err
+
+
+def test_chatgpt_provider_without_sign_in_is_refused_statically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A routed chatgpt provider with no stored OAuth sign-in fails the
+    preflight (naming `agent6 connect chatgpt`), not mid-setup after state
+    exists; with tokens stored it passes without any key lookup."""
+    monkeypatch.setattr(_setup, "load_secrets", dict)
+    cfg = _cfg("gpt-5-codex", {"chatgpt": {"api_format": "chatgpt"}})
+    err = _setup.check_provider_keys(cfg)
+    assert err is not None and "agent6 connect chatgpt" in err
+
+    def stored(*_a: object, **_k: object) -> object:
+        return object()
+
+    monkeypatch.setattr(_setup, "load_oauth_tokens", stored)
+    assert _setup.check_provider_keys(cfg) is None

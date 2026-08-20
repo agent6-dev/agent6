@@ -11,6 +11,7 @@ from typing import Any
 from agent6.budget import BudgetTracker
 from agent6.config import (
     AnthropicProviderEntry,
+    ChatGPTProviderEntry,
     Config,
     RoleModel,
     RoleName,
@@ -20,6 +21,8 @@ from agent6.events import EventSink
 from agent6.models import registry as models_registry
 from agent6.providers import (
     AnthropicProvider,
+    ChatGPTCredential,
+    ChatGPTProvider,
     CommandToken,
     OpenAIProvider,
     Provider,
@@ -136,15 +139,38 @@ def _provider_from_entry(
     """Build a Provider for an explicit `[providers.<provider_name>]` entry +
     model + thinking. Shared by `build_role_provider` (role routing) and the
     review panel's explicit per-seat `provider/model` routing."""
+    extra_headers = tuple(sorted(entry.extra_headers.items()))
+    extra_body = dict(entry.extra_body)
+    extra_query = dict(entry.extra_query)
+    if isinstance(entry, ChatGPTProviderEntry):
+        chatgpt_credential = ChatGPTCredential(
+            provider_name, issuer=entry.oauth_issuer, client_id=entry.oauth_client_id
+        )
+        account = chatgpt_credential.account_id()  # raises the connect hint when not signed in
+        if not account:
+            raise ProviderError(
+                f"The stored ChatGPT sign-in for {provider_name!r} carries no account id;"
+                " run `agent6 connect chatgpt` to sign in again."
+            )
+        return ChatGPTProvider(
+            model=model,
+            credential=chatgpt_credential,
+            account_id=account,
+            base_url=entry.base_url,
+            extra_headers=extra_headers,
+            extra_body=extra_body,
+            extra_query=extra_query,
+            timeout_s=entry.http_timeout_s,
+            transcript_sink=transcript_sink,
+            budget=budget,
+            reasoning_effort=thinking,
+        )
     key = resolve_api_key(provider_name, entry.api_key_env)
     credential = (
         CommandToken(entry.token_command, ttl_s=entry.token_command_ttl_s)
         if entry.token_command
         else None
     )
-    extra_headers = tuple(sorted(entry.extra_headers.items()))
-    extra_body = dict(entry.extra_body)
-    extra_query = dict(entry.extra_query)
     if isinstance(entry, AnthropicProviderEntry):
         # Anthropic requires explicit auth (a missing key is a 401, not a local
         # endpoint); a token_command credential or `auth_style = "none"` satisfies it.

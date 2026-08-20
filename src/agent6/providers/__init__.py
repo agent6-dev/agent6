@@ -2,12 +2,13 @@
 # Copyright 2026 Eric Lesiuta
 """Provider package.
 
-Both `AnthropicProvider` (Anthropic Messages) and `OpenAIProvider` (any
-OpenAI Chat Completions-compatible endpoint: OpenAI, OpenRouter, Ollama,
-vLLM, llama.cpp) satisfy the `Provider` Protocol and can serve ANY
-sub-agent role. Role-to-provider routing lives in `[models.<role>]` in
-your config; the providers themselves are interchangeable from the
-sub-agents' point of view.
+`AnthropicProvider` (Anthropic Messages), `OpenAIProvider` (any OpenAI
+Chat Completions-compatible endpoint: OpenAI, OpenRouter, Ollama, vLLM,
+llama.cpp), and `ChatGPTProvider` (the ChatGPT-subscription Codex
+backend) all satisfy the `Provider` Protocol and can serve ANY sub-agent
+role. Role-to-provider routing lives in `[models.<role>]` in your config;
+the providers themselves are interchangeable from the sub-agents' point
+of view.
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 from agent6.providers.anthropic import AnthropicProvider
+from agent6.providers.chatgpt import ChatGPTProvider
+from agent6.providers.chatgpt_oauth import ChatGPTCredential
 from agent6.providers.openai import OpenAIProvider
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
@@ -81,6 +84,8 @@ def call_for_text(provider: Provider, *, system: str, user: str, max_tokens: int
 
 __all__ = [
     "AnthropicProvider",
+    "ChatGPTCredential",
+    "ChatGPTProvider",
     "CommandToken",
     "OpenAIProvider",
     "Provider",
