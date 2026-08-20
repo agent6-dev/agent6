@@ -45,7 +45,7 @@ from agent6.ui.spawn import (
 )
 from agent6.ui.web import model
 from agent6.viewmodel import machine_verb_refusal, newest_state_log, session_is_live
-from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
+from agent6.viewmodel.listing import finished_needs_new_work
 from agent6.viewmodel.machine_state import MachineVerb
 
 
@@ -183,8 +183,12 @@ def resume_run(
     if not text.strip() and finished_needs_new_work(session_dir):
         # The spawn is DETACHED, so the same refusal from `agent6 resume` would
         # land on a process nobody is reading and the composer would report
-        # "resuming" for a run that never started.
-        return False, needs_new_work_refusal(session_id)
+        # "resuming" for a run that never started. The remedy HERE is the
+        # composer, not the CLI line the shared refusal quotes.
+        return False, (
+            f"run {session_id!r} already finished (the agent called finish_session);"
+            " type what to do next (Enter resumes it with the instruction)"
+        )
     err = spawn_detached_resume(
         cwd, session_dir.name, steer=text, preset=preset, config_path=config_path
     )

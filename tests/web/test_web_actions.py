@@ -308,8 +308,9 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     """A run the agent ENDED has nothing to continue, and the web spawn is
     DETACHED -- the same refusal from `agent6 resume` would land on a process
     nobody reads, so the composer would report "resuming" for a run that never
-    started. Refused here instead, in the same words, and an instruction still
-    goes straight through.
+    started. Refused here instead, naming the composer (the CLI wording quotes
+    a --steer line that is not the remedy on this surface), and an instruction
+    still goes straight through.
     """
     import json
 
@@ -340,7 +341,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
 
     ok, msg = actions.resume_run(tmp_path, "done-WEB111")
     assert ok is False
-    assert "already finished" in msg and "--steer" in msg
+    assert "already finished" in msg and "type what to do next" in msg
     assert spawned == []
 
     ok, _ = actions.resume_run(tmp_path, "done-WEB111", "do more")
