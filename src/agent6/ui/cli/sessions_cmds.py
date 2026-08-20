@@ -351,17 +351,6 @@ def _committed_nothing(cwd: Path, session_id: str) -> bool:
     return chain_tip(cwd, chain_ref_for(session_id)) is None
 
 
-def _no_ref_to_merge(cwd: Path, manifest: SessionManifest, run_branch: str) -> str:
-    """Why there is nothing to merge: a run that committed nothing never cut its
-    branch, anything else lost the ref after the fact."""
-    if _committed_nothing(cwd, manifest.session_id):
-        return "this run committed nothing; there is nothing to merge."
-    return (
-        f"run ref {run_branch!r} no longer exists; its commits survive at"
-        f" {chain_ref_for(manifest.session_id)}."
-    )
-
-
 def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -> str | None:
     """A friendly message when a run's branch is absent, or None when it is
     there. Uses the manifest's recorded merge so diff/commits say where the work

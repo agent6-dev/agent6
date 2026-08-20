@@ -44,7 +44,7 @@ from agent6.sessions.manifest import (
 from agent6.ui.cli._common import sgr
 from agent6.ui.cli.sessions_cmds import (
     _commits_ref,
-    _no_ref_to_merge,
+    _committed_nothing,
     _resolve_session_manifest,
 )
 from agent6.viewmodel import tail_events, worker_models
@@ -132,7 +132,16 @@ def _plan_merge(  # noqa: PLR0911
     # chain_tip resolves both shapes head_ref takes: a branch name and the
     # hidden refs/agent6/<id>/head chain ref.
     if chain_tip(cwd, run_branch) is None:
-        print(f"ERROR: {_no_ref_to_merge(cwd, manifest, run_branch)}", file=sys.stderr)
+        if _committed_nothing(cwd, manifest.session_id):
+            # Not a failure: the command's job is to land work, and there is
+            # none (a zero-commit branch reads the same way below).
+            print("[agent6] nothing to merge: this run committed nothing.")
+            return 0
+        print(
+            f"ERROR: run ref {run_branch!r} no longer exists; its commits survive at"
+            f" {chain_ref_for(manifest.session_id)}.",
+            file=sys.stderr,
+        )
         return 2
     if not branch_exists(cwd, target):
         print(

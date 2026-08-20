@@ -139,8 +139,9 @@ def test_a_run_that_committed_nothing_is_not_reported_as_deleted(
     assert "committed nothing" in out and "never cut" in out
     assert "no longer exists" not in out
 
-    assert main(["sessions", "merge", "nocommit1"]) == 2
-    assert "committed nothing" in capsys.readouterr().err
+    # Nothing to land is not a failure (a zero-commit branch says the same).
+    assert main(["sessions", "merge", "nocommit1"]) == 0
+    assert "nothing to merge: this run committed nothing" in capsys.readouterr().out
 
 
 def test_a_deleted_branch_names_the_chain_ref_that_still_holds_the_work(
