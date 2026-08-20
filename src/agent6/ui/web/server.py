@@ -574,7 +574,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"no session {session_id!r}"}, status=404)
             return
         if sub == "":
-            self._send_json(session_snapshot(session_dir))
+            self._send_json(session_snapshot(session_dir, repo=self.cwd))
         elif sub == "conversation":
             self._send_json(model.conversation_payload(session_dir))
         elif sub == "restate":
@@ -693,7 +693,7 @@ class _Handler(BaseHTTPRequestHandler):
         # Manifest-derived header fields (branch facts + the fan-out compare
         # outcome), read once per connection: they are fixed for the run's life
         # (merged_into lands after the run ends; a reopen/reconnect re-reads).
-        header = manifest_header(session_dir)
+        header = manifest_header(session_dir, repo=self.cwd)
 
         def frame(*, dead: bool = False) -> dict[str, Any]:
             # session_dir per frame, not once at connect: a parked run the operator

@@ -118,6 +118,44 @@ def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(tmp_p
     assert manifest_branches(d) == {}
 
 
+def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: Path) -> None:
+    """A run resumed after its merge commits past the stamp: with the repo at
+    hand the header says the branch awaits a merge again (the web Merge button
+    read the raw stamp and stayed disabled over unmerged commits)."""
+    import json
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t"}
+    env["GIT_COMMITTER_EMAIL"] = "t@t"
+    git = ["git", "-C", str(repo)]
+    subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True, env=env)
+    subprocess.run([*git, "branch", "agent6/x"], check=True)
+    tip = subprocess.run(
+        [*git, "rev-parse", "agent6/x"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    d = tmp_path / "run-x"
+    d.mkdir()
+    stamped = {
+        "mode": "run",
+        "run_branch": "agent6/x",
+        "base_branch": "main",
+        "merged": {"into": "main", "sha": tip, "tip": tip},
+    }
+    (d / "manifest.json").write_text(json.dumps(stamped))
+    assert manifest_branches(d, repo=repo)["branch_line"] == "agent6/x (merged into main)"
+    # A later commit on the run branch: the stamp no longer describes it.
+    subprocess.run([*git, "checkout", "-q", "agent6/x"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "more"], check=True, env=env)
+    got = manifest_branches(d, repo=repo)
+    assert "merged_into" not in got
+    assert got["branch_line"] == "agent6/x → merges into main"
+    # Without the repo the manifest fact stands as recorded.
+    assert manifest_branches(d)["merged_into"] == "main"
+
+
 # --- summarize_session_dir / status_word (shared by TUI hub, web hub, runs list) --
 
 

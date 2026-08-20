@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from agent6.git_ops import merge_stamp_holds
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
@@ -19,13 +20,15 @@ from agent6.viewmodel.state import fold_session, session_state_as_dict
 from agent6.viewmodel.tail import tail_events
 
 
-def manifest_branches(session_dir: Path) -> dict[str, str]:
+def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[str, str]:
     """Branch facts from the run's manifest (run_branch / base_branch /
     merged_into, and `branch_line`, their one wording) for the run header.
     The event fold does not carry them, and an operator needs to SEE where a
     run's work lives and where Merge lands (consecutive spawns chain branches
     invisibly otherwise). Empty for a run with no manifest (or branch_per_run
-    off)."""
+    off). With *repo*, `merged_into` is claimed only while the merge stamp
+    still describes the branch (a resumed run commits past its stamp; the
+    footer and `sessions show` apply the same check)."""
     try:
         manifest = read_manifest(session_dir)
     except ManifestError:
@@ -35,8 +38,11 @@ def manifest_branches(session_dir: Path) -> dict[str, str]:
         out["run_branch"] = manifest.run_branch
     if manifest.base_branch:
         out["base_branch"] = manifest.base_branch
-    if manifest.merged and manifest.merged.into:
-        out["merged_into"] = manifest.merged.into
+    stamp = manifest.merged
+    if stamp and stamp.into:
+        holds = repo is None or merge_stamp_holds(repo, manifest.run_branch or "", stamp.tip)
+        if holds:
+            out["merged_into"] = stamp.into
     line = format_branch(
         out.get("run_branch", ""), out.get("base_branch", ""), out.get("merged_into", "")
     )
@@ -45,20 +51,20 @@ def manifest_branches(session_dir: Path) -> dict[str, str]:
     return out
 
 
-def manifest_header(session_dir: Path) -> dict[str, Any]:
+def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str, Any]:
     """Manifest-derived session-header fields the event fold does not carry:
     the branch facts and the fan-out compare outcome (rank/winner/rationale).
     Merged into every session snapshot (one-shot and streamed) so the header
     a page paints from cannot drift. Empty for a run with no (readable)
     manifest."""
-    header: dict[str, Any] = dict(manifest_branches(session_dir))
+    header: dict[str, Any] = dict(manifest_branches(session_dir, repo=repo))
     compare = session_compare(session_dir)
     if compare is not None:
         header["compare"] = compare.model_dump(mode="json")
     return header
 
 
-def session_snapshot(session_dir: Path) -> dict[str, Any]:
+def session_snapshot(session_dir: Path, *, repo: Path | None = None) -> dict[str, Any]:
     """A session's folded state as the wire dict, with the dir-aware status
     (parked / stale / waiting, not the fold's blanket "running"), the
     dir-backed identity fill, and the manifest header. A session with no log
@@ -66,7 +72,7 @@ def session_snapshot(session_dir: Path) -> dict[str, Any]:
     dir supply the word."""
     state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
     snap = session_state_as_dict(state, session_dir)
-    snap.update(manifest_header(session_dir))
+    snap.update(manifest_header(session_dir, repo=repo))
     return snap
 
 

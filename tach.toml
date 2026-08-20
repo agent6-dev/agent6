@@ -250,6 +250,7 @@ depends_on = [
   "agent6.machine.model",
   "agent6.sessions.ipc",
   "agent6.sessions.manifest",
+  "agent6.git_ops",
 ]
 
 [[modules]]

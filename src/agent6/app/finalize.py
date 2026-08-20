@@ -23,12 +23,12 @@ from agent6.git_ops import (
     GitError,
     auto_stash_message,
     branch_exists,
-    branch_tip_sha,
     chain_ref_for,
     chain_tip,
     create_branch,
     delete_branch_if_merged,
     find_stash,
+    merge_stamp_holds,
     render_commit_trailer,
     restore_stash,
     verify_git_identity,
@@ -95,7 +95,9 @@ def stranded_edits(result: SessionResult, layout: SessionLayout) -> bool:
     with contextlib.suppress(ManifestError):
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
-        merged = manifest.merged is not None and merge_stamp_holds(run_branch, manifest.merged.tip)
+        merged = manifest.merged is not None and merge_stamp_holds(
+            Path.cwd(), run_branch, manifest.merged.tip
+        )
     if not run_branch or merged or branch_exists(Path.cwd(), run_branch):
         return False
     dirty = False
@@ -226,21 +228,6 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(argv)}")
 
 
-def merge_stamp_holds(run_branch: str, merged_tip: str) -> bool:
-    """Does the merged stamp still describe the branch? A resumed run keeps
-    committing on its branch under a PRIOR leg's stamp (and this leg's
-    auto-merge may have conflicted): "changes merged" holds only while the
-    branch still points at the merged tip -- the comparison `sessions prune`
-    trusts. A gone branch (auto_prune), unreadable git, or a pre-`tip` stamp
-    keeps the claim."""
-    if not merged_tip or not run_branch:
-        return True
-    tip = None
-    with contextlib.suppress(GitError):
-        tip = branch_tip_sha(Path.cwd(), run_branch)
-    return tip is None or tip == merged_tip
-
-
 def print_session_end(
     result: SessionResult,
     *,
@@ -305,7 +292,9 @@ def _print_run_branch_footer(
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
-        if manifest.merged is not None and merge_stamp_holds(run_branch, manifest.merged.tip):
+        if manifest.merged is not None and merge_stamp_holds(
+            Path.cwd(), run_branch, manifest.merged.tip
+        ):
             merged_into = manifest.merged.into or base_branch
     if result.completed and run_branch and merged_into:
         # auto_merge already merged this branch into the base (and auto_prune may

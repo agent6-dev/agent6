@@ -12,9 +12,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.app.finalize import merge_stamp_holds
 from agent6.config.layer import resolved_state_dir
-from agent6.git_ops import branch_exists
+from agent6.git_ops import branch_exists, merge_stamp_holds
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import pid_alive, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
@@ -223,7 +222,7 @@ def _changes(session_id: str, manifest: SessionManifest) -> _Changes:
     if not run_branch:
         return _Changes("", "")
     stamp = manifest.merged
-    if stamp is not None and merge_stamp_holds(run_branch, stamp.tip):
+    if stamp is not None and merge_stamp_holds(Path.cwd(), run_branch, stamp.tip):
         into = stamp.into or manifest.base_branch
         return _Changes(format_branch(run_branch, manifest.base_branch, into), into)
     if not branch_exists(Path.cwd(), run_branch):

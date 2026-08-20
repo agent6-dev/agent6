@@ -287,7 +287,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         screen no longer repaints (a reopen re-reads)."""
         if self._branch_line is not None:
             return self._branch_line
-        line = manifest_branches(self._tui.session_dir).get("branch_line", "")
+        line = manifest_branches(self._tui.session_dir, repo=Path.cwd()).get("branch_line", "")
         if not line:
             return ""  # no manifest yet (a launching run); don't cache
         self._branch_line = f"\nbranch: {line}"

@@ -629,6 +629,20 @@ def branch_tip_sha(path: Path, branch: str) -> str | None:
     return sha or None
 
 
+def merge_stamp_holds(path: Path, run_branch: str, merged_tip: str) -> bool:
+    """Does a run's merged stamp still describe its branch? A resumed run keeps
+    committing on its branch under a PRIOR leg's stamp: "merged" holds only
+    while the branch still points at the merged tip (the comparison
+    `sessions prune` trusts). A gone branch (auto_prune), unreadable git, or a
+    pre-`tip` stamp keeps the claim."""
+    if not merged_tip or not run_branch:
+        return True
+    tip = None
+    with contextlib.suppress(GitError):
+        tip = branch_tip_sha(path, run_branch)
+    return tip is None or tip == merged_tip
+
+
 def force_delete_squash_merged_branch(path: Path, branch: str) -> bool:
     """`git branch -D` a run branch, the ONE sanctioned force-delete in agent6.
 
