@@ -61,6 +61,7 @@ from agent6.app.preflight import (
     git_preflight,
     headless_approval_refusal,
     infer_verify_if_unset,
+    unmerged_run_holding_the_tree,
 )
 from agent6.app.providers import (
     build_prompt_reviser_provider,
@@ -338,8 +339,17 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         modified = modified_paths(cwd) if mode == "run" else []
         must_ask = bool(modified) and not cfg.git.auto_stash and cfg.git.require_clean_worktree
         answerable = frontend.capabilities.can_ask or away_mode(layout.session_dir) == "wait"
+        # Untracked files never enter a chain tree, so the tree comparison
+        # leaves out the ones present now (the same set the run records below).
+        unmerged_run = (
+            unmerged_run_holding_the_tree(
+                cwd, state_dir, except_id=effective_session_id, exclude=untracked_paths(cwd)
+            )
+            if must_ask
+            else ""
+        )
         if must_ask and not answerable:
-            reporter.err(f"REFUSING: {dirty_tree_refusal(modified)}")
+            reporter.err(f"REFUSING: {dirty_tree_refusal(modified, unmerged_run=unmerged_run)}")
             discard_husk_dir(layout.session_dir)
             return 2
 
@@ -410,7 +420,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     choice = "include"
                 else:
                     ask = frontend.build_questioner(layout.session_dir, events)
-                    answers = ask((dirty_tree_question(modified),))
+                    answers = ask((dirty_tree_question(modified, unmerged_run=unmerged_run),))
                     choice = dirty_tree_choice(answers[0] if answers else "")
                     stash_pop = stash_pop or choice == "stash"
                 if choice == "cancel":

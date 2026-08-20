@@ -8,7 +8,7 @@ terminal) and are injected by the front-end."""
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -25,7 +25,11 @@ from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    chain_dirty,
+    chain_ref_for,
+    chain_tip,
     is_git_repo,
+    run_branch_for,
     verify_git_identity,
 )
 from agent6.git_ops import (
@@ -36,6 +40,7 @@ from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import effective_run_commands
 from agent6.tools.schema import UserQuestion
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
+from agent6.viewmodel.listing import session_dirs
 from agent6.workflows.review import parse_seat_spec
 
 
@@ -190,29 +195,63 @@ DirtyTreeChoice = Literal["stash", "include", "cancel"]
 DIRTY_TREE_OPTIONS: tuple[str, ...] = ("stash", "include", "cancel")
 
 
-def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10) -> str:
+def unmerged_run_holding_the_tree(
+    cwd: Path, state_dir: Path, *, except_id: str, exclude: Collection[str] = ()
+) -> str:
+    """The id of the newest earlier run whose chain tip IS the working tree's
+    content, else "". A run's edits sit uncommitted on the checkout until its
+    branch is merged, so the next run's dirty-tree question would otherwise
+    call agent6's own last work "uncommitted changes" as if the operator had
+    left them; naming the run points at the merge instead."""
+    for d in session_dirs(state_dir, buckets=("runs",)):
+        if d.name == except_id:
+            continue
+        ref = chain_ref_for(d.name)
+        try:
+            if chain_tip(cwd, ref) is None:
+                continue
+            if not chain_dirty(cwd, ref, None, exclude=exclude):
+                return d.name
+        except GitError:
+            return ""
+        return ""  # the newest run with a chain decides; an older one cannot own the tree
+    return ""
+
+
+def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10, unmerged_run: str = "") -> str:
     # No leading indentation: a modal's text pane drops it, so a listing that
     # depends on it reads differently per surface.
     n = len(paths)
-    head = f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted changes:"
+    head = f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted changes"
+    head += (
+        f" (the unmerged work of run {unmerged_run}, on {run_branch_for(unmerged_run)}):"
+        if unmerged_run
+        else ":"
+    )
     lines = [f"- {p}" for p in paths[:cap]]
     if n > cap:
         lines.append(f"- ... {n - cap} more")
     return "\n".join([head, *lines])
 
 
-def dirty_tree_question(paths: Sequence[str]) -> UserQuestion:
+def dirty_tree_question(paths: Sequence[str], *, unmerged_run: str = "") -> UserQuestion:
     """The start question a run with uncommitted tracked changes asks the
     operator (over the same channel as `ask_user`); the answer's first word is
-    the choice, anything else cancels."""
+    the choice, anything else cancels. *unmerged_run* names the earlier run
+    whose branch holds exactly these changes, when one does."""
+    merge_hint = (
+        f"cancel: park the run; `agent6 sessions merge {unmerged_run}` lands them, then resume it"
+        if unmerged_run
+        else "cancel: park the run; resume it once they are committed or stashed"
+    )
     return UserQuestion(
         question=(
-            f"{_dirty_tree_listing(paths)}\n"
+            f"{_dirty_tree_listing(paths, unmerged_run=unmerged_run)}\n"
             "How should this run treat them?\n"
             "stash: set them aside for the run (applied back at the end when the tree is"
             " clean, else the `git stash apply` line is printed)\n"
             "include: the run's first commit records them with its own work\n"
-            "cancel: park the run; resume it once they are committed or stashed"
+            f"{merge_hint}"
         ),
         options=DIRTY_TREE_OPTIONS,
     )
@@ -227,12 +266,17 @@ def dirty_tree_choice(answer: str) -> DirtyTreeChoice:
     return "cancel"
 
 
-def dirty_tree_refusal(paths: Sequence[str]) -> str:
+def dirty_tree_refusal(paths: Sequence[str], *, unmerged_run: str = "") -> str:
     """The refusal when nobody can answer :func:`dirty_tree_question`."""
+    settle = (
+        f" `agent6 sessions merge {unmerged_run}` lands them; or"
+        if unmerged_run
+        else " Commit or stash them first, or"
+    )
     return (
-        f"{_dirty_tree_listing(paths)}\n"
+        f"{_dirty_tree_listing(paths, unmerged_run=unmerged_run)}\n"
         "This run has no terminal and no front-end to ask how to treat them."
-        " Commit or stash them first, or decide in config: [git].auto_stash = true"
+        f"{settle} decide in config: [git].auto_stash = true"
         " stashes them for the run; [git].require_clean_worktree = false lets the run's"
         " first commit record them."
     )

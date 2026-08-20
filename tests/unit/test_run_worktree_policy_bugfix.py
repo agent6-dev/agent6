@@ -288,3 +288,36 @@ def test_require_clean_worktree_off_includes_without_asking(
 
     assert asked == []
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "edited\n"
+
+
+def test_the_last_runs_unmerged_work_is_named_as_such(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run's edits sit uncommitted on the checkout until its branch merges;
+    the next run's dirty-tree text then names that run and its merge, instead
+    of calling agent6's own work the operator's uncommitted changes."""
+    from agent6.git_ops import chain_commit, chain_ref_for
+    from agent6.sessions.layout import bucket_dir
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    monkeypatch.chdir(repo)
+    state = app_run_mod.resolved_state_dir(repo)
+    prior = bucket_dir(state, "runs") / "prior-run-AAAAAA"
+    prior.mkdir(parents=True)
+    (prior / "logs.jsonl").write_text('{"type": "session.start", "user_task": "t"}\n')
+    (repo / "seed.txt").write_text("edited by the prior run\n", encoding="utf-8")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    assert chain_commit(repo, "agent6 iter 1", ref=chain_ref_for(prior.name), fallback_parent=head)
+    _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
+
+    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
+    err = capsys.readouterr().err
+    assert "the unmerged work of run prior-run-AAAAAA, on agent6/prior-run-AAAAAA" in err
+    assert "agent6 sessions merge prior-run-AAAAAA" in err
+
+    # A further edit of the operator's own is not the run's work.
+    (repo / "seed.txt").write_text("edited by the prior run\nand by me\n", encoding="utf-8")
+    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
+    assert "unmerged work" not in capsys.readouterr().err
