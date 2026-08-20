@@ -15,12 +15,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agent6.config import Config, ConfigError
+from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
 from agent6.machine import MachineError, MachineJournal, load_machine
-from agent6.models.cache import cached_models, list_models
-from agent6.models.validate import known_models
-from agent6.secrets import resolve_api_key
+from agent6.models.choices import config_value_choices
 from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
@@ -347,55 +345,16 @@ def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]
 
 
 def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> list[str]:
-    """Value suggestions for one open-text config leaf, from the same sources
-    the TUI config page and CLI TAB completion use: `models.<role>.provider`
-    offers the configured provider names, `models.<role>.model` the role's
-    provider's model ids (cache-first, refreshed from the live listing; the
-    fetch dials only that operator-configured provider's base_url), `preset`
-    the preset names (built-ins plus the user's `[presets.*]`). Enum leaves
-    already carry their choices in the config payload; everything else (and any
-    error) suggests nothing -- suggestions are best-effort, never a failure.
-
-    The pseudo-key `parallel.models` (the new-work composer's `/parallel`
-    spec autocomplete) returns the worker's model plus the worker provider's
-    cached listing (lanes inherit the worker provider) -- exactly the set
-    `run --parallel` validation accepts -- cache-only so a keystroke never
-    blocks the server on the network."""
-    if key == "parallel.models":
-        return _parallel_model_suggestions(cwd, config_path)
+    """Value suggestions for one open-text config leaf: `preset` offers the
+    preset names, everything else what `models.choices.config_value_choices`
+    offers (a role's provider's model ids; the `/parallel` autocomplete's model
+    ids under the pseudo-key `parallel.models`). Enum leaves already carry
+    their choices in the config payload; any error suggests nothing, since
+    suggestions are best-effort, never a failure."""
     if key == "preset":
         return available_preset_names(cwd, config_path)
-    parts = key.split(".")
-    if len(parts) != 3 or parts[0] != "models" or parts[2] not in ("provider", "model"):
-        return []
     try:
-        cfg = load_effective(cwd, config_path).config
+        eff = load_effective(cwd, config_path)
     except ConfigError:
         return []
-    return _role_value_suggestions(cfg, parts[1], parts[2])
-
-
-def _role_value_suggestions(cfg: Config, role: str, kind: str) -> list[str]:
-    """`models.<role>.provider` -> configured provider names; `.model` -> that
-    role's provider's model ids (cache-first, refreshed from the live listing)."""
-    if kind == "provider":
-        return sorted(cfg.providers)
-    provider = getattr(getattr(cfg.models, role, None), "provider", None)
-    if not provider:
-        return []
-    entry = cfg.providers.get(provider)
-    if entry is None:
-        return cached_models(provider)
-    api_key = resolve_api_key(provider, getattr(entry, "api_key_env", None))
-    return list_models(provider, entry, api_key)
-
-
-def _parallel_model_suggestions(cwd: Path, config_path: Path | None = None) -> list[str]:
-    """Model ids a `/parallel` lane can run (worker-scoped, via `known_models`),
-    for the spec autocomplete in the new-work composer. Cache-only; a broken
-    config suggests nothing."""
-    try:
-        cfg = load_effective(cwd, config_path).config
-    except ConfigError:
-        return []
-    return sorted(known_models(cfg))
+    return config_value_choices(eff, key)

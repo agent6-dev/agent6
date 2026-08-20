@@ -316,9 +316,12 @@ def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
 def test_config_suggestions_providers_and_models(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # models.<role>.provider offers the configured provider names;
-    # models.<role>.model the role's provider's model ids via the same
-    # cache-first listing the TUI config page and CLI completion use.
+    # models.<role>.provider carries the configured provider names as CHOICES
+    # in the config payload (a select, like an enum); models.<role>.model is
+    # suggested from the role's provider's model ids via the one cache-first
+    # listing the TUI config page and CLI completion use (`models.choices`).
+    from agent6.models import choices
+
     cfg_home = Path(os.environ["AGENT6_CONFIG_HOME"])
     (cfg_home / "config.toml").write_text(
         '[providers.openrouter]\napi_format = "openai"\n'
@@ -332,10 +335,19 @@ def test_config_suggestions_providers_and_models(
         seen["provider"] = provider
         return ["kimi", "qwen3"]
 
-    monkeypatch.setattr(model, "list_models", _fake_list)
-    assert model.config_suggestions(tmp_path, "models.worker.provider") == ["openrouter"]
+    monkeypatch.setattr(choices, "list_models", _fake_list)
+    payload = model.config_payload(tmp_path)
+    assert payload["models.worker.provider"]["choices"] == ["openrouter"]
+    assert payload["preset"]["choices"] == ["paranoid", "quick", "standard", "ultra"]
+    assert model.config_suggestions(tmp_path, "models.worker.provider") == []
     assert model.config_suggestions(tmp_path, "models.worker.model") == ["kimi", "qwen3"]
     assert seen["provider"] == "openrouter"
+    assert model.config_suggestions(tmp_path, "preset") == [
+        "paranoid",
+        "quick",
+        "standard",
+        "ultra",
+    ]
     # unknown keys / roles suggest nothing
     assert model.config_suggestions(tmp_path, "web.port") == []
     assert model.config_suggestions(tmp_path, "models.nosuch.model") == []

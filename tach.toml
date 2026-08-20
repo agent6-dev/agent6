@@ -99,8 +99,7 @@ depends_on = [
   "agent6.sessions.ipc",
   "agent6.sessions.manifest",
   "agent6.ui.mcp_server",
-  "agent6.machine",
-]
+  "agent6.machine", "agent6.models.choices",]
 
 [[modules]]
 path = "agent6.workflows"
@@ -143,7 +142,7 @@ depends_on = []
 [[modules]]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
-depends_on = ["agent6.app", "agent6.sessions.layout", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.ui.spawn", "agent6.ui.notify", "agent6.sessions.ipc", "agent6.sessions.manifest", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.portable", "agent6.secrets", "agent6.types", "agent6.viewmodel"]
+depends_on = ["agent6.app", "agent6.sessions.layout", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.ui.spawn", "agent6.ui.notify", "agent6.sessions.ipc", "agent6.sessions.manifest", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.portable", "agent6.types", "agent6.viewmodel", "agent6.models.choices"]
 
 [[modules]]
 # The steer seam + its file-bridge implementation, shared by the CLI's SIGINT
@@ -232,12 +231,9 @@ depends_on = [
   "agent6.config",
   "agent6.config.layer",
   "agent6.machine",
-  # config-editor value suggestions: the same model-listing cache + key
-  # resolution the TUI config page uses
-  "agent6.models.cache",
-  # pre-spawn /parallel model validation on the new-work composer
-  "agent6.models.validate",
-  "agent6.secrets",
+  # config-editor value suggestions: the one owner every editor and TAB
+  # completion read
+  "agent6.models.choices",
 ]
 
 [[modules]]
@@ -409,6 +405,13 @@ depends_on = ["agent6.config", "agent6.models.cache"]
 # refusal never rests on a stale snapshot.
 path = "agent6.models.validate"
 depends_on = ["agent6.config", "agent6.models.cache", "agent6.models.registry", "agent6.secrets", "agent6.config.layer", "agent6.directive"]
+
+[[modules]]
+# The values an open-text config leaf can take (a provider's model ids, the
+# /parallel lane ids): one owner behind every editor's picker, the web suggest
+# route, and TAB completion.
+path = "agent6.models.choices"
+depends_on = ["agent6.config", "agent6.config.layer", "agent6.models.cache", "agent6.models.validate", "agent6.secrets", "agent6.types"]
 
 [[modules]]
 path = "agent6.sandbox.detect"

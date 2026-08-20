@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import functools
 from collections.abc import Callable
 from pathlib import Path
@@ -23,6 +24,7 @@ from agent6.config.layer import (
     preset_catalog,
 )
 from agent6.config.write import PROVIDER_DEFAULTS
+from agent6.models.choices import config_value_choices
 from agent6.sessions.layout import session_layout
 from agent6.ui.cli._common import (
     _machines_dir,
@@ -71,9 +73,11 @@ def _complete_providers(prefix: str, **_kw: object) -> list[str]:
 
 
 @_never_raises
-def _complete_presets(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: built-in presets + configured [presets.*] names."""
-    return [n for n in available_preset_names(Path.cwd()) if n.startswith(prefix)]
+def _complete_presets(prefix: str, **kw: object) -> list[str]:
+    """argcomplete: built-in presets + configured [presets.*] names, under
+    the `--config` already typed."""
+    names = available_preset_names(Path.cwd(), _explicit_config(kw))
+    return [n for n in names if n.startswith(prefix)]
 
 
 @_never_raises
@@ -132,8 +136,16 @@ def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str
         view = build_config_view(load_effective(Path.cwd(), config_path))
     except ConfigError:
         # A config that does not load still gets completion: the schema is
-        # what carries the choices, and a default config is all schema.
-        view = build_config_view(EffectiveConfig(config=Config(), sources={}, layers=()))
+        # what carries the choices, and a default config is all schema; the
+        # preset names still come from the raw layers.
+        view = build_config_view(
+            EffectiveConfig(
+                config=Config(),
+                sources={},
+                layers=(),
+                presets=tuple(available_preset_names(Path.cwd(), config_path)),
+            )
+        )
     out: dict[str, tuple[str, ...]] = {}
     for setting in view.settings:
         if setting.py_type != "choice" or not setting.choices:
@@ -192,14 +204,19 @@ _EXTRA_BODY_RECIPES: tuple[str, ...] = (
 def _complete_config_values(
     prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
 ) -> list[str]:
-    """argcomplete: the Literal choices for the config key already typed."""
+    """argcomplete: the values the config key already typed accepts: its enum
+    or configured choices (the schema's literals, the preset names, the
+    configured providers), a role's provider's model ids, the extra_body
+    recipes."""
     key = getattr(parsed_args, "key", "") or ""
-    if key == "preset":
-        return _complete_presets(prefix)
     raw = getattr(parsed_args, "config", None)
-    choices = list(_config_enum_choices(raw if isinstance(raw, Path) else None).get(key, ()))
+    config_path = raw if isinstance(raw, Path) else None
+    choices = list(_config_enum_choices(config_path).get(key, ()))
     if key.endswith(".extra_body"):
         choices += list(_EXTRA_BODY_RECIPES)
+    if not choices:
+        with contextlib.suppress(ConfigError):
+            choices = config_value_choices(load_effective(Path.cwd(), config_path), key)
     return [v for v in choices if v.startswith(prefix)]
 
 

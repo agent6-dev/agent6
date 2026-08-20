@@ -314,7 +314,7 @@ def test_model_field_is_a_typeahead_picker(repo: Path, monkeypatch: pytest.Monke
         return models
 
     monkeypatch.setattr(cp, "cached_models", _models)
-    monkeypatch.setattr(cp, "list_models", _models)  # mock the live fetch
+    monkeypatch.setattr(cp, "config_value_choices", _models)  # mock the live fetch
 
     async def scenario() -> None:
         from agent6.ui.tui.widgets import TypeaheadField
@@ -405,9 +405,10 @@ def test_editing_a_model_survives_a_broken_secrets_file(
     """secrets.toml with unsafe perms (0644, e.g. restored from a backup) must
     not crash the WHOLE TUI when the edit modal's background model-list fetch
     runs: the thread worker's SecretsError hit textual's default exit_on_error
-    and tore the app down. The fetch degrades to a keyless attempt instead
-    (the sanctioned models/validate.py pattern)."""
+    and tore the app down. The fetch (`models.choices`) degrades to a keyless
+    attempt instead (the sanctioned models/validate.py pattern)."""
     import agent6.ui.tui.config_page as cp
+    from agent6.models import choices
 
     gdir = Path(os.environ["AGENT6_CONFIG_HOME"])
     secrets = gdir / "secrets.toml"
@@ -420,7 +421,7 @@ def test_editing_a_model_survives_a_broken_secrets_file(
         return models
 
     monkeypatch.setattr(cp, "cached_models", _models)
-    monkeypatch.setattr(cp, "list_models", _models)
+    monkeypatch.setattr(choices, "list_models", _models)  # the live fetch, keyless here
 
     async def scenario() -> None:
         app = _Host(repo)

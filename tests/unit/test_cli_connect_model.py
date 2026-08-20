@@ -313,7 +313,7 @@ def test_model_piped_without_model_lists_the_catalog(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models_stub(["claude-a", "claude-b"]))
+    monkeypatch.setattr("agent6.models.choices.list_models", _models_stub(["claude-a", "claude-b"]))
     rc = main(["model", "worker", "anthropic"])
     assert rc == 0
     captured = capsys.readouterr()
@@ -358,7 +358,7 @@ def test_model_piped_unknown_provider_errors(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models_stub([]))
+    monkeypatch.setattr("agent6.models.choices.list_models", _models_stub([]))
     rc = main(["model", "worker", "nosuch"])
     assert rc == 2
     assert "no known models for nosuch" in capsys.readouterr().err
@@ -375,7 +375,7 @@ def test_model_stdout_piped_lists_even_with_a_tty_stdin(
     (tmp_path / "g" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models_stub(["claude-a"]))
+    monkeypatch.setattr("agent6.models.choices.list_models", _models_stub(["claude-a"]))
     rc = main(["model", "worker", "anthropic"])
     assert rc == 0
     assert capsys.readouterr().out == "claude-a\n"
@@ -402,7 +402,7 @@ def test_model_piped_listing_notes_an_ignored_thinking_flag(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models_stub(["claude-a"]))
+    monkeypatch.setattr("agent6.models.choices.list_models", _models_stub(["claude-a"]))
     rc = main(["model", "worker", "anthropic", "--thinking", "high"])
     assert rc == 0
     assert "--thinking ignored" in capsys.readouterr().err
@@ -428,7 +428,7 @@ def test_model_interactive_prefill(
     def fake_list_models(*a: object, **k: object) -> list[str]:
         return ["claude-a", "claude-b"]
 
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", fake_list_models)
+    monkeypatch.setattr("agent6.models.choices.list_models", fake_list_models)
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)  # interactive = both ttys
     answers = iter(["", "2"])  # provider default, then model #2
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
@@ -451,7 +451,7 @@ def test_model_all_interactive_prompts_once(
     def _models(*_a: object, **_k: object) -> list[str]:
         return ["claude-a", "claude-b"]
 
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models)
+    monkeypatch.setattr("agent6.models.choices.list_models", _models)
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)  # interactive = both ttys
     calls = {"n": 0}
     answers = iter(["", "2"])  # provider default, model #2 — once, not 3x

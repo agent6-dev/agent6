@@ -25,6 +25,7 @@ from agent6.config.layer import (
     EffectiveConfig,
     Layer,
     flatten_leaves,
+    preset_names,
 )
 
 
@@ -164,11 +165,26 @@ def _field_schema(
     return None
 
 
+def _configured_choices(eff: EffectiveConfig, leaf: str) -> tuple[str, ...] | None:
+    """Choices the schema cannot state but the effective config can: the
+    preset names for `preset` (built-ins plus the user's `[presets.*]`) and
+    the configured provider names for `models.<role>.provider`. Every editor's
+    picker and TAB completion read them from here; the model ids of a
+    `models.<role>.model` leaf are a fetch (`models.choices`), not a choice."""
+    if leaf == "preset":
+        return eff.presets or tuple(preset_names(eff.layers))
+    parts = leaf.split(".")
+    if len(parts) == 3 and parts[0] == "models" and parts[2] == "provider":
+        return tuple(sorted(eff.config.providers)) or None
+    return None
+
+
 def build_config_view(
     eff: EffectiveConfig, *, resolved: dict[str, Any] | None = None
 ) -> ConfigView:
     """Combine the effective config, its provenance, the schema (types + enum
-    choices + defaults), and any caller-resolved values into the flat
+    choices + defaults), the choices only the config can state
+    (`_configured_choices`), and any caller-resolved values into the flat
     ConfigView every UI renders.
 
     *resolved* maps a dotted key to its resolved value for settings whose raw
@@ -194,6 +210,10 @@ def build_config_view(
             if schema is None:
                 schema = ("str", None, None, "")
             py_type, choices, default, description = schema
+            if choices is None:
+                choices = _configured_choices(eff, leaf)
+                if choices is not None:
+                    py_type = "choice"
             eff_val = resolved.get(leaf, value)
             settings.append(
                 ConfigSetting(

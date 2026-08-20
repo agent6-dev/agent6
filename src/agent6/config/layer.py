@@ -29,7 +29,7 @@ from __future__ import annotations
 import contextlib
 import re
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -75,6 +75,9 @@ class EffectiveConfig:
     config: Config
     sources: dict[str, str]  # dotted leaf path -> layer name
     layers: tuple[Layer, ...]  # the layers that actually contributed (existing files)
+    # The preset names this load knew: the built-ins plus the user's
+    # `[presets.*]` tables (stripped from `layers` before validation), sorted.
+    presets: tuple[str, ...] = ()
 
     @property
     def explicit_leaves(self) -> frozenset[str]:
@@ -247,19 +250,26 @@ def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
     raise ConfigError(f"unknown preset {name!r}. Known presets: {known}.")
 
 
-def available_preset_names(repo_root: Path, explicit_path: Path | None = None) -> list[str]:
-    """Preset names a chooser can offer: the built-ins plus the user's custom
-    `[presets.<name>]` tables (read from the config layers, the same source
-    `--preset` resolves against), sorted + de-duplicated. A config-read failure
-    degrades to the built-ins alone, so a caller (e.g. the TUI's new-work chooser)
-    never blocks on a bad config."""
+def preset_names(layers: Iterable[Layer]) -> list[str]:
+    """Preset names a chooser offers: the built-ins plus the user's
+    `[presets.<name>]` tables in *layers* (the same source `--preset` resolves
+    against), sorted and de-duplicated."""
     names: set[str] = set(BUILTIN_PRESETS)
-    with contextlib.suppress(Exception):
-        for layer in discover_layers(repo_root, explicit_path):
-            prof = layer.data.get("presets")
-            if isinstance(prof, dict):
-                names.update(prof.keys())
+    for layer in layers:
+        prof = layer.data.get("presets")
+        if isinstance(prof, dict):
+            names.update(prof.keys())
     return sorted(names)
+
+
+def available_preset_names(repo_root: Path, explicit_path: Path | None = None) -> list[str]:
+    """`preset_names` over the discovered layers of *repo_root* (+ an explicit
+    `--config` file). A config-read failure degrades to the built-ins alone,
+    so a chooser never blocks on a bad config."""
+    layers: list[Layer] = []
+    with contextlib.suppress(Exception):
+        layers = discover_layers(repo_root, explicit_path)
+    return preset_names(layers)
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,7 +433,9 @@ def _leaf_fix_hint(
     return locate
 
 
-def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConfig:
+def _effective_from_layers(
+    layers: list[Layer], *, source: str, presets: list[str]
+) -> EffectiveConfig:
     """Merge *layers* low->high, validate, and build the per-leaf source map."""
     merged, source_of_leaf = _merge_layers(layers)
     config = validate_config(merged, source=source, locate=_leaf_fix_hint(layers, source_of_leaf))
@@ -431,7 +443,9 @@ def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConf
     # produced, attributed to the layer that set it or "default".
     effective_leaves = flatten_leaves(config.model_dump(mode="python"))
     sources = {leaf: source_of_leaf.get(leaf, "default") for leaf in effective_leaves}
-    return EffectiveConfig(config=config, sources=sources, layers=tuple(layers))
+    return EffectiveConfig(
+        config=config, sources=sources, layers=tuple(layers), presets=tuple(presets)
+    )
 
 
 def _own_preset(layer: Layer) -> str:
@@ -538,8 +552,9 @@ def load_effective(
     """Merge + validate all layers and record per-leaf provenance; a named
     `preset` is injected per :func:`_apply_preset`."""
     layers = discover_layers(repo_root, explicit_path)
+    presets = preset_names(layers)
     layers = _apply_preset(layers, preset)
-    return _effective_from_layers(layers, source="(merged config layers)")
+    return _effective_from_layers(layers, source="(merged config layers)", presets=presets)
 
 
 def load_global_only() -> EffectiveConfig:
@@ -554,7 +569,7 @@ def load_global_only() -> EffectiveConfig:
     gpath = global_config_path()
     layers = [Layer("global", gpath, _read_toml(gpath))] if gpath.is_file() else []
     cleaned, _ = _strip_presets(layers)
-    return _effective_from_layers(cleaned, source="(global config)")
+    return _effective_from_layers(cleaned, source="(global config)", presets=preset_names(layers))
 
 
 def load_effective_with_overlay(
@@ -578,8 +593,11 @@ def load_effective_with_overlay(
     # Apply the selected preset (and strip [presets] tables) just like
     # load_effective, so a user's [presets.<name>] + the top-level `preset` work
     # under `machine run` / `config --machine` instead of failing validation.
+    presets = preset_names(layers)
     layers = _apply_preset(layers, "")
-    return _effective_from_layers(layers, source="(merged config layers + machine overlay)")
+    return _effective_from_layers(
+        layers, source="(merged config layers + machine overlay)", presets=presets
+    )
 
 
 @dataclass(frozen=True, slots=True)

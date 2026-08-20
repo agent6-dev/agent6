@@ -14,7 +14,7 @@ command-palette entries.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
@@ -49,9 +49,9 @@ from agent6.config.write import (
     unset_config_value,
 )
 from agent6.errors import OperatorError
-from agent6.models.cache import cached_models, list_models
+from agent6.models.cache import cached_models
+from agent6.models.choices import config_value_choices
 from agent6.models.registry import resolved_adaptive_values
-from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.screen_chrome import (
     MenuCommands,
@@ -158,6 +158,15 @@ class _NavTable(DataTable[str]):
         section = self.id[4:] if self.id else ""
         if isinstance(screen, ConfigScreen):
             screen.nav_from_table(section, direction)
+
+
+def _model_provider(eff: EffectiveConfig | None, key: str) -> str | None:
+    """The provider a `models.<role>.model` leaf's ids come from, else None."""
+    parts = key.split(".")
+    if eff is None or len(parts) != 3 or parts[0] != "models" or parts[2] != "model":
+        return None
+    role_cfg = getattr(eff.config.models, parts[1], None)
+    return getattr(role_cfg, "provider", None) or None
 
 
 def _provider_preset_base_url(key: str) -> str:
@@ -886,59 +895,6 @@ class ConfigScreen(ScreenChrome, Screen[None]):
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         self.action_edit()  # Enter / double-click a setting row edits it
 
-    def _dynamic_choices(self, setting: ConfigSetting) -> tuple[str, ...] | None:
-        """Choices computed from the live config for fields the schema leaves open
-        as free text: a `models.<role>.provider` field offers the names of the
-        providers you've configured (so you pick, not retype)."""
-        if setting.key.startswith("models.") and setting.key.endswith(".provider"):
-            if self._eff is None:
-                return None
-            return tuple(sorted(self._eff.config.providers)) or None
-        return None
-
-    def _model_provider(self, setting: ConfigSetting) -> str | None:
-        """The provider name for a `models.<role>.model` field (from the role's
-        configured provider), else None."""
-        parts = setting.key.split(".")
-        if (
-            len(parts) == 3
-            and parts[0] == "models"
-            and parts[2] == "model"
-            and self._eff is not None
-        ):
-            role_cfg = getattr(self._eff.config.models, parts[1], None)
-            provider = getattr(role_cfg, "provider", None)
-            return provider or None
-        return None
-
-    def _make_model_fetch(self, provider_name: str) -> Callable[[], list[str]]:
-        """A blocking fetch (run in a worker) that refreshes the model list for
-        *provider_name* from the live listing -- the same fetch+cache the CLI
-        completion uses (cache-first; falls back to the cache on any failure)."""
-        repo = self.repo_root
-        overlay = self.config_path
-
-        def fetch() -> list[str]:
-            entry = load_effective(repo, overlay).config.providers.get(provider_name)
-            if entry is None:
-                return cached_models(provider_name)
-            # Best-effort listing: a broken secrets.toml (unsafe perms, invalid
-            # TOML) degrades to a keyless attempt -- the sanctioned pattern from
-            # models/validate.py -- instead of raising in the thread worker,
-            # where textual's default exit_on_error tears down the WHOLE TUI
-            # over a convenience fetch. The authoritative SecretsError still
-            # fires loudly at run setup.
-            try:
-                secrets = load_secrets()
-            except SecretsError:
-                secrets = {}
-            api_key = resolve_api_key(
-                provider_name, getattr(entry, "api_key_env", None), secrets=secrets
-            )
-            return list_models(provider_name, entry, api_key)
-
-        return fetch
-
     def action_edit(self) -> None:
         setting = self._current_setting()
         if setting is None:
@@ -946,11 +902,6 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 "Select a setting first (click a row or Tab into a table).", severity="warning"
             )
             return
-        # Inject live choices for open-text fields (e.g. provider -> configured
-        # providers) so the editor shows a picker instead of a blank text box.
-        choices = self._dynamic_choices(setting)
-        if choices is not None and setting.choices is None:
-            setting = replace(setting, choices=choices)
 
         def _done(result: tuple[str, str, bool] | None) -> None:
             if result is None:
@@ -978,14 +929,16 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 self.notify(msg)
                 self._reload()
 
-        # A model field gets a type-to-narrow picker over the provider's models
-        # (cached now, refreshed live in a worker); everything else the plain edit.
-        provider = self._model_provider(setting)
+        # A model-id field gets a type-to-narrow picker over the provider's
+        # models (the cache now, refreshed live in a worker); everything else
+        # the plain edit, with the view's choices as its picker.
+        provider = _model_provider(self._eff, setting.key)
         if provider is not None:
+            repo, overlay, key = self.repo_root, self.config_path, setting.key
             modal = EditModal(
                 setting,
                 typeahead=cached_models(provider),
-                fetch=self._make_model_fetch(provider),
+                fetch=lambda: config_value_choices(load_effective(repo, overlay), key),
             )
         else:
             modal = EditModal(setting)

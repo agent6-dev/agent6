@@ -11,13 +11,12 @@ from pathlib import Path
 from typing import cast
 
 from agent6.config import (
-    Config,
     ConfigError,
     RoleName,
 )
 from agent6.config.layer import load_effective, repo_config_path_for
 from agent6.config.write import ConfigLeafValue, set_config_table
-from agent6.models.cache import list_models
+from agent6.models.choices import provider_model_choices
 from agent6.paths import global_config_path
 from agent6.secrets import resolve_api_key
 
@@ -39,29 +38,14 @@ def _connected_providers(config_path: Path | None) -> list[str]:
     return sorted(eff.config.providers)
 
 
-def _configured_models_for(cfg: Config, provider: str) -> list[str]:
-    """Models already assigned to *provider* across the three roles."""
-    out: set[str] = set()
-    roles: tuple[RoleName, ...] = ("worker", "reviewer", "planner")
-    for role in roles:
-        rm = cfg.models.resolve(role)
-        if rm is not None and rm.provider == provider:
-            out.add(rm.model)
-    return sorted(out)
-
-
 def _models_for(config_path: Path | None, provider: str) -> list[str]:
-    """Known model ids for *provider*: configured ones unioned with the live list."""
+    """Known model ids for *provider* (`models.choices.provider_model_choices`);
+    empty when the config does not load."""
     try:
         eff = load_effective(Path.cwd(), config_path)
     except ConfigError:
         return []
-    options = set(_configured_models_for(eff.config, provider))
-    entry = eff.config.providers.get(provider)
-    if entry is not None:
-        api_key = resolve_api_key(provider, entry.api_key_env)
-        options.update(list_models(provider, entry, api_key))
-    return sorted(options)
+    return provider_model_choices(eff.config, provider)
 
 
 def _prompt_for_provider(config_path: Path | None) -> str:
