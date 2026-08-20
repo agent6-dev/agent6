@@ -75,7 +75,7 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
         ask=lambda _p, _o, _s: None,
         capabilities=FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
-        spawn_detached_resume=lambda _cwd, _rid: "",
+        spawn_detached_resume=lambda _cwd, _rid, _flags: "",
     )
     said: list[str] = []
     lifecycle.run_task(

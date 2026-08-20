@@ -23,6 +23,7 @@ from agent6.app._setup import (
     SandboxOverrides,
     check_provider_keys,
     load_session_config,
+    override_flags,
 )
 from agent6.app.frontend import (
     SessionFrontend,
@@ -604,6 +605,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 layout.session_dir, COMMAND_SCOPE
             ):
                 frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
-            err = frontend.spawn_detached_resume(cwd, layout.session_id)
+            err = frontend.spawn_detached_resume(
+                cwd, layout.session_id, override_flags(budget_overrides, sandbox_overrides)
+            )
             if err:
                 reporter.note(err)

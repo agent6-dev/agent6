@@ -245,7 +245,7 @@ def _acp_front(*, reply: str | None):
         ask=_ask,
         capabilities=FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
-        spawn_detached_resume=lambda _cwd, _rid: "",
+        spawn_detached_resume=lambda _cwd, _rid, _flags: "",
     )
     return front, asked
 

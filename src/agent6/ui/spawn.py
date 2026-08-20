@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import IO
 
@@ -137,6 +137,7 @@ def spawn_detached_resume(
     steer: str = "",
     preset: str = "",
     config_path: Path | None = None,
+    flags: Sequence[str] = (),
 ) -> str:
     """Fire-and-forget a detached `agent6 resume <session_id>` (new session, no
     stdio) so a run keeps going in the background after the operator detaches.
@@ -144,7 +145,9 @@ def spawn_detached_resume(
     A non-empty *steer* rides along as `--steer=TEXT` (the `=` form, so a
     follow-up starting with `-` cannot read as an option): the resume injects
     it as the first steering instruction. Operator-typed text, never LLM output.
-    A non-empty *preset* is the `--preset` the leg continues under.
+    A non-empty *preset* is the `--preset` the leg continues under; *flags* are
+    further `resume` options the leg runs under (the detaching invocation's
+    own overrides).
 
     The caller must have released the run's worker lock first, so the child
     acquires it cleanly. `AGENT6_STREAM_TO_LOG=1` keeps the headless child
@@ -163,6 +166,7 @@ def spawn_detached_resume(
         argv.append(f"--preset={preset}")
     if steer:
         argv.append(f"--steer={steer}")
+    argv.extend(flags)
     try:
         proc = subprocess.Popen(
             argv,

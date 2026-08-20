@@ -14,7 +14,7 @@ still gets a working session -- one where the model simply has fewer powers.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
@@ -43,7 +43,7 @@ def acp_frontend(
     ask: Asker,
     capabilities: FrontendCapabilities,
     agent6_exe: Callable[[], str],
-    spawn_detached_resume: Callable[[Path, str], str],
+    spawn_detached_resume: Callable[[Path, str, Sequence[str]], str],
 ) -> SessionFrontend:
     """Wire the lifecycle to one ACP client."""
 

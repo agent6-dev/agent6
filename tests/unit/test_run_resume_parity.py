@@ -40,3 +40,12 @@ def test_neither_lifecycle_builds_its_own_workflow() -> None:
 def test_both_lifecycles_run_the_one_leg_body() -> None:
     assert _calls(agent6.app.run, "run_leg") == 1
     assert _calls(agent6.app.resume, "run_leg") == 1
+
+
+def test_both_lifecycles_detach_under_the_invocations_flags() -> None:
+    """A `/detach` spawns a background `resume`; each lifecycle hands it this
+    invocation's overrides as flags (`override_flags`), or the detached leg
+    runs under the config's defaults: an `--auto-approve` run detached and
+    waited on its first approval with nobody attached."""
+    assert _calls(agent6.app.run, "override_flags") == 1
+    assert _calls(agent6.app.resume, "override_flags") == 1

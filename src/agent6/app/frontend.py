@@ -7,7 +7,7 @@ policy applied when a launcher spawns a run detached."""
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
@@ -168,4 +168,7 @@ class SessionFrontend:
     # process-spawn primitives the front-end owns (`ui.spawn`, mirroring
     # LaneRuntime's injected spawner).
     agent6_exe: Callable[[], str]
-    spawn_detached_resume: Callable[[Path, str], str]
+    # (cwd, session_id, flags): the flags are this invocation's overrides as
+    # CLI options, so the detached leg runs under them (see
+    # `_setup.override_flags`).
+    spawn_detached_resume: Callable[[Path, str, Sequence[str]], str]

@@ -69,3 +69,19 @@ def test_machine_env_mechanism_forces_none(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
     assert resolve_isolation("strict", _linux_env()) == "none"
     assert resolve_isolation("auto", _linux_env()) == "none"
+
+
+def test_overrides_render_as_the_flags_that_set_them() -> None:
+    """A continuation this invocation spawns (a detached resume) carries the
+    overrides as flags; a leg that dropped them ran under the config's
+    defaults (an --auto-approve run detached and waited on its first
+    approval; a --max-usd cap fell back to the config's)."""
+    from agent6.app._setup import BudgetOverrides, override_flags
+
+    sandbox = _SandboxOverrides(disable_sandbox=True, auto_approve=True)
+    budget = BudgetOverrides(max_usd=0.25, max_tokens_fallback=1000)
+    assert sandbox.argv() == ["--dangerously-disable-sandbox", "--auto-approve"]
+    assert budget.argv() == ["--max-usd", "0.25", "--max-tokens-fallback", "1000"]
+    assert override_flags(budget, sandbox) == [*budget.argv(), *sandbox.argv()]
+    assert override_flags(None, None) == []
+    assert _SandboxOverrides().argv() == [] and BudgetOverrides().argv() == []

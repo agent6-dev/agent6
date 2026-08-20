@@ -88,6 +88,17 @@ class BudgetOverrides:
             # than escaping to the crash reporter.
             raise ConfigError(self._flag_error(exc)) from exc
 
+    def argv(self) -> list[str]:
+        """These overrides as the flags that set them, for a continuation
+        this invocation spawns (a detached resume): a leg that dropped them
+        ran under the config's defaults."""
+        out: list[str] = []
+        if self.max_usd is not None:
+            out += ["--max-usd", str(self.max_usd)]
+        if self.max_tokens_fallback is not None:
+            out += ["--max-tokens-fallback", str(self.max_tokens_fallback)]
+        return out
+
     def _flag_error(self, exc: ValidationError) -> str:
         flags = {"max_usd": "--max-usd", "max_tokens_fallback": "--max-tokens-fallback"}
         parts: list[str] = []
@@ -95,6 +106,12 @@ class BudgetOverrides:
             field = str(err["loc"][-1]) if err["loc"] else ""
             parts.append(f"{flags.get(field, field)}: {err['msg']}")
         return "; ".join(parts) or str(exc)
+
+
+def override_flags(budget: BudgetOverrides | None, sandbox: SandboxOverrides | None) -> list[str]:
+    """The CLI flags a continuation this invocation spawns (a detached resume)
+    carries so it runs under the same overrides."""
+    return [*(budget.argv() if budget else []), *(sandbox.argv() if sandbox else [])]
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +136,15 @@ class SandboxOverrides:
             auto_approve=bool(getattr(args, "auto_approve", False)),
             no_commands=bool(getattr(args, "no_commands", False)),
         )
+
+    def argv(self) -> list[str]:
+        """These overrides as the flags that set them (see BudgetOverrides.argv)."""
+        flags = (
+            ("--dangerously-disable-sandbox", self.disable_sandbox),
+            ("--auto-approve", self.auto_approve),
+            ("--no-commands", self.no_commands),
+        )
+        return [flag for flag, on in flags if on]
 
     def apply(self, cfg: Config) -> Config:
         return cfg.with_sandbox_overrides(

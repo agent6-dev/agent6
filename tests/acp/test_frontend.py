@@ -29,7 +29,7 @@ def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
         ask=_ask,
         capabilities=FrontendCapabilities(can_ask=can_ask),
         agent6_exe=lambda: "agent6",
-        spawn_detached_resume=lambda _cwd, _rid: "",
+        spawn_detached_resume=lambda _cwd, _rid, _flags: "",
     )
     return front, asked
 

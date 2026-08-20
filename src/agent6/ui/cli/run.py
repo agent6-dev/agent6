@@ -5,7 +5,6 @@ presentation seam, and hand the lifecycle to `agent6.app.run.run_task`."""
 
 from __future__ import annotations
 
-import functools
 import os
 import sys
 from pathlib import Path
@@ -197,7 +196,9 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
             )
         ),
         agent6_exe=agent6_exe,
-        spawn_detached_resume=functools.partial(spawn_detached_resume, config_path=config_path),
+        spawn_detached_resume=lambda cwd, sid, flags: spawn_detached_resume(
+            cwd, sid, config_path=config_path, flags=flags
+        ),
     )
 
 
