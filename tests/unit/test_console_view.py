@@ -315,3 +315,17 @@ def test_streamed_model_text_cannot_reach_the_terminal_with_controls() -> None:
         assert "safe" in got and "more" in got
     finally:
         view.close()
+
+
+def test_the_policy_line_is_read_when_the_task_prints() -> None:
+    """The gate is inferred and pinned AFTER the view is built and BEFORE
+    session.start; a policy read at construction said "no verify gate" over a
+    run that had one, so the line is read when it prints."""
+    buf = StringIO()
+    facts = ["kimi · strict · commands ask · no verify gate"]
+    view = ConsoleView(buf, color=False, policy=lambda: facts[0])
+    facts[0] = "kimi · strict · commands ask · ./verify.sh (inferred)"
+    view.feed({"type": "session.start", "user_task": "add mul"})
+    view.close()
+    assert "./verify.sh (inferred)" in buf.getvalue()
+    assert "no verify gate" not in buf.getvalue()

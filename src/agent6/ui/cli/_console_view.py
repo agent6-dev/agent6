@@ -18,7 +18,7 @@ from __future__ import annotations
 import contextlib
 import sys
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from threading import Event, RLock, Thread
 from typing import Any, TextIO
 
@@ -86,11 +86,18 @@ class ConsoleView:
     thread-safe so it can subscribe to an EventSink that several roles emit to."""
 
     def __init__(
-        self, out: TextIO | None = None, *, color: bool | None = None, policy: str = ""
+        self,
+        out: TextIO | None = None,
+        *,
+        color: bool | None = None,
+        policy: Callable[[], str] | None = None,
     ) -> None:
-        # The run's policy line (viewmodel.session_policy), printed under the task so
-        # an operator sees the model, the command setting, the sandbox and the
-        # gate without interrupting. "" when the caller has no run dir.
+        # The run's policy line (viewmodel.session_policy), printed under the
+        # task so an operator sees the model, the command setting, the sandbox
+        # and the gate without interrupting. Read WHEN the task prints, not when
+        # the view is built: the gate is inferred and pinned between the two,
+        # and an early read said "no verify gate" over a run that had one. None
+        # when the caller has no run dir.
         self._policy = policy
         # Finished /btw answers waiting for a clean break. A btw completes while
         # the run is streaming; printing it then would cut the transcript in
@@ -184,8 +191,9 @@ class ConsoleView:
             if etype == "session.start":
                 task = " ".join(str(event.get("user_task", "")).split())
                 self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")
-                if self._policy:
-                    self._line(self._c("dim", f"  {self._policy}") + "\n")
+                policy = self._policy() if self._policy is not None else ""
+                if policy:
+                    self._line(self._c("dim", f"  {policy}") + "\n")
                 return
             if etype == "btw.answered":
                 # Queued, not printed: it lands whole at the next turn boundary

@@ -114,7 +114,7 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
     def attach_console_view(events: EventSink) -> None:
         # The sink writes into the run dir, so its path is the handle to the
         # run's policy facts without threading the layout through the protocol.
-        view = ConsoleView(sys.stderr, policy=session_policy(events.path.parent).line())
+        view = ConsoleView(sys.stderr, policy=lambda: session_policy(events.path.parent).line())
         console_cell[0] = view
         events.subscribe(view)
 
