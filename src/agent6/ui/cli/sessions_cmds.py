@@ -82,10 +82,11 @@ from agent6.viewmodel import (
 from agent6.viewmodel.format import (
     WINNER_GLYPH,
     StatusLevel,
-    format_cost,
+    format_cost_cell,
     format_when,
     status_label,
     status_level,
+    winner_id,
 )
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import SubrunError
@@ -138,20 +139,17 @@ def _cmd_list() -> int:
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str, str]] = []
     for s in summaries:
-        when = format_when(s.mtime)
         styled, plain = _styled_status(s.status, s.reason, color=color)
-        # An all-unpriced run's ~$0.0000 is information (spend happened, price
-        # unknown); only a genuinely clean $0 stays blank.
-        cost = (
-            ""
-            if s.cost_usd <= 0 and not s.usd_partial
-            else format_cost(s.cost_usd, partial=s.usd_partial)
-        )
-        # A winner lane gets a ★ suffix on its id (folded into the width math, so
-        # the columns stay aligned); a non-disruptive marker the hub/home mirror.
-        session_id = f"{s.session_id} {WINNER_GLYPH}" if s.session_id in winners else s.session_id
         rows.append(
-            (when, styled, plain, s.mode, cost, session_id, task_snippet(s.task, max_chars=60))
+            (
+                format_when(s.mtime),
+                styled,
+                plain,
+                s.mode,
+                format_cost_cell(s.cost_usd, partial=s.usd_partial),
+                winner_id(s.session_id, winner=s.session_id in winners),
+                task_snippet(s.task, max_chars=60),
+            )
         )
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     id_w = max(2, *(len(r[5]) for r in rows))

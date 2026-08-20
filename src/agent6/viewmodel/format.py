@@ -65,10 +65,25 @@ def format_transition(seq: int, state: str, label: str, goto: str, detail: str =
     return f"{line} -- {detail}" if detail else line
 
 
+def format_cost_cell(usd: float, *, partial: bool = False) -> str:
+    """A listing's cost cell: blank for a genuinely clean $0, else
+    `format_cost` (an all-unpriced run's `~$0.0000` is information: spend
+    happened, price unknown)."""
+    if usd <= 0 and not partial:
+        return ""
+    return format_cost(usd, partial=partial)
+
+
 # The fan-out winner marker, shown on listing rows (a lane the auto-compare
 # ranked first). Text glyph so every terminal font renders it; the web SPA
 # mirrors it in page.py.
 WINNER_GLYPH = "★"
+
+
+def winner_id(session_id: str, *, winner: bool) -> str:
+    """The id cell of a listing row: the winner glyph suffixed on a fan-out
+    compare winner (folded into the cell so column widths stay aligned)."""
+    return f"{session_id} {WINNER_GLYPH}" if winner else session_id
 
 
 def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:

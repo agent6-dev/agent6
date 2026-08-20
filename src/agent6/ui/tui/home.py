@@ -54,7 +54,7 @@ from agent6.viewmodel import (
     summarize_session_dir,
     task_snippet,
 )
-from agent6.viewmodel.format import WINNER_GLYPH, format_cost, format_when, status_label
+from agent6.viewmodel.format import format_cost_cell, format_when, status_label, winner_id
 
 # The hub re-asks on this cadence (matching the web hub's poll rate), so a
 # session that ends while you watch stops reading as running.
@@ -64,13 +64,6 @@ _HUB_POLL_S = 4.0
 def _status_cell(summary: SessionSummary) -> Text:
     label = status_label(summary.status, summary.reason)
     return Text(label, style=status_style(summary.status))
-
-
-def _cost_cell(cost_usd: float, *, partial: bool) -> str:
-    # An all-unpriced run's ~$0.0000 is information; a clean $0 stays blank.
-    if cost_usd <= 0 and not partial:
-        return ""
-    return format_cost(cost_usd, partial=partial)
 
 
 class HomeScreen(ScreenChrome, Screen[None]):
@@ -182,15 +175,13 @@ class HomeScreen(ScreenChrome, Screen[None]):
             if not rd.is_dir():
                 continue  # vanished since the listing snapshot — skip it
             s = summarize_session_dir(rd)
-            when = format_when(s.mtime)
             # Text cells: task is model/user input and may carry markup brackets.
-            session_id = f"{s.session_id} {WINNER_GLYPH}" if is_winner(rd) else s.session_id
             table.add_row(
-                when,
+                format_when(s.mtime),
                 s.mode,
                 _status_cell(s),
-                _cost_cell(s.cost_usd, partial=s.usd_partial),
-                Text(session_id),
+                format_cost_cell(s.cost_usd, partial=s.usd_partial),
+                Text(winner_id(s.session_id, winner=is_winner(rd))),
                 Text(task_snippet(s.task, max_chars=60)),
             )
             survivors.append(rd)

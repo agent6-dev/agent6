@@ -433,14 +433,15 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
 
 
 def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
-    """The hub row renders the same '~' lower-bound marker as `sessions show`;
-    an all-unpriced run's ~$0.0000 is information, a clean $0 stays blank."""
-    from agent6.ui.tui.home import _cost_cell
+    """The listing rows (hub and `sessions`) render the same '~' lower-bound
+    marker as `sessions show`; an all-unpriced run's ~$0.0000 is information,
+    a clean $0 stays blank."""
+    from agent6.viewmodel.format import format_cost_cell
 
-    assert _cost_cell(0.0123, partial=True) == "~$0.0123"
-    assert _cost_cell(0.0, partial=True) == "~$0.0000"
-    assert _cost_cell(0.0, partial=False) == ""
-    assert _cost_cell(0.0123, partial=False) == "$0.0123"
+    assert format_cost_cell(0.0123, partial=True) == "~$0.0123"
+    assert format_cost_cell(0.0, partial=True) == "~$0.0000"
+    assert format_cost_cell(0.0, partial=False) == ""
+    assert format_cost_cell(0.0123, partial=False) == "$0.0123"
 
 
 def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
