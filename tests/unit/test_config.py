@@ -393,6 +393,42 @@ def test_openai_provider_with_no_api_key_env_loads(tmp_path: Path) -> None:
     assert ollama.api_key_env is None
 
 
+def test_chatgpt_provider_defaults_and_refusals(tmp_path: Path) -> None:
+    """A bare api_format = "chatgpt" entry fills the Codex backend defaults;
+    the formats-only knobs (deployment, key sources, auth_style) are refused
+    rather than silently ignored."""
+    body = _VALID_TOML.replace(
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
+        '[providers.chatgpt]\napi_format = "chatgpt"\n',
+    )
+    body = body.replace('provider = "anthropic"', 'provider = "chatgpt"')
+    cfg = load_config(_write(tmp_path, body))
+    from agent6.config import ChatGPTProviderEntry
+
+    entry = cfg.providers["chatgpt"]
+    assert isinstance(entry, ChatGPTProviderEntry)
+    assert entry.base_url == "https://chatgpt.com/backend-api/codex"
+    assert entry.oauth_issuer == "https://auth.openai.com"
+    assert entry.oauth_client_id
+    assert entry.auth_style == "bearer"
+
+    for extra, named in (
+        ('deployment = "vertex"\nbase_url = "https://x.example/v1"\n', "direct"),
+        ('api_key_env = "OPENAI_API_KEY"\n', "api_key_env"),
+        ('token_command = ["mint"]\n', "token_command"),
+        ('auth_style = "none"\n', "auth_style"),
+        ('oauth_issuer = "not-a-url"\n', "oauth_issuer"),
+    ):
+        bad = body.replace(
+            '[providers.chatgpt]\napi_format = "chatgpt"\n',
+            '[providers.chatgpt]\napi_format = "chatgpt"\n' + extra,
+        )
+        with pytest.raises(ConfigError) as exc:
+            load_config(_write(tmp_path, bad))
+        assert named in str(exc.value)
+
+
 def test_multiple_openai_providers_load(tmp_path: Path) -> None:
     """Both OpenAI and OpenRouter side-by-side, distinct keys, routed per role."""
     body = _VALID_TOML.replace(
@@ -885,4 +921,4 @@ def test_a_provider_block_without_api_format_names_the_key(tmp_path: Path) -> No
     cfg.write_text('[providers.anthropic]\napi_key_env = "K"\n', encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
         load_config(cfg)
-    assert 'set api_format = "anthropic" or "openai"' in str(exc.value)
+    assert 'set api_format = "anthropic", "openai", or "chatgpt"' in str(exc.value)

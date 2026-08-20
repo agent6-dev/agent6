@@ -10,6 +10,7 @@ from __future__ import annotations
 from agent6.config._git import GitCommitConfig, GitConfig
 from agent6.config._providers import (
     AnthropicProviderEntry,
+    ChatGPTProviderEntry,
     OpenAIProviderEntry,
     ProviderEntry,
     validate_base_url,
@@ -54,6 +55,7 @@ __all__ = [
     "Agent6Section",
     "AnthropicProviderEntry",
     "BudgetConfig",
+    "ChatGPTProviderEntry",
     "Config",
     "ConfigError",
     "ContextConfig",

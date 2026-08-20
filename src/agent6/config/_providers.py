@@ -11,12 +11,12 @@ from pydantic import BaseModel, Discriminator, Field, field_validator, model_val
 
 from agent6.config._base import MODEL_CONFIG
 
-ApiFormat = Literal["anthropic", "openai"]
+ApiFormat = Literal["anthropic", "openai", "chatgpt"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
 
-def validate_base_url(url: str) -> None:
+def validate_base_url(url: str, field: str = "base_url") -> None:
     """Reject a `[providers.*].base_url` that is not an http(s) URL with a host.
 
     A provider's
@@ -31,17 +31,22 @@ def validate_base_url(url: str) -> None:
         parts = urlsplit(url)
         port = parts.port  # urlsplit raises ValueError on an out-of-range port
     except ValueError as exc:
-        raise ValueError(f"invalid base_url {url!r}: {exc}") from exc
+        raise ValueError(f"invalid {field} {url!r}: {exc}") from exc
     if parts.scheme not in ("http", "https"):
-        raise ValueError(f"base_url {url!r} must start with http:// or https://")
+        raise ValueError(f"{field} {url!r} must start with http:// or https://")
     if not parts.hostname:
-        raise ValueError(f"base_url {url!r} has no host")
+        raise ValueError(f"{field} {url!r} has no host")
     if port is not None and not (1 <= port <= 65535):
-        raise ValueError(f"base_url {url!r} has an invalid port")
+        raise ValueError(f"{field} {url!r} has an invalid port")
 
 
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 _OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
+_CHATGPT_DEFAULT_BASE_URL = "https://chatgpt.com/backend-api/codex"
+_CHATGPT_DEFAULT_ISSUER = "https://auth.openai.com"
+# The Codex CLI's public OAuth client id. OpenAI permits ChatGPT sign-in for
+# third-party agents through it; the redirect is pinned to localhost:1455.
+_CHATGPT_DEFAULT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
 
 def _default_base_url(api_format: str, deployment: str) -> str | None:
@@ -53,7 +58,9 @@ def _default_base_url(api_format: str, deployment: str) -> str | None:
     """
     if deployment != "direct":
         return None
-    return _ANTHROPIC_DEFAULT_BASE_URL if api_format == "anthropic" else _OPENAI_DEFAULT_BASE_URL
+    if api_format == "anthropic":
+        return _ANTHROPIC_DEFAULT_BASE_URL
+    return _CHATGPT_DEFAULT_BASE_URL if api_format == "chatgpt" else _OPENAI_DEFAULT_BASE_URL
 
 
 def _default_auth_style(api_format: str, deployment: str) -> str:
@@ -66,8 +73,9 @@ def _default_auth_style(api_format: str, deployment: str) -> str:
 
 
 _API_FORMAT_DESCRIPTION = (
-    '`"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, '
-    "Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …)."
+    "The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, "
+    "OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), or `chatgpt` "
+    "(the ChatGPT-subscription Codex backend, Responses API)."
 )
 
 
@@ -202,6 +210,8 @@ class _ProviderBase(BaseModel):
         dep = data.get("deployment", "direct")
         if fmt == "anthropic" and dep == "azure":
             raise ValueError("deployment 'azure' requires api_format 'openai'")
+        if fmt == "chatgpt" and dep != "direct":
+            raise ValueError("api_format 'chatgpt' supports deployment 'direct' only")
         if not data.get("base_url"):
             default = _default_base_url(fmt, dep) if isinstance(fmt, str) else None
             if default is None:
@@ -261,13 +271,7 @@ class AnthropicProviderEntry(_ProviderBase):
     # The narrowing override is sound: the model is frozen, so the attribute
     # can never be written back through the wider base type.
     api_format: Literal["anthropic"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        Field(
-            description=(
-                "The wire format: `anthropic` (the Messages API) or `openai` (Chat Completions: "
-                "OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI "
-                "endpoint)."
-            )
-        )
+        Field(description=_API_FORMAT_DESCRIPTION)
     )
     prompt_caching: bool = Field(
         default=True,
@@ -289,17 +293,63 @@ class OpenAIProviderEntry(_ProviderBase):
     """
 
     api_format: Literal["openai"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        Field(
-            description=(
-                "The wire format: `anthropic` (the Messages API) or `openai` (Chat Completions: "
-                "OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI "
-                "endpoint)."
-            )
-        )
+        Field(description=_API_FORMAT_DESCRIPTION)
     )
 
 
+class ChatGPTProviderEntry(_ProviderBase):
+    """`api_format = "chatgpt"` -- the ChatGPT-subscription Codex backend.
+
+    The Responses wire format at `chatgpt.com/backend-api/codex`, authorized
+    by the OAuth tokens `agent6 connect chatgpt` stores in `secrets.toml`
+    (no API key). Usage draws on the account's ChatGPT plan limits.
+    """
+
+    api_format: Literal["chatgpt"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        Field(description=_API_FORMAT_DESCRIPTION)
+    )
+    oauth_issuer: str = Field(
+        default=_CHATGPT_DEFAULT_ISSUER,
+        description=(
+            "The OAuth authority `agent6 connect chatgpt` signs in against and tokens refresh "
+            "against; with `base_url`, the only hosts this provider dials."
+        ),
+    )
+    oauth_client_id: str = Field(
+        default=_CHATGPT_DEFAULT_CLIENT_ID,
+        description=(
+            "The public OAuth client id presented to `oauth_issuer` (default: the Codex CLI "
+            "client, whose registration pins the sign-in redirect to `localhost:1455`)."
+        ),
+    )
+
+    @field_validator("oauth_issuer")
+    @classmethod
+    def _check_oauth_issuer(cls, v: str) -> str:
+        validate_base_url(v, field="oauth_issuer")
+        return v
+
+    @model_validator(mode="after")
+    def _oauth_takes_no_key_source(self) -> ChatGPTProviderEntry:
+        """The chatgpt format authenticates with the connect-stored OAuth
+        tokens; a static key source beside them is dead config."""
+        if self.api_key_env or self.token_command:
+            named = "api_key_env" if self.api_key_env else "token_command"
+            raise ValueError(
+                f"api_format 'chatgpt' authenticates with the OAuth tokens"
+                f" `agent6 connect chatgpt` stores, so {named} would never be used;"
+                " drop it"
+            )
+        if self.auth_style != "bearer":
+            raise ValueError(
+                "api_format 'chatgpt' always sends its OAuth token as"
+                f" `Authorization: Bearer`; auth_style {self.auth_style!r} is not honoured,"
+                " drop it"
+            )
+        return self
+
+
 ProviderEntry = Annotated[
-    AnthropicProviderEntry | OpenAIProviderEntry,
+    AnthropicProviderEntry | OpenAIProviderEntry | ChatGPTProviderEntry,
     Discriminator("api_format"),
 ]

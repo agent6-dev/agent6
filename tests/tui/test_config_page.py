@@ -869,8 +869,12 @@ def test_add_provider_via_form_persists(repo: Path) -> None:
             assert isinstance(modal, ProviderModal)
             modal.query_one("#prov-name", Input).value = "openrouter"
             fmt = modal.query_one("#prov-format", ChoiceField)
-            fmt.focus()  # highlight anthropic -> openai, then Space to select
+            # Typing the known preset name prefilled openai; exercise the
+            # chooser with a round trip (up to anthropic, back down, Space)
+            # so the assertion holds however many formats the union grows.
+            fmt.focus()
             await pilot.pause()
+            await pilot.press("up")
             await pilot.press("down")
             await pilot.press("space")
             await pilot.pause()

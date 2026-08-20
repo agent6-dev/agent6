@@ -53,7 +53,7 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `api_format` | *(required)* | The wire format: `anthropic` (the Messages API) or `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint). |
+| `api_format` | *(required)* | The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), or `chatgpt` (the ChatGPT-subscription Codex backend, Responses API). |
 | `deployment` | `"direct"` | `direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format only): the URL shape and where the model name and API version go. |
 | `base_url` | per (format, deployment) | The endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for `vertex` and `azure`. Its host is the only network destination the agent dials for this provider. |
 | `auth_style` | per (format, deployment) | How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local endpoint). `agent6 connect` sets it; rarely typed by hand. |
@@ -65,6 +65,8 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 | `extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is bounded at 20 s regardless. |
 | `prompt_caching` | `true` | Anthropic prompt caching: the system prompt, the tools, and the growing conversation are re-read at 0.1x the input price. `anthropic` format only. |
+| `oauth_issuer` | `"https://auth.openai.com"` | The OAuth authority `agent6 connect chatgpt` signs in against and tokens refresh against; with `base_url`, the only hosts this provider dials. |
+| `oauth_client_id` | `"app_EMoamEEZ73f0CkXaXp7hrann"` | The public OAuth client id presented to `oauth_issuer` (default: the Codex CLI client, whose registration pins the sign-in redirect to `localhost:1455`). |
 
 ### Deployments
 

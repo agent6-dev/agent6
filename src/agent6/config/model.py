@@ -485,7 +485,7 @@ class Config(BaseModel):
 # pydantic reports a provider block with no `api_format` as
 # "Unable to extract tag using discriminator", which names neither the key to
 # add nor its two values. A hand-written block is a documented way in.
-_MISSING_API_FORMAT = 'set api_format = "anthropic" or "openai" (see docs/config.md)'
+_MISSING_API_FORMAT = 'set api_format = "anthropic", "openai", or "chatgpt" (see docs/config.md)'
 
 
 def _format_validation_error(
