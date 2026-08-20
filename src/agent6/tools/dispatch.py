@@ -161,6 +161,27 @@ def _coerce_stringified_args(
     return coerced
 
 
+def invalid_arguments(exc: ValidationError) -> str:
+    """One line per real argument problem, for the model and the log: the
+    dotted field, then the message without pydantic's "Value error, " lead
+    and docs URL. A container error caused by an invalid item ("edits: Tuple
+    should have at least 1 item after validation, not 0") is dropped: the
+    item's own line already says what to fix."""
+    errors = exc.errors(include_url=False)
+    item_locs = [tuple(e["loc"]) for e in errors]
+    parts: list[str] = []
+    for err in errors:
+        loc = tuple(err["loc"])
+        if err["type"] == "too_short" and any(
+            other != loc and other[: len(loc)] == loc for other in item_locs
+        ):
+            continue
+        field = ".".join(str(p) for p in loc) or "arguments"
+        msg = str(err["msg"]).removeprefix("Value error, ")
+        parts.append(f"{field}: {msg}")
+    return "invalid arguments: " + "; ".join(parts)
+
+
 # Execution tools whose stdout/stderr IS the diagnostic signal. Their tool.result
 # event carries a capped output tail (like verify.end) so logs.jsonl shows
 # the command's output for quick observability -- not just a one-line summary --
@@ -516,6 +537,10 @@ class ToolDispatcher:
             # aborts the run loudly instead of surfacing it as a normal failure.
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
+        except ValidationError as exc:
+            message = invalid_arguments(exc)
+            self._emit("tool.result", name=name, ok=False, summary=message, call_id=cid)
+            raise ToolError(message) from exc
         except Exception as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise ToolError(f"{name} failed: {exc}") from exc

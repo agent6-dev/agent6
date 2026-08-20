@@ -699,6 +699,26 @@ def test_apply_edit_replace_rejects_empty_old_string(tmp_path: Path) -> None:
         )
 
 
+def test_invalid_arguments_read_as_one_line(tmp_path: Path) -> None:
+    """A schema miss is the model's most common recoverable error; it gets one
+    line naming the field and the rule, not pydantic's dump (two errors, docs
+    URLs, and a cascade "Tuple should have at least 1 item" for the container
+    whose only item was invalid)."""
+    cfg = _config(tmp_path)
+    (tmp_path / "f.py").write_text("x = 1\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError) as caught:
+        d.dispatch(
+            "apply_edit",
+            {"path": "f.py", "edits": [{"old_string": "", "new_string": "y\n"}]},
+        )
+    assert str(caught.value) == (
+        "invalid arguments: edits.0: old_string must be non-empty for kind='replace'"
+    )
+    with pytest.raises(ToolError, match=r"^invalid arguments: edits: Field required$"):
+        d.dispatch("apply_edit", {"path": "f.py"})
+
+
 def test_apply_edit_create_rejects_nonempty_old_string(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
