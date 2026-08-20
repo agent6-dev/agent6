@@ -977,6 +977,7 @@ def test_list_joins_instances_with_their_files_and_names_the_rest(
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     (tmp_path / "waiter.asm.toml").write_text(WAITER_DELAYED, encoding="utf-8")
     (tmp_path / "broken.asm.toml").write_text("not toml {{", encoding="utf-8")
+    (tmp_path / "broken2.asm.toml").write_text("also not toml {{", encoding="utf-8")
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
     assert main(["machine"]) == 0
@@ -989,3 +990,5 @@ def test_list_joins_instances_with_their_files_and_names_the_rest(
     assert waiter.split() == ["-", "-", "waiter_delayed", "valid", "waiter.asm.toml"]
     broken = next(line for line in lines if "broken.asm.toml" in line)
     assert broken.split() == ["-", "-", "-", "invalid", "broken.asm.toml"]
+    # Two unparsable files (both named "-") keep two rows.
+    assert any("broken2.asm.toml" in line for line in lines)

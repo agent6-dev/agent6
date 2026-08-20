@@ -84,16 +84,21 @@ def _cmd_machine_list() -> int:
     instance has run yet. The instance columns are the web hub's (status,
     current state); the file columns the TUI machines page's (spec validity)."""
     cwd = Path.cwd()
-    files = {(row := summarize_machine_file(p)).name: (p, row) for p in machine_files(cwd)}
+    files = [(p, summarize_machine_file(p)) for p in machine_files(cwd)]
     instances = [summarize_machine_dir(d) for d in machine_instance_dirs(resolved_state_dir(cwd))]
     if not files and not instances:
         print('no machines yet. Draft one with `agent6 machine create "<task>"`.')
         return 0
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str, str]] = []
+    joined: set[Path] = set()  # authored files an instance row already shows
     for s in instances:
         styled, plain = styled_status(s.status, s.reason, color=color)
-        path, file_row = files.pop(s.name, (None, None))
+        # The first authored file declaring this machine name; a second file with
+        # the same name (or an unparsable one, named "-") keeps its own row.
+        own = next(((p, row) for p, row in files if row.name == s.name and p not in joined), None)
+        if own is not None:
+            joined.add(own[0])
         rows.append(
             (
                 format_when(s.mtime),
@@ -101,12 +106,14 @@ def _cmd_machine_list() -> int:
                 plain,
                 s.current or "-",
                 s.name,
-                file_row.spec if file_row is not None else "-",
-                str(path.relative_to(cwd)) if path is not None else "-",
+                own[1].spec if own is not None else "-",
+                str(own[0].relative_to(cwd)) if own is not None else "-",
             )
         )
-    for name, (path, file_row) in sorted(files.items()):
-        rows.append(("-", "", "", "-", name, file_row.spec, str(path.relative_to(cwd))))
+    for path, file_row in files:
+        if path not in joined:
+            rel = str(path.relative_to(cwd))
+            rows.append(("-", "", "", "-", file_row.name, file_row.spec, rel))
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     state_w = max(5, *(len(r[3]) for r in rows))
     name_w = max(7, *(len(r[4]) for r in rows))
