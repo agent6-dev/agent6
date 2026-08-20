@@ -154,11 +154,28 @@ def _grant_from_response(resp: httpx2.Response, *, operation: str) -> TokenGrant
     )
 
 
-def _token_error(resp: httpx2.Response, *, operation: str) -> ProviderError:
+def _scrub(text: str, secrets: tuple[str, ...]) -> str:
+    """Replace the in-flight credential values wherever the issuer's response
+    text echoes them (the same class `scrub_secret_values` covers on the model
+    wire; these endpoints have their own). Raw and JSON-escaped spellings;
+    values under 8 chars are ignored."""
+    for value in secrets:
+        if len(value) < 8:
+            continue
+        for spelling in {value, json.dumps(value)[1:-1]}:
+            text = text.replace(spelling, "<REDACTED>")
+    return text
+
+
+def _token_error(
+    resp: httpx2.Response, *, operation: str, secrets: tuple[str, ...] = ()
+) -> ProviderError:
     """A classified error for a non-2xx token response. The body's error code
     decides permanence: a dead refresh token names the repair (`agent6
-    connect chatgpt`); anything else keeps its status for the retry policy."""
-    body = resp.text[:2000]
+    connect chatgpt`); anything else keeps its status for the retry policy.
+    *secrets* are the request's credential values, scrubbed from any echoed
+    body text."""
+    body = _scrub(resp.text[:2000], secrets)
     code = ""
     try:
         err = json.loads(body).get("error")
@@ -205,7 +222,7 @@ def exchange_code(
     except httpx2.HTTPError as exc:
         raise ProviderError(f"could not reach {url}: {exc}") from exc
     if resp.status_code >= 400:
-        raise _token_error(resp, operation="exchange")
+        raise _token_error(resp, operation="exchange", secrets=(code, verifier))
     return _grant_from_response(resp, operation="exchange")
 
 
@@ -290,7 +307,10 @@ def poll_device_auth(
             interval += 5.0
             sleep(interval)
             continue
-        raise ProviderError(f"device sign-in failed: HTTP {resp.status_code}: {resp.text[:200]}")
+        raise ProviderError(
+            "device sign-in failed: "
+            f"HTTP {resp.status_code}: {_scrub(resp.text[:200], (device.device_auth_id,))}"
+        )
     raise ProviderError("device sign-in expired before the code was entered; run connect again")
 
 
@@ -324,7 +344,7 @@ def refresh_grant(
     except httpx2.HTTPError as exc:
         raise ProviderError(f"could not reach {url}: {exc}") from exc
     if resp.status_code >= 400:
-        raise _token_error(resp, operation="refresh")
+        raise _token_error(resp, operation="refresh", secrets=(refresh_token,))
     return _grant_from_response(resp, operation="refresh")
 
 
@@ -350,7 +370,7 @@ def revoke_tokens(issuer: str, client_id: str, tokens: OAuthTokens) -> str | Non
     except httpx2.HTTPError as exc:
         return f"could not reach {url}: {exc}"
     if resp.status_code >= 400:
-        return f"HTTP {resp.status_code}: {resp.text[:200]}"
+        return f"HTTP {resp.status_code}: {_scrub(resp.text[:200], (token,))}"
     return None
 
 

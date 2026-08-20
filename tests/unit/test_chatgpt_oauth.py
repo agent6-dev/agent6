@@ -13,6 +13,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 
+from agent6.providers import chatgpt_oauth
 from agent6.providers.chatgpt_oauth import (
     REDIRECT_URI,
     ChatGPTCredential,
@@ -257,3 +258,32 @@ def test_device_auth_disabled_returns_none(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_json", gone)
     assert start_device_auth("https://auth.example", "app_X") is None
+
+
+def test_refresh_error_scrubs_an_echoed_refresh_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A token-endpoint error that echoes the received credential (a proxy or
+    a debug body) must not carry it into ProviderError text: those messages
+    land in retry events and logs. The model wire scrubs this class via
+    scrub_secret_values; the oauth wire scrubs its own in-flight values."""
+    secret = "rt-veryverysecretvalue123"
+
+    def echoing_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        return _Resp(500, {"error": "boom", "received": secret})
+
+    monkeypatch.setattr(chatgpt_oauth, "_post_form", echoing_post)
+    with pytest.raises(ProviderError) as ei:
+        chatgpt_oauth.refresh_grant("https://auth.openai.com", "cid", secret)
+    assert secret not in str(ei.value)
+    assert "<REDACTED>" in str(ei.value)
+
+
+def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    tok = "at-echoedtokenvalue456789"
+
+    def echoing_post(*args: object, **kwargs: object) -> _Resp:
+        return _Resp(500, {"error": "boom", "received": tok})
+
+    monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
+    tokens = chatgpt_oauth.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
+    warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
+    assert warn is not None and tok not in warn and "<REDACTED>" in warn

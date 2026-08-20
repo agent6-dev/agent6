@@ -153,10 +153,16 @@ def test_record_scrubs_credential_values_from_the_bodies(tmp_path: Path) -> None
 
 def test_redact_headers_unit() -> None:
     out = _redact_headers(  # pyright: ignore[reportPrivateUsage]
-        {"x-api-key": "secret", "Authorization": "Bearer t", "Other": "keep"}
+        {
+            "x-api-key": "secret",
+            "Authorization": "Bearer t",
+            "chatgpt-account-id": "acc-uuid",
+            "Other": "keep",
+        }
     )
     assert out["x-api-key"] == "<REDACTED>"
     assert out["Authorization"] == "<REDACTED>"
+    assert out["chatgpt-account-id"] == "<REDACTED>"
     assert out["Other"] == "keep"
 
 

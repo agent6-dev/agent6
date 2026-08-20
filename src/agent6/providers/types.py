@@ -93,7 +93,9 @@ def parse_retry_after(headers: Mapping[str, str]) -> float | None:
     return max(0.0, delta)
 
 
-_REDACT_HEADER_NAMES = frozenset({"x-api-key", "authorization", "proxy-authorization", "api-key"})
+_REDACT_HEADER_NAMES = frozenset(
+    {"x-api-key", "authorization", "proxy-authorization", "api-key", "chatgpt-account-id"}
+)
 _REDACTED = "<REDACTED>"
 
 
