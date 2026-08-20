@@ -5651,6 +5651,42 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     assert turn.finish_signal is None  # and never captured as a finish
 
 
+def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
+    """A dispatched finish_session must not advance ok_tool_calls: a standing
+    goal's revoked finish would otherwise reset the fruitless streak every
+    round, and standing_patience could never engage (the run span a
+    3-second finish->revoke->finish loop until killed)."""
+    from agent6.tools.results import FinishSessionResult
+    from agent6.workflows._conversation import ToolUse
+    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = FinishSessionResult(summary_text="done", result=None)
+    wf = _wf(mode="run", dispatcher=dispatcher)
+    state = _state()
+    turn = _TurnState(
+        iteration=1,
+        resp=MagicMock(),
+        assistant=AssistantTurn(
+            raw_content=(),
+            tool_uses=(ToolUse(id="tu1", name="finish_session", input={"summary": "done"}),),
+        ),
+    )
+    wf._turn_dispatch_tools(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert state.ok_tool_calls == 0  # a control verb is not work
+
+    worked = _TurnState(
+        iteration=2,
+        resp=MagicMock(),
+        assistant=AssistantTurn(
+            raw_content=(),
+            tool_uses=(ToolUse(id="tu2", name="read_file", input={"path": "x"}),),
+        ),
+    )
+    wf._turn_dispatch_tools(state, worked)  # pyright: ignore[reportPrivateUsage]
+    assert state.ok_tool_calls == 1
+
+
 def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
     """ "Stop after this step" is honored at the end of EVERY completed
     iteration, including one with no tool_use: the boundary poll only ran on

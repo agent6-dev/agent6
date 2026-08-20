@@ -1317,7 +1317,11 @@ class Workflow:
                         }
                     )
                 state.spiral.note_success(content)
-                state.ok_tool_calls += 1
+                # Control verbs are not WORK: a revoked finish_session that
+                # counted here would reset the standing fruitless streak
+                # every round, and standing_patience could never engage.
+                if name not in ("finish_session", "finish_planning"):
+                    state.ok_tool_calls += 1
                 self._note_jail_exec_failure(state, turn, name, tool_input, result)
                 # Only a DISPATCHED finish counts: a refused finish tool (mode
                 # backstop, schema error) is an error result the model recovers
