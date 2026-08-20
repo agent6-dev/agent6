@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,10 +75,17 @@ def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
     return dirs[0] if dirs else None
 
 
+# An ask transcript's headers: the title (`# agent6 ask`, `# agent6 ask
+# (interactive)`), then `## Question` / `## Answer` for a one-shot ask or
+# `## Q1` / `## A1` (numbered) for an interactive one.
+_ASK_QUESTION_HEADER = re.compile(r"^## (Question|Q\d+)$")
+_ASK_ANSWER_HEADER = re.compile(r"^## (Answer|A\d+)$")
+
+
 def first_task_line(lines: Iterable[str]) -> str | None:
-    """First user-authored line, skipping the ask headers and the multi-line body
-    of a `<file ...>` / `<prior-run ...>` block (a seeded ask prepends those).
-    Returns None when nothing stands out."""
+    """First user-authored line, skipping the ask headers (one-shot and
+    interactive) and the multi-line body of a `<file ...>` / `<prior-run ...>`
+    block (a seeded ask prepends those). Returns None when nothing stands out."""
     skip_until: str | None = None
     for line in lines:
         s = line.strip()
@@ -85,9 +93,9 @@ def first_task_line(lines: Iterable[str]) -> str | None:
             if s == skip_until:
                 skip_until = None
             continue
-        if s in {"# agent6 ask", "## Question"}:
+        if s.startswith("# agent6 ask") or _ASK_QUESTION_HEADER.match(s):
             continue
-        if s == "## Answer":
+        if _ASK_ANSWER_HEADER.match(s):
             break
         if s.startswith("<file "):
             if "</file>" not in s:

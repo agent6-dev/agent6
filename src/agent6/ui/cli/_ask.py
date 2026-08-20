@@ -19,47 +19,23 @@ from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._steer import repl_prompt_sigint
-from agent6.viewmodel import first_task_line, newest_session_dir, session_mtime
+from agent6.viewmodel import newest_session_dir, session_dirs, summarize_session_dir, task_snippet
 from agent6.workflows.loop import (
     SessionResult,
     Workflow,
 )
 
 
-def ask_question_snippet(transcript: str) -> str:
-    """First non-tag line of the first question section of an ask transcript.
-
-    One-shot asks head it `## Question` (save_ask_transcript); interactive
-    sessions head it `## Q1` (save_ask_repl_transcript). Accept both."""
-    lines = transcript.splitlines()
-    start = next((i + 1 for i, line in enumerate(lines) if line in ("## Question", "## Q1")), None)
-    if start is None:
-        return "(no question)"
-    return first_task_line(lines[start:]) or "(question)"
-
-
 def cmd_ask_list() -> int:
-    """`agent6 ask list`: enumerate saved asks under the per-repo state dir (asks subdir)."""
-    asks_dir = bucket_dir(resolved_state_dir(Path.cwd()), "asks")
-    if not asks_dir.is_dir():
-        print("No asks yet (the asks subdir under the per-repo state dir does not exist).")
-        return 0
-    dirs = sorted(
-        (d for d in asks_dir.iterdir() if d.is_dir()),
-        key=session_mtime,
-        reverse=True,
-    )
+    """`agent6 ask list`: the saved asks under the per-repo state dir, newest
+    first, each with its question (the shared listing summary and snippet)."""
+    dirs = session_dirs(resolved_state_dir(Path.cwd()), buckets=("asks",))
     if not dirs:
         print("No asks yet.")
         return 0
     for d in dirs:
-        tp = d / "transcript.md"
-        snippet = (
-            ask_question_snippet(tp.read_text(encoding="utf-8", errors="replace"))
-            if tp.is_file()
-            else "(no transcript)"
-        )
-        print(f"{d.name}  {snippet[:90]}")
+        s = summarize_session_dir(d)
+        print(f"{d.name}  {task_snippet(s.task, max_chars=90)}")
     return 0
 
 

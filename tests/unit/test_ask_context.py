@@ -117,31 +117,31 @@ def test_seed_files_wraps_and_skips_missing(tmp_path: Path) -> None:
     assert "missing" not in out  # missing file skipped, not crashed
 
 
-def test_ask_question_snippet_skips_digest_tags() -> None:
-    from agent6.ui.cli._ask import ask_question_snippet as _ask_question_snippet
+def test_ask_transcript_snippet_skips_digest_tags() -> None:
+    """The one snippet every listing shows for an ask (`task_snippet` over
+    the transcript): the question, past the headers and a seeded block."""
+    from agent6.viewmodel import task_snippet
 
     t = (
         "# agent6 ask\n\n## Question\n\n"
         '<prior-run id="x">stuff</prior-run>\n\nwhy is the broker slow?\n\n'
         "## Answer\n\nbecause\n"
     )
-    assert _ask_question_snippet(t) == "why is the broker slow?"
+    assert task_snippet(t) == "why is the broker slow?"
     # plain question (no tags)
-    assert _ask_question_snippet("## Question\n\nwhat does fib do?\n\n## Answer\n") == (
-        "what does fib do?"
-    )
+    assert task_snippet("## Question\n\nwhat does fib do?\n\n## Answer\n") == "what does fib do?"
     with_file = (
         "# agent6 ask\n\n## Question\n\n"
         '<file path="a.py">\nprint("a")\n</file>\n\n'
         "what does this file do?\n\n## Answer\n\nprints a\n"
     )
-    assert _ask_question_snippet(with_file) == "what does this file do?"
+    assert task_snippet(with_file) == "what does this file do?"
     with_answer_heading_in_file = (
         "# agent6 ask\n\n## Question\n\n"
         '<file path="notes.md">\n## Answer\nbody\n</file>\n\n'
         "what does this note say?\n\n## Answer\n\nbody\n"
     )
-    assert _ask_question_snippet(with_answer_heading_in_file) == "what does this note say?"
+    assert task_snippet(with_answer_heading_in_file) == "what does this note say?"
 
 
 def test_ask_list_uses_log_activity_not_frontend_dir_touch(
@@ -220,17 +220,19 @@ def test_ask_repl_multi_turn_carries_context(
     assert "## Q2" in (layout.session_dir / "transcript.md").read_text(encoding="utf-8")
 
 
-def test_ask_question_snippet_reads_interactive_transcripts(tmp_path: Path) -> None:
-    # REPL transcripts head their sections "## Q1"/"## A1" (not "## Question");
-    # `ask list` used to show "(no question)" for every interactive ask.
+def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: Path) -> None:
+    """REPL transcripts head their sections `## Q1` / `## A1` (not
+    `## Question`); the shared snippet skips those headers too, so the hubs
+    and `ask list` show the question, not "## Q1"."""
     from agent6.sessions.layout import SessionLayout
-    from agent6.ui.cli._ask import ask_question_snippet, save_ask_repl_transcript
+    from agent6.ui.cli._ask import save_ask_repl_transcript
+    from agent6.viewmodel import task_snippet
 
     layout = SessionLayout(state_dir=tmp_path, session_id="ask-x")
     layout.ensure()
     save_ask_repl_transcript(layout, [("why is the broker slow?", "because"), ("more?", "sure")])
     text = (layout.session_dir / "transcript.md").read_text(encoding="utf-8")
-    assert ask_question_snippet(text) == "why is the broker slow?"
+    assert task_snippet(text) == "why is the broker slow?"
 
 
 # --- ask outside a git repository ------------------------------------------
