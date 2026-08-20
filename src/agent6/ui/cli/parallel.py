@@ -104,7 +104,9 @@ def _parallel_approval_refusal(cfg: Config) -> str | None:
         "sandbox.run_commands = 'ask' cannot drive parallel lanes: each lane runs"
         " detached, with nobody to answer its prompts.\n"
         "  --auto-approve   approve every command in every lane\n"
-        "  --no-commands    withhold commands from every lane"
+        "  --no-commands    withhold commands from every lane\n"
+        "  (a hub has no flags: agent6 config set sandbox.run_commands yes|no, --repo"
+        " for this checkout)"
     )
 
 

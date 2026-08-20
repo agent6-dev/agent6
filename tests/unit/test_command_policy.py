@@ -98,6 +98,9 @@ def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -
     assert (err is not None) is refused
     if err is not None:
         assert "--auto-approve" in err and "--no-commands" in err
+        # A hub (TUI/web new task) relays this refusal and has no flags to
+        # pass; the config remedy is the one it can act on.
+        assert "agent6 config set sandbox.run_commands" in err
 
 
 def test_a_single_no_refuses_one_call_and_withdraws_nothing(
