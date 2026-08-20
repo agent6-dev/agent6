@@ -26,7 +26,7 @@ from agent6.errors import OperatorError, read_operator_file
 from agent6.events import EventWriteError
 from agent6.sessions.id import SessionIdError, unused_session_id
 from agent6.sessions.ipc import listening_ports
-from agent6.sessions.layout import SessionLayout, session_layout
+from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import session_bucket
 from agent6.ui.acp import serve_acp
@@ -122,6 +122,7 @@ from agent6.ui.cli.skills_cmds import (
 from agent6.ui.cli.system_cmds import _cmd_system_apparmor
 from agent6.ui.cli.watch import _cmd_watch_target
 from agent6.ui.cli.web_cmds import _cmd_web
+from agent6.viewmodel import scan_session_log
 from agent6.viewmodel.listing import newest_session_dir
 
 
@@ -309,6 +310,10 @@ def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: st
     with contextlib.suppress(ManifestError):
         if read_manifest(layout.session_dir).parked_task:
             return rc
+    # An undone run's continuation is the fork it named (its resume line was
+    # printed); a follow-up on the undone run itself is not on offer.
+    if scan_session_log(layout.session_dir / LOGS_NAME).end_reason == "undone":
+        return rc
     return end_of_session_prompt(
         rc=rc,
         session_id=layout.session_id,

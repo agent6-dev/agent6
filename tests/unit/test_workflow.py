@@ -5324,6 +5324,11 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
     assert "forked-child-ID" in result.summary
     undone = [e for e in events if e["type"] == "session.undone"]
     assert undone and undone[-1]["new_session_id"] == "forked-child-ID"
+    # An undo is the operator's own end: it journals a session.end (reason
+    # undone -> the listings' "stopped"), or the run read "stale" (dead worker,
+    # no end) the moment the fork was cut.
+    ends = [e for e in events if e["type"] == "session.end"]
+    assert ends and ends[-1]["reason"] == "undone" and ends[-1]["all_passed"] is False
 
 
 def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(

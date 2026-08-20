@@ -4318,6 +4318,9 @@ class Workflow:
                 return None
             new_id, undone_text = forked
             self._emit("session.undone", new_session_id=new_id, undone_text=undone_text)
+            # An undo is the operator's own end, like an abort: without a
+            # session.end the run read "stale" (a dead worker and no end).
+            self._emit("session.end", reason="undone", iterations=iteration, all_passed=False)
             return SessionResult(
                 completed=False,
                 reason="undone",

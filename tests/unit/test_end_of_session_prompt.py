@@ -282,3 +282,28 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
     monkeypatch.setattr(cli, "end_of_session_prompt", spy)
     assert cli._prompt_for_the_next_input(_run_args(), 2, layout.session_id) == 2  # pyright: ignore[reportPrivateUsage]
     assert asked == []
+
+
+def test_an_undone_run_is_not_followed_by_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """/undo forks back and names the fork as the continuation; asking "next:"
+    on the undone run offered a follow-up to the abandoned one (and its /exit
+    printed a resume line for it)."""
+    from agent6.ui import cli
+
+    layout = _seed_session(tmp_path, monkeypatch, session_id="undone-run-AAAAAA")
+    with (layout.session_dir / "logs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write('{"type": "session.undone", "new_session_id": "fork-BBBBBB"}\n')
+        fh.write('{"type": "session.end", "reason": "undone", "all_passed": false}\n')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    asked: list[str] = []
+
+    def spy(**_kw: object) -> int:
+        asked.append("asked")
+        return 0
+
+    monkeypatch.setattr(cli, "end_of_session_prompt", spy)
+    assert cli._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
+    assert asked == []
