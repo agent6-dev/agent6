@@ -42,11 +42,14 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             " the built-in default."
         ),
     )
-    config_show.add_argument(
-        "key",
-        nargs="?",
-        default="",
-        help="Show just this leaf (or a section prefix, e.g. 'sandbox') UNTRUNCATED.",
+    show_keys = config_show.add_argument(
+        "keys",
+        nargs="*",
+        metavar="KEY",
+        help="Show just these leaves (or section prefixes, e.g. 'sandbox') UNTRUNCATED.",
+    )
+    show_keys.completer = partial(  # type: ignore[attr-defined]
+        _complete_config_keys, settable=False
     )
     config_show.add_argument(
         "--json", action="store_true", dest="as_json", help="Emit JSON instead of a table."

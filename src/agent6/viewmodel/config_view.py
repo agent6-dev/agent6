@@ -309,20 +309,24 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
 
 def render_key_detail(
     eff: EffectiveConfig,
-    key: str,
+    keys: list[str],
     *,
     resolved: dict[str, Any] | None = None,
     color: bool = False,
     as_json: bool = False,
-) -> str | None:
-    """Render one config leaf (or a whole section prefix) UNTRUNCATED, for
-    `agent6 config show <key>`: the full-width table clips long values (e.g. a
-    verify_command), so a single-key view prints the whole value plus its source,
-    default, and choices. Returns None when nothing matches *key*."""
+) -> str:
+    """Render the config leaves under *keys* (each a leaf or a whole section
+    prefix) UNTRUNCATED, in the order asked, for `agent6 config show <key>...`:
+    the full-width table clips long values (e.g. a verify_command), so this
+    view prints the whole value plus its source, default, and choices. Raises
+    KeyError naming the first key that matches nothing."""
     view = build_config_view(eff, resolved=resolved)
-    matched = [s for s in view.settings if s.key == key or s.key.startswith(key + ".")]
-    if not matched:
-        return None
+    matched: list[ConfigSetting] = []
+    for key in keys:
+        hits = [s for s in view.settings if s.key == key or s.key.startswith(key + ".")]
+        if not hits:
+            raise KeyError(key)
+        matched.extend(s for s in hits if s not in matched)
     if as_json:
         return json.dumps(
             {s.key: _leaf_json(s) for s in matched}, indent=2, sort_keys=True, default=str

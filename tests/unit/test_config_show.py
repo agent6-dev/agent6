@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -122,6 +123,22 @@ def test_key_detail_always_carries_the_meaning() -> None:
     """`config show <key>` is a deliberate ask about one key, so the meaning is
     part of the answer, no flag needed."""
     eff = EffectiveConfig(config=Config(), sources={}, layers=())
-    detail = render_key_detail(eff, "budget.max_usd")
-    assert detail is not None
+    detail = render_key_detail(eff, ["budget.max_usd"])
     assert "meaning: Cap on the metered spend" in detail
+
+
+def test_key_detail_takes_several_keys_in_the_order_asked() -> None:
+    """`config show a b` prints a's leaves then b's (a section prefix expands
+    to its leaves, a leaf named twice prints once); a key matching nothing
+    raises KeyError naming it, so the command can refuse by name."""
+    eff = EffectiveConfig(config=Config(), sources={}, layers=())
+    detail = render_key_detail(eff, ["sandbox.network", "budget", "sandbox.network"])
+    heads = [line.strip() for line in detail.splitlines() if not line.startswith("    ")]
+    assert heads[0] == "sandbox.network"
+    assert "budget.max_usd" in heads
+    assert heads.index("budget.max_usd") > 0
+    assert heads.count("sandbox.network") == 1
+    with pytest.raises(KeyError, match="nope"):
+        render_key_detail(eff, ["budget.max_usd", "nope"])
+    as_json = json.loads(render_key_detail(eff, ["sandbox.network"], as_json=True))
+    assert list(as_json) == ["sandbox.network"]

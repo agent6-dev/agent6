@@ -65,21 +65,26 @@ from agent6.viewmodel.config_view import format_value, render_key_detail, render
 
 
 def _cmd_config_show(
-    config_path: Path | None, *, as_json: bool, key: str = "", descriptions: bool = False
+    config_path: Path | None,
+    *,
+    as_json: bool,
+    keys: list[str] | None = None,
+    descriptions: bool = False,
 ) -> int:
     eff = load_effective(Path.cwd(), config_path)
     resolved = models_registry.resolved_adaptive_values(eff.config)
-    if key:
-        # `config show <key>`: one leaf (or a whole section prefix), untruncated
+    if keys:
+        # `config show <key>...`: leaves or whole section prefixes, untruncated
         # (JSON mode filters to the same match set). The detail view always
         # carries the meaning: a deliberately-asked-about key is the one place
         # a description can never bury the values.
-        detail = render_key_detail(
-            eff, key, resolved=resolved, color=sys.stdout.isatty(), as_json=as_json
-        )
-        if detail is None:
+        try:
+            detail = render_key_detail(
+                eff, keys, resolved=resolved, color=sys.stdout.isatty(), as_json=as_json
+            )
+        except KeyError as exc:
             print(
-                f"ERROR: no config key matches {key!r} (see `agent6 config show`).",
+                f"ERROR: no config key matches {exc.args[0]!r} (see `agent6 config show`).",
                 file=sys.stderr,
             )
             return 2

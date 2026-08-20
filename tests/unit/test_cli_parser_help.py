@@ -10,7 +10,10 @@ from collections.abc import Iterator
 
 import pytest
 
-from agent6.ui.cli.completers import _complete_presets  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.completers import (
+    _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
+    _complete_presets,  # pyright: ignore[reportPrivateUsage]
+)
 from agent6.ui.cli.parser import build_parser
 
 
@@ -118,6 +121,18 @@ def test_profile_flags_have_the_profiles_completer() -> None:
     for sub in carriers:
         action = _option(sub, "--preset")
         assert getattr(action, "completer", None) is _complete_presets
+
+
+def test_config_show_keys_complete_like_config_get() -> None:
+    """`config show KEY...` takes several effective leaves (or section prefixes)
+    and offers them on TAB, the same pool `config get` completes."""
+    parser = build_parser()
+    action = _positional(_find(_find(parser, "config"), "show"), "keys")
+    assert action.nargs == "*"
+    completer = getattr(action, "completer", None)
+    assert completer is not None
+    assert completer.func is _complete_config_keys
+    assert completer.keywords == {"settable": False}
 
 
 def test_option_metavars() -> None:
