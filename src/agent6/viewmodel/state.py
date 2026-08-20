@@ -16,12 +16,14 @@ manifest to fill the dir-backed fields.
 from __future__ import annotations
 
 import contextlib
+import functools
 import shlex
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
+from agent6.models.registry import context_window
 from agent6.sessions.ipc import listening_ports
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import events
@@ -775,6 +777,27 @@ def status_facts(state: SessionState) -> StatusFacts:
     )
 
 
+@functools.lru_cache(maxsize=64)
+def _window(provider: str, model: str) -> int | None:
+    # The registry reads the bundled table and the provider's model cache file;
+    # every surface asks per heartbeat, so the answer is memoised per model.
+    return context_window(provider, model)
+
+
+def context_fill(state: SessionState) -> int | None:
+    """Context-window fill (percent) at the last completed model call: the
+    call's full prompt tokens over the model's window (bundled priors, else the
+    provider listing cache). None until both sides are known. The one rule
+    behind every surface's `ctx N%` readout."""
+    role = state.last_role
+    if role is None or role.ctx_tokens <= 0 or not role.model:
+        return None
+    window = _window(role.provider, role.model)
+    if not window:
+        return None
+    return min(100, round(100 * role.ctx_tokens / window))
+
+
 def session_state_as_dict(state: SessionState, session_dir: Path | None = None) -> dict[str, Any]:
     """The JSON-able wire form of a SessionState, stable field names: what
     `agent6 attach --json` and a web client serialize. Tuples become lists, nested
@@ -790,6 +813,7 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     correct only for a genuinely dir-less stream (the machine reasoning
     snapshot)."""
     d = asdict(state)
+    d["context_pct"] = context_fill(state)
     if session_dir is not None:
         word, reason = status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in LIVE_STATUS_WORDS

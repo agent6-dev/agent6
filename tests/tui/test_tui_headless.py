@@ -809,13 +809,12 @@ def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
 def test_context_pct_readout_in_top_line_and_bar(tmp_path: Path, monkeypatch: Any) -> None:
     """With the model's context window known, the dashboard's top line shows
     `ctx: NN%` and the composer bar's subtitle carries the same readout."""
-    from agent6.ui.tui import app as app_mod
     from agent6.ui.tui.conversation import SteerInput
 
     def _window(_provider: str, _model: str) -> int:
         return 100_000
 
-    monkeypatch.setattr(app_mod, "context_window", _window)
+    monkeypatch.setattr("agent6.viewmodel.state._window", _window)
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def scenario() -> None:

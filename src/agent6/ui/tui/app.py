@@ -59,7 +59,6 @@ from agent6.app.fork import undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import available_preset_names
 from agent6.directive import parse_compact
-from agent6.models.registry import context_window
 from agent6.sessions.ipc import (
     listening_ports,
     register_frontend,
@@ -114,6 +113,7 @@ from agent6.viewmodel.state import (
     SessionState,
     ToolCallView,
     apply_event,
+    context_fill,
     fold_session,
     initial_state,
     status_facts,
@@ -824,9 +824,6 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.last_event_at = time.monotonic()
         self._heartbeat_at = 0.0
         self.spin = 0
-        # (provider, model) -> context window (None = unknown); the registry
-        # lookup can touch the model-listing cache file, so ask it once.
-        self._ctx_windows: dict[tuple[str, str], int | None] = {}
         # The preset a resume from a composer continues under ("" = as
         # recorded); both run views' pickers read and write it.
         self.resume_preset = ""
@@ -1266,19 +1263,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.call_from_thread(self.notify, msg, severity="information" if new_dir else "error")
 
     def context_pct(self) -> int | None:
-        """Context-window fill (percent) at the last completed model call: the
-        call's full prompt tokens over the model's window (bundled priors, else
-        the provider listing cache). None until both sides are known."""
-        role = self.state.last_role
-        if role is None or role.ctx_tokens <= 0 or not role.model:
-            return None
-        key = (role.provider, role.model)
-        if key not in self._ctx_windows:
-            self._ctx_windows[key] = context_window(role.provider, role.model)
-        window = self._ctx_windows[key]
-        if not window:
-            return None
-        return min(100, round(100 * role.ctx_tokens / window))
+        """Context-window fill (percent) at the last completed model call (the
+        viewmodel's rule, shared with the web header and the pause menu)."""
+        return context_fill(self.state)
 
     def session_controllable(self) -> bool:
         """True while the run can receive operator input over the file bridge:

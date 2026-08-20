@@ -1213,7 +1213,10 @@ function paintRun(cards, s) {
     const fbText = `${b.tokens_unmetered}${fbCap > 0 ? ' / ' + fbCap : (fbCap === -1 ? ' (unlimited)' : '')} tokens`;
     cards.budget.appendChild(barRow('unmetered', fbFrac, fbText));
   }
-  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${b.input_total||0} · out ${b.output_total||0}`));
+  // The context-window fill at the last model call (the TUI's `ctx: N%`, the
+  // pause menu's readout): the fold's one rule, served as context_pct.
+  const ctxPct = typeof s.context_pct === 'number' ? ` · context ${s.context_pct}%` : '';
+  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${b.input_total||0} · out ${b.output_total||0}${ctxPct}`));
 
   // task tree
   cards.tasks.innerHTML = '';

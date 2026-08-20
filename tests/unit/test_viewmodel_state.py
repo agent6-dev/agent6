@@ -38,6 +38,41 @@ def test_format_log_line_keeps_the_compaction_reason() -> None:
     assert "keep the auth work" in requested
 
 
+def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The `ctx N%` readout every surface shows (TUI header + composer, the
+    pause menu, the web budget card) comes from one rule: the last completed
+    call's prompt tokens over the model's window; None until both are known.
+    The wire dict carries it as `context_pct`."""
+    from agent6.viewmodel import state as state_mod
+    from agent6.viewmodel.state import apply_event, context_fill, initial_state
+
+    def _known(_provider: str, _model: str) -> int | None:
+        return 100_000
+
+    def _unknown(_provider: str, _model: str) -> int | None:
+        return None
+
+    monkeypatch.setattr(state_mod, "_window", _known)
+    s = initial_state()
+    assert context_fill(s) is None  # no call yet
+    for ev in (
+        {"type": "session.start", "user_task": "x", "mode": "run"},
+        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+        {
+            "type": "role.result",
+            "role": "worker",
+            "ok": True,
+            "tokens_in": 1_000,
+            "cache_read": 40_000,
+        },
+    ):
+        s = apply_event(s, ev)
+    assert context_fill(s) == 41
+    assert session_state_as_dict(s)["context_pct"] == 41
+    monkeypatch.setattr(state_mod, "_window", _unknown)
+    assert context_fill(s) is None  # an unknown window is not a percent
+
+
 def test_format_log_line_names_the_pins_in_force() -> None:
     """loop.pin.restored announces the pins in force at leg start, whether a
     fresh run's --pin or a resume's snapshot; the line said "restored from the

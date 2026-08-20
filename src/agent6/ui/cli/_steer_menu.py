@@ -39,7 +39,6 @@ from pathlib import Path
 
 from agent6.config.layer import load_effective
 from agent6.directive import parse_btw
-from agent6.models.registry import context_window
 from agent6.paths import data_dir
 from agent6.sessions.ipc import request_compact
 from agent6.sessions.layout import LOGS_NAME
@@ -56,7 +55,7 @@ from agent6.viewmodel import (
     task_snippet,
 )
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost, status_label
-from agent6.viewmodel.state import SessionState, status_facts
+from agent6.viewmodel.state import SessionState, context_fill, status_facts
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
@@ -178,8 +177,8 @@ def _print_status(session_dir: Path) -> None:
     cost = format_cost(s.budget.usd_total, partial=s.budget.usd_partial)
     ctx = ""
     if role is not None and role.ctx_tokens > 0:
-        window = context_window(role.provider, role.model) if role.model else None
-        pct = f" ({min(100, round(100 * role.ctx_tokens / window))}%)" if window else ""
+        fill = context_fill(s)
+        pct = f" ({fill}%)" if fill is not None else ""
         ctx = f" · ctx {role.ctx_tokens:,} tok{pct}"
     if s.compact_elided:
         ctx += f" · elided {s.compact_elided} ({s.compact_gists_live} gists)"

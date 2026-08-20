@@ -243,6 +243,7 @@ depends_on = [
 # so it depends on those two leaf machine modules; nothing UI-toolkit-shaped.
 path = "agent6.viewmodel"
 depends_on = [
+  "agent6.models.registry",
   "agent6.sessions.layout",
   "agent6.types",
   "agent6.config.layer",
