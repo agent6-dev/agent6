@@ -73,6 +73,18 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     assert seen == [""]
 
 
+def test_resume_refuses_a_malformed_steer_directive_before_any_leg(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`resume --steer "/pin"` (every front-end's continue lands here) is
+    refused before a session is even resolved: a leg spent on a directive
+    the loop declines ends as a silent finish and flips a passed run to
+    failed."""
+    monkeypatch.chdir(tmp_path)
+    assert _cmd_resume(None, "any-run-AAAAAA", force=False, steer="/pin") == 2
+    assert "pin needs an instruction" in capsys.readouterr().err
+
+
 def _park_manifest(session_dir: Path, *, preset: str, from_flag: bool) -> None:
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(

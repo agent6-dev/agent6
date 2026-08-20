@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
+from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec, steer_problem
 
 
 def _segs(text: str) -> list[tuple[str, str]]:
@@ -253,3 +253,18 @@ def test_parse_compact_none_unless_leading_exact_token() -> None:
     assert parse_compact("please /compact this") is None
     assert parse_compact("/compaction is neat") is None
     assert parse_compact("ordinary steer") is None
+
+
+def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None:
+    """The one check a front-end runs before starting a leg on steer text:
+    a bare /pin or a /parallel with no task is named; ordinary text and a
+    well-formed directive pass."""
+    assert steer_problem("/pin") is not None and "pin needs an instruction" in (
+        steer_problem("/pin") or ""
+    )
+    assert steer_problem("/parallel 2") is not None
+    for live_only in ("/compact", "/compact keep the auth work", "/btw why?", "/restate"):
+        assert "acts on a live run" in (steer_problem(live_only) or ""), live_only
+    assert steer_problem("/pin keep the API stable") is None
+    assert steer_problem("/parallel 2 try the other design") is None
+    assert steer_problem("focus on the parser") is None

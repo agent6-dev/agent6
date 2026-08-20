@@ -252,3 +252,22 @@ def test_a_busy_checkout_is_refused_at_once(
     assert captured == []
     spawn.spawn_new_work(tmp_path, "ask", "why?")
     assert captured[-1][1:] == ["ask", "--", "why?"]
+
+
+def test_detached_resume_refuses_a_malformed_steer_before_spawning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A composer's continue on a finished run rides a detached `resume
+    --steer`; a bare `/pin` (a `/parallel` with no task) is refused HERE, with
+    the message the child would print to a stdio nobody reads while the
+    composer says "resuming"."""
+
+    def _must_not_spawn(*_a: object, **_k: object) -> object:
+        pytest.fail("nothing may be spawned for a malformed steer")
+
+    monkeypatch.setattr(subprocess, "Popen", _must_not_spawn)
+    err = spawn.spawn_detached_resume(tmp_path, "runny-one-AAAAAA", steer="/pin")
+    assert "pin needs an instruction" in err
+    assert "needs a task" in spawn.spawn_detached_resume(
+        tmp_path, "runny-one-AAAAAA", steer="/parallel 3"
+    )

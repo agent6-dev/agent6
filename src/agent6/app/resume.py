@@ -46,6 +46,7 @@ from agent6.config import (
 from agent6.config.layer import (
     resolved_state_dir,
 )
+from agent6.directive import steer_problem
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
@@ -222,6 +223,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     """
     cwd = Path.cwd()
     state_dir = resolved_state_dir(cwd)
+    if steer.strip() and (problem := steer_problem(steer)) is not None:
+        reporter.error(f"--steer: {problem}")
+        return 2
     if not session_id:
         # "resume my last session" -- the common recovery case. Every bucket a
         # resumable mode writes to, so splitting plans/ out of runs/ does not

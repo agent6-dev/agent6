@@ -98,6 +98,22 @@ def test_free_text_becomes_the_next_leg_then_exit(monkeypatch: pytest.MonkeyPatc
     assert calls == [("runny-one-AAAAAA", "now add the tests")]
 
 
+def test_a_malformed_directive_re_prompts_instead_of_spending_a_leg(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bare `/pin` typed here started a resume leg the loop could only
+    decline; the model answered without tools and the passed run read
+    "failed · silent finish". The prompt names the problem and asks again."""
+    calls = _seen_resumes(monkeypatch)
+    answers = iter(["/pin", "/pin keep the API stable", "/exit"])
+    rc = prompt_mod.end_of_session_prompt(
+        rc=0, session_id="runny-one-AAAAAA", ask=lambda _p: next(answers)
+    )
+    assert rc == 0
+    assert calls == [("runny-one-AAAAAA", "/pin keep the API stable")]
+    assert "pin needs an instruction" in capsys.readouterr().err
+
+
 def test_exit_leaves_the_session_resumable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import IO
 
 from agent6.config.layer import resolved_state_dir
-from agent6.directive import DirectiveError, parse_directive
+from agent6.directive import DirectiveError, parse_directive, steer_problem
 from agent6.models.validate import directive_model_refusal
 from agent6.sandbox.jail import keep_out_of_the_sweep
 from agent6.sessions.layout import LOGS_NAME
@@ -153,7 +153,11 @@ def spawn_detached_resume(
     child WAIT for a front-end at an ask/approval instead of fabricating an empty
     answer (every caller here is a front-end or a detach the operator re-attaches
     to). argv is the agent6 exe + the run id (never LLM output). Returns "" on
-    success, else an error message."""
+    success, else an error message: a malformed directive as *steer* is
+    refused here (the child would refuse it on a stdio nobody reads while
+    the composer reports "resuming")."""
+    if steer and (problem := steer_problem(steer)) is not None:
+        return problem
     argv = [*agent6_argv(config_path), "resume", session_id]
     if preset:
         argv.append(f"--preset={preset}")

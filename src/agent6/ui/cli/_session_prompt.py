@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app._setup import BudgetOverrides, SandboxOverrides
+from agent6.directive import steer_problem
 from agent6.ui.cli.resume import _cmd_resume
 
 # Free text is the next leg's operator instruction (what `--steer` carries);
@@ -67,6 +68,9 @@ def end_of_session_prompt(
             print(f"\nresume with:  agent6 resume {session_id}")
             return rc
         if not answer:
+            continue
+        if (problem := steer_problem(answer)) is not None:
+            print(f"[agent6] {problem}", file=sys.stderr)
             continue
         rc = _cmd_resume(
             config_path,

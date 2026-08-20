@@ -166,6 +166,32 @@ def spec_fragment(text: str) -> str | None:
     return token.rsplit(",", 1)[-1]
 
 
+def steer_problem(text: str) -> str | None:
+    """Why *text* cannot START a leg as its steer: a malformed directive (a
+    bare `/pin`, a `/parallel` with no task) or a live-run command (`/compact`,
+    `/btw`, `/restate`: a composer or the pause menu acts on those; the loop
+    would hand the bare token to the model as an instruction). None for
+    ordinary text and a well-formed directive. A leg spent on a directive the
+    loop can only decline reads as a silent finish and flips a passed run to
+    failed."""
+    live_only = "acts on a live run (from a composer or the pause menu); it cannot start a leg"
+    if parse_compact(text) is not None:
+        return f"/compact {live_only}"
+    if parse_btw(text) is not None:
+        return f"/btw {live_only}"
+    if _RESTATE_TOKEN.match(text):
+        return f"/restate {live_only}"
+    try:
+        parse_pin(text)
+        parse_directive(text)
+    except DirectiveError as exc:
+        return str(exc)
+    return None
+
+
+_RESTATE_TOKEN = re.compile(r"\A\s*/restate(?=\s|\Z)")
+
+
 def parse_directive(text: str) -> list[Segment] | None:
     """Split a `/parallel` message into its task segments, or `None` when *text*
     is not a directive (does not start with the exact `/parallel` token).
