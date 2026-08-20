@@ -53,6 +53,7 @@ from agent6.viewmodel import (
     restate,
     status_for_session_dir,
     tail_events,
+    task_snippet,
 )
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost, status_label
 from agent6.viewmodel.state import SessionState, status_facts
@@ -187,7 +188,7 @@ def _print_status(session_dir: Path) -> None:
     preset = _read_preset(session_dir)
     prof = f" · preset {preset}" if preset else ""
     print(f"[agent6] {label} · tasks {tasks} · {len(s.tool_calls)} tools · cost {cost}{ctx}{prof}")
-    print(f"         model {model} · task: {s.user_task[:80]}")
+    print(f"         model {model} · task: {task_snippet(s.user_task, max_chars=80)}")
 
 
 def _print_pins(session_dir: Path) -> None:

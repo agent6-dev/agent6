@@ -105,6 +105,30 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert pause_menu(tmp_path, input_fn=_feed([])) is None
 
 
+def test_pause_menu_status_clips_the_task_like_every_listing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """/status ends a long task with an ellipsis and skips a seeded run's
+    `<prior-run>` block, the shared snippet rule; a bare 80-char slice cut
+    mid-word and read as the whole task."""
+    import json
+    import os
+
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    task = "<prior-run>\nseeded context\n</prior-run>\n" + "add a function " * 12
+    (tmp_path / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "user_task": task, "mode": "run"}) + "\n",
+        encoding="utf-8",
+    )
+    pause_menu(tmp_path, input_fn=_feed(["/status"]))
+    status = next(ln for ln in capsys.readouterr().out.splitlines() if "task:" in ln)
+    shown = status.split("task: ", 1)[1]
+    assert shown.endswith("…") and len(shown) == 80
+    assert shown.startswith("add a function") and "<prior-run" not in shown
+
+
 def test_pause_menu_help_names_parallel(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """The mid-run steer help names `/parallel`, the directive the loop dispatches
     sibling lanes for (see agent6.directive.parse_directive)."""
