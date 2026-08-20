@@ -320,6 +320,7 @@ class TranscriptFold:
         self._finish = ""  # summary from the terminal finish tool
         self._tools = 0
         self._commits = 0
+        self._mode = ""  # from session.start; an ask or a plan never commits
         # Receipt state for the done item: cost from budget.update, wall time
         # from the first/last event ts, the last auto-commit's subject. Each
         # degrades to absent on a journal that never carried it.
@@ -335,6 +336,8 @@ class TranscriptFold:
             self._last_ep = ep
             if self._first_ep is None:
                 self._first_ep = ep
+        if etype == "session.start":
+            self._mode = str(event.get("mode", ""))
         if etype == "budget.update":
             self._usd = float(event.get("usd_total", 0) or 0)
             return True
@@ -354,7 +357,12 @@ class TranscriptFold:
             parts.append(f"${self._usd:.4f}")
         if self._first_ep is not None and self._last_ep is not None:
             parts.append(f"{max(0, round(self._last_ep - self._first_ep))}s")
-        parts.append(f"{tools} · {commits}")
+        # An ask or a plan never commits: "0 commits" there is noise, not a fact
+        # worth a receipt line.
+        counts = (
+            tools if self._mode in ("ask", "plan") and not self._commits else f"{tools} · {commits}"
+        )
+        parts.append(counts)
         if self._commit_subject:
             parts.append(_clip(self._commit_subject, 60))
         return " · ".join(parts)

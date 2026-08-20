@@ -474,3 +474,20 @@ def test_salient_arg_is_always_one_line() -> None:
     whitespace so the head stays one line."""
     arg = salient_arg({"_raw_arguments": '{"argv": [".venv/bin/python", "-c", "\nfrom x"]}'})
     assert "\n" not in arg
+
+
+def test_an_asks_receipt_carries_no_commit_count() -> None:
+    """An ask (or a plan) never commits: its done line counts tools only; a
+    run keeps "N commits", and a journal with no session.start keeps the
+    counts it always showed."""
+    ask = [
+        {"type": "session.start", "mode": "ask", "user_task": "why?"},
+        {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
+        {"type": "session.end", "reason": "answered", "all_passed": False},
+    ]
+    done = next(it for it in fold_transcript(ask) if it.kind == "done")
+    assert done.detail == "1 tool"
+    run = [{**ask[0], "mode": "run"}, *ask[1:]]
+    done = next(it for it in fold_transcript(run) if it.kind == "done")
+    assert done.detail == "1 tool · 0 commits"
