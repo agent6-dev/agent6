@@ -84,6 +84,7 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 | `baseline_ok` | `bool | None` | `None` |
 | `ok_tool_calls` | `int` | `0` |
 | `standing_tools_mark` | `int` | `-1` |
+| `standing_fruitless` | `int` | `0` |
 | `parallel_groups_dispatched` | `int` | `0` |
 | `pins` | `tuple[str, ...]` | `()` |
 | `head_sha` | `str` | `''` |

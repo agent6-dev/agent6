@@ -264,6 +264,19 @@ def ends_with_question(text: str) -> bool:
     return bool(lines) and lines[-1].endswith("?")
 
 
+def standing_fruitless_nudge(reason: str, task_id: str, title: str, streak: int) -> str:
+    """The re-entry notice once a round landed nothing: same continuation,
+    harder push -- repeat-what-you-did is the one wrong answer."""
+    return (
+        f"[harness] The run would have ended here ({reason}), and nothing has"
+        f" landed since the last re-entry (fruitless round {streak}). The"
+        f" standing task ({task_id}: {title}) continues: dig deeper or try a"
+        " different approach -- a different angle, tool, or part of the repo;"
+        " do not repeat the previous round. The run ends on its budget or an"
+        " operator stop."
+    )
+
+
 def standing_resume_nudge(reason: str, task_id: str, title: str) -> str:
     """The soft-end conversion for a run with a standing task: instead of
     ending, the loop re-enters the standing goal with this notice."""

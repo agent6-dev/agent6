@@ -77,7 +77,9 @@ def _wf(**kw: Any) -> Workflow:
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(
+                verify_command=(), require_verify_to_finish=False, standing_patience=-1
+            ),
         ),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
@@ -5994,30 +5996,56 @@ def _standing_nodes() -> Any:
     )
 
 
-def test_standing_task_converts_silent_finish_into_reentry() -> None:
-    """A run with a ready standing task does not end on going quiet: the
-    nudge re-enters the goal. A SECOND quiet turn with no tool call since is
-    a spin, and the original end is honoured."""
+def test_standing_default_never_self_quits_and_escalates() -> None:
+    """At the default standing_patience -1, a fruitless quiet round never
+    ends the run by itself: every re-entry lands, and fruitless ones carry
+    the escalating dig-deeper nudge (the run ends on budget/cap/operator).
+    A refused tool call is not work; an executed one resets the streak."""
     curator = MagicMock()
     curator.nodes.return_value = _standing_nodes()
     wf = _wf(mode="run", curator=curator, budget=None)
     conv = Conversation()
     state = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
     first = wf._handle_silent_finish("Done.", conv, state, iteration=3)  # pyright: ignore[reportPrivateUsage]
-    assert first is None  # absorbed: the run continues
+    assert first is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
-    # No tool call happened since: the spin guard honours the end.
+    # Quiet again with no executed call: still absorbed, nudge escalates.
+    state.tool_calls += 1  # a REFUSED call is not work
     second = wf._handle_silent_finish("Done.", conv, state, iteration=4)  # pyright: ignore[reportPrivateUsage]
-    assert second is not None and second.reason == "silent_finish"
-    # An EXECUTED tool call re-arms the absorb; a refused one does not (a
-    # retirement the curator rejects must not turn the spin into "work", or
-    # the D8 no-retire rule loops a fruitless goal to its budget).
-    state.tool_calls += 1
-    still = wf._handle_silent_finish("Done.", conv, state, iteration=5)  # pyright: ignore[reportPrivateUsage]
-    assert still is not None and still.reason == "silent_finish"
-    state.ok_tool_calls += 1
-    third = wf._handle_silent_finish("Done.", conv, state, iteration=6)  # pyright: ignore[reportPrivateUsage]
+    assert second is None
+    text = conv.to_wire()[-1]["content"][0]["text"]
+    assert "different approach" in text and "fruitless round 1" in text
+    third = wf._handle_silent_finish("Done.", conv, state, iteration=5)  # pyright: ignore[reportPrivateUsage]
     assert third is None
+    assert "fruitless round 2" in conv.to_wire()[-1]["content"][0]["text"]
+    # Work landing resets the streak: the next absorb is the plain nudge.
+    state.ok_tool_calls += 1
+    fourth = wf._handle_silent_finish("Done.", conv, state, iteration=6)  # pyright: ignore[reportPrivateUsage]
+    assert fourth is None
+    assert "fruitless" not in conv.to_wire()[-1]["content"][0]["text"]
+    assert state.standing_fruitless == 0
+
+
+def test_standing_patience_bounds_fruitless_reentries() -> None:
+    """standing_patience = N absorbs N fruitless rounds, then honours the
+    end; 0 restores give-up-on-first-fruitless."""
+    curator = MagicMock()
+    curator.nodes.return_value = _standing_nodes()
+    wf = _wf(mode="run", curator=curator, budget=None)
+    wf.config.workflow.standing_patience = 1
+    conv = Conversation()
+    state = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
+    assert wf._handle_silent_finish("Done.", conv, state, iteration=3) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf._handle_silent_finish("Done.", conv, state, iteration=4) is None  # pyright: ignore[reportPrivateUsage]
+    ended = wf._handle_silent_finish("Done.", conv, state, iteration=5)  # pyright: ignore[reportPrivateUsage]
+    assert ended is not None and ended.reason == "silent_finish"
+
+    wf0 = _wf(mode="run", curator=curator, budget=None)
+    wf0.config.workflow.standing_patience = 0
+    state0 = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
+    assert wf0._handle_silent_finish("Done.", Conversation(), state0, iteration=3) is None  # pyright: ignore[reportPrivateUsage]
+    ended0 = wf0._handle_silent_finish("Done.", Conversation(), state0, iteration=4)  # pyright: ignore[reportPrivateUsage]
+    assert ended0 is not None and ended0.reason == "silent_finish"
 
 
 def test_standing_task_gates_finish_session_and_soft_stops() -> None:

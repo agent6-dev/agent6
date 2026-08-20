@@ -88,7 +88,8 @@ A focus task held for many turns with no forward motion draws a nudge offering t
 
 **Standing tasks park a run instead of ending it.** A standing task (`run --standing "<goal>"`, or `add_task(standing=true)`) is the frontier's never-passing fallback, worked only when no ordinary subtask is ready; the model retires its own (`skipped`/`obsolete`), the operator's `--standing` goal only the operator retires.
 While one exists, the soft out-of-work endings (`finish_session`, the settled family, a quiet turn) convert into re-entry.
-Faults, operator verbs, the iteration cap, and a spent budget still end the run, and a re-entry with no tool call since the last one is a spin, honoured as the original end.
+Faults, operator verbs, the iteration cap, and a spent budget still end the run.
+A re-entry round that landed no executed tool call escalates the nudge (dig deeper, try a different approach) instead of quitting; `[workflow].standing_patience` bounds how many such rounds are absorbed (`-1`, the default, never ends on its own; a round that lands work resets the streak).
 An interactive run (`run -i` / `resume -i`) parks the same way on a quiet turn: the conversation waits on the steer bridge, and a steer from any composer or the pause menu continues it in place.
 
 **Context compaction has two tiers**, with thresholds in `[context]`.

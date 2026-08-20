@@ -115,6 +115,17 @@ class WorkflowConfig(BaseModel):
     # even then a finish over a red verify is reported honestly (session.end
     # all_passed=False -> "finished", never "passed"); this flag turns the honest
     # signal into a hard gate for operators who want it.
+    standing_patience: int = Field(
+        ge=-1,
+        default=-1,
+        description=(
+            "Consecutive fruitless standing-goal re-entries (rounds with no executed tool call) "
+            "the run absorbs before soft ends are honoured. `-1` (default): never on its own -- "
+            "the run ends on its budget, iteration cap, or an operator stop; `0`: the first "
+            "fruitless round ends it; `N`: N fruitless re-entries get an escalating nudge, then "
+            "ends are honoured. A round that lands work resets the streak."
+        ),
+    )
     require_verify_to_finish: bool = Field(
         default=False,
         description=(

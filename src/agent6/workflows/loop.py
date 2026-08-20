@@ -165,6 +165,7 @@ from agent6.workflows._nudges import (
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
     ends_with_question,
+    standing_fruitless_nudge,
     standing_resume_nudge,
     tool_error_signature,
     verify_did_not_run,
@@ -365,10 +366,13 @@ class _LoopState:
     gateless_ever_committed: bool = False
     verify_settled_idle: int = 0
     verify_settled_nudged: bool = False
-    # Spin guard for the standing-goal re-entry: `ok_tool_calls` at the last
-    # absorption. A re-entry with no executed call since is a spin, not work,
-    # and the original end is honoured instead. -1 = never absorbed.
+    # Standing-goal re-entry bookkeeping: `ok_tool_calls` at the last
+    # absorption (-1 = never absorbed), and the consecutive fruitless
+    # re-entries since work last landed. `[workflow].standing_patience`
+    # decides how many fruitless rounds are absorbed before ends are
+    # honoured (-1 = never on its own).
     standing_tools_mark: int = -1
+    standing_fruitless: int = 0
     run_budget_nudged: bool = False
     # Cross-run memory write nudges (run mode, memory store wired): one flip
     # advisory when verify first goes green after failing, one deferred
@@ -958,6 +962,7 @@ class Workflow:
         moves: it carries unconditionally."""
         state.verify.baseline_ok = snap.baseline_ok
         state.standing_tools_mark = snap.standing_tools_mark
+        state.standing_fruitless = snap.standing_fruitless
         state.ok_tool_calls = snap.ok_tool_calls
         if snap.last_verify_ok is None or not snap.head_sha:
             return
@@ -2290,26 +2295,37 @@ class Workflow:
     def _standing_absorb(self, state: _LoopState, *, reason: str, iteration: int) -> str | None:
         """The standing-goal conversion for a soft end: the nudge text to
         inject when the run should re-enter the standing task instead of
-        ending, else None. None when there is no ready standing task, when the
-        budget is spent (the hard bounds always win), or on a spin -- a
-        re-entry with no tool call since the last one means the goal is not
-        producing work, and the original end is honoured."""
+        ending, else None. None when there is no ready standing task, when
+        the budget is spent (the hard bounds always win), or once
+        `[workflow].standing_patience` fruitless re-entries (no executed
+        tool call since the last one) are used up. At the default (-1) a
+        fruitless round never ends the run by itself: the nudge escalates
+        to "dig deeper or try a different approach" instead, and the run
+        ends on its budget, iteration cap, or an operator stop."""
         st = self._standing_task()
         if st is None:
             return None
         remaining = self._budget_fraction_remaining()
         if remaining is not None and remaining <= 0.0:
             return None
-        if state.ok_tool_calls == state.standing_tools_mark:
-            self._log(
-                f"  standing: no executed tool call since the last re-entry; honouring {reason}"
-            )
-            return None
-        state.standing_tools_mark = state.ok_tool_calls
         nid, title = st
+        if state.ok_tool_calls == state.standing_tools_mark:
+            state.standing_fruitless += 1
+            patience = self.config.workflow.standing_patience
+            if 0 <= patience < state.standing_fruitless:
+                self._log(
+                    f"  standing: {state.standing_fruitless} fruitless re-entries >"
+                    f" standing_patience {patience}; honouring {reason}"
+                )
+                return None
+            nudge = standing_fruitless_nudge(reason, nid, title, state.standing_fruitless)
+        else:
+            state.standing_fruitless = 0
+            nudge = standing_resume_nudge(reason, nid, title)
+        state.standing_tools_mark = state.ok_tool_calls
         self._log(f"  standing re-entry ({reason}) -> {nid} at iter {iteration}")
         self._emit("loop.standing.resumed", reason=reason, task_id=nid, iteration=iteration)
-        return standing_resume_nudge(reason, nid, title)
+        return nudge
 
     def _absorb_soft_stop(
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
@@ -3382,6 +3398,7 @@ class Workflow:
             edited_since_verify=state.verify.edited_since,
             baseline_ok=state.verify.baseline_ok,
             standing_tools_mark=state.standing_tools_mark,
+            standing_fruitless=state.standing_fruitless,
             ok_tool_calls=state.ok_tool_calls,
             head_sha=self._checkpoint_head_sha(),
             graph_version=self._checkpoint_graph_version(),

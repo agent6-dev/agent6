@@ -193,9 +193,10 @@ class SessionSnapshot(BaseModel):
     # Executed-dispatch count for the standing spin guard (0 on old snapshots:
     # one extra re-entry at most, then the mark resyncs).
     ok_tool_calls: int = 0
-    # Standing-goal spin guard (see _LoopState.standing_tools_mark). Additive:
-    # an old snapshot without it restores the never-absorbed default.
+    # Standing-goal re-entry bookkeeping (see _LoopState). Additive: an old
+    # snapshot restores the never-absorbed default and a fresh streak.
     standing_tools_mark: int = -1
+    standing_fruitless: int = 0
     # /parallel groups dispatched so far. Run-lifetime, not leg-lifetime: lane
     # ids and their imported branches embed the group number
     # (`<run>-p<N>-l<i>`), so a resume that restarted at p1 rebuilt a prior
