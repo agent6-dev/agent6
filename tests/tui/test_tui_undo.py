@@ -123,3 +123,83 @@ def test_composer_labels_name_the_fork(continue_as: str) -> None:
 
     title, _ = composer_labels("resume", continue_as=continue_as)
     assert title == ("continue as fork-child-AAAAAA" if continue_as else "continue this session")
+
+
+def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Run > Fork used to spawn `agent6 fork <id>` continuing at once; with
+    no direction, a fork of a finished run re-read a done conversation and
+    ended as a silent finish. It now creates the fork unstarted; on a finished
+    run the composer routes the next line to the fork (Enter resumes it)."""
+    spawned: list[tuple[str, str]] = []
+
+    def _fake_resume(
+        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+    ) -> str:
+        spawned.append((rid, steer))
+        return ""
+
+    def _fake_create_fork(*_a: object, **_k: object) -> tuple[str, int]:
+        return ("fork-child-CCCCCC", 0)
+
+    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(app_mod, "create_fork", _fake_create_fork)
+    run = tmp_path / "done-run-AAAAAA"
+    run.mkdir()
+    evs = [
+        {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            app.action_fork()
+            await pilot.pause()
+            assert app.continue_as == "fork-child-CCCCCC"
+            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            assert "continue as fork-child-CCCCCC" in str(bar.border_title)
+            app.submit_instruction("try the other design")
+            assert spawned == [("fork-child-CCCCCC", "try the other design")]
+
+    asyncio.run(scenario())
+
+
+def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The live composer steers THIS run; a fork made while live is created
+    unstarted and the notice says how it starts."""
+    import os
+
+    from agent6.sessions.ipc import write_worker_pid
+
+    def _fake_create_fork(*_a: object, **_k: object) -> tuple[str, int]:
+        return ("fork-child-DDDDDD", 0)
+
+    monkeypatch.setattr(app_mod, "create_fork", _fake_create_fork)
+    run = tmp_path / "live-run-AAAAAA"
+    run.mkdir()
+    (run / "logs.jsonl").write_text(
+        json.dumps(
+            {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_worker_pid(run, os.getpid())
+
+    async def scenario() -> None:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.action_fork()
+            await pilot.pause()
+            assert app.continue_as == ""
+            assert app.session_controllable()
+
+    asyncio.run(scenario())

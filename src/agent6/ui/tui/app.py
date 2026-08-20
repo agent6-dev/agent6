@@ -55,7 +55,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.app.fork import undo_fork
+from agent6.app.fork import create_fork, undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import available_preset_names
 from agent6.directive import parse_compact
@@ -69,7 +69,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.ui.spawn import agent6_argv, run_cli_capture, spawn_and_locate, spawn_detached_resume
+from agent6.ui.spawn import agent6_argv, run_cli_capture, spawn_detached_resume
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.conversation import (
     RUN_MENU,
@@ -801,9 +801,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.exit_on_end = exit_on_end
         # The run ended under exit_on_end and the dashboard is holding.
         self._end_hold = False
-        # The fork this view's /undo on a finished run created (the fold has
-        # no event for it); continue_as routes the follow-up there.
-        self._undo_child = ""
+        # The fork this view created (/undo on a finished run, Run > Fork; the
+        # fold has no event for either); continue_as routes the follow-up there.
+        self._continue_child = ""
         # Set by action_detach_exit; run_tui reads it to print the reattach hint.
         self.detached = False
         # THE (word, reason) for this run -- status_for_session_dir, the same
@@ -1098,7 +1098,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self.notify(said[-1].strip() if said else "undo failed", severity="warning")
             return
         child, text = result
-        self._undo_child = child
+        self._continue_child = child
         self._fill_composers(text)
         self.notify(f"undone: continue as {child}; your message is back to edit")
 
@@ -1114,9 +1114,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
     @property
     def continue_as(self) -> str:
         """The session a typed follow-up resumes: the fork an undone run named
-        (its continuation, from the fold or from this view's own /undo on a
-        finished run), else "" for this run itself."""
-        return self.state.undone_to or self._undo_child
+        (its continuation, from the fold), the fork this view created (/undo
+        on a finished run, Run > Fork), else "" for this run itself."""
+        return self.state.undone_to or self._continue_child
 
     def _fill_composers(self, text: str) -> None:
         """Put *text* in both composer bars (the covered view's too), ready to
@@ -1145,11 +1145,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             severity="error" if err else "information",
         )
 
-    def _steer_request_to_bar(self) -> None:
-        """An external steer request (a CLI Ctrl-C on an attached run, `agent6
-        steer`): route it to the visible composer bar instead of a popup --
-        focus it and say why. With a viewer or modal on top, the notice alone
-        points the operator at the bar."""
+    def _focus_composer(self) -> None:
+        """Focus the visible composer bar; with a viewer or modal on top, the
+        caller's notice alone points the operator at the bar."""
         stack = self.screen_stack
         if not stack:  # shutdown race: the tick fired after the last screen popped
             return
@@ -1158,6 +1156,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         elif stack[-1] is self._dash:
             with contextlib.suppress(NoMatches):
                 self._dash.query_one("#dash-input", SteerInput).focus()
+
+    def _steer_request_to_bar(self) -> None:
+        """An external steer request (a CLI Ctrl-C on an attached run, `agent6
+        steer`): route it to the visible composer bar instead of a popup --
+        focus it and say why."""
+        self._focus_composer()
         self.notify("steering requested: type an instruction and press Enter")
 
     def action_compact(self) -> None:
@@ -1260,25 +1264,32 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         )
 
     def action_fork(self) -> None:
-        """Fork this run into a NEW run (from its latest checkpoint) that runs in the
-        background and shows up in the hub. Spawns off-thread so the UI stays live."""
-        self.notify(f"forking {self.session_dir.name}…", severity="information")
-        threading.Thread(target=self._do_fork, daemon=True).start()
-
-    def _do_fork(self) -> None:
-        runs = self.session_dir.parent  # sibling run dirs under runs/
-        new_dir, err = spawn_and_locate(
-            [*agent6_argv(self.config_path), "fork", self.session_dir.name],
-            Path.cwd(),
-            before={p for p in runs.iterdir() if p.is_dir()},
-            list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
+        """Fork this run at its latest checkpoint into a NEW run, unstarted. On
+        a finished run the composer is handed to the fork: the next typed line
+        is its instruction (Enter resumes the fork with it), the way /undo
+        hands over its fork. On a live run the composer keeps steering THIS
+        run, so the notice says how the fork starts. A fork that simply
+        continued had no direction: of a finished run it re-read a done
+        conversation and ended as a silent finish."""
+        said: list[str] = []
+        child, rc = create_fork(
+            self.config_path,
+            self.session_dir.name,
+            cwd=Path.cwd(),
+            reporter=Reporter(out=said.append, err=said.append),
         )
-        msg = (
-            f"forked to {new_dir.name} (open it from the hub)"
-            if new_dir
-            else (err or "fork failed")
-        )
-        self.call_from_thread(self.notify, msg, severity="information" if new_dir else "error")
+        if rc != 0:
+            self.notify(said[-1].strip() if said else "fork failed", severity="error")
+            return
+        if self.session_controllable():
+            self.notify(f"forked to {child} (unstarted); start it: agent6 resume {child} --steer …")
+            return
+        self._continue_child = child
+        self.notify(f"forked to {child}; type what it should do below (Enter resumes it)")
+        self._conv.refresh_liveness()
+        with contextlib.suppress(NoMatches):
+            self._dash.render_heartbeat()
+        self._focus_composer()
 
     def context_pct(self) -> int | None:
         """Context-window fill (percent) at the last completed model call (the
