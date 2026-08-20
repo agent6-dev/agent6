@@ -28,7 +28,7 @@ Stop it with Ctrl-C.
 
 Every page docks its text entry at the bottom, like a chat: type, Enter sends, Shift+Enter inserts a newline.
 
-- **Sessions page**: every session (mode, status, last activity, cost); the docked composer starts new work (run / plan / ask); prune merged run branches, clear saved asks.
+- **Sessions page**: every session (mode, status, last activity, cost); the docked composer starts new work (run / plan / ask, under a chosen config preset); prune merged run branches, clear saved asks.
 - **Machines page**: machine instances and `machine create` drafts, cards that run an authored machine file, and a docked composer that creates a new one.
 - **Session view** (live over SSE): the conversation is the page, the same folded transcript the CLI and TUI render, with the in-progress turn streaming underneath.
     - A detail toggle cycles collapsed / expanded / hidden; any clipped item expands on click.

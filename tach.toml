@@ -143,7 +143,7 @@ depends_on = []
 [[modules]]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
-depends_on = ["agent6.app", "agent6.sessions.layout", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.ui.spawn", "agent6.ui.notify", "agent6.sessions.ipc", "agent6.sessions.manifest", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.portable", "agent6.secrets", "agent6.viewmodel"]
+depends_on = ["agent6.app", "agent6.sessions.layout", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.ui.spawn", "agent6.ui.notify", "agent6.sessions.ipc", "agent6.sessions.manifest", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.portable", "agent6.secrets", "agent6.types", "agent6.viewmodel"]
 
 [[modules]]
 # The steer seam + its file-bridge implementation, shared by the CLI's SIGINT

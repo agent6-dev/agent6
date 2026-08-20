@@ -147,6 +147,25 @@ def parse_btw(text: str) -> str | None:
     return text[m.end() :].strip()
 
 
+# The spec token of a `/parallel` directive still being typed: the message
+# is `/parallel <token>` with nothing after it yet (a following space = task
+# text has begun, so stop suggesting).
+_SPEC_TAIL = re.compile(r"/parallel[^\S\n]+(\S*)\Z")
+
+
+def spec_fragment(text: str) -> str | None:
+    """The comma-separated model fragment under construction at the end of a
+    `/parallel` spec (a composer's autocomplete key), or None when the caret
+    has left the spec or the token is a bare lane count."""
+    m = _SPEC_TAIL.match(text)
+    if m is None:
+        return None
+    token = m.group(1)
+    if token.isdigit():
+        return None
+    return token.rsplit(",", 1)[-1]
+
+
 def parse_directive(text: str) -> list[Segment] | None:
     """Split a `/parallel` message into its task segments, or `None` when *text*
     is not a directive (does not start with the exact `/parallel` token).

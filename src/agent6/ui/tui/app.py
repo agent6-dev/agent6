@@ -362,7 +362,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             return
         with contextlib.suppress(NoMatches):
             self.query_one("#dash-suggest", SteerSuggest).show_for(
-                event.text_area.text, live=self._tui.session_controllable()
+                event.text_area.text,
+                mode="steer" if self._tui.session_controllable() else "resume",
             )
 
     def action_toggle_dashboard(self) -> None:
@@ -499,7 +500,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # Relabel every paint: mode flips on finished, and the context readout
         # in the subtitle moves with the run.
         self.query_one("#dash-input", SteerInput).set_mode(
-            live=tui.session_controllable(), ctx_pct=tui.context_pct()
+            mode="steer" if tui.session_controllable() else "resume", ctx_pct=tui.context_pct()
         )
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while

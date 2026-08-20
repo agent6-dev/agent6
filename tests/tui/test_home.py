@@ -144,10 +144,11 @@ def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path
     asyncio.run(scenario())
 
 
-def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
+def test_home_app_lists_runs_and_opens_the_new_task_view(tmp_path: Path) -> None:
     import asyncio
 
-    from agent6.ui.tui.home import Agent6HomeApp, _NewWorkModal
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.new_work import NewWorkScreen
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "do [x]"}])
@@ -163,84 +164,104 @@ def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
             assert isinstance(app.screen, HomeScreen)  # hub lives on its own screen
             table = app.screen.query_one("#sessions", DataTable)
             assert table.row_count == 1  # the one run is listed
-            # 'n' opens the new-work modal; Esc closes it without starting work.
+            # 'n' opens the new-task view (an empty conversation); Esc backs out.
             await pilot.press("n")
             await pilot.pause()
-            assert isinstance(app.screen, _NewWorkModal)
+            assert isinstance(app.screen, NewWorkScreen)
             await pilot.press("escape")
             await pilot.pause()
-            assert not isinstance(app.screen, _NewWorkModal)
+            assert isinstance(app.screen, HomeScreen)
 
     asyncio.run(scenario())
 
 
-def test_new_work_modal_is_multiline_and_starts_chosen_mode(tmp_path: Path) -> None:
+def test_new_task_view_starts_the_chosen_mode_and_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Enter in the draft composer starts `<mode>` under the picked preset (the
+    same spawn every hub makes); a located session dir is the hub's return
+    value. Ctrl-J is a newline, so a task can span lines."""
     import asyncio
 
-    from textual.widgets import TextArea
+    from textual.widgets import Select
 
-    from agent6.ui.tui.home import Agent6HomeApp, _NewWorkModal
+    from agent6.ui.tui import new_work
+    from agent6.ui.tui.conversation import SteerInput
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.new_work import NewWorkScreen
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+    started: list[tuple[str, str, str]] = []
+
+    def _spawn(cwd: Path, mode: str, task: str, *, preset: str = "", config_path: object = None):
+        started.append((mode, task, preset))
+        return tmp_path / "located", ""
+
+    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            result: list[object] = []
-            app.push_screen(_NewWorkModal(), result.append)
+            app.push_screen(NewWorkScreen(tmp_path, presets=["ultra"]))
             await pilot.pause()
-            ta = app.screen.query_one(TextArea)
-            # Enter is a NEWLINE here (multiline task), not a submit.
-            await pilot.press("a")
-            await pilot.press("enter")
-            await pilot.press("b")
+            assert isinstance(app.screen, NewWorkScreen)
+            bar = app.screen.query_one("#draft-input", SteerInput)
+            assert bar.border_title == "new task"
+            app.screen.query_one("#draft-mode", Select).value = "plan"
+            app.screen.query_one("#draft-preset", Select).value = "ultra"
+            bar.focus()
             await pilot.pause()
-            assert ta.text == "a\nb"
-            assert isinstance(app.screen, _NewWorkModal)  # Enter did not dismiss
-            # ↓ past the last line moves to the buttons; →,Enter starts 'plan'.
-            await pilot.press("down")
-            await pilot.press("right")
-            await pilot.press("enter")
-            await pilot.pause()
-            # mode + multiline task + preset ("" = config default, no --preset).
-            assert result == [("plan", "a\nb", "")]
+            await pilot.press("a", "ctrl+j", "b", "enter")
+            deadline = time.monotonic() + 10
+            while app.return_value is None and time.monotonic() < deadline:
+                await pilot.pause(0.05)
+            assert started == [("plan", "a\nb", "ultra")]
+            assert app.return_value == tmp_path / "located"
 
     asyncio.run(scenario())
 
 
-def test_new_work_modal_yields_chosen_profile(tmp_path: Path) -> None:
-    """The new-work modal carries the picked config preset in its result tuple:
-    (mode, task, preset). Selecting a built-in (e.g. 'ultra') yields that name;
-    the default '(config default)' would yield '' (covered above)."""
+def test_new_task_view_keeps_the_text_on_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A start the child refuses renders its reason where the transcript will
+    be and hands the typed text back to the composer to fix and resend."""
     import asyncio
 
-    from textual.widgets import Select, TextArea
+    from textual.widgets import Static
 
-    from agent6.ui.tui.home import Agent6HomeApp, _NewWorkModal
+    from agent6.ui.tui import new_work
+    from agent6.ui.tui.conversation import SteerInput
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.new_work import NewWorkScreen
 
     a6 = tmp_path / ".agent6"
-    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+
+    def _spawn(cwd: Path, mode: str, task: str, *, preset: str = "", config_path: object = None):
+        return None, "REFUSING: 1 tracked file has uncommitted changes:\n- [git] seed.txt"
+
+    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            result: list[object] = []
-            # An explicit preset list so the dropdown offers a known value.
-            app.push_screen(_NewWorkModal(["ultra"]), result.append)
+            app.push_screen(NewWorkScreen(tmp_path))
             await pilot.pause()
-            app.screen.query_one(TextArea).insert("do it")
-            # Pick 'ultra' directly on the Select (no overlay navigation needed).
-            app.screen.query_one("#new-preset", Select).value = "ultra"
+            bar = app.screen.query_one("#draft-input", SteerInput)
+            bar.focus()
             await pilot.pause()
-            # Run via a button activation (Esc-free path), like the user clicking.
-            from agent6.ui.tui.widgets import ActionItem
-
-            next(iter(app.screen.query(ActionItem))).post_message(ActionItem.Activated("run"))
-            await pilot.pause()
-            assert result == [("run", "do it", "ultra")]  # preset threaded through
+            await pilot.press("f", "i", "x", "enter")
+            deadline = time.monotonic() + 10
+            notice = app.screen.query_one("#draft-notice", Static)
+            while "REFUSING" not in str(notice.render()) and time.monotonic() < deadline:
+                await pilot.pause(0.05)
+            shown = str(notice.render())
+            assert "REFUSING" in shown and "[git] seed.txt" in shown  # markup-safe
+            assert bar.text == "fix"  # back in the composer, not lost
+            assert app.return_value is None and isinstance(app.screen, NewWorkScreen)
 
     asyncio.run(scenario())
 

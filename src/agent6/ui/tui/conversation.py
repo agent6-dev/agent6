@@ -25,7 +25,7 @@ import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from rich.text import Text
 from textual import events
@@ -124,37 +124,48 @@ def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text
     return out
 
 
-def composer_labels(*, live: bool) -> tuple[str, str]:
+# What Enter in the composer does: steer a LIVE session, resume a finished
+# one with a follow-up, or start a new session from a draft.
+ComposerMode = Literal["steer", "resume", "start"]
+
+
+def composer_labels(mode: ComposerMode) -> tuple[str, str]:
     """(border title, key hint) for the composer.
 
     One conversation view serves runs, plans and asks, so it says "session":
     a fixed "the run" is wrong two times in three.
     """
-    if live:
+    if mode == "steer":
         return ("steer this session (/pin, /compact [focus])", "Enter sends · Ctrl-J newline")
-    return ("continue this session", "Enter resumes · Ctrl-J newline")
+    if mode == "resume":
+        return ("continue this session", "Enter resumes · Ctrl-J newline")
+    return ("new task", "Enter starts · Ctrl-J newline")
 
 
-def steer_suggestion_rows(text: str, *, live: bool) -> list[tuple[str, str]]:
+def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, str]]:
     """The steer directives matching the composer's first word while it is
     still being typed (`/…`, no whitespace yet): (command, help) rows, empty
     for ordinary text. /compact acts only on a live session, so a resume
-    composer does not offer it."""
+    composer does not offer it; a draft offers only /parallel (the fan-out
+    is the one directive a start understands)."""
     if not text.startswith("/") or any(ch.isspace() for ch in text):
         return []
-    offered = (
-        STEER_COMMANDS if live else {c: h for c, h in STEER_COMMANDS.items() if c != "/compact"}
-    )
+    if mode == "start":
+        offered = {c: h for c, h in STEER_COMMANDS.items() if c == "/parallel"}
+    elif mode == "resume":
+        offered = {c: h for c, h in STEER_COMMANDS.items() if c != "/compact"}
+    else:
+        offered = STEER_COMMANDS
     return [(c, h) for c, h in offered.items() if c.startswith(text)]
 
 
-def complete_steer(text: str, *, live: bool) -> str | None:
+def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
     """Tab in a composer: the completed command word, or None when Tab should
     keep its focus-move meaning. A unique match completes with a trailing
     space; several matches advance to their longest common prefix, returning
     *text* unchanged when there is no progress so Tab never yanks focus away
     mid-command."""
-    rows = steer_suggestion_rows(text, live=live)
+    rows = steer_suggestion_rows(text, mode=mode)
     if not rows:
         return None
     if len(rows) == 1:
@@ -174,8 +185,9 @@ class SteerSuggest(Static):
     SteerSuggest { display: none; height: auto; padding: 0 1; background: $surface; }
     """
 
-    def show_for(self, text: str, *, live: bool) -> None:
-        rows = steer_suggestion_rows(text, live=live)
+    def show_for(self, text: str, *, mode: ComposerMode) -> None:
+        rows = steer_suggestion_rows(text, mode=mode)
+        body: Text | None = None
         if rows:
             body = Text()
             for i, (cmd, help_) in enumerate(rows):
@@ -183,8 +195,13 @@ class SteerSuggest(Static):
                     body.append("\n")
                 body.append(cmd, style="bold")
                 body.append(f"  {help_}", style="dim")
+        self.show_text(body)
+
+    def show_text(self, body: Text | None) -> None:
+        """Show *body* as the hint line, or hide the line for None."""
+        if body is not None:
             self.update(body)
-        show = bool(rows)
+        show = body is not None
         if self.display != show:
             self.display = show
 
@@ -260,19 +277,19 @@ class SteerInput(TextArea):
             super().__init__()
 
     def on_mount(self) -> None:
-        self.set_mode(live=True)
+        self.set_mode(mode=self.mode)
         self._resize()
 
     policy = ""  # viewmodel.session_policy(...).short(), set once the run dir is known
-    mode_live = True  # which steer directives apply (see steer_suggestion_rows)
+    mode: ComposerMode = "steer"  # which directives apply (see steer_suggestion_rows)
 
-    def set_mode(self, *, live: bool, ctx_pct: int | None = None) -> None:
-        """Relabel for the session's state: steering (live) vs resuming
-        (finished), plus the context-window fill when known, right where you
-        type. Only writes on a real change: this runs on every heartbeat, and
-        same-value style writes still cost a refresh."""
-        self.mode_live = live
-        title, keys = composer_labels(live=live)
+    def set_mode(self, *, mode: ComposerMode, ctx_pct: int | None = None) -> None:
+        """Relabel for the session's state: steering (live), resuming
+        (finished), or starting (a draft), plus the context-window fill when
+        known, right where you type. Only writes on a real change: this runs
+        on every heartbeat, and same-value style writes still cost a refresh."""
+        self.mode = mode
+        title, keys = composer_labels(mode)
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
         # The run's policy sits where the eye already goes for status, from the
         # same fold the CLI banner and the web header read.
@@ -296,7 +313,7 @@ class SteerInput(TextArea):
             event.stop()
             self.insert("\n")
         elif event.key == "tab":
-            completed = complete_steer(self.text, live=self.mode_live)
+            completed = complete_steer(self.text, mode=self.mode)
             if completed is not None:  # else Tab keeps its focus-move meaning
                 event.prevent_default()
                 event.stop()
@@ -718,7 +735,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
                     bar.policy = session_policy(self._logs_path.parent).short()
                 pct_fn = getattr(self.app, "context_pct", None)
                 pct = pct_fn() if callable(pct_fn) else None
-                bar.set_mode(live=self._host_live(), ctx_pct=pct if isinstance(pct, int) else None)
+                bar.set_mode(
+                    mode="steer" if self._host_live() else "resume",
+                    ctx_pct=pct if isinstance(pct, int) else None,
+                )
 
     def refresh_liveness(self) -> None:
         """Relabel the composer for a liveness change that came with no event
@@ -780,7 +800,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             return
         with contextlib.suppress(NoMatches):
             self.query_one("#conv-suggest", SteerSuggest).show_for(
-                event.text_area.text, live=self._host_live()
+                event.text_area.text, mode="steer" if self._host_live() else "resume"
             )
 
     # -- copy ---------------------------------------------------------------

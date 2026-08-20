@@ -227,19 +227,26 @@ function attachParallelSuggest(task, root) {
 }
 
 // The new-work composer, docked at the bottom of the Sessions page: task text +
-// mode + Start (Enter starts, Shift+Enter newline).
-function newWorkDock() {
+// mode + preset + Start (Enter starts, Shift+Enter newline). `presets` is the
+// hub payload's list; the first option keeps the config's own preset.
+function newWorkDock(presets) {
   const root = el('div', 'composer dock dock-fixed');
   const row = el('div', 'row');
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
   const mode = el('select', 'field'); mode.style.flex = '0 0 auto'; mode.style.width = 'auto';
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
+  const preset = el('select', 'field'); preset.style.flex = '0 0 auto'; preset.style.width = 'auto';
+  preset.title = 'config preset for this run (a preset cannot change mid-run)';
+  const dflt = el('option', null, 'preset: config default'); dflt.value = ''; preset.appendChild(dflt);
+  for (const p of (presets || [])) { const o = el('option', null, p); o.value = p; preset.appendChild(o); }
   const go = el('button', 'primary', 'Start');
   const start = async () => {
     if (!task.value.trim()) return;
     go.disabled = true;
-    try { const d = await postJSON('/api/new', { mode: mode.value, task: task.value }); if (d.session_id) location.hash = '#/session/' + encodeURIComponent(d.session_id); }
-    catch (e) { toast(e.message, true); go.disabled = false; }
+    try {
+      const d = await postJSON('/api/new', { mode: mode.value, task: task.value, preset: preset.value });
+      if (d.session_id) location.hash = '#/session/' + encodeURIComponent(d.session_id);
+    } catch (e) { toast(e.message, true); go.disabled = false; }
   };
   go.onclick = start;
   const ac = attachParallelSuggest(task, root);
@@ -247,7 +254,7 @@ function newWorkDock() {
     if (ac.onKeyDown(e)) return;   // the /parallel suggestion popup took the key
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); }
   };
-  row.appendChild(task); row.appendChild(mode); row.appendChild(go);
+  row.appendChild(task); row.appendChild(mode); row.appendChild(preset); row.appendChild(go);
   root.appendChild(growGrip(task));
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask · Shift+Enter newline · '
@@ -376,7 +383,7 @@ async function renderHub(focus, gen) {
   };
   let lists = build(data);
   view.appendChild(lists);
-  view.appendChild(machinesTab ? createMachineDock() : newWorkDock());
+  view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets));
   // The hub painted once and never again, so a lane that finished, failed, or
   // crashed kept its "running" pill until a manual reload -- and clicking the
   // already-active tab does not re-enter route(). Refresh the LISTS only: a

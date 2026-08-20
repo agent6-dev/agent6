@@ -13,14 +13,14 @@ from agent6.ui.tui.conversation import composer_labels
 
 
 def test_a_finished_session_offers_to_continue_the_session() -> None:
-    title, keys = composer_labels(live=False)
+    title, keys = composer_labels("resume")
     assert "run" not in title, title
     assert "session" in title
     assert "resumes" in keys
 
 
 def test_a_live_session_offers_to_steer_the_session() -> None:
-    title, _keys = composer_labels(live=True)
+    title, _keys = composer_labels("steer")
     assert "run" not in title, title
     assert "session" in title
     assert "/pin" in title and "/compact" in title

@@ -261,7 +261,7 @@ When a skill must apply, use `always`, `/name`, or `--skill`.
 ### Presets
 
 A preset fills many settings at once.
-`agent6 config presets` lists them; select with `--preset <name>`, `agent6 config set preset <name>` (`--repo`), or the TUI new-work chooser.
+`agent6 config presets` lists them; select with `--preset <name>`, `agent6 config set preset <name>` (`--repo`), or the preset picker of the TUI and web new-task composers.
 A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
 A `--config FILE` or machine overlay cannot select one.
 

@@ -510,7 +510,7 @@ class _Handler(BaseHTTPRequestHandler):
             )
             return
         if path == "/api/hub":
-            self._send_json(model.hub_payload(self.cwd))
+            self._send_json(model.hub_payload(self.cwd, self.config_path))
             return
         if path == "/api/config":
             self._send_json(model.config_payload(self.cwd, self.config_path))

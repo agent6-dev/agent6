@@ -20,36 +20,41 @@ from agent6.ui.tui.conversation import (
 
 
 def test_rows_match_the_typed_prefix() -> None:
-    assert [c for c, _ in steer_suggestion_rows("/", live=True)] == [
+    assert [c for c, _ in steer_suggestion_rows("/", mode="steer")] == [
         "/pin",
         "/compact",
         "/parallel",
         "/restate",
         "/undo",
     ]
-    assert [c for c, _ in steer_suggestion_rows("/p", live=True)] == ["/pin", "/parallel"]
-    assert steer_suggestion_rows("fix it", live=True) == []
-    assert steer_suggestion_rows("/pin keep this", live=True) == []  # args typed: hints gone
+    assert [c for c, _ in steer_suggestion_rows("/p", mode="steer")] == ["/pin", "/parallel"]
+    assert steer_suggestion_rows("fix it", mode="steer") == []
+    assert steer_suggestion_rows("/pin keep this", mode="steer") == []  # args typed: hints gone
 
 
 def test_compact_is_live_only() -> None:
-    assert [c for c, _ in steer_suggestion_rows("/", live=False)] == [
+    assert [c for c, _ in steer_suggestion_rows("/", mode="resume")] == [
         "/pin",
         "/parallel",
         "/restate",
         "/undo",
     ]
-    assert complete_steer("/c", live=False) is None  # Tab keeps its focus-move meaning
-    assert complete_steer("/c", live=True) == "/compact "
+    assert complete_steer("/c", mode="resume") is None  # Tab keeps its focus-move meaning
+    assert complete_steer("/c", mode="steer") == "/compact "
+
+
+def test_a_draft_offers_only_the_fan_out() -> None:
+    assert [c for c, _ in steer_suggestion_rows("/", mode="start")] == ["/parallel"]
+    assert complete_steer("/p", mode="start") == "/parallel "
 
 
 def test_tab_completes_unique_and_stalls_ambiguous() -> None:
-    assert complete_steer("/pa", live=True) == "/parallel "
-    assert complete_steer("/pin", live=True) == "/pin "
+    assert complete_steer("/pa", mode="steer") == "/parallel "
+    assert complete_steer("/pin", mode="steer") == "/pin "
     # Ambiguous with no common-prefix progress: consumed but unchanged, so Tab
     # never yanks focus away mid-command.
-    assert complete_steer("/p", live=True) == "/p"
-    assert complete_steer("q", live=True) is None
+    assert complete_steer("/p", mode="steer") == "/p"
+    assert complete_steer("q", mode="steer") is None
 
 
 def test_typing_slash_shows_hints_and_tab_completes(tmp_path: Path) -> None:

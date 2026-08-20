@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
 from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
@@ -189,14 +189,17 @@ def list_machine_files(cwd: Path) -> list[dict[str, str]]:
     return [{"path": str(p), "name": p.name} for p in sorted(found)]
 
 
-def hub_payload(cwd: Path) -> dict[str, Any]:
+def hub_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
     """The hub: every run, machine instance, and machine-create draft, plus the
-    authored machine files (to run or create from), summarized for the listing."""
+    authored machine files (to run or create from), summarized for the listing,
+    and the presets the new-work composer offers (the same list `--preset`
+    resolves against)."""
     return {
         "sessions": _list_sessions(cwd),
         "machines": _list_machines(cwd),
         "machine_files": list_machine_files(cwd),
         "drafts": _list_drafts(cwd),
+        "presets": available_preset_names(cwd, config_path),
     }
 
 

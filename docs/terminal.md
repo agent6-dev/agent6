@@ -11,7 +11,7 @@ Every image is from a recorded run; click to enlarge.
 ## Hub
 
 `agent6 tui` lists every run for the repository with its mode, status, last activity, and cost.
-Enter opens a run; `c` opens the config page; `?` lists the keys.
+Enter opens a run; `n` opens an empty conversation to start a run, plan, or ask (the mode and the config preset are picked above the composer, and a start the run refuses is shown there with the text kept); `c` opens the config page; `?` lists the keys.
 
 ![The hub](screenshots/out/01-hub.png)
 

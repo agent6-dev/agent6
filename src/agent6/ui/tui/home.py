@@ -11,7 +11,6 @@ thin driver over the CLI + the same file/event contract the dashboard reads.
 
 from __future__ import annotations
 
-import re
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -19,12 +18,10 @@ from typing import ClassVar
 
 try:
     from rich.text import Text
-    from textual import events, on
     from textual.app import App, ComposeResult, SystemCommand
     from textual.binding import Binding
-    from textual.containers import Horizontal, Vertical
-    from textual.screen import ModalScreen, Screen
-    from textual.widgets import DataTable, Footer, Select, Static, TextArea
+    from textual.screen import Screen
+    from textual.widgets import DataTable, Footer
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise ImportError(
         "agent6 TUI requires the 'textual' package (part of the base install)."
@@ -35,14 +32,14 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 # needs textual) is only reached when textual is present.
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective
-from agent6.models.validate import known_models
 from agent6.sessions.layout import LOGS_NAME
-from agent6.ui.spawn import agent6_argv, run_cli_capture, spawn_new_work
+from agent6.ui.spawn import agent6_argv, run_cli_capture
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.machines import MachinesScreen
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import ConfirmModal
+from agent6.ui.tui.new_work import NewWorkScreen, available_models, available_presets
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.theme import (
     PALETTE_CSS,
@@ -50,7 +47,6 @@ from agent6.ui.tui.theme import (
     PlainNotify,
     setup_theme,
 )
-from agent6.ui.tui.widgets import FORM_CSS, ActionItem
 from agent6.viewmodel import (
     SessionSummary,
     is_winner,
@@ -64,49 +60,6 @@ from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 # The hub re-asks on this cadence (matching the web hub's poll rate), so a
 # session that ends while you watch stops reading as running.
 _HUB_POLL_S = 4.0
-# The new-work preset dropdown's first entry: "" => no --preset, so the run
-# uses the top-level `preset` from config (or the plain defaults).
-_DEFAULT_PRESET_LABEL = "(config default)"
-
-
-def _available_presets(repo_cwd: Path) -> list[str]:
-    """Preset names the new-work chooser offers (the built-ins plus the user's
-    custom `[presets.<name>]` tables). Delegates to `config.layer`, so the
-    dropdown and the `--preset` CLI flag resolve against the same source."""
-    from agent6.config.layer import available_preset_names  # noqa: PLC0415
-
-    return available_preset_names(repo_cwd, None)
-
-
-def _available_models(repo_cwd: Path, config_path: Path | None = None) -> list[str]:
-    """Model ids for the new-work modal's `/parallel` autocomplete: the worker's
-    model plus the worker provider's cached listing (lanes inherit the worker
-    provider; cache-only, no network) -- exactly the set `run --parallel`
-    validation accepts. Empty on any config error; the affordance is best-effort."""
-    try:
-        cfg = load_effective(repo_cwd, config_path).config
-    except ConfigError:
-        return []
-    return sorted(known_models(cfg))
-
-
-# The spec token while it is still being typed: the whole message is
-# `/parallel <token>` with nothing after it yet (a following space = task text
-# has begun, so stop suggesting). Returns the comma-fragment under construction,
-# or None when the caret has left the spec / the token is a bare lane count.
-_SPEC_TAIL = re.compile(r"/parallel[^\S\n]+(\S*)\Z")
-
-
-def _spec_fragment(text: str) -> str | None:
-    m = _SPEC_TAIL.match(text)
-    if m is None:
-        return None
-    token = m.group(1)
-    if token.isdigit():  # a lane count, not a model id
-        return None
-    return token.rsplit(",", 1)[-1]
-
-
 # Colors for the shared status words, so a dead run cannot read as a neutral
 # "done" in the listing. Unlisted words ("finished", "created") render plain
 # on purpose: neutral outcomes carry no signal worth a color.
@@ -138,153 +91,6 @@ def _cost_cell(cost_usd: float, *, partial: bool) -> str:
     return format_cost(cost_usd, partial=partial)
 
 
-class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
-    """Type a task, pick an optional config preset, then start it as a run /
-    plan / ask. The mode IS the button you pick (flat actions, like the config
-    dialogs); Enter in the box runs. The preset dropdown maps to the
-    `--preset` CLI flag; "(config default)" => no flag (so the config's `preset`
-    applies). Result: (mode, task, preset) or None, where preset="" means the
-    config default (no --preset)."""
-
-    CSS = (
-        FORM_CSS
-        + """
-    _NewWorkModal { align: center middle; }
-    #new-box {
-        width: 80%; max-width: 100; height: auto;
-        border: round $accent; padding: 1 2; background: $surface;
-    }
-    #new-title { text-style: bold; }
-    #new-task {
-        margin-top: 1; height: 6; padding: 0 1;
-        border: round $primary; background: $surface;
-    }
-    #new-task:focus { border: round $accent; }
-    #new-preset-row { height: auto; padding-top: 1; }
-    #new-preset-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
-    #new-preset { width: 1fr; }
-    #new-actions { padding-top: 1; height: auto; }
-    #new-suggest { height: auto; color: $accent; }
-    """
-    )
-
-    BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel", show=True)]
-
-    def __init__(self, presets: list[str] | None = None, models: list[str] | None = None) -> None:
-        # Preset names for the dropdown (built-ins + user [presets.*]); the
-        # caller passes the repo-resolved list (built-ins + user [presets.*]).
-        # None (e.g. a bare test) => only the "(config default)" entry, so the
-        # modal stands alone as a pure widget without loading config. `models` are
-        # the known model ids offered as `/parallel` spec autocomplete (empty = the
-        # affordance is inert, e.g. a bare test or a fresh machine with no cache).
-        super().__init__()
-        self._presets = presets if presets is not None else []
-        self._models = models if models is not None else []
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="new-box"):
-            yield Static("Start new work", id="new-title")
-            # A multiline TextArea (not an Input): Enter is a newline, so a task
-            # can span lines; it brings undo/redo/select-all for free. Tab (and ↓
-            # past the last line) move to the run/plan/ask buttons.
-            yield TextArea(id="new-task", placeholder="task / question…")
-            with Horizontal(id="new-preset-row"):
-                yield Static("preset:", id="new-preset-label")
-                # value="" is the "(config default)" sentinel: NO --preset, so
-                # the config's own `preset` (or plain defaults) applies.
-                yield Select(
-                    [(_DEFAULT_PRESET_LABEL, ""), *((p, p) for p in self._presets)],
-                    value="",
-                    allow_blank=False,
-                    id="new-preset",
-                )
-            with Horizontal(id="new-actions"):
-                yield ActionItem("run", "run")
-                yield ActionItem("plan", "plan")
-                yield ActionItem("ask", "ask")
-            # Split at the phrase boundary so a narrow terminal (the box is 80%
-            # wide) never wraps mid-phrase.
-            yield Static(
-                Text(
-                    "Tab to run / plan / ask\n"
-                    "/parallel [N|models] <task> fans out lanes (repeat to queue more)\n"
-                    "Enter = newline · Esc cancel",
-                    style="dim",
-                ),
-                classes="edit-label",
-            )
-            # Live `/parallel` model-id suggestions: matches update as you type the
-            # spec token, the TUI analogue of the web composer's autocomplete popup.
-            yield Static("", id="new-suggest")
-
-    @on(TextArea.Changed, "#new-task")
-    def _on_task_changed(self, _event: TextArea.Changed) -> None:
-        self._refresh_suggestions()
-
-    def _refresh_suggestions(self) -> None:
-        """Show model ids matching the `/parallel` spec fragment under the caret,
-        or clear the line when the caret isn't in a spec token."""
-        out = self.query_one("#new-suggest", Static)
-        frag = _spec_fragment(self.query_one("#new-task", TextArea).text)
-        if frag is None or not self._models:
-            out.update("")
-            return
-        q = frag.lower()
-        starts = [m for m in self._models if m.lower().startswith(q)]
-        rest = [m for m in self._models if q in m.lower() and not m.lower().startswith(q)]
-        shown = (starts + rest)[:8]
-        if not shown:
-            out.update(Text("no matching model ids", style="dim"))
-            return
-        total = sum(1 for m in self._models if q in m.lower())
-        more = f"  (+{total - len(shown)} more, keep typing)" if total > len(shown) else ""
-        out.update(Text("models: ", style="dim") + Text("  ".join(shown)) + Text(more, style="dim"))
-
-    def on_mount(self) -> None:
-        self.query_one("#new-task", TextArea).focus()
-
-    def on_key(self, event: events.Key) -> None:
-        # Buttons: ←/→ move between run/plan/ask, ↑ goes back to the task. The task
-        # is a TextArea (Enter=newline), so Tab — or ↓ once you're on the last line
-        # — moves down to the buttons.
-        focused = self.focused
-        if event.key in ("left", "right") and isinstance(focused, ActionItem):
-            items = list(self.query(ActionItem))
-            step = 1 if event.key == "right" else -1
-            items[(items.index(focused) + step) % len(items)].focus()
-            event.stop()
-        elif event.key == "up" and isinstance(focused, ActionItem):
-            self.query_one("#new-task", TextArea).focus()
-            event.stop()
-        elif event.key == "down" and isinstance(focused, TextArea):
-            row, _ = focused.cursor_location
-            if row >= focused.document.line_count - 1:
-                next(iter(self.query(ActionItem))).focus()
-                event.stop()
-
-    @on(ActionItem.Activated)
-    def _start(self, event: ActionItem.Activated) -> None:
-        self._submit(event.action)
-
-    def _submit(self, mode: str) -> None:
-        task = self.query_one("#new-task", TextArea).text.strip()
-        if task:
-            # Select.value is the option's value: "" for "(config default)"
-            # (no --preset), else the chosen preset name. allow_blank=False
-            # plus the leading "" option means it's never Select.BLANK.
-            preset = str(self.query_one("#new-preset", Select).value)
-            self.dismiss((mode, task, preset))
-        else:
-            self.notify("Enter a task first.", severity="warning")
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-    def on_click(self, event: events.Click) -> None:
-        if event.widget is self:  # click on the backdrop (outside the dialog) = cancel
-            self.action_cancel()
-
-
 class HomeScreen(ScreenChrome, Screen[None]):
     """The hub view: browse recent runs, start new work, open the config editor.
     Its bindings live here (not on the App) so the footer of a pushed screen --
@@ -294,7 +100,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         Menu(
             "File",
             (
-                MenuItem("New run/plan/ask", "new_work", "n"),
+                MenuItem("New task", "new_work", "n"),
                 MenuItem("Open selected", "open_selected", "enter"),
                 MenuItem("Merge selected run", "merge_selected", "m"),
                 MenuItem("Refresh", "refresh", "r"),
@@ -452,11 +258,12 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
     def action_new_work(self) -> None:
         self.app.push_screen(
-            _NewWorkModal(
-                _available_presets(self.repo_cwd),
-                _available_models(self.repo_cwd, self.config_path),
-            ),
-            self._on_new_work,
+            NewWorkScreen(
+                self.repo_cwd,
+                self.config_path,
+                presets=available_presets(self.repo_cwd, self.config_path),
+                models=available_models(self.repo_cwd, self.config_path),
+            )
         )
 
     def action_merge_selected(self) -> None:
@@ -491,8 +298,6 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # An invalid config (e.g. a stale value or a leftover table from a removed
         # feature) would crash the config screen on load. Pre-check so we can point
         # at `agent6 config fix` instead of taking down the TUI.
-        from agent6.config import ConfigError  # noqa: PLC0415
-        from agent6.config.layer import load_effective  # noqa: PLC0415
 
         try:
             load_effective(self.repo_cwd, self.config_path)
@@ -508,18 +313,6 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
     def action_open_machines(self) -> None:
         self.app.push_screen(MachinesScreen(self.agent6_dir, self.repo_cwd, self.config_path))
-
-    def _on_new_work(self, result: tuple[str, str, str] | None) -> None:
-        if result is None:
-            return
-        mode, task, preset = result
-        session_dir, error = spawn_new_work(
-            self.repo_cwd, mode, task, preset=preset, config_path=self.config_path
-        )
-        if session_dir is not None:
-            self.app.exit(session_dir)
-        else:
-            self.app.notify(error or "Could not start the run.", severity="error", timeout=15.0)
 
 
 class Agent6HomeApp(PlainNotify, MuxPointerShapes, App[Path | None]):
