@@ -807,8 +807,9 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     Pass *session_dir* whenever the caller has one: the label is then THE dir-aware
     status (parked/starting/stale/waiting, not the fold's blanket "running"),
     `live` says whether steer/stop/compact would reach anything, `ports` lists
-    what the run's network is serving, and the dir-backed identity
-    (session_id, the manifest's user_task) fills what the fold left empty.
+    what the run's network is serving, a plan's `plan_md` is its written
+    deliverable, and the dir-backed identity (session_id, the manifest's
+    user_task) fills what the fold left empty.
     Without it the payload keeps the fold-only label and `live: None` --
     correct only for a genuinely dir-less stream (the machine reasoning
     snapshot)."""
@@ -836,6 +837,11 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         # its session network listens on, reachable via `agent6 forward`.
         # A live probe, [] once the network is gone.
         d["ports"] = listening_ports(session_dir)
+        if d["mode"] == "plan":
+            # The planning run's deliverable (`agent6 plan show` prints the
+            # same file), per frame: it lands when the plan finishes.
+            with contextlib.suppress(OSError):
+                d["plan_md"] = (session_dir / "plan.md").read_text(encoding="utf-8")
     else:
         # A genuinely dir-less stream (the machine reasoning snapshot):
         # liveness is unknowable here.

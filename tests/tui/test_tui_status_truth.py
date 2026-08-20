@@ -103,6 +103,39 @@ def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: Path) -> None:
+    """A plan's product is plan.md; the CLI prints it at the end and the web
+    shows it in a card, but the dashboard's end story showed only the summary
+    line, sending the operator to `plan show`."""
+    d = tmp_path / "plan2"
+    d.mkdir()
+    (d / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": d.name, "mode": "plan", "user_task": "lay it out"}),
+        encoding="utf-8",
+    )
+    evs = [
+        {"type": "session.start", "session_id": d.name, "mode": "plan", "user_task": "lay it out"},
+        {"type": "tool.call", "name": "finish_planning", "args": {"summary": "Plan seeded."}},
+        {"type": "tool.result", "name": "finish_planning", "ok": True, "summary": "ok"},
+        {"type": "session.end", "reason": "finish_planning", "all_passed": True},
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    (d / "plan.md").write_text(
+        "# Plan: lay it out\n\n## Tasks\n1. do the thing\n", encoding="utf-8"
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            body = str(app._dash.query_one("#stream-body", Static).render())
+            assert "planned" in body
+            assert "Plan seeded." in body
+            assert "1. do the thing" in body
+
+    asyncio.run(scenario())
+
+
 def test_the_header_names_the_pins_in_force(tmp_path: Path) -> None:
     """The pinned instructions bind for the whole run; the dashboard header
     lists them (the web header's and `sessions show`'s line), so an operator

@@ -962,6 +962,8 @@ async function renderRun(id, opts, gen) {
   // The heading is where the MODE belongs; paintRun fills it in from the
   // snapshot. A fixed word was right one time in three.
   mk('head', opts.title || 'Session', ''); // status/summary leads the drawer
+  // A planning run's deliverable (plan.md), shown only when there is one.
+  mk('plan', 'plan.md', 'scroll');
   mk('tasks', 'Task graph', 'scroll');
   mk('budget', 'Budget', '');
   mk('tools', 'Tool calls', 'scroll');
@@ -980,9 +982,9 @@ async function renderRun(id, opts, gen) {
   applyDrawer(saved ? saved === 'open' : window.innerWidth >= 1024);
 
   // The phone widget menu: pick which single widget the page shows.
-  const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['tasks', 'Task graph'],
-                   ['budget', 'Budget'], ['tools', 'Tool calls'], ['diff', 'Latest commit'],
-                   ['log', 'Event log']];
+  const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['plan', 'plan.md'],
+                   ['tasks', 'Task graph'], ['budget', 'Budget'], ['tools', 'Tool calls'],
+                   ['diff', 'Latest commit'], ['log', 'Event log']];
   const wbtn = el('button', 'wmenu-btn', '☰');
   wbtn.title = 'widgets';
   const wmenu = el('div', 'wmenu'); wmenu.style.display = 'none';
@@ -1275,6 +1277,16 @@ function paintRun(cards, s) {
   for (const line of (s.log_tail||[]).slice(-200)) log.appendChild(el('div', null, line));
   cards.log.appendChild(log);
   cards.log.scrollTop = cards.log.scrollHeight;
+
+  // plan.md: the planning run's deliverable (the CLI prints it at the end).
+  cards.plan.innerHTML = '';
+  const planCard = cards.plan.parentElement;
+  if (s.plan_md) {
+    const pre = el('pre', 'plan'); pre.textContent = s.plan_md; cards.plan.appendChild(pre);
+    planCard.style.display = '';
+  } else {
+    planCard.style.display = 'none';
+  }
 
   // diff
   cards.diff.innerHTML = '';

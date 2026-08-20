@@ -134,6 +134,27 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> Non
     assert "fallback_task" not in snap
 
 
+def test_plan_snapshot_carries_the_plan_md(tmp_path: Path) -> None:
+    """A planning run's deliverable rides the snapshot as plan_md (the web shows
+    it in a Plan card; `agent6 plan show` prints the same file). A run, or a
+    plan that has not written one, carries no such key."""
+    d = _bucket(tmp_path, "plans") / "plan1"
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(
+        json.dumps({"mode": "plan", "user_task": "lay it out"}), encoding="utf-8"
+    )
+    assert "plan_md" not in session_snapshot(d)
+    (d / "plan.md").write_text("# Plan: lay it out\n\n1. do\n", encoding="utf-8")
+    assert session_snapshot(d)["plan_md"].startswith("# Plan: lay it out")
+    run = _bucket(tmp_path, "runs") / "run1"
+    run.mkdir(parents=True)
+    (run / "manifest.json").write_text(
+        json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
+    )
+    (run / "plan.md").write_text("stray\n", encoding="utf-8")
+    assert "plan_md" not in session_snapshot(run)
+
+
 def test_hub_marks_the_fan_out_winner(tmp_path: Path) -> None:
     d = _run(tmp_path, "lane-win", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "manifest.json").write_text(

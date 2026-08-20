@@ -135,6 +135,7 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 .log { font-family: var(--mono); font-size: 12px; line-height: 1.4; }
 .log div { white-space: pre-wrap; word-break: break-word; }
 
+.plan { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
 .diff { font-family: var(--mono); font-size: 12px; }
 .diff .add { color: var(--ok); } .diff .del { color: var(--err); } .diff .hunk { color: var(--accent2); }
 

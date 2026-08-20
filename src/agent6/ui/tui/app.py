@@ -572,11 +572,15 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             role is not None and role.in_flight and (role.streamed_thinking or role.streamed_text)
         )
         if s.finished:
-            # The end story, not a stale "idle": how it ended + the closing summary.
+            # The end story, not a stale "idle": how it ended + the closing
+            # summary, and a plan's deliverable (the CLI prints plan.md at the
+            # end; the web shows it in its plan.md card).
             word, reason = tui.dir_status
             st.append(status_label(word, reason) + "\n", style=f"bold {status_style(word)}")
             if s.finish_summary:
                 st.append(s.finish_summary, style="dim")
+            if plan := tui.plan_md():
+                st.append("\n\n" + plan)
         elif streaming:
             assert role is not None
             if role.streamed_thinking:
@@ -1097,6 +1101,15 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self._undo_child = child
         self._fill_composers(text)
         self.notify(f"undone: continue as {child}; your message is back to edit")
+
+    def plan_md(self) -> str:
+        """A planning run's written deliverable (plan.md), "" for a run or a
+        plan that has not written one."""
+        if self.mode != "plan":
+            return ""
+        with contextlib.suppress(OSError):
+            return (self.session_dir / "plan.md").read_text(encoding="utf-8")
+        return ""
 
     @property
     def continue_as(self) -> str:
