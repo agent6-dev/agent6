@@ -672,9 +672,20 @@ def machine_chain_ref_for(machine_id: str) -> str:
     return chain_ref_for(f"machine-{machine_id}")
 
 
+# Every visible agent6 branch sits under this prefix: a run's `agent6/<id>`,
+# a machine's `agent6/machine-<id>`.
+BRANCH_PREFIX = "agent6/"
+
+
+def run_branch_for(session_id: str) -> str:
+    """The visible branch a run's chain advances (`[git].branch_per_run`),
+    named for the session that cut it: `agent6/<id>`."""
+    return f"{BRANCH_PREFIX}{session_id}"
+
+
 def machine_branch_for(machine_id: str) -> str:
     """The visible branch a machine's `mode="run"` states land on."""
-    return f"agent6/machine-{machine_id}"
+    return f"{BRANCH_PREFIX}machine-{machine_id}"
 
 
 def chain_ref_for(session_id: str) -> str:

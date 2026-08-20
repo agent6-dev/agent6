@@ -521,7 +521,8 @@ path = "agent6.sessions.manifest"
 # disagree: this module refused a mode the tool surface happily built.
 # sessions.layout: the manifest of the session that cut a run branch is found
 # by resolving its id across buckets, and that resolution has one owner.
-depends_on = ["agent6.types", "agent6.sessions.layout"]
+# git_ops: the branch prefix that resolution strips.
+depends_on = ["agent6.types", "agent6.sessions.layout", "agent6.git_ops"]
 
 [[modules]]
 # One authoritative writer per run dir: the worker.lock flock run/resume/fork

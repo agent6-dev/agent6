@@ -76,6 +76,7 @@ from agent6.git_ops import (
     chain_ref_for,
     modified_paths,
     render_commit_trailer,
+    run_branch_for,
     stash_tracked_changes,
     untracked_paths,
 )
@@ -330,7 +331,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # mode branches: `plan`/`ask` make no commits. The ref itself is
         # advanced by the first chain commit; nothing is cut or checked out.
         if cfg.git.branch_per_run and mode == "run":
-            run_branch = f"agent6/{effective_session_id}"
+            run_branch = run_branch_for(effective_session_id)
 
         # The operator's uncommitted changes to tracked files. Untracked files
         # are not in question: they stay out of the run (`untracked_at_start`).

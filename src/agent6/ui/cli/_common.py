@@ -17,7 +17,7 @@ from agent6.paths import (
     root_optin_enabled,
 )
 from agent6.sessions.id import SessionIdError, list_session_ids
-from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout, bucket_dir
+from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout, bucket_dir, layout_of
 from agent6.viewmodel import is_session_husk, newest_session_dir, session_mtime
 
 
@@ -258,10 +258,7 @@ def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
     ]
     if not candidates:
         return None
-    newest = max(candidates, key=session_mtime)
-    return SessionLayout(
-        state_dir=_state_dir(repo_root), session_id=newest.name, subdir=newest.parent.name
-    )
+    return layout_of(max(candidates, key=session_mtime))
 
 
 def resolve_or_newest_layout(
@@ -282,9 +279,7 @@ def resolve_or_newest_layout(
     newest = newest_session_dir(session_bucket_dirs(repo_root))
     if newest is None:
         return None
-    return SessionLayout(
-        state_dir=_state_dir(repo_root), session_id=newest.name, subdir=newest.parent.name
-    )
+    return layout_of(newest)
 
 
 def _enforce_root_policy(allow_root: bool) -> int | None:

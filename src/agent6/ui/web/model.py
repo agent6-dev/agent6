@@ -19,7 +19,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
 from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.models.choices import config_value_choices
-from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
+from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir, is_safe_session_id
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
     fold_machine,
@@ -50,12 +50,6 @@ def machines_root(cwd: Path) -> Path:
     return resolved_state_dir(cwd) / "machines"
 
 
-def is_safe_component(name: str) -> bool:
-    """True iff *name* is a single path component (no separator, not `.`/`..`),
-    so a browser-supplied run id or machine name cannot traverse out of its dir."""
-    return bool(name) and "/" not in name and "\\" not in name and name not in {".", ".."}
-
-
 def session_dir_for(cwd: Path, session_id: str) -> Path | None:
     """Locate a session dir by exact id across the hub buckets (no prefix match: the
     web client always sends the full id from the hub payload). Rejects a session_id
@@ -64,7 +58,7 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
     (state from before ids were one namespace) is ambiguous, so it resolves to
     None rather than silently showing one of two sessions; the CLI resolver
     names the ambiguity."""
-    if not is_safe_component(session_id):
+    if not is_safe_session_id(session_id):
         return None
     found: Path | None = None
     for sub in HUB_BUCKETS:
@@ -77,7 +71,7 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
 
 
 def machine_dir_for(cwd: Path, name: str) -> Path | None:
-    if not is_safe_component(name):
+    if not is_safe_session_id(name):
         return None
     d = machines_root(cwd) / name
     return d if d.is_dir() else None
@@ -86,7 +80,7 @@ def machine_dir_for(cwd: Path, name: str) -> Path | None:
 def draft_dir_for(cwd: Path, name: str) -> Path | None:
     """A `machine create` draft dir by name. Its logs.jsonl is a run-style log of
     the authoring agent, so it is watched through the run endpoints."""
-    if not is_safe_component(name):
+    if not is_safe_session_id(name):
         return None
     d = bucket_dir(resolved_state_dir(cwd), "machines") / name
     return d if d.is_dir() else None

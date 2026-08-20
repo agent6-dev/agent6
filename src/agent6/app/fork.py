@@ -36,7 +36,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.git_ops import GitError, chain_ref_for, create_branch_at, set_ref
+from agent6.git_ops import GitError, chain_ref_for, create_branch_at, run_branch_for, set_ref
 from agent6.graph.replay import graph_at_version, journal_prefix
 from agent6.graph.storage import (
     append_jsonl,
@@ -503,7 +503,7 @@ def _materialize_fork(
     # what the source did.
     write_untracked_at_start(dst.session_dir, read_untracked_at_start(src.session_dir))
 
-    run_branch = f"agent6/{dst.session_id}" if cfg.git.branch_per_run else None
+    run_branch = run_branch_for(dst.session_id) if cfg.git.branch_per_run else None
     write_session_manifest(
         dst,
         session_id=dst.session_id,

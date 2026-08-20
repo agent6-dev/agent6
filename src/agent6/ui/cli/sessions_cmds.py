@@ -37,6 +37,7 @@ from agent6.git_ops import (
     list_run_branches,
     list_run_commits,
     render_commit_trailer,
+    run_branch_for,
     verify_git_identity,
 )
 from agent6.git_ops import status as git_status
@@ -47,6 +48,7 @@ from agent6.sessions.layout import (
     SESSION_BUCKETS,
     SessionLayout,
     bucket_dir,
+    layout_of,
     session_layout,
 )
 from agent6.sessions.manifest import (
@@ -332,7 +334,7 @@ def _resolve_session_manifest(
         if latest is None:
             print_nothing_yet()
             return 2
-        layout = SessionLayout(state_dir=_state_dir(cwd), session_id=latest.name)
+        layout = layout_of(latest)
         print(f"[agent6] {recent_note}: {layout.session_id}", file=sys.stderr)
     else:
         # An EXPLICIT id resolves across every bucket. A plan the operator named
@@ -1025,7 +1027,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     chain = chain_ref_for(layout.session_id)
     try:
         if chain_tip(cwd, chain) is not None:
-            branch_kept = branch_exists(cwd, f"agent6/{layout.session_id}")
+            branch_kept = branch_exists(cwd, run_branch_for(layout.session_id))
             delete_ref(cwd, chain)
             # With no visible branch the ref was the commits' only anchor.
             note = " and its chain ref" + ("" if branch_kept else " (its commits are now loose)")

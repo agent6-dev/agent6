@@ -55,6 +55,7 @@ from agent6.git_ops import (
     diff_since,
     list_chain_refs,
     list_run_branches,
+    run_branch_for,
 )
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
@@ -278,7 +279,7 @@ def bridge_spawner(
     records it and moves on. `auto_approve` forwards the coordinator/fan-out's
     own `--auto-approve` to the lane's argv, same as `max_usd`. The detached
     spawn + run-dir locate is *runtime*.spawn (the front-end's primitive)."""
-    branch = f"agent6/{spec.session_id}"
+    branch = run_branch_for(spec.session_id)
     try:
         clone_workspace(origin, spec.workdir)
         if at is not None:

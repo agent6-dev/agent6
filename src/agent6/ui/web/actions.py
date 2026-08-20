@@ -36,6 +36,7 @@ from agent6.sessions.ipc import (
     write_question_answers,
     write_steer_answer,
 )
+from agent6.sessions.layout import is_safe_session_id
 from agent6.ui.spawn import (
     agent6_argv,
     run_cli_capture,
@@ -231,7 +232,7 @@ def _machine_state_dir(cwd: Path, name: str, state: str = "") -> Path | None:
     if machine_dir is None:
         return None
     if state:
-        if not model.is_safe_component(state):
+        if not is_safe_session_id(state):
             return None
         target = machine_dir / "states" / state
         return target if target.is_dir() else None
