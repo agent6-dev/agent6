@@ -206,7 +206,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         can_ask=frontend.capabilities.can_ask,
     )
     if refusal is not None:
-        reporter.err(f"REFUSING: {refusal}")
+        reporter.refuse(refusal)
         return 2
     try:
         isolation = select_isolation(
@@ -237,15 +237,15 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             validate_explicit_session_id(session_id)
         except SessionIdError as exc:
-            reporter.err(f"ERROR: {exc}")
+            reporter.error(str(exc))
             return 2
     state_dir = resolved_state_dir(cwd)
     bucket = session_bucket(mode)
     # Same-bucket reuse is the resume/park flow below; another bucket's id is
     # a collision every surface would see as ambiguous.
     if session_id and (held := session_id_bucket(state_dir, session_id)) not in (None, bucket):
-        reporter.err(
-            f"ERROR: --session-id {session_id!r} already names a session under {held}/;"
+        reporter.error(
+            f"--session-id {session_id!r} already names a session under {held}/;"
             " ids are unique across every bucket. Pick another id."
         )
         return 2
@@ -268,8 +268,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         except ManifestError:
             parked = ""
         if not parked:
-            reporter.err(
-                f"ERROR: run {session_id!r} already exists. Use `agent6 resume {session_id}` to "
+            reporter.error(
+                f"run {session_id!r} already exists. Use `agent6 resume {session_id}` to "
                 "continue it, or choose a different --session-id."
             )
             return 2
@@ -349,7 +349,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             else ""
         )
         if must_ask and not answerable:
-            reporter.err(f"REFUSING: {dirty_tree_refusal(modified, unmerged_run=unmerged_run)}")
+            reporter.refuse(dirty_tree_refusal(modified, unmerged_run=unmerged_run))
             discard_husk_dir(layout.session_dir)
             return 2
 
@@ -358,7 +358,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         warn_install_inside_workspace(cwd, reporter=reporter)
         for line in agents_md_notices(cwd):
-            reporter.err(f"[agent6] {line}")
+            reporter.note(line)
 
         # Write the run manifest. This is the canonical record of where the
         # run started (base_sha + base_branch), which model+provider drove
@@ -453,8 +453,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # stdin. Skip revision for this run instead.
         effective_revise_prompt = cfg.prompt.revise_prompt
         if effective_revise_prompt == "interactive" and tui_enabled:
-            reporter.err(
-                "[agent6] prompt.revise_prompt='interactive' needs the terminal; the TUI"
+            reporter.note(
+                "prompt.revise_prompt='interactive' needs the terminal; the TUI"
                 " owns it. Skipping prompt revision for this run."
             )
             effective_revise_prompt = "off"
@@ -512,7 +512,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         mcp_manager = None
         session_net: SessionNetwork | None = None
         try:
-            reporter.err(f"[agent6] session id: {effective_session_id}")
+            reporter.note(f"session id: {effective_session_id}")
 
             # Spawn any configured MCP servers BEFORE the workflow
             # starts so their tools are visible from iteration 1. The manager
@@ -759,12 +759,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     hint = stash_recovery_hint(
                         cwd, session_id=effective_session_id, base_branch=base_branch
                     )
-                    reporter.err(
-                        "[agent6] pre-run changes remain stashed while the run continues"
+                    reporter.note(
+                        "pre-run changes remain stashed while the run continues"
                         " in the background; after it ends, restore them with:"
                         f" {hint}"
                         if hint
-                        else "[agent6] pre-run changes remain stashed while the run continues"
+                        else "pre-run changes remain stashed while the run continues"
                         " in the background, but the stash could not be located; check"
                         " `git stash list`"
                     )
@@ -791,4 +791,4 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
             err = frontend.spawn_detached_resume(cwd, layout.session_id)
             if err:
-                reporter.err(f"[agent6] {err}")
+                reporter.note(err)

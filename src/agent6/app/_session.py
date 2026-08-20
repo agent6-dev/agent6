@@ -58,7 +58,7 @@ def resolve_isolation_or_refuse(
     try:
         return resolve_isolation(cfg.sandbox.isolation, env)
     except IsolationUnavailableError as exc:
-        reporter.err(f"REFUSING: {exc}")
+        reporter.refuse(str(exc))
         raise SessionRefused(2) from exc
 
 
@@ -78,21 +78,21 @@ def select_isolation(
     warn_sandbox_gaps(selected, env, cfg, reporter=reporter)
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     if not confirm_unconfined(selected, cfg):
-        reporter.err("[agent6] aborted.")
+        reporter.note("aborted.")
         raise SessionRefused(1)
     net_err = check_network_support(cfg, selected)
     if net_err is not None:
-        reporter.err(f"REFUSING: {net_err}")
+        reporter.refuse(net_err)
         raise SessionRefused(2)
     # The shared list (`config_refusal`): a default this host cannot honour
     # degraded with a warning above; a value the operator wrote down refuses.
     cfg_err = config_refusal(cfg, selected, Path.cwd(), explicit_leaves=explicit_leaves)
     if cfg_err is not None:
-        reporter.err(f"REFUSING: {cfg_err}")
+        reporter.refuse(cfg_err)
         raise SessionRefused(2)
     budget_err = budget_preflight(cfg)
     if budget_err is not None:
-        reporter.err(f"REFUSING: {budget_err}")
+        reporter.refuse(budget_err)
         raise SessionRefused(2)
     return selected
 
@@ -111,8 +111,8 @@ def warn_install_inside_workspace(cwd: Path, *, reporter: Reporter) -> None:
     """Warn when agent6 is installed inside the workspace a jailed command can
     write (never refuse it: agent6 developing agent6 is exactly that shape)."""
     if (root := install_inside_workspace(cwd)) is not None:
-        reporter.err(
-            f"[agent6] WARNING: agent6 is installed inside this workspace ({root});"
+        reporter.warn(
+            f"agent6 is installed inside this workspace ({root});"
             " a jailed command can rewrite the running agent. Install it outside"
             " the project (pipx / uv tool)."
         )

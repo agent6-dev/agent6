@@ -170,7 +170,7 @@ def git_preflight(
         # knows where the run started.
         pre_status = git_status(cwd)
     except GitError as exc:
-        reporter.err(f"ERROR: {exc}")
+        reporter.error(str(exc))
         raise SessionRefused(2) from exc
     # Starting a run while checked out on ANOTHER run's branch (agent6/<id>) is
     # usually a slip -- the operator forgot to merge or switch back -- so the new
@@ -181,8 +181,8 @@ def git_preflight(
         and pre_status.branch.startswith("agent6/")
         and not confirm_run_on_run_branch(pre_status.branch)
     ):
-        reporter.err(
-            "[agent6] aborted. Merge (agent6 sessions merge) or switch branches first, then re-run."
+        reporter.note(
+            "aborted. Merge (agent6 sessions merge) or switch branches first, then re-run."
         )
         raise SessionRefused(2)
     return GitPreflight(base_sha=pre_status.head_sha, base_branch=pre_status.branch)
@@ -373,8 +373,8 @@ def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporte
     if effective_run_commands(cfg.sandbox.run_commands, session_dir) != "no":
         return cfg
     if cfg.workflow.verify_command:
-        reporter.err(
-            "[agent6] commands are withheld, and the verify gate is a command:"
+        reporter.note(
+            "commands are withheld, and the verify gate is a command:"
             " running gateless (per-step commits, no green gate)."
         )
     return cfg.with_verify_command(())

@@ -264,7 +264,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err('nothing to resume yet. Start a session with `agent6 run "<task>"`.')
             return 2
         session_id = latest.name
-        reporter.err(f"[agent6] resuming most recent session: {session_id}")
+        reporter.note(f"resuming most recent session: {session_id}")
     # Across buckets: an ask is a session like any other, so `agent6 resume`
     # continues one by id instead of only finding what lives under runs/.
     # One resolver, no per-bucket fallback: a runs/-only fallback would make an
@@ -272,7 +272,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     try:
         layout = resolve_session(state_dir, session_id)
     except SessionIdError as exc:
-        reporter.err(f"ERROR: {exc}")
+        reporter.error(str(exc))
         return 2
     session_id = layout.session_id
     # Read the manifest BEFORE taking the lock or clearing any state: resume
@@ -283,7 +283,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         manifest = read_manifest(layout.session_dir)
         mode = manifest.session_mode()
     except ManifestError as exc:
-        reporter.err(f"ERROR: cannot resume {session_id}: {exc}")
+        reporter.error(f"cannot resume {session_id}: {exc}")
         return 2
     # One authoritative writer per run dir (see acquire_single_writer). Refuse a
     # second resume of a still-live run before touching any shared state.
@@ -299,7 +299,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     # verify) is exactly what resume exists for. Read through the same fold the
     # listing uses, so the refusal and the status can never disagree.
     if not steer.strip() and finished_needs_new_work(layout.session_dir):
-        reporter.err(f"REFUSING: {needs_new_work_refusal(session_id)}")
+        reporter.refuse(needs_new_work_refusal(session_id))
         release_single_writer(worker_lock_fd)
         return 2
     # Drop a prior session's stale answer files (the id counters reset
@@ -354,12 +354,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     sandbox_overrides=sandbox_overrides,
                 ).config
             except ConfigError as exc:
-                reporter.err(f"ERROR: {exc}")
+                reporter.error(str(exc))
                 return 2
             why = f" ({manifest.parked_reason})" if manifest.parked_reason else ""
-            reporter.err(
-                f"[agent6] run {session_id!r} was parked at submission{why}; starting it now."
-            )
+            reporter.note(f"run {session_id!r} was parked at submission{why}; starting it now.")
             saved_task = manifest.parked_task
             clear_worker_pid(layout.session_dir)
             release_single_writer(worker_lock_fd)
@@ -399,8 +397,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             repo_lock_fd = acquire_repo_writer(state_dir, session_id)
             if repo_lock_fd is None:
                 holder = repo_writer_holder(state_dir) or "another run"
-                reporter.err(
-                    f"REFUSING: run {holder!r} is already driving this checkout; a"
+                reporter.refuse(
+                    f"run {holder!r} is already driving this checkout; a"
                     " second run-mode worker would interleave auto-commits on the"
                     " one working tree. Wait for it, or stop it first:\n"
                     f"    agent6 sessions stop {holder}"
@@ -409,7 +407,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         snapshot_path = layout.session_dir / "loop_state.json"
         if not snapshot_path.is_file():
-            reporter.err(f"ERROR: no resume snapshot at {snapshot_path}; nothing to resume.")
+            reporter.error(f"no resume snapshot at {snapshot_path}; nothing to resume.")
             return 2
 
         # ask is read-only and may run outside a git repo (agent6 self-help),
@@ -432,7 +430,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             snapshot = load_session_snapshot(snapshot_path)
         except (ValueError, OSError) as exc:
-            reporter.err(f"ERROR: {exc}")
+            reporter.error(str(exc))
             return 1
         if not turn_replay_allowed(
             layout.session_dir, snapshot.next_iteration, frontend.confirm_replay_after_crash
@@ -479,7 +477,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 sandbox_overrides=sandbox_overrides,
             )
         except ConfigError as exc:
-            reporter.err(f"ERROR: {exc}")
+            reporter.error(str(exc))
             return 2
         cfg, explicit_leaves = effective.config, effective.explicit_leaves
         if preset:
@@ -519,7 +517,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             try:
                 verify_git_identity(cwd, identity)
             except GitError as exc:
-                reporter.err(f"ERROR: {exc}")
+                reporter.error(str(exc))
                 return 2
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
@@ -527,7 +525,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         warn_install_inside_workspace(cwd, reporter=reporter)
         for line in agents_md_notices(cwd):
-            reporter.err(f"[agent6] {line}")
+            reporter.note(line)
 
         tui_enabled = frontend.should_spawn_tui(tui, False, mode)
         refusal = headless_approval_refusal(
@@ -537,7 +535,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             can_ask=frontend.capabilities.can_ask,
         )
         if refusal is not None:
-            reporter.err(f"REFUSING: {refusal}")
+            reporter.refuse(refusal)
             return 2
         stream_text, console_stream = frontend.stream_modes(tui_enabled)
         if console_stream:
@@ -550,8 +548,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # resumed leg silently lose prompt revision.
         effective_revise_prompt = cfg.prompt.revise_prompt
         if effective_revise_prompt == "interactive" and tui_enabled:
-            reporter.err(
-                "[agent6] prompt.revise_prompt='interactive' needs the terminal; the TUI"
+            reporter.note(
+                "prompt.revise_prompt='interactive' needs the terminal; the TUI"
                 " owns it. Skipping prompt revision for this leg."
             )
             effective_revise_prompt = "off"
@@ -568,7 +566,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         if not leg_configured and snapshot.verify_command:
             cfg = cfg.with_verify_command(snapshot.verify_command)
             gate = " ".join(snapshot.verify_command)
-            reporter.err(f"[agent6] reusing this run's verify command: {gate}")
+            reporter.note(f"reusing this run's verify command: {gate}")
         # The same leg-start decision a fresh run makes, LAST so nothing hands
         # the gate back: a leg that cannot run a command cannot run its gate,
         # so it is gateless rather than unwinnable. Frozen here, with the
@@ -586,7 +584,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # command is now judging the run.
             was = " ".join(pinned_gate) or "none"
             now = " ".join(cfg.workflow.verify_command) or "none"
-            reporter.err(f"[agent6] this run's verify gate changed: was {was}, now {now}")
+            reporter.note(f"this run's verify gate changed: was {was}, now {now}")
         pin_gate(
             layout.session_dir,
             cfg.workflow.verify_command,
@@ -614,7 +612,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         mcp_manager = None
         session_net: SessionNetwork | None = None
         try:
-            reporter.err(f"[agent6] resume session id: {session_id}")
+            reporter.note(f"resume session id: {session_id}")
 
             # The run's session network, before its first member: the
             # commands and any server that joins it share this one.
@@ -739,7 +737,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 with frontend.tui_session(layout.session_dir, tui_enabled):
                     result = wf.resume()
             except ResumeError as exc:
-                reporter.err(f"ERROR: {exc}")
+                reporter.error(str(exc))
                 return 1
             except KeyboardInterrupt:
                 interrupted = True
@@ -857,4 +855,4 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
             err = frontend.spawn_detached_resume(cwd, layout.session_id)
             if err:
-                reporter.err(f"[agent6] {err}")
+                reporter.note(err)

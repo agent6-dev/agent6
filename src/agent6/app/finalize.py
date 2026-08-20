@@ -430,8 +430,8 @@ def finalize_auto_merge(
     try:
         verify_git_identity(cwd, identity)
     except GitError as exc:
-        reporter.err(
-            f"[agent6] auto_merge skipped: {exc}",
+        reporter.note(
+            f"auto_merge skipped: {exc}",
         )
         return
     outcome = execute_merge(
@@ -447,41 +447,41 @@ def finalize_auto_merge(
         identity=identity,
         budget=budget,
         events=events,
-        warn=lambda m: reporter.err(f"[agent6] {m}"),
+        warn=reporter.note,
     )
     if outcome.status == "merged":
-        reporter.err(
-            f"[agent6] auto_merged {run_branch} into {base_branch} "
+        reporter.note(
+            f"auto_merged {run_branch} into {base_branch} "
             f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}"
         )
         if outcome.stamp_error:
-            reporter.err(
-                f"[agent6] merge record could not be written: {outcome.stamp_error};"
+            reporter.note(
+                f"merge record could not be written: {outcome.stamp_error};"
                 " `sessions prune` will call this branch unmerged"
             )
         # auto_prune is a branch verb: with branch_per_run off there is no
         # branch, and the chain ref stays as the run's record (sessions rm).
         if cfg.git.auto_prune and manifest.run_branch:
             if delete_branch_if_merged(cwd, run_branch):
-                reporter.err(
-                    f"[agent6] auto_pruned {run_branch}",
+                reporter.note(
+                    f"auto_pruned {run_branch}",
                 )
             else:
-                reporter.err(
-                    f"[agent6] auto_prune kept {run_branch} (squash-merged, unreachable; "
+                reporter.note(
+                    f"auto_prune kept {run_branch} (squash-merged, unreachable; "
                     f"remove with: git branch -D {run_branch})"
                 )
     elif outcome.status == "noop":
-        reporter.err(f"[agent6] nothing left to merge from {run_branch} into {base_branch}.")
+        reporter.note(f"nothing left to merge from {run_branch} into {base_branch}.")
     elif outcome.status == "conflict":
-        reporter.err(
-            f"[agent6] auto_merge into {base_branch} hit conflicts "
+        reporter.note(
+            f"auto_merge into {base_branch} hit conflicts "
             f"({', '.join(outcome.conflicts)}); nothing was moved and {run_branch} is "
             f"intact. Merge by hand:\n    git merge {run_branch}"
         )
     else:
-        reporter.err(
-            f"[agent6] auto_merge failed: {outcome.error}",
+        reporter.note(
+            f"auto_merge failed: {outcome.error}",
         )
 
 
@@ -533,35 +533,33 @@ def finalize_auto_stash(
     message = auto_stash_message(session_id)
     entry = find_stash(cwd, message)
     if entry is None:
-        reporter.err("[agent6] pre-run auto-stash not found (already restored?); nothing to pop")
+        reporter.note("pre-run auto-stash not found (already restored?); nothing to pop")
         return
     # apply-by-sha is identity-stable; drop it yourself once you've confirmed.
     apply = f"git stash apply {entry.sha}"
     recover = _stash_apply_cmd(entry.sha, base_branch, needs_checkout=bool(run_branch))
     if not auto_pop:
-        reporter.err(f"[agent6] pre-run changes are stashed; restore them with: {recover}")
+        reporter.note(f"pre-run changes are stashed; restore them with: {recover}")
         return
     try:
         st = git_status(cwd, exclude=exclude)
     except GitError:
         st = None
     if st is None or not st.is_clean:
-        reporter.err(
-            f"[agent6] pre-run changes left stashed (worktree not clean); restore with: {recover}"
-        )
+        reporter.note(f"pre-run changes left stashed (worktree not clean); restore with: {recover}")
         return
     if run_branch and st.branch == run_branch:
         if not branch_exists(cwd, base_branch):
-            reporter.err(
-                f"[agent6] base branch {base_branch} no longer exists; pre-run changes left "
+            reporter.note(
+                f"base branch {base_branch} no longer exists; pre-run changes left "
                 f"stashed (recover with: {apply})"
             )
             return
         try:
             create_branch(cwd, base_branch)  # checks out the existing base branch
         except GitError as exc:
-            reporter.err(
-                f"[agent6] could not switch to {base_branch} to restore the stash ({exc}); "
+            reporter.note(
+                f"could not switch to {base_branch} to restore the stash ({exc}); "
                 f"restore with: {recover}"
             )
             return
@@ -570,15 +568,15 @@ def finalize_auto_stash(
     except GitError as exc:
         # The apply itself landed; what failed is putting back a concurrent
         # stash the raced drop displaced. Say both -- finalization continues.
-        reporter.err(f"[agent6] restored your pre-run changes onto {base_branch}, but {exc}")
+        reporter.note(f"restored your pre-run changes onto {base_branch}, but {exc}")
         return
     if restored:
-        reporter.err(
-            f"[agent6] restored your pre-run changes onto {base_branch}",
+        reporter.note(
+            f"restored your pre-run changes onto {base_branch}",
         )
     else:
-        reporter.err(
-            "[agent6] restoring your pre-run changes hit a conflict; resolve the markers"
+        reporter.note(
+            "restoring your pre-run changes hit a conflict; resolve the markers"
             f" (your stash is preserved; re-apply with: git stash apply {entry.sha})"
         )
 
@@ -630,6 +628,6 @@ def fire_notify_hook(
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        reporter.err(
-            f"[agent6] notify.on_complete failed: {exc}",
+        reporter.note(
+            f"notify.on_complete failed: {exc}",
         )

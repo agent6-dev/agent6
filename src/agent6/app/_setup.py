@@ -405,8 +405,8 @@ def _warn_servers_that_keep_the_network(
         if probe and readonly_probe_refusal(srv):
             continue
         if srv.enabled and srv.effective_network == "auto":
-            reporter.err(
-                f"[agent6] WARNING: MCP server {name!r} keeps this host's network:"
+            reporter.warn(
+                f"MCP server {name!r} keeps this host's network:"
                 f" taking it away needs the network namespace only 'strict' has, and"
                 f" this host resolved to {isolation!r}. On 'hardened', setting its"
                 " sandbox.network = 'none' refuses the run instead of connecting it."

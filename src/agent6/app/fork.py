@@ -90,11 +90,11 @@ def _resolve_source(state_dir: Path, query: str, *, reporter: Reporter) -> Sessi
             reporter.err('nothing to fork yet. Start a session with `agent6 run "<task>"`.')
             return None
         query = latest.name
-        reporter.err(f"[agent6] forking most recent session: {query}")
+        reporter.note(f"forking most recent session: {query}")
     try:
         return resolve_session(state_dir, query)
     except SessionIdError as exc:
-        reporter.err(f"ERROR: {exc}")
+        reporter.error(str(exc))
         return None
 
 
@@ -175,15 +175,15 @@ def _select_checkpoint_path(
             return rolling
         if turns:
             return src.checkpoint_path(turns[-1])
-        reporter.err(
-            f"ERROR: {src.session_id} has no checkpoints and no loop_state.json; nothing to fork."
+        reporter.error(
+            f"{src.session_id} has no checkpoints and no loop_state.json; nothing to fork."
         )
         return None
     if at_turn in turns:
         return src.checkpoint_path(at_turn)
     avail = ", ".join(str(t) for t in turns) or "none"
-    reporter.err(
-        f"ERROR: no checkpoint at turn {at_turn} for {src.session_id}. Available turns: {avail}"
+    reporter.error(
+        f"no checkpoint at turn {at_turn} for {src.session_id}. Available turns: {avail}"
     )
     return None
 
@@ -262,7 +262,7 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
     try:
         snap = load_session_snapshot(src.checkpoint_path(newest))
     except (OSError, ValueError) as exc:
-        reporter.err(f"ERROR: cannot read checkpoint {newest} of {src.session_id}: {exc}")
+        reporter.error(f"cannot read checkpoint {newest} of {src.session_id}: {exc}")
         return None
     ops = _operator_messages(snap.messages)
     if len(ops) <= 1:
@@ -368,7 +368,7 @@ def create_fork(  # noqa: PLR0911
     try:
         checkpoint = load_session_snapshot(checkpoint_path)
     except (OSError, ValueError) as exc:
-        reporter.err(f"ERROR: failed to load checkpoint {checkpoint_path}: {exc}")
+        reporter.error(f"failed to load checkpoint {checkpoint_path}: {exc}")
         return "", 1
 
     # Read the source manifest to carry base_sha / base_branch / mode forward.
@@ -382,7 +382,7 @@ def create_fork(  # noqa: PLR0911
         sm = read_manifest(src.session_dir)
         src_mode = sm.session_mode()
     except ManifestError as exc:
-        reporter.err(f"ERROR: cannot read source run manifest {src.manifest_path}: {exc}")
+        reporter.error(f"cannot read source run manifest {src.manifest_path}: {exc}")
         return "", 2
     src_base_sha = sm.base_sha
     src_base_branch = sm.base_branch
@@ -391,8 +391,8 @@ def create_fork(  # noqa: PLR0911
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:
-        reporter.err(
-            "ERROR: the chosen checkpoint records no head_sha, so the fork branch "
+        reporter.error(
+            "the chosen checkpoint records no head_sha, so the fork branch "
             "cannot be cut. (A checkpoint from before per-turn sha capture.)"
         )
         return "", 1
@@ -404,7 +404,7 @@ def create_fork(  # noqa: PLR0911
         # run never uses.
         cfg = load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config
     except ConfigError as exc:
-        reporter.err(f"ERROR: {exc}")
+        reporter.error(str(exc))
         return "", 2
 
     # Stamp the child's preset like the run/resume paths (`preset or cfg.preset`):
@@ -418,13 +418,13 @@ def create_fork(  # noqa: PLR0911
         try:
             validate_explicit_session_id(new_session_id)
         except SessionIdError as exc:
-            reporter.err(f"ERROR: {exc}")
+            reporter.error(str(exc))
             return "", 2
         # Any bucket holding it makes the id ambiguous on every surface; the
         # same-bucket case would also fail the target-dir check later.
         if (held := session_id_bucket(state_dir, new_session_id)) is not None:
-            reporter.err(
-                f"ERROR: --session-id {new_session_id!r} already names a session under {held}/;"
+            reporter.error(
+                f"--session-id {new_session_id!r} already names a session under {held}/;"
                 " ids are unique across every bucket. Pick another id."
             )
             return "", 2
@@ -484,7 +484,7 @@ def _materialize_fork(
     it: derived from the current config instead, a source whose gate was
     inferred or adopted forked to a run the manifest called gateless."""
     if dst.session_dir.exists():
-        reporter.err(f"ERROR: target run dir already exists: {dst.session_dir}")
+        reporter.error(f"target run dir already exists: {dst.session_dir}")
         return 2
     dst.ensure()
 
@@ -524,7 +524,7 @@ def _materialize_fork(
         if run_branch is not None:
             create_branch_at(cwd, run_branch, forked_from_sha)
     except GitError as exc:
-        reporter.err(f"ERROR: could not cut fork refs at {forked_from_sha[:12]}: {exc}")
+        reporter.error(f"could not cut fork refs at {forked_from_sha[:12]}: {exc}")
         # The fork dir was just materialized; don't leave an orphan run dir +
         # manifest (and a lineage gap) when the refs couldn't be cut.
         shutil.rmtree(dst.session_dir, ignore_errors=True)
@@ -542,8 +542,8 @@ def _materialize_fork(
         ),
     )
     at = f"(branch {run_branch} " if run_branch else f"({chain_ref_for(dst.session_id)} "
-    reporter.err(
-        f"[agent6] forked {src.session_id}@turn {forked_from_turn} -> {dst.session_id} "
+    reporter.note(
+        f"forked {src.session_id}@turn {forked_from_turn} -> {dst.session_id} "
         f"{at}at {forked_from_sha[:12]})"
     )
     return 0

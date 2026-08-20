@@ -21,6 +21,21 @@ class Reporter:
     out: Callable[[str], None]
     err: Callable[[str], None]
 
+    # The four stderr conventions, owned here so every lifecycle words them
+    # the same: a refusal (the run does not start, exit 2), an error, a loud
+    # warning, and a status note.
+    def refuse(self, msg: str) -> None:
+        self.err(f"REFUSING: {msg}")
+
+    def error(self, msg: str) -> None:
+        self.err(f"ERROR: {msg}")
+
+    def warn(self, msg: str) -> None:
+        self.err(f"[agent6] WARNING: {msg}")
+
+    def note(self, msg: str) -> None:
+        self.err(f"[agent6] {msg}")
+
 
 def _print_out(msg: str) -> None:
     print(msg)

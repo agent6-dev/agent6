@@ -553,7 +553,7 @@ def build_lane_spawner(
         if verdict.refused:
             raise ParallelError(refusal_message(verdict, directive=True))
         if verdict.warned:
-            reporter.err(f"[agent6] WARNING: {warning_message(verdict)}")
+            reporter.warn(warning_message(verdict))
         workdir_root = subordinate_workdir_root(cfg, origin, coordinator_session_id) / group
         specs = [
             LaneSpec(
@@ -784,7 +784,7 @@ def _print_lane_status(
     model = f" ({spec.model})" if spec.model else ""
     cost_s = f"  {format_cost(cost)}" if cost > 0 else ""
     wait_s = f" · waiting on {waiting} (answer via the web or TUI hub)" if waiting else ""
-    reporter.err(f"[agent6] lane {spec.lane} [{spec.session_id}]{model}: {status}{wait_s}{cost_s}")
+    reporter.note(f"lane {spec.lane} [{spec.session_id}]{model}: {status}{wait_s}{cost_s}")
 
 
 # ---------------------------------------------------------------------------
@@ -843,9 +843,7 @@ def _stamp_compare_outcomes(
         )
         err = _stamp(_lane_link(origin_state, session_id), compare=compare)
         if err is not None:
-            reporter.err(
-                f"[agent6] lane [{session_id}]: imported, but the compare stamp failed: {err}"
-            )
+            reporter.note(f"lane [{session_id}]: imported, but the compare stamp failed: {err}")
 
 
 def _import_lanes(
@@ -1000,7 +998,7 @@ def run_parallel(
     `auto_approve` forwards to every lane's argv, same as `max_usd`.
     """
     if not lanes:
-        reporter.err("ERROR: no lanes to run")
+        reporter.error("no lanes to run")
         return 2
     if fanout_id is None:
         fanout_id = lanes[0].session_id.rsplit("-l", 1)[0]
@@ -1018,17 +1016,17 @@ def run_parallel(
     try:
         base_sha = git_status(origin).head_sha
     except GitError as exc:
-        reporter.err(f"ERROR: {exc}")
+        reporter.error(str(exc))
         return 2
 
     bucket_dir(origin_state, "runs").mkdir(parents=True, exist_ok=True)
-    reporter.err(f"[agent6] parallel fan-out {fanout_id}: {len(lanes)} lanes")
+    reporter.note(f"parallel fan-out {fanout_id}: {len(lanes)} lanes")
     if max_usd is not None:
         # The judge is one more capped call series, so the advertised total
         # includes it; without that the effective ceiling quietly exceeded
         # the printed one.
-        reporter.err(
-            f"[agent6] budget: ${max_usd:g}/lane x {len(lanes)} + judge"
+        reporter.note(
+            f"budget: ${max_usd:g}/lane x {len(lanes)} + judge"
             f" = ${max_usd * (len(lanes) + 1):g} total"
         )
 
@@ -1041,9 +1039,7 @@ def run_parallel(
                 _symlink_lane(origin_state, res)
                 _print_lane_status(spec, "started", 0.0, reporter=reporter)
             else:
-                reporter.err(
-                    f"[agent6] lane {spec.lane} [{spec.session_id}]: FAILED to start: {res.error}"
-                )
+                reporter.note(f"lane {spec.lane} [{spec.session_id}]: FAILED to start: {res.error}")
         interrupted = _await_lanes([r for r in results if r.ok], runtime=runtime, reporter=reporter)
     except KeyboardInterrupt:
         # Ctrl+C mid-spawn (before the await): route the already-started lanes

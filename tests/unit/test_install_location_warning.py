@@ -5,12 +5,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
 import agent6
 from agent6.app import _session as session_mod
+from agent6.app.reporter import Reporter
 
 
 def test_detects_an_install_root_inside_the_workspace(
@@ -33,9 +33,11 @@ def test_run_entry_warns_once_and_never_refuses(
     pkg = ws / ".venv" / "agent6"
     pkg.mkdir(parents=True)
     monkeypatch.setattr(agent6, "__file__", str(pkg / "__init__.py"))
-    reporter = MagicMock()
-    session_mod.warn_install_inside_workspace(ws, reporter=reporter)
-    warnings = [c.args[0] for c in reporter.err.call_args_list if "WARNING" in c.args[0]]
+    said: list[str] = []
+    session_mod.warn_install_inside_workspace(
+        ws, reporter=Reporter(out=said.append, err=said.append)
+    )
+    warnings = [line for line in said if "WARNING" in line]
     assert any("installed inside" in w and "pipx" in w for w in warnings)
 
 
@@ -45,6 +47,8 @@ def test_no_warning_for_an_outside_install(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr(agent6, "__file__", str(outside / "__init__.py"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    reporter = MagicMock()
-    session_mod.warn_install_inside_workspace(ws, reporter=reporter)
-    assert not [c for c in reporter.err.call_args_list if "installed inside" in c.args[0]]
+    said: list[str] = []
+    session_mod.warn_install_inside_workspace(
+        ws, reporter=Reporter(out=said.append, err=said.append)
+    )
+    assert not [line for line in said if "installed inside" in line]

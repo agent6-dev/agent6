@@ -365,7 +365,7 @@ def run_one(
         )
         cfg = _apply_operator_env_grants(cfg)
     except (ConfigError, ValidationError) as exc:
-        reporter.err(f"REFUSING: machine agent config error: {exc}")
+        reporter.refuse(f"machine agent config error: {exc}")
         return _result("error", None, None)
     apply_git_ops_policy(cfg)
     # A mode="run" state commits its work, but this confined process can't read
@@ -380,11 +380,11 @@ def run_one(
     # defensively and fail closed.
     net_err = check_network_support(cfg, isolation)
     if net_err is not None:
-        reporter.err(f"REFUSING: {net_err}")
+        reporter.refuse(net_err)
         return _result("error", None, None)
     hide_err = check_hide_paths_support(cfg, isolation)
     if hide_err is not None:
-        reporter.err(f"REFUSING: {hide_err}")
+        reporter.refuse(hide_err)
         return _result("error", None, None)
     budget = BudgetTracker(
         max_usd=cfg.budget.max_usd,

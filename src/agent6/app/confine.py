@@ -69,17 +69,15 @@ def warn_sandbox_gaps(
             # The degrade ITSELF, not just its consequences below: 'auto'
             # landing under strict never happens silently, and the why is the
             # same line check sandbox / check config print (one owner).
-            reporter.err(
-                f"[agent6] WARNING: 'auto' selected '{isolation}', not 'strict': {reason}."
-            )
+            reporter.warn(f"'auto' selected '{isolation}', not 'strict': {reason}.")
     if isolation == "none":
         origin = (
             "sandbox.isolation = 'none'"
             if cfg.sandbox.isolation == "none"
             else "'auto' found no confinement mechanism on this host"
         )
-        reporter.err(
-            f"[agent6] WARNING: running UNSANDBOXED ({origin}). "
+        reporter.warn(
+            f"running UNSANDBOXED ({origin}). "
             "Every command runs as a plain subprocess with no filesystem, network, "
             "or syscall confinement: the LLM's run_command, the verify command, and "
             "any spawned MCP server. sandbox.memory_limit_mb still applies: the "
@@ -89,8 +87,8 @@ def warn_sandbox_gaps(
             "isolation."
         )
     elif isolation == "strict" and env.landlock_abi < 1:
-        reporter.err(
-            "[agent6] WARNING: 'strict' is running WITHOUT its Landlock layer: "
+        reporter.warn(
+            "'strict' is running WITHOUT its Landlock layer: "
             "this kernel offers no Landlock (needs Linux >= 5.13 with the "
             "Landlock LSM enabled). Namespaces, the pivoted read-only rootfs, "
             "and seccomp still confine commands; the in-jail Landlock "
@@ -102,16 +100,16 @@ def warn_sandbox_gaps(
         # afterwards. Not a blocklist of sensitive files: the grant is the
         # documented read-only system set, and root simply stops file
         # permissions from narrowing it.
-        reporter.err(
-            "[agent6] WARNING: running as root under 'hardened': file permissions "
+        reporter.warn(
+            "running as root under 'hardened': file permissions "
             "no longer narrow what a jailed command reads, so it can read the "
             "root-only files in the granted system set (/etc/shadow, /etc/sudoers, "
             "the host's ssh private keys). 'strict' pivots into a minimal rootfs "
             "where they are absent. Run as your normal user."
         )
     if isolation == "hardened" and cfg.sandbox.protect_git:
-        reporter.err(
-            "[agent6] WARNING: 'hardened' cannot protect .git: the read-only bind "
+        reporter.warn(
+            "'hardened' cannot protect .git: the read-only bind "
             "needs a mount namespace, which only 'strict' has. A jailed command can "
             "write .git; the in-process edit tools still refuse. For the same "
             "reason /tmp is the host's shared /tmp, and HOME (/tmp/agent6-home) is a "
@@ -119,8 +117,8 @@ def warn_sandbox_gaps(
             "Use 'strict' for a private /tmp and a protected .git."
         )
     if isolation == "hardened" and cfg.sandbox.network == "auto":
-        reporter.err(
-            "[agent6] WARNING: 'hardened' has no network namespace, so "
+        reporter.warn(
+            "'hardened' has no network namespace, so "
             "sandbox.network = 'auto' cannot give the run its own session "
             "network: jailed commands share this process's host network, which "
             "hardened does not confine. Run on 'strict' for a session "
@@ -128,8 +126,8 @@ def warn_sandbox_gaps(
             "instead."
         )
     if isolation == "hardened" and env.landlock_abi < 3:
-        reporter.err(
-            f"[agent6] WARNING: 'hardened' on Landlock ABI {env.landlock_abi} (< 3) "
+        reporter.warn(
+            f"'hardened' on Landlock ABI {env.landlock_abi} (< 3) "
             "does not confine file truncation: a jailed command can truncate "
             "(truncate/ftruncate) files outside its write grants, discarding their "
             "contents. Its other writes stay confined. Full write-confinement needs "
@@ -137,8 +135,8 @@ def warn_sandbox_gaps(
             "whose mount namespace confines truncation on any ABI."
         )
     for hidden, region, source in unmaskable_exposures(cfg, isolation):
-        reporter.err(
-            f"[agent6] WARNING: jailed commands can read {hidden}: it sits inside"
+        reporter.warn(
+            f"jailed commands can read {hidden}: it sits inside"
             f" {region} ({source}), which they are granted, and 'hardened' has no"
             " mount namespace to mask it out. Every command this run starts can"
             " read the provider keys, transcripts, notes, and run history in there."
@@ -147,8 +145,8 @@ def warn_sandbox_gaps(
     if isolation in ("strict", "hardened"):
         notes = tool_mount_notes()
         for tool in notes.unreachable:
-            reporter.err(
-                f"[agent6] WARNING: tool {tool} resolves into a dir that is never"
+            reporter.warn(
+                f"tool {tool} resolves into a dir that is never"
                 " mounted into the jail ($HOME itself, or agent6's private dirs),"
                 " so it will not run inside sandboxed commands. Move the target"
                 " into its own subdirectory."
@@ -168,8 +166,8 @@ def warn_cleartext_credential_endpoints(
     loud warning naming the cost, never a refusal (an internal-network or VPN
     endpoint is a real case)."""
     for label in cfg.cleartext_credential_endpoints():
-        reporter.err(
-            f"[agent6] WARNING: {label} sends its credential over plaintext http"
+        reporter.warn(
+            f"{label} sends its credential over plaintext http"
             " to a non-loopback host: anyone on the network path can read it."
             " Use https where you can."
         )

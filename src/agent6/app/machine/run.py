@@ -253,7 +253,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # anything (docs §7.1/§9), so a tool/agent never executes unreviewed logic.
     uncommitted = uncommitted_refusal(path, cwd)
     if uncommitted is not None:
-        reporter.err(f"REFUSING: {uncommitted}")
+        reporter.refuse(uncommitted)
         return 1
     states = list(spec.states.values())
     has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
@@ -276,7 +276,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         eff = load_effective_with_overlay(cwd, spec.config, explicit_path=config_path)
         cfg = eff.config
     except ConfigError as exc:
-        reporter.err(f"ERROR: {exc}")
+        reporter.error(str(exc))
         return 2
     cfg = cfg.with_sandbox_overrides(auto_approve=auto_approve, no_commands=no_commands)
     if has_run_agent and cfg.sandbox.run_commands == "ask":
@@ -284,8 +284,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         # run_command under 'ask' (machine bridges deny when no front-end is
         # attached), so a mode='run' state that shells out burns its budget
         # against denials.
-        reporter.err(
-            "[agent6] NOTE: this machine has mode='run' agent state(s) and"
+        reporter.note(
+            "NOTE: this machine has mode='run' agent state(s) and"
             " sandbox.run_commands='ask'; an unattended machine auto-denies"
             " run_command. Approve for this invocation with --auto-approve, or"
             " set `agent6 config set --repo sandbox.run_commands yes` to always"
@@ -300,7 +300,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             if has_agent_state:
                 cfg.require_runnable("worker")
         except ConfigError as exc:
-            reporter.err(f"ERROR: {exc}")
+            reporter.error(str(exc))
             return 2
         try:
             isolation = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
@@ -319,7 +319,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             cfg, isolation = outcome  # fix applied + re-validated clear; continue
         cfg_err = config_refusal(cfg, isolation, cwd, explicit_leaves=eff.explicit_leaves)
         if cfg_err is not None:
-            reporter.err(f"REFUSING: {cfg_err}")
+            reporter.refuse(cfg_err)
             return 2
         if has_agent_state:
             # The machine's statically reachable routes include every agent
@@ -335,7 +335,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # After check_provider_keys so the price cache has been refreshed.
             budget_err = budget_preflight(cfg, extra_models=pinned_models)
             if budget_err is not None:
-                reporter.err(f"REFUSING: {budget_err}")
+                reporter.refuse(budget_err)
                 return 2
             # Resolve the commit identity HERE on the host, where global git
             # config is visible, so a mode="run" state's confined agent (which
@@ -347,7 +347,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 try:
                     name, email = verify_git_identity(cwd, base)
                 except GitError as exc:
-                    reporter.err(f"ERROR: {exc}")
+                    reporter.error(str(exc))
                     return 2
                 commit_identity = CommitIdentity(name=name, email=email)
             root = machines_root(resolved_state_dir(cwd)) / spec.machine
@@ -386,8 +386,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             events = journal.read()
             if events and isinstance(events[-1], MachineEnd):
                 end = events[-1]
-                reporter.err(
-                    f"REFUSING: {spec.machine} already ended in {end.state!r}"
+                reporter.refuse(
+                    f"{spec.machine} already ended in {end.state!r}"
                     f" ({end.status}: {end.reason})."
                     " Replay it with `agent6 machine replay`, or archive the"
                     " instance directory to start fresh."
@@ -399,8 +399,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 # never execute under the old instance's identity.
                 drift = bundle_drift(root, path)
                 if drift is not None:
-                    reporter.err(
-                        f"REFUSING: {drift}. A live instance runs the bundle it"
+                    reporter.refuse(
+                        f"{drift}. A live instance runs the bundle it"
                         " recorded; archive the instance directory to start"
                         " fresh with the edited machine."
                     )
@@ -435,7 +435,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 # is swallowed rather than killing the machine un-journaled.
                 if kind == "notify":
                     with contextlib.suppress(OSError):
-                        reporter.err(f"[agent6] notify [{level}] {state!r}: {message}")
+                        reporter.note(f"notify [{level}] {state!r}: {message}")
                 if operator_hook is not None:
                     operator_hook(kind, state, message, level)
 
@@ -466,7 +466,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 # "running" wherever the pid number stays alive.
                 clear_worker_pid(root)
     except (JournalError, EngineError) as exc:
-        reporter.err(f"ERROR: {exc}")
+        reporter.error(str(exc))
         return 1
     if result.status == "waiting":
         reporter.out(

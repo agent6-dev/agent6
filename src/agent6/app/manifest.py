@@ -211,7 +211,7 @@ def pin_gate(
         try:
             stamp_verify_gate(session_dir, gate, why)
         except (ManifestError, OSError) as exc:
-            reporter.err(f"[agent6] could not record this run's verify gate: {exc}")
+            reporter.note(f"could not record this run's verify gate: {exc}")
 
     _stamp(argv, origin)
 
