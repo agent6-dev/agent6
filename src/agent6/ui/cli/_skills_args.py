@@ -12,7 +12,13 @@ from agent6.ui.cli.completers import _complete_skills
 
 
 def _add_skills_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    skills_p = _sub(sub, "skills", help="Manage operator-installed skills (SKILL.md packs).")
+    skills_p = _sub(
+        sub,
+        "skills",
+        help=(
+            "Manage operator-installed skills (SKILL.md packs); a bare `agent6 skills` lists them."
+        ),
+    )
     skills_sub = skills_p.add_subparsers(
         dest="skills_command", required=True, metavar="<subcommand>"
     )

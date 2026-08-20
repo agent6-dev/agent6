@@ -9,6 +9,7 @@ error; and a subparser `default=None` would clobber the top-level
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import pytest
@@ -133,3 +134,42 @@ def test_get_completion_offers_no_key_get_rejects(
 
     for key in _complete_config_keys("models.", settable=False):
         assert main(["config", "get", key]) == 0, f"completion offered {key!r}, which get rejects"
+
+
+def _subcommands(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
+    for action in parser._actions:  # pyright: ignore[reportPrivateUsage]
+        if isinstance(action, argparse._SubParsersAction):  # pyright: ignore[reportPrivateUsage]
+            return dict(action.choices)
+    return {}
+
+
+def test_default_verb_sets_are_the_parsers_real_subcommands() -> None:
+    """Each default-verb group lists its verbs by hand (argv is rewritten
+    before parsing); a verb added to a parser and not here would be
+    swallowed as the default verb's first argument."""
+    from agent6.ui.cli.parser import _DEFAULT_VERBS  # pyright: ignore[reportPrivateUsage]
+
+    groups = _subcommands(build_parser())
+    for group, (default, verbs) in _DEFAULT_VERBS.items():
+        real = set(_subcommands(groups[group]))
+        assert verbs == real, f"{group}: {sorted(verbs ^ real)}"
+        assert default in real
+
+
+@pytest.mark.parametrize(
+    ("argv", "dest", "verb"),
+    [
+        (["skills"], "skills_command", "list"),
+        (["memory"], "memory_command", "list"),
+        (["mcp"], "mcp_command", "list"),
+        (["config"], "config_command", "show"),
+        (["config", "git.auto_stash"], "config_command", "show"),
+        (["prompt"], "prompt_command", "show"),
+        (["prompt", "--json"], "prompt_command", "show"),
+    ],
+)
+def test_a_bare_group_runs_its_listing(argv: list[str], dest: str, verb: str) -> None:
+    """`agent6 skills` lists like `agent6 sessions` does; `agent6 config` shows;
+    a key after `config` is a `show` of that key."""
+    args = build_parser().parse_args(_inject_default_verb(argv))
+    assert getattr(args, dest) == verb

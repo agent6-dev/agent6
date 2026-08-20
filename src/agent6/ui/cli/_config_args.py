@@ -25,7 +25,10 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     config_p = _sub(
         sub,
         "config",
-        help="Inspect and materialize the layered config (global + repo + defaults).",
+        help=(
+            "Inspect and materialize the layered config (global + repo + defaults);"
+            " a bare `agent6 config` shows it."
+        ),
     )
     config_sub = config_p.add_subparsers(
         dest="config_command", required=True, metavar="<subcommand>"

@@ -26,15 +26,27 @@ from agent6.ui.cli._watch_args import (
 )
 from agent6.ui.cli.completers import _complete_session_ids
 
-# Commands with a default verb: `plan <task>` == `plan run <task>`, and
-# `ask <q>` == `ask query <q>`. _inject_default_verb rewrites argv so a bare
-# task isn't mistaken for a subcommand name. The explicit forms (`plan run`,
-# `ask query`, `history search`) cover the rare query whose first word is a verb
-# name. Only commands with ONE obvious primary action get a default verb.
+# Commands with a default verb: `plan <task>` == `plan run <task>`, `ask <q>`
+# == `ask query <q>`, and a bare group whose obvious action is its read-only
+# listing (`skills` == `skills list`, `config` == `config show`, like a bare
+# `sessions`). _inject_default_verb rewrites argv so a bare task isn't
+# mistaken for a subcommand name. The explicit forms (`plan run`, `ask query`,
+# `history search`) cover the rare query whose first word is a verb name. A
+# test pins each verb set to the parser's real subcommands.
 _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     "plan": ("run", frozenset({"run", "show", "edit"})),
     "ask": ("query", frozenset({"query", "list"})),
     "history": ("search", frozenset({"search"})),
+    "skills": ("list", frozenset({"install", "update", "list", "enable", "disable", "remove"})),
+    "memory": ("list", frozenset({"add", "list", "show", "rm"})),
+    "mcp": ("list", frozenset({"connect", "list", "serve"})),
+    "config": (
+        "show",
+        frozenset(
+            {"show", "fill", "path", "presets", "get", "set", "unset", "add", "remove", "fix"}
+        ),
+    ),
+    "prompt": ("show", frozenset({"show"})),
 }
 
 
@@ -248,7 +260,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_model_parser(sub)
 
-    mem_p = _sub(sub, "memory", help="Manage the repo's agent memory (one fact per file + index).")
+    mem_p = _sub(
+        sub,
+        "memory",
+        help=(
+            "Manage the repo's agent memory (one fact per file + index); a bare"
+            " `agent6 memory` lists it."
+        ),
+    )
     mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
     mem_add = _sub(mem_sub, "add", help="Write <name>.md and its index line.")
     mem_add.add_argument("name", help="Memory name (lowercase letters, digits, dashes).")
@@ -312,7 +331,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mcp_p = _sub(
         sub,
         "mcp",
-        help="MCP (Model Context Protocol): add a server, list them, or serve.",
+        help=(
+            "MCP (Model Context Protocol): add a server, list them, or serve; a bare"
+            " `agent6 mcp` lists them."
+        ),
     )
     mcp_sub = mcp_p.add_subparsers(dest="mcp_command", required=True, metavar="<subcommand>")
     _add_mcp_server_parsers(mcp_sub)
