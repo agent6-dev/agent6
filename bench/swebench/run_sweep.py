@@ -74,7 +74,13 @@ def run_one(
     iid = inst["instance_id"]
     pred_path = out_dir / "preds" / f"{model_label(model)}__{iid}.json"
     if pred_path.exists():
-        return {"instance_id": iid, "model": model, "status": "cached"}
+        # Resume-cache only a pred with an actual patch: an empty one is
+        # indistinguishable from a crash artifact (ENOSPC killed a fleet and
+        # the rerun no-op'd on 37 "cached (0b)" empties), and an operator
+        # resuming a sweep wants the gaps filled either way.
+        if json.loads(pred_path.read_text()).get("model_patch"):
+            return {"instance_id": iid, "model": model, "status": "cached"}
+        pred_path.unlink()
     pred_path.parent.mkdir(parents=True, exist_ok=True)
     work = out_dir / "runs" / model_label(model) / iid
     if work.exists():
