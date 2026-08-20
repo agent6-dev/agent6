@@ -32,7 +32,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.app.machine import summarize_machine_file
+from agent6.app.machine.listing import MachineRow, machine_rows
 from agent6.machine import (
     JournalError,
     MachineError,
@@ -67,20 +67,25 @@ from agent6.ui.tui.theme import (
     MuxPointerShapes,
     PlainNotify,
     setup_theme,
+    status_style,
 )
 from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
     fold_machine,
     fold_session,
-    machine_files,
     machine_verb_refusal,
     machine_word_for_dir,
     newest_state_log,
     tail_events,
 )
 from agent6.viewmodel.events import tool_result_ok
-from agent6.viewmodel.format import format_transition, machine_state_mark
+from agent6.viewmodel.format import (
+    format_transition,
+    format_when,
+    machine_state_mark,
+    status_label,
+)
 
 
 def _list_drafts(agent6_dir: Path) -> list[Path]:
@@ -581,7 +586,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         self.agent6_dir = agent6_dir  # per-repo state dir; machine-create drafts live under it
         self.repo_cwd = repo_cwd
         self.config_path = config_path
-        self._machines: list[Path] = []
+        self._machines: list[MachineRow] = []
 
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)
@@ -591,23 +596,40 @@ class MachinesScreen(ScreenChrome, Screen[None]):
     def on_mount(self) -> None:
         table = self.query_one("#machines", DataTable)
         table.cursor_type = "row"
-        table.add_columns("machine", "states", "spec", "file")
+        table.add_columns("machine", "status", "state", "updated", "states", "spec", "file")
         self.app.sub_title = f"machines · {self.repo_cwd}"
         self._reload()
 
     def _reload(self) -> None:
+        """The rows `agent6 machine` lists (`app.machine.listing.machine_rows`):
+        each instance's status and current state joined with its authored
+        file's validity, then the files no instance ran."""
         table = self.query_one("#machines", DataTable)
         table.clear()
-        self._machines = machine_files(self.repo_cwd)
-        for path in self._machines:
-            row = summarize_machine_file(path)
-            table.add_row(Text(row.name), row.states, row.spec, Text(path.name))
+        self._machines = machine_rows(self.repo_cwd, self.agent6_dir)
+        for row in self._machines:
+            status = (
+                Text(status_label(row.status, row.reason), style=status_style(row.status))
+                if row.status
+                else Text("")
+            )
+            table.add_row(
+                Text(row.name),
+                status,
+                row.current or "-",
+                format_when(row.mtime) if row.mtime else "-",
+                row.states,
+                row.spec,
+                Text(row.file.name if row.file is not None else "-"),
+            )
         table.show_cursor = table.row_count > 0
 
     def _selected(self) -> Path | None:
+        """The selected row's authored file; None for a row without one (an
+        instance whose file is gone: watchable, not viewable or runnable)."""
         table = self.query_one("#machines", DataTable)
         if self._machines and 0 <= table.cursor_row < len(self._machines):
-            return self._machines[table.cursor_row]
+            return self._machines[table.cursor_row].file
         return None
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
@@ -664,10 +686,16 @@ class MachinesScreen(ScreenChrome, Screen[None]):
 
     def action_watch(self) -> None:
         """Open the live watch view for the selected machine's instance (whether it
-        is currently running or has finished)."""
+        is currently running or has finished); an instance whose authored file
+        is gone is watched from the source it recorded."""
         path = self._selected()
         if path is not None:
             self._open_watch(path)
+            return
+        table = self.query_one("#machines", DataTable)
+        if self._machines and 0 <= table.cursor_row < len(self._machines):
+            instance = machines_root(self.agent6_dir) / self._machines[table.cursor_row].name
+            self._open_watch(instance / "machine.asm.toml")
 
     def _open_watch(self, path: Path) -> None:
         try:

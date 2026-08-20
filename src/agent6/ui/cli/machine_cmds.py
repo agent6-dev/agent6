@@ -23,9 +23,9 @@ from agent6.app.machine import (
     MachineFrontend,
     machine_network_refusal,
     machine_spend,
-    summarize_machine_file,
 )
 from agent6.app.machine.create import create_machine
+from agent6.app.machine.listing import machine_rows
 from agent6.app.machine.run import run_machine
 from agent6.app.reporter import STDIO_REPORTER
 from agent6.config import (
@@ -64,11 +64,8 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     event_epoch,
     fold_machine,
-    machine_files,
-    machine_instance_dirs,
     machine_verb_refusal,
     machine_word_for_dir,
-    summarize_machine_dir,
 )
 from agent6.viewmodel.format import (
     format_cost,
@@ -79,41 +76,29 @@ from agent6.viewmodel.format import (
 
 
 def _cmd_machine_list() -> int:
-    """List this repo's machines: every instance (newest first) joined with the
-    authored `.asm.toml` that declares it, then the authored files no
-    instance has run yet. The instance columns are the web hub's (status,
-    current state); the file columns the TUI machines page's (spec validity)."""
+    """List this repo's machines (`app.machine.listing.machine_rows`, the rows
+    the TUI machines page shows): every instance newest first joined with the
+    authored `.asm.toml` that declares it, then the files no instance ran."""
     cwd = Path.cwd()
-    files = [(p, summarize_machine_file(p)) for p in machine_files(cwd)]
-    instances = [summarize_machine_dir(d) for d in machine_instance_dirs(resolved_state_dir(cwd))]
-    if not files and not instances:
+    machines = machine_rows(cwd, resolved_state_dir(cwd))
+    if not machines:
         print('no machines yet. Draft one with `agent6 machine create "<task>"`.')
         return 0
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str, str]] = []
-    joined: set[Path] = set()  # authored files an instance row already shows
-    for s in instances:
-        styled, plain = styled_status(s.status, s.reason, color=color)
-        # The first authored file declaring this machine name; a second file with
-        # the same name (or an unparsable one, named "-") keeps its own row.
-        own = next(((p, row) for p, row in files if row.name == s.name and p not in joined), None)
-        if own is not None:
-            joined.add(own[0])
+    for m in machines:
+        styled, plain = styled_status(m.status, m.reason, color=color) if m.status else ("", "")
         rows.append(
             (
-                format_when(s.mtime),
+                format_when(m.mtime) if m.mtime else "-",
                 styled,
                 plain,
-                s.current or "-",
-                s.name,
-                own[1].spec if own is not None else "-",
-                str(own[0].relative_to(cwd)) if own is not None else "-",
+                m.current or "-",
+                m.name,
+                m.spec,
+                str(m.file.relative_to(cwd)) if m.file is not None else "-",
             )
         )
-    for path, file_row in files:
-        if path not in joined:
-            rel = str(path.relative_to(cwd))
-            rows.append(("-", "", "", "-", file_row.name, file_row.spec, rel))
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     state_w = max(5, *(len(r[3]) for r in rows))
     name_w = max(7, *(len(r[4]) for r in rows))

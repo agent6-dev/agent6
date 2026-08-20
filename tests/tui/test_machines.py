@@ -750,3 +750,40 @@ def test_watch_screen_pops_prompts_on_a_live_machine(tmp_path: Path) -> None:
             assert isinstance(app.screen, ApprovalModal), "a live machine must still pop the modal"
 
     asyncio.run(scenario())
+
+
+def test_machines_page_lists_instances_with_their_files(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """The page shows the rows `agent6 machine` lists: an instance's status
+    and current state joined with its authored file, then the files no
+    instance ran (blank status)."""
+    from agent6.config.layer import resolved_state_dir
+    from agent6.ui.cli import main as cli_main
+
+    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    (tmp_path / "other.asm.toml").write_text(TINY.replace('"tiny"', '"other"'), encoding="utf-8")
+    assert cli_main(["machine", "run", str(f)]) == 0
+    state_dir = resolved_state_dir(tmp_path)
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachinesScreen(state_dir, tmp_path))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachinesScreen)
+            table = screen.query_one("#machines", DataTable)
+            assert table.row_count == 2
+            rows = [[str(cell) for cell in table.get_row_at(i)] for i in range(table.row_count)]
+            ran = next(r for r in rows if r[0] == "tiny")
+            assert ran[1] == "ok" and ran[2] == "done" and ran[5] == "valid"
+            never = next(r for r in rows if r[0] == "other")
+            assert never[1] == "" and never[2] == "-" and never[3] == "-"
+
+    asyncio.run(scenario())
