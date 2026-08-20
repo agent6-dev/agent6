@@ -383,7 +383,7 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
                 table = app.screen.query_one("#sessions", DataTable)
                 if table.row_count == 0:
                     return ""
-                return str(table.get_row_at(0)[2])
+                return str(table.get_row_at(0)[1])
 
             await _wait_for(pilot, lambda: "running" in status_cell(), "the running row")
             (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # dies

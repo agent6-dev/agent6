@@ -12,11 +12,13 @@ are exactly `session_state_as_dict` / `machine_state_as_dict` (identical to
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
+from agent6.git_ops import run_branch_tips
 from agent6.models.choices import config_value_choices
 from agent6.sessions.layout import (
     HUB_BUCKETS,
@@ -43,7 +45,7 @@ from agent6.viewmodel import (
     task_snippet,
 )
 from agent6.viewmodel.config_view import render_show
-from agent6.viewmodel.format import status_label, status_level
+from agent6.viewmodel.format import listing_status_label, status_level
 from agent6.viewmodel.transcript_style import item_lines
 
 
@@ -92,12 +94,13 @@ def draft_dir_paths(cwd: Path) -> list[Path]:
 # --- hub listing -------------------------------------------------------------
 
 
-def _session_summary(session_dir: Path) -> dict[str, Any]:
+def _session_summary(session_dir: Path, branch_tips: Mapping[str, str]) -> dict[str, Any]:
     """The hub's one-line run summary, from the shared scanner: id, mode, task,
-    status (+ reason detail), when, usd. The status words come from
-    `viewmodel.status_word`, so a provider_error death reads "failed" here
-    exactly as in the TUI hub and `agent6 sessions list`."""
-    s = summarize_session_dir(session_dir)
+    status (+ reason detail, + the unmerged mark), when, usd. The label comes
+    from `viewmodel.listing_status_label`, so a provider_error death or an
+    unmerged pass reads here exactly as in the TUI hub and `agent6 sessions
+    list` (the web row shows the mode itself, so the label keeps it out)."""
+    s = summarize_session_dir(session_dir, branch_tips=branch_tips)
     return {
         "id": s.session_id,
         "mode": s.mode,
@@ -106,7 +109,7 @@ def _session_summary(session_dir: Path) -> dict[str, Any]:
         "reason": s.reason,
         # The one shared human label and its colour level; the client renders
         # both verbatim instead of keeping JS copies of the status maps.
-        "label": status_label(s.status, s.reason),
+        "label": listing_status_label("run", s.status, s.reason, unmerged=s.unmerged),
         "level": status_level(s.status),
         "mtime": s.mtime,
         "usd": s.cost_usd,
@@ -117,7 +120,8 @@ def _session_summary(session_dir: Path) -> dict[str, Any]:
 
 def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
     """Every session a hub lists, summarized, newest first (`session_dirs`)."""
-    return [_session_summary(p) for p in session_dirs(resolved_state_dir(cwd))]
+    tips = run_branch_tips(cwd)
+    return [_session_summary(p, tips) for p in session_dirs(resolved_state_dir(cwd))]
 
 
 def _list_machines(cwd: Path) -> list[dict[str, Any]]:
@@ -145,7 +149,7 @@ def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
     """`machine create` drafts summarized like runs (their logs.jsonl is a
     run-style authoring log), newest first, so the machines page can link to
     the #/draft/<name> view."""
-    summaries = [_session_summary(p) for p in draft_dir_paths(cwd)]
+    summaries = [_session_summary(p, {}) for p in draft_dir_paths(cwd)]
     summaries.sort(key=lambda s: s["mtime"], reverse=True)
     return summaries
 

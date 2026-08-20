@@ -110,3 +110,92 @@ def test_runs_list_columns_stay_aligned_with_a_machine_draft(
     id_col = lines[0].index("  id  ") + 2
     assert lines[1].index("drafty-two-BBBBBB") == id_col
     assert lines[2].index("runny-one-AAAAAA") == id_col
+
+
+def test_listing_status_label_folds_mode_reason_and_unmerged() -> None:
+    """One cell for the three surfaces: the mode when the word does not imply
+    it, the reason, the unmerged mark on ended runs only."""
+    from agent6.viewmodel.format import listing_status_label
+
+    assert listing_status_label("run", "passed") == "passed"
+    assert listing_status_label("run", "passed", unmerged=True) == "passed · unmerged"
+    assert listing_status_label("plan", "planned") == "planned"
+    assert listing_status_label("plan", "running") == "plan · running"
+    assert listing_status_label("ask", "answered") == "answered"
+    assert listing_status_label("machine", "finished") == "machine · finished"
+    assert (
+        listing_status_label("run", "failed", "provider_error", unmerged=True)
+        == "failed · provider error · unmerged"
+    )
+    # A live run's branch is unmerged by definition: no mark.
+    assert listing_status_label("run", "running", unmerged=True) == "running"
+
+
+def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The listing answers "does anything still need merging": a finished run
+    whose branch holds commits reads `passed · unmerged`; merging (stamp tip ==
+    branch tip) or a zero-commit branch (tip == base) drops the mark."""
+    import subprocess
+
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    base = git("rev-parse", "HEAD")
+    git("checkout", "-qb", "agent6/unmerged-run-AAAAAA")
+    (repo / "b.txt").write_text("b\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "work")
+    tip = git("rev-parse", "HEAD")
+    git("checkout", "-q", "main")
+
+    runs = _runs_dir(repo)
+    for sid, branch, merged in (
+        ("unmerged-run-AAAAAA", "agent6/unmerged-run-AAAAAA", None),
+        (
+            "merged-run-BBBBBB",
+            "agent6/unmerged-run-AAAAAA",
+            {"into": "main", "sha": tip, "tip": tip},
+        ),
+    ):
+        d = runs / sid
+        d.mkdir(parents=True)
+        manifest: dict[str, object] = {
+            "version": 2,
+            "session_id": sid,
+            "mode": "run",
+            "user_task": "t",
+            "base_sha": base,
+            "run_branch": branch,
+        }
+        if merged:
+            manifest["merged"] = merged
+        (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (d / "logs.jsonl").write_text(
+            json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+            + "\n"
+            + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+            + "\n",
+            encoding="utf-8",
+        )
+    assert _cmd_list() == 0
+    out = capsys.readouterr().out
+    unmerged_row = next(line for line in out.splitlines() if "unmerged-run-AAAAAA" in line)
+    merged_row = next(line for line in out.splitlines() if "merged-run-BBBBBB" in line)
+    assert "passed · unmerged" in unmerged_row
+    assert "unmerged" not in merged_row.replace("unmerged-run", "")
+    assert "mode" not in out.splitlines()[0]  # the column folded into status

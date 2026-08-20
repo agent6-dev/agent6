@@ -290,14 +290,17 @@ _LEVEL_SGR: dict[StatusLevel, str] = {
 }
 
 
-def styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
+def styled_status(
+    status: str, reason: str, *, color: bool, label: str | None = None
+) -> tuple[str, str]:
     """(possibly-colored label, plain label) for a listing row -- the plain form
-    drives width math."""
-    label = status_label(status, reason)
+    drives width math. *label* overrides the text (the sessions listing's
+    mode-folded cell); the colour always follows the status word."""
+    text = status_label(status, reason) if label is None else label
     sgr_code = _LEVEL_SGR[status_level(status)]
     if color and sgr_code:
-        return f"\x1b[{sgr_code}m{label}\x1b[0m", label
-    return label, label
+        return f"\x1b[{sgr_code}m{text}\x1b[0m", text
+    return text, text
 
 
 def plural(n: int, singular: str, plural: str | None = None) -> str:

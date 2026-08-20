@@ -31,6 +31,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 # needs textual) is only reached when textual is present.
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective
+from agent6.git_ops import run_branch_tips
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.spawn import agent6_argv, run_cli_capture
 from agent6.ui.tui.config_page import ConfigScreen
@@ -54,7 +55,12 @@ from agent6.viewmodel import (
     summarize_session_dir,
     task_snippet,
 )
-from agent6.viewmodel.format import format_cost_cell, format_when, status_label, winner_id
+from agent6.viewmodel.format import (
+    format_cost_cell,
+    format_when,
+    listing_status_label,
+    winner_id,
+)
 
 # The hub re-asks on this cadence (matching the web hub's poll rate), so a
 # session that ends while you watch stops reading as running.
@@ -62,7 +68,9 @@ _HUB_POLL_S = 4.0
 
 
 def _status_cell(summary: SessionSummary) -> Text:
-    label = status_label(summary.status, summary.reason)
+    label = listing_status_label(
+        summary.mode, summary.status, summary.reason, unmerged=summary.unmerged
+    )
     return Text(label, style=status_style(summary.status))
 
 
@@ -140,7 +148,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
     def on_mount(self) -> None:
         table = self.query_one("#sessions", DataTable)
         table.cursor_type = "row"
-        table.add_columns("when", "mode", "status", "cost", "id", "task")
+        table.add_columns("when", "status", "cost", "id", "task")
         self.action_refresh()
         table.focus()
         self.set_interval(_HUB_POLL_S, self._poll)
@@ -171,14 +179,14 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # cursor_row-indexed selection action (open/logs/merge) maps to the wrong
         # run for cursor positions past the gap.
         survivors: list[Path] = []
+        tips = run_branch_tips(self.repo_cwd)
         for rd in session_dirs(self.agent6_dir):
             if not rd.is_dir():
                 continue  # vanished since the listing snapshot — skip it
-            s = summarize_session_dir(rd)
+            s = summarize_session_dir(rd, branch_tips=tips)
             # Text cells: task is model/user input and may carry markup brackets.
             table.add_row(
                 format_when(s.mtime),
-                s.mode,
                 _status_cell(s),
                 format_cost_cell(s.cost_usd, partial=s.usd_partial),
                 Text(winner_id(s.session_id, winner=is_winner(rd))),

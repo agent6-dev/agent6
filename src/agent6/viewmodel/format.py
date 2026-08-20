@@ -136,6 +136,30 @@ def status_label(status: str, reason: str = "") -> str:
     return status if not reason else f"{status} · {reason.replace('_', ' ')}"
 
 
+# Status words that already name the session's mode; every other word reads as
+# a run's unless the listing cell says otherwise.
+_MODE_IMPLIED: dict[str, str] = {"planned": "plan", "answered": "ask"}
+
+# The end words: a merged/unmerged mark only means something once the run is
+# over (a live run's branch is unmerged by definition).
+_ENDED_WORDS = frozenset({"passed", "failed", "finished", "stopped", "undone"})
+
+
+def listing_status_label(
+    mode: str, status: str, reason: str = "", *, unmerged: bool = False
+) -> str:
+    """The one listing status cell: the mode folded in when the word does not
+    imply it ("plan · running", a bare "planned"), the reason, and the
+    unmerged mark on an ended run ("passed · unmerged"). One owner so the CLI
+    list, the TUI hub, and the web hub rows cannot drift."""
+    label = status_label(status, reason)
+    if mode not in ("run", "?", "") and _MODE_IMPLIED.get(status) != mode:
+        label = f"{mode} · {label}"
+    if unmerged and status in _ENDED_WORDS:
+        label = f"{label} · unmerged"
+    return label
+
+
 StatusLevel = Literal["ok", "info", "active", "warn", "error", "neutral"]
 
 # How a status word (a run's from `listing.status_word`, a machine's from

@@ -24,6 +24,7 @@ from agent6.git_ops import (
     git_hardening_flags,
     list_run_commits,
     run_branch_for,
+    run_branch_tips,
 )
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import request_stop
@@ -62,6 +63,7 @@ from agent6.viewmodel.format import (
     WINNER_GLYPH,
     format_cost_cell,
     format_when,
+    listing_status_label,
     winner_id,
 )
 from agent6.workflows.judge import CandidateBrief
@@ -69,12 +71,12 @@ from agent6.workflows.judge import CandidateBrief
 
 def _cmd_list() -> int:
     """List this repo's sessions, newest first: updated (last-activity time),
-    status (with the failure reason), mode, cost, id, task.
+    status (the mode folded in when the word does not imply it, the failure
+    reason, the unmerged mark), cost, id, task.
 
     EVERY bucket, unlike the TUI/web hubs: they give `machine create` drafts
     their own card, and the CLI has none -- so leaving drafts out here made a
-    session `attach` opens happily appear in no listing at all. The mode column
-    is what tells them apart.
+    session `attach` opens happily appear in no listing at all.
     """
 
     cwd = Path.cwd()
@@ -87,36 +89,42 @@ def _cmd_list() -> int:
         print(NOTHING_YET)  # the listing's empty state is output, not an error
         return 0
     winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
+    tips = run_branch_tips(cwd)
     summaries = sorted(
-        (summarize_session_dir(d) for d in dirs), key=lambda s: s.mtime, reverse=True
+        (summarize_session_dir(d, branch_tips=tips) for d in dirs),
+        key=lambda s: s.mtime,
+        reverse=True,
     )
     color = sys.stdout.isatty()
-    rows: list[tuple[str, str, str, str, str, str, str]] = []
+    rows: list[tuple[str, str, str, str, str, str]] = []
     for s in summaries:
-        styled, plain = styled_status(s.status, s.reason, color=color)
+        styled, plain = styled_status(
+            s.status,
+            s.reason,
+            color=color,
+            label=listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
+        )
         rows.append(
             (
                 format_when(s.mtime),
                 styled,
                 plain,
-                s.mode,
                 format_cost_cell(s.cost_usd, partial=s.usd_partial),
                 winner_id(s.session_id, winner=s.session_id in winners),
-                task_snippet(s.task, max_chars=60),
+                s.task,
             )
         )
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
-    mode_w = max(4, *(len(r[3]) for r in rows))  # a `machine` draft is wider than run/plan/ask
-    id_w = max(2, *(len(r[5]) for r in rows))
-    print(
-        f"{'updated':<11}  {'status':<{status_w}}  {'mode':<{mode_w}}  {'cost':<8}"
-        f"  {'id':<{id_w}}  task"
-    )
-    for when, styled, plain, mode, cost, session_id, task in rows:
+    id_w = max(2, *(len(r[4]) for r in rows))
+    # The task column takes what a tty has left (floor 24); piped output keeps
+    # the fixed 60 the scripts around it read today.
+    fixed = 11 + 2 + status_w + 2 + 8 + 2 + id_w + 2
+    task_w = max(24, shutil.get_terminal_size().columns - fixed) if color else 60
+    print(f"{'updated':<11}  {'status':<{status_w}}  {'cost':<8}  {'id':<{id_w}}  task")
+    for when, styled, plain, cost, session_id, task in rows:
         pad = " " * (status_w - len(plain))
-        print(
-            f"{when:<11}  {styled}{pad}  {mode:<{mode_w}}  {cost:<8}  {session_id:<{id_w}}  {task}"
-        )
+        snip = task_snippet(task, max_chars=task_w)
+        print(f"{when:<11}  {styled}{pad}  {cost:<8}  {session_id:<{id_w}}  {snip}")
     return 0
 
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -157,6 +157,9 @@ class SessionSummary:
     cost_usd: float
     usd_partial: bool  # sticky: cost_usd is a lower bound (unpriced spend in some leg)
     mtime: float
+    # The run branch holds commits its base does not (per the merge stamp and
+    # the caller's branch-tips snapshot); False when unknowable (no snapshot).
+    unmerged: bool = False
     # The gate verdict from the gate facts (LogScan.verify_verdict), NOT the
     # status word: the compare table and the judge read it, and the word calls
     # a red-gated finish "finished".
@@ -559,11 +562,18 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     )
 
 
-def summarize_session_dir(session_dir: Path) -> SessionSummary:
+def summarize_session_dir(
+    session_dir: Path, *, branch_tips: Mapping[str, str] | None = None
+) -> SessionSummary:
     """One listing row from `logs.jsonl` + the manifest. Replaced the
     near-duplicate scanners in the TUI hub and the web hub that badged a
     provider_error death as a neutral "done". An "ask" run's task is replaced by
-    its transcript, which shows what was asked."""
+    its transcript, which shows what was asked.
+
+    *branch_tips* is the caller's one-call `git_ops.run_branch_tips` snapshot;
+    with it the row says whether the run branch still holds unmerged commits
+    (the tip is not the base and not the merge stamp's tip). Without it
+    `unmerged` stays False: no mark, never a wrong one."""
     logs = session_dir / LOGS_NAME
     scan = scan_session_log(logs) if logs.is_file() else LogScan()
     mode, task = scan.mode, scan.task
@@ -586,12 +596,21 @@ def summarize_session_dir(session_dir: Path) -> SessionSummary:
     if mode == "ask":
         with contextlib.suppress(OSError):
             task = (session_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")
+    unmerged = False
+    if branch_tips is not None:
+        with contextlib.suppress(ManifestError):
+            m = read_manifest(session_dir)
+            tip = branch_tips.get(m.run_branch or "")
+            unmerged = (
+                tip is not None and tip != m.base_sha and (m.merged is None or m.merged.tip != tip)
+            )
     return SessionSummary(
         session_id=session_dir.name,
         mode=mode,
         task=task,
         status=word,
         reason=reason,
+        unmerged=unmerged,
         cost_usd=scan.cost_usd or 0.0,
         usd_partial=scan.usd_partial,
         mtime=session_mtime(session_dir),

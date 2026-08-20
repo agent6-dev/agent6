@@ -606,6 +606,25 @@ def list_run_branches(path: Path) -> tuple[str, ...]:
     return tuple(b for b in res.stdout.splitlines() if b.strip())
 
 
+def run_branch_tips(path: Path) -> dict[str, str]:
+    """{run branch: tip sha} for every `agent6/` branch, one git call: the
+    listings' merged/unmerged mark needs every tip, and a per-row rev-parse
+    would put ~50 subprocesses on the hub's poll."""
+    res = _run(
+        path,
+        "for-each-ref",
+        "--format=%(refname:short) %(objectname)",
+        "refs/heads/agent6/",
+        check=False,
+    )
+    out: dict[str, str] = {}
+    for line in res.stdout.splitlines():
+        branch, _, sha = line.partition(" ")
+        if branch and sha:
+            out[branch] = sha
+    return out
+
+
 def is_ancestor(path: Path, maybe_ancestor: str, ref: str) -> bool:
     """True if *maybe_ancestor* is reachable from *ref* (`git merge-base
     --is-ancestor`). Used to tell a reachable-merged run branch (an ancestor of its
