@@ -23,8 +23,8 @@ from typing import Any
 import httpx2
 
 from agent6.budget import BudgetTracker
-from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
+    BearerCredential,
     ProviderError,
     ProviderResponse,
     TranscriptRecorder,
@@ -174,7 +174,7 @@ class ProviderCall:
     body: dict[str, Any]
     timeout_s: float
     api_key: str
-    credential: CommandToken | None
+    credential: BearerCredential | None
     transcript_sink: TranscriptRecorder | None
     budget: BudgetTracker | None
     model: str

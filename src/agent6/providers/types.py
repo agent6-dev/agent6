@@ -257,6 +257,17 @@ class TranscriptSink:
         return path
 
 
+class BearerCredential(Protocol):
+    """A refreshable bearer source (`CommandToken`, `ChatGPTCredential`).
+
+    `token()` returns a fresh-enough bearer; `invalidate()` forces the next
+    `token()` to mint anew (the transport calls it once after a 401/403)."""
+
+    def token(self) -> str: ...
+
+    def invalidate(self) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ToolDefinition:
     """One tool exposed to the model. `input_schema` is generated from a pydantic model."""
