@@ -1125,10 +1125,10 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: Path
     asyncio.run(scenario())
 
 
-def test_the_highlighted_setting_shows_its_description(repo: Path) -> None:
-    """The detail pane under the table says what the highlighted leaf means
-    (key, type, default, the description), and the edit modal repeats it: the
-    TUI editor read as bare knobs while the web and the docs explained them."""
+def test_setting_description_lives_in_the_edit_modal_only(repo: Path) -> None:
+    """The edit modal explains the highlighted leaf; the page itself carries
+    no detail pane (a pane under the table resized with every highlight and
+    made scrolling janky, so the operator removed it)."""
     from textual.widgets import Static
 
     async def scenario() -> None:
@@ -1137,6 +1137,7 @@ def test_the_highlighted_setting_shows_its_description(repo: Path) -> None:
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, ConfigScreen)
+            assert not screen.query("#detail")
             tbl = screen.query_one("#tbl-sandbox", DataTable)
             tbl.focus()
             ridx = next(
@@ -1146,16 +1147,11 @@ def test_the_highlighted_setting_shows_its_description(repo: Path) -> None:
             )
             tbl.move_cursor(row=ridx)
             await pilot.pause()
-            head = str(screen.query_one("#detail-key", Static).render())
-            body = str(screen.query_one("#detail-text", Static).render())
-            assert head.startswith("sandbox.run_commands")
-            assert "choice" in head and "default ask" in head
-            assert "run_command" in body and "**" not in body
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, EditModal)
             shown = str(modal.query_one("#edit-description", Static).render())
-            assert "run_command" in shown
+            assert "run_command" in shown and "**" not in shown
 
     asyncio.run(scenario())
