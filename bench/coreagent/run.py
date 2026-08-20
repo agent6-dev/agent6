@@ -334,9 +334,13 @@ def one_run(
     module = TASKS[task]
     session_id = f"{task}-{condition}-r{rep}-{uuid.uuid4().hex[:6]}"
     workdir = RUNS_ROOT / label / session_id
-    state_home = workdir / ".state"
+    # Beside the workdir, never inside it: agent6 refuses a state base inside
+    # the workspace (jailed commands could read transcripts and keys).
+    state_home = RUNS_ROOT / label / ".state" / session_id
     if workdir.exists():
         shutil.rmtree(workdir)
+    if state_home.exists():
+        shutil.rmtree(state_home)
     workdir.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(TASKS_DIR / task / "repo", workdir)
     state_home.mkdir(parents=True, exist_ok=True)
