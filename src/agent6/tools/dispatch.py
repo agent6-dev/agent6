@@ -1199,4 +1199,5 @@ class ToolDispatcher:
             stderr=res.stderr[-20_000:],
             duration_s=res.duration_s,
             exec_failed=res.exec_failed,
+            timeout_s=policy.timeout_s,
         )

@@ -254,6 +254,29 @@ def test_wire_run_verify(tmp_path: Path) -> None:
     )
 
 
+def test_wire_run_verify_timeout_names_the_cap(tmp_path: Path) -> None:
+    """A verify killed at verify_timeout_s reached the model as a bare
+    returncode 124 with empty output (full-suite pytest spends the whole cap
+    in silent collection), indistinguishable from a failing suite; SWE-bench
+    runs re-called the 240s gate back to back. The wire now carries
+    timed_out + the cap."""
+    toml = _VALID_TOML.replace(
+        'verify_command = ["true"]', 'verify_command = ["true"]\nverify_timeout_s = 240'
+    )
+    p = tmp_path / "agent6.toml"
+    p.write_text(toml, encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=load_config(p))
+    with mock.patch(
+        "agent6.tools.dispatch.run_in_jail",
+        return_value=_cmd_result(returncode=124, duration_s=240.1),
+    ):
+        out = d.dispatch("run_verify_command", {})
+    assert _dumps(out) == (
+        '{"returncode": 124, "stdout": "", "stderr": "", "duration_s": 240.1,'
+        ' "exec_failed": false, "command": "true", "timed_out": true, "timeout_s": 240.0}'
+    )
+
+
 def test_wire_run_command(tmp_path: Path) -> None:
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     with mock.patch(

@@ -151,6 +151,13 @@ CASES: list[tuple[str, ToolResult, str]] = [
         "exit=0 in 12.3s",
     ),
     (
+        "exec_timed_out",
+        ExecResult(
+            returncode=124, stdout="", stderr="", duration_s=240.1, exec_failed=False, timeout_s=240
+        ),
+        "exit=124 (timed out at 240s) in 240.1s",
+    ),
+    (
         "metric",
         MetricResult(
             returncode=0,
@@ -161,6 +168,19 @@ CASES: list[tuple[str, ToolResult, str]] = [
             score=42.0,
         ),
         "exit=0 in 0.5s",
+    ),
+    (
+        "metric_timed_out",
+        MetricResult(
+            returncode=124,
+            stdout="",
+            stderr="",
+            duration_s=240.1,
+            exec_failed=False,
+            score=None,
+            timeout_s=240,
+        ),
+        "exit=124 (timed out at 240s) in 240.1s",
     ),
     # run control
     ("finish_session", FinishSessionResult(summary_text="done", result=None), "ok"),

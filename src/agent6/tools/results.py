@@ -274,6 +274,10 @@ class ExecResult(ToolResult):
     # Set when the command outlived its check-in and is still running as this
     # background job. `returncode` is None until it ends.
     background_id: str = ""
+    # The wall-clock cap the runner enforced, 0 when none. rc=124 is the
+    # jail's documented timeout result; pairing it with the cap on the wire
+    # is what lets the model tell "killed at 240s" from "tests failed".
+    timeout_s: float = 0.0
 
     def to_wire(self) -> dict[str, Any]:
         wire: dict[str, Any] = {
@@ -285,6 +289,9 @@ class ExecResult(ToolResult):
         }
         if self.command:
             wire["command"] = shlex.join(self.command)
+        if self.returncode == 124 and self.timeout_s > 0:
+            wire["timed_out"] = True
+            wire["timeout_s"] = self.timeout_s
         if self.background_id:
             wire["still_running"] = True
             wire["background_id"] = self.background_id
@@ -293,6 +300,8 @@ class ExecResult(ToolResult):
     def summary(self) -> str:
         if self.background_id:
             return f"still running as {self.background_id} after {self.duration_s:.1f}s"
+        if self.returncode == 124 and self.timeout_s > 0:
+            return f"exit=124 (timed out at {self.timeout_s:.0f}s) in {self.duration_s:.1f}s"
         return f"exit={self.returncode} in {self.duration_s:.1f}s"
 
 
@@ -307,6 +316,7 @@ class MetricResult(ToolResult):
     duration_s: float
     exec_failed: bool
     score: float | None
+    timeout_s: float = 0.0
 
     @classmethod
     def from_exec(cls, res: ExecResult, score: float | None) -> MetricResult:
@@ -319,10 +329,11 @@ class MetricResult(ToolResult):
             duration_s=res.duration_s,
             exec_failed=res.exec_failed,
             score=score,
+            timeout_s=res.timeout_s,
         )
 
     def to_wire(self) -> dict[str, Any]:
-        return {
+        wire: dict[str, Any] = {
             "returncode": self.returncode,
             "stdout": self.stdout,
             "stderr": self.stderr,
@@ -330,8 +341,14 @@ class MetricResult(ToolResult):
             "exec_failed": self.exec_failed,
             "score": self.score,
         }
+        if self.returncode == 124 and self.timeout_s > 0:
+            wire["timed_out"] = True
+            wire["timeout_s"] = self.timeout_s
+        return wire
 
     def summary(self) -> str:
+        if self.returncode == 124 and self.timeout_s > 0:
+            return f"exit=124 (timed out at {self.timeout_s:.0f}s) in {self.duration_s:.1f}s"
         return f"exit={self.returncode} in {self.duration_s:.1f}s"
 
 
