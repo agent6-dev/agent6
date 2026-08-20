@@ -23,15 +23,14 @@ import bisect
 import contextlib
 import os
 import subprocess
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.containers import Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.geometry import Offset
@@ -43,18 +42,16 @@ from textual.widgets import Footer, Static, TextArea
 from agent6.directive import STEER_COMMANDS
 from agent6.sessions.ipc import clear_steer_answer, request_steer, write_steer_answer
 from agent6.ui.tui import clipboard
-from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import (
-    HelpScreen,
     Menu,
     MenuBar,
     MenuItem,
     menu_bindings,
 )
 from agent6.ui.tui.modals import HistorySearchModal, RestateModal
+from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
-from agent6.ui.tui.theme import open_theme_picker
 from agent6.viewmodel import restate
 from agent6.viewmodel.format import spinner_frame
 from agent6.viewmodel.policy import session_policy
@@ -341,37 +338,7 @@ def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path)
     screen.app.push_screen(HistorySearchModal(entries), fill)
 
 
-class _ConvCommands(Provider):
-    """The conversation view's menu actions in the Ctrl+P palette, from the same
-    per-instance menus as the menu bar -- so every action stays reachable while
-    the composer bar has focus (which owns the letter keys), and the two
-    surfaces never drift. Run-menu items resolve on the Agent6TUI host app."""
-
-    def _commands(self) -> Iterator[tuple[str, Callable[[], object], str]]:
-        conv = cast("ConversationScreen", self.screen)
-        for menu in conv._menus:  # pyright: ignore[reportPrivateUsage]
-            for item in menu.items:
-                if item.action == "command_palette":
-                    continue
-                handler = getattr(conv, f"action_{item.action}", None) or getattr(
-                    conv.app, f"action_{item.action}", None
-                )
-                if handler is not None:
-                    yield (item.label, handler, menu.title)
-
-    async def discover(self) -> Hits:
-        for name, runnable, help_text in self._commands():
-            yield DiscoveryHit(name, runnable, help=help_text)
-
-    async def search(self, query: str) -> Hits:
-        matcher = self.matcher(query)
-        for name, runnable, help_text in self._commands():
-            score = matcher.match(name)
-            if score > 0:
-                yield Hit(score, matcher.highlight(name), runnable, help=help_text)
-
-
-class ConversationScreen(Screen[None]):
+class ConversationScreen(ScreenChrome, Screen[None]):
     """Scrollable, live-following, selectable LLM conversation for a single run."""
 
     CSS = """
@@ -446,7 +413,12 @@ class ConversationScreen(Screen[None]):
         Binding("question_mark", "help", "Help", show=False),
         *menu_bindings((*MENUS, Menu("Run", ()))),  # + the Alt+r opener (primary shape)
     ]
-    COMMANDS: ClassVar = {_ConvCommands}
+    COMMANDS: ClassVar = {MenuCommands}
+    HELP_TITLE: ClassVar = "agent6 — conversation"
+    HELP_HINTS: ClassVar = (
+        "Steer bar: Enter sends the instruction",
+        "Ctrl-J or Shift+Enter inserts a newline",
+    )
 
     def __init__(
         self, logs_path: Path, *, title: Callable[[str], str], primary: bool = False
@@ -544,21 +516,8 @@ class ConversationScreen(Screen[None]):
             self._poll()
             self._timer.resume()
 
-    def action_menu(self, mnemonic: str) -> None:
-        self.query_one(MenuBar).open(mnemonic)
-
-    def action_help(self) -> None:
-        self.app.push_screen(
-            HelpScreen(
-                self._menus,
-                self,
-                title="agent6 — conversation",
-                hints=(
-                    "Steer bar: Enter sends the instruction",
-                    "Ctrl-J or Shift+Enter inserts a newline",
-                ),
-            )
-        )
+    def menus(self) -> tuple[Menu, ...]:
+        return self._menus
 
     def _scroll(self) -> VerticalScroll:
         return self.query_one("#conv-scroll", VerticalScroll)
@@ -907,12 +866,6 @@ class ConversationScreen(Screen[None]):
     def action_view_logs(self) -> None:
         """Open the raw event log of this run (the audit-log companion view)."""
         self.app.push_screen(LogScreen(self._logs_path, title=lambda: self._title("logs")))
-
-    def action_choose_theme(self) -> None:
-        open_theme_picker(self.app)
-
-    def action_choose_copy_method(self) -> None:
-        open_copy_method_picker(self.app)
 
     def action_cycle_detail(self) -> None:
         """Cycle the transcript's detail level (hidden -> collapsed -> expanded), keeping

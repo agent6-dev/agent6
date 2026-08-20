@@ -375,7 +375,11 @@ def test_start_question_before_session_start_is_answerable(tmp_path: Path) -> No
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
             await _wait_for(
-                pilot, lambda: isinstance(app.screen, QuestionModal), "the question modal"
+                pilot,
+                lambda: (
+                    isinstance(app.screen, QuestionModal) and bool(app.screen.query("#opt-0-0"))
+                ),
+                "the question modal",
             )
             app._heartbeat_at = 0.0
             app._tick()

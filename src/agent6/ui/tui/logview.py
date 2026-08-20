@@ -37,17 +37,17 @@ from textual.screen import Screen
 from textual.widgets import Footer, Static
 
 from agent6.ui.tui.menubar import (
-    HelpScreen,
     Menu,
     MenuBar,
     MenuItem,
     menu_bindings,
 )
+from agent6.ui.tui.screen_chrome import ScreenChrome
 from agent6.viewmodel.state import STREAM_DELTA_EVENTS, format_log_line
 from agent6.viewmodel.tail import LogTail
 
 
-class LogScreen(Screen[None]):
+class LogScreen(ScreenChrome, Screen[None]):
     """Scrollable, read-only, selectable log of a single run (live or finished)."""
 
     CSS = """
@@ -56,6 +56,7 @@ class LogScreen(Screen[None]):
     #logview-body { height: auto; padding: 0 1; pointer: text; }  /* selectable: I-beam */
     """
 
+    HELP_TITLE: ClassVar = "agent6 — log"
     MENUS: ClassVar = (
         Menu("File", (MenuItem("Back", "close"),)),
         Menu(
@@ -106,12 +107,6 @@ class LogScreen(Screen[None]):
         self._reload()
         # Follow live: a resume appends to the same file, so keep reading.
         self.set_interval(0.5, self._poll)
-
-    def action_menu(self, mnemonic: str) -> None:
-        self.query_one(MenuBar).open(mnemonic)
-
-    def action_help(self) -> None:
-        self.app.push_screen(HelpScreen(self.MENUS, self, title="agent6 — log"))
 
     def _scroll(self) -> VerticalScroll:
         return self.query_one("#logview-scroll", VerticalScroll)

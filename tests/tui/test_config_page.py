@@ -18,8 +18,8 @@ from textual.app import App
 from textual.widgets import DataTable, Input, OptionList
 
 from agent6.config.layer import load_effective
-from agent6.ui.tui.config_page import ConfigScreen, EditModal, HelpScreen
-from agent6.ui.tui.menubar import MenuBar
+from agent6.ui.tui.config_page import ConfigScreen, EditModal
+from agent6.ui.tui.menubar import HelpScreen, MenuBar
 from agent6.viewmodel.config_view import build_config_view
 
 _GLOBAL = """\

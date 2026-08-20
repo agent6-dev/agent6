@@ -24,7 +24,6 @@ try:
     from textual import events, on
     from textual.app import ComposeResult
     from textual.binding import Binding
-    from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Horizontal, Vertical, VerticalScroll
     from textual.geometry import Region
     from textual.screen import ModalScreen, Screen
@@ -53,8 +52,13 @@ from agent6.errors import OperatorError
 from agent6.models.cache import cached_models, list_models
 from agent6.models.registry import resolved_adaptive_values
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.tui.theme import open_theme_picker
+from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.tui.screen_chrome import (
+    MenuCommands,
+    PaletteCommand,
+    ScreenChrome,
+    menu_palette_commands,
+)
 from agent6.ui.tui.widgets import (
     FORM_CSS,
     ActionItem,
@@ -102,29 +106,6 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
     Action("help", "Help", "Show all actions and shortcuts", key="question_mark"),
     Action("close", "Back", "Back to the hub", key="escape"),
 )
-
-
-class _ConfigCommands(Provider):
-    """The Config-page actions in the Ctrl+P palette, from the same registry
-    (:data:`CONFIG_ACTIONS`) as the menu, the buttons, and the key bindings --
-    so the four surfaces never drift."""
-
-    @property
-    def _config(self) -> ConfigScreen:
-        screen = self.screen
-        assert isinstance(screen, ConfigScreen)
-        return screen
-
-    async def discover(self) -> Hits:
-        for name, runnable, help_text in self._config.palette_commands():
-            yield DiscoveryHit(name, runnable, help=help_text)
-
-    async def search(self, query: str) -> Hits:
-        matcher = self.matcher(query)
-        for name, runnable, help_text in self._config.palette_commands():
-            score = matcher.match(name)
-            if score > 0:
-                yield Hit(score, matcher.highlight(name), runnable, help=help_text)
 
 
 def _fmt(value: object) -> str:
@@ -507,7 +488,7 @@ class ProviderModal(_FormModal[None]):
             self.action_cancel()
 
 
-class ConfigScreen(Screen[None]):
+class ConfigScreen(ScreenChrome, Screen[None]):
     """Full config viewer/editor: collapsible per-section tables, search, a
     modified-only filter, provenance, and edit/reset — all reachable by button,
     key, or the command palette."""
@@ -607,7 +588,9 @@ class ConfigScreen(Screen[None]):
         + [Binding("q", "close", "Back", show=False)]
         + menu_bindings(MENUS)
     )
-    COMMANDS: ClassVar = Screen.COMMANDS | {_ConfigCommands}
+    COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    HELP_TITLE: ClassVar = "agent6 config — keys & actions"
+    HELP_HINTS: ClassVar = ("Enter edits the selected setting",)
 
     def __init__(self, repo_root: Path, config_path: Path | None = None) -> None:
         super().__init__()
@@ -619,20 +602,13 @@ class ConfigScreen(Screen[None]):
         self._table_keys: dict[str, list[str]] = {}
         self._modified_only = False
 
-    def palette_commands(self) -> Iterator[tuple[str, Callable[[], None], str]]:
-        """(label, runnable, help) per menu action -- the Ctrl+P palette source. The
-        label comes from MENUS (the descriptive form, matching the menu bar and the
-        home/run palettes -- e.g. "Keys & actions", not the footer's terse "Help");
-        the help text from CONFIG_ACTIONS. The footer + buttons keep the terse
-        CONFIG_ACTIONS labels. Skips the palette opener (textual provides it)."""
+    def palette_commands(self) -> Iterator[PaletteCommand]:
+        """The menu actions with CONFIG_ACTIONS' descriptions as their help
+        (the menu title alone says less than the registry does)."""
         descriptions = {a.id: a.description for a in CONFIG_ACTIONS}
-        for menu in self.MENUS:
-            for item in menu.items:
-                if item.action == "command_palette":
-                    continue
-                handler = getattr(self, f"action_{item.action}", None)
-                if handler is not None:
-                    yield item.label, handler, descriptions.get(item.action, "")
+        for label, handler, menu_title in menu_palette_commands(self, self.MENUS):
+            action = next((i.action for m in self.MENUS for i in m.items if i.label == label), "")
+            yield label, handler, descriptions.get(action, menu_title)
 
     def compose(self) -> ComposeResult:
         # Load the view first so the (fixed) set of sections is known, then
@@ -859,9 +835,6 @@ class ConfigScreen(Screen[None]):
 
     # --- actions (one handler per registry entry; button + key both land here)
 
-    def action_menu(self, mnemonic: str) -> None:
-        self.query_one(MenuBar).open(mnemonic)
-
     def action_search(self) -> None:
         self.query_one("#search", Input).focus()  # the inline filter box
 
@@ -894,19 +867,6 @@ class ConfigScreen(Screen[None]):
     def action_reload(self) -> None:
         self._reload()
         self.notify("Config reloaded.")
-
-    def action_help(self) -> None:
-        self.app.push_screen(
-            HelpScreen(
-                self.MENUS,
-                self,
-                title="agent6 config — keys & actions",
-                hints=("Enter edits the selected setting",),
-            )
-        )
-
-    def action_choose_theme(self) -> None:
-        open_theme_picker(self.app)
 
     def action_quit(self) -> None:
         # The menu's "Quit" (^Q) quits the whole app. On a Screen `quit` isn't

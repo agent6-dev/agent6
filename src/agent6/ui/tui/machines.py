@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
 
@@ -22,7 +22,6 @@ try:
     from rich.text import Text
     from textual.app import App, ComposeResult
     from textual.binding import Binding
-    from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Container, Horizontal, VerticalScroll
     from textual.notifications import SeverityLevel
     from textual.screen import ModalScreen, Screen
@@ -58,8 +57,7 @@ from agent6.sessions.ipc import (
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
 from agent6.ui.notify import desktop_notify
 from agent6.ui.spawn import agent6_argv, spawn_and_confirm, spawn_and_locate
-from agent6.ui.tui.copy_method import open_copy_method_picker
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
     ApprovalModal,
     ConfirmModal,
@@ -67,11 +65,11 @@ from agent6.ui.tui.modals import (
     SteerModal,
     TextInputModal,
 )
+from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.theme import (
     PALETTE_CSS,
     MuxPointerShapes,
     PlainNotify,
-    open_theme_picker,
     setup_theme,
 )
 from agent6.viewmodel import (
@@ -593,29 +591,7 @@ class CreateMachineModal(ModalScreen[str]):
         self.dismiss("")
 
 
-class _MachineCommands(Provider):
-    """The Machines-page actions in the Ctrl+P palette, from the same MENUS as the
-    menu bar and key bindings -- so the surfaces never drift."""
-
-    @property
-    def _page(self) -> MachinesScreen:
-        screen = self.screen
-        assert isinstance(screen, MachinesScreen)
-        return screen
-
-    async def discover(self) -> Hits:
-        for name, runnable, help_text in self._page.palette_commands():
-            yield DiscoveryHit(name, runnable, help=help_text)
-
-    async def search(self, query: str) -> Hits:
-        matcher = self.matcher(query)
-        for name, runnable, help_text in self._page.palette_commands():
-            score = matcher.match(name)
-            if score > 0:
-                yield Hit(score, matcher.highlight(name), runnable, help=help_text)
-
-
-class MachinesScreen(Screen[None]):
+class MachinesScreen(ScreenChrome, Screen[None]):
     """List authored state machines; view (parsed), run, or create them. Run/Create
     shell out to the CLI (detached); View parses in-process."""
 
@@ -677,7 +653,9 @@ class MachinesScreen(Screen[None]):
         Binding("q", "close", "Back", show=False),
         *menu_bindings(MENUS),
     ]
-    COMMANDS: ClassVar = Screen.COMMANDS | {_MachineCommands}
+    COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    HELP_TITLE: ClassVar = "agent6 machines — keys & actions"
+    HELP_HINTS: ClassVar = ("Enter opens the selected machine",)
 
     def __init__(self, agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> None:
         super().__init__()
@@ -686,22 +664,10 @@ class MachinesScreen(Screen[None]):
         self.config_path = config_path
         self._machines: list[Path] = []
 
-    def palette_commands(self) -> Iterator[tuple[str, Callable[[], None], str]]:
-        for menu in self.MENUS:
-            for item in menu.items:
-                if item.action in ("command_palette", "quit"):
-                    continue
-                handler = getattr(self, f"action_{item.action}", None)
-                if handler is not None:
-                    yield (item.label, handler, menu.title)
-
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)
         yield DataTable(id="machines")
         yield Footer()
-
-    def action_menu(self, mnemonic: str) -> None:
-        self.query_one(MenuBar).open(mnemonic)
 
     def on_mount(self) -> None:
         table = self.query_one("#machines", DataTable)
@@ -818,22 +784,6 @@ class MachinesScreen(Screen[None]):
 
     def action_refresh(self) -> None:
         self._reload()
-
-    def action_choose_theme(self) -> None:
-        open_theme_picker(self.app)
-
-    def action_choose_copy_method(self) -> None:
-        open_copy_method_picker(self.app)
-
-    def action_help(self) -> None:
-        self.app.push_screen(
-            HelpScreen(
-                self.MENUS,
-                self,
-                title="agent6 machines — keys & actions",
-                hints=("Enter opens the selected machine",),
-            )
-        )
 
     def action_quit(self) -> None:
         self.app.exit()

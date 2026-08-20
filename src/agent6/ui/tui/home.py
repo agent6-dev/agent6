@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import ClassVar
 
@@ -22,7 +22,6 @@ try:
     from textual import events, on
     from textual.app import App, ComposeResult, SystemCommand
     from textual.binding import Binding
-    from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Horizontal, Vertical
     from textual.screen import ModalScreen, Screen
     from textual.widgets import DataTable, Footer, Select, Static, TextArea
@@ -40,16 +39,15 @@ from agent6.models.validate import known_models
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.spawn import agent6_argv, run_cli_capture, spawn_new_work
 from agent6.ui.tui.config_page import ConfigScreen
-from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.machines import MachinesScreen
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import ConfirmModal
+from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.theme import (
     PALETTE_CSS,
     MuxPointerShapes,
     PlainNotify,
-    open_theme_picker,
     setup_theme,
 )
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
@@ -287,30 +285,7 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
             self.action_cancel()
 
 
-class _HomeCommands(Provider):
-    """The home hub's menu actions in the Ctrl+P palette, from the same MENUS
-    registry as the menu bar and key bindings -- so every action is searchable by
-    name (parity with the config screen and the run dashboard)."""
-
-    @property
-    def _home(self) -> HomeScreen:
-        screen = self.screen
-        assert isinstance(screen, HomeScreen)
-        return screen
-
-    async def discover(self) -> Hits:
-        for name, runnable, help_text in self._home.palette_commands():
-            yield DiscoveryHit(name, runnable, help=help_text)
-
-    async def search(self, query: str) -> Hits:
-        matcher = self.matcher(query)
-        for name, runnable, help_text in self._home.palette_commands():
-            score = matcher.match(name)
-            if score > 0:
-                yield Hit(score, matcher.highlight(name), runnable, help=help_text)
-
-
-class HomeScreen(Screen[None]):
+class HomeScreen(ScreenChrome, Screen[None]):
     """The hub view: browse recent runs, start new work, open the config editor.
     Its bindings live here (not on the App) so the footer of a pushed screen --
     e.g. the config editor -- shows only that screen's keys, not the hub's."""
@@ -360,19 +335,11 @@ class HomeScreen(Screen[None]):
         Binding("q", "quit", "Quit"),
         *menu_bindings(MENUS),
     ]
-    COMMANDS: ClassVar = Screen.COMMANDS | {_HomeCommands}
-
-    def palette_commands(self) -> Iterator[tuple[str, Callable[[], None], str]]:
-        """(label, runnable, help) per menu action -- the Ctrl+P palette source,
-        the same MENUS registry as the menu bar and key bindings. Skips the
-        palette itself and Quit (textual provides those)."""
-        for menu in self.MENUS:
-            for item in menu.items:
-                if item.action in ("command_palette", "quit"):
-                    continue
-                handler = getattr(self, f"action_{item.action}", None)
-                if handler is not None:
-                    yield (item.label, handler, menu.title)
+    COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    HELP_HINTS: ClassVar = (
+        "Enter opens the selected run",
+        "Pickers: ↑↓ highlight · Space selects",
+    )
 
     def __init__(self, agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> None:
         super().__init__()
@@ -453,9 +420,6 @@ class HomeScreen(Screen[None]):
         self.app.sub_title = f"{self.repo_cwd} · {count} session{'' if count == 1 else 's'}"
         # An empty table shouldn't paint a full-height focus cursor over its body.
         table.show_cursor = table.row_count > 0
-
-    def action_menu(self, mnemonic: str) -> None:
-        self.query_one(MenuBar).open(mnemonic)
 
     def action_open_selected(self) -> None:
         table = self.query_one("#sessions", DataTable)
@@ -544,25 +508,6 @@ class HomeScreen(Screen[None]):
 
     def action_open_machines(self) -> None:
         self.app.push_screen(MachinesScreen(self.agent6_dir, self.repo_cwd, self.config_path))
-
-    def action_choose_theme(self) -> None:
-        open_theme_picker(self.app)
-
-    def action_choose_copy_method(self) -> None:
-        open_copy_method_picker(self.app)
-
-    def action_help(self) -> None:
-        self.app.push_screen(
-            HelpScreen(
-                self.MENUS,
-                self,
-                title="agent6 — keys & actions",
-                hints=(
-                    "Enter opens the selected run",
-                    "Pickers: ↑↓ highlight · Space selects",
-                ),
-            )
-        )
 
     def _on_new_work(self, result: tuple[str, str, str] | None) -> None:
         if result is None:

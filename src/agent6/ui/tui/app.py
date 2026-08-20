@@ -27,16 +27,15 @@ import os
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 try:
     from rich.markup import escape
     from rich.text import Text
     from textual.app import App, ComposeResult, SystemCommand
     from textual.binding import Binding
-    from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Horizontal, ScrollableContainer, VerticalScroll
     from textual.css.query import NoMatches
     from textual.screen import ModalScreen, Screen
@@ -82,9 +81,8 @@ from agent6.ui.tui.conversation import (
     SteerSuggest,
     open_history_search,
 )
-from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
     ApprovalModal,
     ConfirmModal,
@@ -92,12 +90,12 @@ from agent6.ui.tui.modals import (
     RestateModal,
     ToolCallDetailModal,
 )
+from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import (
     PALETTE_CSS,
     MuxPointerShapes,
     PlainNotify,
-    open_theme_picker,
     setup_theme,
 )
 from agent6.viewmodel import restate, session_compare
@@ -169,27 +167,6 @@ def _end_color(all_passed: bool | None, end_reason: str) -> str:
     return "green" if all_passed else "yellow" if end_reason in _DELIBERATE_END_REASONS else "red"
 
 
-class _DashboardCommands(Provider):
-    """Ctrl+P palette provider over the dashboard's palette_commands()."""
-
-    @property
-    def _dash(self) -> DashboardScreen:
-        screen = self.screen
-        assert isinstance(screen, DashboardScreen)
-        return screen
-
-    async def discover(self) -> Hits:
-        for name, runnable, help_text in self._dash.palette_commands():
-            yield DiscoveryHit(name, runnable, help=help_text)
-
-    async def search(self, query: str) -> Hits:
-        matcher = self.matcher(query)
-        for name, runnable, help_text in self._dash.palette_commands():
-            score = matcher.match(name)
-            if score > 0:
-                yield Hit(score, matcher.highlight(name), runnable, help=help_text)
-
-
 # Dashboard exit code meaning "quit the whole hub" (vs 0 == back to the hub).
 QUIT_HUB_CODE = 99
 
@@ -203,7 +180,7 @@ class _ScrollPane(VerticalScroll):
     ALLOW_MAXIMIZE = True
 
 
-class DashboardScreen(Screen[None]):
+class DashboardScreen(ScreenChrome, Screen[None]):
     """The run dashboard panes: task graph, live stream, tool table, log window,
     diff/verify, and the composer bar. Presentation only -- it renders the app's
     folded SessionState and dispatches run control back through the app (see the
@@ -244,7 +221,12 @@ class DashboardScreen(Screen[None]):
     #plan:focus, #stream:focus, #tools:focus, #log:focus, #diff:focus { border: round $accent; }
     """
 
-    COMMANDS: ClassVar = Screen.COMMANDS | {_DashboardCommands}
+    COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    HELP_HINTS: ClassVar = (
+        "Tab focuses a pane · PgUp/PgDn, Home/End scroll it",
+        "Enter on a tool row opens its full detail",
+        "Pickers: ↑↓ highlight · Space selects",
+    )
 
     MENUS: ClassVar = (
         Menu(
@@ -465,21 +447,6 @@ class DashboardScreen(Screen[None]):
 
     # --- command palette ---------------------------------------------
 
-    def palette_commands(self) -> Iterator[tuple[str, Callable[[], Any], str]]:
-        """(label, runnable, help) per menu action -- the Ctrl+P palette source, from
-        the same MENUS registry as the menu bar, footer, and key bindings, so the
-        surfaces never drift (same generator pattern as the home hub + config). Skips
-        the palette opener itself (textual provides it)."""
-        for menu in self.MENUS:
-            for item in menu.items:
-                if item.action == "command_palette":
-                    continue
-                handler = getattr(self, f"action_{item.action}", None) or getattr(
-                    self.app, f"action_{item.action}", None
-                )
-                if handler is not None:
-                    yield (item.label, handler, menu.title)
-
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Enter on a tool-calls row opens its full args + summary in a modal (the
         columns truncate long values). Map the visual row back through the same
@@ -503,29 +470,6 @@ class DashboardScreen(Screen[None]):
             return
         self._selected_task_id = None if tid == self._selected_task_id else tid
         self.render_state()  # a selection, not an event: re-render with the new filter now
-
-    def action_menu(self, mnemonic: str) -> None:
-        self.query_one(MenuBar).open(mnemonic)
-
-    def action_help(self) -> None:
-        self.app.push_screen(
-            HelpScreen(
-                self.MENUS,
-                self,
-                title="agent6 — keys & actions",
-                hints=(
-                    "Tab focuses a pane · PgUp/PgDn, Home/End scroll it",
-                    "Enter on a tool row opens its full detail",
-                    "Pickers: ↑↓ highlight · Space selects",
-                ),
-            )
-        )
-
-    def action_choose_theme(self) -> None:
-        open_theme_picker(self.app)
-
-    def action_choose_copy_method(self) -> None:
-        open_copy_method_picker(self.app)
 
     # --- rendering ---------------------------------------------------
 
