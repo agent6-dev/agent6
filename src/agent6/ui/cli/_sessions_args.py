@@ -121,7 +121,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_ids",
         nargs="+",
         metavar="SESSION_ID",
-        help="2 or more session ids (or unique prefixes) to compare.",
+        help=(
+            "2 or more session ids (or unique prefixes) to compare, or one --parallel"
+            " fan-out id (compares its lanes)."
+        ),
     )
     sessions_compare_ids.completer = _complete_session_ids  # type: ignore[attr-defined]
 

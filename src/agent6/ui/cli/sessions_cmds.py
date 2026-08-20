@@ -5,6 +5,7 @@ read side; `merge`/`prune` are `sessions_merge`)."""
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import subprocess
 import sys
@@ -466,6 +467,20 @@ def _screen_candidates(
     return candidates, notes
 
 
+def _fanout_lanes(cwd: Path, parallel_id: str) -> tuple[str, ...]:
+    """The lane ids of the fan-out *parallel_id* (each lane's manifest names
+    it), in lane order; empty when no run does."""
+    lanes: list[tuple[int, str]] = []
+    runs = _runs_dir(cwd)
+    if runs.is_dir():
+        for d in runs.iterdir():
+            with contextlib.suppress(ManifestError):
+                m = read_manifest(d)
+                if m.parallel_id == parallel_id:
+                    lanes.append((m.lane or 0, d.name))
+    return tuple(name for _, name in sorted(lanes))
+
+
 def _cmd_compare(*, session_ids: tuple[str, ...], config_path: Path | None) -> int:
     """Advisory ranked comparison across >=2 already-run candidates: the same
     ranked report `--parallel`'s auto-compare prints (judge via the reviewer
@@ -473,13 +488,19 @@ def _cmd_compare(*, session_ids: tuple[str, ...], config_path: Path | None) -> i
     runs picked by hand, not necessarily from the same fan-out or even the
     same task (each candidate's own manifest `user_task` is its task).
     Read-only: no merges, no writes."""
+    cwd = Path.cwd()
+    if len(session_ids) == 1:
+        # One id: a fan-out's, comparing its lanes (the console prints the
+        # fan-out id, `sessions show` calls it ambiguous); anything else is one
+        # run, too few.
+        session_ids = _fanout_lanes(cwd, session_ids[0]) or session_ids
     if len(session_ids) < 2:
         print(
-            f"ERROR: sessions compare needs at least 2 run ids (got {len(session_ids)}).",
+            "ERROR: sessions compare needs 2 or more run ids, or one --parallel fan-out id"
+            f" (its lanes); got {len(session_ids)}.",
             file=sys.stderr,
         )
         return 2
-    cwd = Path.cwd()
     resolved: list[tuple[SessionLayout, SessionManifest]] = []
     seen: set[str] = set()
     for query in session_ids:

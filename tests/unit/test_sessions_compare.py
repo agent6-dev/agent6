@@ -119,7 +119,30 @@ def test_compare_needs_at_least_two_ids(repo: Path, capsys: pytest.CaptureFixtur
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     rc = main(["sessions", "compare", "run-AAAA11"])
     assert rc == 2
-    assert "at least 2" in capsys.readouterr().err
+    assert "2 or more run ids, or one --parallel fan-out id" in capsys.readouterr().err
+
+
+def test_compare_of_a_fanout_id_compares_its_lanes(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fan-out id is what the console prints and the operator holds; given
+    alone it names every lane whose manifest carries it, in lane order (it
+    read as one run, too few, and `sessions show` calls it ambiguous)."""
+    base = _init_repo(repo)
+    for lane, cost in ((1, 0.09), (2, 0.01)):
+        _setup_run(
+            repo,
+            f"fan-{lane}",
+            base_sha=base,
+            commits=[(f"{lane}.txt", "x\n", f"add {lane}")],
+            cost=cost,
+            manifest_extra={"parallel_id": "fan", "lane": lane},
+        )
+    _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
+    assert main(["sessions", "compare", "fan"]) == 0
+    out = capsys.readouterr().out
+    assert "comparing 2 runs" in out
+    assert "fan-1" in out and "fan-2" in out and "run-AAAA11" not in out
 
 
 def test_compare_unknown_id_errors_loudly(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
