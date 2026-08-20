@@ -347,3 +347,20 @@ def test_the_task_headline_is_the_first_line_clipped() -> None:
     )
     assert "Execute the prepared plan: validate inputs" in out
     assert "# Plan" not in out and "1. add" not in out
+
+
+def test_the_receipt_reads_the_mode_from_the_start_the_console_prints_itself() -> None:
+    """The console prints its own headline for session.start; the fold must
+    still see the event (mode, first timestamp), or an ask's receipt reads
+    "0 commits" on the live console while every other surface omits it."""
+    out = _render(
+        [
+            {"type": "session.start", "mode": "ask", "user_task": "why?"},
+            {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
+            {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
+            {"type": "session.end", "reason": "answered", "all_passed": False},
+        ]
+    )
+    assert "1 tool" in out
+    assert "0 commits" not in out
+    assert out.count("why?") == 1  # the headline once, no operator item for the start

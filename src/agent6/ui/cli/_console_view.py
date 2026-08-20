@@ -197,6 +197,9 @@ class ConsoleView:
                 policy = self._policy() if self._policy is not None else ""
                 if policy:
                     self._line(self._c("dim", f"  {policy}") + "\n")
+                # The fold still reads the start (mode, first timestamp) for
+                # the receipt; its operator item is this headline, not printed twice.
+                self._fold.feed(event)
                 return
             if etype == "btw.answered":
                 # Queued, not printed: it lands whole at the next turn boundary

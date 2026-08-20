@@ -27,6 +27,7 @@ class SessionPolicy:
     isolation: str
     verify_command: tuple[str, ...]
     verify_origin: str
+    mode: str = ""  # run | plan | ask; an ask has no gate to name
 
     def gate(self) -> str:
         """The gate and whose it is: an operator's `configured` gate certifies
@@ -55,7 +56,8 @@ class SessionPolicy:
         parts = [p for p in (self.model, self.isolation) if p]
         if self.run_commands:
             parts.append(f"commands {self.run_commands}")
-        parts.append(self.gate())
+        if self.mode != "ask":
+            parts.append(self.gate())
         return " · ".join(parts)
 
 
@@ -72,4 +74,5 @@ def session_policy(session_dir: Path) -> SessionPolicy:
         isolation=m.policy.isolation,
         verify_command=tuple(m.workflow.verify_command),
         verify_origin=m.workflow.verify_origin,
+        mode=m.mode,
     )

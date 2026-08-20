@@ -46,3 +46,10 @@ def test_a_gateless_run_says_so(tmp_path: Path) -> None:
 
 def test_an_unreadable_dir_reports_nothing_rather_than_guessing(tmp_path: Path) -> None:
     assert session_policy(tmp_path).line() == ""
+
+
+def test_an_asks_line_names_no_gate(tmp_path: Path) -> None:
+    """An ask never verifies, so its policy line carries no gate (a configured
+    verify_command still rides in its manifest)."""
+    _manifest(tmp_path, mode="ask")
+    assert session_policy(tmp_path).line() == "claude-x · strict · commands ask"
