@@ -12,11 +12,11 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.config.layer import resolved_state_dir
 from agent6.graph.storage import load_graph
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout
 from agent6.ui.cli._common import (
-    _state_dir,
     all_session_dirs,
     newest_layout_holding,
     resolve_session_layout,
@@ -64,7 +64,7 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
         sys.stderr.write(completed.stderr)
         return completed.returncode
     hits = _parse_rg_matches(completed.stdout)
-    _render_history_hits(hits, _state_dir(cwd))
+    _render_history_hits(hits, resolved_state_dir(cwd))
     return 0 if hits else 1
 
 
@@ -367,7 +367,9 @@ def _cmd_history_graph(session_id: str) -> int:
     else:
         found = newest_layout_holding(cwd, "graph")
         if found is None:
-            print(f"ERROR: no sessions with a graph under {_state_dir(cwd)}", file=sys.stderr)
+            print(
+                f"ERROR: no sessions with a graph under {resolved_state_dir(cwd)}", file=sys.stderr
+            )
             return 2
         layout = found
         print(
@@ -411,7 +413,9 @@ def _transcript_layout(cwd: Path, session_id: str) -> SessionLayout | int:
             return 2
     found = newest_layout_holding(cwd, "transcripts")
     if found is None:
-        print(f"ERROR: no sessions with transcripts under {_state_dir(cwd)}", file=sys.stderr)
+        print(
+            f"ERROR: no sessions with transcripts under {resolved_state_dir(cwd)}", file=sys.stderr
+        )
         return 2
     print(f"[agent6] transcript for most recent session: {found.session_id}", file=sys.stderr)
     return found

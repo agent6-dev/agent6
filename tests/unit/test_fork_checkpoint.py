@@ -23,11 +23,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import chain_ref_for
 from agent6.graph.storage import list_checkpoint_turns
 from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
-from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.workflows._session_state import load_session_snapshot
@@ -300,7 +300,7 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "plan-src-AAAA11", head_sha=head, turns=(1, 2), mode="plan")
 
     rc = _cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True)
@@ -322,7 +322,7 @@ def test_fork_refuses_an_explicit_id_held_by_any_bucket(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
     (state_dir / "sessions" / "asks" / "taken-CCCC33").mkdir(parents=True)
 
@@ -341,7 +341,7 @@ def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.M
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(
         state_dir, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="paranoid"
     )
@@ -378,7 +378,7 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "src-PROF11", head_sha=head, turns=(1,), workflow_profile="fast")
 
     rc = _cmd_fork(None, "src-PROF11", new_session_id="child-PROF22", no_run=True)
@@ -404,7 +404,7 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     # A config-selected source whose stamped name is now STALE (config says quick).
     _seed_source_run(
         state_dir,
@@ -437,7 +437,7 @@ def test_fork_snapshots_the_dag_under_the_source_curator_lock(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     src = _seed_source_run(state_dir, "src-LOCK11", head_sha=head, turns=(1,))
 
     locked: list[Path] = []
@@ -465,7 +465,7 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,), mode="plan")
 
     for bad in (None, "{not json", "[]"):  # missing / corrupt JSON / non-object
@@ -497,7 +497,7 @@ def test_fork_cleans_up_run_dir_when_branch_cut_fails(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
     # A second commit, and pre-create the fork branch pointing at it (≠ head).
     (repo / "b.txt").write_text("y\n")
@@ -522,7 +522,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
     rc = _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True)
@@ -592,7 +592,7 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1, 2))
     latest_payload = {
         "version": 2,
@@ -627,7 +627,7 @@ def test_latest_fork_does_not_run_ahead_of_loop_state(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1, 2, 3))
     src.session_dir.joinpath("loop_state.json").write_text(
         src.checkpoint_path(2).read_text(encoding="utf-8"), encoding="utf-8"
@@ -647,7 +647,7 @@ def test_fork_at_turn_selects_that_checkpoint(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
     rc = _cmd_fork(None, "sunny-otter", at_turn=2, new_session_id="kid-CCCC33", no_run=True)
@@ -662,7 +662,7 @@ def test_fork_unknown_turn_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
     rc = _cmd_fork(None, "sunny-otter", at_turn=99, new_session_id="kid-DDDD44", no_run=True)
@@ -679,7 +679,7 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     layout = SessionLayout(state_dir=state_dir, session_id="bare-run-EEEE55")
     layout.ensure()
     layout.manifest_path.write_text(
@@ -741,7 +741,7 @@ def test_fork_without_id_forks_most_recent_run(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "only-run-AAAA11", head_sha=head, turns=(1,))
     rc = _cmd_fork(None, "", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
@@ -760,7 +760,7 @@ def test_fork_continue_resumes_without_force(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
     captured: dict[str, Any] = {}
 
@@ -807,7 +807,7 @@ def test_resume_config_refusal_leaves_checkout_untouched(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "cfgfail-AAAA11", head_sha=head, turns=(1,))
     rc = _cmd_resume(None, "cfgfail-AAAA11", force=False)
     assert rc == 2
@@ -836,7 +836,7 @@ def test_resume_diverged_branch_refuses_without_checkout(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "divg-AAAA11", head_sha=new_head, turns=(1,))
     rc = _cmd_resume(None, "divg-AAAA11", force=False)
     assert rc == 1
@@ -901,7 +901,7 @@ def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     # graph_version 1 = root only; 2 = root + child; 3 = child passed.
     src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
     assert {n.title for n in load_graph(src).values()} == {"root task", "late subtask"}
@@ -937,7 +937,7 @@ def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     src = _seed_source_run(state_dir, "old-run-AAAA11", head_sha=head, turns=(1,))
     payload = json.loads(src.checkpoint_path(1).read_text(encoding="utf-8"))
     payload["graph_version"] = 0
@@ -960,7 +960,7 @@ def test_an_auto_minted_fork_id_skips_a_taken_directory(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
+    state_dir = resolved_state_dir(repo)
     _seed_source_run(state_dir, "forky-src-AAAA11", head_sha=head, turns=(1, 2))
     taken = state_dir / "sessions" / "runs" / "taken-one-AAAAAA"
     taken.mkdir(parents=True)

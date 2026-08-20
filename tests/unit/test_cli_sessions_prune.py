@@ -14,7 +14,6 @@ from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import chain_ref_for
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
-from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> str:
@@ -393,7 +392,7 @@ def test_runs_dir_prints_the_state_dir(
     monkeypatch.chdir(repo)
     assert main(["sessions", "dir"]) == 0
     printed = capsys.readouterr().out.strip()
-    assert printed == str(_state_dir(repo))
+    assert printed == str(resolved_state_dir(repo))
     assert "\n" not in printed
 
 
@@ -410,7 +409,7 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _state_dir(repo) / "sessions" / "runs"
+    runs = resolved_state_dir(repo) / "sessions" / "runs"
     live, dead = runs / "live-run-AAAA11", runs / "dead-run-BBBB22"
     for d in (live, dead):
         d.mkdir(parents=True)
@@ -438,7 +437,7 @@ def test_runs_rm_asks_clears_the_bucket(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    asks = _state_dir(repo) / "sessions" / "asks"
+    asks = resolved_state_dir(repo) / "sessions" / "asks"
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
     assert main(["sessions", "rm", "some-id", "--asks"]) == 2
@@ -564,7 +563,7 @@ def test_rm_reports_a_deletion_failure_instead_of_success(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _state_dir(repo) / "sessions" / "runs"
+    runs = resolved_state_dir(repo) / "sessions" / "runs"
     target = runs / "stuck-run-CCCC33"
     target.mkdir(parents=True)
     (target / "logs.jsonl").write_text(

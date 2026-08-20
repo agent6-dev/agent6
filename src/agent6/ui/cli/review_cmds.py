@@ -15,14 +15,13 @@ from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import (
     Config,
 )
-from agent6.config.layer import load_effective
+from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, git_hardening_flags
 from agent6.providers import (
     ProviderError,
     TranscriptSink,
 )
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.ui.cli._common import _state_dir
 from agent6.workflows.loop import build_readonly_review_tools
 from agent6.workflows.review import (
     CodeReviewError,
@@ -240,7 +239,7 @@ def _cmd_review(  # noqa: PLR0911
         max_usd=cfg.budget.max_usd,
         max_tokens_fallback=cfg.budget.max_tokens_fallback,
     )
-    layout_root = _state_dir(root) / "reviews"
+    layout_root = resolved_state_dir(root) / "reviews"
     layout_root.mkdir(parents=True, exist_ok=True)
     transcript_sink = TranscriptSink(layout_root)
 

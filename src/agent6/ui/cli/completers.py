@@ -29,7 +29,6 @@ from agent6.models.choices import config_value_choices
 from agent6.sessions.layout import machines_root, session_layout
 from agent6.ui.cli._common import (
     _plans_dir,
-    _state_dir,
     session_bucket_dirs,
 )
 from agent6.ui.cli.model import _connected_providers, _models_for
@@ -258,7 +257,7 @@ def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: obje
     inside the run's network can see it.
     """
     target = str(getattr(parsed_args, "target", "") or "")
-    layout = session_layout(_state_dir(Path.cwd()), target) if target else None
+    layout = session_layout(resolved_state_dir(Path.cwd()), target) if target else None
     if layout is None:
         return []
     return [str(p) for p in listening_ports(layout.session_dir) if str(p).startswith(prefix)]
@@ -273,7 +272,7 @@ def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
     verb accepts, no less and no more.
     """
     out: list[str] = []
-    for bucket in resumable_bucket_dirs(_state_dir(Path.cwd())):
+    for bucket in resumable_bucket_dirs(resolved_state_dir(Path.cwd())):
         if not bucket.is_dir():
             continue
         out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]

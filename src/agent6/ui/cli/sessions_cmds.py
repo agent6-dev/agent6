@@ -17,7 +17,7 @@ from agent6.config import (
     Config,
     ConfigError,
 )
-from agent6.config.layer import load_effective
+from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import (
     DIFF_SHOW_SAFETY_FLAGS,
     CommitIdentity,
@@ -61,7 +61,6 @@ from agent6.types import SESSION_KINDS
 from agent6.ui.cli._common import (
     NOTHING_YET,
     _runs_dir,
-    _state_dir,
     print_nothing_yet,
     resolve_or_newest_layout,
     resolve_session_layout,
@@ -126,7 +125,7 @@ def _cmd_list() -> int:
     cwd = Path.cwd()
     dirs: list[Path] = []
     for sub in SESSION_BUCKETS:
-        d = bucket_dir(_state_dir(cwd), sub)
+        d = bucket_dir(resolved_state_dir(cwd), sub)
         if d.is_dir():
             dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
     if not dirs:
@@ -735,7 +734,7 @@ def _cmd_prune(  # noqa: PLR0912
     except GitError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    state_dir = _state_dir(cwd)
+    state_dir = resolved_state_dir(cwd)
     deleted = squashed_deleted = merged_kept = unmerged_kept = 0
     for br in branches:
         if br == current:
@@ -931,7 +930,7 @@ def _cmd_compare(*, session_ids: tuple[str, ...], config_path: Path | None) -> i
     reviewer = cfg.models.resolve("reviewer")
     # `sessions compare` is advisory and stateless: it ranks + prints but never stamps
     # a manifest (only the fan-out's auto-compare does), so `ranked_by` is unused.
-    outcome = rank(cfg, candidates, transcript_dir=_state_dir(cwd) / "compare")
+    outcome = rank(cfg, candidates, transcript_dir=resolved_state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
     print_ranked_candidates(candidates, outcome)
     # A fresh judgment can contradict the fan-out's recorded verdict (the star in
@@ -967,7 +966,7 @@ def _cmd_sessions_dir() -> int:
 
     One bare line so it composes (`ls "$(agent6 sessions dir)"`, or delete a bucket
     outright). Sessions live under sessions/<bucket>/, one bucket per mode."""
-    print(_state_dir(Path.cwd()))
+    print(resolved_state_dir(Path.cwd()))
     return 0
 
 
@@ -977,7 +976,7 @@ def _rm_asks(cwd: Path, session_id: str) -> int:
     if session_id:
         print("ERROR: --asks clears this directory's asks; drop the run id.", file=sys.stderr)
         return 2
-    bucket = bucket_dir(_state_dir(cwd), "asks")
+    bucket = bucket_dir(resolved_state_dir(cwd), "asks")
     gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
     try:
         shutil.rmtree(bucket)

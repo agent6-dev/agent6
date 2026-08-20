@@ -234,7 +234,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
     assert cli_main(["machine", "run", str(f)]) == 0
     instance = resolved_state_dir(tmp_path) / "machines" / "tiny"
     spec = load_machine(f)
-    # A per-state dir so _state_dir() resolves -- the "dead dir" a steer would hit.
+    # A per-state dir so _current_state_dir() resolves -- the "dead dir" a steer would hit.
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
     (state / "logs.jsonl").write_text("", encoding="utf-8")

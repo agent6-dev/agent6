@@ -122,25 +122,14 @@ def sgr(text: str, code: str) -> str:
     return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
 
 
-def _state_dir(repo_root: Path) -> Path:
-    """The per-repo agent6 state dir (config + run state), out of the workspace.
-
-    Resolved from the global `[agent6].state_dir` base (default
-    `$XDG_STATE_HOME/agent6`) plus a per-repo id, so this is cheap and works
-    for read-only commands (`sessions`/`history`/...) without a full config
-    merge.
-    """
-    return resolved_state_dir(repo_root)
-
-
 def _runs_dir(repo_root: Path) -> Path:
     """The `runs/` directory under the per-repo state dir."""
-    return bucket_dir(_state_dir(repo_root), "runs")
+    return bucket_dir(resolved_state_dir(repo_root), "runs")
 
 
 def _plans_dir(repo_root: Path) -> Path:
     """The `plans/` directory under the per-repo state dir."""
-    return bucket_dir(_state_dir(repo_root), "plans")
+    return bucket_dir(resolved_state_dir(repo_root), "plans")
 
 
 # What a fresh install is told when it has nothing yet. One string: the same
@@ -173,7 +162,7 @@ def session_bucket_dirs(repo_root: Path) -> list[Path]:
     """The session bucket dirs under `sessions/` in the state
     dir, the cross-bucket scope for latest-run resolution and history. A missing
     bucket is still listed; iterators skip non-dirs."""
-    state = _state_dir(repo_root)
+    state = resolved_state_dir(repo_root)
     return [bucket_dir(state, subdir) for subdir in SESSION_BUCKETS]
 
 
@@ -207,7 +196,7 @@ def resolve_session_layout(
     an empty session and advising a resume that fails. `allow_husk` is for
     `sessions rm`, whose whole job is deleting one.
     """
-    layout = resolve_session(_state_dir(repo_root), query)
+    layout = resolve_session(resolved_state_dir(repo_root), query)
     if not allow_husk and is_session_husk(layout.session_dir):
         raise SessionIdError(
             f"session {layout.session_id} crashed before it ever started (no log, nothing"

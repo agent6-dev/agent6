@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from agent6.config.layer import resolved_state_dir
 from agent6.sessions.ipc import (
     approvals_dir,
     clear_pending_answers,
@@ -454,7 +455,6 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
     the instance dir. Every other test calls `session_dirs` directly, so
     nothing covered the argument."""
     from agent6.ui.cli import plan_watch
-    from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
     from agent6.ui.tui import home
 
     monkeypatch.chdir(tmp_path)
@@ -465,4 +465,4 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
 
     monkeypatch.setattr(home, "run_home", _capture)
     assert plan_watch._cmd_tui() == 0  # pyright: ignore[reportPrivateUsage]
-    assert seen == [_state_dir(tmp_path)]
+    assert seen == [resolved_state_dir(tmp_path)]

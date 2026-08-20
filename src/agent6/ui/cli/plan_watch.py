@@ -13,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 
+from agent6.config.layer import resolved_state_dir
 from agent6.errors import read_operator_file
 from agent6.sessions.id import SessionIdError, resolve_session_id
 from agent6.sessions.ipc import (
@@ -29,7 +30,6 @@ from agent6.sessions.manifest import ManifestError, SessionManifest, read_manife
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import (
     _plans_dir,
-    _state_dir,
     print_no_session_match,
     print_nothing_yet,
     resolve_or_newest_layout,
@@ -262,7 +262,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         return 2
     target = layout.session_dir if layout is not None else None
     if target is None or not target.is_dir():
-        print_no_session_match(session_id, _state_dir(Path.cwd()))
+        print_no_session_match(session_id, resolved_state_dir(Path.cwd()))
         return 2
 
     loaded: SessionManifest | None = None
@@ -417,7 +417,7 @@ def _cmd_tui(config_path: Path | None = None) -> int:
     cwd = Path.cwd()
     # The STATE dir: every bucket lookup below it goes through `bucket_dir`,
     # which appends `sessions/` itself.
-    agent6_dir = _state_dir(cwd)
+    agent6_dir = resolved_state_dir(cwd)
     while True:
         session_dir = run_home(agent6_dir, cwd, config_path)
         if session_dir is None:

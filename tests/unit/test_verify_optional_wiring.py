@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config
-from agent6.config.layer import EffectiveConfig
+from agent6.config.layer import EffectiveConfig, resolved_state_dir
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import RepoSummary
 from agent6.workflows._prompt_blocks import build_system_prompt
@@ -254,14 +254,13 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
     import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
     from agent6.app.reporter import Reporter
-    from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
     from agent6.ui.cli.run import session_frontend
 
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    session_dir = _state_dir(repo) / "sessions" / "runs" / "withheld-AAAA11"
+    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "withheld-AAAA11"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(

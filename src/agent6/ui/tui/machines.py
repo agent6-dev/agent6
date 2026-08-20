@@ -198,7 +198,7 @@ class MachineWatchScreen(Screen[None]):
         # Drop only our own front-end claim; concurrent watchers keep theirs.
         unregister_frontend(self._root, os.getpid())
 
-    def _state_dir(self) -> Path | None:
+    def _current_state_dir(self) -> Path | None:
         """The current agent state's per-state dir (where its answer files live)."""
         log = newest_state_log(self._root)
         return log.parent if log is not None else None
@@ -246,7 +246,7 @@ class MachineWatchScreen(Screen[None]):
                 timeout=6.0,
             )
             return
-        state_dir = self._state_dir()
+        state_dir = self._current_state_dir()
         if state_dir is None or self._steer_open:
             self.app.notify("no agent state to steer", timeout=4.0)
             return
@@ -384,7 +384,7 @@ class MachineWatchScreen(Screen[None]):
         machine is the machine twin of the run-modal gate."""
         if not live:
             return
-        state_dir = self._state_dir()
+        state_dir = self._current_state_dir()
         if state_dir is None:
             return
         self._prompts.dispatch(

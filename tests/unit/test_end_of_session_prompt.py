@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.config.layer import resolved_state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import _session_prompt as prompt_mod
 
@@ -18,10 +19,11 @@ def _seed_session(
 ) -> SessionLayout:
     """A real run dir under repo_root's state home, so resolution reaches the
     tty guard rather than short-circuiting on SessionIdError."""
-    from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.setenv("AGENT6_STATE_HOME", str(repo_root / ".state"))
-    layout = SessionLayout(state_dir=_state_dir(repo_root), session_id=session_id, subdir="runs")
+    layout = SessionLayout(
+        state_dir=resolved_state_dir(repo_root), session_id=session_id, subdir="runs"
+    )
     layout.session_dir.mkdir(parents=True, exist_ok=True)
     (layout.session_dir / "logs.jsonl").write_text(
         '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n', encoding="utf-8"

@@ -13,13 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from agent6.budget import BudgetTracker
+from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
-from agent6.ui.cli._common import (
-    _state_dir,
-)
 from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.viewmodel import first_task_line, newest_session_dir, session_mtime
 from agent6.workflows.loop import (
@@ -42,7 +40,7 @@ def ask_question_snippet(transcript: str) -> str:
 
 def cmd_ask_list() -> int:
     """`agent6 ask list`: enumerate saved asks under the per-repo state dir (asks subdir)."""
-    asks_dir = bucket_dir(_state_dir(Path.cwd()), "asks")
+    asks_dir = bucket_dir(resolved_state_dir(Path.cwd()), "asks")
     if not asks_dir.is_dir():
         print("No asks yet (the asks subdir under the per-repo state dir does not exist).")
         return 0
@@ -173,7 +171,7 @@ def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str
     same shape, and the useful direction is whichever way the operator is
     working -- an ask that worked something out, then a run to do it.
     """
-    state_dir = _state_dir(cwd)
+    state_dir = resolved_state_dir(cwd)
     if latest:
         # runs/ and asks/ only: a machine draft is an authoring log, not a
         # session with a task and an outcome, and picking the newest one made

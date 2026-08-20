@@ -16,8 +16,8 @@ import pytest
 import agent6.app._session as session_mod
 import agent6.app._setup as setup_mod
 import agent6.app.resume as resume_mod
+from agent6.config.layer import resolved_state_dir
 from agent6.sessions.layout import SessionLayout
-from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 
 
@@ -42,7 +42,7 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    session_dir = _state_dir(repo) / "sessions" / "runs" / "parked-AAAA11"
+    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "parked-AAAA11"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
@@ -118,7 +118,9 @@ def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _park_manifest(
-        _state_dir(repo) / "sessions" / "runs" / "parked-BBBB22", preset="strict", from_flag=True
+        resolved_state_dir(repo) / "sessions" / "runs" / "parked-BBBB22",
+        preset="strict",
+        from_flag=True,
     )
     captured = _stub_start_of_run(resume_mod, monkeypatch, tmp_path)
 
@@ -136,7 +138,9 @@ def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _park_manifest(
-        _state_dir(repo) / "sessions" / "runs" / "parked-CCCC33", preset="strict", from_flag=True
+        resolved_state_dir(repo) / "sessions" / "runs" / "parked-CCCC33",
+        preset="strict",
+        from_flag=True,
     )
     captured = _stub_start_of_run(resume_mod, monkeypatch, tmp_path)
 
@@ -158,7 +162,9 @@ def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _park_manifest(
-        _state_dir(repo) / "sessions" / "runs" / "parked-DDDD44", preset="hardened", from_flag=False
+        resolved_state_dir(repo) / "sessions" / "runs" / "parked-DDDD44",
+        preset="hardened",
+        from_flag=False,
     )
     captured = _stub_start_of_run(resume_mod, monkeypatch, tmp_path)
 
@@ -171,7 +177,7 @@ class _Stop(Exception):
 
 
 def _plan_session_dir(repo: Path, session_id: str) -> None:
-    session_dir = _state_dir(repo) / "sessions" / "runs" / session_id
+    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / session_id
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": session_id, "mode": "plan", "user_task": "t"}),
@@ -280,7 +286,7 @@ def test_resume_preset_flag_is_recorded_for_later_legs(
     monkeypatch.chdir(repo)
     _plan_session_dir(repo, "plan-PRESET1")
     _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
-    session_dir = _state_dir(repo) / "sessions" / "runs" / "plan-PRESET1"
+    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "plan-PRESET1"
 
     def _stop(*_a: object, **_k: object) -> object:
         raise _Stop()
@@ -368,7 +374,7 @@ def test_an_id_matching_two_buckets_is_refused_by_name(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = _state_dir(repo)
+    state = resolved_state_dir(repo)
     _session_dir(state, "runs", "quiet-fox-AAAAAA", "run")
     _session_dir(state, "asks", "quiet-fox-BBBBBB", "ask")
 
@@ -390,7 +396,7 @@ def test_a_session_resume_cannot_continue_is_left_untouched(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = _state_dir(repo)
+    state = resolved_state_dir(repo)
     draft = _session_dir(state, "machines", "brave-elk-CCCCCC", "machine")
     (draft / "worker.pid").write_text("4242\n", encoding="utf-8")
     (draft / "answer_1.json").write_text("{}", encoding="utf-8")
@@ -413,7 +419,7 @@ def test_a_resumed_ask_needs_no_repo_and_answers_where_a_fresh_one_does(
     outside = tmp_path / "notarepo"
     outside.mkdir()
     monkeypatch.chdir(outside)
-    state = _state_dir(outside)
+    state = resolved_state_dir(outside)
     ask = _session_dir(state, "asks", "quiet-fox-AAAAAA", "ask")
 
     # No snapshot: the refusal that follows proves the git preflight was skipped
@@ -443,7 +449,7 @@ def test_resuming_a_finished_run_without_a_steer_is_refused(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    session_dir = _state_dir(repo) / "sessions" / "runs" / "done-BBBB22"
+    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "done-BBBB22"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": "done-BBBB22", "mode": "run", "user_task": "t"}),
@@ -480,7 +486,7 @@ def test_a_finished_run_still_resumes_with_a_steer(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    session_dir = _state_dir(repo) / "sessions" / "runs" / "done-CCCC33"
+    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "done-CCCC33"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": "done-CCCC33", "mode": "run", "user_task": "t"}),
