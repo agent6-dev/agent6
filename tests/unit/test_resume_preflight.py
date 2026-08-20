@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 import agent6.app._session as session_mod
+import agent6.app._setup as setup_mod
 import agent6.app.resume as resume_mod
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
@@ -64,27 +65,12 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
         seen.append(preset)
         raise ConfigError("stop before run_task")  # short-circuit the branch
 
-    monkeypatch.setattr(resume_mod, "load_effective", _capture_load_effective)
+    monkeypatch.setattr(setup_mod, "load_effective", _capture_load_effective)
     rc = _cmd_resume(None, "parked-AAAA11", force=False)
     assert rc == 2
     # A config-selected preset re-resolves from the config files; only a
     # --preset flag is replayed (WorkflowStamp.replay_preset's contract).
     assert seen == [""]
-
-
-class _StubGit:
-    run_repo_hooks = False
-
-
-class _StubCfg:
-    git = _StubGit()
-
-    def require_runnable(self, _role: str) -> None:
-        return None
-
-
-class _StubLoaded:
-    config = _StubCfg()
 
 
 def _park_manifest(session_dir: Path, *, preset: str, from_flag: bool) -> None:
@@ -104,23 +90,17 @@ def _park_manifest(session_dir: Path, *, preset: str, from_flag: bool) -> None:
     )
 
 
-def _stub_start_of_run(resume: object, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+def _stub_start_of_run(
+    resume: object, monkeypatch: pytest.MonkeyPatch, tmp: Path
+) -> dict[str, object]:
     """Let a parked resume reach `run_task`; capture the kwargs it hands over."""
-
-    def _load(*_a: object, **_k: object) -> _StubLoaded:
-        return _StubLoaded()
-
-    def _hook_policy(_v: object) -> None:
-        return None
-
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp)
     captured: dict[str, object] = {}
 
     def _capture_run_task(*_a: object, **k: object) -> int:
         captured.update(k)
         return 0
 
-    monkeypatch.setattr(resume, "load_effective", _load)
-    monkeypatch.setattr(resume, "apply_git_ops_policy", _hook_policy)
     monkeypatch.setattr(resume, "run_task", _capture_run_task)
     return captured
 
@@ -140,7 +120,7 @@ def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
     _park_manifest(
         _state_dir(repo) / "sessions" / "runs" / "parked-BBBB22", preset="strict", from_flag=True
     )
-    captured = _stub_start_of_run(resume_mod, monkeypatch)
+    captured = _stub_start_of_run(resume_mod, monkeypatch, tmp_path)
 
     assert _cmd_resume(None, "parked-BBBB22", force=False) == 0
     assert captured["preset_stamp"] == ("strict", True)
@@ -158,7 +138,7 @@ def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
     _park_manifest(
         _state_dir(repo) / "sessions" / "runs" / "parked-CCCC33", preset="strict", from_flag=True
     )
-    captured = _stub_start_of_run(resume_mod, monkeypatch)
+    captured = _stub_start_of_run(resume_mod, monkeypatch, tmp_path)
 
     assert _cmd_resume(None, "parked-CCCC33", force=False, preset="none") == 0
     assert captured["preset_stamp"] is None
@@ -180,7 +160,7 @@ def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
     _park_manifest(
         _state_dir(repo) / "sessions" / "runs" / "parked-DDDD44", preset="hardened", from_flag=False
     )
-    captured = _stub_start_of_run(resume_mod, monkeypatch)
+    captured = _stub_start_of_run(resume_mod, monkeypatch, tmp_path)
 
     assert _cmd_resume(None, "parked-DDDD44", force=False) == 0
     assert captured["preset_stamp"] is None  # re-derives, not the stale manifest name
@@ -260,7 +240,7 @@ def _stub_load_effective(monkeypatch: pytest.MonkeyPatch, toml_body: str, tmp: P
     def _load(*_a: object, **_k: object) -> EffectiveConfig:
         return EffectiveConfig(config=cfg, sources={}, layers=())
 
-    monkeypatch.setattr(resume_mod, "load_effective", _load)
+    monkeypatch.setattr(setup_mod, "load_effective", _load)
 
 
 def test_plan_resume_requires_the_planner_role(

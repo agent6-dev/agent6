@@ -85,7 +85,7 @@ def test_plan_clamps_run_commands_like_ask(tmp_path: Path) -> None:
     planning is approved per call, never auto-run. The clamp only tightens (a
     configured "no" stays "no"), and an allow-all session answer upgrades the
     clamped "ask" back to "yes"."""
-    from agent6.app._session import session_config
+    from agent6.app._setup import session_config
     from agent6.sessions.ipc import COMMAND_SCOPE, effective_run_commands, set_session_allow
 
     yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})

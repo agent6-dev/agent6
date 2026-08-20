@@ -18,15 +18,14 @@ from agent6.app._session import (
     build_session_providers,
     build_session_tools,
     select_isolation,
-    session_config,
     session_facts_provider,
     warn_install_inside_workspace,
 )
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
-    apply_git_ops_policy,
     check_provider_keys,
+    load_session_config,
     start_mcp_manager_if_enabled,
     wants_session_network,
 )
@@ -62,7 +61,6 @@ from agent6.config import (
     ConfigError,
 )
 from agent6.config.layer import (
-    load_effective,
     resolved_state_dir,
 )
 from agent6.events import EventSink, EventWriteError
@@ -352,15 +350,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # preset re-resolves from the same files, and handing its name
                 # back would make _select_preset rank it as a flag (the same
                 # rule as the snapshot-resume path below).
-                cfg = load_effective(
-                    cwd, config_path, preset=preset or manifest.workflow.replay_preset
+                cfg = load_session_config(
+                    cwd,
+                    config_path,
+                    mode=mode,
+                    preset=preset or manifest.workflow.replay_preset,
+                    budget_overrides=budget_overrides,
+                    sandbox_overrides=sandbox_overrides,
                 ).config
-                apply_git_ops_policy(cfg)
-                if budget_overrides is not None:
-                    cfg = budget_overrides.apply(cfg)
-                if sandbox_overrides is not None:
-                    cfg = sandbox_overrides.apply(cfg)
-                cfg.require_runnable(role)
             except ConfigError as exc:
                 reporter.err(f"ERROR: {exc}")
                 return 2
@@ -478,22 +475,22 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 return 1
 
         try:
-            effective = load_effective(Path.cwd(), config_path, preset=preset or manifest_preset)
-            cfg, explicit_leaves = effective.config, effective.explicit_leaves
-            apply_git_ops_policy(cfg)
-            if preset:
-                # This leg and every later one run under the operator's new
-                # choice; the stamp is what listings show and resume replays.
-                stamp_preset(layout.session_dir, preset)
-            if budget_overrides is not None:
-                cfg = budget_overrides.apply(cfg)
-            # Same clamp a fresh session gets: a resumed ask is still an ask.
-            # The operator's own flags land after it, as they do on a fresh one.
-            cfg = session_config(cfg, mode, sandbox_overrides)
-            cfg.require_runnable(role)
+            effective = load_session_config(
+                Path.cwd(),
+                config_path,
+                mode=mode,
+                preset=preset or manifest_preset,
+                budget_overrides=budget_overrides,
+                sandbox_overrides=sandbox_overrides,
+            )
         except ConfigError as exc:
             reporter.err(f"ERROR: {exc}")
             return 2
+        cfg, explicit_leaves = effective.config, effective.explicit_leaves
+        if preset:
+            # This leg and every later one run under the operator's new
+            # choice; the stamp is what listings show and resume replays.
+            stamp_preset(layout.session_dir, preset)
 
         # Needs the config: "approve everything while away" is a grant per
         # scope, and the scopes in play include one per configured MCP server.

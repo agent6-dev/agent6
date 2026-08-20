@@ -20,13 +20,13 @@ from agent6.app._session import (
     build_session_providers,
     build_session_tools,
     select_isolation,
-    session_config,
     session_facts_provider,
     warn_install_inside_workspace,
 )
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
+    session_config,
     start_mcp_manager_if_enabled,
     wants_session_network,
 )

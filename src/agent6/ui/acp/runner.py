@@ -29,12 +29,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from agent6.app._setup import load_session_config
 from agent6.app.finalize import EXIT_NO_COMMIT_LANDED, EXIT_VERIFY_FAILED
 from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.reporter import Reporter
 from agent6.app.resume import resume_task
 from agent6.app.run import run_task
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import resolved_state_dir
 from agent6.sessions.id import unused_session_id
 from agent6.types import session_bucket
 from agent6.ui.acp.frontend import acp_frontend
@@ -325,7 +326,7 @@ class RunBridge:
                     reporter=teeing_reporter(said),
                 )
             else:
-                effective = load_effective(session.cwd, self.config_path)
+                effective = load_session_config(session.cwd, self.config_path, mode=ACP_MODE)
                 code = run_task(
                     effective.config,
                     text,

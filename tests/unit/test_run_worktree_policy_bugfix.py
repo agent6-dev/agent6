@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+import agent6.app._setup as setup_mod
 import agent6.app.preflight as preflight_mod
 import agent6.app.run as app_run_mod
 import agent6.ui.cli.run as run_mod
@@ -96,7 +97,7 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
         _seen_at_stop.append(git_status(Path.cwd()).modified_count == 0)
         raise _Stop
 
-    monkeypatch.setattr(run_mod, "load_effective", _load_effective)
+    monkeypatch.setattr(setup_mod, "load_effective", _load_effective)
     monkeypatch.setattr(preflight_mod, "apply_git_ops_policy", _noop)
     monkeypatch.setattr(run_mod, "validate_configured_model", _model_ok)
     monkeypatch.setattr(preflight_mod, "verify_git_identity", _noop)

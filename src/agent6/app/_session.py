@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 import agent6
-from agent6.app._setup import SandboxOverrides, detect_env
+from agent6.app._setup import detect_env
 from agent6.app.confine import (
     check_network_support,
     config_refusal,
@@ -46,7 +46,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
-from agent6.types import IsolationLevel, session_kind
+from agent6.types import IsolationLevel
 from agent6.workflows.review import ReviewSeat
 
 
@@ -242,23 +242,3 @@ def session_facts_provider(
         )
 
     return facts
-
-
-def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:
-    """The effective config for a session of *mode*.
-
-    Both lifecycles call this before anything reads a knob, so a fresh session
-    and a resumed one are governed identically. Today it is the interactive-mode
-    clamp (ask, plan); anything else mode-dependent belongs here rather than at
-    one call site.
-
-    *overrides* are the operator's per-invocation flags, and they land LAST:
-    the most specific layer, and the one the LLM cannot reach. The clamp exists
-    to catch a STANDING `run_commands = "yes"` that nobody is watching, not an
-    explicit `--auto-approve` on this invocation -- clamping that made the flag
-    inert and every headless `ask --auto-approve` refused. Tightening still wins
-    outright: `--no-commands` pins "no", and `--auto-approve` never resurrects a
-    withheld one.
-    """
-    clamped = cfg.with_run_commands_clamped() if session_kind(mode).clamps_commands else cfg
-    return clamped if overrides is None else overrides.apply(clamped)

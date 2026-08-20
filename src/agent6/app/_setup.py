@@ -21,6 +21,7 @@ from agent6.config import (
     ConfigError,
     MCPServerEntry,
 )
+from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.events import EventSink
 from agent6.git_ops import set_provider_key_env, set_repo_filter_policy, set_repo_hook_policy
 from agent6.models.cache import list_models, refresh_pricing_catalog
@@ -31,7 +32,7 @@ from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
 from agent6.tools.policy import jail_policy
-from agent6.types import IsolationLevel, JailPolicy, NetworkMode
+from agent6.types import IsolationLevel, JailPolicy, NetworkMode, session_kind
 from agent6.workflows.review import parse_seat_spec
 
 
@@ -144,6 +145,51 @@ def apply_git_ops_policy(cfg: Config) -> None:
     set_repo_hook_policy(cfg.git.run_repo_hooks)
     set_repo_filter_policy(cfg.git.run_repo_filters)
     set_provider_key_env(p.api_key_env for p in cfg.providers.values() if p.api_key_env)
+
+
+def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:
+    """The effective config for a session of *mode*.
+
+    Both lifecycles call this before anything reads a knob, so a fresh session
+    and a resumed one are governed identically. Today it is the interactive-mode
+    clamp (ask, plan); anything else mode-dependent belongs here rather than at
+    one call site.
+
+    *overrides* are the operator's per-invocation flags, and they land LAST:
+    the most specific layer, and the one the LLM cannot reach. The clamp exists
+    to catch a STANDING `run_commands = "yes"` that nobody is watching, not an
+    explicit `--auto-approve` on this invocation -- clamping that made the flag
+    inert and every headless `ask --auto-approve` refused. Tightening still wins
+    outright: `--no-commands` pins "no", and `--auto-approve` never resurrects a
+    withheld one.
+    """
+    clamped = cfg.with_run_commands_clamped() if session_kind(mode).clamps_commands else cfg
+    return clamped if overrides is None else overrides.apply(clamped)
+
+
+def load_session_config(
+    cwd: Path,
+    config_path: Path | None,
+    *,
+    mode: str,
+    preset: str = "",
+    budget_overrides: BudgetOverrides | None = None,
+    sandbox_overrides: SandboxOverrides | None = None,
+) -> EffectiveConfig:
+    """The config a session of *mode* starts or resumes under, built the same
+    way at every entry point (`agent6 run`, `resume`, an editor's ACP turn):
+    the effective layers for *preset*, the git policy set from them, the
+    budget flags, `session_config` (the interactive clamp with the sandbox
+    flags landing last), checked runnable for the mode's role. Raises
+    ConfigError like `load_effective`."""
+    effective = load_effective(cwd, config_path, preset=preset)
+    cfg = effective.config
+    apply_git_ops_policy(cfg)
+    if budget_overrides is not None:
+        cfg = budget_overrides.apply(cfg)
+    cfg = session_config(cfg, mode, sandbox_overrides)
+    cfg.require_runnable(session_kind(mode).role)
+    return replace(effective, config=cfg)
 
 
 def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str | None:

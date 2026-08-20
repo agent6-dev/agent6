@@ -85,6 +85,13 @@ def _repo(path: Path) -> Path:
     return path
 
 
+def _loaded(*_a: object, **_k: object) -> EffectiveConfig:
+    """The loader's result for a test that stubs `run_task`: the real type (the
+    bridge reads `explicit_leaves` off it), unconfigured (the real loader
+    would refuse a config with no model to run)."""
+    return EffectiveConfig(config=Config(), sources={}, layers=())
+
+
 def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
     """stdout IS the protocol stream. One status line on it desynchronises the
     connection irrecoverably, and no editor recovers from that."""
@@ -112,6 +119,7 @@ def test_a_cancel_reaches_the_run_it_names(tmp_path: Path, monkeypatch: pytest.M
         return 0
 
     monkeypatch.setattr(runner, "run_task", _blocking_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
 
     wire = _Wire()
     try:
@@ -142,6 +150,7 @@ def test_a_cancelled_turn_says_so(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         return 0
 
     monkeypatch.setattr(runner, "run_task", _blocking_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -178,6 +187,7 @@ def test_the_runs_journal_streams_out_as_session_update(
         return 0
 
     monkeypatch.setattr(runner, "run_task", _writing_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -207,7 +217,7 @@ def test_a_run_that_cannot_start_says_why(tmp_path: Path, monkeypatch: pytest.Mo
     def _broken(*_a: object, **_kw: object) -> object:
         raise ConfigError("Config file is not valid TOML (agent6.toml)")
 
-    monkeypatch.setattr(runner, "load_effective", _broken)
+    monkeypatch.setattr(runner, "load_session_config", _broken)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -340,6 +350,7 @@ def test_a_turn_cancelled_while_queued_never_starts(
         return 0
 
     monkeypatch.setattr(runner, "run_task", _blocking_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
     wire = _Wire()
     try:
         first = wire.new_session(_repo(tmp_path))
@@ -409,6 +420,7 @@ def test_a_refusal_that_never_reached_a_journal_still_says_why(
         return 2
 
     monkeypatch.setattr(runner, "run_task", _refusing_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -562,14 +574,9 @@ def test_a_second_prompt_resumes_the_same_run(
     def _minted(*_a: object, **_k: object) -> str:
         return "run-AAAA11"
 
-    def _effective(*_a: object, **_k: object) -> EffectiveConfig:
-        # The real type: the bridge reads `explicit_leaves` off it, and a
-        # SimpleNamespace stand-in cannot answer for that.
-        return EffectiveConfig(config=Config(), sources={}, layers=())
-
     monkeypatch.setattr(runner, "resolved_state_dir", _state_dir)
     monkeypatch.setattr(runner, "unused_session_id", _minted)
-    monkeypatch.setattr(runner, "load_effective", _effective)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
 
     def _run_task(_config: object, text: str, **kw: Any) -> int:
         calls.append(("run", str(kw["session_id"]), text))

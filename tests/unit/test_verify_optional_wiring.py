@@ -251,6 +251,7 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
     two contradictory preamble lines, committed nothing all leg, and exited 4
     over a gate that never ran."""
     import agent6.app._session as session_mod
+    import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
     from agent6.app.reporter import Reporter
     from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
@@ -304,7 +305,7 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
         return True
 
     pinned: list[tuple[tuple[str, ...], str]] = []
-    monkeypatch.setattr(resume_mod, "load_effective", _load)
+    monkeypatch.setattr(setup_mod, "load_effective", _load)
     monkeypatch.setattr(session_mod, "detect_env", object)
     monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
     monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)

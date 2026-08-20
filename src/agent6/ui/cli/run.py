@@ -15,6 +15,7 @@ from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
     check_provider_keys,
+    load_session_config,
 )
 from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.preflight import (
@@ -24,9 +25,6 @@ from agent6.app.run import run_task
 from agent6.config import (
     Config,
     RoleName,
-)
-from agent6.config.layer import (
-    load_effective,
 )
 from agent6.events import EventSink
 from agent6.models.validate import (
@@ -271,27 +269,28 @@ def _cmd_run(  # noqa: PLR0911
     """Adapt `agent6 run`/`plan`/`ask` argv: build the effective config, apply
     the flag overrides, resolve skills and @file refs, route `--parallel`,
     then drive the lifecycle (`app.run.run_task`) with the injected seam."""
-    effective = load_effective(Path.cwd(), config_path, preset=preset)
+    # The not-a-git-repo wall first: run/plan need git; ask is read-only and
+    # may run outside a repo. A user in a scratch non-git dir must not clear
+    # the provider, model, and key walls serially only to discover at the end
+    # that they also need git.
+    if mode != "ask" and not require_git_repo(Path.cwd()):
+        return 2
+    effective = load_session_config(
+        Path.cwd(),
+        config_path,
+        mode=mode,
+        preset=preset,
+        budget_overrides=budget_overrides,
+        sandbox_overrides=sandbox_overrides,
+    )
     cfg, explicit_leaves = effective.config, effective.explicit_leaves
-    if budget_overrides is not None:
-        cfg = budget_overrides.apply(cfg)
-    if sandbox_overrides is not None:
-        cfg = sandbox_overrides.apply(cfg)
     if decompose:  # --decompose: plan-first for this run (overrides config)
         cfg = cfg.model_copy(update={"prompt": cfg.prompt.model_copy(update={"decompose": "on"})})
     task, compose_err = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
     if compose_err:
         print(f"ERROR: {compose_err}", file=sys.stderr)
         return 2
-    # Surface the not-a-git-repo wall up front. run/plan need git; ask is
-    # read-only and may run outside a repo. Without this, a user in a scratch
-    # non-git dir clears the provider, model, and key walls serially only to
-    # discover at the end that they also need git. Mirrors the resume path,
-    # which already checks git before require_runnable.
-    if mode != "ask" and not require_git_repo(Path.cwd()):
-        return 2
     role = session_kind(mode).role
-    cfg.require_runnable(role)
 
     # Resolve @path references in the task string before the
     # workflow ever sees it. Lets the user write "fix the bug in @src/x.py

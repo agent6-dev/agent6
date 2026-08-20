@@ -6,6 +6,7 @@ anything else is a bug and crash-reports at exit 1."""
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -110,6 +111,7 @@ def test_a_bad_budget_flag_refuses_end_to_end(
 ) -> None:
     """`run --max-usd inf` names the flag it refuses, at exit 2, not a saved
     ValidationError traceback and an invitation to file a bug."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # past the git wall
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "s"))

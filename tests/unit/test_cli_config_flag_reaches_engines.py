@@ -79,7 +79,7 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
         seen.append(explicit)
         raise _ConfigError("stop here")
 
-    monkeypatch.setattr(acp_runner, "load_effective", fake_load)
+    monkeypatch.setattr(acp_runner, "load_session_config", fake_load)
 
     class _Server:
         def __init__(self) -> None:
