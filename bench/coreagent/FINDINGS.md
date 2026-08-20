@@ -406,3 +406,48 @@ in it unmodified. A cargo/rustup special-case was started and reverted; the
 general fix is the sandbox-reachability diagnostic above, which turns "agent6
 seems broken" into an actionable operator message. No regression on long
 tasks (longhorizon stylebook 1.0 on the fixed bin, identical to baseline).
+
+## Thrust 6 — a compact operating brief as the system prompt (2026-08-18) → NULL, not shipped
+
+**Hypothesis:** the run-mode `<agent6>` block (task, tool notes, gate rules,
+finish) says nothing about HOW to work; a compact brief in the style of the
+larger coding agents (understand → change little → check with the gate →
+finish cleanly, with the read/search tools named and the edit tools'
+contracts spelled out; `prompts/brief.md`, 2.2k chars, replacing the block)
+should lift small models. Condition `brief` (`--conditions baseline,brief`),
+everything else identical.
+
+**Result: task-dependent, zero net; not shipped.** Two waves (4 reps, then 8
+more on the discriminating tasks), pooled:
+
+| model | bugs | ledger | rpn | textkit |
+|---|---|---|---|---|
+| qwen3.6-35b-a3b (n=12) | −0.02 | **−0.50** (6/12 → 0/12 solved) | +0.17 (0/12 → 2/12) | 0.00 (n=4, floor) |
+| mistral-small-3.2-24b (n=12) | −0.01 | **−0.39** (0.81 → 0.42) | **+0.21** (9/12 → 12/12) | −0.04 (n=4) |
+| kimi-k2.6 (n=4) | 0 | 0 | 0 | 0 (all 1.0: ceiling) |
+
+Cost per run unchanged (the block is a small share of the context).
+
+- The rpn win replicates on both small models; the ledger loss replicates on
+  both. Both are real at n=12 (qwen ledger 6/12 vs 0/12 solved) and they
+  cancel; per the adoption rule (helps-some/hurts-others → a knob at most,
+  and no knob is worth its config surface for a prompt paragraph) nothing
+  ships. Consistent with Thrust 3: prompt prose is not the lever for small
+  models.
+- **What the ledger loss is.** Every qwen ledger `brief` run went quiet at
+  ~10s: the model decides to rewrite the stub file whole, calls `apply_edit`
+  with `kind="create"` on the existing file (a validation error), then
+  narrates the fix ("let me use apply_patch instead") without calling
+  anything, twice, and the went-quiet guard ends the run. The baseline runs
+  hit the same wall half the time. mistral instead thrashes small edits
+  (an indent-fuzzy miss, then a botched partial edit that leaves a syntax
+  error the gate keeps reporting). The mechanism behind both: there is no
+  whole-file overwrite. `create` refuses an existing file (a guard against a
+  model that thinks the file is new) and `replace` needs the byte-exact old
+  text, so "rewrite this stub" has no clean move. That is a tool-shape
+  finding, not a prompt one; the next experiment is an explicit
+  `apply_edit kind="overwrite"` (the model states the intent, so the create
+  guard keeps its job), measured on the same three tasks against these
+  baseline arms.
+- Methodology: `--reps 8` was needed; the wave-1 n=4 cells disagreed with
+  the pooled cells on bugs for qwen (+0.17 → −0.02).
