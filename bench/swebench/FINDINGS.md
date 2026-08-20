@@ -322,6 +322,26 @@ distinct-model review panels, contract search (find how the existing
 suite pins the surface), and stronger models (harness is model-agnostic;
 vendor-scaffold co-training is the competition's edge).
 
+### gpt-5.6-sol sweep (random-80, official scorer, 2026-08-20)
+
+ChatGPT-subscription provider, sol at effort medium, $1/instance token
+cap, verify auto-detected with `verify_timeout_s = 240`, conc 2-3.
+Two random draws from the 500 (seeds registered in the sample files):
+
+| draw | resolved |
+|---|---|
+| sample_50 (seed 20260623) | 32/50 = 64.0% |
+| slice2, 30 more (seed 20260820) | 27/30 = 90.0% |
+| pooled | 59/80 = 73.8% (Wilson 95% [63.2%, 82.1%]) |
+
+empty=2, err=0. The per-draw gap is wide at these n; the pooled
+interval is the number to quote. Published full-500 comparisons
+(vendor tables): mini-swe-agent 67.3, KimiCode 67.5, Claude Code 73.7;
+cross-table comparability caveats apply, and this is a sample, not the
+full set. Harness findings from the sweep's transcripts (verify
+timeouts dominate wasted wall; containers lack rg; multi-file V4A
+patches) are recorded with the fixes in the repo history.
+
 ### Cross-model health (dev-slice subsets, same harness)
 
 | model | resolved | empties | note |
