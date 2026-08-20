@@ -270,3 +270,32 @@ def test_attach_to_a_finished_run_reports_its_outcome_not_a_crash(
     assert result == [0]
     err = capsys.readouterr().err
     assert "crashed or killed" not in err, f"a clean finish rendered as a crash: {err!r}"
+
+
+def test_attach_prints_the_runs_policy_line_like_the_run_did(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The replay of a finished run carries the same header the live console
+    printed under the task: model, isolation, command policy, gate."""
+    _make_run(
+        tmp_path,
+        "done-run",
+        [
+            {"type": "session.start", "user_task": "t"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        ],
+    )
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "done-run"
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "mode": "run",
+                "models": {"driver": {"model": "m-1"}},
+                "policy": {"run_commands": "ask", "isolation": "strict"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    assert main(["attach", "done-run"]) == 0
+    assert "  m-1 · strict · commands ask · " in capsys.readouterr().out

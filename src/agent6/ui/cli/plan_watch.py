@@ -46,6 +46,7 @@ from agent6.viewmodel import (
     scan_session_log,
     session_is_live,
     session_mtime,
+    session_policy,
     status_for_session_dir,
     tail_events,
 )
@@ -628,7 +629,7 @@ def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> 
     already said its outcome, and calling that "crashed or killed" contradicted
     the `passed` the other surfaces were showing for the same run.
     """
-    view = ConsoleView(sys.stdout)
+    view = ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
     try:
         for event in tail_events(events_path, follow=False):
             view.feed(event)
@@ -694,7 +695,7 @@ def _watch_transcript(target: Path) -> int:
         # folds the log once, for the parked/created distinction it needs).
         return not worker_is_alive(target)
 
-    view = ConsoleView(sys.stdout)
+    view = ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
     front_end = _install_front_end(target, view)
     interrupted = False
     try:
