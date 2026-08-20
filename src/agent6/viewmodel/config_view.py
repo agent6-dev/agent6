@@ -288,7 +288,10 @@ def _description_lines(description: str, indent: str) -> list[str]:
 
 def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
     """One leaf's machine-readable view (shared by the full dump and the
-    single-key path, so the two JSON shapes cannot drift)."""
+    single-key path, so the two JSON shapes cannot drift). `display` and
+    `default_display` are the value column and the default as every surface
+    prints them (`display_value` / `format_value`), so a client renders them
+    verbatim instead of keeping its own formatter."""
     return {
         "value": s.value,
         "effective": s.effective_value,
@@ -299,6 +302,8 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         "type": s.py_type,
         "choices": list(s.choices) if s.choices is not None else None,
         "description": s.description,
+        "display": display_value(s),
+        "default_display": format_value(s.default),
     }
 
 

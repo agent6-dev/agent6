@@ -1556,8 +1556,7 @@ async function renderConfig(gen) {
     const s = data[k];
     const tr = el('tr', s.modified ? 'mod' : '');
     tr.appendChild(el('td', 'key', k));
-    const shown = s.adaptive ? (esc(s.effective) + '  (adaptive)') : fmtVal(s.value);
-    tr.appendChild(el('td', 'val', shown));
+    tr.appendChild(el('td', 'val', s.display)); // the one shared value column (viewmodel.display_value)
     tr.appendChild(el('td', 'src', esc(s.source)));
     // Hover text: the leaf's meaning (the docs table cell), from the same
     // per-key payload the editor overlay shows it in.
@@ -1600,7 +1599,7 @@ function editConfig(key, s) {
   title.style.textTransform = 'none'; // a config key is a case-sensitive identifier
   box.appendChild(title);
   const meta = el('div', 'sub muted');
-  meta.textContent = `${esc(s.type)} · default: ${fmtVal(s.default)} · set from: ${esc(s.source)}` + (s.adaptive ? ' · adaptive' : '');
+  meta.textContent = `${esc(s.type)} · default: ${s.default_display} · set from: ${esc(s.source)}` + (s.adaptive ? ' · adaptive' : '');
   meta.style.marginBottom = '10px';
   box.appendChild(meta);
   if (s.description) {
@@ -1647,7 +1646,7 @@ function editConfig(key, s) {
   let unsetBtn = null;
   if (s.source === 'repo' || s.source === 'global') {
     unsetBtn = el('button', null, 'Unset');
-    unsetBtn.title = 'remove from the ' + s.source + ' config; reverts to ' + fmtVal(s.default);
+    unsetBtn.title = 'remove from the ' + s.source + ' config; reverts to ' + s.default_display;
     row.appendChild(unsetBtn);
   }
   row.appendChild(cancel); box.appendChild(row);
@@ -1679,11 +1678,4 @@ function editConfig(key, s) {
   };
   field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
 }
-function fmtVal(v) {
-  if (v === null || v === undefined) return '—';
-  if (Array.isArray(v)) return '[' + v.join(', ') + ']';
-  if (typeof v === 'object') return JSON.stringify(v); // dict leaves (providers, skills.state), not "[object Object]"
-  return String(v);
-}
-
 route();
