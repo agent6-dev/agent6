@@ -51,6 +51,7 @@ The config page shows every setting, its effective value, and where that value c
 ## Without the TUI
 
 `agent6 run` executes in the foreground: steer it with Ctrl-C, no TUI required (the pause menu Tab-completes its commands; Up recalls and Ctrl-R searches the session's past messages).
+Ctrl-Z in a view, or `/detach` in the pause menu, hands the run to the background after its current step (`agent6 attach` reattaches); a viewer opened with `agent6 attach --tui` just closes.
 Runs started from the TUI or web hub are detached instead, and `agent6 attach` attaches to either kind: the run's conversation by default, `--raw` for a no-deps line tail, `--tui` for the full-screen TUI, `--json` for a one-shot snapshot of the same state.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">

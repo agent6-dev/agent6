@@ -742,6 +742,43 @@ def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_ctrl_z_on_the_run_spawned_view_detaches_the_run_itself(tmp_path: Path) -> None:
+    """The view `agent6 run --tui` spawns fronts a run in the terminal's own
+    process; leaving the view alone left that run streaming in the foreground
+    (the shell never came back). Ctrl-Z there steers a detach, so the
+    lifecycle hands the run to a background resume at its next step; a plain
+    viewer (`attach --tui`) leaves the run it watches untouched."""
+    import os
+
+    from agent6.sessions.ipc import steer_request_pending, write_worker_pid
+
+    async def spawned_view() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        write_worker_pid(tmp_path, os.getpid())
+        app = Agent6TUI(tmp_path, exit_on_end=True)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+        assert app.detached
+        assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "detach"
+        assert steer_request_pending(tmp_path)
+
+    async def viewer() -> None:
+        (tmp_path / "steer.answer").unlink()
+        (tmp_path / "steer.request").unlink()
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+        assert app.detached
+        assert not steer_request_pending(tmp_path)
+
+    asyncio.run(spawned_view())
+    asyncio.run(viewer())
+
+
 def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
     """Run > Stop after this step on a LIVE run confirms, then drops the
     stop.request marker the loop honors at its next completed-iteration

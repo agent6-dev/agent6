@@ -1274,8 +1274,15 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.exit(QUIT_HUB_CODE if self.from_hub else 0)
 
     def action_detach_exit(self) -> None:
-        # The run was detached all along; leaving is what Ctrl-Z means here.
-        # run_tui prints the reattach hint once the terminal is restored.
+        # A viewer (`attach --tui`, the hub) leaves a run that was detached all
+        # along. The view `agent6 run --tui` spawned (exit_on_end) fronts a run
+        # in the terminal's own process: leaving it alone left that run in the
+        # foreground, streaming, and the shell never came back. So the run is
+        # steered to detach: at its next step boundary the lifecycle hands it
+        # to a background resume and exits, as the CLI pause menu's /detach
+        # does. run_tui prints the hint once the terminal is restored.
+        if self.exit_on_end:
+            submit_steer(self.session_dir, "detach")
         self.detached = True
         self.exit(QUIT_HUB_CODE if self.from_hub else 0)
 
@@ -1316,7 +1323,12 @@ def run_tui(
     rc = app.run() or 0
     if app.detached:
         sid = session_dir.name
-        print(f"[agent6] detached: {sid} keeps running.")
-        print(f"          reattach:  agent6 attach {sid}")
+        if exit_on_end:
+            # The lifecycle in the parent prints the reattach line once the run
+            # has been handed to the background (after its current step).
+            print(f"[agent6] leaving the view: {sid} detaches to the background after this step.")
+        else:
+            print(f"[agent6] detached: {sid} keeps running.")
+            print(f"          reattach:  agent6 attach {sid}")
         print("          (Ctrl+_ undoes typing in the composer)")
     return rc
