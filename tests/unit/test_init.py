@@ -165,3 +165,60 @@ def test_init_still_appends_to_a_utf8_agents_md(tmp_path: Path) -> None:
     text = p.read_text(encoding="utf-8")
     assert "Verify command" in text
     assert "Café" in text
+
+
+def test_init_asks_about_the_entries_it_would_add(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The .gitignore question names the entries (secrets alone without a
+    detected ecosystem); a repo already carrying them is told so, unasked."""
+    from agent6 import init as init_mod
+
+    asked: list[str] = []
+
+    def record(prompt: str, default: bool) -> bool:
+        asked.append(prompt)
+        return default
+
+    monkeypatch.setattr(init_mod, "_ask", record)
+    repo = _repo(tmp_path)
+    assert init_workspace(repo, interactive=True) == 0
+    (gitignore_q,) = [q for q in asked if ".gitignore" in q]
+    assert gitignore_q == (
+        "Add 6 entries to .gitignore (.env, .env.*, .envrc, secrets/, *.pem, *.key)?"
+    )
+    asked.clear()
+    capsys.readouterr()
+    assert init_workspace(repo, interactive=True) == 0
+    assert not [q for q in asked if ".gitignore" in q]
+    assert ".gitignore already has all agent6 entries" in capsys.readouterr().out
+
+
+def test_init_next_steps_name_only_what_is_still_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The "Next:" block after init lists connect and model only while the
+    effective config lacks a provider or a worker model, and marks the run
+    line "verify is inferred" only when no gate was set."""
+    from agent6.ui.cli import main
+
+    repo = _repo(tmp_path)
+    monkeypatch.chdir(repo)
+    assert main(["init", "--yes"]) == 0
+    out = capsys.readouterr().out
+    assert "agent6 connect" in out and "agent6 model worker" in out
+    assert "verify is inferred per run" in out
+    global_cfg = tmp_path / "cfg" / "config.toml"
+    global_cfg.parent.mkdir(parents=True, exist_ok=True)
+    global_cfg.write_text(
+        '[providers.openrouter]\napi_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n'
+        '[models.worker]\nprovider = "openrouter"\nmodel = "m"\n'
+        "[workflow]\nverify_command = ['true']\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    assert main(["init", "--yes"]) == 0
+    out = capsys.readouterr().out
+    assert "agent6 connect" not in out and "agent6 model worker" not in out
+    assert "verify is inferred" not in out and 'agent6 run "<task>"' in out

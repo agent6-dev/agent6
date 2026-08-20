@@ -204,7 +204,7 @@ def _go(repo_root: Path) -> Signal | None:
 
 def _loose_python_tests(repo_root: Path) -> Signal | None:
     if any(repo_root.glob("test_*.py")) or any((repo_root / "tests").glob("test_*.py")):
-        return ((_python(repo_root), "-m", "pytest", "-q"), "tests")
+        return ((_python(repo_root), "-m", "pytest", "-q"), "test_*.py")
     return None
 
 

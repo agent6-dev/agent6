@@ -116,7 +116,7 @@ def test_repo_signal_loose_python_tests_come_last(tmp_path: Path) -> None:
     """test_*.py at the root or under tests/ means pytest, but only when no
     manifest says otherwise: a Go repo's tests/ dir stays `go test`."""
     (tmp_path / "test_calc.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
-    assert verify_from_repo_signals(tmp_path) == (("python3", "-m", "pytest", "-q"), "tests")
+    assert verify_from_repo_signals(tmp_path) == (("python3", "-m", "pytest", "-q"), "test_*.py")
     (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
     assert verify_from_repo_signals(tmp_path) == (("go", "test", "./..."), "go.mod")
 

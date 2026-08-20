@@ -8,8 +8,8 @@ import hashlib
 import sys
 from pathlib import Path
 
-from agent6.config import ConfigError
-from agent6.config.layer import repo_config_path_for
+from agent6.config import Config, ConfigError
+from agent6.config.layer import load_effective, repo_config_path_for
 from agent6.errors import OperatorError
 from agent6.git_ops import (
     GitError,
@@ -121,13 +121,22 @@ def _offer_scaffold_commit(root: Path, created: tuple[Path, ...], *, interactive
     print(f"  committed the agent6 scaffold ({', '.join(rel)})")
 
 
-def _print_next_steps() -> None:
+def _print_next_steps(cwd: Path, config_path: Path | None) -> None:
+    """The commands still between this repo and a first run: connect and model
+    only while the effective config lacks a provider or a worker model."""
+    try:
+        cfg: Config | None = load_effective(cwd, config_path).config
+    except ConfigError:
+        cfg = None
     print()
     print("Next:")
-    print("  agent6 connect                 # add a provider + API key (global), if not done")
-    print("  agent6 model worker <provider> <model>   # pick your worker model")
+    if cfg is None or not cfg.providers:
+        print("  agent6 connect                 # add a provider + API key (global)")
+    if cfg is None or cfg.models.resolve("worker") is None:
+        print("  agent6 model worker <provider> <model>   # pick your worker model")
     print("  agent6 config show             # audit the effective config")
-    print('  agent6 run "<task>"            # verify is inferred if you skipped it above')
+    gated = cfg is not None and bool(cfg.workflow.verify_command)
+    print('  agent6 run "<task>"' + ("" if gated else "            # verify is inferred per run"))
 
 
 def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | None = None) -> int:
@@ -174,7 +183,7 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
         if theirs and is_git_repo(cwd):
             names = ", ".join(sorted(p.name for p in theirs))
             print(f"  left uncommitted (already edited): {names}")
-        _print_next_steps()
+        _print_next_steps(cwd, config_path)
     # Don't leave root-owned scaffolding in the user's repo (sudo case).
     chown_to_real_user(target.parent)
     return rc

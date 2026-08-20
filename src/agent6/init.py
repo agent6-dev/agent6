@@ -142,21 +142,22 @@ def _read_agents_md(root: Path) -> str:
         return ""
 
 
-def _update_gitignore(root: Path, *, ecosystem: str) -> str:
-    """Append any missing secret + build-artifact entries to `.gitignore`.
-
-    Idempotent: a line-equal match (after strip) is never re-added; existing
-    content is never reordered or removed."""
+def _missing_gitignore_entries(root: Path, *, ecosystem: str) -> list[str]:
+    """The secret + build-artifact entries `.gitignore` lacks (a line-equal
+    match, after strip, counts as present). Raises when the file cannot be
+    read."""
     entries = (*_GITIGNORE_ENTRIES, *_ECOSYSTEM_GITIGNORE.get(ecosystem, ()))
     gi = root / ".gitignore"
-    try:
-        existing_text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
-    except (OSError, UnicodeDecodeError) as exc:
-        return f".gitignore could not be read ({exc}); leaving it alone"
+    existing_text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
     existing_lines = {line.strip() for line in existing_text.splitlines()}
-    missing = [e for e in entries if e not in existing_lines]
-    if not missing:
-        return ".gitignore already has all agent6 entries"
+    return [e for e in entries if e not in existing_lines]
+
+
+def _append_gitignore(root: Path, missing: list[str]) -> str:
+    """Append *missing* to `.gitignore` under an agent6 comment; existing
+    content is never reordered or removed."""
+    gi = root / ".gitignore"
+    existing_text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
     verb = "appended to" if existing_text else "created"
     block = ["", "# agent6 (added by `agent6 init`)", *missing, ""]
     new_text = existing_text
@@ -273,12 +274,19 @@ def init_workspace(
     # 2. verify_command (optional; inferred).
     _setup_verify_command(root, ecosystem=detected, ask=ask, config_path=config_path)
 
-    # 3. .gitignore (idempotent).
-    if ask("Add secret + build-artifact entries to .gitignore?", True):
-        # No manifest, no guess: the secret entries alone; --ecosystem picks.
-        print("  " + _update_gitignore(root, ecosystem=detected))
+    # 3. .gitignore (idempotent): the question names the entries it would add
+    # (the secret ones; the build artifacts only for a detected --ecosystem).
+    try:
+        missing = _missing_gitignore_entries(root, ecosystem=detected)
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"  .gitignore could not be read ({exc}); leaving it alone")
     else:
-        print("  skipped .gitignore")
+        if not missing:
+            print("  .gitignore already has all agent6 entries")
+        elif ask(f"Add {len(missing)} entries to .gitignore ({', '.join(missing)})?", True):
+            print("  " + _append_gitignore(root, missing))
+        else:
+            print("  skipped .gitignore")
 
     # 4. AGENTS.md.
     _setup_agents_md(root, ecosystem=detected, ask=ask)
