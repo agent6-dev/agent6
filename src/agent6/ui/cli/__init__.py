@@ -310,9 +310,11 @@ def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: st
     with contextlib.suppress(ManifestError):
         if read_manifest(layout.session_dir).parked_task:
             return rc
-    # An undone run's continuation is the fork it named (its resume line was
-    # printed); a follow-up on the undone run itself is not on offer.
-    if scan_session_log(layout.session_dir / LOGS_NAME).end_reason == "undone":
+    # A detached run continues in the background (its reattach line was
+    # printed): no leg ended here to follow up on. An undone run's
+    # continuation is the fork it named (its resume line was printed).
+    scan = scan_session_log(layout.session_dir / LOGS_NAME)
+    if not scan.finished or scan.end_reason == "undone":
         return rc
     return end_of_session_prompt(
         rc=rc,

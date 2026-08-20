@@ -28,7 +28,9 @@ def _seed_session(
     )
     layout.session_dir.mkdir(parents=True, exist_ok=True)
     (layout.session_dir / "logs.jsonl").write_text(
-        '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n', encoding="utf-8"
+        '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n'
+        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        encoding="utf-8",
     )
     return layout
 
@@ -262,6 +264,31 @@ def test_a_resumed_leg_ends_by_asking_like_a_fresh_one(
     args = _run_args(session_id="resumed-run", force=False, tui=False, preset="", steer="")
     assert cli._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
     assert asked == (["resumed-run-AAAAAA"] if asks else [])
+
+
+def test_a_detached_run_is_not_followed_by_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/detach` hands the run to a background resume (its reattach line was
+    printed); the leg here did not end, so there is nothing to follow up on.
+    Asking "next:" offered a leg that would collide with the live one."""
+    from agent6.ui import cli
+
+    layout = _seed_session(tmp_path, monkeypatch, session_id="detached-run-AAAAAA")
+    (layout.session_dir / "logs.jsonl").write_text(
+        '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n'
+        '{"type": "loop.steer.detached"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+
+    def _must_not_prompt(**_kw: object) -> int:
+        pytest.fail("prompted")
+
+    monkeypatch.setattr(cli, "end_of_session_prompt", _must_not_prompt)
+    args = _run_args()
+    assert cli._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_parked_start_is_not_followed_by_the_prompt(
