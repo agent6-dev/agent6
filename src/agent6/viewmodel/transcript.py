@@ -415,7 +415,8 @@ class TranscriptFold:
         if etype == "diff.updated":
             self._commits += 1
             n = len(str(event.get("patch", "")).splitlines())
-            return [TranscriptItem("commit", detail=f"{n} lines")]
+            sha = str(event.get("sha", ""))[:12]
+            return [TranscriptItem("commit", detail=f"{sha} · {n} lines" if sha else f"{n} lines")]
         build = _MARKER_BODIES.get(etype)
         if build is not None:
             body = build(event)
