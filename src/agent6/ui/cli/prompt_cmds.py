@@ -57,7 +57,7 @@ def _as_text(x: ModelExchange) -> str:
     for t in x.tools:
         out.append(f"--- {t.name}")
         out.append(t.description)
-        out.append("schema: " + json.dumps(t.input_schema, separators=(",", ":")))
+        out.append("schema: " + json.dumps(t.input_schema, indent=2))
     if x.mcp_pending:
         out.append("--- (plus the tools of the enabled MCP servers, discovered at run start)")
     out += ["", "=== first user message ===", x.first_message]
