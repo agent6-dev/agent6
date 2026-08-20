@@ -10,6 +10,7 @@ characters in ui/web/client.js; keep them in sync.
 
 from __future__ import annotations
 
+import time
 from typing import Literal
 
 from agent6.sessions.manifest import CompareStamp
@@ -33,6 +34,11 @@ SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 def spinner_frame(tick: int) -> str:
     """The braille spinner frame for *tick*, one owner for every surface."""
     return SPINNER_FRAMES[tick % len(SPINNER_FRAMES)]
+
+
+def format_when(epoch: float) -> str:
+    """A listing's `when` column: local `MM-DD HH:MM`."""
+    return time.strftime("%m-%d %H:%M", time.localtime(epoch))
 
 
 def format_cost(usd: float, *, partial: bool = False) -> str:

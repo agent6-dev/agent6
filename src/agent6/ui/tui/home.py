@@ -11,7 +11,6 @@ thin driver over the CLI + the same file/event contract the dashboard reads.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import ClassVar
@@ -52,11 +51,10 @@ from agent6.viewmodel import (
     SessionSummary,
     is_winner,
     session_dirs,
-    session_mtime,
     summarize_session_dir,
     task_snippet,
 )
-from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
+from agent6.viewmodel.format import WINNER_GLYPH, format_cost, format_when, status_label
 
 # The hub re-asks on this cadence (matching the web hub's poll rate), so a
 # session that ends while you watch stops reading as running.
@@ -184,9 +182,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
             if not rd.is_dir():
                 continue  # vanished since the listing snapshot — skip it
             s = summarize_session_dir(rd)
-            # last-activity time (logs.jsonl), so opening a run to view it does not
-            # bump its "when" the way the run-dir mtime did.
-            when = time.strftime("%m-%d %H:%M", time.localtime(session_mtime(rd)))
+            when = format_when(s.mtime)
             # Text cells: task is model/user input and may carry markup brackets.
             session_id = f"{s.session_id} {WINNER_GLYPH}" if is_winner(rd) else s.session_id
             table.add_row(

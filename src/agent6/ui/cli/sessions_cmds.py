@@ -84,6 +84,7 @@ from agent6.viewmodel.format import (
     WINNER_GLYPH,
     StatusLevel,
     format_cost,
+    format_when,
     status_label,
     status_level,
 )
@@ -121,7 +122,6 @@ def _cmd_list() -> int:
     session `attach` opens happily appear in no listing at all. The mode column
     is what tells them apart.
     """
-    import time  # noqa: PLC0415
 
     cwd = Path.cwd()
     dirs: list[Path] = []
@@ -139,7 +139,7 @@ def _cmd_list() -> int:
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str, str]] = []
     for s in summaries:
-        when = time.strftime("%m-%d %H:%M", time.localtime(s.mtime))
+        when = format_when(s.mtime)
         styled, plain = _styled_status(s.status, s.reason, color=color)
         # An all-unpriced run's ~$0.0000 is information (spend happened, price
         # unknown); only a genuinely clean $0 stays blank.
