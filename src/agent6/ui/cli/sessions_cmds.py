@@ -905,7 +905,12 @@ def _cmd_compare(*, session_ids: tuple[str, ...], config_path: Path | None) -> i
     # a manifest (only the fan-out's auto-compare does), so `ranked_by` is unused.
     outcome = rank(cfg, candidates, transcript_dir=resolved_state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
-    print_ranked_candidates(candidates, outcome)
+    merged = {
+        layout.session_id: manifest.merged.into
+        for layout, manifest in resolved
+        if manifest.merged is not None and manifest.merged.into
+    }
+    print_ranked_candidates(candidates, outcome, merged_into=merged)
     # A fresh judgment can contradict the fan-out's recorded verdict (the star in
     # listings comes from the auto-compare stamp, which this command never
     # rewrites); when re-judging one fan-out's own lanes, disclose the clash

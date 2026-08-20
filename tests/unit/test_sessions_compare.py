@@ -187,6 +187,37 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
     assert "total: candidates $0.1000" in out and "+ judge" not in out
 
 
+def test_compare_row_of_a_merged_run_says_so(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A candidate already merged is not offered `sessions merge` again; its
+    row names the base it landed on."""
+    base = _init_repo(repo)
+    _setup_run(
+        repo,
+        "run-MMMM55",
+        base_sha=base,
+        commits=[("m.txt", "m\n", "add m")],
+        status="passed",
+        cost=0.01,
+        manifest_extra={"merged": {"into": "main", "sha": "abc", "tip": "abc"}},
+    )
+    _setup_run(
+        repo,
+        "run-NNNN66",
+        base_sha=base,
+        commits=[("n.txt", "n\n", "add n")],
+        status="passed",
+        cost=0.02,
+    )
+    assert main(["sessions", "compare", "run-MMMM55", "run-NNNN66"]) == 0
+    out = capsys.readouterr().out
+    merged_row = next(line for line in out.splitlines() if "run-MMMM55" in line)
+    assert merged_row.endswith("merged into main")
+    other_row = next(line for line in out.splitlines() if "run-NNNN66" in line)
+    assert other_row.endswith("merge with: agent6 sessions merge run-NNNN66")
+
+
 def test_compare_rows_and_total_format_cost_the_same_way(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

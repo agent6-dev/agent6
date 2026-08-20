@@ -14,7 +14,7 @@ so `app` never imports `ui`. A caller that shows nothing passes
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
@@ -117,11 +117,13 @@ def print_ranked_candidates(
     candidates: list[CandidateBrief],
     outcome: RankOutcome,
     *,
+    merged_into: Mapping[str, str] | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
-    """Print the ranked table (best first) + a `sessions merge` line per candidate,
-    a total-spend line (candidate costs plus any judge cost), then the judge's
-    rationale if there is one. Prints nothing when the ranking is empty."""
+    """Print the ranked table (best first) + a `sessions merge` line per candidate
+    (or where it is already merged, per *merged_into*), a total-spend line
+    (candidate costs plus any judge cost), then the judge's rationale if there
+    is one. Prints nothing when the ranking is empty."""
     if not outcome.ranking:
         return
     by_id = {c.session_id: c for c in candidates}
@@ -129,10 +131,9 @@ def print_ranked_candidates(
     for rnk, rid in enumerate(outcome.ranking, start=1):
         c = by_id[rid]
         verify = "passed" if c.verify_ok else "failed" if c.verify_ok is False else "no-verify"
-        reporter.out(
-            f"  {rnk}. {rid}  {verify:<9} {format_cost(c.cost_usd)}"
-            f"   merge with: agent6 sessions merge {rid}"
-        )
+        into = (merged_into or {}).get(rid, "")
+        landing = f"merged into {into}" if into else f"merge with: agent6 sessions merge {rid}"
+        reporter.out(f"  {rnk}. {rid}  {verify:<9} {format_cost(c.cost_usd)}   {landing}")
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)
         judge = outcome.judge_cost_usd
