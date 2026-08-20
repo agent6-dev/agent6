@@ -620,7 +620,6 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         table = self.query_one("#machines", DataTable)
         table.cursor_type = "row"
         table.add_columns("machine", "status", "state", "updated", "states", "spec", "file")
-        self.app.sub_title = f"machines · {self.repo_cwd}"
         self._reload()
 
     def _reload(self) -> None:
@@ -646,6 +645,13 @@ class MachinesScreen(ScreenChrome, Screen[None]):
                 Text(row.file.name if row.file is not None else "-"),
             )
         table.show_cursor = table.row_count > 0
+        # The count in the title (the hub does the same); an empty table alone
+        # reads as still loading, so say none exist and what draws one.
+        n = len(self._machines)
+        tally = (
+            "no machines yet (c creates one)" if not n else f"{n} machine{'' if n == 1 else 's'}"
+        )
+        self.app.sub_title = f"machines · {self.repo_cwd} · {tally}"
 
     def _selected(self) -> Path | None:
         """The selected row's authored file; None for a row without one (an

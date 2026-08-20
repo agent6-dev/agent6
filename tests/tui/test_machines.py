@@ -402,6 +402,25 @@ def test_machines_page_lists_and_views(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_machines_page_title_counts_or_names_the_empty_case(tmp_path: Path) -> None:
+    """An empty machines table read as still loading (the CLI says "no machines
+    yet" and how to draft one); the title carries the count, like the hub's."""
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.sub_title.endswith("· no machines yet (c creates one)")
+            _write(tmp_path / "m.asm.toml")
+            screen = app.screen
+            assert isinstance(screen, MachinesScreen)
+            screen.action_refresh()
+            await pilot.pause()
+            assert app.sub_title.endswith("· 1 machine")
+
+    asyncio.run(scenario())
+
+
 def test_machines_menu_bar_dispatches_an_item(tmp_path: Path) -> None:
     """Selecting an item from the menu bar (not just the key binding) runs its
     action -- exercises action_menu + on_menu_bar_selected, the dead-menu bug class."""
