@@ -299,3 +299,48 @@ def test_attach_prints_the_runs_policy_line_like_the_run_did(
     monkeypatch.chdir(tmp_path)
     assert main(["attach", "done-run"]) == 0
     assert "  m-1 · strict · commands ask · " in capsys.readouterr().out
+
+
+def test_watch_json_checks_the_merged_claim_against_the_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`attach --json` claims merged only while the stamp still describes the
+    branch (a run resumed after its merge commits past it), like the web
+    snapshot and `sessions show`."""
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)
+    env = {
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+    git = ["git", "-C", str(tmp_path)]
+    subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True, env=env)
+    subprocess.run([*git, "branch", "agent6/stamped-run"], check=True)
+    tip = subprocess.run(
+        [*git, "rev-parse", "agent6/stamped-run"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    _make_run(tmp_path, "stamped-run", [{"type": "session.start", "user_task": "t"}])
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "stamped-run"
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "mode": "run",
+                "run_branch": "agent6/stamped-run",
+                "base_branch": "main",
+                "merged": {"into": "main", "sha": tip, "tip": tip},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert main(["attach", "stamped-run", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["merged_into"] == "main"
+    subprocess.run([*git, "checkout", "-q", "agent6/stamped-run"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "more"], check=True, env=env)
+    assert main(["attach", "stamped-run", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert "merged_into" not in out
+    assert out["branch_line"] == "agent6/stamped-run → merges into main"
