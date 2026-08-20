@@ -20,7 +20,7 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import print_no_session_match, resolve_or_newest_layout
 from agent6.viewmodel import LogScan, scan_session_log, status_for_session_dir
-from agent6.viewmodel.format import format_branch, format_compare, format_cost
+from agent6.viewmodel.format import format_branch, format_compare, format_cost, format_lineage
 
 
 def _fmt_dur(seconds: float | None) -> str:
@@ -37,12 +37,11 @@ def _fmt_dur(seconds: float | None) -> str:
 def _print_fork_lineage(manifest: SessionManifest) -> None:
     """Print the fork-lineage line for a run created by `agent6 fork` (no-op
     otherwise)."""
-    parent = manifest.parent_session_id
-    if not parent:
-        return
-    sha = manifest.forked_from_sha
-    sha_note = f" ({sha[:12]})" if sha else ""
-    print(f"forked from: {parent}@turn {manifest.forked_from_turn}{sha_note}")
+    lineage = format_lineage(
+        manifest.parent_session_id, manifest.forked_from_turn, manifest.forked_from_sha
+    )
+    if lineage:
+        print(f"forked from: {lineage}")
 
 
 def _print_parallel_compare(manifest: SessionManifest) -> None:

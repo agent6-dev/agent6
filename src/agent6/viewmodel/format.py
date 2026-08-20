@@ -97,6 +97,15 @@ def format_branch(run_branch: str, base_branch: str, merged_into: str) -> str:
     return f"{run_branch} → merges into {base_branch}" if base_branch else run_branch
 
 
+def format_lineage(parent: str | None, turn: int | None, sha: str | None) -> str:
+    """Where a forked run came from, one wording for every header:
+    `<parent>@turn <n> (<sha12>)`; "" for a run that is not a fork."""
+    if not parent:
+        return ""
+    sha_note = f" ({sha[:12]})" if sha else ""
+    return f"{parent}@turn {turn}{sha_note}"
+
+
 def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
     """A lane's fan-out compare outcome as `(headline, rationale)`, or None when
     the run carries no `compare` stamp. The headline reads e.g.

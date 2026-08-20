@@ -1142,6 +1142,7 @@ function paintRun(cards, s) {
   add('state', s.status_label || (s.finished ? 'finished' : 'running'));
   // Where the run's work lives and where Merge lands: consecutive spawns chain
   // branches, which is invisible without this line.
+  if (s.forked_from) add('forked from', s.forked_from);
   if (s.branch_line) add('branch', s.branch_line);
   // What the run is serving: a dev server the agent started is reachable only
   // through `agent6 forward` (the run's network has no way in from outside).

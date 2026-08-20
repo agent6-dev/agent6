@@ -98,7 +98,7 @@ from agent6.ui.tui.theme import (
     setup_theme,
     status_style,
 )
-from agent6.viewmodel import manifest_branches, restate, session_compare
+from agent6.viewmodel import manifest_branches, manifest_header, restate, session_compare
 from agent6.viewmodel.events import SESSION_START_EVENTS
 from agent6.viewmodel.format import (
     TASK_STATUS_GLYPH,
@@ -265,6 +265,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         self._rendered_diff: tuple[object, object, object, object] | None = None
         self._compare_line: str | None = None  # cached fan-out compare header (terminal state)
         self._branch_line: str | None = None  # cached branch header (fixed for the leg)
+        self._lineage_line: str | None = None  # cached fork lineage (never changes)
 
     def _compare_top(self) -> str:
         """The fan-out compare outcome for the header's task line (empty for a
@@ -279,6 +280,14 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         rat = f" — {rationale[:100]}" if rationale else ""
         self._compare_line = f"\ncompare: {headline}{rat}"
         return self._compare_line
+
+    def _lineage_top(self) -> str:
+        """Where a forked run came from, for the header (the web header's and
+        `sessions show`'s line); read once, it never changes."""
+        if self._lineage_line is None:
+            lineage = manifest_header(self._tui.session_dir).get("forked_from", "")
+            self._lineage_line = f"\nforked from: {lineage}" if lineage else ""
+        return self._lineage_line
 
     def _branch_top(self) -> str:
         """Where the run's work lives, for the header: the run branch and the
@@ -534,8 +543,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{ctx}"
             f"   {finished}\n"
             f"task: {escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))}"
-            f"{escape(self._branch_top())}{escape(self._serving_top())}"
-            f"{escape(self._compare_top())}"
+            f"{escape(self._lineage_top())}{escape(self._branch_top())}"
+            f"{escape(self._serving_top())}{escape(self._compare_top())}"
         )
 
         # Live reasoning / response pane. Built as rich Text so model output is

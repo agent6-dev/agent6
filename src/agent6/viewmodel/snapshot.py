@@ -6,6 +6,7 @@ One fold each, so the two never disagree."""
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from agent6.git_ops import merge_stamp_holds
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.viewmodel.format import format_branch
+from agent6.viewmodel.format import format_branch, format_lineage
 from agent6.viewmodel.listing import session_compare
 from agent6.viewmodel.machine_state import fold_machine, machine_state_as_dict
 from agent6.viewmodel.state import fold_session, session_state_as_dict
@@ -53,11 +54,16 @@ def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[st
 
 def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str, Any]:
     """Manifest-derived session-header fields the event fold does not carry:
-    the branch facts and the fan-out compare outcome (rank/winner/rationale).
-    Merged into every session snapshot (one-shot and streamed) so the header
-    a page paints from cannot drift. Empty for a run with no (readable)
-    manifest."""
+    the branch facts, the fork lineage (`forked_from`, one wording), and the
+    fan-out compare outcome (rank/winner/rationale). Merged into every session
+    snapshot (one-shot and streamed) so the header a page paints from cannot
+    drift. Empty for a run with no (readable) manifest."""
     header: dict[str, Any] = dict(manifest_branches(session_dir, repo=repo))
+    with contextlib.suppress(ManifestError):
+        m = read_manifest(session_dir)
+        lineage = format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
+        if lineage:
+            header["forked_from"] = lineage
     compare = session_compare(session_dir)
     if compare is not None:
         header["compare"] = compare.model_dump(mode="json")

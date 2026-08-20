@@ -22,7 +22,7 @@ from agent6.viewmodel import (
     summarize_session_dir,
     task_snippet,
 )
-from agent6.viewmodel.format import format_branch, format_compare
+from agent6.viewmodel.format import format_branch, format_compare, format_lineage
 
 
 def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
@@ -116,6 +116,34 @@ def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(tmp_p
     }
     (d / "manifest.json").write_text(json.dumps({"mode": "ask"}))
     assert manifest_branches(d) == {}
+
+
+def test_manifest_header_carries_the_fork_lineage_in_one_wording(tmp_path: Path) -> None:
+    """`forked_from` is the line every header shows for a run `agent6 fork`
+    made (`sessions show`, the TUI dashboard, the web run header):
+    `<parent>@turn <n> (<sha12>)`; absent for a run that is not a fork."""
+    import json
+
+    from agent6.viewmodel import manifest_header
+
+    assert format_lineage("orig-run-AAAAAA", 3, "a" * 40) == "orig-run-AAAAAA@turn 3 (aaaaaaaaaaaa)"
+    assert format_lineage("orig-run-AAAAAA", 3, None) == "orig-run-AAAAAA@turn 3"
+    assert format_lineage(None, None, None) == ""
+    d = tmp_path / "fork-x"
+    d.mkdir()
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {
+                "mode": "run",
+                "parent_session_id": "orig-run-AAAAAA",
+                "forked_from_turn": 3,
+                "forked_from_sha": "b" * 40,
+            }
+        )
+    )
+    assert manifest_header(d)["forked_from"] == "orig-run-AAAAAA@turn 3 (bbbbbbbbbbbb)"
+    (d / "manifest.json").write_text(json.dumps({"mode": "run"}))
+    assert "forked_from" not in manifest_header(d)
 
 
 def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: Path) -> None:
