@@ -266,6 +266,37 @@ def test_a_resumed_leg_ends_by_asking_like_a_fresh_one(
     assert asked == (["resumed-run-AAAAAA"] if asks else [])
 
 
+def test_a_leg_that_undoes_or_detaches_ends_the_asking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inside the prompt loop a follow-up leg can end by /undo (the fork it
+    named is the continuation) or by /detach (the run went on in the
+    background); the loop asked "next:" again for a run that takes no
+    follow-up here, and an answer would have collided or been refused."""
+    layout = _seed_session(tmp_path, monkeypatch, session_id="undone-run-AAAAAA")
+    monkeypatch.chdir(tmp_path)
+    asked: list[str] = []
+
+    def fake_resume(_cfg: Path | None, _sid: str, **kw: object) -> int:
+        # The leg forks back and ends the run as undone.
+        (layout.session_dir / "logs.jsonl").write_text(
+            '{"type": "session.start"}\n{"type": "session.end", "reason": "undone"}\n',
+            encoding="utf-8",
+        )
+        return 0
+
+    monkeypatch.setattr(prompt_mod, "_cmd_resume", fake_resume)
+
+    def ask(prompt: str) -> str:
+        asked.append(prompt)
+        return "/undo" if len(asked) == 1 else pytest.fail("asked again after the undo")
+
+    rc = prompt_mod.end_of_session_prompt(
+        rc=0, session_id=layout.session_id, session_dir=layout.session_dir, ask=ask
+    )
+    assert rc == 0 and len(asked) == 1
+
+
 def test_a_detached_run_is_not_followed_by_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

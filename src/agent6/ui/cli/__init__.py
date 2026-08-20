@@ -26,7 +26,7 @@ from agent6.errors import OperatorError, read_operator_file
 from agent6.events import EventWriteError
 from agent6.sessions.id import SessionIdError, unused_session_id
 from agent6.sessions.ipc import listening_ports
-from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
+from agent6.sessions.layout import SessionLayout, session_layout
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import session_bucket
 from agent6.ui.acp import serve_acp
@@ -41,7 +41,11 @@ from agent6.ui.cli._common import (
     resolve_or_newest_layout,
     session_bucket_dirs,
 )
-from agent6.ui.cli._session_prompt import end_of_session_prompt, prompting_is_possible
+from agent6.ui.cli._session_prompt import (
+    end_of_session_prompt,
+    follow_up_on_offer,
+    prompting_is_possible,
+)
 from agent6.ui.cli.check_cmds import _cmd_check
 from agent6.ui.cli.completions_cmd import cmd_completions
 from agent6.ui.cli.config_cmds import (
@@ -122,7 +126,6 @@ from agent6.ui.cli.skills_cmds import (
 from agent6.ui.cli.system_cmds import _cmd_system_apparmor
 from agent6.ui.cli.watch import _cmd_watch_target
 from agent6.ui.cli.web_cmds import _cmd_web
-from agent6.viewmodel import scan_session_log
 from agent6.viewmodel.listing import newest_session_dir
 
 
@@ -310,15 +313,12 @@ def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: st
     with contextlib.suppress(ManifestError):
         if read_manifest(layout.session_dir).parked_task:
             return rc
-    # A detached run continues in the background (its reattach line was
-    # printed): no leg ended here to follow up on. An undone run's
-    # continuation is the fork it named (its resume line was printed).
-    scan = scan_session_log(layout.session_dir / LOGS_NAME)
-    if not scan.finished or scan.end_reason == "undone":
+    if not follow_up_on_offer(layout.session_dir):
         return rc
     return end_of_session_prompt(
         rc=rc,
         session_id=layout.session_id,
+        session_dir=layout.session_dir,
         ask=input,
         config_path=args.config,
         budget_overrides=BudgetOverrides.from_args(args),

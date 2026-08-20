@@ -11,7 +11,9 @@ from pathlib import Path
 
 from agent6.app._setup import BudgetOverrides, SandboxOverrides
 from agent6.directive import steer_problem
+from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.cli.resume import _cmd_resume
+from agent6.viewmodel.listing import scan_session_log
 
 # Free text is the next leg's operator instruction (what `--steer` carries);
 # `/exit` finishes. No other verbs until a second one earns its place.
@@ -41,10 +43,20 @@ def prompting_is_possible() -> bool:
         return False
 
 
+def follow_up_on_offer(session_dir: Path) -> bool:
+    """Whether the run in *session_dir* can take a follow-up leg from here: its
+    last leg ended (a detached run went on in the background; its reattach line
+    was printed) and not by /undo (the fork it named is the continuation; its
+    resume line was printed)."""
+    scan = scan_session_log(session_dir / LOGS_NAME)
+    return scan.finished and scan.end_reason != "undone"
+
+
 def end_of_session_prompt(
     *,
     rc: int,
     session_id: str,
+    session_dir: Path | None = None,
     ask: Callable[[str], str],
     config_path: Path | None = None,
     budget_overrides: BudgetOverrides | None = None,
@@ -57,7 +69,9 @@ def end_of_session_prompt(
     no `agent6 resume <id>` retyping. `/exit` (or EOF) stops asking and prints
     the line that picks the session back up: nothing is sealed, and a finished
     session stays resumable like any other. A leg that refuses returns its own
-    code rather than re-prompting over the failure.
+    code rather than re-prompting over the failure; a leg that detached or
+    undid the run (see `follow_up_on_offer`, checked when *session_dir* is
+    given) ends the asking, its own line already printed.
     """
     while True:
         try:
@@ -81,4 +95,6 @@ def end_of_session_prompt(
             sandbox_overrides=sandbox_overrides,
         )
         if rc != 0:
+            return rc
+        if session_dir is not None and not follow_up_on_offer(session_dir):
             return rc
