@@ -100,7 +100,7 @@ baseline ÷ final cycles. All runs are valid (anti-cheat checks passed).
 
 The three agent6 runs are on byte-identical code: 5664 / 8256 / 20016
 cycles (7.4×–26.1×). The spread is the worker's stochastic search
-path, not a code change, so we quote a *range*, not a headline number.
+path, not a code change, so the result is a range, not a single number.
 agent6's best run (26.1×) edged out claude-code's single run (25.3×).
 
 **agent6 + open-weights models via OpenRouter** (single run, equal

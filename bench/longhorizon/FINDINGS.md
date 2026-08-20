@@ -1,4 +1,4 @@
-# Long-horizon experiments — findings
+# Long-horizon experiments: findings
 
 Numbers from the harness this directory documents (see README); day 1 built
 it, day 2 measured the write-side nudges and gist elision, day 3 measured
@@ -44,7 +44,7 @@ pipeline), n=3 per cell:
   windows. Day 2 built and measured that mitigation; see the gist block
   below.
 - Task fairness check: kimi-k2.6 produced a PERFECT 1.0 stylebook (all 12
-  components) under window32k with a drop — the ceiling is reachable under
+  components) under window32k with a drop; the ceiling is reachable under
   compaction pressure; it just timed out at 2400s before finish_session
   (103k output tokens of reasoning; see methodology).
 
@@ -98,7 +98,7 @@ a second open model. kimi-k2.6 stylebook under the window16k thresholds:
   every axis (0.983 vs 1.0, 10 iters, 6 rereads). Second-model confirmation
   that `elision_gists` default-on is strictly better in the engaged regime.
 
-## 2. Nobody writes memories unprompted — FIXED by the write-side nudges
+## 2. Nobody writes memories unprompted; FIXED by the write-side nudges
 
 Day 1: across all 46 legs / 2 models (qwen3-coder-30b, kimi-k2.6) spanning
 orchard, relay, stylebook: `add_memory` calls = **0**. The `<memories>` block's
@@ -107,7 +107,7 @@ inert as shipped: models with a discovered non-obvious fact in hand (the
 orchard generated-file trap) never record it.
 
 **Day 2 (nudges shipped, mem2-qwen, n=4 per cell):** two loop surfaces now
-nudge `add_memory` — an advisory at the first red-to-green verify flip, and a
+nudge `add_memory`: an advisory at the first red-to-green verify flip, and a
 once-deferred finish_session after such a recovery when nothing was recorded.
 Result: `memory_writes` went 0.0 → 0.5–0.8 per leg. In per-run traces the
 flip advisory alone converted about half the writers; the finish backstop
@@ -117,12 +117,12 @@ trap facts ("data/catalog.tsv is generated from tools/catalog_source.tsv by
 gen_catalog.py; shelf = base + (base*margin+50)//100"), 1 is a
 confidently-wrong trap-faller rationalization, 0 are task-progress junk.
 
-**Day 2: read-side value was still unmeasured — the 2-leg orchard cannot
+**Day 2: read-side value was still unmeasured; the 2-leg orchard cannot
 measure it by construction.** Leg-1 writers are exactly the reps that
 recovered (and so left an easy leg 2); trap-fallers, the population a memory
 would help, never went green in leg 1 so never got nudged and wrote nothing.
 The baseline-vs-fresh_state leg-1 delta (must be zero in expectation) came
-out +0.03 score / 12 iters — that is the noise floor, and the leg-2 deltas
+out +0.03 score / 12 iters, the noise floor; the leg-2 deltas
 sit inside it. Measuring read-side value needs a THIRD leg that touches the
 generator again after leg 2's recovery memory exists.
 
@@ -137,11 +137,11 @@ implementation goes verify-green and only the hidden grader sees it.
   (dscore −0.172). Same-wave leg-1 calibration delta (identical conditions by
   construction): −0.019, so the leg-3 delta is ~9x this wave's floor.
 - Components: rounding **0.78 vs 0.33**, api 1.00 vs 0.83, regen 0.91 vs
-  0.78. `trap_edits` **0.0 vs 0.7 per leg** — no baseline rep touched a
+  0.78. `trap_edits` 0.0 vs 0.7 per leg: no baseline rep touched a
   generated feed; two fresh reps hand-edited (the worst, with a dead API on
-  top, landed 0.375 — the no-generator mutant signature). Iterations are
+  top, landed 0.375, the no-generator mutant signature). Iterations are
   flat (30.8 vs 31.2): on this task memory buys correctness, not speed.
-- Leg 2 same wave: −0.045 with rounding 1.00 vs 0.89 — direction consistent,
+- Leg 2 same wave: -0.045 with rounding 1.00 vs 0.89; direction consistent,
   still near the floor, as day 2 predicted.
 - Mechanism, per rep: 3/6 baseline reps entered leg 3 holding nudged
   memories; all three avoided the trap. What the memory SAYS predicts what
@@ -149,13 +149,13 @@ implementation goes verify-green and only the hidden grader sees it.
   words scored 1.0; the rep whose store only encoded the catalog formula
   (half-up implicit in `(x+50)//100`) reapplied the generated-file fact but
   truncated the NEW discount computation (rounding 0.0). Record the RULE,
-  not the instance — a candidate wording tweak for the write nudges.
+  not the instance, a candidate wording tweak for the write nudges.
 - The no-memory baseline reps went 1.0/1.0/0.906, so with n=6 the condition
   delta is carried by the memory readers plus rep luck; the component
   pattern (rounding and trap, nothing else) matches the memory mechanism,
   not generic drift.
 - Two believed-done dents in baseline came from a fresh shape: a feed
-  written with WRONG values (one rep stored discounts instead of prices —
+  written with WRONG values (one rep stored discounts instead of prices;
   and wrote a confidently-wrong memory saying that is the format) while a
   compute-side API kept every probe green. The registers-read-the-feed
   grader catches it; the shipped suite structurally cannot. Second
@@ -172,7 +172,7 @@ auto-on from the capability registry) calls it unprompted: `deps_added` 1.7
 per leg on orchard-weekend, 0.3 on relay. The edges are sensible
 gate-everything-on-investigation fan-outs ("Add weekend_cents column" /
 "Implement weekend_price" / "Modify cart_total" each depend on "Investigate
-the weekend pricing requirements"). **Verdict: keep the tool** — it is a
+the weekend pricing requirements"). **Verdict: keep the tool**; it is a
 weak-model affordance, unused by capable models and free when unused.
 Whether the edges improve sequencing is unmeasurable here (mistral's low
 scores are capability-bound: 3/3 leg-1 trap falls at exactly 0.889, weekend
@@ -181,7 +181,7 @@ scores are capability-bound: 3/3 leg-1 trap falls at exactly 0.889, weekend
 ## 4. The orchard trap catches real behavior
 
 qwen leg-1 (smoke2): hand-edited the generated `data/catalog.tsv` 3 times,
-tested around verify, called finish_session believing it was done — hidden
+tested around verify, called finish_session believing it was done; hidden
 score 0.889 (exactly the unfixed-seed signature). Leg 2 then went through
 verify, which regenerated the file and resurfaced the failure; the agent
 root-caused `tools/catalog_source.tsv` properly and scored 1.0 including
@@ -191,7 +191,7 @@ the half-up-vs-banker's discriminator (F-310 → 909). kimi never falls in
 population the memory experiment needs.
 
 Day 3: the trap re-fires on the SAME model inside one sequence when the
-cross-run store is wiped — fresh_state qwen hand-edited the new clearance
+cross-run store is wiped; fresh_state qwen hand-edited the new clearance
 feed in 2/6 leg-3 reps (one landed 0.375 with a hand-built feed the build
 cannot reproduce), while baseline touched a generated feed in 0/6. Note the
 counting rule changed on day 3 (`trap_edits` now matches the edit call's

@@ -1,13 +1,13 @@
-# coreagent bench — decomposition & compaction experiments
+# coreagent bench: decomposition & compaction experiments
 
 A harness to measure agent6 *core-agent* changes (prompt/DAG/compaction) on
 objective, test-graded tasks, across models, with enough reps to separate signal
 from noise. Built for two thrusts:
 
-- **Thrust 2 — task decomposition** (`[prompt].decompose`): does front-loading a
-  subtask plan help small models finish multi-part tasks?
-- **Thrust 1 — context compaction** (`[context].keep_recent_chars`): does keeping
-  a recent verbatim tail at tier-2 beat the hard `[task, summary]` restart?
+- **Thrust 2, task decomposition** (`[prompt].decompose`): whether
+  front-loading a subtask plan helps small models finish multi-part tasks.
+- **Thrust 1, context compaction** (`[context].keep_recent_chars`): whether
+  a recent verbatim tail at tier-2 beats the hard `[task, summary]` restart.
 
 ## What it measures
 
@@ -17,12 +17,12 @@ with a private `XDG_STATE_HOME`, then grades the result with the task's
 agent's repo, so it can't be tampered or over-fit). Metrics per run (from the
 run's `logs.jsonl` + the grader):
 
-- `score` — fraction of grader CASES passing (partial credit -> low variance).
+- `score`: fraction of grader CASES passing (partial credit -> low variance).
   `solved` = score >= 0.999.
-- `components_passed` — coarse "did it forget a whole component" signal.
-- `n_subtasks` / `n_subtasks_passed` — DAG decomposition actually performed.
-- `compactions` / `drops` — tier-2 / tier-1 compaction events.
-- `redundant_reads` (+ `_post_compact`) — read-shaped tool calls repeating an
+- `components_passed`: coarse "did it forget a whole component" signal.
+- `n_subtasks` / `n_subtasks_passed`: DAG decomposition actually performed.
+- `compactions` / `drops`: tier-2 / tier-1 compaction events.
+- `redundant_reads` (+ `_post_compact`): read-shaped tool calls repeating an
   earlier `(name,args)`. The primary compaction-quality signal.
 - `iterations`, `usd`, `tokens_in/out`, `wall_s`, `end_reason`, `tampered`.
 
@@ -59,11 +59,11 @@ Anthropic models (unpriced) get token caps instead of `--max-usd`.
 
 ## Conditions (`CONDITIONS` in run.py)
 
-- `baseline` — shipped defaults.
-- `decompose` — `[prompt].decompose = true`.
-- `compact_tight` — aggressive `[context]` thresholds to force tier-2 on a
+- `baseline`: shipped defaults.
+- `decompose`: `[prompt].decompose = true`.
+- `compact_tight`: aggressive `[context]` thresholds to force tier-2 on a
   moderate task.
-- `decompose_tight` — both.
+- `decompose_tight`: both.
 
 Add a condition by adding a config-TOML fragment to the dict. The task prompt is
 deliberately NEUTRAL about decomposition, so any DAG-use difference comes from the

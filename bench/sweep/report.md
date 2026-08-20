@@ -2,18 +2,18 @@
 
 This report measures one variable: the **worker model** driving agent6, holding
 the agent, sandbox, task suite, and budget fixed. 330 runs, 8 models, 6 tasks,
-each (model, task) cell repeated independently. It is a snapshot — regenerate
+each (model, task) cell repeated independently. It is a snapshot; regenerate
 the tables from the samples with `bench/sweep/stats.py` (see `README.md`).
 
 ## Summary
 
 On this suite every model completes 92–100% of cells; the 95% success-rate
-intervals overlap across all eight. **Success is therefore not the
-discriminating axis here — cost and latency are.** Conditioning the cost
+intervals overlap across all eight; on this suite cost and latency
+discriminate, success does not. Conditioning the cost
 comparison on success (Mann-Whitney on cost-of-passing-runs vs `sonnet-4-6`),
 the six open-weights configurations are cheaper than the frontier reference by
-a large effect (Cliff's δ ≈ −0.7 to −1.0, p < 0.001 for five of six). The
-numbers, not adjectives, are in the tables below; a few neutral observations:
+a large effect (Cliff's delta -0.7 to -1.0, p < 0.001 for five of six).
+Observations:
 
 - The cheapest run cost (`deepseek-v4-flash`, $0.0066 median) and the most
   expensive (`sonnet-4-6`, $0.097 derived) differ ~15× at indistinguishable
@@ -21,53 +21,51 @@ numbers, not adjectives, are in the tables below; a few neutral observations:
 - `qwen3.6-27b-dense` completed every cell (48/48) at $0.022 and 39 s median
   wall-clock. The same-vendor, same-generation sparse model
   `qwen3.6-35b-a3b` (35B, 3B active) completed 44/48 at ~4.6× the wall-clock
-  (181 s) — a measured difference between a dense and a sparse model of the
+  (181 s), a measured difference between a dense and a sparse model of the
   same family on agentic tool-use; the cause (endpoint throughput vs in-loop
   iteration count) is not separable from these metrics alone.
 - `opus-4-8` used the fewest input tokens (4214 median) and the lowest latency
-  (33 s) of any model — it tends to one-shot these tasks; `sonnet-4-6` used
+  (33 s) of any model, one-shotting most cells; `sonnet-4-6` used
   more (20631) at higher latency.
 
 ## The task suite is two kinds of task
 
 The six tasks (drawn from `bench/realworld/`) split into:
 
-- **Construction (3):** `werkzeug-safe-join`, `tinydb-search`, `click-unstyle`
-  — a function is stubbed so the project's own test suite **fails** until it is
-  correctly restored.
+- **Construction (3):** `werkzeug-safe-join`, `tinydb-search`,
+  `click-unstyle`: a function is stubbed; the project's test suite fails
+  until it is restored.
 - **Restraint / premature-finish bait (3):** `csv-rfc4180`, `url-rfc3986`,
-  `html-strip` — the code already **passes** its tests; the task description
-  tempts the agent to over-implement, and success means *not* breaking the
-  passing tests with unnecessary edits.
+  `html-strip`: the code already passes its tests; the task description
+  invites over-implementation, and success means leaving the passing tests
+  unbroken.
 
 Consequence: a do-nothing or crashed run still "passes" all three restraint
-tasks, so the aggregate success rate has a **floor of ~50% (3/6)**. A mid-range
-score can mean "did nothing," not "half-capable" — always read the per-task
-matrix. (See next section for how this caught a real defect.)
+tasks, so the aggregate success rate has a floor of 3/6. A mid-range score is read against
+the per-task matrix (the opus-4-8 anomaly below is an instance).
 
-## A defect this benchmark surfaced (and agent6 fixed)
+## Anomaly: the first opus-4-8 sweep
 
-The first opus-4-8 sweep scored **6/12** — implausibly low for a frontier
-model when `sonnet-4-6` scored 30/30. Inspection showed every opus run exited
-at iteration 1 with **0 tokens consumed**: `claude-opus-4-8` rejects any
-`temperature` parameter (`400 "temperature is deprecated for this model"`), and
-agent6 both pinned `temperature` for determinism and treated 4xx as permanent —
-so **agent6 could not run the model at all.** The 6 "passes" were the three
-restraint tasks passing on untouched code (the floor above).
+The first opus-4-8 sweep scored 6/12 while `sonnet-4-6` scored 30/30. Every
+opus run exited at iteration 1 with 0 tokens consumed: `claude-opus-4-8` rejects any
+`temperature` parameter (`400 "temperature is deprecated for this model"`);
+agent6 pinned `temperature` for determinism and treated 4xx as permanent,
+so no opus run executed. The 6 passes were the
+three restraint tasks passing on untouched code (the floor above).
 
-Fixed in agent6 (commit `cb26543`): on a 400 that names `temperature`, drop it
-and retry once, latching a per-provider flag for the rest of the run
-(model-agnostic; no hardcoded model list). With the fix, opus-4-8 runs and
-completes 12/12. The opus rows below are the post-fix re-run.
+The agent6 fix: on a 400 that names `temperature`, drop it and retry
+once, latching a per-provider flag for the rest of the run
+(model-agnostic; no hardcoded model list). With the fix opus-4-8
+completes 12/12; the opus rows below are the post-fix re-run.
 
 ## Provenance & reproducibility
 
-- Open-weights sweep (240 runs): commit `8974d60`.
+- Open-weights sweep (240 runs): the tree before the merged fixes below.
 - Anthropic + dense-Qwen sweep, and the opus re-run: after merging 22
-  bug-fixes (`5227d50`, `8c9e408`) and the opus fix (`cb26543`).
+  bug-fixes and the temperature fix above.
 - **Reproducibility check:** the merged fixes do not touch the OpenRouter
   worker execution path, so the open-weights numbers should be invariant to
-  them — confirmed empirically below.
+  them; confirmed empirically below.
 
 Keys are read from `~/.config/agent6/secrets.toml`; no key touches a sample or
 the process argv. API spend was $9.09 measured (OpenRouter); Anthropic cost is
@@ -86,11 +84,11 @@ code and compared to the full sweep:
 | `qwen3.6-35b-a3b` | 92% / $0.0097 | 100% / $0.0125 | yes |
 | `deepseek-v4-flash` | 94% / $0.0066 | 100% / $0.0120 | no (higher) |
 
-Success rates reproduce within small-sample noise, and **4 of 5 confirmatory
-median costs fall inside the full sweep's 95% bootstrap CI**. The exception,
-`deepseek-v4-flash`, is the highest-variance model (heavy-tailed cost); its
-n=12 median landed just above the n=48 CI — sampling variance on a cheap, loopy
-model, not a code effect. This supports treating the open-weights numbers as
+Success rates reproduce within small-sample noise, and 4 of 5 confirmatory
+median costs fall inside the full sweep's 95% bootstrap CI. The exception,
+`deepseek-v4-flash`, has the heaviest-tailed cost distribution; its
+n=12 median landed just above the n=48 CI, consistent with sampling
+variance. This supports treating the open-weights numbers as
 invariant to the merged fixes.
 
 ## Caveats
@@ -122,7 +120,7 @@ usage accounting and wall-clock from the harness.
 **Cost note:** OpenRouter reports a per-call USD cost, used directly. The
 Anthropic API does not, so cost for those models is *derived* from measured
 token counts at public list price (opus-4-8 $5/$25, sonnet-4-6 $3/$15 per
-1M input/output tokens) — an estimate, not billed spend, and it excludes
+1M input/output tokens): an estimate rather than billed spend; it excludes
 prompt-caching discounts the other models' reported costs already include.
 
 Reported statistics: success rate with a 95% Wilson score interval; cost,

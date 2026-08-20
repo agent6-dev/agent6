@@ -33,7 +33,7 @@ runs; the smaller models vary run-to-run (a generated script occasionally needs
 a lint/dry-run fix, which loops back one attempt).
 
 **4/6 author a valid bundle** (machine + 5 scripts incl. mock tests, both
-`check` and `test` green) — the capable models usually on the first attempt. The
+`check` and `test` green); the capable models usually on the first attempt. The
 two failures are model-protocol quirks, not agent6 faults; in both, agent6
 detected the bad output, re-prompted, and after 4 attempts failed cleanly with a
 precise diagnostic:

@@ -1,7 +1,7 @@
-# Core-agent experiments — findings
+# Core-agent experiments: findings
 
-Two thrusts on the agent6 core loop — front-loaded task **decomposition** and
-keep-last-K-verbatim **compaction** — plus one opportunistic provider fix found
+Two thrusts on the agent6 core loop, front-loaded task decomposition and
+keep-last-K-verbatim compaction, plus one opportunistic provider fix found
 along the way. All numbers from the `bench/coreagent` harness (see README):
 multi-component, hidden-grader-scored tasks; `score` = fraction of grader cases
 passing (partial credit, low variance); `solved` = score == 1.0.
@@ -9,7 +9,7 @@ passing (partial credit, low variance); `solved` = score == 1.0.
 Adoption rule: strictly-better-everywhere → default; helps-some/hurts-others →
 off-by-default config knob; helps-nowhere → scrap (no cruft "just in case").
 
-## Thrust 2 — task decomposition (`[prompt].decompose`) → SHIPPED as off-by-default knob
+## Thrust 2: task decomposition (`[prompt].decompose`) → SHIPPED as off-by-default knob
 
 **Hypothesis:** small models finish multi-part tasks better when forced to break
 the task into DAG subtasks first and work one at a time (the existing
@@ -24,7 +24,7 @@ capable models. → off-by-default config knob.**
 |---|---|---|---|---|---|
 | **mistral-small-3.2-24b** | **+0.53** (n=10) | **+0.13** (n=10) | +0.18 (n=4) | -0.00 (n=10) | win on implement-many |
 | qwen3-coder-30b | 0.00 | 0.00 | 0.00 | 0.00 | ceiling, overhead |
-| qwen3.6-35b | 0.00 | 0.00 | — | — | ceiling, overhead |
+| qwen3.6-35b | 0.00 | 0.00 | n/a | n/a | ceiling, overhead |
 | claude-haiku-4-5 | 0.00 | 0.00 | 0.00 | 0.00 | ceiling, overhead |
 
 - **mistral-small-3.2-24b** is the one model that prematurely finishes / drops
@@ -34,7 +34,7 @@ capable models. → off-by-default config knob.**
   iterations (~31 → 22, n=10): the finish-gate keeps it on-task instead of
   thrashing.
 - The win is mechanism-specific, not universal across task TYPE: on **bugs**
-  (a debug task) decompose shows NO reliable win — n=10 mean is flat (−0.00), and
+  (a debug task) decompose shows NO reliable win; n=10 mean is flat (-0.00), and
   that average hides two disagreeing batches (deep n=6 −0.14, screen n=4 +0.21),
   i.e. high variance, not a clean effect either way. Fixing 7 seeded bugs isn't a
   "forgot a component" failure, so up-front decomposition has no clear handle.
@@ -42,7 +42,7 @@ capable models. → off-by-default config knob.**
   INDEPENDENT components, which is exactly its design intent.
 - **Capable models** (qwen3-coder-30b, qwen3.6-35b, haiku) sit at the score
   ceiling both ways; decompose only adds overhead. haiku is the cleanest demo:
-  score 1.00 → 1.00 but iterations **6 → 29 (rpn), 8 → 29 (bugs)** — a ~4x tax for
+  score 1.00 to 1.00 but iterations 6 to 29 (rpn), 8 to 29 (bugs): a ~4x tax for
   zero gain, because it dutifully creates 5-8 subtasks for work it would have done
   directly. This 2-4x overhead is exactly why decompose must default off.
 - `solved` (full credit) moves less than `score`: decompose reliably gets MORE
@@ -56,7 +56,7 @@ implementation task. (Refinement worth noting: the original `<dag-rules>` block
 already nudged toward decomposition; making it the explicit first step plus the
 finish-gate is what converts mistral's premature finishes into full coverage.)
 
-## Thrust 1 — keep-last-K-verbatim compaction (`[context].keep_recent_chars`) → SCRAPPED
+## Thrust 1: keep-last-K-verbatim compaction (`[context].keep_recent_chars`) → SCRAPPED
 
 **Hypothesis (COMPACTION_RESEARCH.md top idea):** agent6's tier-2 restart to
 `[task, summary]` is the field's most aggressive choice; every other agent
@@ -75,15 +75,15 @@ I implemented it cleanly (a `select_verbatim_tail` helper + a hybrid
 - **Tier-2 almost never fires.** Because tier-1 keeps the context bounded *below*
   the tier-2 trigger, tier-2 only fires on pathologically long runs (a 100+-turn
   weak-model spiral), and there it is confounded with the model's own variance.
-  In a forced-compaction A/B — kimi on the `needle` task (read five ~6k-char ref
+  In a forced-compaction A/B, kimi on the `needle` task (read five ~6k-char ref
   files, retain all five buried rules), aggressive 18k/36k thresholds, n=6 per
-  condition — **tier-2 fired 0 times in all 18 runs.** keep_recent_chars was
+  condition, tier-2 fired 0 times in all 18 runs. keep_recent_chars was
   completely inactive; the hard-vs-hybrid score gap (0.91 vs 0.96) is noise (the
   hybrid even had MORE re-reads, 22 vs 15).
 - **The real compaction cost is tier-1, which keep-last-K doesn't address.** Tight
   tier-1 elision dropped the ref files and the model re-read them 12-43x per run,
   knocking kimi from 1.00 (no compaction) to ~0.91. That is a tier-1 phenomenon,
-  and only at artificially tight thresholds — at the shipped adaptive thresholds
+  and only at artificially tight thresholds; at the shipped adaptive thresholds
   (~45%/80% of a 128k-256k window) neither tier fires on tasks this size.
 - agent6's durable **task DAG + restart notice + surface-current-task** already
   carry task state across a restart, which is the continuity keep-last-K provides
@@ -97,12 +97,12 @@ benefit in any regime I could produce → no cruft.
 (elision causing re-reads on long runs) and in summary fidelity, not in the tier-2
 tail. The high-value, A/B-able candidates from the research are tier-1 salience-keep
 (don't elide a file the worker is still editing) and a deterministic facts ledger
-(record `path:line` + verify outcomes, no LLM call) — see COMPACTION_RESEARCH.md
+(record `path:line` + verify outcomes, no LLM call); see COMPACTION_RESEARCH.md
 #1/#6. Both need a genuinely long-horizon benchmark to validate (these short
 test-graded tasks don't trigger realistic compaction); building that is the right
 next step before touching compaction again.
 
-## Opportunistic fix — Gemini/Gemma `tool_code` tool calls
+## Opportunistic fix: Gemini/Gemma `tool_code` tool calls
 
 gemma-3-27b scored ~0 on every task: it emits tool calls as a fenced
 ```` ```tool_code\n[read_file(path='spec.md')]\n``` ```` block (Gemini family) in
@@ -111,7 +111,7 @@ gemma-3-27b scored ~0 on every task: it emits tool calls as a fenced
 executed) in `providers/openai.py` `_coerce_text_tool_calls`, the same recovery
 path as the Qwen `<function=>` XML form. **Live-validated:** post-fix, gemma parses
 a 5-call ```tool_code add_task plan and drives the DAG (0 → real engagement). It
-still fails the tasks, but for unrelated reasons — heavy 429 rate-limiting on
+still fails the tasks, but for unrelated reasons: heavy 429 rate-limiting on
 OpenRouter's free DeepInfra backend, and an occasional UNFENCED `[fn(...)]` list
 (a known remaining limit; the fenced form is the documented, unambiguous one).
 A strict improvement for the whole Gemini/Gemma family. Shipped with 3 regression
@@ -127,7 +127,7 @@ python3 stats.py results/myrun.jsonl
 ```
 Result JSONL for every experiment is committed under `results/`.
 
-## Thrust 3 — skills & prompt-style engineering (2026-07-10 campaign)
+## Thrust 3: skills & prompt-style engineering (2026-07-10 campaign)
 
 The skills-subsystem campaign: does prompt-level style/skill content change
 small-model behavior in the agent loop, and which delivery mechanism works?
@@ -183,7 +183,7 @@ shipped in docs/config.md: keep the index small on weak models.
 Same systematic-debugging skill via baked-file vs [skills.state] "always" vs
 index+use_skill, bugs task, both models, n=3, all arms on one agent6 build:
 scores flat (task at ceiling), delivery byte-verified for baked and always,
-and the on-demand arm's index present in every transcript — but NEITHER
+and the on-demand arm's index present in every transcript, but NEITHER
 model ever called use_skill organically (0 calls in 6 runs, despite the
 skill description matching the task). Consistent with superpowers
 requiring an unconditional session-start bootstrap injection in Claude Code
@@ -218,9 +218,9 @@ default stands. A real-repo task set is the prerequisite.
 **skill_bootstrap** (the ecosystem session-bootstrap pattern via
 `[skills.state] using-superpowers = "always"`, verbatim, no tool mapping;
 bugs, n=3/model, delivery verified in every transcript): qwen made zero
-use_skill calls, with scores and cost identical to baseline — the block is
+use_skill calls, with scores and cost identical to baseline; the block is
 inert bytes there. mistral invoked use_skill in 3/3 runs (first organic
-invocations observed), correctly selecting systematic-debugging — after
+invocations observed), correctly selecting systematic-debugging, after
 first re-fetching using-superpowers itself, whose text was already in its
 prompt. Outcomes did not improve: mean score 0.64 vs 0.98 baseline, cost
 x1.9, one run collapsed, matching the prompt-addition fragility the padding
@@ -237,7 +237,7 @@ style rules (its occasional narration turn disappears) but per-run cost is
 already ~$0.008, leaving nothing material to save. No adoption action from
 either result.
 
-## Thrust 4 — competitive campaign (2026-07-11)
+## Thrust 4: competitive campaign (2026-07-11)
 
 Goal: measure agent6 against aider, opencode, and Claude Code on shared
 models, resolve SWE-bench Verified at a fixed budget, and fix what the
@@ -271,7 +271,7 @@ budget cap unchanged as the real limiter.
 Go tasks: agent6 is competitive on wall and cost (kvstore-debug with kimi:
 30s/$0.015 vs Claude Code with haiku 26s/$0.055). rust-ratelimit is the
 one measured gap: agent6 spends 202-350s and $0.42-0.88 where Claude Code
-spends 23-44s and $0.04-0.19 — the verify-after-every-edit discipline
+spends 23-44s and $0.04-0.19; the verify-after-every-edit discipline
 multiplies cargo build time. Documented as future work: compile-cost-aware
 verify cadence. agent6 cost cells use the agent's own accounting (the
 key-usage delta method requires an exclusive key; overlapping waves
@@ -309,7 +309,7 @@ under HOME there); state exported from SWE-bench containers; root-owned
 run dirs cleaned with privilege; header-less bench conditions extend
 [workflow].
 
-## Thrust 5 — ultracode round: failure mining + general robustness (2026-07-11)
+## Thrust 5: ultracode round: failure mining + general robustness (2026-07-11)
 
 A multi-agent mining pass over every unresolved SWE-bench/rust run, followed
 by general (no-tool-specific) loop-robustness fixes on what it surfaced.
@@ -348,7 +348,7 @@ it does not lift a capable model's resolve rate much.
 
 `workflows/_nudges.py` carries the thresholds; the observations that set them:
 
-- **No-progress (verify) guard** — motivated by mistral-small (2026-07-11):
+- **No-progress (verify) guard**, motivated by mistral-small (2026-07-11):
   nine consecutive verify failures with the IDENTICAL normalized error while
   the worker kept editing one file, burning a third of the run's budget on one
   failure. Third stage measured on the guard2 waves (n=14): the detector fired
@@ -356,18 +356,18 @@ it does not lift a capable model's resolve rate much.
   burned to the iteration cap at score 0 -- so ten consecutive identical
   failures (both nudges delivered and unheeded) is past any observed recovery,
   and the run stops honestly. Thresholds: nudge 4, escalate 7, stop 10.
-- **Tool-error spiral guard** — observed on SWE-bench: kimi re-issuing
+- **Tool-error spiral guard**, observed on SWE-bench: kimi re-issuing
   malformed grep calls until the run timed out. Thresholds: 3 / 5 / 8.
-- **Verify-broken detection** — observed on SWE-bench sympy testbeds across
+- **Verify-broken detection**, observed on SWE-bench sympy testbeds across
   three models: `python -m pytest` with pytest absent, exit 1 in 0.0s, read by
   the model as a real red.
-- **Verify-settled completion** — Kimi K2.6 observed running to 128 iterations
+- **Verify-settled completion**: Kimi K2.6 observed running to 128 iterations
   on a task done at ~45, re-running read-only commands after success.
-- **Low-budget wrap-up** — Kimi K2.6 observed solving the task, never
+- **Low-budget wrap-up**: Kimi K2.6 observed solving the task, never
   re-running verify, never calling finish_session, and burning the remainder on
   read-only commands (the settled detector cannot engage without a green
   verify).
-- **Task finish-gate** — a weak model on a long task observed quitting at
+- **Task finish-gate**: a weak model on a long task observed quitting at
   silent_finish iter 7 with 7 subtasks still open.
 
 ### kimi re-measured (before/after, both clean full sweeps)
@@ -407,7 +407,7 @@ general fix is the sandbox-reachability diagnostic above, which turns "agent6
 seems broken" into an actionable operator message. No regression on long
 tasks (longhorizon stylebook 1.0 on the fixed bin, identical to baseline).
 
-## Thrust 6 — a compact operating brief as the system prompt (2026-08-18) → NULL, not shipped
+## Thrust 6: a compact operating brief as the system prompt (2026-08-18) → NULL, not shipped
 
 **Hypothesis:** the run-mode `<agent6>` block (task, tool notes, gate rules,
 finish) says nothing about HOW to work; a compact brief in the style of the

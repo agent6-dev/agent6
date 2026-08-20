@@ -1,4 +1,4 @@
-# longhorizon bench — compaction, memory, and dependency use on long tasks
+# longhorizon bench: compaction, memory, and dependency use on long tasks
 
 The evaluation vehicle bench/coreagent's FINDINGS called for: its short
 test-graded tasks never trigger realistic compaction, so tier-1 elision
@@ -6,15 +6,15 @@ costs, summary fidelity, and every cross-run channel stayed unmeasurable.
 This harness runs agent6 on genuinely long, multi-leg task sequences and
 measures exactly those:
 
-- **Tier-1 compaction losses** — do elisions cause re-reads and forgotten
-  spec details? Gates the deferred facts-ledger: build it only if these
-  losses are real.
-- **Cross-run memory value** — does the `<memories>` block make a second
-  run on the same repo cheaper or better? (add_memory / invalidate_memory
-  shipped 2026-07-06.)
-- **add_dependency use** — does any model create DAG edges unprompted, and
-  does it correlate with better sequencing? (Standing decision: rip the
-  tool out if useless.)
+- **Tier-1 compaction losses**: whether elisions cause re-reads and
+  forgotten spec details. Gates the deferred facts-ledger: build it only
+  if these losses are real.
+- **Cross-run memory value**: whether the `<memories>` block makes a second
+  run on the same repo cheaper or better (add_memory / invalidate_memory
+  shipped 2026-07-06).
+- **add_dependency use**: whether any model creates DAG edges unprompted,
+  and whether that correlates with better sequencing (standing decision:
+  rip the tool out if useless).
 
 ## How it runs
 
@@ -22,7 +22,7 @@ Each (model x condition x task x rep) cell is a SEQUENCE: all of a task's
 legs run in one throwaway git workdir, in order; a leg may first overlay
 extra files (`tasks/<t>/<inject>/`, new requirements landing mid-project).
 Legs share the per-repo agent6 state dir, so cross-run channels carry over;
-the `fresh_state` condition gives each leg a private state dir instead —
+the `fresh_state` condition gives each leg a private state dir instead;
 that pair is the memory A/B. Every leg is graded by the task's
 authoritative HIDDEN grader (`tasks/<t>/grade.py`, never shipped into the
 agent's repo) with partial credit and per-component scores, and recorded as
@@ -51,18 +51,18 @@ tools, so a hand-written feed no generator reproduces scores zero.
 
 ## Conditions (`CONDITIONS` in run.py)
 
-- `baseline` — shipped defaults (adaptive thresholds; memories on).
-- `window16k` / `window32k` / `window64k` — `[context]` thresholds pinned to
+- `baseline`: shipped defaults (adaptive thresholds; memories on).
+- `window16k` / `window32k` / `window64k`: `[context]` thresholds pinned to
   what the shipped adaptive fractions (45%/80%) resolve to on that window.
   That is the regime a small/open-model user gets BY DEFAULT, not an
   artificial squeeze; on a 256k model baseline compaction never fires, so
   these rungs are the compaction A/B. A tidy reader stays under the 32k
   rung's 58k-char drop threshold on these tasks; 16k (local serving) is
   where tier-1 provably engages.
-- `window16k_nogist` — the same thresholds with `context.elision_gists`
+- `window16k_nogist`: the same thresholds with `context.elision_gists`
   off: bare markers only, the pre-gist behavior. Pairs with `window16k`
   as the gist-elision A/B.
-- `fresh_state` — private state dir per leg: the no-cross-run-memory
+- `fresh_state`: private state dir per leg: the no-cross-run-memory
   control for sequences.
 
 ## Metrics per leg (from the run's logs.jsonl + the grader)

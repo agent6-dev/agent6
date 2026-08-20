@@ -163,13 +163,13 @@ def _fmt_q(s: SidePerf) -> str:
 
 def render_markdown(label: str, rows: list[TaskCompare]) -> str:
     lines: list[str] = []
-    lines.append(f"# Head-to-head: agent6 vs claude-code — {label}")
+    lines.append(f"# Head-to-head: agent6 vs claude-code: {label}")
     lines.append("")
     lines.append(
         "Per-task verify, agent cost, agent wall, composite Q, "
         "diff size (added lines), and solution perf (min of 3 verify "
         "runs, ms). Solution perf is the time the agent's *output code* "
-        "takes to run the test suite — independent of how long the "
+        "takes to run the test suite, independent of how long the "
         "agent itself took. n/a = verify failed."
     )
     lines.append("")

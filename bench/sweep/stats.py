@@ -339,7 +339,7 @@ def build_report(samples: list[dict], ref: str | None = None) -> str:
             "**Cost note:** OpenRouter reports a per-call USD cost, used directly. The\n"
             "Anthropic API does not, so cost for those models is *derived* from measured\n"
             "token counts at public list price (opus-4-8 $5/$25, sonnet-4-6 $3/$15 per\n"
-            "1M input/output tokens) — an estimate, not billed spend, and it excludes\n"
+            "1M input/output tokens): an estimate rather than billed spend; it excludes\n"
             "prompt-caching discounts the other models' reported costs already include."
         )
     L.append("")
@@ -435,13 +435,12 @@ def build_report(samples: list[dict], ref: str | None = None) -> str:
     L.append("## Reading the success rate")
     L.append("")
     L.append(
-        "Read the per-task matrix, not just the aggregate. A suite can mix *construction*\n"
-        "tasks (a function is stubbed so the verify FAILS until it is restored) with\n"
-        "*restraint* tasks (the code already passes its verify; success means resisting\n"
-        "unnecessary edits that would break it). A do-nothing or crashed run still 'passes'\n"
-        "every restraint task, so an aggregate success rate has a non-zero floor and a\n"
-        "mid-range score can mean 'did nothing' rather than 'half-capable' — the matrix\n"
-        "disambiguates. (This is how a crashed run was caught here: see the report notes.)"
+        "The per-task matrix qualifies the aggregate. A suite can mix construction\n"
+        "tasks (a function is stubbed; the verify fails until it is restored) with\n"
+        "restraint tasks (the code already passes its verify; success means leaving\n"
+        "it unbroken). A do-nothing or crashed run still passes every restraint\n"
+        "task, so an aggregate success rate has a non-zero floor; the matrix\n"
+        "separates a mid-range score from a did-nothing run."
     )
     L.append("")
     return "\n".join(L)

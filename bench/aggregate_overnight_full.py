@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aggregator for /tmp/agent6-overnight-full/ — Phase 4 results.
+"""Aggregator for /tmp/agent6-overnight-full/ Phase 4 results.
 
 Prints a markdown report combining realworld pass/fail/cost and perf
 cycle scores for the 3 candidate models. Run after run_overnight_full.sh
@@ -21,7 +21,7 @@ def fmt_model(slug: str) -> str:
 
 
 def main() -> None:
-    print("# overnight full bench — Phase 4 results")
+    print("# overnight full bench: Phase 4 results")
     print()
     print("## Realworld (11 tasks per model)")
     print()

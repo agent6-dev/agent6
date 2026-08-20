@@ -5,11 +5,12 @@ different worker models on a fixed task suite. The question is narrow and
 measurable: **given the same task and the same agent, how do models differ in
 success rate and cost?**
 
-**Latest results: [`report.md`](report.md)** — 8 models (Kimi K2.6/K2.7, GLM 5.2,
+**Latest results: [`report.md`](report.md)**: 8 models (Kimi K2.6/K2.7, GLM 5.2,
 Qwen3.6 27B-dense + 35B-A3B, DeepSeek V4 Flash, Claude Sonnet 4.6 / Opus 4.8),
-330 runs. On this suite all models reach 92–100% success, so cost/latency is the
-differentiator; the sweep also surfaced (and agent6 fixed) a real defect — agent6
-could not run `claude-opus-4-8` at all.
+330 runs. On this suite all models reach 92-100% success, so cost and
+latency differentiate; the sweep also surfaced an agent6 defect (the
+temperature parameter kept `claude-opus-4-8` from executing at all),
+fixed and re-run.
 
 ## Task suite
 

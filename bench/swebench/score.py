@@ -63,7 +63,7 @@ def main() -> int:
         if report.exists():
             r = json.loads(report.read_text())
             resolved = r.get("resolved_instances", 0)
-            total = len(plist)  # we submitted len(plist), not the full dataset
+            total = len(plist)  # denominator: submitted predictions, not the full dataset
             summary[model] = {
                 "resolved": resolved,
                 "total": total,
