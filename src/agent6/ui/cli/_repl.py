@@ -124,9 +124,10 @@ def build_repl_hook(
 
 
 def repl_run_diff(session_id: str) -> None:
-    """REPL /diff: print `git diff base_sha..HEAD` for the live run."""
+    """REPL /diff: print the run's diff (`sessions diff`), no pager: a pager
+    would take over the prompt loop's terminal."""
     try:
-        _cmd_diff(session_id=session_id, stat=False, paths=())
+        _cmd_diff(session_id=session_id, stat=False, paths=(), paginate=False)
     except Exception as exc:
         print(f"[agent6] /diff failed: {exc}", file=sys.stderr)
 

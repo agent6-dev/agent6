@@ -324,6 +324,38 @@ def test_runs_diff_with_commits_prints_the_patch(
     assert "+a" in out  # the real patch still prints
 
 
+def test_the_repl_diff_keeps_gits_pager_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """`run -i`'s /diff runs `git --no-pager diff ...`: on a terminal git's
+    pager would take over the REPL's prompt loop (the next command typed
+    became a `less` search)."""
+    import subprocess
+
+    from agent6.ui.cli._repl import repl_run_diff
+
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-DIFF02", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    seen: list[list[str]] = []
+    real_run = subprocess.run
+
+    def _spy(argv: list[str], **kw: object) -> object:
+        seen.append(list(argv))
+        return real_run(argv, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(subprocess, "run", _spy)
+    repl_run_diff("run-DIFF02")
+    assert "+a" in capfd.readouterr().out
+    diffs = [a for a in seen if a[0] == "git" and "diff" in a and "--quiet" not in a]
+    assert diffs and all(a[1] == "--no-pager" for a in diffs)
+    # The plain command keeps the pager (git's own tty rule).
+    seen.clear()
+    assert main(["sessions", "diff", "run-DIFF02"]) == 0
+    capfd.readouterr()
+    diffs = [a for a in seen if a[0] == "git" and "diff" in a and "--quiet" not in a]
+    assert diffs and all("--no-pager" not in a for a in diffs)
+
+
 def test_runs_diff_neutralizes_poisoned_diff_external(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

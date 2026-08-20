@@ -119,8 +119,10 @@ def _cmd_list() -> int:
     return 0
 
 
-def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
+def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: bool = True) -> int:
     """Print the git diff a run produced (manifest.base_sha -> branch HEAD).
+    *paginate* False keeps git's pager out (the `run -i` REPL, whose prompt
+    loop the pager would otherwise take over).
 
     Resolves the run id (or unique prefix; empty string means most-recent),
     reads `manifest.json` for `base_sha` and `run_branch`, then shells
@@ -189,7 +191,8 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
         dirty = _dirty_worktree_note(cwd, manifest.run_branch)
         print(dirty if dirty else "(no changes)")
         return 0
-    proc = subprocess.run(["git", *git_hardening_flags(cwd), *args], cwd=cwd, check=False)
+    pager = () if paginate else ("--no-pager",)
+    proc = subprocess.run(["git", *pager, *git_hardening_flags(cwd), *args], cwd=cwd, check=False)
     return proc.returncode
 
 
