@@ -11,7 +11,14 @@ from pathlib import Path
 import pytest
 
 from agent6 import secrets
-from agent6.secrets import SecretsError
+from agent6.secrets import (
+    OAuthTokens,
+    SecretsError,
+    load_oauth_tokens,
+    resolve_api_key,
+    save_oauth_tokens,
+    save_secret,
+)
 
 
 @pytest.fixture
@@ -105,3 +112,42 @@ def test_concurrent_save_secret_loses_no_provider(gcfg: Path) -> None:
     p = secrets.save_secret("final", "sk-final")
     assert stat.S_IMODE(p.stat().st_mode) == 0o600
     assert not p.with_name(p.name + ".lock").exists()
+
+
+def test_oauth_tokens_round_trip_beside_api_keys(gcfg: Path) -> None:
+    """OAuth tokens replace their provider's entry, preserve siblings, stay 0600."""
+    save_secret("anthropic", "sk-ant-123")
+    tokens = OAuthTokens(
+        access_token="eyJ.access", refresh_token="rt-1", expires_at=1755.5, account_id="acct-9"
+    )
+    path = save_oauth_tokens("chatgpt", tokens)
+    assert (path.stat().st_mode & 0o777) == 0o600
+    assert load_oauth_tokens("chatgpt") == tokens
+    assert resolve_api_key("anthropic", None) == "sk-ant-123"
+    # Re-connect rotates the whole entry; no stale fields survive.
+    save_oauth_tokens("chatgpt", OAuthTokens("a2", "r2", 2000.0, "acct-9"))
+    loaded = load_oauth_tokens("chatgpt")
+    assert loaded is not None and loaded.access_token == "a2" and loaded.refresh_token == "r2"
+
+
+def test_load_oauth_tokens_absent_or_mangled_is_none(gcfg: Path) -> None:
+    """No entry, an api-key-only entry, and an unparseable expiry all read as
+    absent (the caller's repair path is `agent6 connect` either way)."""
+    assert load_oauth_tokens("chatgpt") is None
+    save_secret("chatgpt", "sk-not-oauth")
+    assert load_oauth_tokens("chatgpt") is None
+    assert (
+        load_oauth_tokens(
+            "chatgpt",
+            secrets={
+                "providers": {
+                    "chatgpt": {
+                        "oauth_access_token": "a",
+                        "oauth_refresh_token": "r",
+                        "oauth_expires_at": "not-a-float",
+                    }
+                }
+            },
+        )
+        is None
+    )

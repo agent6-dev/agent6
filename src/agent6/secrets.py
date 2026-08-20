@@ -28,6 +28,7 @@ from __future__ import annotations
 import os
 import stat
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -107,13 +108,19 @@ def save_secret(
     extra: dict[str, str] | None = None,
     user: RealUser | None = None,
 ) -> Path:
-    """Persist `[providers.<name>].api_key` (and any *extra* string fields).
+    """Persist `[providers.<name>].api_key` (and any *extra* string fields)."""
+    return _save_provider_entry(provider_name, {"api_key": api_key, **(extra or {})}, user)
+
+
+def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUser | None) -> Path:
+    """Replace `[providers.<name>]` with *entry*.
 
     Rewrites the whole file atomically, preserving other providers'
     entries, then forces `0600` and chowns back to the real user. The
     read-merge-publish cycle runs under `locked_file`: two concurrent
-    `agent6 connect` invocations would otherwise read the same base file
-    and the later publish would drop the earlier provider's credential.
+    writers (an `agent6 connect` beside a run refreshing OAuth tokens)
+    would otherwise read the same base file and the later publish would
+    drop the earlier one's credential.
     """
     user = user or effective_user()
     path = secrets_path(user)
@@ -128,9 +135,6 @@ def save_secret(
         providers = data.get("providers")
         if not isinstance(providers, dict):
             providers = {}
-        entry = {"api_key": api_key}
-        if extra:
-            entry.update(extra)
         providers[provider_name] = entry
         data["providers"] = providers
 
@@ -148,6 +152,70 @@ def save_secret(
     chown_to_real_user(path.parent, user)
     chown_to_real_user(path, user)
     return path
+
+
+@dataclass(frozen=True, slots=True)
+class OAuthTokens:
+    """One provider's OAuth grant as stored in `secrets.toml`.
+
+    `expires_at` is a unix timestamp for the access token; `account_id` is
+    the backend account the tokens are bound to ("" when the identity token
+    carried none).
+    """
+
+    access_token: str
+    refresh_token: str
+    expires_at: float
+    account_id: str = ""
+
+
+def save_oauth_tokens(
+    provider_name: str, tokens: OAuthTokens, *, user: RealUser | None = None
+) -> Path:
+    """Persist `[providers.<name>]` OAuth tokens (replacing the entry)."""
+    return _save_provider_entry(
+        provider_name,
+        {
+            "oauth_access_token": tokens.access_token,
+            "oauth_refresh_token": tokens.refresh_token,
+            "oauth_expires_at": repr(tokens.expires_at),
+            "oauth_account_id": tokens.account_id,
+        },
+        user,
+    )
+
+
+def load_oauth_tokens(
+    provider_name: str,
+    *,
+    secrets: dict[str, Any] | None = None,
+    user: RealUser | None = None,
+) -> OAuthTokens | None:
+    """The stored OAuth tokens for one provider, or None when absent.
+
+    A present-but-mangled entry (missing token, unparseable expiry) reads as
+    absent: every caller's None path already says "run `agent6 connect`",
+    which is also the repair.
+    """
+    data = secrets if secrets is not None else load_secrets(user)
+    providers = data.get("providers")
+    entry = providers.get(provider_name) if isinstance(providers, dict) else None
+    if not isinstance(entry, dict):
+        return None
+    access = entry.get("oauth_access_token")
+    refresh = entry.get("oauth_refresh_token")
+    if not (isinstance(access, str) and access and isinstance(refresh, str) and refresh):
+        return None
+    try:
+        expires_at = float(str(entry.get("oauth_expires_at", "0")))
+    except ValueError:
+        return None
+    return OAuthTokens(
+        access_token=access,
+        refresh_token=refresh,
+        expires_at=expires_at,
+        account_id=str(entry.get("oauth_account_id", "") or ""),
+    )
 
 
 def _render_secrets_toml(data: dict[str, Any]) -> str:
