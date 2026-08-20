@@ -219,6 +219,32 @@ def refresh_grant(
     return _grant_from_response(resp, operation="refresh")
 
 
+def revoke_tokens(issuer: str, client_id: str, tokens: OAuthTokens) -> str | None:
+    """Best-effort revocation at `<issuer>/oauth/revoke` for a sign-out.
+
+    Prefers the refresh token (killing the whole grant), falls back to the
+    access token. Returns an error description instead of raising: the caller
+    removes the local tokens either way, matching the endpoint's own
+    semantics (revoking an already-dead token is a success).
+    """
+    token, hint = (
+        (tokens.refresh_token, "refresh_token")
+        if tokens.refresh_token
+        else (tokens.access_token, "access_token")
+    )
+    body: dict[str, str] = {"token": token, "token_type_hint": hint}
+    if hint == "refresh_token":
+        body["client_id"] = client_id
+    url = f"{issuer.rstrip('/')}/oauth/revoke"
+    try:
+        resp = httpx2.post(url, json=body, timeout=_TOKEN_TIMEOUT_S)
+    except httpx2.HTTPError as exc:
+        return f"could not reach {url}: {exc}"
+    if resp.status_code >= 400:
+        return f"HTTP {resp.status_code}: {resp.text[:200]}"
+    return None
+
+
 def jwt_claims(token: str) -> dict[str, Any]:
     """The payload claims of a JWT, `{}` on any malformation.
 

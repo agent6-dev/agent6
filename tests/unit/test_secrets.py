@@ -151,3 +151,12 @@ def test_load_oauth_tokens_absent_or_mangled_is_none(gcfg: Path) -> None:
         )
         is None
     )
+
+
+def test_delete_provider_secrets_preserves_siblings(gcfg: Path) -> None:
+    save_secret("anthropic", "sk-1")
+    save_oauth_tokens("chatgpt", OAuthTokens("a", "r", 100.0, "id"))
+    assert secrets.delete_provider_secrets("chatgpt") is True
+    assert secrets.delete_provider_secrets("chatgpt") is False
+    assert secrets.load_oauth_tokens("chatgpt") is None
+    assert secrets.resolve_api_key("anthropic", None) == "sk-1"

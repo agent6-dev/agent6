@@ -113,6 +113,7 @@ agent6 model worker chatgpt gpt-5-codex
 - Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
 - Model names come from the ChatGPT plan (e.g. the current gpt-5 Codex family); agent6 does not pin a list.
+- `agent6 connect chatgpt --logout` signs out: the grant is revoked at `oauth_issuer` (best effort) and the tokens leave `secrets.toml`.
 
 ### OpenRouter routing and caching (`extra_body`)
 

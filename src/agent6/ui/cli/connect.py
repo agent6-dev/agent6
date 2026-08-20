@@ -37,10 +37,17 @@ from agent6.providers.chatgpt_oauth import (
     parse_callback,
     pkce_pair,
     plan_type_of,
+    revoke_tokens,
     tokens_from_grant,
 )
 from agent6.providers.types import ProviderError
-from agent6.secrets import SecretsError, save_oauth_tokens, save_secret
+from agent6.secrets import (
+    SecretsError,
+    delete_provider_secrets,
+    load_oauth_tokens,
+    save_oauth_tokens,
+    save_secret,
+)
 
 
 def _prompt_api_key(name: str) -> str:
@@ -314,7 +321,36 @@ def _chatgpt_sign_in(name: str) -> int:
     return 0
 
 
-def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  # noqa: PLR0911, PLR0912
+def _cmd_logout(name: str) -> int:
+    """Remove a provider's stored credentials (`connect --logout`).
+
+    For a chatgpt-format provider the OAuth grant is revoked at the issuer
+    first (best effort: local removal proceeds regardless, and revoking an
+    already-dead token is a success). The `[providers.<name>]` config block
+    stays; only credentials are removed.
+    """
+    tokens = load_oauth_tokens(name)
+    if tokens is not None:
+        issuer, client_id = _chatgpt_oauth_fields(name)
+        err = revoke_tokens(issuer, client_id, tokens)
+        if err is None:
+            print(f"Revoked the ChatGPT sign-in for {name!r} at {issuer}.")
+        else:
+            print(f"WARNING: revocation failed ({err}); removing local tokens anyway.")
+    try:
+        removed = delete_provider_secrets(name)
+    except SecretsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(
+        f"Removed stored credentials for {name!r} from secrets.toml."
+        if removed
+        else f"No stored credentials for {name!r}."
+    )
+    return 0
+
+
+def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: bool = False) -> int:  # noqa: PLR0911, PLR0912
     """Interactively add a provider + API key.
 
     Security: this command NEVER executes anything supplied by a remote. It
@@ -324,10 +360,12 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
     read-only GET to the provider's `/models` endpoint to confirm the key
     authenticates.
     """
-    print("agent6 connect: add a provider and API key.\n")
     name = _resolve_provider_name(provider)
     if name is None:
         return 2
+    if logout:
+        return _cmd_logout(name)
+    print("agent6 connect: add a provider and API key.\n")
     preset = PROVIDER_DEFAULTS.get(name)
     api_format = preset["api_format"] if preset else ""
     if not api_format:

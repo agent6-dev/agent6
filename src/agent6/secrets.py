@@ -154,6 +154,28 @@ def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUs
     return path
 
 
+def delete_provider_secrets(provider_name: str, *, user: RealUser | None = None) -> bool:
+    """Remove `[providers.<name>]` from `secrets.toml`. True when it existed."""
+    user = user or effective_user()
+    path = secrets_path(user)
+    with locked_file(path):
+        if not path.exists():
+            return False
+        _require_safe_perms(path, user)
+        try:
+            data: dict[str, Any] = tomllib.loads(path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            raise SecretsError(f"{path} is not valid TOML: {exc}") from exc
+        providers = data.get("providers")
+        if not isinstance(providers, dict) or provider_name not in providers:
+            return False
+        del providers[provider_name]
+        atomic_write(path, _render_secrets_toml(data))
+        path.chmod(0o600)
+    chown_to_real_user(path, user)
+    return True
+
+
 @dataclass(frozen=True, slots=True)
 class OAuthTokens:
     """One provider's OAuth grant as stored in `secrets.toml`.

@@ -625,7 +625,9 @@ def _dispatch_check(args: argparse.Namespace) -> int:
 
 
 def _dispatch_connect(args: argparse.Namespace) -> int:
-    return _cmd_connect(provider=args.provider, to_repo=args.repo, verify=args.verify)
+    return _cmd_connect(
+        provider=args.provider, to_repo=args.repo, verify=args.verify, logout=args.logout
+    )
 
 
 def _dispatch_model(args: argparse.Namespace) -> int:

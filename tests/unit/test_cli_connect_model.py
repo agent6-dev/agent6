@@ -608,3 +608,36 @@ def test_oauth_callback_server_round_trip() -> None:
         assert srv.wait(timeout_s=5.0) == "OK"
     finally:
         srv.close()
+
+
+def test_connect_logout_revokes_and_removes_tokens(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--logout revokes a ChatGPT grant at the issuer (best effort) and
+    removes the provider's secrets entry; a repeat run reports nothing left."""
+    import time as _time
+
+    secrets.save_oauth_tokens(
+        "chatgpt", secrets.OAuthTokens("AT", "RT", _time.time() + 3600, "acct")
+    )
+    revoked: list[dict[str, object]] = []
+
+    class _RevokeResp:
+        status_code = 200
+        text = ""
+
+    def fake_post(url: str, *, json: dict[str, object], timeout: float) -> _RevokeResp:
+        revoked.append({"url": url, **json})
+        return _RevokeResp()
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.httpx2.post", fake_post)
+    rc = main(["connect", "chatgpt", "--logout"])
+    assert rc == 0
+    assert revoked[0]["url"] == "https://auth.openai.com/oauth/revoke"
+    assert revoked[0]["token"] == "RT" and revoked[0]["token_type_hint"] == "refresh_token"
+    assert secrets.load_oauth_tokens("chatgpt") is None
+    assert "Removed stored credentials" in capsys.readouterr().out
+
+    rc = main(["connect", "chatgpt", "--logout"])
+    assert rc == 0
+    assert "No stored credentials" in capsys.readouterr().out

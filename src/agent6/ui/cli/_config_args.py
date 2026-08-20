@@ -166,6 +166,12 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         help="Write the [providers.*] block to the per-repo config instead of the global config.",
     )
     connect_p.add_argument(
+        "--logout",
+        action="store_true",
+        help="Sign out instead: remove the provider's stored credentials from secrets.toml"
+        " (a ChatGPT sign-in is also revoked at the issuer). The config block stays.",
+    )
+    connect_p.add_argument(
         "--no-verify",
         dest="verify",
         action="store_false",
