@@ -95,6 +95,10 @@ def run_one(
     _docker("pull", "-q", image, capture_output=True)
 
     uv = shutil.which("uv") or "/usr/local/bin/uv"
+    # AGENT6_SB_RG: path to a STATIC rg on the host; mounted at /usr/bin/rg
+    # (the containers ship none; models probe there, then fall back to grep).
+    rg = os.environ.get("AGENT6_SB_RG", "")
+    rg_mount = ["-v", f"{rg}:/usr/bin/rg:ro"] if rg and Path(rg).is_file() else []
     # Forward optional review-panel env (Fugu dimension) into the container.
     review_env = [
         flag
@@ -128,6 +132,7 @@ def run_one(
             else []
         ),
         *(f for m in extra_mounts for f in ("-v", m)),
+        *rg_mount,
         "-v",
         f"{uv}:/usr/local/bin/uv:ro",
         "-v",

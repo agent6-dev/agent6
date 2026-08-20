@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs INSIDE a pulled SWE-bench instance container. Installs agent6 (uv-managed
-# Python 3.14 + the mounted wheel — no Rust toolchain needed), points it at the
+# Python 3.14 + the mounted wheel, no Rust toolchain needed), points it at the
 # worker model, runs it on the issue text in /testbed, and writes the resulting
 # git diff to /out/patch.diff for SWE-bench's evaluator. The container is the
 # isolation boundary; agent6 runs hardened inside it (no privileged, no userns),
@@ -126,8 +126,8 @@ model = "$MODEL"
 
 [sandbox]
 # UNSANDBOXED: the container is the isolation. agent6's jail fights the container
-# here (couldn't exec the conda interpreter under hardened/strict), so we opt out
-# of the kernel sandbox entirely -- the standard SWE-bench setup where Docker is
+# here (couldn't exec the conda interpreter under hardened/strict), so the config
+# opts out of the kernel sandbox entirely: the standard SWE-bench setup, Docker as
 # the boundary. profile="none" is self-authorizing (an operator-only config
 # value); the per-invocation forms are --dangerously-disable-sandbox /
 # AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1.
