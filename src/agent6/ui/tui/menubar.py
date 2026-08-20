@@ -437,7 +437,8 @@ class MenuBar(Horizontal):
     def _refresh_title(self, *_: object) -> None:
         app = self.app
         parts = [p for p in (app.title, app.sub_title) if p]
-        self.query_one(".app-title", Static).update(" — ".join(parts))
+        # Text, never markup: the subtitle carries the task the user typed.
+        self.query_one(".app-title", Static).update(Text(" — ".join(parts)))
 
     def open(self, mnemonic: str) -> None:
         """Open the menu *mnemonic* (a single letter). Opening the menu that is

@@ -1424,3 +1424,28 @@ def test_the_composer_title_shows_its_brackets(tmp_path: Path) -> None:
             assert bar.border_title == escape(title)
 
     asyncio.run(scenario())
+
+
+def test_the_menu_bar_title_keeps_the_tasks_brackets(tmp_path: Path) -> None:
+    """The bar mirrors the app subtitle, which carries the task the user
+    typed; a Static given a str parses it as markup, so `[wip]` vanished."""
+    from rich.text import Text
+    from textual.widgets import Static
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text(
+            json.dumps(_ev(type="session.start", user_task="fix [wip] parser", mode="run")) + "\n",
+            encoding="utf-8",
+        )
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 30)) as pilot:
+            for _ in range(30):
+                await pilot.pause()
+                if app.state.user_task:
+                    break
+            await pilot.pause()
+            shown = app.screen.query_one(".app-title", Static).render()
+            text = shown.plain if isinstance(shown, Text) else str(shown)
+            assert "[wip]" in text, text
+
+    asyncio.run(scenario())
