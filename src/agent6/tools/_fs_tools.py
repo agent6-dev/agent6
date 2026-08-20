@@ -40,6 +40,7 @@ from agent6.tools.patch_apply import (
     apply_v4a_text,
     is_v4a_patch,
     patch_target_path,
+    split_patch_files,
 )
 from agent6.tools.results import (
     DocsContentResult,
@@ -325,38 +326,59 @@ def apply_patch(
     raw: dict[str, Any],
 ) -> ToolResult:
     args = ApplyPatchInput.model_validate(raw)
-    v4a = is_v4a_patch(args.patch)
-    # The write location: the explicit `path` arg if given, else derived from
-    # the patch headers (V4A always embeds it; GPT-family models omit `path`).
-    # Either way it is resolved + protected-path-checked below, so deriving it
-    # from the patch never widens where a write can land.
-    try:
-        derived_path = patch_target_path(args.patch)
-    except PatchError as exc:
-        raise ToolError(f"apply_patch failed for {args.path or '<unknown>'}: {exc}") from exc
-    target = args.path or derived_path
-    # Security checks on the write location come first (absolute path, repo
-    # escape, protected dirs), before the lower-priority model-confusion
-    # check that an explicit `path` matches the patch header.
-    refuse_protected_writes(target, config, extra_protect_paths)
-    sp = ws.resolve_write(target)
-    refuse_protected_writes(target, config, extra_protect_paths, sp)
-    if args.path and args.path != derived_path:
-        raise ToolError(
-            f"apply_patch: `path` argument {args.path!r} disagrees with the patch "
-            f"header path {derived_path!r}; emit them consistently or omit `path`"
-        )
-    existing = _existing_text(sp, target)
-    try:
-        if v4a:
-            _, new_content = apply_v4a_text(args.patch, existing)
-        else:
-            _, new_content = apply_patch_text(args.patch, existing)
-    except PatchError as exc:
-        raise ToolError(f"apply_patch failed for {target}: {exc}") from exc
-    if args.preview:
-        return preview_result(target, existing, new_content)
-    write_contained(sp, new_content)
-    if index is not None:
-        index.mark_changed(sp.abs_path)
-    return PatchResult(path=str(sp.rel_path), bytes_written=len(new_content))
+    sections = split_patch_files(args.patch)
+    if len(sections) > 1:
+        if args.path:
+            raise ToolError(
+                f"apply_patch: `path` argument {args.path!r} is ambiguous for a "
+                f"{len(sections)}-file patch; omit `path` (each file names itself)"
+            )
+        if args.preview:
+            raise ToolError("apply_patch: preview is single-file; preview one file at a time")
+    # Per file: resolve + security-check the target, apply in memory. Nothing
+    # is written until EVERY section applied cleanly (all-or-nothing across
+    # files, matching the per-hunk contract within one file).
+    staged: list[tuple[SafePath, str, str]] = []  # (resolved, target, new_content)
+    for section in sections:
+        v4a = is_v4a_patch(section)
+        # The write location: the explicit `path` arg if given, else derived
+        # from the patch headers (V4A always embeds it; GPT-family models omit
+        # `path`). Either way it is resolved + protected-path-checked below, so
+        # deriving it from the patch never widens where a write can land.
+        try:
+            derived_path = patch_target_path(section)
+        except PatchError as exc:
+            raise ToolError(f"apply_patch failed for {args.path or '<unknown>'}: {exc}") from exc
+        target = args.path or derived_path
+        # Security checks on the write location come first (absolute path, repo
+        # escape, protected dirs), before the lower-priority model-confusion
+        # check that an explicit `path` matches the patch header.
+        refuse_protected_writes(target, config, extra_protect_paths)
+        sp = ws.resolve_write(target)
+        refuse_protected_writes(target, config, extra_protect_paths, sp)
+        if args.path and args.path != derived_path:
+            raise ToolError(
+                f"apply_patch: `path` argument {args.path!r} disagrees with the patch "
+                f"header path {derived_path!r}; emit them consistently or omit `path`"
+            )
+        existing = _existing_text(sp, target)
+        try:
+            if v4a:
+                _, new_content = apply_v4a_text(section, existing)
+            else:
+                _, new_content = apply_patch_text(section, existing)
+        except PatchError as exc:
+            raise ToolError(f"apply_patch failed for {target}: {exc}") from exc
+        if args.preview:
+            return preview_result(target, existing, new_content)
+        staged.append((sp, target, new_content))
+    for sp, _target, new_content in staged:
+        write_contained(sp, new_content)
+        if index is not None:
+            index.mark_changed(sp.abs_path)
+    rows = tuple((str(sp.rel_path), len(new)) for sp, _t, new in staged)
+    return PatchResult(
+        path=rows[0][0],
+        bytes_written=sum(b for _p, b in rows),
+        files=rows if len(rows) > 1 else (),
+    )

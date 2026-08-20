@@ -1453,18 +1453,6 @@ def test_apply_patch_v4a_path_into_git_still_refused(tmp_path: Path) -> None:
         d.dispatch("apply_patch", {"patch": patch})
 
 
-def test_apply_patch_v4a_multi_file_rejected(tmp_path: Path) -> None:
-    cfg = _config(tmp_path)
-    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    patch = (
-        "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
-        "*** Update File: b.py\n@@\n-p\n+q\n*** End Patch"
-    )
-    with pytest.raises(ToolError, match="one file at a time"):
-        d.dispatch("apply_patch", {"patch": patch})
-
-
 def test_apply_patch_unified_still_works_and_path_optional(tmp_path: Path) -> None:
     """The unified-diff path is unchanged and also accepts an omitted `path`
     (derived from the `+++` header)."""
@@ -1905,3 +1893,105 @@ def test_read_file_refuses_a_binary_file_as_its_description_promises(tmp_path: P
     # The converse: ordinary text still reads.
     (tmp_path / "ok.txt").write_text("hello\n", encoding="utf-8")
     assert d.dispatch("read_file", {"path": "ok.txt"}).to_wire()["content"] == "hello\n"
+
+
+def test_apply_patch_multi_file_v4a(tmp_path: Path) -> None:
+    """A multi-file V4A patch (what GPT-family models emit natively) applies
+    every file all-or-nothing. One-file-per-call was a pre-1.0 placeholder;
+    SWE-bench transcripts showed models looping on the rejection."""
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("p\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch(
+        "apply_patch",
+        {
+            "patch": (
+                "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
+                "*** Update File: b.py\n@@\n-p\n+q\n*** End Patch"
+            ),
+        },
+    ).to_wire()
+    assert out["files"] == [
+        {"path": "a.py", "bytes_written": 2},
+        {"path": "b.py", "bytes_written": 2},
+    ]
+    assert out["path"] == "a.py" and out["bytes_written"] == 4
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "y\n"
+    assert (tmp_path / "b.py").read_text(encoding="utf-8") == "q\n"
+
+
+def test_apply_patch_multi_file_unified_diff_git(tmp_path: Path) -> None:
+    """git-style multi-file unified diffs split at `diff --git` boundaries."""
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch(
+        "apply_patch",
+        {
+            "patch": (
+                "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,1 +1,1 @@\n-x\n+y\n"
+                "diff --git a/new.py b/new.py\n--- /dev/null\n+++ b/new.py\n"
+                "@@ -0,0 +1 @@\n+fresh\n"
+            ),
+        },
+    ).to_wire()
+    assert [f["path"] for f in out["files"]] == ["a.py", "new.py"]
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "y\n"
+    assert (tmp_path / "new.py").read_text(encoding="utf-8") == "fresh\n"
+
+
+def test_apply_patch_multi_file_is_all_or_nothing(tmp_path: Path) -> None:
+    """A context miss in the SECOND file leaves the first unwritten."""
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("DIFFERENT\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match=r"b\.py"):
+        d.dispatch(
+            "apply_patch",
+            {
+                "patch": (
+                    "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
+                    "*** Update File: b.py\n@@\n-p\n+q\n*** End Patch"
+                ),
+            },
+        )
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "x\n"
+
+
+def test_apply_patch_multi_file_protected_second_file_writes_nothing(tmp_path: Path) -> None:
+    """The protected-path guard runs per file BEFORE any write: a .git target
+    anywhere in a multi-file patch refuses the whole call."""
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    (tmp_path / ".git").mkdir()
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match=r"\.git"):
+        d.dispatch(
+            "apply_patch",
+            {
+                "patch": (
+                    "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
+                    "*** Add File: .git/hooks/pre-commit\n+#!/bin/sh\n*** End Patch"
+                ),
+            },
+        )
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "x\n"
+
+
+def test_apply_patch_multi_file_path_arg_rejected(tmp_path: Path) -> None:
+    """`path` cannot name the target of a multi-file patch."""
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="ambiguous"):
+        d.dispatch(
+            "apply_patch",
+            {
+                "path": "a.py",
+                "patch": (
+                    "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
+                    "*** Update File: b.py\n@@\n-p\n+q\n*** End Patch"
+                ),
+            },
+        )

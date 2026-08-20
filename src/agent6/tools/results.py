@@ -182,15 +182,24 @@ class EditResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class PatchResult(ToolResult):
-    """apply_patch that wrote (not preview)."""
+    """apply_patch that wrote (not preview). A multi-file patch carries one
+    (path, bytes_written) row per file in `files`; `path`/`bytes_written`
+    then hold the first file and the total, and the single-file wire is
+    unchanged (`files` empty)."""
 
     path: str
     bytes_written: int
+    files: tuple[tuple[str, int], ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
-        return {"path": self.path, "bytes_written": self.bytes_written}
+        wire: dict[str, Any] = {"path": self.path, "bytes_written": self.bytes_written}
+        if self.files:
+            wire["files"] = [{"path": p, "bytes_written": b} for p, b in self.files]
+        return wire
 
     def summary(self) -> str:
+        if self.files:
+            return f"patched {len(self.files)} files bytes={self.bytes_written}"
         return f"patched path={self.path} bytes={self.bytes_written}"
 
 

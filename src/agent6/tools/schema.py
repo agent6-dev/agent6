@@ -106,11 +106,13 @@ class ApplyEditInput(_ToolInput):
 class ApplyPatchInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "apply_patch"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Patch one file per call. Accepts a standard unified diff (`--- a/PATH`,"
+        "Patch files. Accepts a standard unified diff (`--- a/PATH`,"
         " `+++ b/PATH`, @@ hunks; `--- /dev/null` creates) or OpenAI's"
-        " *** Begin/Update File/End Patch format. Context lines must match the"
-        " file exactly; no deletion. `path` optional (taken from headers)."
-        " preview=true echoes the diff without writing."
+        " *** Begin/Update File/End Patch format. Multi-file patches apply"
+        " all-or-nothing (unified needs `diff --git` separators between files)."
+        " Context lines must match the file exactly; no deletion. `path`"
+        " optional (taken from headers; single-file only)."
+        " preview=true echoes the diff without writing (single-file only)."
     )
 
     path: str = ""

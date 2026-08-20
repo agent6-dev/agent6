@@ -14,7 +14,12 @@ Accepts standard `diff -u` output:
 
 Design choices (pre-1.0):
 
-- One file per patch. Multi-file patches are rejected. Callers loop.
+- Multi-file patches are accepted at the tool layer (`split_patch_files`
+  cuts them at `diff --git` / V4A file-directive boundaries; the caller
+  applies per file, all-or-nothing). The parse/apply functions here stay
+  single-file. A bare multi-file unified diff WITHOUT `diff --git`
+  separators is still rejected: a `--- ` line is indistinguishable from a
+  removal of `-- comment` content without hunk-structural context.
 - Zero fuzz. Context lines must match the on-disk file exactly. If any
   hunk fails to apply, no change is written (all-or-nothing).
 - `--- /dev/null` is allowed and means "create a new file"; the target
@@ -358,6 +363,40 @@ def apply_patch_text(patch_text: str, original: str | None) -> tuple[str, str]:
 def is_v4a_patch(text: str) -> bool:
     """True if *text* looks like an OpenAI `*** Begin Patch` envelope."""
     return text.lstrip().startswith("*** Begin Patch")
+
+
+def split_patch_files(text: str) -> list[str]:
+    """Cut a possibly-multi-file patch into single-file patch texts.
+
+    V4A: one section per `*** Add/Update/Delete File:` directive, each
+    re-wrapped in its own envelope. Unified: one section per `diff --git `
+    boundary (a hunk body line always carries a +/-/space prefix, so a
+    column-0 `diff --git ` is only ever a file boundary). A single-file
+    patch is returned as-is; the per-file parsers keep their own
+    multi-file guards for anything a split cannot see.
+    """
+    if is_v4a_patch(text):
+        raw = text.strip().splitlines()
+        if not raw or raw[0].strip() != "*** Begin Patch" or raw[-1].strip() != "*** End Patch":
+            return [text]  # malformed envelope: let apply_v4a_text name the error
+        body = raw[1:-1]
+        starts = [i for i, ln in enumerate(body) if _v4a_file_directive(ln) is not None]
+        if len(starts) <= 1:
+            return [text]
+        sections = []
+        for n, i in enumerate(starts):
+            end = starts[n + 1] if n + 1 < len(starts) else len(body)
+            sections.append("\n".join(["*** Begin Patch", *body[i:end], "*** End Patch"]))
+        return sections
+    lines = text.splitlines(keepends=True)
+    starts = [i for i, ln in enumerate(lines) if ln.startswith("diff --git ")]
+    if len(starts) <= 1:
+        return [text]
+    sections = []
+    for n, i in enumerate(starts):
+        end = starts[n + 1] if n + 1 < len(starts) else len(lines)
+        sections.append("".join(lines[i:end]))
+    return sections
 
 
 def patch_target_path(text: str) -> str:
