@@ -5,6 +5,7 @@ cleaning up the branches and chain refs already landed."""
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -165,6 +166,23 @@ def _plan_merge(  # noqa: PLR0911
     )
 
 
+def _manual_merge_cmd(cwd: Path, plan: _MergePlan) -> str:
+    """The by-hand merge for a plumbing conflict, from the checkout as it is: git
+    refuses to merge over modified tracked files (a finished run leaves its work
+    in the tree until merged), so a dirty tree is stashed first, and a checkout
+    on another branch moves to the target."""
+    steps: list[str] = []
+    with contextlib.suppress(GitError):
+        st = git_status(cwd)
+        if st.modified_count:
+            steps.append("git stash")
+        if st.branch != plan.target:
+            steps.append(f"git checkout {plan.target}")
+    squash = " --squash" if plan.strategy == "squash" else ""
+    steps.append(f"git merge{squash} {plan.run_branch}")
+    return " && ".join(steps)
+
+
 def _cmd_merge(
     *,
     session_id: str,
@@ -202,12 +220,11 @@ def _cmd_merge(
         print(f"ERROR: {outcome.error}", file=sys.stderr)
         return 1
     if outcome.status == "conflict":
-        squash = " --squash" if plan.strategy == "squash" else ""
         print(
             f"CONFLICT: merging {plan.run_branch} into {plan.target} hit conflicts in "
-            f"{', '.join(outcome.conflicts)}. The tree was left clean (no partial merge); "
-            f"resolve it by hand if you want:\n"
-            f"    git checkout {plan.target} && git merge{squash} {plan.run_branch}",
+            f"{', '.join(outcome.conflicts)}. Your checkout is untouched (no partial "
+            f"merge); resolve it by hand if you want:\n"
+            f"    {_manual_merge_cmd(cwd, plan)}",
             file=sys.stderr,
         )
         return 1

@@ -169,6 +169,32 @@ def test_runs_merge_lands_over_a_worktree_carrying_the_run(
     assert _git(tmp_path, "status", "--porcelain").split() == ["??", "wip.txt"]
 
 
+def test_a_conflicting_merge_prints_a_by_hand_command_that_runs_from_this_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The recovery line for a plumbing conflict must run from the checkout as
+    it stands: after a run the tree carries the run's work uncommitted, and git
+    refuses `merge` over modified tracked files, so the printed command stashes
+    first; a checkout on another branch is moved to the target."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-CONF11", commits=[("README.md", "theirs\n", "agent6 iter 1")])
+    (tmp_path / "README.md").write_text("ours\n", encoding="utf-8")
+    _git(tmp_path, "commit", "-qam", "main moved")
+    (tmp_path / "README.md").write_text("theirs\n", encoding="utf-8")  # the run's work, uncommitted
+
+    assert main(["sessions", "merge", "run-CONF11"]) == 1
+    err = capsys.readouterr().err
+    assert "CONFLICT" in err and "README.md" in err
+    assert "    git stash && git merge --squash agent6/run-CONF11" in err
+
+    _git(tmp_path, "checkout", "-q", "--", "README.md")
+    _git(tmp_path, "checkout", "-q", "-b", "elsewhere")
+    assert main(["sessions", "merge", "run-CONF11"]) == 1
+    assert (
+        "    git checkout main && git merge --squash agent6/run-CONF11" in capsys.readouterr().err
+    )
+
+
 def test_runs_merge_refuses_unknown_into_without_creating_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
