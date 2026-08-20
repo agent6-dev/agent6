@@ -1188,7 +1188,7 @@ function paintRun(cards, s) {
   const legUsd = Math.max(0, (b.usd_total || 0) - (b.usd_prior_legs || 0));
   const usdFrac = usdCap > 0 ? Math.min(1, legUsd / usdCap) : 0;
   const usdText = fmtUsd(b.usd_total, b.usd_partial)
-    + (usdCap > 0 ? ((b.usd_prior_legs || 0) > 0 ? ' · leg ' + fmtUsd(legUsd, false) + ' / $' + usdCap : ' / $' + usdCap)
+    + (usdCap > 0 ? ((b.usd_prior_legs || 0) > 0 ? ' · leg ' + fmtUsd(legUsd, false) + ' / ' + fmtUsd(usdCap, false) : ' / ' + fmtUsd(usdCap, false))
                   : (usdCap === -1 ? ' (unlimited)' : ''));
   cards.budget.appendChild(barRow('cost', usdFrac, usdText));
   if (b.tokens_unmetered) {
