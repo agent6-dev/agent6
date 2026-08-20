@@ -187,21 +187,19 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
         return res
     _layout, manifest = res
 
-    base_sha = manifest.base_sha
-    run_branch = manifest.run_branch
-    if not base_sha:
-        print("ERROR: manifest has no base_sha; nothing to diff against", file=sys.stderr)
-        return 2
-    if run_branch:
-        pruned = _pruned_branch_note(cwd, manifest, run_branch)
-        if pruned is not None:  # branch gone (pruned): say where the work went
-            print(pruned)
-            return 0
-
     ref = _commits_ref(cwd, manifest)
     if not ref.head_ref:
         print(f"[agent6] {ref.reason}.")
         return 0
+    if manifest.run_branch:
+        pruned = _pruned_branch_note(cwd, manifest, manifest.run_branch)
+        if pruned is not None:  # branch gone (pruned): say where the work went
+            print(pruned)
+            return 0
+    base_sha = manifest.base_sha
+    if not base_sha:
+        print("ERROR: manifest has no base_sha; nothing to diff against", file=sys.stderr)
+        return 2
 
     head_ref = ref.head_ref
     # The logical command; printed without the -c hardening overrides (the
@@ -231,7 +229,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
         # live run mid-work has its edits uncommitted on the worktree and this
         # reads as "the agent did nothing". If the run branch is the current
         # checkout and its worktree is dirty, say so instead of a bare silence.
-        dirty = _dirty_worktree_note(cwd, run_branch)
+        dirty = _dirty_worktree_note(cwd, manifest.run_branch)
         print(dirty if dirty else "(no changes)")
         return 0
     proc = subprocess.run(["git", *git_hardening_flags(cwd), *args], cwd=cwd, check=False)

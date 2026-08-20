@@ -796,3 +796,21 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     out = capsys.readouterr().out
     assert "fan-out clones: swept 1" in out
     assert not (workdir / "fan").exists()
+
+
+def test_diff_explains_an_ask_the_same_way_merge_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An ask records no base commit either; `sessions diff` named the missing
+    manifest field where its siblings name the fact (an ask writes nothing)."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "ask-AAA056", commits=[], run_branch=None)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="ask-AAA056")
+    m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    m["mode"], m["base_sha"] = "ask", ""
+    layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
+
+    assert main(["sessions", "diff", "ask-AAA056"]) == 0
+    captured = capsys.readouterr()
+    assert "an ask does not write to the repo" in captured.out
+    assert "base_sha" not in captured.err
