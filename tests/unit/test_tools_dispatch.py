@@ -712,6 +712,63 @@ def test_apply_edit_create_rejects_nonempty_old_string(tmp_path: Path) -> None:
         )
 
 
+def test_apply_edit_overwrite_replaces_an_existing_file_whole(tmp_path: Path) -> None:
+    """A rewrite from a stub: `create` refuses the existing file (and names
+    the kind that does the job); `overwrite` writes it whole and reports so."""
+    cfg = _config(tmp_path)
+    (tmp_path / "f.py").write_text("def f():\n    raise NotImplementedError\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match=r"already exists.*overwrite"):
+        d.dispatch(
+            "apply_edit",
+            {"path": "f.py", "edits": [{"kind": "create", "old_string": "", "new_string": "x"}]},
+        )
+    out = d.dispatch(
+        "apply_edit",
+        {
+            "path": "f.py",
+            "edits": [
+                {"kind": "overwrite", "old_string": "", "new_string": "def f():\n    return 1\n"}
+            ],
+        },
+    ).to_wire()
+    assert out["applied"] == ["overwrite"]
+    assert (tmp_path / "f.py").read_text(encoding="utf-8") == "def f():\n    return 1\n"
+    # A missing file is written the same way: the kind states "the whole
+    # file is new_string", not "the file exists".
+    d.dispatch(
+        "apply_edit",
+        {"path": "g.py", "edits": [{"kind": "overwrite", "old_string": "", "new_string": "y\n"}]},
+    )
+    assert (tmp_path / "g.py").read_text(encoding="utf-8") == "y\n"
+
+
+@pytest.mark.parametrize("kind", ["create", "overwrite"])
+def test_apply_edit_whole_file_kinds_share_the_create_contracts(tmp_path: Path, kind: str) -> None:
+    """Both whole-file kinds refuse a non-empty old_string and refuse to be
+    combined with other edits (the file stays untouched either way)."""
+    cfg = _config(tmp_path)
+    (tmp_path / "f.py").write_text("keep me\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="old_string"):
+        d.dispatch(
+            "apply_edit",
+            {"path": "f.py", "edits": [{"kind": kind, "old_string": "junk", "new_string": "x"}]},
+        )
+    with pytest.raises(ToolError, match=kind):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "f.py",
+                "edits": [
+                    {"kind": "replace", "old_string": "keep me", "new_string": "edited"},
+                    {"kind": kind, "old_string": "", "new_string": "WHOLE\n"},
+                ],
+            },
+        )
+    assert (tmp_path / "f.py").read_text(encoding="utf-8") == "keep me\n"
+
+
 def test_apply_patch_ok(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("a\nb\nc\n", encoding="utf-8")

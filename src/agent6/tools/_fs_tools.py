@@ -51,6 +51,7 @@ from agent6.tools.results import (
     ToolResult,
 )
 from agent6.tools.schema import (
+    WHOLE_FILE_KINDS,
     Agent6DocsInput,
     ApplyEditInput,
     ApplyPatchInput,
@@ -270,11 +271,14 @@ def apply_edit(
     existing = _existing_text(sp, args.path)
     new_content = existing
     for i, edit in enumerate(args.edits):
-        if edit.kind == "create":
-            if existing is not None and i == 0:
-                raise ToolError(f"create requested but file already exists: {args.path}")
+        if edit.kind in WHOLE_FILE_KINDS:
+            if edit.kind == "create" and existing is not None:
+                raise ToolError(
+                    f"create requested but file already exists: {args.path}"
+                    ' (kind="overwrite" replaces it whole)'
+                )
             new_content = edit.new_string
-            applied.append("create")
+            applied.append(edit.kind)
         else:
             if new_content is None:
                 raise ToolError(f"replace requested but file does not exist: {args.path}")

@@ -75,9 +75,10 @@ class ApplyEditInput(_ToolInput):
         "Edit one file. `edits` is an array of {old_string, new_string, kind?}."
         " Each old_string must occur exactly once in the file, byte for byte;"
         " expand it with surrounding context if not unique, and re-read the"
-        ' file if not found. kind="create" makes a new file: empty old_string,'
-        " full content in new_string, the only edit in the array. preview=true"
-        " returns the would-be diff without touching disk."
+        ' file if not found. kind="create" makes a new file and kind="overwrite"'
+        " replaces an existing file whole (a rewrite from a stub): for both,"
+        " empty old_string, the full content in new_string, the only edit in"
+        " the array. preview=true returns the would-be diff without touching disk."
     )
 
     path: str = Field(min_length=1)
@@ -85,16 +86,18 @@ class ApplyEditInput(_ToolInput):
     preview: bool = False
 
     @model_validator(mode="after")
-    def _check_create_is_sole(self) -> ApplyEditInput:
-        # `create` writes the whole file from `new_string`, so combining it
-        # with other edits is nonsensical: the dispatcher's create branch only
-        # guards "file already exists" for the FIRST edit, so a `create` placed
-        # after a `replace` would skip that guard and silently overwrite the
-        # file (discarding the prior edits). Require create to be the sole edit
-        # and fail loud at the trust boundary instead.
-        if len(self.edits) > 1 and any(e.kind == "create" for e in self.edits):
+    def _check_whole_file_edit_is_sole(self) -> ApplyEditInput:
+        # `create` and `overwrite` write the whole file from `new_string`, so
+        # combining either with other edits is nonsensical: the dispatcher's
+        # create branch only guards "file already exists" for the FIRST edit,
+        # so a `create` placed after a `replace` would skip that guard and
+        # silently overwrite the file (discarding the prior edits). Require a
+        # whole-file edit to be the sole edit and fail loud at the trust
+        # boundary instead.
+        whole = [e.kind for e in self.edits if e.kind in WHOLE_FILE_KINDS]
+        if len(self.edits) > 1 and whole:
             raise ValueError(
-                "kind='create' must be the only edit (it writes the entire file);"
+                f"kind={whole[0]!r} must be the only edit (it writes the entire file);"
                 " do not combine it with other edits"
             )
         return self
@@ -115,6 +118,13 @@ class ApplyPatchInput(_ToolInput):
     preview: bool = False
 
 
+# The edit kinds that write the whole file from `new_string`: `create` refuses
+# an existing file (a model that thinks the file is new must not clobber it),
+# `overwrite` states the intent to replace one whole (a rewrite from a stub,
+# where a replace would need the byte-exact old text).
+WHOLE_FILE_KINDS = frozenset({"create", "overwrite"})
+
+
 class EditPair(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -123,7 +133,7 @@ class EditPair(BaseModel):
     # with "Field required: kind". Replace
     # is the overwhelming-majority case; `create` must still be set explicitly
     # and `_check_shape` enforces its empty-old_string contract.
-    kind: str = Field(default="replace", pattern="^(replace|create)$")
+    kind: str = Field(default="replace", pattern="^(replace|create|overwrite)$")
     old_string: str = ""
     new_string: str
 
@@ -134,10 +144,10 @@ class EditPair(BaseModel):
         # model gets a clear error instead of a silent corruption.
         if self.kind == "replace" and self.old_string == "":
             raise ValueError("old_string must be non-empty for kind='replace'")
-        # kind="create" ignores old_string; reject a non-empty value to catch
-        # the common LLM mistake of pasting context into the wrong field.
-        if self.kind == "create" and self.old_string != "":
-            raise ValueError("old_string must be empty for kind='create'")
+        # A whole-file kind ignores old_string; reject a non-empty value to
+        # catch the common LLM mistake of pasting context into the wrong field.
+        if self.kind in WHOLE_FILE_KINDS and self.old_string != "":
+            raise ValueError(f"old_string must be empty for kind={self.kind!r}")
         return self
 
 
