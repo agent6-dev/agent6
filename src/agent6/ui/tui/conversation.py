@@ -130,16 +130,18 @@ def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text
 ComposerMode = Literal["steer", "resume", "start"]
 
 
-def composer_labels(mode: ComposerMode) -> tuple[str, str]:
+def composer_labels(mode: ComposerMode, *, continue_as: str = "") -> tuple[str, str]:
     """(border title, key hint) for the composer.
 
     One conversation view serves runs, plans and asks, so it says "session":
-    a fixed "the run" is wrong two times in three.
+    a fixed "the run" is wrong two times in three. *continue_as* names the
+    fork an undone run continues as (Enter resumes THAT session).
     """
     if mode == "steer":
         return ("steer this session (/pin, /compact [focus])", "Enter sends · Ctrl-J newline")
     if mode == "resume":
-        return ("continue this session", "Enter resumes · Ctrl-J newline")
+        title = f"continue as {continue_as}" if continue_as else "continue this session"
+        return (title, "Enter resumes · Ctrl-J newline")
     return ("new task", "Enter starts · Ctrl-J newline")
 
 
@@ -332,13 +334,16 @@ class SteerInput(TextArea):
     policy = ""  # viewmodel.session_policy(...).short(), set once the run dir is known
     mode: ComposerMode = "steer"  # which directives apply (see steer_suggestion_rows)
 
-    def set_mode(self, *, mode: ComposerMode, ctx_pct: int | None = None) -> None:
+    def set_mode(
+        self, *, mode: ComposerMode, ctx_pct: int | None = None, continue_as: str = ""
+    ) -> None:
         """Relabel for the session's state: steering (live), resuming
-        (finished), or starting (a draft), plus the context-window fill when
-        known, right where you type. Only writes on a real change: this runs
-        on every heartbeat, and same-value style writes still cost a refresh."""
+        (finished; *continue_as* names the fork an undone run resumes as), or
+        starting (a draft), plus the context-window fill when known, right
+        where you type. Only writes on a real change: this runs on every
+        heartbeat, and same-value style writes still cost a refresh."""
         self.mode = mode
-        title, keys = composer_labels(mode)
+        title, keys = composer_labels(mode, continue_as=continue_as)
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
         # The run's policy sits where the eye already goes for status, from the
         # same fold the CLI banner and the web header read.
@@ -810,7 +815,12 @@ class ConversationScreen(ScreenChrome, Screen[None]):
                     bar.policy = session_policy(self._logs_path.parent).short()
                 pct_fn = getattr(self.app, "context_pct", None)
                 pct = pct_fn() if callable(pct_fn) else None
-                bar.set_mode(mode=mode, ctx_pct=pct if isinstance(pct, int) else None)
+                fork = getattr(self.app, "continue_as", "")
+                bar.set_mode(
+                    mode=mode,
+                    ctx_pct=pct if isinstance(pct, int) else None,
+                    continue_as=fork if isinstance(fork, str) else "",
+                )
 
     def refresh_liveness(self) -> None:
         """Relabel the composer for a liveness change that came with no event

@@ -515,7 +515,9 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # Relabel every paint: mode flips on finished, and the context readout
         # in the subtitle moves with the run.
         mode: ComposerMode = "steer" if tui.session_controllable() else "resume"
-        self.query_one("#dash-input", SteerInput).set_mode(mode=mode, ctx_pct=tui.context_pct())
+        self.query_one("#dash-input", SteerInput).set_mode(
+            mode=mode, ctx_pct=tui.context_pct(), continue_as=tui.continue_as
+        )
         self.query_one("#dash-preset", ResumePreset).show(mode == "resume")
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
@@ -795,6 +797,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.exit_on_end = exit_on_end
         # The run ended under exit_on_end and the dashboard is holding.
         self._end_hold = False
+        # The fork this view's /undo on a finished run created (the fold has
+        # no event for it); continue_as routes the follow-up there.
+        self._undo_child = ""
         # Set by action_detach_exit; run_tui reads it to print the reattach hint.
         self.detached = False
         # THE (word, reason) for this run -- status_for_session_dir, the same
@@ -922,6 +927,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
     def _handle_event(self, event: dict[str, object]) -> None:
         self.state = apply_event(self.state, event)
         self.last_event_at = time.monotonic()  # the ts-less fallback anchor
+        if event.get("type") == "session.undone" and self.state.undone_to:
+            # /undo forked the run at the state before the operator's last
+            # message: that fork is the continuation, and the message taken
+            # back is the operator's to edit and resend (the web does the same).
+            self._fill_composers(self.state.undone_text)
+            self.notify(f"undone: continue as {self.state.undone_to}; your message is back to edit")
         if event.get("type") in SESSION_START_EVENTS:
             # A session boundary (fresh run OR a resumed leg -- a resume emits
             # only loop.resume.start, never a second session.start) restarts the
@@ -1081,23 +1092,41 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self.notify(said[-1].strip() if said else "undo failed", severity="warning")
             return
         child, text = result
-        self.notify(f"undone: forked to {child}; your message is back to edit: {text[:60]}")
+        self._undo_child = child
+        self._fill_composers(text)
+        self.notify(f"undone: continue as {child}; your message is back to edit")
+
+    @property
+    def continue_as(self) -> str:
+        """The session a typed follow-up resumes: the fork an undone run named
+        (its continuation, from the fold or from this view's own /undo on a
+        finished run), else "" for this run itself."""
+        return self.state.undone_to or self._undo_child
+
+    def _fill_composers(self, text: str) -> None:
+        """Put *text* in both composer bars (the covered view's too), ready to
+        edit and resend."""
+        for screen, bar_id in ((self._conv, "#conv-input"), (self._dash, "#dash-input")):
+            with contextlib.suppress(NoMatches):
+                screen.query_one(bar_id, SteerInput).load_text(text)
 
     def resume_with_instruction(self, text: str) -> None:
-        """Resume this run with *text* as its first steering instruction (rides
-        `agent6 resume --steer`, which seeds the steer files AFTER its stale-
-        state clear; a pre-seed here would be wiped by that clear). The new
-        session's steer poll injects the text at its first boundary."""
+        """Resume this run (or, after /undo, the fork it named) with *text* as
+        its first steering instruction (rides `agent6 resume --steer`, which
+        seeds the steer files AFTER its stale-state clear; a pre-seed here
+        would be wiped by that clear). The new session's steer poll injects
+        the text at its first boundary."""
+        target = self.continue_as or self.session_dir.name
         err = spawn_detached_resume(
             Path.cwd(),
-            self.session_dir.name,
+            target,
             steer=text,
             preset=self.resume_preset,
             config_path=self.config_path,
         )
         under = f" under preset {self.resume_preset}" if self.resume_preset else ""
         self.notify(
-            err or f"resuming {self.session_dir.name}{under} with your instruction…",
+            err or f"resuming {target}{under} with your instruction…",
             severity="error" if err else "information",
         )
 
