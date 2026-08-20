@@ -44,7 +44,7 @@ from agent6.app.frontend import (
     apply_spawned_away_default,
     approval_scopes,
 )
-from agent6.app.manifest import pin_gate
+from agent6.app.manifest import pin_gate, stamp_preset
 from agent6.app.preflight import (
     SessionRefused,
     drop_gate_if_unrunnable,
@@ -331,8 +331,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     isolation: IsolationLevel | None = None
     try:
         # The original run's manifest drives resume: `mode` (a plan run resumes
-        # read-only with the plan tools, never as a write run), `preset` (resume
-        # has no --preset flag), `base_sha` (the review-panel diff base), and
+        # read-only with the plan tools, never as a write run), `preset` (unless
+        # `--preset` picks another), `base_sha` (the review-panel diff base), and
         # `run_branch` (the visible ref the chain keeps advancing). Read FIRST: a
         # PARKED run (manifest carries parked_task, no snapshot exists) is
         # started fresh below instead of hitting the no-snapshot refusal.
@@ -483,6 +483,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             effective = load_effective(Path.cwd(), config_path, preset=preset or manifest_preset)
             cfg, explicit_leaves = effective.config, effective.explicit_leaves
             apply_git_ops_policy(cfg)
+            if preset:
+                # This leg and every later one run under the operator's new
+                # choice; the stamp is what listings show and resume replays.
+                stamp_preset(layout.session_dir, preset)
             if budget_overrides is not None:
                 cfg = budget_overrides.apply(cfg)
             # Same clamp a fresh session gets: a resumed ask is still an ask.

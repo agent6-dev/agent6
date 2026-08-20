@@ -111,6 +111,7 @@ agent6 ask "how does the task-graph curator work?"
 
 - `--preset quick|standard|ultra|paranoid` selects a strategy.
   `agent6 config presets` lists them and `agent6 config set preset <name>` persists one.
+  A preset cannot change mid-run; `agent6 resume <id> --preset <name>` continues a stopped run under another one and records it for later resumes.
 - `agent6 run "task" --parallel 3` (or `model-a,model-b`) fans out isolated lanes and prints a ranked comparison.
   The same fan-out spawns from the TUI and web composers, or mid-run with the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel)).
 - `agent6 run "task" --standing "hunt and fix bugs"` adds a standing goal: a never-finishing fallback task the run re-enters whenever the ordinary queue drains or the worker tries to stop.

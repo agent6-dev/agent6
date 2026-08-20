@@ -32,7 +32,12 @@ def agent6_exe() -> str:
 
 
 def spawn_detached_resume(
-    cwd: Path, session_id: str, *, steer: str = "", config_path: Path | None = None
+    cwd: Path,
+    session_id: str,
+    *,
+    steer: str = "",
+    preset: str = "",
+    config_path: Path | None = None,
 ) -> str:
     """Fire-and-forget a detached `agent6 resume <session_id>` (new session, no
     stdio) so a run keeps going in the background after the operator detaches.
@@ -40,6 +45,7 @@ def spawn_detached_resume(
     A non-empty *steer* rides along as `--steer=TEXT` (the `=` form, so a
     follow-up starting with `-` cannot read as an option): the resume injects
     it as the first steering instruction. Operator-typed text, never LLM output.
+    A non-empty *preset* is the `--preset` the leg continues under.
 
     The caller must have released the run's worker lock first, so the child
     acquires it cleanly. `AGENT6_STREAM_TO_LOG=1` keeps the headless child
@@ -54,6 +60,8 @@ def spawn_detached_resume(
         # The overlay the parent ran under; a resume re-applies it only when
         # told, so the spawned continuation matches the run it continues.
         argv[1:1] = ["--config", str(config_path)]
+    if preset:
+        argv.append(f"--preset={preset}")
     if steer:
         argv.append(f"--steer={steer}")
     try:

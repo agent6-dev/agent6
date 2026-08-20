@@ -167,6 +167,15 @@ def stamp_parked(session_dir: Path, *, task: str, reason: str) -> None:
     )
 
 
+def stamp_preset(session_dir: Path, name: str) -> None:
+    """Record the preset a resumed leg was started under with `--preset`: from
+    here the run runs under it, and a later resume without a flag replays it
+    (`WorkflowStamp.replay_preset`)."""
+    m = read_manifest(session_dir)
+    workflow = m.workflow.model_copy(update={"preset": name, "preset_from_flag": True})
+    write_manifest(session_dir / "manifest.json", m.model_copy(update={"workflow": workflow}))
+
+
 def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> None:
     """Pin the gate this run is judged by, and where it came from.
 

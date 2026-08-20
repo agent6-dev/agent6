@@ -168,6 +168,15 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
+    resume_preset = resume_p.add_argument(
+        "--preset",
+        default="",
+        help=(
+            "Continue under another strategy preset (a preset touches any setting, so it"
+            " changes only between legs); recorded on the run, so later resumes keep it."
+        ),
+    )
+    resume_preset.completer = _complete_presets  # type: ignore[attr-defined]
     resume_p.add_argument(
         "--force",
         action="store_true",

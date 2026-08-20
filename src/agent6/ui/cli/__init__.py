@@ -512,6 +512,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         tui=args.tui,
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
+        preset=args.preset,
         steer=args.steer,
         interactive=getattr(args, "interactive", False),
     )

@@ -286,6 +286,35 @@ def test_plan_resume_requires_the_planner_role(
         _cmd_resume(None, "plan-AAAA11", force=False)
 
 
+def test_resume_preset_flag_is_recorded_for_later_legs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`resume --preset X` continues the run under X and stamps it as the run's
+    flag-selected preset, so a later plain resume replays X and every listing
+    names it; without the flag the stamp is untouched."""
+    from agent6.sessions.manifest import read_manifest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _plan_session_dir(repo, "plan-PRESET1")
+    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    session_dir = _state_dir(repo) / "sessions" / "runs" / "plan-PRESET1"
+
+    def _stop(*_a: object, **_k: object) -> object:
+        raise _Stop()
+
+    monkeypatch.setattr(session_mod, "detect_env", _stop)
+    with pytest.raises(_Stop):
+        _cmd_resume(None, "plan-PRESET1", force=False, preset="quick")
+    stamp = read_manifest(session_dir).workflow
+    assert (stamp.preset, stamp.preset_from_flag, stamp.replay_preset) == ("quick", True, "quick")
+    with pytest.raises(_Stop):
+        _cmd_resume(None, "plan-PRESET1", force=False)
+    assert read_manifest(session_dir).workflow.replay_preset == "quick"
+
+
 def test_plan_resume_builds_the_planner_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
