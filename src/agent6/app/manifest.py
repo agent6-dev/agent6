@@ -106,6 +106,7 @@ def write_session_manifest(
         base_sha=base_sha,
         base_branch=base_branch,
         run_branch=run_branch,
+        git_control=cfg.git.control,
         models=ModelsBrief(
             # The role that actually drives this mode: a plan run recorded the
             # worker here and `sessions show` then named a model that never ran.

@@ -8,6 +8,7 @@
   "base_sha": "1111111111111111111111111111111111111111",
   "base_branch": "master",
   "run_branch": "agent6/r-lane02",
+  "git_control": "agent6",
   "models": {
     "driver": {
       "provider": "openai",

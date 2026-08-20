@@ -251,7 +251,11 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             commit_trailer=render_commit_trailer(
                 cfg.git.commit.trailer, models=(session.rm_role.model,)
             ),
-            chain_ref=chain_ref_for(inputs.session_id) if mode == "run" else None,
+            # `git.control = "model"` suspends the whole shadow chain: the
+            # model's own commits are the record.
+            chain_ref=chain_ref_for(inputs.session_id)
+            if mode == "run" and cfg.git.control != "model"
+            else None,
             chain_branch=inputs.chain_branch,
             chain_fallback_parent=inputs.base_sha or None,
             untracked_at_start=inputs.untracked_at_start,

@@ -172,6 +172,10 @@ class SessionManifest(BaseModel):
     base_sha: str = ""
     base_branch: str = ""
     run_branch: str | None = None
+    # Who managed git for this run ([git].control at start). "model" runs have
+    # no chain/branch to diff or merge; the git surfaces refuse via
+    # `model_git_refusal`. An old manifest folds the default.
+    git_control: str = "agent6"
     models: ModelsBrief = ModelsBrief()
     workflow: WorkflowStamp = WorkflowStamp()
     policy: PolicyStamp = PolicyStamp()
@@ -213,6 +217,21 @@ class SessionManifest(BaseModel):
             raise ManifestError(f"a {kind.name!r} session is not resumable")
         # Guarded by `resumable` above, which the type system cannot follow.
         return cast(ResumableMode, kind.name)
+
+
+def model_git_refusal(manifest: SessionManifest, verb: str) -> str | None:
+    """The one refusal for git surfaces on a model-controlled run, or None.
+
+    A `git.control = "model"` run has no agent6 chain or run branch: the
+    model's own commits are the record, so there is nothing for *verb* to
+    act on."""
+    if manifest.git_control != "model":
+        return None
+    return (
+        f"{verb}: run {manifest.session_id or '?'} managed git itself"
+        ' ([git].control = "model"); its record is the model\'s own commits,'
+        " not an agent6 chain. Inspect it with plain git."
+    )
 
 
 def read_manifest(session_dir: Path) -> SessionManifest:

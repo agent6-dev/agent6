@@ -37,7 +37,7 @@ from agent6.git_ops import (
     status as git_status,
 )
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, read_untracked_at_start
-from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
 from agent6.viewmodel.format import format_cost
 from agent6.workflows.loop import SessionResult
@@ -286,6 +286,7 @@ def _print_run_branch_footer(
     run_branch = ""
     base_branch = ""
     merged_into = ""
+    manifest: SessionManifest | None = None
     with contextlib.suppress(ManifestError):
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
@@ -294,7 +295,21 @@ def _print_run_branch_footer(
             Path.cwd(), run_branch, manifest.merged.tip
         ):
             merged_into = manifest.merged.into or base_branch
-    if result.completed and run_branch and merged_into:
+    if result.completed and manifest is not None and manifest.git_control == "model":
+        # The model managed git: report where IT left the checkout; there is
+        # no agent6 branch to merge or diff.
+        current = ""
+        head = ""
+        with contextlib.suppress(GitError):
+            st = git_status(Path.cwd())
+            current = st.branch
+            head = st.head_sha[:12]
+        where = current or head or "the current checkout"
+        reporter.out(
+            f'\ngit was model-controlled ([git].control = "model"); its work is on {where}'
+        )
+        reporter.out("  inspect it with plain git (log/diff); sessions merge does not apply")
+    elif result.completed and run_branch and merged_into:
         # auto_merge already merged this branch into the base (and auto_prune may
         # have deleted it); don't tell the operator to merge it again.
         reporter.out(f"\nchanges merged into {merged_into}")

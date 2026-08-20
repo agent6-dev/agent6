@@ -8,6 +8,7 @@
   "base_sha": "0000000000000000000000000000000000000000",
   "base_branch": "master",
   "run_branch": "agent6/r-fresh01",
+  "git_control": "agent6",
   "models": {
     "driver": {
       "provider": "anthropic",

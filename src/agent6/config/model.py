@@ -291,6 +291,17 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _model_git_control_needs_git_writes(self) -> Config:
+        """`git.control = "model"` hands git to the model, which cannot manage
+        what it cannot write: `sandbox.protect_git = true` contradicts it."""
+        if self.git.control == "model" and self.sandbox.protect_git:
+            raise ValueError(
+                'git.control = "model" needs the model to write .git;'
+                ' set sandbox.protect_git = false (or keep control = "agent6").'
+            )
+        return self
+
+    @model_validator(mode="after")
     def _mcp_pass_env_excludes_provider_keys(self) -> Config:
         """No server's `pass_env` may name a provider's `api_key_env`.
 

@@ -933,3 +933,13 @@ def test_chatgpt_issuer_refuses_cleartext_off_loopback(tmp_path: Path) -> None:
         ChatGPTProviderEntry(api_format="chatgpt", oauth_issuer="http://auth.lan.example")
     ok = ChatGPTProviderEntry(api_format="chatgpt", oauth_issuer="http://127.0.0.1:8123")
     assert ok.oauth_issuer.startswith("http://127.")
+
+
+def test_model_git_control_requires_git_writes(tmp_path: Path) -> None:
+    """git.control = "model" hands git to the model; protect_git = true
+    contradicts it and refuses naming both keys."""
+    body = _VALID_TOML.replace("[git]\n", '[git]\ncontrol = "model"\n')
+    with pytest.raises(ConfigError, match="protect_git"):
+        load_config(_write(tmp_path, body))
+    ok = load_config(_write(tmp_path, body.replace("protect_git = true", "protect_git = false")))
+    assert ok.git.control == "model"

@@ -39,6 +39,7 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 | `base_sha` | `str` | `''` |
 | `base_branch` | `str` | `''` |
 | `run_branch` | `str | None` | `None` |
+| `git_control` | `str` | `'agent6'` |
 | `models` | `ModelsBrief` | `ModelsBrief()` |
 | `workflow` | `WorkflowStamp` | `WorkflowStamp()` |
 | `policy` | `PolicyStamp` | `PolicyStamp()` |
@@ -54,7 +55,7 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 
 - **Written by:** app/manifest
 - **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, tools/sessions, ui/mcp_server, ui/cli/{__init__, _ask, _steer_menu, net_cmds, sessions_cmds, sessions_merge, sessions_show}, ui/tui/app, ui/web/actions, viewmodel/{format, listing, policy, snapshot, state}
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (11 test files exercise it)
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (12 test files exercise it)
 
 ## SessionSnapshot
 

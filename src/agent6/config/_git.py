@@ -155,6 +155,16 @@ class GitConfig(BaseModel):
     # additionally advances a visible agent6/<slug> branch ref to the chain
     # tip (off = the hidden ref only). Forced on for --parallel lanes (work
     # is imported by branch).
+    control: Literal["agent6", "model"] = Field(
+        default="agent6",
+        description=(
+            "Who manages git during a run: `agent6` (default) records every step on the run's "
+            "own commit chain and branch, never touching HEAD; `model` hands git to the model -- "
+            "no per-step chain, no run branch, the model's own commits and branches are the "
+            "record, and `sessions diff`/`merge`, `/undo`, and `fork` refuse for such runs. "
+            "Requires `sandbox.protect_git = false`."
+        ),
+    )
     branch_per_run: bool = Field(
         default=True,
         description=(

@@ -199,3 +199,15 @@ def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
     assert "passed · unmerged" in unmerged_row
     assert "unmerged" not in merged_row.replace("unmerged-run", "")
     assert "mode" not in out.splitlines()[0]  # the column folded into status
+
+
+def test_model_controlled_run_refuses_the_git_surfaces() -> None:
+    """A git_control = "model" manifest turns sessions diff/merge/commits and
+    fork away with one message: the record is the model's own commits."""
+    from agent6.sessions.manifest import SessionManifest, model_git_refusal
+
+    agent6_run = SessionManifest(mode="run", session_id="x1")
+    assert model_git_refusal(agent6_run, "sessions") is None
+    model_run = SessionManifest(mode="run", session_id="x2", git_control="model")
+    msg = model_git_refusal(model_run, "sessions diff")
+    assert msg is not None and "model" in msg and "x2" in msg

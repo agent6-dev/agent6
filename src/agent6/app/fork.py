@@ -62,7 +62,7 @@ from agent6.sessions.layout import (
     read_untracked_at_start,
     write_untracked_at_start,
 )
-from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.sessions.manifest import ManifestError, model_git_refusal, read_manifest
 from agent6.types import session_bucket
 from agent6.viewmodel import newest_session_dir
 from agent6.workflows._session_state import load_session_snapshot
@@ -340,7 +340,7 @@ def undo_fork(
     return child, target.undone_text
 
 
-def create_fork(  # noqa: PLR0911
+def create_fork(  # noqa: PLR0911, PLR0912
     config_path: Path | None,
     source_session_id: str,
     *,
@@ -394,6 +394,12 @@ def create_fork(  # noqa: PLR0911
         src_mode = sm.session_mode()
     except ManifestError as exc:
         reporter.error(f"cannot read source run manifest {src.manifest_path}: {exc}")
+        return "", 2
+    refusal = model_git_refusal(sm, "fork")
+    if refusal is not None:
+        # /undo forks in-process, so this one guard covers it too: without an
+        # agent6 chain there is no checkpoint to fork or rewind to.
+        reporter.error(refusal)
         return "", 2
     src_base_sha = sm.base_sha
     src_base_branch = sm.base_branch

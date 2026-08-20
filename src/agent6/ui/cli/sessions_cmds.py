@@ -37,6 +37,7 @@ from agent6.sessions.layout import (
 from agent6.sessions.manifest import (
     ManifestError,
     SessionManifest,
+    model_git_refusal,
     read_manifest,
 )
 from agent6.types import SESSION_KINDS
@@ -319,6 +320,10 @@ def _resolve_session_manifest(
         manifest = read_manifest(layout.session_dir)
     except ManifestError as exc:
         print(f"ERROR: could not read manifest: {exc}", file=sys.stderr)
+        return 2
+    refusal = model_git_refusal(manifest, "sessions")
+    if refusal is not None:
+        print(f"REFUSING: {refusal}", file=sys.stderr)
         return 2
     return layout, manifest
 
