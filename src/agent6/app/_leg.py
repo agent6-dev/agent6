@@ -18,7 +18,6 @@ import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from agent6.app._session import (
     build_session_providers,
@@ -60,7 +59,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.types import IsolationLevel, ResumableMode
+from agent6.types import AutoCommitDirective, IsolationLevel, ResumableMode
 from agent6.workflows._session_state import SessionEndReason
 from agent6.workflows.loop import ResumeError, SessionResult, Workflow
 
@@ -210,7 +209,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
                 undo_outcome.append(got)
             return got
 
-        after_auto_commit: Callable[[int, str], Literal["continue", "stop"]] = (
+        after_auto_commit: Callable[[int, str], AutoCommitDirective] = (
             frontend.build_repl_hook(cwd, budget, inputs.session_id, mcp_manager)
             if inputs.interactive and mode == "run"
             else (lambda _i, _s: "continue")

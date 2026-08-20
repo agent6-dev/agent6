@@ -11,7 +11,7 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Protocol
 
 from agent6.budget import BudgetTracker
 from agent6.config import Config
@@ -27,7 +27,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import Approver
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
-from agent6.types import IsolationLevel
+from agent6.types import AutoCommitDirective, IsolationLevel
 from agent6.workflows.loop import SessionResult, Workflow
 from agent6.workflows.subrun import GroupLaneSpawner
 
@@ -156,7 +156,7 @@ class SessionFrontend:
     # `run -i` / `ask -i`
     build_repl_hook: Callable[
         [Path, BudgetTracker, str, MCPManager | None],
-        Callable[[int, str], Literal["continue", "stop"]],
+        Callable[[int, str], AutoCommitDirective],
     ]
     run_ask_repl: Callable[[Workflow, BudgetTracker, SessionLayout, str], SessionResult]
     save_ask_transcript: Callable[[SessionLayout, str, str], None]

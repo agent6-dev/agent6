@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
-from typing import Literal
 
 from agent6.app.frontend import FrontendCapabilities, SessionFacts, SessionFrontend, SteerHooks
 from agent6.budget import BudgetTracker
@@ -25,7 +24,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.schema import UserQuestion
-from agent6.types import IsolationLevel
+from agent6.types import AutoCommitDirective, IsolationLevel
 from agent6.ui.steer import file_bridge_steer
 from agent6.workflows.loop import SessionResult, Workflow
 
@@ -97,7 +96,7 @@ def acp_frontend(
 
     def _no_repl(
         _session_dir: Path, _budget: BudgetTracker, _task: str, _mcp: object
-    ) -> Callable[[int, str], Literal["continue", "stop"]]:
+    ) -> Callable[[int, str], AutoCommitDirective]:
         # ACP has its own turn loop; an interactive REPL inside it would be a
         # second one, with two things reading the same stdin. The hook exists
         # and always continues.

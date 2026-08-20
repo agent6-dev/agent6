@@ -1405,19 +1405,6 @@ def recent_log(path: Path, n: int = 20) -> str:
     return res.stdout if res.ok else ""
 
 
-def revert_head(path: Path) -> str:
-    """Forward-revert HEAD via `git revert HEAD --no-edit`.
-
-    Backs the interactive REPL's `/undo` so the operator
-    can roll back the last auto-commit without rewriting history. Returns
-    the SHA of the new revert commit. AGENTS.md forbids `reset --hard`
-    and force operations; `revert` is the policy-compliant undo.
-    """
-    _run(path, "revert", "HEAD", "--no-edit")
-    sha_res = _run(path, "rev-parse", "HEAD")
-    return sha_res.stdout.strip() if sha_res.ok else ""
-
-
 def tracked_files(path: Path) -> tuple[str, ...]:
     """Return the list of repo-tracked files via `git ls-files`.
 

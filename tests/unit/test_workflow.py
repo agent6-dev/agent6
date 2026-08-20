@@ -5262,6 +5262,70 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
     assert ends[-1]["all_passed"] is False  # a stop is deliberate, never "passed"
 
 
+def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
+    """The REPL hook's "undo" is the loop's own /undo (fork back before the
+    last message): the run ends `undone` naming the fork, exactly as a steer
+    /undo does, and never touches git itself."""
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            return _tool_resp(
+                "apply_edit",
+                {"path": "a.py", "edits": [{"kind": "create", "new_string": "x = 1\n"}]},
+                tool_id="e1",
+            )
+
+    class DispatcherStub(_StubDispatcher):
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    events: list[dict[str, Any]] = []
+
+    class _Events:
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            events.append({"type": event_type, **fields})
+
+    def _undo_hook(_i: int, _sha: str) -> Literal["continue", "stop", "undo"]:
+        return "undo"
+
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+        events=_Events(),
+        after_auto_commit=_undo_hook,
+    )
+    wf.undo_forker = lambda: ("forked-child-ID", "t")
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
+    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert result.reason == "undone"
+    assert "forked-child-ID" in result.summary
+    undone = [e for e in events if e["type"] == "session.undone"]
+    assert undone and undone[-1]["new_session_id"] == "forked-child-ID"
+
+
 def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     tmp_path: Path,
 ) -> None:

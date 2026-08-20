@@ -10,20 +10,17 @@ import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from agent6.ui.cli._console_view import ConsoleView
 
 from agent6.budget import BudgetTracker
 from agent6.config.layer import repo_config_path_for, resolved_state_dir
-from agent6.git_ops import (
-    GitError,
-    revert_head,
-)
 from agent6.init import init_workspace
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.tools.mcp_client import MCPManager
+from agent6.types import AutoCommitDirective
 from agent6.ui.cli._interact import _pause
 from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.ui.cli.plan_watch import (
@@ -43,12 +40,11 @@ REPL_HELP = (
     "                              into the agent's tool surface\n"
     "  /init                    - run the `agent6 init` setup wizard in the\n"
     "                              current cwd (prompts; never overwrites files)\n"
-    "  /undo                    - git revert HEAD (forward revert of the\n"
-    "                              last auto-commit; safe under git policy).\n"
-    "                              History is preserved: a NEW commit is\n"
-    "                              added that inverts the last one. Nothing\n"
-    "                              is destroyed; ``git reset --hard`` is\n"
-    "                              forbidden by agent6's git policy.\n"
+    "  /undo                    - fork back before the last message (the\n"
+    "                              same /undo as steering, the TUI and web):\n"
+    "                              this run ends, the fork holds the state\n"
+    "                              before it, resume it with the message\n"
+    "                              edited. Nothing is rewritten.\n"
     "  /help                    - show this help\n"
     "  /quit                    - stop the agent cleanly after this commit\n"
 )
@@ -61,16 +57,18 @@ def build_repl_hook(
     session_id: str = "",
     mcp_manager: MCPManager | None = None,
     console_view: ConsoleView | None = None,
-) -> Callable[[int, str], Literal["continue", "stop"]]:
+) -> Callable[[int, str], AutoCommitDirective]:
     """Build the after_auto_commit hook for `agent6 run -i`.
 
     Captures the budget tracker (for `/cost`), the repo root (for
-    `/undo` and `/diff`), the current run id (for `/diff` and
+    `/diff` and `/init`), the current run id (for `/diff` and
     `/watch`), and the live MCP manager (for `/mcp`) in a closure
-    so Workflow stays agnostic of the CLI's extra state.
+    so Workflow stays agnostic of the CLI's extra state. `/undo` is the
+    loop's own undo (fork back before the last message), returned as a
+    directive.
     """
 
-    def hook(iteration: int, sha: str) -> Literal["continue", "stop"]:
+    def hook(iteration: int, sha: str) -> AutoCommitDirective:
         # The whole prompt session sits inside the console-view pause: the run
         # is waiting on the OPERATOR, and the heartbeat's per-tick line-erase
         # would otherwise wipe the "agent6> " prompt and the typed characters,
@@ -79,7 +77,7 @@ def build_repl_hook(
         with _pause(console_view):
             return _prompt_loop(iteration, sha)
 
-    def _prompt_loop(iteration: int, sha: str) -> Literal["continue", "stop"]:
+    def _prompt_loop(iteration: int, sha: str) -> AutoCommitDirective:
         print(
             f"\n[agent6] iter {iteration} committed {sha[:12]}. "
             f"REPL: /continue /cost /diff /watch /mcp /init /undo /help /quit",
@@ -116,16 +114,7 @@ def build_repl_hook(
                 repl_run_init(root)
                 continue
             if cmd == "/undo":
-                try:
-                    revert_sha = revert_head(root)
-                except GitError as exc:
-                    print(f"[agent6] /undo failed: {exc}", file=sys.stderr)
-                    continue
-                print(
-                    f"[agent6] /undo: reverted {sha[:12]} via new commit {revert_sha[:12]}",
-                    file=sys.stderr,
-                )
-                continue
+                return "undo"
             print(
                 f"[agent6] unknown command {raw!r}; try /help",
                 file=sys.stderr,

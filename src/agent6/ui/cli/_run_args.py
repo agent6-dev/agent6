@@ -69,7 +69,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="store_true",
         help=(
             "REPL mode: after each successful auto-commit, prompt on stdin for"
-            " one of /continue (default), /diff, /cost, /undo (git revert HEAD),"
+            " one of /continue (default), /diff, /cost, /undo (fork back before the last message),"
             " /watch, /mcp, /init, /help, /quit. Requires a TTY."
         ),
     )

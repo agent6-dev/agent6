@@ -3,17 +3,18 @@
 """Tests for interactive REPL plumbing.
 
 Covers:
-* ``git_ops.revert_head`` on a tmp repo - forward-revert preserves
-  history (HEAD~1 is the original commit) and produces a new SHA.
 * ``cli._build_repl_hook`` slash-command dispatch:
   - empty input / ``/continue`` -> ``"continue"``
   - ``/quit`` -> ``"stop"``
   - EOF -> ``"stop"``
   - ``/cost`` invokes ``budget.format_summary`` then re-prompts
-  - ``/undo`` invokes ``git_ops.revert_head`` then re-prompts
+  - ``/undo`` -> ``"undo"`` (the loop's fork-back undo; the chain never
+    moves HEAD, so a `git revert HEAD` would have reverted the checkout's
+    own commit)
   - unknown command re-prompts
 * ``Workflow`` exits cleanly with ``reason="interactive_stop"`` when
-  the hook returns ``"stop"`` after an auto-commit.
+  the hook returns ``"stop"`` after an auto-commit, and takes the undo
+  fork on ``"undo"``.
 """
 
 from __future__ import annotations
@@ -26,7 +27,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.budget import BudgetTracker
-from agent6.git_ops import GitError, revert_head
 from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]
 
 
@@ -50,32 +50,6 @@ def _commit(path: Path, name: str, body: str, msg: str) -> str:
         text=True,
     )
     return out.stdout.strip()
-
-
-# --- git_ops.revert_head --------------------------------------------------
-
-
-def test_revert_head_creates_new_commit(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    bad_sha = _commit(tmp_path, "b.txt", "bad\n", "bad change")
-    revert_sha = revert_head(tmp_path)
-    assert len(revert_sha) == 40
-    assert revert_sha != bad_sha
-    # The file added in the bad commit should be gone.
-    assert not (tmp_path / "b.txt").exists()
-    # History preserved: HEAD~1 is still the bad commit (no rewrite).
-    parent = subprocess.run(
-        ["git", "-C", str(tmp_path), "rev-parse", "HEAD~1"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    assert parent == bad_sha
-
-
-def test_revert_head_raises_on_non_repo(tmp_path: Path) -> None:
-    with pytest.raises(GitError):
-        revert_head(tmp_path)
 
 
 # --- _build_repl_hook dispatch -------------------------------------------
@@ -158,25 +132,21 @@ def test_hook_unknown_reprompts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert hook(1, "abc") == "stop"
 
 
-def test_hook_undo_invokes_revert_and_reprompts(
+def test_hook_undo_is_the_loops_undo_directive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """`/undo` hands the loop its own undo (fork back before the last message)
+    and touches no git: the chain never moves HEAD, so reverting HEAD would
+    revert the checkout's own commit, never the auto-commit."""
     _init_repo(tmp_path)
-    _commit(tmp_path, "b.txt", "bad\n", "bad change")
-    answers = iter(["/undo", ""])
+    head = _commit(tmp_path, "b.txt", "theirs\n", "the operator's commit")
+    answers = iter(["/undo"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
     hook = build_repl_hook(tmp_path, _budget())
-    assert hook(1, "abc") == "continue"
-    # /undo actually ran: b.txt should be gone.
-    assert not (tmp_path / "b.txt").exists()
-
-
-def test_hook_undo_failure_reprompts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # tmp_path is not a git repo: revert_head will raise GitError.
-    answers = iter(["/undo", "/quit"])
-    monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
-    hook = build_repl_hook(tmp_path, _budget())
-    assert hook(1, "abc") == "stop"
+    assert hook(1, "abc") == "undo"
+    assert (tmp_path / "b.txt").exists()
+    argv = ["git", "-C", str(tmp_path), "rev-parse", "HEAD"]
+    assert subprocess.run(argv, check=True, capture_output=True, text=True).stdout.strip() == head
 
 
 # --- Workflow integration ----------------------------------------------

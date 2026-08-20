@@ -80,7 +80,7 @@ from agent6.tools.schema import (
     FinishPlanningInput,
     FinishSessionInput,
 )
-from agent6.types import RepoSummary
+from agent6.types import AutoCommitDirective, RepoSummary
 from agent6.verify_infer import infer_verify_command, read_agents_md
 from agent6.workflows._compaction import (
     DROP_BLOCKS_AT_CHARS,
@@ -620,11 +620,12 @@ class Workflow:
     should_interrupt: Callable[[], bool] = field(default=lambda: False)
     # Hook invoked once per successful auto-commit (after the
     # commit lands). Returning "stop" exits the loop cleanly with
-    # completed=True, reason="interactive_stop"; "continue" (the default)
-    # lets the next iteration run. The CLI's `agent6 run -i` installs a
-    # TTY prompt here for the REPL; default no-op preserves autonomous
-    # behaviour for `agent6 run` and `agent6 resume`.
-    after_auto_commit: Callable[[int, str], Literal["continue", "stop"]] = field(
+    # completed=True, reason="interactive_stop"; "undo" takes the steer's
+    # /undo path (fork back before the last message); "continue" (the
+    # default) lets the next iteration run. The CLI's `agent6 run -i`
+    # installs a TTY prompt here for the REPL; default no-op preserves
+    # autonomous behaviour for `agent6 run` and `agent6 resume`.
+    after_auto_commit: Callable[[int, str], AutoCommitDirective] = field(
         default=lambda _i, _sha: "continue"
     )
     # `/parallel` steer dispatch: the ui-side group spawner that runs a sibling
@@ -1638,6 +1639,10 @@ class Workflow:
         # REPL hook. Default no-op returns "continue".
         if sha:
             directive = self.after_auto_commit(turn.iteration, sha)
+            if directive == "undo":
+                undone = self._steer_outcome("undo", turn.iteration, state)
+                if undone is not None:
+                    return undone
             if directive == "stop":
                 self._log(f"LOOP: interactive stop at iter {turn.iteration}")
                 # An operator stop is deliberate, not verified success: the
