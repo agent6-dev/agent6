@@ -255,6 +255,9 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
                     f"no ChatGPT sign-in stored for [providers.{name}];"
                     " run `agent6 connect chatgpt`."
                 )
+            # Same opportunistic refresh as the keyed path: the listing is
+            # what feeds model completion and context-window sizing.
+            list_models(name, entry, None)
             continue
         key = resolve_api_key(name, entry.api_key_env, secrets=secrets)
         if key:

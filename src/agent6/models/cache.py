@@ -38,6 +38,7 @@ from agent6.config import (
 from agent6.paths import cache_dir
 from agent6.providers.types import ProviderError
 from agent6.providers.wire import auth_header
+from agent6.secrets import load_oauth_tokens
 
 __all__ = ["cached_context_window", "list_models"]
 
@@ -185,9 +186,64 @@ def _models_endpoint(entry: ProviderEntry, api_key: str | None) -> tuple[str, di
     return url, headers
 
 
+# The backend hides models newer than the claimed client, keyed on each
+# model's minimal_client_version. agent6 speaks the plain Responses dialect
+# every listed model accepts, so it claims the ceiling and lists them all.
+_CHATGPT_CLIENT_VERSION = "9.9.9"
+
+
+def _chatgpt_models_endpoint(
+    provider_name: str, entry: ChatGPTProviderEntry
+) -> tuple[str, dict[str, str]]:
+    """The subscription backend's own listing, authorized by the stored
+    sign-in (best effort: an expired access token just fails the fetch and
+    the caller falls back to the cache; runs refresh tokens, listings don't).
+    """
+    tokens = load_oauth_tokens(provider_name)
+    if tokens is None:
+        raise ProviderError("no ChatGPT sign-in stored; run `agent6 connect chatgpt`")
+    url = f"{entry.base_url.rstrip('/')}/models?client_version={_CHATGPT_CLIENT_VERSION}"
+    headers = dict(entry.extra_headers)
+    headers["authorization"] = f"Bearer {tokens.access_token}"
+    if tokens.account_id:
+        headers["chatgpt-account-id"] = tokens.account_id
+    headers["originator"] = "agent6"
+    return url, headers
+
+
+def _chatgpt_listing(payload: object) -> tuple[list[str], dict[str, int]]:
+    """`{"models": [{slug, context_window, visibility}, ...]}` -> (ids, context).
+
+    Hidden entries (internal models) are left out of completion; a typed
+    hidden slug still works, the backend is the validator.
+    """
+    models = payload.get("models") if isinstance(payload, dict) else None
+    ids: list[str] = []
+    context: dict[str, int] = {}
+    if not isinstance(models, list):
+        return ids, context
+    for item in models:
+        if not isinstance(item, dict):
+            continue
+        slug = item.get("slug")
+        if not isinstance(slug, str) or not slug or item.get("visibility") == "hide":
+            continue
+        ids.append(slug)
+        ctx = item.get("context_window")
+        if isinstance(ctx, int) and not isinstance(ctx, bool) and ctx > 0:
+            context[slug] = ctx
+    return ids, context
+
+
 def _fetch(
-    entry: ProviderEntry, api_key: str | None, timeout_s: float
+    provider_name: str, entry: ProviderEntry, api_key: str | None, timeout_s: float
 ) -> tuple[list[str], dict[str, tuple[float, float]], dict[str, int]]:
+    if isinstance(entry, ChatGPTProviderEntry):
+        url, headers = _chatgpt_models_endpoint(provider_name, entry)
+        resp = httpx2.get(url, headers=headers, timeout=timeout_s)
+        resp.raise_for_status()
+        ids, context = _chatgpt_listing(resp.json())
+        return ids, {}, context  # a subscription prices nothing
     url, headers = _models_endpoint(entry, api_key)
     resp = httpx2.get(url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()
@@ -300,10 +356,8 @@ def fetch_models_live(
     fresh evidence from a stale fallback -- `models.validate` hard-refuses only
     on a listing this returned. The TTL-gated read-through is `list_models`.
     """
-    if isinstance(entry, ChatGPTProviderEntry):
-        return None  # the subscription backend has no public /models listing
     try:
-        models, pricing, context = _fetch(entry, api_key, timeout_s)
+        models, pricing, context = _fetch(provider_name, entry, api_key, timeout_s)
     except (httpx2.HTTPError, ValueError, OSError, ProviderError):
         # ProviderError: a malformed credential auth_header refused. It falls
         # back like any other fetch failure, keeping the "Never raises" contract.

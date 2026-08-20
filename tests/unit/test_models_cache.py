@@ -232,3 +232,54 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
     price = models_pricing.lookup_price("claude-opus-5")
     assert price is not None
     assert price[0] > 0 and price[1] > 0
+
+
+def test_chatgpt_listing_fetches_with_the_sign_in(
+    cache_home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The chatgpt listing comes from the backend's own /models with the
+    stored bearer + account header and a ceiling client_version; hidden
+    entries stay out of completion; context windows land in the cache."""
+    from agent6.config import ChatGPTProviderEntry
+    from agent6.secrets import OAuthTokens, save_oauth_tokens
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    save_oauth_tokens("chatgpt", OAuthTokens("AT", "RT", time.time() + 3600, "acct-1"))
+    seen: dict[str, object] = {}
+
+    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+        seen["url"] = url
+        seen["headers"] = headers
+        body = {
+            "models": [
+                {"slug": "gpt-5.6-sol", "context_window": 272000, "visibility": "list"},
+                {"slug": "codex-auto-review", "context_window": 272000, "visibility": "hide"},
+            ]
+        }
+        return httpx2.Response(200, json=body, request=httpx2.Request("GET", url))
+
+    monkeypatch.setattr(httpx2, "get", _get)
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    ids = models_cache.list_models("chatgpt", entry, None, ttl_s=0)
+    assert ids == ["gpt-5.6-sol"]
+    assert str(seen["url"]).endswith("/models?client_version=9.9.9")
+    headers = seen["headers"]
+    assert isinstance(headers, dict)
+    assert headers["authorization"] == "Bearer AT"
+    assert headers["chatgpt-account-id"] == "acct-1"
+    assert models_cache.cached_context_window("chatgpt", ("gpt-5.6-sol",)) == 272000
+
+
+def test_chatgpt_listing_without_sign_in_fails_soft(
+    cache_home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agent6.config import ChatGPTProviderEntry
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "empty"))
+
+    def _never(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+        pytest.fail("no sign-in: nothing to fetch with")
+
+    monkeypatch.setattr(httpx2, "get", _never)
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    assert models_cache.list_models("chatgpt", entry, None, ttl_s=0) == []

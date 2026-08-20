@@ -93,7 +93,7 @@ agent6 model worker chatgpt gpt-5-codex
 - Usage draws on the plan's own limits; cost meters show $0 (nothing is billed per token) while token counts still feed the budget caps.
 - Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
-- Model names come from the ChatGPT plan (e.g. the current gpt-5 Codex family); agent6 does not pin a list.
+- Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs, never a static list), and its context windows size compaction.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at `oauth_issuer` (best effort) and the tokens leave `secrets.toml`.
 
 ### OpenRouter routing and caching (`extra_body`)

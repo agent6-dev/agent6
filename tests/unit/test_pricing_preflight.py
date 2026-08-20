@@ -159,4 +159,12 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
         return object()
 
     monkeypatch.setattr(_setup, "load_oauth_tokens", stored)
+    listed: list[str] = []
+
+    def fake_list(name: str, *_a: object, **_k: object) -> list[str]:
+        listed.append(name)
+        return []
+
+    monkeypatch.setattr(_setup, "list_models", fake_list)
     assert _setup.check_provider_keys(cfg) is None
+    assert listed == ["chatgpt"]  # the signed-in path refreshes the listing
