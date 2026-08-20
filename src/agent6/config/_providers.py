@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
 
 from agent6.config._base import MODEL_CONFIG
+from agent6.config._sandbox import is_loopback_url
 
 ApiFormat = Literal["anthropic", "openai", "chatgpt"]
 Deployment = Literal["direct", "vertex", "azure"]
@@ -327,6 +328,14 @@ class ChatGPTProviderEntry(_ProviderBase):
     @classmethod
     def _check_oauth_issuer(cls, v: str) -> str:
         validate_base_url(v, field="oauth_issuer")
+        if v.startswith("http://") and not is_loopback_url(v):
+            # The issuer receives the refresh token on every renewal; unlike a
+            # model base_url (where plain http serves LAN Ollama), cleartext
+            # for a credential authority is never right off-loopback.
+            raise ValueError(
+                "oauth_issuer must use https (plain http is allowed only for a"
+                " loopback test issuer)"
+            )
         return v
 
     @model_validator(mode="after")

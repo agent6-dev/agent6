@@ -922,3 +922,14 @@ def test_a_provider_block_without_api_format_names_the_key(tmp_path: Path) -> No
     with pytest.raises(ConfigError) as exc:
         load_config(cfg)
     assert 'set api_format = "anthropic", "openai", or "chatgpt"' in str(exc.value)
+
+
+def test_chatgpt_issuer_refuses_cleartext_off_loopback(tmp_path: Path) -> None:
+    """The issuer receives the refresh token on every renewal: plain http is
+    refused except for a loopback test issuer."""
+    from agent6.config import ChatGPTProviderEntry
+
+    with pytest.raises(ValueError, match="https"):
+        ChatGPTProviderEntry(api_format="chatgpt", oauth_issuer="http://auth.lan.example")
+    ok = ChatGPTProviderEntry(api_format="chatgpt", oauth_issuer="http://127.0.0.1:8123")
+    assert ok.oauth_issuer.startswith("http://127.")

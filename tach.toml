@@ -329,7 +329,7 @@ depends_on = []
 [[modules]]
 # The [providers.*] entries, discriminated by wire format.
 path = "agent6.config._providers"
-depends_on = ["agent6.config._base"]
+depends_on = ["agent6.config._base", "agent6.config._sandbox"]
 
 [[modules]]
 # The [sandbox] and [mcp] models; paths for the private-dir grant refusals.

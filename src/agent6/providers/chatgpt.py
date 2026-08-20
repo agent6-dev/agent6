@@ -223,6 +223,11 @@ def parse_output_items(
             if tool_use is not None:
                 tool_uses.append(tool_use)
     text = "".join(text_parts)
+    if tool_uses and stop_reason == "end_turn":
+        # Anthropic-shape semantics: a turn that stopped to call tools says
+        # so. This also arms the loop's empty-tool-call detector for this
+        # wire (stop says tool_use + nothing came = a retryable contradiction).
+        stop_reason = "tool_use"
     details = usage.get("input_tokens_details")
     cached = int(details.get("cached_tokens", 0) or 0) if isinstance(details, Mapping) else 0
     prompt_total = int(usage.get("input_tokens") or 0)
