@@ -66,8 +66,8 @@ def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) 
     """On the live console the loop's state narration (LOOP: transitions, a
     compaction, the thresholds compaction will fire at) is noise between the
     glyphs; a tool_error line repeats the error the stream shows under its red
-    glyph and an auto-commit line the sha on the ✎ item; genuine notices pass.
-    `AGENT6_DEBUG=1` shows everything."""
+    glyph, an auto-commit line the sha on the ✎ item, and the STEER pair the
+    operator item; genuine notices pass. `AGENT6_DEBUG=1` shows everything."""
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     out = io.StringIO()
     log = loop_logger("run", ConsoleView(out, color=False))
@@ -77,6 +77,8 @@ def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) 
     log("[agent6]   tool_error: apply_edit: old_string not found in calc.py\n<<<ON_DISK\n...")
     log("[agent6]   auto-commit: 1d44ec667018")
     log("[agent6]   final checkpoint: 1d44ec667018")
+    log("[agent6] STEER: operator steering at iter 5")
+    log("[agent6]   injecting steering instruction (41 chars)")
     log("[agent6] LOOP: verify adopted from verify.sh: ./verify.sh".replace("LOOP: ", ""))
     assert out.getvalue().strip() == "[agent6] verify adopted from verify.sh: ./verify.sh"
     monkeypatch.setenv("AGENT6_DEBUG", "1")

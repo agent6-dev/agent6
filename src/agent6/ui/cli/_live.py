@@ -26,11 +26,12 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
     loop's internal state narration (`LOOP: LOAD_CONTEXT`, `compaction: …`,
     `compaction thresholds: …`) is pure noise on the glyph stream (`config
     show` prints the resolved thresholds); a `tool_error:` line repeats, in
-    full, the error the stream shows under its red `└`, and an `auto-commit:`
-    / `final checkpoint:` line the sha the ✎ commit item carries; all are
-    suppressed unless `AGENT6_DEBUG=1`. Genuine notices (review decisions, a
-    verify adoption) pass. Headless/`ask` keep the full trace on their own
-    stream (the log, not a live stream)."""
+    full, the error the stream shows under its red `└`, an `auto-commit:` /
+    `final checkpoint:` line the sha the ✎ commit item carries, and the
+    `STEER:` / `injecting steering instruction` pair the operator (prompt-glyph) item; all
+    are suppressed unless `AGENT6_DEBUG=1`. Genuine notices (review decisions,
+    a verify adoption, a steer's abort/detach/undo) pass. Headless/`ask` keep
+    the full trace on their own stream (the log, not a live stream)."""
     if console_view is None:
         # No live console: a headless run's stdout (or ask's stderr) is
         # block-buffered when redirected to a file/pipe, so without an explicit
@@ -42,7 +43,14 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
 
     def _filtered(msg: str) -> None:
         stripped = msg.removeprefix("[agent6] ")
-        narration = ("compaction", "  tool_error:", "  auto-commit:", "  final checkpoint:")
+        narration = (
+            "compaction",
+            "  tool_error:",
+            "  auto-commit:",
+            "  final checkpoint:",
+            "STEER:",
+            "  injecting steering instruction",
+        )
         if not debug and ("LOOP:" in msg or stripped.startswith(narration)):
             return
         console_view.notice(msg)
