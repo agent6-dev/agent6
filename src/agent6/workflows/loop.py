@@ -2968,7 +2968,21 @@ class Workflow:
                 output_tokens=resp.output_tokens,
                 stop_reason=resp.stop_reason,
             )
-        self._log(f"LOOP: went_quiet at iter {iteration} - agent emitted no text and no tool_use")
+        # An empty turn the provider still billed output tokens for is not a
+        # model that chose silence: the tokens went to reasoning that never
+        # surfaced, or to a tool call the upstream failed to parse and dropped
+        # (seen on OpenRouter-routed qwen at temperature 0, deterministically
+        # per prompt). Say so, in the log and on the event, so the transcript
+        # file is not the only place the difference shows.
+        billed = (
+            f" ({resp.output_tokens} output tokens billed for it: reasoning that never"
+            " surfaced, or a tool call the provider dropped)"
+            if resp.output_tokens > 0 and not starved
+            else ""
+        )
+        self._log(
+            f"LOOP: went_quiet at iter {iteration} - agent emitted no text and no tool_use{billed}"
+        )
         env_max = os.environ.get("AGENT6_WENT_QUIET_MAX_NUDGES", "").strip()
         effective_max_nudges = int(env_max) if env_max.isdigit() else self.went_quiet_max_nudges
         if state.went_quiet_nudges_used < effective_max_nudges:
@@ -3006,6 +3020,7 @@ class Workflow:
                 iteration=iteration,
                 nudges_used=state.went_quiet_nudges_used,
                 nudges_max=effective_max_nudges,
+                output_tokens=resp.output_tokens,
             )
             return None
         cont = self._quiet_continuation(

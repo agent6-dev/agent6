@@ -12,12 +12,14 @@ times PER STREAK; on any non-empty turn the counter resets.
 
 from __future__ import annotations
 
+import json
 import subprocess as _sp
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
+from agent6.events import EventSink
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.workflows.loop import Workflow
@@ -288,3 +290,35 @@ def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: Path) -> No
     result = wf.run("task")
     assert result.reason != "went_quiet"
     assert result.completed is True
+
+
+def test_a_billed_empty_turn_says_so(tmp_path: Path) -> None:
+    """An empty turn the provider still charged output tokens for is not a
+    model that chose silence (reasoning that never surfaced, or a tool call
+    the upstream dropped): the log line and the nudge event carry the count,
+    so the transcript file is not the only place the difference shows."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    billed = ProviderResponse(
+        text="\n\n",
+        tool_uses=(),
+        stop_reason="stop",
+        input_tokens=1,
+        output_tokens=128,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={"content": []},
+    )
+    provider = MagicMock()
+    provider.call.side_effect = [billed, _resp_text("done"), _resp_text("done"), _resp_text("done")]
+    lines: list[str] = []
+    wf = _build_wf(repo, provider, went_quiet_max_nudges=2)
+    wf.logger = lines.append
+    wf.events = EventSink(tmp_path / "logs.jsonl")
+    wf.run("do something")
+
+    quiet = [ln for ln in lines if "went_quiet at iter" in ln]
+    assert quiet and "128 output tokens billed" in quiet[0], quiet
+    events = [json.loads(ln) for ln in (tmp_path / "logs.jsonl").read_text().splitlines()]
+    nudge = next(e for e in events if e["type"] == "loop.went_quiet.nudge")
+    assert nudge["output_tokens"] == 128
