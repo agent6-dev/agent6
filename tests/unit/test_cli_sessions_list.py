@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.ui.cli._common import _runs_dir  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli._common import _runs_dir, styled_status  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.sessions_cmds import _cmd_list  # pyright: ignore[reportPrivateUsage]
 
 
@@ -78,9 +78,7 @@ def test_styled_status_colors_stale_red_and_parked_yellow() -> None:
     """The CLI status colors mirror the TUI/web: a lost worker (stale) is red and
     a parked submission (needs a resume) is yellow, not the old dim/uncolored that
     let a dead or unstarted run read as neutral in `agent6 sessions`."""
-    from agent6.ui.cli.sessions_cmds import _styled_status  # pyright: ignore[reportPrivateUsage]
-
-    stale, _ = _styled_status("stale", "", color=True)
+    stale, _ = styled_status("stale", "", color=True)
     assert "\x1b[1;31m" in stale  # the error level, like failed: the run header + web pill agree
-    parked, _ = _styled_status("parked", "resume to start", color=True)
+    parked, _ = styled_status("parked", "resume to start", color=True)
     assert "\x1b[33m" in parked  # yellow: attention, not a neutral done

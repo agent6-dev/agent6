@@ -65,6 +65,7 @@ from agent6.ui.cli._common import (
     resolve_or_newest_layout,
     resolve_session_layout,
     sgr,
+    styled_status,
 )
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank
 from agent6.viewmodel import (
@@ -81,36 +82,12 @@ from agent6.viewmodel import (
 )
 from agent6.viewmodel.format import (
     WINNER_GLYPH,
-    StatusLevel,
     format_cost_cell,
     format_when,
-    status_label,
-    status_level,
     winner_id,
 )
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import SubrunError
-
-# The ANSI SGR for each `viewmodel.format.status_level`, tty only: a listing
-# where a provider_error death reads as plain text is how dead runs went
-# unnoticed. The TUI's Rich map and the web's pill classes are the siblings.
-_LEVEL_SGR: dict[StatusLevel, str] = {
-    "ok": "32",
-    "info": "35",  # magenta (mauve on the TUI/web)
-    "active": "1;36",
-    "warn": "33",
-    "error": "1;31",
-    "neutral": "",
-}
-
-
-def _styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
-    """(possibly-colored label, plain label) -- the plain form drives width math."""
-    label = status_label(status, reason)
-    sgr = _LEVEL_SGR[status_level(status)]
-    if color and sgr:
-        return f"\x1b[{sgr}m{label}\x1b[0m", label
-    return label, label
 
 
 def _cmd_list() -> int:
@@ -139,7 +116,7 @@ def _cmd_list() -> int:
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str, str]] = []
     for s in summaries:
-        styled, plain = _styled_status(s.status, s.reason, color=color)
+        styled, plain = styled_status(s.status, s.reason, color=color)
         rows.append(
             (
                 format_when(s.mtime),

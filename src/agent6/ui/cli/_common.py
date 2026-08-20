@@ -24,6 +24,7 @@ from agent6.sessions.layout import (
     layout_of,
 )
 from agent6.viewmodel import is_session_husk, newest_session_dir, session_mtime
+from agent6.viewmodel.format import StatusLevel, status_label, status_level
 
 
 def _sub(
@@ -274,3 +275,26 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
         file=sys.stderr,
     )
     return None
+
+
+# The ANSI SGR for each `viewmodel.format.status_level`, tty only: a listing
+# where a provider_error death reads as plain text is how dead runs went
+# unnoticed. The TUI's Rich map and the web's pill classes are the siblings.
+_LEVEL_SGR: dict[StatusLevel, str] = {
+    "ok": "32",
+    "info": "35",  # magenta (mauve on the TUI/web)
+    "active": "1;36",
+    "warn": "33",
+    "error": "1;31",
+    "neutral": "",
+}
+
+
+def styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
+    """(possibly-colored label, plain label) for a listing row -- the plain form
+    drives width math."""
+    label = status_label(status, reason)
+    sgr_code = _LEVEL_SGR[status_level(status)]
+    if color and sgr_code:
+        return f"\x1b[{sgr_code}m{label}\x1b[0m", label
+    return label, label
