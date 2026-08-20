@@ -158,7 +158,7 @@ def test_forward_refuses_a_run_with_no_network_instead_of_waiting(tmp_path: Path
     layout.session_dir.mkdir(parents=True)
     out = io.StringIO()
     assert forward(layout, 3000, 3000, out=out) == 2
-    assert "sandbox.network" in out.getvalue()
+    assert "network" in out.getvalue()  # the refusal names the missing network
 
 
 def test_forward_stops_when_its_session_ends(tmp_path: Path) -> None:

@@ -33,6 +33,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.policy import jail_policy
 from agent6.types import NetworkMode
+from agent6.viewmodel import session_is_live, summarize_session_dir
 
 _JOIN_ORDER = (("user", os.CLONE_NEWUSER), ("net", os.CLONE_NEWNET))
 
@@ -86,6 +87,20 @@ def _pump(a: socket.socket, b: socket.socket) -> None:
         sel.close()
 
 
+def no_session_network_reason(layout: SessionLayout) -> str:
+    """Why `forward` finds no session network to reach into: the run is not
+    live (its network lives only while its run does), or a live run made none
+    (host network, or an isolation short of strict)."""
+    if not session_is_live(layout.session_dir):
+        word = summarize_session_dir(layout.session_dir).status
+        return f"{layout.session_id} is {word}; a session network exists only while its run does."
+    return (
+        f"{layout.session_id} has no network of its own to reach into. A run only makes one"
+        " under the strict isolation with sandbox.network = auto|session; with network = host"
+        " its commands are already on this machine's."
+    )
+
+
 def forward(
     layout: SessionLayout, remote_port: int, local_port: int, out: TextIO = sys.stderr
 ) -> int:
@@ -100,13 +115,7 @@ def forward(
     # per-connection child, so a bind-first flow prints "forwarding" and then
     # drops every connection in silence when there is no network to join.
     if read_session_netns_pid(layout.session_dir) is None:
-        print(
-            f"agent6 forward: {layout.session_id} has no network of its own to"
-            " reach into. A run only makes one under the strict isolation with"
-            " sandbox.network = auto|session; with network = host its commands"
-            " are already on this machine's.",
-            file=out,
-        )
+        print(f"agent6 forward: {no_session_network_reason(layout)}", file=out)
         return 2
     # Same number on both sides unless told otherwise: that is what `kubectl
     # port-forward 3000`, `docker -p 3000:3000` and `ssh -L` all mean, and it is

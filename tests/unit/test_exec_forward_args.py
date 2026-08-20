@@ -188,3 +188,43 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
         net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
     assert captured["isolation"] == "strict"
     assert "recorded no launch policy" in capsys.readouterr().err
+
+
+def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: Path) -> None:
+    """A run's session network lives only while the run does; `forward` on a
+    finished run used to explain isolation levels and network modes as if
+    the config were the reason. It says the run is finished; the config
+    explanation is kept for a LIVE run that made no network."""
+    import io
+    import json
+    import os
+
+    from agent6.sessions.ipc import write_worker_pid
+    from agent6.ui.cli import net_cmds
+
+    layout = SessionLayout(state_dir=tmp_path, session_id="done-run-AAAAAA")
+    layout.ensure()
+    run = layout.session_dir
+    (run / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + "\n",
+        encoding="utf-8",
+    )
+    out = io.StringIO()
+    assert net_cmds.forward(layout, 8765, 0, out=out) == 2
+    assert "done-run-AAAAAA is passed; a session network exists only while its run does" in (
+        out.getvalue()
+    )
+    assert "strict isolation" not in out.getvalue()
+
+    # Live (a worker holds it) but without a network of its own: the config explanation.
+    (run / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    write_worker_pid(run, os.getpid())
+    out = io.StringIO()
+    assert net_cmds.forward(layout, 8765, 0, out=out) == 2
+    assert "strict isolation" in out.getvalue()
