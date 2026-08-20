@@ -61,6 +61,7 @@ from agent6.config.layer import available_preset_names
 from agent6.directive import parse_compact
 from agent6.models.registry import context_window
 from agent6.sessions.ipc import (
+    listening_ports,
     register_frontend,
     request_compact,
     request_stop,
@@ -163,7 +164,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
     CSS = """
     /* Top row: the task graph is usually a few nodes, so it stays compact beside
        the model's live output. */
-    #top { height: 4; padding: 0 1; }
+    #top { height: auto; max-height: 6; padding: 0 1; }
     #head { height: 28%; }
     #plan { width: 32%; border: round $primary; }
     #stream { width: 1fr; border: round $primary; padding: 0 1; }
@@ -292,6 +293,17 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             return ""  # no manifest yet (a launching run); don't cache
         self._branch_line = f"\nbranch: {line}"
         return self._branch_line
+
+    def _serving_top(self) -> str:
+        """What the run is serving, for the header: the ports its network
+        listens on and the `agent6 forward` line that reaches one (the web
+        header's and `sessions show`'s line). A live probe: "" once the
+        network is gone."""
+        ports = listening_ports(self._tui.session_dir)
+        if not ports:
+            return ""
+        listed = ", ".join(str(p) for p in ports)
+        return f"\nserving: {listed} · agent6 forward {self._tui.session_dir.name} {ports[0]}"
 
     @property
     def _tui(self) -> Agent6TUI:
@@ -522,7 +534,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{ctx}"
             f"   {finished}\n"
             f"task: {escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))}"
-            f"{escape(self._branch_top())}{escape(self._compare_top())}"
+            f"{escape(self._branch_top())}{escape(self._serving_top())}"
+            f"{escape(self._compare_top())}"
         )
 
         # Live reasoning / response pane. Built as rich Text so model output is

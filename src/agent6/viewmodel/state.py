@@ -22,6 +22,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
+from agent6.sessions.ipc import listening_ports
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import events
 from agent6.viewmodel.format import status_label
@@ -775,11 +776,12 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
 
     Pass *session_dir* whenever the caller has one: the label is then THE dir-aware
     status (parked/starting/stale/waiting, not the fold's blanket "running"),
-    `live` says whether steer/stop/compact would reach anything, and the
-    dir-backed identity (session_id, the manifest's user_task) fills what the fold
-    left empty. Without it the payload keeps the fold-only label and
-    `live: None` -- correct only for a genuinely dir-less stream (the machine
-    reasoning snapshot)."""
+    `live` says whether steer/stop/compact would reach anything, `ports` lists
+    what the run's network is serving, and the dir-backed identity
+    (session_id, the manifest's user_task) fills what the fold left empty.
+    Without it the payload keeps the fold-only label and `live: None` --
+    correct only for a genuinely dir-less stream (the machine reasoning
+    snapshot)."""
     d = asdict(state)
     if session_dir is not None:
         word, reason = status_for_session_dir(session_dir, status_facts(state))
@@ -799,6 +801,10 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
             manifest = read_manifest(session_dir)
             d["user_task"] = d["user_task"] or manifest.user_task
             d["mode"] = d["mode"] or manifest.mode
+        # What the run is serving (a dev server the agent started): the ports
+        # its session network listens on, reachable via `agent6 forward`.
+        # A live probe, [] once the network is gone.
+        d["ports"] = listening_ports(session_dir)
     else:
         # A genuinely dir-less stream (the machine reasoning snapshot):
         # liveness is unknowable here.

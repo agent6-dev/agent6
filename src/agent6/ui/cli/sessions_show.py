@@ -15,7 +15,7 @@ from pathlib import Path
 from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import branch_exists, chain_ref_for, chain_tip, merge_stamp_holds
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.ipc import pid_alive, read_worker_pid, worker_is_alive
+from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import print_no_session_match, resolve_or_newest_layout
@@ -244,8 +244,6 @@ def _print_listening_ports(session_dir: Path) -> None:
     This is where someone asks "what is it doing", so it is where the answer
     belongs, with the command that opens it.
     """
-    from agent6.ui.cli.net_cmds import listening_ports  # noqa: PLC0415
-
     with contextlib.suppress(Exception):
         ports = listening_ports(session_dir)
         if not ports:

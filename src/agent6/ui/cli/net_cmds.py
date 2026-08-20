@@ -66,28 +66,6 @@ def join_session_network(session_dir: Path) -> None:
             os.close(fd)
 
 
-def listening_ports(session_dir: Path) -> list[int]:
-    """The TCP ports something in the run is listening on, or [].
-
-    Read from `/proc/<holder>/net/`, which is that process's OWN view: a
-    namespace's sockets are readable without entering it, so this needs no
-    fork and no setns (a forking version would warn under any threaded caller,
-    the web server included).
-    """
-    pid = read_session_netns_pid(session_dir)
-    if pid is None:
-        return []
-    ports: set[int] = set()
-    for name in ("tcp", "tcp6"):
-        with contextlib.suppress(OSError):
-            for line in Path(f"/proc/{pid}/net/{name}").read_text(encoding="utf-8").splitlines():
-                cols = line.split()
-                # st == 0A is LISTEN; the local address is host:port in hex.
-                if len(cols) > 3 and cols[3] == "0A" and ":" in cols[1]:
-                    ports.add(int(cols[1].rsplit(":", 1)[1], 16))
-    return sorted(ports)
-
-
 def _pump(a: socket.socket, b: socket.socket) -> None:
     """Shuttle bytes both ways until either side hangs up."""
     sel = selectors.DefaultSelector()

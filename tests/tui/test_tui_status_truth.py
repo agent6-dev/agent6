@@ -543,3 +543,35 @@ def test_dashboard_header_says_where_the_changes_are(tmp_path: Path) -> None:
     manifest["merged"] = {"into": "main", "sha": "abc", "tip": "abc"}
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert "branch: agent6/branched (merged into main)" in asyncio.run(header())  # a reopen
+
+
+def test_dashboard_header_says_what_the_run_serves(tmp_path: Path) -> None:
+    """A dev server the agent started is reachable only through `agent6
+    forward`; the header names the port and that command (the web header's
+    and `sessions show`'s line)."""
+    import os
+    import socket
+
+    from agent6.sessions.ipc import write_session_netns_pid
+
+    d = tmp_path / "serving"
+    d.mkdir()
+    evs = [{"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"}]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    with socket.socket() as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        write_session_netns_pid(d, os.getpid())
+
+        async def header() -> str:
+            app = Agent6TUI(d)
+            async with app.run_test(size=(140, 40)) as pilot:
+                await _open_dash(app, pilot)
+                return str(app._dash.query_one("#top", Static).render())
+
+        top = asyncio.run(header())
+    # This process stands in for the network holder, so the host's own listeners
+    # show too: the test socket is among them, and the forward line names one.
+    serving = next(line for line in top.splitlines() if line.startswith("serving: "))
+    assert str(port) in serving and "· agent6 forward serving " in serving

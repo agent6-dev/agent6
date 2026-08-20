@@ -25,6 +25,7 @@ from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.errors import OperatorError, read_operator_file
 from agent6.events import EventWriteError
 from agent6.sessions.id import SessionIdError, unused_session_id
+from agent6.sessions.ipc import listening_ports
 from agent6.sessions.layout import SessionLayout, session_layout
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import session_bucket
@@ -86,7 +87,7 @@ from agent6.ui.cli.memory_cmds import (
     _cmd_memory_show,
 )
 from agent6.ui.cli.model import _cmd_model
-from agent6.ui.cli.net_cmds import exec_in_session, forward, listening_ports
+from agent6.ui.cli.net_cmds import exec_in_session, forward
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
 from agent6.ui.cli.plan_watch import (
     _cmd_plan_edit,

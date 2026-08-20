@@ -419,7 +419,7 @@ A run's commands share one network with no route off the box, so a dev server th
 Two commands are the way in, both operator-only:
 
 ```
-agent6 sessions show <id>        # what it is serving, and the command to open it
+agent6 sessions show <id>        # what it is serving, and the command to open it (the TUI dashboard and web run headers say the same)
 agent6 forward <id>              # list the ports it is listening on
 agent6 forward <id> 3000         # bridge that port to one on this machine
 agent6 exec <id> -- curl ...     # run a command in the run's sandbox

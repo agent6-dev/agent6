@@ -1143,6 +1143,11 @@ function paintRun(cards, s) {
   // Where the run's work lives and where Merge lands: consecutive spawns chain
   // branches, which is invisible without this line.
   if (s.branch_line) add('branch', s.branch_line);
+  // What the run is serving: a dev server the agent started is reachable only
+  // through `agent6 forward` (the run's network has no way in from outside).
+  if (s.ports && s.ports.length) {
+    add('serving', s.ports.join(', ') + ' · agent6 forward ' + (s.session_id || cards._id || '') + ' ' + s.ports[0]);
+  }
   // Fan-out compare outcome (stamped into a lane's manifest by --parallel's
   // auto-compare): where this lane placed and why. Absent for a non-lane run.
   if (s.compare && typeof s.compare.rank === 'number') {

@@ -20,14 +20,13 @@ import pytest
 
 from agent6.config import Config
 from agent6.sandbox.jail import SessionNetwork
-from agent6.sessions.ipc import write_session_netns_pid
+from agent6.sessions.ipc import listening_ports, write_session_netns_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.cli.net_cmds import (
     SessionNetworkUnavailable,
     exec_in_session,
     join_session_network,
-    listening_ports,
 )
 
 pytestmark = pytest.mark.needs_namespaces

@@ -26,13 +26,13 @@ from agent6.config.layer import (
 )
 from agent6.config.write import PROVIDER_DEFAULTS
 from agent6.models.choices import config_value_choices
+from agent6.sessions.ipc import listening_ports
 from agent6.sessions.layout import machines_root, session_layout
 from agent6.ui.cli._common import (
     _plans_dir,
     session_bucket_dirs,
 )
 from agent6.ui.cli.model import _connected_providers, _models_for
-from agent6.ui.cli.net_cmds import listening_ports
 from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
 from agent6.viewmodel.config_view import build_config_view
 

@@ -733,3 +733,23 @@ def test_a_question_asked_while_no_model_runs_is_the_harness_s() -> None:
         ]
     )
     assert after.pending_questions[-1].from_harness is True
+
+
+def test_run_state_as_dict_carries_what_the_run_serves(tmp_path: Path) -> None:
+    """`ports` is the wire form of `listening_ports`: the ports the run's
+    network listens on ([] with no network), so the web/TUI headers can name
+    a dev server the agent started, as `sessions show` and `forward` do."""
+    import os
+    import socket
+
+    from agent6.sessions.ipc import write_session_netns_pid
+
+    d = tmp_path / "r"
+    d.mkdir()
+    assert session_state_as_dict(fold_session([]), d)["ports"] == []
+    with socket.socket() as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        write_session_netns_pid(d, os.getpid())  # this process stands in for the holder
+        assert port in session_state_as_dict(fold_session([]), d)["ports"]
