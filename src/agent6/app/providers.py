@@ -269,6 +269,8 @@ class InstrumentedProvider:
                 should_interrupt=should_interrupt,
             )
         except Exception as exc:
+            if isinstance(exc, ProviderError) and not exc.provider:
+                exc.provider = self.provider_name  # the hint names the config key
             if self.events is not None:
                 self.events.emit("role.result", role=self.role, ok=False, error=str(exc)[:200])
             self._emit_budget()

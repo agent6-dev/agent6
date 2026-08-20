@@ -33,16 +33,17 @@ RETRY_AFTER_CEILING_S = 120.0
 TOOL_CALL_STOP_REASONS = frozenset({"tool_calls", "tool_use"})
 
 
-def provider_error_hint(status_code: int | None) -> str:
+def provider_error_hint(status_code: int | None, provider: str = "") -> str:
     """A short, actionable suffix for a fatal provider error, or "".
 
     The raw upstream body (e.g. a 401 JSON blob) tells a user nothing about how
-    to fix it. Map the common credential/quota statuses to a next step.
+    to fix it. Map the common credential/quota statuses to a next step, naming
+    the failing *provider*'s config key when known.
     """
     if status_code in (401, 403):
         return (
             " Authentication failed: verify the provider key with `agent6 connect`"
-            " or check [providers.<name>].api_key_env."
+            f" or check [providers.{provider or '<name>'}].api_key_env."
         )
     if status_code == 402:
         return " Insufficient credits/quota at the provider; top up or switch providers."

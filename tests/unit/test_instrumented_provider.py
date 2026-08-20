@@ -187,3 +187,16 @@ def test_a_failed_call_still_reports_what_it_spent(
     ]
     assert [(e["input_total"], e["output_total"]) for e in updates] == [(50_000, 120)]
     assert updates[0]["usd_total"] > 0.0
+
+
+def test_a_provider_error_is_stamped_with_the_provider_name() -> None:
+    """The loop's credential hint names the failing provider's config key
+    (`[providers.openai].api_key_env`) instead of a `<name>` placeholder; the
+    wrapper is the one place that knows the name."""
+    from agent6.providers import ProviderError
+
+    inner = MagicMock()
+    inner.call.side_effect = ProviderError("401 nope", status_code=401)
+    with pytest.raises(ProviderError) as info:
+        _wrap(inner).call(system="s", messages=[])
+    assert info.value.provider == "openai"

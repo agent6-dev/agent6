@@ -1240,7 +1240,7 @@ class Workflow:
                 return outcome
             return _NEXT_TURN  # "continue" or an injected instruction -> re-do the turn
         except ProviderError as exc:
-            hint = provider_error_hint(exc.status_code)
+            hint = provider_error_hint(exc.status_code, exc.provider)
             # The full upstream body (which can carry a noisy account user_id)
             # goes in this one diagnostic log line; the end-block summary below
             # stays concise so the raw blob is not echoed to the operator twice.

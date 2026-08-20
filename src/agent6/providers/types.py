@@ -35,6 +35,9 @@ class ProviderError(Exception):
     rate-limit/unavailable response (429/503) when present, so the retry wrapper
     waits at least as long as the server asked instead of its own shorter
     backoff. None when absent.
+
+    `provider` is the configured provider name ("" until the instrumented
+    wrapper stamps it), so a credential hint can name the config key to fix.
     """
 
     def __init__(
@@ -42,10 +45,12 @@ class ProviderError(Exception):
         *args: object,
         status_code: int | None = None,
         retry_after_s: float | None = None,
+        provider: str = "",
     ) -> None:
         super().__init__(*args)
         self.status_code = status_code
         self.retry_after_s = retry_after_s
+        self.provider = provider
 
 
 class ProviderAborted(ProviderError):
