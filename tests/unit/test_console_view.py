@@ -329,3 +329,21 @@ def test_the_policy_line_is_read_when_the_task_prints() -> None:
     view.close()
     assert "./verify.sh (inferred)" in buf.getvalue()
     assert "no verify gate" not in buf.getvalue()
+
+
+def test_the_task_headline_is_the_first_line_clipped() -> None:
+    """A `--from-plan` task carries the whole plan; flattening it made the
+    headline one endless line. The first user-authored line, clipped, is the
+    headline every other surface shows."""
+    out = _render(
+        [
+            {
+                "type": "session.start",
+                "user_task": (
+                    "Execute the prepared plan: validate inputs\n\n# Plan\n\n1. add\n2. test"
+                ),
+            },
+        ]
+    )
+    assert "Execute the prepared plan: validate inputs" in out
+    assert "# Plan" not in out and "1. add" not in out

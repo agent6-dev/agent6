@@ -25,6 +25,7 @@ from typing import Any, TextIO
 from agent6.ui.cli._task_tree import tree_lines_from_event_nodes
 from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.format import spinner_frame
+from agent6.viewmodel.listing import task_snippet
 from agent6.viewmodel.transcript import (
     DONE,
     THINK,
@@ -189,7 +190,9 @@ class ConsoleView:
                 self._end_block()
                 return
             if etype == "session.start":
-                task = " ".join(str(event.get("user_task", "")).split())
+                # The first user-authored line, clipped: a `--from-plan` task
+                # carries the whole plan and flattened it into one endless line.
+                task = task_snippet(str(event.get("user_task", "")), max_chars=200)
                 self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")
                 policy = self._policy() if self._policy is not None else ""
                 if policy:
