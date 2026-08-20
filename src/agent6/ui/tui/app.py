@@ -743,6 +743,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
        specificity, later rule wins) so the screen shows through behind dialogs. */
     ModalScreen { background: $background 60%; }
     * { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }  /* half the 2-wide default */
+    /* A footer that does not fit clips (textual's default); the 1-row widget has no
+       room for the scrollbar the universal rule gives it, which replaced every hint. */
+    Footer { scrollbar-size-vertical: 0; scrollbar-size-horizontal: 0; }
     /* I-beam over anything you can type into (kitty OSC 22; inert elsewhere). */
     Input, TextArea { pointer: text; }
     """

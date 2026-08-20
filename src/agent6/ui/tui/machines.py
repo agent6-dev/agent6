@@ -770,6 +770,9 @@ class _MachineWatchApp(PlainNotify, MuxPointerShapes, App[None]):
         PALETTE_CSS
         + """
     * { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }  /* match the other apps */
+    /* A footer that does not fit clips (textual's default); the 1-row widget has no
+       room for the scrollbar the universal rule gives it, which replaced every hint. */
+    Footer { scrollbar-size-vertical: 0; scrollbar-size-horizontal: 0; }
     Input, TextArea { pointer: text; }
     """
     )
