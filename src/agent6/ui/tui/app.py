@@ -108,7 +108,7 @@ from agent6.viewmodel.format import (
     spinner_frame,
     status_label,
 )
-from agent6.viewmodel.listing import LIVE_STATUS_WORDS, status_for_session_dir
+from agent6.viewmodel.listing import LIVE_STATUS_WORDS, status_for_session_dir, task_snippet
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     SESSION_START_EVENTS,
@@ -511,7 +511,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         self.query_one("#top", Static).update(
             f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{ctx}"
             f"   {finished}\n"
-            f"task: {escape((s.user_task or tui.fallback_task)[:120])}"
+            f"task: {escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))}"
             f"{escape(self._compare_top())}"
         )
 
@@ -791,10 +791,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         """What names this run in a title: the TASK (clipped), the pet name
         only when no task is known yet -- the web hub's rows lead the same
         way, and the id stays in the header line and every resume hint."""
-        task = (self.state.user_task or self.fallback_task).strip()
-        if not task:
-            return self.session_dir.name
-        return task[:56] + ("…" if len(task) > 56 else "")
+        task = self.state.user_task or self.fallback_task
+        return task_snippet(task, max_chars=57) or self.session_dir.name
 
     def screen_title(self, context: str) -> str:
         """Menu-bar subtitle for a run screen: the view's context word, the live
