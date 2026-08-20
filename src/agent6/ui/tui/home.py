@@ -11,7 +11,6 @@ thin driver over the CLI + the same file/event contract the dashboard reads.
 
 from __future__ import annotations
 
-import os
 import re
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -37,10 +36,9 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 # needs textual) is only reached when textual is present.
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective
-from agent6.directive import DirectiveError, parse_directive
-from agent6.models.validate import directive_model_refusal, known_models
-from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
-from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate
+from agent6.models.validate import known_models
+from agent6.sessions.layout import LOGS_NAME
+from agent6.ui.spawn import agent6_argv, run_cli_capture, spawn_new_work
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
@@ -57,8 +55,8 @@ from agent6.ui.tui.theme import (
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
 from agent6.viewmodel import (
     SessionSummary,
-    is_session_husk,
     is_winner,
+    session_dirs,
     session_mtime,
     summarize_session_dir,
     task_snippet,
@@ -140,18 +138,6 @@ def _cost_cell(cost_usd: float, *, partial: bool) -> str:
     if cost_usd <= 0 and not partial:
         return ""
     return format_cost(cost_usd, partial=partial)
-
-
-def _list_sessions(agent6_dir: Path) -> list[Path]:
-    """Every session directory a hub lists, newest first by last-activity time.
-    Husks (never-started dirs) are skipped, the same rule as `agent6 sessions`."""
-    out: list[Path] = []
-    for sub in HUB_BUCKETS:
-        d = bucket_dir(agent6_dir, sub)
-        if d.is_dir():
-            out.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
-    out.sort(key=session_mtime, reverse=True)
-    return out
 
 
 class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
@@ -403,9 +389,6 @@ class HomeScreen(Screen[None]):
         yield DataTable(id="sessions")
         yield Footer()
 
-    def action_menu(self, mnemonic: str) -> None:
-        self.query_one(MenuBar).open(mnemonic)
-
     def on_mount(self) -> None:
         table = self.query_one("#sessions", DataTable)
         table.cursor_type = "row"
@@ -440,7 +423,7 @@ class HomeScreen(Screen[None]):
         # cursor_row-indexed selection action (open/logs/merge) maps to the wrong
         # run for cursor positions past the gap.
         survivors: list[Path] = []
-        for rd in _list_sessions(self.agent6_dir):
+        for rd in session_dirs(self.agent6_dir):
             if not rd.is_dir():
                 continue  # vanished since the listing snapshot — skip it
             s = summarize_session_dir(rd)
@@ -470,6 +453,9 @@ class HomeScreen(Screen[None]):
         self.app.sub_title = f"{self.repo_cwd} · {count} session{'' if count == 1 else 's'}"
         # An empty table shouldn't paint a full-height focus cursor over its body.
         table.show_cursor = table.row_count > 0
+
+    def action_menu(self, mnemonic: str) -> None:
+        self.query_one(MenuBar).open(mnemonic)
 
     def action_open_selected(self) -> None:
         table = self.query_one("#sessions", DataTable)
@@ -582,13 +568,8 @@ class HomeScreen(Screen[None]):
         if result is None:
             return
         mode, task, preset = result
-        session_dir, error = _spawn_and_locate(
-            self.agent6_dir,
-            self.repo_cwd,
-            mode,
-            task,
-            preset=preset,
-            config_path=self.config_path,
+        session_dir, error = spawn_new_work(
+            self.repo_cwd, mode, task, preset=preset, config_path=self.config_path
         )
         if session_dir is not None:
             self.app.exit(session_dir)
@@ -646,114 +627,13 @@ class Agent6HomeApp(PlainNotify, MuxPointerShapes, App[Path | None]):
                 yield cmd
 
 
-def _spawn_and_locate(
-    agent6_dir: Path,
-    repo_cwd: Path,
-    mode: str,
-    task: str,
-    *,
-    preset: str = "",
-    config_path: Path | None = None,
-) -> tuple[Path | None, str]:
-    """Spawn `agent6 <mode> [--preset <name>] <task>` detached and return the new
-    run dir (to be watched by the dashboard), or (None, diagnostic) on failure. A
-    non-empty *preset* maps to the per-subcommand --preset flag (after the mode,
-    before the task); "" => no flag, so the config's [workflow].preset applies.
-
-    A `/parallel [spec] <task> ...` message (run mode only) fans out one detached
-    `agent6 run --parallel <spec>` per segment (omitted spec = one isolated lane);
-    a malformed directive is refused before any spawn (all-or-nothing), any
-    segment's launch failure fails the whole message (already-launched lanes
-    keep running in the hub), and the first segment's run dir is returned to
-    watch."""
-    segments = None
-    if mode == "run":
-        try:
-            segments = parse_directive(task)
-        except DirectiveError as exc:
-            return None, str(exc)
-    if segments is None:
-        return _spawn_run(
-            agent6_dir, repo_cwd, mode, task, preset=preset, spec="", config_path=config_path
-        )
-    refusal = directive_model_refusal(repo_cwd, segments, config_path)
-    if refusal is not None:
-        return None, refusal
-    first: Path | None = None
-    failures: list[str] = []
-    for i, seg in enumerate(segments, 1):
-        session_dir, err = _spawn_run(
-            agent6_dir,
-            repo_cwd,
-            "run",
-            seg.task,
-            preset=preset,
-            spec=seg.spec or "1",
-            config_path=config_path,
-        )
-        if session_dir is None:
-            failures.append(f"lane {i} ({seg.task}): {err}")
-        elif first is None:
-            first = session_dir
-    if failures:
-        # The caller's surfaces are open-the-run XOR show-the-error; a partial
-        # failure must not vanish behind a surviving lane, so stay on the hub.
-        return None, "\n".join(failures)
-    assert first is not None  # no failures => every segment produced a dir
-    return first, ""
-
-
-def _spawn_run(
-    agent6_dir: Path,
-    repo_cwd: Path,
-    mode: str,
-    task: str,
-    *,
-    preset: str,
-    spec: str,
-    config_path: Path | None = None,
-) -> tuple[Path | None, str]:
-    """Spawn one detached `agent6 <mode>` (optionally `--parallel <spec>`) and
-    return its located run dir, or (None, diagnostic)."""
-    # --preset is a per-subcommand flag, so it goes after <mode> and before the
-    # positional <task> -> `agent6 <mode> --preset <name> <task>`.
-    argv = [agent6_exe()]
-    if config_path is not None:
-        # The hub's overlay follows into the run it spawns.
-        argv += ["--config", str(config_path)]
-    argv.append(mode)
-    if preset:
-        argv += ["--preset", preset]
-    if spec:
-        argv += ["--parallel", spec]
-    # `--` before the task so a task that looks like a flag is never parsed as
-    # one; every flag precedes it. Matches the web actions spawn.
-    argv += ["--", task]
-    return spawn_and_locate(
-        argv,
-        repo_cwd,
-        before=set(_list_sessions(agent6_dir)),
-        list_dirs=lambda: _list_sessions(agent6_dir),
-        # The hub watches this run on the dashboard, which renders the model's
-        # reasoning + answer from role.*_delta events. Tell the detached (non-TTY)
-        # run to emit those deltas to its logs.jsonl; without this it takes the
-        # non-streaming path and the dashboard shows only worker status.
-        # AGENT6_DETACHED_AWAY=wait: driven from the dashboard over the bridge, so
-        # approvals/questions WAIT for the front-end, never fabricate an answer.
-        env={**os.environ, "AGENT6_STREAM_TO_LOG": "1", "AGENT6_DETACHED_AWAY": "wait"},
-    )
-
-
 def _run_merge_cli(
     repo_cwd: Path, session_id: str, config_path: Path | None = None
 ) -> tuple[bool, str]:
     """Run `agent6 sessions merge <session_id>` (capturing output) and return (ok, message).
     The hub shells out to the same CLI a user would, so merging stays a CLI concern
     and the UI never touches git_ops. Synchronous: a merge is a quick git op."""
-    argv = [agent6_exe()]
-    if config_path is not None:
-        argv += ["--config", str(config_path)]
-    return run_cli_capture([*argv, "sessions", "merge", session_id], repo_cwd)
+    return run_cli_capture([*agent6_argv(config_path), "sessions", "merge", session_id], repo_cwd)
 
 
 def run_home(agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> Path | None:

@@ -99,10 +99,10 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
 def test_hub_spawns_stamp_the_explicit_config_into_argv(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A hub started with --config F propagates F into everything it spawns,
-    so spawned work runs under the config the operator gave the hub."""
-    from agent6.ui.tui import home as tui_home
-    from agent6.ui.web import actions as web_actions
+    """A hub started with --config F propagates F into everything it spawns
+    (the one new-work spawn every hub makes), so spawned work runs under the
+    config the operator gave the hub."""
+    from agent6.ui import spawn
 
     argvs: list[list[str]] = []
 
@@ -111,14 +111,9 @@ def test_hub_spawns_stamp_the_explicit_config_into_argv(
         return None, "stubbed"
 
     cfg = tmp_path / "overlay.toml"
-    monkeypatch.setattr(web_actions, "spawn_and_locate", fake_spawn)
-    web_actions._spawn_run(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, "run", "t", "", spec="", config_path=cfg
-    )
-    monkeypatch.setattr(tui_home, "spawn_and_locate", fake_spawn)
-    tui_home._spawn_run(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, tmp_path, "run", "t", preset="", spec="", config_path=cfg
-    )
+    monkeypatch.setattr(spawn, "spawn_and_locate", fake_spawn)
+    spawn.spawn_new_work(tmp_path, "run", "t", config_path=cfg)
+    assert len(argvs) == 1
     for argv in argvs:
         flag = argv.index("--config")
         assert argv[flag + 1] == str(cfg)

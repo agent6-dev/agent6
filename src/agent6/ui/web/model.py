@@ -35,6 +35,7 @@ from agent6.viewmodel import (
     operator_inputs,
     restate,
     session_compare,
+    session_dirs,
     session_state_as_dict,
     summarize_session_dir,
     tail_events,
@@ -93,16 +94,6 @@ def draft_dir_for(cwd: Path, name: str) -> Path | None:
     return d if d.is_dir() else None
 
 
-def session_dir_paths(cwd: Path) -> list[Path]:
-    """Every run/ask directory (unordered): the before/after set for spawn-and-locate."""
-    out: list[Path] = []
-    for sub in HUB_BUCKETS:
-        d = bucket_dir(resolved_state_dir(cwd), sub)
-        if d.is_dir():
-            out.extend(p for p in d.iterdir() if p.is_dir())
-    return out
-
-
 def draft_dir_paths(cwd: Path) -> list[Path]:
     """Every machine-create draft directory (where `machine create` writes)."""
     d = bucket_dir(resolved_state_dir(cwd), "machines")
@@ -135,16 +126,8 @@ def _session_summary(session_dir: Path) -> dict[str, Any]:
 
 
 def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
-    """Every session a hub lists, summarized, newest first by last-activity time.
-    Husks (never-started dirs) are skipped, the same rule as `agent6 sessions`."""
-    dirs: list[Path] = []
-    for sub in HUB_BUCKETS:
-        d = bucket_dir(resolved_state_dir(cwd), sub)
-        if d.is_dir():
-            dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
-    summaries = [_session_summary(p) for p in dirs]
-    summaries.sort(key=lambda s: s["mtime"], reverse=True)
-    return summaries
+    """Every session a hub lists, summarized, newest first (`session_dirs`)."""
+    return [_session_summary(p) for p in session_dirs(resolved_state_dir(cwd))]
 
 
 def _list_machines(cwd: Path) -> list[dict[str, Any]]:

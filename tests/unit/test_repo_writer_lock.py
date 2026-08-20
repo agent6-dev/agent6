@@ -212,29 +212,26 @@ def test_resume_refuses_while_another_run_drives_the_checkout(
     assert "run-A" in err and "checkout" in err
 
 
-def test_web_new_work_preflight_refuses_while_checkout_busy(
+def test_hub_new_work_preflight_refuses_while_checkout_busy(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The web hub refuses a New Work `run` submission up front (naming the live
+    """A hub refuses a New Work `run` submission up front (naming the live
     run) instead of spawning a detached run that parks and times out the locate;
     plan submissions are read-only and spawn freely."""
-    from agent6.ui.web import actions
-
-    spawned: list[str] = []
+    from agent6.ui import spawn
 
     def must_not_spawn(*a: object, **k: object) -> tuple[Path | None, str]:
         raise AssertionError("must not spawn")
 
-    monkeypatch.setattr(actions, "spawn_and_locate", must_not_spawn)
+    monkeypatch.setattr(spawn, "spawn_and_locate", must_not_spawn)
     state = resolved_state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
     try:
-        session_id, err = actions.spawn_new_work(repo, "run", "another task")
+        session_dir, err = spawn.spawn_new_work(repo, "run", "another task")
     finally:
         release_single_writer(holder_fd)
-    assert session_id is None
+    assert session_dir is None
     assert "run-LIVE" in err and "checkout" in err
-    assert spawned == []
 
 
 def test_runs_show_reports_a_parked_run_as_parked(

@@ -549,7 +549,7 @@ def test_machine_create_spawns_with_task(tmp_path: Path, monkeypatch: object) ->
             app.screen.query_one("#create-input", Input).value = "nightly sweep"
             await pilot.press("enter")  # submit
             await pilot.pause()
-            assert captured and captured[-1][-2:] == ["create", "nightly sweep"]
+            assert captured and captured[-1][-3:] == ["create", "--", "nightly sweep"]
 
     asyncio.run(scenario())
 

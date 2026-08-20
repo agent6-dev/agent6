@@ -41,6 +41,7 @@ from agent6.sessions.ipc import (
     worker_is_alive,
 )
 from agent6.sessions.layout import LOGS_NAME
+from agent6.ui.spawn import spawn_new_work
 from agent6.ui.web import actions, model
 from agent6.ui.web.page import (
     FAVICON_SVG,
@@ -361,9 +362,10 @@ class _Handler(BaseHTTPRequestHandler):
         # /api/new  /api/sessions/prune  /api/config  /api/machine/create  /api/machine/run
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())
-            session_id, err = actions.spawn_new_work(
-                self.cwd, body.mode, body.task, body.preset, self.config_path
+            session_dir, err = spawn_new_work(
+                self.cwd, body.mode, body.task, preset=body.preset, config_path=self.config_path
             )
+            session_id = session_dir.name if session_dir is not None else None
             self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
             return
         if path == "/api/sessions/rm_asks":

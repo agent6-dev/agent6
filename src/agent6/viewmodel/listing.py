@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
 from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel.events import event_epoch
 
@@ -34,6 +34,20 @@ def session_mtime(session_dir: Path) -> float:
         except OSError:
             continue
     return 0.0
+
+
+def session_dirs(state_dir: Path, buckets: Iterable[str] = HUB_BUCKETS) -> list[Path]:
+    """Every session dir a listing shows across *buckets* (names under
+    `sessions/`, the hub's by default), newest first by last activity; husks
+    skipped, like every listing skips them. The one enumeration behind the
+    hubs' tables and a spawn's before/after locate set."""
+    dirs: list[Path] = []
+    for name in buckets:
+        bucket = bucket_dir(state_dir, name)
+        if bucket.is_dir():
+            dirs.extend(p for p in bucket.iterdir() if p.is_dir() and not is_session_husk(p))
+    dirs.sort(key=session_mtime, reverse=True)
+    return dirs
 
 
 def newest_session_dir(buckets: Iterable[Path]) -> Path | None:

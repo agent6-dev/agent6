@@ -57,7 +57,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
 from agent6.ui.notify import desktop_notify
-from agent6.ui.spawn import agent6_exe, spawn_and_confirm, spawn_and_locate
+from agent6.ui.spawn import agent6_argv, spawn_and_confirm, spawn_and_locate
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
@@ -764,9 +764,7 @@ class MachinesScreen(Screen[None]):
             # held, network refusal, bad bundle) exits nonzero before that and
             # its stderr surfaces here instead of a watch screen on nothing.
             instance = self.agent6_dir / "machines" / spec.machine
-            argv = [agent6_exe()]
-            if self.config_path is not None:
-                argv += ["--config", str(self.config_path)]
+            argv = agent6_argv(self.config_path)
             err = spawn_and_confirm(
                 [*argv, "machine", "run", str(path)],
                 self.repo_cwd,
@@ -805,11 +803,8 @@ class MachinesScreen(Screen[None]):
         # draft it produces so the authoring agent's reasoning + tool calls are
         # watchable live, exactly like a run. The create keeps running detached,
         # so quitting the dashboard is safe.
-        argv = [agent6_exe()]
-        if self.config_path is not None:
-            argv += ["--config", str(self.config_path)]
         draft_dir, error = spawn_and_locate(
-            [*argv, "machine", "create", task],
+            [*agent6_argv(self.config_path), "machine", "create", "--", task],
             self.repo_cwd,
             before=set(_list_drafts(self.agent6_dir)),
             list_dirs=lambda: _list_drafts(self.agent6_dir),

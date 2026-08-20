@@ -3,8 +3,8 @@
 """Find the agent6 executable and spawn it detached.
 
 Shared by every front-end (TUI hub, machines page, web server) so a UI action
-shells out to the same CLI a user would run, never doing the work in-process. A
-leaf module (only stdlib) so any front-end depends on it without a cycle."""
+shells out to the same CLI a user would run, never doing the work in-process:
+one argv head, one detached environment, one new-work spawn."""
 
 from __future__ import annotations
 
@@ -18,8 +18,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import IO
 
+from agent6.config.layer import resolved_state_dir
+from agent6.directive import DirectiveError, parse_directive
+from agent6.models.validate import directive_model_refusal
 from agent6.sandbox.jail import keep_out_of_the_sweep
 from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.lock import repo_writer_held, repo_writer_holder
+from agent6.types import OPERATOR_MODES
+from agent6.viewmodel.listing import session_dirs
 
 
 def agent6_exe() -> str:
@@ -29,6 +35,99 @@ def agent6_exe() -> str:
     if argv0.name.startswith("agent6") and argv0.exists():
         return str(argv0.resolve())
     return shutil.which("agent6") or "agent6"
+
+
+def agent6_argv(config_path: Path | None) -> list[str]:
+    """The argv head every spawn starts from: the exe, plus `--config F` when
+    the front-end runs under an explicit config, so spawned work runs under
+    the config the operator gave the front-end."""
+    argv = [agent6_exe()]
+    if config_path is not None:
+        argv += ["--config", str(config_path)]
+    return argv
+
+
+# The environment of a run a front-end drives over the bridge: the headless
+# child streams its reasoning deltas to logs.jsonl (a live view renders them),
+# and approvals / questions WAIT for a front-end instead of the headless
+# default's fabricated empty answer.
+DETACHED_RUN_ENV: dict[str, str] = {"AGENT6_STREAM_TO_LOG": "1", "AGENT6_DETACHED_AWAY": "wait"}
+
+
+def spawn_new_work(  # noqa: PLR0911
+    cwd: Path, mode: str, task: str, *, preset: str = "", config_path: Path | None = None
+) -> tuple[Path | None, str]:
+    """Start `agent6 <mode> [--preset P] -- <task>` detached from a hub and
+    return the new session's dir to open, or `(None, why)`.
+
+    A `/parallel [spec] <task> ...` message (run mode only) fans out one
+    detached `agent6 run --parallel <spec>` per segment (omitted spec = one
+    isolated lane); a malformed directive is refused before any spawn, any
+    segment's failure fails the whole message (lanes already launched keep
+    running), and the first segment's dir is returned. A run into a checkout
+    another run is driving is refused here, at once, rather than parked by
+    the child after the locate wait."""
+    if mode not in OPERATOR_MODES:
+        return None, f"unknown mode {mode!r}"
+    if not task.strip():
+        return None, "empty task"
+    if mode == "run":
+        state = resolved_state_dir(cwd)
+        if repo_writer_held(state):
+            holder = repo_writer_holder(state) or "another run"
+            return None, (
+                f"run {holder} is already driving this checkout; steer it with this task"
+                " (or /parallel it) from its run view, or wait for it to finish"
+            )
+    segments = None
+    if mode == "run":
+        try:
+            segments = parse_directive(task)
+        except DirectiveError as exc:
+            return None, str(exc)
+    if segments is None:
+        return _spawn_run(cwd, mode, task, preset=preset, spec="", config_path=config_path)
+    refusal = directive_model_refusal(cwd, segments, config_path)
+    if refusal is not None:
+        return None, refusal
+    first: Path | None = None
+    failures: list[str] = []
+    for i, seg in enumerate(segments, 1):
+        session_dir, err = _spawn_run(
+            cwd, "run", seg.task, preset=preset, spec=seg.spec or "1", config_path=config_path
+        )
+        if session_dir is None:
+            failures.append(f"lane {i} ({seg.task}): {err}")
+        elif first is None:
+            first = session_dir
+    if failures:
+        # Open the run XOR show the error: a partial failure must not vanish
+        # behind a surviving lane.
+        return None, "\n".join(failures)
+    assert first is not None  # no failures => every segment produced a dir
+    return first, ""
+
+
+def _spawn_run(
+    cwd: Path, mode: str, task: str, *, preset: str, spec: str, config_path: Path | None
+) -> tuple[Path | None, str]:
+    """One detached `agent6 <mode> [--preset P] [--parallel S] -- <task>`,
+    located by its new session dir. `--` ends option parsing: a task starting
+    with `-` is never read as a flag."""
+    argv = [*agent6_argv(config_path), mode]
+    if preset:
+        argv += ["--preset", preset]
+    if spec:
+        argv += ["--parallel", spec]
+    argv += ["--", task]
+    state = resolved_state_dir(cwd)
+    return spawn_and_locate(
+        argv,
+        cwd,
+        before=set(session_dirs(state)),
+        list_dirs=lambda: session_dirs(state),
+        env={**os.environ, **DETACHED_RUN_ENV},
+    )
 
 
 def spawn_detached_resume(
@@ -55,11 +154,7 @@ def spawn_detached_resume(
     answer (every caller here is a front-end or a detach the operator re-attaches
     to). argv is the agent6 exe + the run id (never LLM output). Returns "" on
     success, else an error message."""
-    argv = [agent6_exe(), "resume", session_id]
-    if config_path is not None:
-        # The overlay the parent ran under; a resume re-applies it only when
-        # told, so the spawned continuation matches the run it continues.
-        argv[1:1] = ["--config", str(config_path)]
+    argv = [*agent6_argv(config_path), "resume", session_id]
     if preset:
         argv.append(f"--preset={preset}")
     if steer:
@@ -72,7 +167,7 @@ def spawn_detached_resume(
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
-            env={**os.environ, "AGENT6_STREAM_TO_LOG": "1", "AGENT6_DETACHED_AWAY": "wait"},
+            env={**os.environ, **DETACHED_RUN_ENV},
         )
     except OSError as exc:
         return f"could not spawn background resume: {exc}"

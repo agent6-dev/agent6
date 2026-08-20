@@ -13,14 +13,12 @@ is trusted exactly as far as the operator behind the loopback/tailnet bind.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
 from agent6.app.fork import undo_fork
 from agent6.app.reporter import Reporter
-from agent6.config.layer import resolved_state_dir
-from agent6.directive import DirectiveError, parse_compact, parse_directive
+from agent6.directive import parse_compact
 from agent6.machine import (
     JournalError,
     MachineError,
@@ -28,7 +26,6 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
-from agent6.models.validate import directive_model_refusal
 from agent6.sessions.ipc import (
     read_worker_pid,
     request_compact,
@@ -39,9 +36,8 @@ from agent6.sessions.ipc import (
     write_question_answers,
     write_steer_answer,
 )
-from agent6.sessions.lock import repo_writer_held, repo_writer_holder
 from agent6.ui.spawn import (
-    agent6_exe,
+    agent6_argv,
     run_cli_capture,
     spawn_and_confirm,
     spawn_and_locate,
@@ -51,103 +47,8 @@ from agent6.ui.web import model
 from agent6.viewmodel import newest_state_log, session_is_live
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
 
+
 # Modes `agent6 web` can start as new work, mapped 1:1 to the CLI subcommand.
-NEW_WORK_MODES = frozenset({"run", "plan", "ask"})
-
-
-def _exe_argv(config_path: Path | None) -> list[str]:
-    """The agent6 argv head; a hub started with `--config F` stamps F into
-    every command it spawns, so spawned work runs under the config the
-    operator gave the hub."""
-    exe = [agent6_exe()]
-    return [*exe, "--config", str(config_path)] if config_path is not None else exe
-
-
-def spawn_new_work(  # noqa: PLR0911
-    cwd: Path, mode: str, task: str, preset: str = "", config_path: Path | None = None
-) -> tuple[str | None, str]:
-    """Spawn `agent6 <mode> [--preset P] <task>` detached and return the new run
-    id (its dir name) to open, or (None, diagnostic). Mirrors the TUI hub: the
-    detached run is told to stream reasoning to its log so the dashboard is live.
-
-    A `/parallel [spec] <task> ...` message (run mode only) fans out one detached
-    `agent6 run --parallel <spec>` per segment (omitted spec = one isolated lane).
-    A malformed directive is refused before any spawn (all-or-nothing) and any
-    segment's launch failure fails the whole message (already-launched lanes
-    keep running in the hub); on success the first segment's run id is returned
-    to open, the rest run in the hub."""
-    if mode not in NEW_WORK_MODES:
-        return None, f"unknown mode {mode!r}"
-    if not task.strip():
-        return None, "empty task"
-    if mode == "run":
-        # One live run-mode worker per checkout (acquire_repo_writer): refuse
-        # up front so the composer shows why, instead of spawning a detached
-        # run that parks itself and times out the locate. plan/ask are
-        # read-only and spawn freely. Advisory probe; the lock is the boundary.
-        state = resolved_state_dir(cwd)
-        if repo_writer_held(state):
-            holder = repo_writer_holder(state) or "another run"
-            return None, (
-                f"run {holder} is already driving this checkout; steer it with"
-                " this task (or /parallel it) from its run view, or wait for it"
-                " to finish"
-            )
-    segments = None
-    if mode == "run":
-        try:
-            segments = parse_directive(task)
-        except DirectiveError as exc:
-            return None, str(exc)
-    if segments is None:
-        return _spawn_run(cwd, mode, task, preset, spec="", config_path=config_path)
-    refusal = directive_model_refusal(cwd, segments, config_path)
-    if refusal is not None:
-        return None, refusal
-    first: str | None = None
-    failures: list[str] = []
-    for i, seg in enumerate(segments, 1):
-        session_id, err = _spawn_run(
-            cwd, "run", seg.task, preset, spec=seg.spec or "1", config_path=config_path
-        )
-        if session_id is None:
-            failures.append(f"lane {i} ({seg.task}): {err}")
-        elif first is None:
-            first = session_id
-    if failures:
-        # Binary contract (navigate XOR toast): a partial failure surfaces the
-        # diagnostic instead of navigating away from it.
-        return None, "; ".join(failures)
-    assert first is not None  # no failures => every segment produced an id
-    return first, ""
-
-
-def _spawn_run(
-    cwd: Path, mode: str, task: str, preset: str, *, spec: str, config_path: Path | None = None
-) -> tuple[str | None, str]:
-    """Spawn one detached `agent6 <mode>` (optionally `--parallel <spec>`) and
-    return its located run dir name, or (None, diagnostic)."""
-    argv = [*_exe_argv(config_path), mode]
-    if preset:
-        argv += ["--preset", preset]
-    if spec:
-        argv += ["--parallel", spec]
-    # `--` ends option parsing: the body-derived task can start with `-` without
-    # being read as a flag.
-    argv += ["--", task]
-    session_dir, err = spawn_and_locate(
-        argv,
-        cwd,
-        before=set(model.session_dir_paths(cwd)),
-        list_dirs=lambda: model.session_dir_paths(cwd),
-        # AGENT6_DETACHED_AWAY=wait: this run is driven from the browser over the
-        # bridge, so approvals and questions must WAIT for a viewer, not fabricate
-        # empty answers when the tab is momentarily disconnected (see run.py).
-        env={**os.environ, "AGENT6_STREAM_TO_LOG": "1", "AGENT6_DETACHED_AWAY": "wait"},
-    )
-    return (session_dir.name if session_dir is not None else None), err
-
-
 def spawn_machine_create(
     cwd: Path, task: str, config_path: Path | None = None
 ) -> tuple[str | None, str]:
@@ -156,7 +57,7 @@ def spawn_machine_create(
     if not task.strip():
         return None, "empty task"
     draft, err = spawn_and_locate(
-        [*_exe_argv(config_path), "machine", "create", "--", task],
+        [*agent6_argv(config_path), "machine", "create", "--", task],
         cwd,
         before=set(model.draft_dir_paths(cwd)),
         list_dirs=lambda: model.draft_dir_paths(cwd),
@@ -184,7 +85,7 @@ def spawn_machine_run(
         return False, f"invalid machine file: {exc}"
     instance = model.machines_root(cwd) / spec.machine
     err = spawn_and_confirm(
-        [*_exe_argv(config_path), "machine", "run", machine_file],
+        [*agent6_argv(config_path), "machine", "run", machine_file],
         cwd,
         started=lambda pid: read_worker_pid(instance) == pid,
     )
@@ -462,7 +363,7 @@ def merge_run(
 ) -> tuple[bool, str]:
     """Merge a run's branch: `agent6 sessions merge <id> [--strategy S]`. `--` before
     the client-supplied run id so a dashy value cannot be read as a flag."""
-    argv = [*_exe_argv(config_path), "sessions", "merge"]
+    argv = [*agent6_argv(config_path), "sessions", "merge"]
     if strategy:
         argv += ["--strategy", strategy]
     argv += ["--", session_id]
@@ -471,20 +372,20 @@ def merge_run(
 
 def prune_sessions(cwd: Path, config_path: Path | None = None) -> tuple[bool, str]:
     """Prune merged/obsolete run branches: `agent6 sessions prune`."""
-    return run_cli_capture([*_exe_argv(config_path), "sessions", "prune"], cwd)
+    return run_cli_capture([*agent6_argv(config_path), "sessions", "prune"], cwd)
 
 
 def remove_session(cwd: Path, session_id: str, config_path: Path | None = None) -> tuple[bool, str]:
     """Delete one run's history: `agent6 sessions rm <id>`. History only -- the run
     branch is git's, and `sessions prune` is the branch verb. The CLI refuses a live
     run, so this surface inherits that."""
-    return run_cli_capture([*_exe_argv(config_path), "sessions", "rm", "--", session_id], cwd)
+    return run_cli_capture([*agent6_argv(config_path), "sessions", "rm", "--", session_id], cwd)
 
 
 def remove_asks(cwd: Path, config_path: Path | None = None) -> tuple[bool, str]:
     """Clear every saved ask: `agent6 sessions rm --asks`. The bucket that
     accumulates, since an ask runs in any directory."""
-    return run_cli_capture([*_exe_argv(config_path), "sessions", "rm", "--asks"], cwd)
+    return run_cli_capture([*agent6_argv(config_path), "sessions", "rm", "--asks"], cwd)
 
 
 def set_config(
@@ -494,7 +395,7 @@ def set_config(
     validates the key and value; the write lands in the global config by default.
     `--` before the body-derived key/value so a dashy value cannot be read as a
     flag."""
-    argv = [*_exe_argv(config_path), "config", "set"]
+    argv = [*agent6_argv(config_path), "config", "set"]
     if repo:
         argv.append("--repo")
     argv += ["--", key, value]
@@ -507,7 +408,7 @@ def unset_config(
     """Unset one config leaf: `agent6 config unset <key> [--repo]`, reverting it
     to the next-lower layer / built-in default. Same fixed-argv CLI bridge as
     set_config (`--` guards a dashy key)."""
-    argv = [*_exe_argv(config_path), "config", "unset"]
+    argv = [*agent6_argv(config_path), "config", "unset"]
     if repo:
         argv.append("--repo")
     argv += ["--", key]

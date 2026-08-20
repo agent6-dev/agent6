@@ -73,7 +73,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate, spawn_detached_resume
+from agent6.ui.spawn import agent6_argv, run_cli_capture, spawn_and_locate, spawn_detached_resume
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.conversation import (
     RUN_MENU,
@@ -1243,7 +1243,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         def _confirmed(yes: bool | None) -> None:
             if yes:
                 ok, msg = run_cli_capture(
-                    [agent6_exe(), "sessions", "rm", "--", self.session_dir.name], Path.cwd()
+                    [*agent6_argv(self.config_path), "sessions", "rm", "--", self.session_dir.name],
+                    Path.cwd(),
                 )
                 self.notify(
                     msg or ("removed" if ok else "could not remove"),
@@ -1283,7 +1284,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
     def _do_fork(self) -> None:
         runs = self.session_dir.parent  # sibling run dirs under runs/
         new_dir, err = spawn_and_locate(
-            [agent6_exe(), "fork", self.session_dir.name],
+            [*agent6_argv(self.config_path), "fork", self.session_dir.name],
             Path.cwd(),
             before={p for p in runs.iterdir() if p.is_dir()},
             list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],

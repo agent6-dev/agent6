@@ -111,6 +111,11 @@ SESSION_KINDS: dict[str, SessionKind] = {
 }
 
 
+# The modes an operator starts from a hub or the CLI and resumes; machine and
+# agent legs are driven by the machine agent.
+OPERATOR_MODES: tuple[str, ...] = tuple(k.name for k in SESSION_KINDS.values() if k.resumable)
+
+
 class UnknownSessionKind(ValueError):
     """A mode string this agent6 does not know."""
 

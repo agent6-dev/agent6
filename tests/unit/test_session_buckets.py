@@ -104,8 +104,8 @@ def test_every_hub_lists_every_hub_bucket(
     `agent6 sessions` printing "no sessions yet" over a real plan."""
     from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli import main
-    from agent6.ui.tui.home import _list_sessions as tui_list  # pyright: ignore[reportPrivateUsage]
     from agent6.ui.web import model as web_model
+    from agent6.viewmodel import session_dirs
 
     monkeypatch.chdir(tmp_path)
     state = resolved_state_dir(tmp_path)
@@ -117,7 +117,7 @@ def test_every_hub_lists_every_hub_bucket(
 
     assert main(["sessions", "list"]) == 0
     assert "brave-oak-AAAAAA" in capsys.readouterr().out
-    assert [p.name for p in tui_list(state)] == ["brave-oak-AAAAAA"]
+    assert [p.name for p in session_dirs(state)] == ["brave-oak-AAAAAA"]
     assert [s["id"] for s in web_model.hub_payload(tmp_path)["sessions"]] == ["brave-oak-AAAAAA"]
 
 

@@ -22,7 +22,7 @@ from agent6.sessions.ipc import (
     write_answer,
     write_question_answers,
 )
-from agent6.ui.tui.home import _list_sessions, session_mtime
+from agent6.viewmodel import session_dirs, session_mtime
 
 
 def _write_run(
@@ -45,7 +45,7 @@ def test_list_runs_spans_runs_and_asks(tmp_path: Path) -> None:
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     _write_run(a6, "asks", "a1", [{"type": "session.start", "mode": "ask"}])
-    names = {p.name for p in _list_sessions(a6)}  # pyright: ignore[reportPrivateUsage]
+    names = {p.name for p in session_dirs(a6)}
     assert names == {"r1", "a1"}
 
 
@@ -245,262 +245,6 @@ def test_new_work_modal_yields_chosen_profile(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_spawn_argv_includes_profile_flag_only_when_chosen(
-    tmp_path: Path, monkeypatch: object
-) -> None:
-    """The launch helper builds `agent6 <mode> --preset <name> <task>` when a
-    preset is picked, and `agent6 <mode> <task>` (no --preset) for the
-    "(config default)" choice (preset=""). Captures argv by stubbing Popen, so
-    no real agent6 is spawned; the helper times out fast on the stubbed proc."""
-    import subprocess
-
-    from agent6.ui.tui import home
-
-    captured: list[list[str]] = []
-
-    class _FakeProc:
-        pid = 424242
-        returncode = 0
-
-        def poll(self) -> int:
-            return 0  # "already exited" -> helper bails out immediately
-
-    def _fake_popen(argv: list[str], **_kw: object) -> _FakeProc:
-        captured.append(list(argv))
-        return _FakeProc()
-
-    monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
-    # A stable executable name so the argv assertion isn't path-dependent.
-    monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
-
-    a6 = tmp_path / ".agent6"
-    a6.mkdir()
-
-    # Chosen preset -> --preset is present, after <mode>, before the `--` task.
-    home._spawn_and_locate(a6, tmp_path, "plan", "do it", preset="ultra")
-    assert captured[-1] == ["agent6", "plan", "--preset", "ultra", "--", "do it"]
-
-    # "(config default)" (preset="") -> NO --preset flag at all.
-    home._spawn_and_locate(a6, tmp_path, "run", "do it", preset="")
-    assert captured[-1] == ["agent6", "run", "--", "do it"]
-    assert "--preset" not in captured[-1]
-
-
-def test_spawn_argv_parallel_directive(tmp_path: Path, monkeypatch: object) -> None:
-    """`/parallel N <task>` (run only) fans out lanes: the hub spawns
-    `agent6 run <task> --parallel N`. A malformed directive is refused before any
-    spawn (same (None, message) surface a failed spawn uses)."""
-    import subprocess
-
-    from agent6.ui.tui import home
-
-    captured: list[list[str]] = []
-
-    class _FakeProc:
-        pid = 424242
-        returncode = 0
-
-        def poll(self) -> int:
-            return 0
-
-    def _fake_popen(argv: list[str], **_kw: object) -> _FakeProc:
-        captured.append(list(argv))
-        return _FakeProc()
-
-    monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
-    monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
-    a6 = tmp_path / ".agent6"
-    a6.mkdir()
-
-    home._spawn_and_locate(a6, tmp_path, "run", "/parallel 2 add a greeting", preset="")
-    assert captured[-1] == ["agent6", "run", "--parallel", "2", "--", "add a greeting"]
-
-    home._spawn_and_locate(a6, tmp_path, "run", "/parallel gpt-5,opus refactor", preset="ultra")
-    assert captured[-1] == [
-        "agent6",
-        "run",
-        "--preset",
-        "ultra",
-        "--parallel",
-        "gpt-5,opus",
-        "--",
-        "refactor",
-    ]
-
-    # Omitted spec -> one isolated lane (--parallel 1).
-    home._spawn_and_locate(a6, tmp_path, "run", "/parallel refactor the parser", preset="")
-    assert captured[-1] == ["agent6", "run", "--parallel", "1", "--", "refactor the parser"]
-
-    # Multi-segment: one detached fan-out spawned per segment.
-    start = len(captured)
-    home._spawn_and_locate(a6, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", preset="")
-    assert captured[start:] == [
-        ["agent6", "run", "--parallel", "2", "--", "task A"],
-        ["agent6", "run", "--parallel", "3", "--", "task B"],
-    ]
-
-    # Malformed: refused before any Popen (nothing new captured).
-    before = len(captured)
-    session_dir, err = home._spawn_and_locate(a6, tmp_path, "run", "/parallel", preset="")
-    assert session_dir is None and "/parallel" in err
-    assert len(captured) == before
-
-    # All-or-nothing: a later empty segment refuses the whole message.
-    before = len(captured)
-    session_dir, err = home._spawn_and_locate(
-        a6, tmp_path, "run", "/parallel 2 ok /parallel", preset=""
-    )
-    assert session_dir is None and "/parallel" in err
-    assert len(captured) == before
-
-
-def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: object) -> None:
-    """A later lane's spawn failure must fail the whole message (and an earlier
-    lane's failure must not be masked by a later success): the caller's only
-    surfaces are open-the-run XOR show-the-error, so a partial failure returns
-    the diagnostic and stays on the hub, lanes already launched keep running."""
-    from agent6.ui.tui import home
-
-    def fake_spawn(
-        agent6_dir: Path,
-        repo_cwd: Path,
-        mode: str,
-        task: str,
-        *,
-        preset: str,
-        spec: str,
-        config_path: object = None,
-    ) -> tuple[Path | None, str]:
-        if "task B" in task:
-            return None, "boom"
-        return tmp_path / "r1", ""
-
-    monkeypatch.setattr(home, "_spawn_run", fake_spawn)  # type: ignore[attr-defined]
-
-    def _no_refusal(repo_cwd: Path, segments: object, config_path: object = None) -> None:
-        return None
-
-    monkeypatch.setattr(home, "directive_model_refusal", _no_refusal)  # type: ignore[attr-defined]
-    session_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", preset=""
-    )
-    assert session_dir is None
-    assert "boom" in err and "task B" in err
-
-    # reversed: first lane fails, second succeeds -- lane 1's diagnostic survives
-    def fake_spawn_rev(
-        agent6_dir: Path,
-        repo_cwd: Path,
-        mode: str,
-        task: str,
-        *,
-        preset: str,
-        spec: str,
-        config_path: object = None,
-    ) -> tuple[Path | None, str]:
-        if "task A" in task:
-            return None, "boom"
-        return tmp_path / "r2", ""
-
-    monkeypatch.setattr(home, "_spawn_run", fake_spawn_rev)  # type: ignore[attr-defined]
-    session_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", preset=""
-    )
-    assert session_dir is None
-    assert "boom" in err and "task A" in err
-
-
-def test_spawn_parallel_refuses_unknown_model_before_spawn(
-    tmp_path: Path, monkeypatch: object
-) -> None:
-    """A `/parallel` model the cache can't confirm is the modal's normal error
-    path: refused before any Popen (nothing spawned), with a did-you-mean."""
-    import json
-    import subprocess
-
-    from agent6.config import Config
-    from agent6.ui.tui import home
-
-    cache = tmp_path / "cache" / "models"
-    cache.mkdir(parents=True)
-    (cache / "o.json").write_text(
-        json.dumps({"models": ["moonshotai/kimi-k2.6"]}), encoding="utf-8"
-    )
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))  # type: ignore[attr-defined]
-
-    # The miss now re-checks the live listing before refusing; stub it with the
-    # same ids so the refusal rests on "fresh" evidence (no real network).
-    from agent6.models import validate as models_validate
-
-    def _listing(*_a: object) -> list[str] | None:
-        return ["moonshotai/kimi-k2.6"]
-
-    monkeypatch.setattr(models_validate, "_fresh_listing", _listing)  # type: ignore[attr-defined]
-
-    cfg = Config.model_validate(
-        {
-            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
-            "models": {"worker": {"provider": "o", "model": "moonshotai/kimi-k2.6"}},
-        }
-    )
-
-    class _Eff:
-        config = cfg
-
-    captured: list[list[str]] = []
-
-    def _fake_popen(argv: list[str], **_kw: object) -> object:
-        captured.append(list(argv))
-        raise AssertionError("no spawn on a model refusal")
-
-    monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
-    monkeypatch.setattr(models_validate, "load_effective", lambda _cwd, _cp=None: _Eff())  # type: ignore[attr-defined]
-    a6 = tmp_path / ".agent6"
-    a6.mkdir()
-
-    session_dir, err = home._spawn_and_locate(
-        a6, tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it", preset=""
-    )
-    assert session_dir is None
-    assert "unknown model 'moonshotai/kimi-k2.7'" in err
-    assert "closest: moonshotai/kimi-k2.6" in err
-    assert captured == []
-
-
-def test_spawn_sets_stream_to_log_env(tmp_path: Path, monkeypatch: object) -> None:
-    """The hub spawns the run with AGENT6_STREAM_TO_LOG=1 so the detached, non-TTY
-    process emits role.*_delta events into logs.jsonl for the dashboard to render.
-    Without it the run takes the non-streaming path and the dashboard shows only
-    worker status, never live thinking."""
-    import subprocess
-
-    from agent6.ui.tui import home
-
-    captured_env: dict[str, str] = {}
-
-    class _FakeProc:
-        pid = 424242
-        returncode = 0
-
-        def poll(self) -> int:
-            return 0  # "already exited" -> helper bails out immediately
-
-    def _fake_popen(argv: list[str], **kw: object) -> _FakeProc:
-        env = kw.get("env")
-        if isinstance(env, dict):
-            captured_env.update(env)
-        return _FakeProc()
-
-    monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
-    monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
-    a6 = tmp_path / ".agent6"
-    a6.mkdir()
-    home._spawn_and_locate(a6, tmp_path, "ask", "why?", preset="")
-    assert captured_env.get("AGENT6_STREAM_TO_LOG") == "1"
-    # Still inherits the rest of the environment (PATH etc.), not a bare env.
-    assert "PATH" in captured_env
-
-
 def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch: object) -> None:
     """The hub's merge helper shells out to `agent6 sessions merge <id>` and reports the
     captured output as (ok, message) -- it never touches git_ops itself."""
@@ -521,10 +265,9 @@ def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch
         return _Proc()
 
     monkeypatch.setattr(subprocess, "run", _fake_run)  # type: ignore[attr-defined]
-    monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
 
     ok, msg = home._run_merge_cli(tmp_path, "r1")  # pyright: ignore[reportPrivateUsage]
-    assert captured[-1] == ["agent6", "sessions", "merge", "r1"]
+    assert captured[-1][1:] == ["sessions", "merge", "r1"]
     assert ok is True
     assert "merged agent6/r1" in msg
 
@@ -687,7 +430,7 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
     Handing it `<state>/sessions` made `bucket_dir` append `sessions/` a second
     time, so the hub listed nothing while the CLI and the web listed every
     session, and the TUI's machine watch read the authoring bucket instead of
-    the instance dir. Every other test calls `_list_sessions` directly, so
+    the instance dir. Every other test calls `session_dirs` directly, so
     nothing covered the argument."""
     from agent6.ui.cli import plan_watch
     from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
