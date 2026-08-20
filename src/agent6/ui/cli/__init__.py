@@ -67,6 +67,7 @@ from agent6.ui.cli.machine_cmds import (
     _cmd_machine_check,
     _cmd_machine_create,
     _cmd_machine_graph,
+    _cmd_machine_list,
     _cmd_machine_poke,
     _cmd_machine_replay,
     _cmd_machine_run,
@@ -680,6 +681,8 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
 
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    if args.machine_command == "list":
+        return _cmd_machine_list()
     if args.machine_command == "check":
         return _cmd_machine_check(args.file)
     if args.machine_command == "test":

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Parser builder for `machine` and its subcommands: author-time tooling for
-agent6 state machines (.asm.toml) -- check/test/graph/run/status/poke/
+agent6 state machines (.asm.toml) -- list/check/test/graph/run/status/poke/
 replay/create."""
 
 from __future__ import annotations
@@ -17,10 +17,21 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     machine_p = _sub(
         sub,
         "machine",
-        help="Author-time tooling for agent6 state machines (.asm.toml).",
+        help=(
+            "Author-time tooling for agent6 state machines (.asm.toml); bare `machine`"
+            " lists this repo's machines."
+        ),
     )
     machine_sub = machine_p.add_subparsers(
         dest="machine_command", required=True, metavar="<subcommand>"
+    )
+    _sub(
+        machine_sub,
+        "list",
+        help=(
+            "List this repo's machines (`agent6 machine`, or `machine list`): each"
+            " instance's status and state, and each authored .asm.toml's spec validity."
+        ),
     )
     machine_check = _sub(
         machine_sub,

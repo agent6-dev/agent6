@@ -962,3 +962,30 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     assert main(["machine", "run", str(f)]) == 2
     err = capsys.readouterr().err
     assert "REFUSING" in err and "private directory" in err
+
+
+def test_list_joins_instances_with_their_files_and_names_the_rest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 machine` (== `machine list`) is the CLI's machines page: each
+    instance's status and current state (the web hub's words) joined with the
+    authored file that declares it (the TUI page's spec column), then the
+    files no instance has run, and an unparsable file kept by path alone."""
+    monkeypatch.chdir(tmp_path)
+    assert main(["machine"]) == 0
+    assert "no machines yet" in capsys.readouterr().out
+    (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
+    (tmp_path / "waiter.asm.toml").write_text(WAITER_DELAYED, encoding="utf-8")
+    (tmp_path / "broken.asm.toml").write_text("not toml {{", encoding="utf-8")
+    assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
+    capsys.readouterr()
+    assert main(["machine"]) == 0
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+    assert lines[0].split() == ["updated", "status", "state", "machine", "spec", "file"]
+    tiny = next(line for line in lines if "tiny.asm.toml" in line)
+    assert tiny.split()[2:] == ["ok", "done", "tiny", "valid", "tiny.asm.toml"]  # [2:]: the when
+    waiter = next(line for line in lines if "waiter.asm.toml" in line)
+    assert waiter.split() == ["-", "-", "waiter_delayed", "valid", "waiter.asm.toml"]
+    broken = next(line for line in lines if "broken.asm.toml" in line)
+    assert broken.split() == ["-", "-", "-", "invalid", "broken.asm.toml"]

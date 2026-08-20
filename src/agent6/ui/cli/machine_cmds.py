@@ -27,6 +27,7 @@ from agent6.app.machine import (
     machine_network_refusal,
     machine_spend,
     run_offline_tests,
+    summarize_machine_file,
     validate_bundle,
 )
 from agent6.app.machine.create import create_machine
@@ -66,6 +67,7 @@ from agent6.sandbox.jail import jail_search_path
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import machines_root
 from agent6.types import IsolationLevel
+from agent6.ui.cli._common import styled_status
 from agent6.ui.cli.plan_watch import format_plain_event
 from agent6.ui.notify import desktop_notify
 from agent6.viewmodel import (
@@ -73,10 +75,64 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     event_epoch,
     fold_machine,
+    machine_files,
+    machine_instance_dirs,
     machine_verb_refusal,
     machine_word_for_dir,
+    summarize_machine_dir,
 )
-from agent6.viewmodel.format import format_cost, format_transition, machine_state_mark
+from agent6.viewmodel.format import (
+    format_cost,
+    format_transition,
+    format_when,
+    machine_state_mark,
+)
+
+
+def _cmd_machine_list() -> int:
+    """List this repo's machines: every instance (newest first) joined with the
+    authored `.asm.toml` that declares it, then the authored files no
+    instance has run yet. The instance columns are the web hub's (status,
+    current state); the file columns the TUI machines page's (spec validity)."""
+    cwd = Path.cwd()
+    files = {(row := summarize_machine_file(p)).name: (p, row) for p in machine_files(cwd)}
+    instances = [summarize_machine_dir(d) for d in machine_instance_dirs(resolved_state_dir(cwd))]
+    if not files and not instances:
+        print('no machines yet. Draft one with `agent6 machine create "<task>"`.')
+        return 0
+    color = sys.stdout.isatty()
+    rows: list[tuple[str, str, str, str, str, str, str]] = []
+    for s in instances:
+        styled, plain = styled_status(s.status, s.reason, color=color)
+        path, file_row = files.pop(s.name, (None, None))
+        rows.append(
+            (
+                format_when(s.mtime),
+                styled,
+                plain,
+                s.current or "-",
+                s.name,
+                file_row.spec if file_row is not None else "-",
+                str(path.relative_to(cwd)) if path is not None else "-",
+            )
+        )
+    for name, (path, file_row) in sorted(files.items()):
+        rows.append(("-", "", "", "-", name, file_row.spec, str(path.relative_to(cwd))))
+    status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
+    state_w = max(5, *(len(r[3]) for r in rows))
+    name_w = max(7, *(len(r[4]) for r in rows))
+    spec_w = max(4, *(len(r[5]) for r in rows))
+    print(
+        f"{'updated':<11}  {'status':<{status_w}}  {'state':<{state_w}}  {'machine':<{name_w}}"
+        f"  {'spec':<{spec_w}}  file"
+    )
+    for when, styled, plain, state, name, spec, file in rows:
+        pad = " " * (status_w - len(plain))
+        print(
+            f"{when:<11}  {styled}{pad}  {state:<{state_w}}  {name:<{name_w}}"
+            f"  {spec:<{spec_w}}  {file}"
+        )
+    return 0
 
 
 def _fail(path: Path, problems: list[str], label: str = "") -> int:

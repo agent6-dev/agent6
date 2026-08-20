@@ -47,6 +47,12 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
         ),
     ),
     "prompt": ("show", frozenset({"show"})),
+    "machine": (
+        "list",
+        frozenset(
+            {"list", "check", "test", "graph", "run", "status", "poke", "stop", "replay", "create"}
+        ),
+    ),
 }
 
 
