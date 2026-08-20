@@ -4356,7 +4356,7 @@ class Workflow:
         if not self.steer_requested():
             return None
         self._emit("loop.steer.requested", iteration=iteration)
-        self._log(f"STEER: operator requested mid-run steering at iter {iteration}")
+        self._log(f"STEER: operator steering at iter {iteration}")
         try:
             text = self.steer_prompt()
         finally:
