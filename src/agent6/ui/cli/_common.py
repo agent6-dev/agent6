@@ -298,3 +298,9 @@ def styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
     if color and sgr_code:
         return f"\x1b[{sgr_code}m{label}\x1b[0m", label
     return label, label
+
+
+def plural(n: int, singular: str, plural: str | None = None) -> str:
+    """'1 transition' / '3 transitions': no '1 branches' in user-facing counts."""
+    word = singular if n == 1 else (plural or singular + "s")
+    return f"{n} {word}"

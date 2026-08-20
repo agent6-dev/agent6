@@ -63,17 +63,19 @@ from agent6.ui.cli.history_cmds import (
     _cmd_history_transcript,
 )
 from agent6.ui.cli.init_cmds import _cmd_init
-from agent6.ui.cli.machine_cmds import (
+from agent6.ui.cli.machine_check import (
     _cmd_machine_check,
-    _cmd_machine_create,
     _cmd_machine_graph,
+    _cmd_machine_test,
+)
+from agent6.ui.cli.machine_cmds import (
+    _cmd_machine_create,
     _cmd_machine_list,
     _cmd_machine_poke,
     _cmd_machine_replay,
     _cmd_machine_run,
     _cmd_machine_status,
     _cmd_machine_stop,
-    _cmd_machine_test,
 )
 from agent6.ui.cli.mcp_cmds import _cmd_mcp_serve
 from agent6.ui.cli.mcp_connect import cmd_mcp_connect, cmd_mcp_list

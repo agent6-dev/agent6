@@ -182,14 +182,14 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
     failing test never executed."""
     from types import SimpleNamespace
 
-    from agent6.ui.cli import machine_cmds, main
+    from agent6.ui.cli import machine_check, main
 
     f = _write(tmp_path)
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     (scripts / "thing_test.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
     monkeypatch.setattr(
-        machine_cmds, "detect_env", lambda: SimpleNamespace(detected_isolation="hardened")
+        machine_check, "detect_env", lambda: SimpleNamespace(detected_isolation="hardened")
     )
     assert main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
