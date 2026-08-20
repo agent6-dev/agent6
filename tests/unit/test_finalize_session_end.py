@@ -482,7 +482,7 @@ def test_finalize_auto_stash_pops_the_run_stash_not_the_latest(
     import subprocess
 
     from agent6.app.finalize import finalize_auto_stash
-    from agent6.git_ops import auto_stash_message, stash_all
+    from agent6.git_ops import auto_stash_message, stash_tracked_changes
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -494,12 +494,14 @@ def test_finalize_auto_stash_pops_the_run_stash_not_the_latest(
     git("config", "user.email", "t@t")
     git("config", "user.name", "t")
     (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    (repo / "pre.txt").write_text("", encoding="utf-8")
+    (repo / "mid.txt").write_text("", encoding="utf-8")
     git("add", "-A")
     git("commit", "-qm", "base")
     (repo / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
-    stash_all(repo, auto_stash_message("r1"))
+    stash_tracked_changes(repo, auto_stash_message("r1"))
     (repo / "mid.txt").write_text("mid-run work\n", encoding="utf-8")
-    stash_all(repo, "operator stash pushed mid-run")
+    stash_tracked_changes(repo, "operator stash pushed mid-run")
     base = subprocess.run(
         ["git", "-C", str(repo), "branch", "--show-current"],
         check=True,
@@ -515,8 +517,8 @@ def test_finalize_auto_stash_pops_the_run_stash_not_the_latest(
         reporter=STDIO_REPORTER,
     )
     assert "restored your pre-run changes" in capsys.readouterr().err
-    assert (repo / "pre.txt").is_file()
-    assert not (repo / "mid.txt").exists()  # the mid-run stash stays a stash
+    assert (repo / "pre.txt").read_text(encoding="utf-8") == "pre-run work\n"
+    assert (repo / "mid.txt").read_text(encoding="utf-8") == ""  # the mid-run stash stays a stash
 
 
 def test_finalize_auto_stash_reports_a_vanished_stash(
@@ -552,7 +554,7 @@ def test_finalize_auto_stash_prints_a_failed_bystander_putback(
 
     from agent6.app import finalize as finalize_mod
     from agent6.app.finalize import finalize_auto_stash
-    from agent6.git_ops import GitError, auto_stash_message, stash_all
+    from agent6.git_ops import GitError, auto_stash_message, stash_tracked_changes
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -566,8 +568,8 @@ def test_finalize_auto_stash_prints_a_failed_bystander_putback(
     (repo / "base.txt").write_text("base\n", encoding="utf-8")
     git("add", "-A")
     git("commit", "-qm", "base")
-    (repo / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
-    stash_all(repo, auto_stash_message("r1"))
+    (repo / "base.txt").write_text("pre-run work\n", encoding="utf-8")
+    stash_tracked_changes(repo, auto_stash_message("r1"))
 
     def raising_restore(cwd: object, entry: object) -> bool:
         raise GitError(
@@ -597,7 +599,7 @@ def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
     import subprocess
 
     from agent6.app.finalize import stash_recovery_hint
-    from agent6.git_ops import auto_stash_message, stash_all
+    from agent6.git_ops import auto_stash_message, stash_tracked_changes
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -608,10 +610,10 @@ def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
     (repo / "f.txt").write_text("pre-run work\n", encoding="utf-8")
-    stash_all(repo, auto_stash_message("r9"))
+    stash_tracked_changes(repo, auto_stash_message("r9"))
     # A stash pushed later shifts every position; the hint must not care.
     (repo / "f.txt").write_text("someone else\n", encoding="utf-8")
-    stash_all(repo, "an unrelated stash")
+    stash_tracked_changes(repo, "an unrelated stash")
 
     hint = stash_recovery_hint(repo, session_id="r9", base_branch="main")
     assert hint is not None
@@ -720,7 +722,7 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
     import agent6.app.finalize as finalize_mod
     from agent6.git_ops import GitError
 
-    def _boom(_path: Path) -> object:
+    def _boom(_path: Path, **_kw: object) -> object:
         raise GitError("git unreadable here")
 
     monkeypatch.setattr(finalize_mod, "git_status", _boom)

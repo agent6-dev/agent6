@@ -44,6 +44,7 @@ def _mk(
     manifest: dict[str, object] = {"mode": "run", "session_id": name, "user_task": "t"}
     if parked:
         manifest["parked_task"] = parked
+        manifest["parked_reason"] = "checkout busy"
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     if events is not None:
         (d / "logs.jsonl").write_text(
@@ -75,7 +76,7 @@ def _end(reason: str, all_passed: bool = False) -> dict[str, object]:
 # (name, events (None = no logs.jsonl), parked_task, pid, expected word, expected reason)
 MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, str]] = [
     ("created", None, "", None, "created", ""),
-    ("parked", None, "fix it", None, "parked", "resume to start"),
+    ("parked", None, "fix it", None, "parked", "checkout busy"),
     # A parked run being resumed: a live worker in its pre-session.start preflight
     # window reads "starting" even while the manifest still carries parked_task
     # (resume clears it only once under way).
@@ -84,6 +85,10 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
     ("running", [_START, _TOOL], "", LIVE, "running", ""),
     ("waiting-approval", [_START, _APPROVAL], "", LIVE, "waiting", "needs answer"),
     ("waiting-question", [_START, _QUESTION], "", LIVE, "waiting", "needs answer"),
+    # The start question about uncommitted changes comes before session.start.
+    ("waiting-before-start", [_QUESTION], "", LIVE, "waiting", "needs answer"),
+    # ... and a worker that died on it is not "waiting" for anyone.
+    ("died-on-start-question", [_QUESTION], "", DEAD, "stale", "died launching"),
     (
         "answered-runs-on",
         [_START, _APPROVAL, _ANSWER],

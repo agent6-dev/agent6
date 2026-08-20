@@ -174,11 +174,13 @@ class SessionManifest(BaseModel):
     models: ModelsBrief = ModelsBrief()
     workflow: WorkflowStamp = WorkflowStamp()
     policy: PolicyStamp = PolicyStamp()
-    # A parked run: submitted while another run-mode worker held the checkout
-    # (the repo.lock refusal). Holds the VERBATIM task -- user_task above is
-    # the truncated display twin -- and non-empty means the run never started:
+    # A parked run: submitted, never started. Holds the VERBATIM task
+    # (user_task above is the truncated display twin); non-empty means
     # `agent6 resume <id>` starts it fresh, whose manifest rewrite clears it.
+    # `parked_reason` says why, for the operator: the checkout was busy, or the
+    # working tree had uncommitted changes and the operator chose to wait.
     parked_task: str = ""
+    parked_reason: str = ""
     # fork lineage (a non-forked run leaves these null)
     parent_session_id: str | None = None
     forked_from_turn: int | None = None

@@ -48,10 +48,15 @@ from agent6.app.frontend import (
 )
 from agent6.app.manifest import (
     pin_gate,
+    stamp_parked,
     write_session_manifest,
 )
 from agent6.app.preflight import (
+    DirtyTreeChoice,
     SessionRefused,
+    dirty_tree_choice,
+    dirty_tree_question,
+    dirty_tree_refusal,
     drop_gate_if_unrunnable,
     git_preflight,
     headless_approval_refusal,
@@ -69,9 +74,10 @@ from agent6.git_ops import (
     GitError,
     auto_stash_message,
     chain_ref_for,
-    dirty_paths,
+    modified_paths,
     render_commit_trailer,
-    stash_all,
+    stash_tracked_changes,
+    untracked_paths,
 )
 from agent6.paths import chown_to_real_user, mkdir_for_real_user
 from agent6.providers import TranscriptSink
@@ -84,6 +90,7 @@ from agent6.sessions.id import (
 )
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
+    away_mode,
     clear_away_mode,
     clear_compact_request,
     clear_pending_answers,
@@ -98,7 +105,7 @@ from agent6.sessions.ipc import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.sessions.layout import LOGS_NAME, SessionLayout
+from agent6.sessions.layout import LOGS_NAME, SessionLayout, write_untracked_at_start
 from agent6.sessions.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -221,7 +228,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         )
     except SessionRefused as refusal:
         return refusal.rc
-    base_sha, base_branch, pre_status = git.base_sha, git.base_branch, git.pre_status
+    base_sha, base_branch = git.base_sha, git.base_branch
 
     # Layout: standard run-dir scaffolding for transcripts + logs. ask sessions
     # live under the per-repo state dir (asks subdir) to stay separate from real runs.
@@ -282,6 +289,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # wrong inside it.
     result: SessionResult | None = None
     stashed = False
+    # Apply the stash back at run end (onto a clean tree, else the apply line
+    # is printed): [git].auto_stash_pop, or "stash" chosen at the start question.
+    stash_pop = cfg.git.auto_stash_pop
+    untracked_at_start: frozenset[str] = frozenset()
     run_branch: str | None = None
     detach_requested = False
     # /undo's outcome, captured by the injected forker so the undone-reason
@@ -313,72 +324,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # the worker is blocked in a long provider call (which emits no events).
         write_worker_pid(layout.session_dir, os.getpid())
 
-        # One live run-mode worker per CHECKOUT, not just per run dir: two runs
-        # share one worktree, so each would commit the other's in-flight edits
-        # into its own chain. Taken BEFORE
-        # any tree mutation (auto-stash, branch cut). plan/ask are read-only and
-        # skip it. A refused submission is PARKED, not dropped: the manifest saves
-        # the verbatim task and `agent6 resume <id>` starts it once the checkout
-        # frees up.
-        if mode == "run":
-            repo_lock_fd = acquire_repo_writer(layout.state_dir, effective_session_id)
-            if repo_lock_fd is None:
-                holder = repo_writer_holder(layout.state_dir) or "another run"
-                write_session_manifest(
-                    layout,
-                    session_id=effective_session_id,
-                    user_task=task,
-                    base_sha=base_sha,
-                    base_branch=pre_status.branch if pre_status is not None else "",
-                    run_branch=None,
-                    cfg=cfg,
-                    mode=mode,
-                    # The CONFIG preset, not the sandbox one: resume feeds this
-                    # back to load_effective, and a sandbox word ("strict") there
-                    # made every parked resume die with "unknown preset".
-                    effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
-                    preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
-                    parked_task=task,
-                )
-                reporter.err(
-                    f"REFUSING: run {holder!r} is already driving this checkout; a second"
-                    " run-mode worker would interleave auto-commits on the one working"
-                    f" tree. Your task was parked as run {effective_session_id!r}:\n"
-                    f"    agent6 resume {effective_session_id}    (start it once the checkout"
-                    " is free)\n"
-                    f"or hand it to the live run as an isolated lane by steering"
-                    f" {holder!r} with:\n"
-                    "    /parallel 1 <the same task>"
-                )
-                return 2
-
-        # Enforce the dirty-tree policy BEFORE cutting the run branch, so the
-        # branch is cut from a clean tree and the agent's per-step auto-commits
-        # (`git add -A`) never swallow the user's pre-existing uncommitted work.
-        # Only `run` makes commits; `plan`/`ask` are read-only (matching the
-        # branch_per_run guard below).
-        if mode == "run" and pre_status is not None and not pre_status.is_clean:
-            if cfg.git.auto_stash:
-                try:
-                    stash_all(cwd, auto_stash_message(effective_session_id))
-                    stashed = True
-                except GitError as exc:
-                    reporter.err(f"ERROR: could not auto-stash before run: {exc}")
-                    discard_husk_dir(layout.session_dir)
-                    return 2
-            elif cfg.git.require_clean_worktree:
-                dirty = dirty_paths(cwd)
-                listed = "\n".join(f"    {p}" for p in dirty)
-                more = "\n    ..." if len(dirty) >= 10 else ""
-                reporter.err(
-                    "REFUSING: working tree is not clean:\n"
-                    f"{listed}{more}\n"
-                    "Commit, stash, or discard your changes, set [git].auto_stash=true, "
-                    "or set [git].require_clean_worktree=false to override."
-                )
-                discard_husk_dir(layout.session_dir)
-                return 2
-
         # A visible branch named after the run id is 1:1 with the run (find it
         # from any run id, `agent6 sessions diff <id>`, or delete the branch to
         # drop the pointer). The name is the unique run id. Only real `run`
@@ -386,6 +331,18 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # advanced by the first chain commit; nothing is cut or checked out.
         if cfg.git.branch_per_run and mode == "run":
             run_branch = f"agent6/{effective_session_id}"
+
+        # The operator's uncommitted changes to tracked files. Untracked files
+        # are not in question: they stay out of the run (`untracked_at_start`).
+        # A run that would have to ask about them but cannot refuses BEFORE
+        # anything is created (see the approval refusal above).
+        modified = modified_paths(cwd) if mode == "run" else []
+        must_ask = bool(modified) and not cfg.git.auto_stash and cfg.git.require_clean_worktree
+        answerable = frontend.capabilities.can_ask or away_mode(layout.session_dir) == "wait"
+        if must_ask and not answerable:
+            reporter.err(f"REFUSING: {dirty_tree_refusal(modified)}")
+            discard_husk_dir(layout.session_dir)
+            return 2
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
@@ -398,6 +355,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # run started (base_sha + base_branch), which model+provider drove
         # it, and the user_task it was given. `agent6 sessions diff <run-id>` and
         # any future tooling that wants to reproduce a run reads from here.
+        # Written before the gates below, which PARK rather than refuse: a
+        # parked run keeps its dir and manifest, and `agent6 resume <id>` starts
+        # it fresh (that start rewrites the manifest and un-parks it).
         write_session_manifest(
             layout,
             session_id=effective_session_id,
@@ -411,6 +371,67 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
             isolation=isolation,
         )
+
+        def _park(reason: str, detail: str, *, hint: str = "") -> int:
+            # *reason* is the short cause every listing shows beside "parked";
+            # *detail* is the sentence the operator reads now.
+            stamp_parked(layout.session_dir, task=task, reason=reason)
+            reporter.err(
+                f"PARKED: {detail}. Your task is saved as run {effective_session_id!r}:\n"
+                f"    agent6 resume {effective_session_id}    (starts it)"
+                + (f"\n{hint}" if hint else "")
+            )
+            return 2
+
+        if mode == "run":
+            # One live run-mode worker per CHECKOUT, not just per run dir: two
+            # runs share one worktree, so each would commit the other's
+            # in-flight edits into its own chain. Taken BEFORE any tree mutation
+            # (auto-stash, branch cut). plan/ask are read-only and skip it.
+            repo_lock_fd = acquire_repo_writer(layout.state_dir, effective_session_id)
+            if repo_lock_fd is None:
+                holder = repo_writer_holder(layout.state_dir) or "another run"
+                return _park(
+                    "checkout busy",
+                    f"run {holder!r} is already driving this checkout, and a second run-mode"
+                    " worker would interleave auto-commits on the one working tree",
+                    hint=(
+                        f"or hand it to the live run as an isolated lane by steering"
+                        f" {holder!r} with:\n    /parallel 1 <the same task>"
+                    ),
+                )
+            # Settle the operator's uncommitted changes BEFORE the run's first
+            # commit can sweep them up: config decides when it can, else the
+            # operator is asked over the same channel as `ask_user`.
+            if modified:
+                choice: DirtyTreeChoice
+                if cfg.git.auto_stash:
+                    choice = "stash"
+                elif not cfg.git.require_clean_worktree:
+                    choice = "include"
+                else:
+                    ask = frontend.build_questioner(layout.session_dir, events)
+                    answers = ask((dirty_tree_question(modified),))
+                    choice = dirty_tree_choice(answers[0] if answers else "")
+                    stash_pop = stash_pop or choice == "stash"
+                if choice == "cancel":
+                    return _park(
+                        "uncommitted changes",
+                        "the working tree has uncommitted changes to tracked files; commit or"
+                        " stash them, then start the run",
+                    )
+                if choice == "stash":
+                    try:
+                        stash_tracked_changes(cwd, auto_stash_message(effective_session_id))
+                        stashed = True
+                    except GitError as exc:
+                        return _park(
+                            "stash failed", f"stashing the working tree's changes failed: {exc}"
+                        )
+            # The files that are the operator's: untracked at this moment, after
+            # any stash. Every chain commit and dirty check leaves them out.
+            untracked_at_start = untracked_paths(cwd)
+            write_untracked_at_start(layout.session_dir, untracked_at_start)
 
         # The interactive revision prompt reads the terminal; with the TUI owning
         # it the prompt would land invisibly in the console log and contend for
@@ -528,6 +549,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 chain_ref=chain_ref_for(effective_session_id) if mode == "run" else None,
                 chain_branch=run_branch,
                 chain_fallback_parent=base_sha or None,
+                untracked_at_start=untracked_at_start,
                 commit_per_step=cfg.git.commit_per_step,
                 provider=session.provider,
                 dispatcher=dispatcher,
@@ -736,8 +758,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                         cwd,
                         base_branch=base_branch,
                         run_branch=run_branch,
-                        auto_pop=cfg.git.auto_stash_pop,
+                        auto_pop=stash_pop,
                         session_id=layout.session_id,
+                        exclude=untracked_at_start,
                         reporter=reporter,
                     )
         finally:

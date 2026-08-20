@@ -55,7 +55,13 @@ from agent6.sessions.id import (
     unused_session_id,
     validate_explicit_session_id,
 )
-from agent6.sessions.layout import SessionLayout, session_layout, session_matches
+from agent6.sessions.layout import (
+    SessionLayout,
+    read_untracked_at_start,
+    session_layout,
+    session_matches,
+    write_untracked_at_start,
+)
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import session_bucket
 from agent6.viewmodel import newest_session_dir
@@ -493,6 +499,9 @@ def _materialize_fork(
     atomic_write(dst.session_dir / "loop_state.json", blob)
     atomic_write(dst.checkpoint_path(0), blob)
     _copy_dag(src, dst, graph_version=graph_version)
+    # Same checkout, same operator files: the fork leaves out of its commits
+    # what the source did.
+    write_untracked_at_start(dst.session_dir, read_untracked_at_start(src.session_dir))
 
     run_branch = f"agent6/{dst.session_id}" if cfg.git.branch_per_run else None
     write_session_manifest(

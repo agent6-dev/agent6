@@ -322,7 +322,7 @@ Under `none` isolation nothing is enforced or refused.
   The orchestrator writes each lane a `--config` file via `materialize()`, a dump of the resolved `Config` model (provider `base_url`, `api_key_env` names), which never holds a raw API key.
   The lane reads the same `secrets.toml` or provider env var as any other run.
 - Lane git plumbing (clone, fetch, merge) goes through `git_ops.py` and lane spawning through `ui/spawn.py`, both already on the [subprocess allowlist](#12-host-side-subprocess-allowlist).
-- A lane starts from committed state only: the fan-out clones HEAD and a coordinator dispatch cuts lanes at the run's chain tip after chain-committing changes, so `--parallel` refuses a dirty origin under `git.require_clean_worktree`.
+- A lane starts from committed state only: the fan-out clones HEAD and a coordinator dispatch cuts lanes at the run's chain tip after chain-committing changes, so `--parallel` refuses an origin with uncommitted tracked changes under `git.require_clean_worktree`.
 
 ### 11. State machines
 

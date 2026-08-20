@@ -130,8 +130,7 @@ def test_second_run_parks_with_the_verbatim_task(repo: Path) -> None:
     from agent6.viewmodel.listing import summarize_session_dir
 
     row = summarize_session_dir(layout.session_dir)
-    assert row.status == "parked"
-    assert "resume" in row.reason
+    assert (row.status, row.reason) == ("parked", "checkout busy")
 
 
 def test_resume_starts_a_parked_run_with_the_saved_task(
@@ -141,7 +140,7 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
     verbatim saved task under the same run id (releasing its own locks first,
     so the fresh start can take them)."""
     from agent6.app import resume as resume_mod
-    from agent6.app.manifest import write_session_manifest
+    from agent6.app.manifest import stamp_parked, write_session_manifest
 
     state = resolved_state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-PARKED2")
@@ -155,8 +154,8 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
         run_branch=None,
         cfg=_load_cfg(),
         mode="run",
-        parked_task="do the saved thing",
     )
+    stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
     called: dict[str, Any] = {}
 
     def fake_run_task(cfg: Config, task: str, **kw: Any) -> int:
@@ -303,7 +302,7 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
     wiped by run_task's own stale-state clear, so the follow-up must ride the
     delegation (initial_steer) instead of dying on the floor."""
     from agent6.app import resume as resume_mod
-    from agent6.app.manifest import write_session_manifest
+    from agent6.app.manifest import stamp_parked, write_session_manifest
 
     state = resolved_state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-PSTEER")
@@ -317,8 +316,8 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
         run_branch=None,
         cfg=_load_cfg(),
         mode="run",
-        parked_task="do the saved thing",
     )
+    stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
     called: dict[str, Any] = {}
 
     def fake_run_task(cfg: Config, task: str, **kw: Any) -> int:

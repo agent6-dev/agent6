@@ -260,9 +260,12 @@ The curator also holds a per-mutation flock on the session dir against a concurr
 A write-path fault after the in-memory update reloads the graph from disk before surfacing, so a later read never observes a node that was never persisted.
 
 One live run-mode worker per checkout is the level above (`sessions/lock.py`, a repo-wide flock on `<state-dir>/repo.lock`): run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
-A second `agent6 run` refuses loudly and parks the submitted task verbatim in a new run's manifest (`parked_task`, shown as "parked" in listings).
-The refusal prints the two follow-ups: `agent6 resume <id>` once the checkout is free, or a `/parallel 1 <task>` steer that hands it to the live run as an isolated lane.
+A second `agent6 run` parks: the submitted task is saved verbatim in the new run's manifest (`parked_task`, with `parked_reason`, shown as "parked · checkout busy" in listings) and `agent6 resume <id>` starts it once the checkout is free; the message also offers a `/parallel 1 <task>` steer that hands it to the live run as an isolated lane.
 Plan and ask expose no edit tools and spawn freely; `--parallel` lanes work in isolated workdirs under the coordinator's one lock.
+
+The working tree at start is the run's next gate, in the same shape.
+Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt.
+Uncommitted changes to tracked files are asked about over the `ask_user` channel (stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes"); `[git].auto_stash` and `require_clean_worktree = false` answer without asking, and a run nobody can answer refuses before its dir exists.
 
 ## Session state on disk
 
@@ -278,6 +281,7 @@ Ids are one namespace across every bucket, since every surface addresses a sessi
 | `checkpoints/<NNNN>.json` | per-turn snapshots at the pre-call boundary, carrying the workspace `head_sha` and curator `graph_version` |
 | `plan.md` | the plan itself, in plan sessions |
 | `transcripts/` | full provider request and response pairs for replay |
+| `untracked-at-start` | the files untracked when the run started (repo-root-relative, NUL-separated): the operator's, left out of every chain commit and dirty check; a fork copies its source's |
 
 `loop_state.json` is the latest pointer for resume; `checkpoints/` is the per-turn history `fork --at-turn` addresses, kept in full.
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor; the planner re-reads it before every turn and is shown it whenever it differs from what it last saw, so answers written there survive the next `finish_planning`.

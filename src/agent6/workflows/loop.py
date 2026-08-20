@@ -537,6 +537,10 @@ class Workflow:
     # Parent for the chain's first commit when chain_ref does not exist yet:
     # HEAD's sha at run start (None in an unborn repo).
     chain_fallback_parent: str | None = None
+    # Files that were untracked when the run started (repo-root-relative). The
+    # operator's, so no chain commit records them and no dirty check counts
+    # them; a file the model creates is not in the set and is committed.
+    untracked_at_start: frozenset[str] = frozenset()
     # [git].commit_per_step: False disables every agent commit. The chain never
     # advances; resume-from-git, sessions diff/merge, and /parallel dispatch
     # from a changed tree degrade, and the work stays only in the worktree.
@@ -944,7 +948,7 @@ class Workflow:
         if snap.last_verify_ok is None or not snap.head_sha:
             return
         try:
-            status = git_status(self.root)
+            status = git_status(self.root, exclude=self.untracked_at_start)
         except (GitError, OSError):
             return
         if status.is_clean and status.head_sha == snap.head_sha:
@@ -1351,7 +1355,7 @@ class Workflow:
         ):
             return False
         try:
-            status = git_status(self.root)
+            status = git_status(self.root, exclude=self.untracked_at_start)
         except (GitError, OSError):
             return False
         return status.is_clean and status.head_sha == self.base_sha
@@ -1702,7 +1706,7 @@ class Workflow:
         # is already gone by this point in the loop), omit the snapshot.
         worktree_status = ""
         try:
-            st = git_status(self.root)
+            st = git_status(self.root, exclude=self.untracked_at_start)
             worktree_status = (
                 f"branch={st.branch}"
                 f" head={st.head_sha[:12]}"
@@ -3066,8 +3070,13 @@ class Workflow:
         detector; no chain (unit-test embedders) falls back to status."""
         try:
             if self.chain_ref is not None:
-                return chain_dirty(self.root, self.chain_ref, self.chain_fallback_parent)
-            return not git_status(self.root).is_clean
+                return chain_dirty(
+                    self.root,
+                    self.chain_ref,
+                    self.chain_fallback_parent,
+                    exclude=self.untracked_at_start,
+                )
+            return not git_status(self.root, exclude=self.untracked_at_start).is_clean
         except (GitError, OSError):
             return False
 
@@ -3083,7 +3092,11 @@ class Workflow:
             return ""
         try:
             paths = chain_dirty_paths(
-                self.root, self.chain_ref, self.chain_fallback_parent, _DIRTY_NOTE_CAP
+                self.root,
+                self.chain_ref,
+                self.chain_fallback_parent,
+                _DIRTY_NOTE_CAP,
+                exclude=self.untracked_at_start,
             )
         except (GitError, OSError):
             return ""
@@ -4696,6 +4709,7 @@ class Workflow:
                 fallback_parent=self.chain_fallback_parent,
                 identity=self._commit_identity(),
                 also_branch=self.chain_branch,
+                exclude=self.untracked_at_start,
             )
             or ""
         )

@@ -30,8 +30,7 @@ from agent6.app.preflight import budget_preflight
 from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
 from agent6.directive import DirectiveError
-from agent6.git_ops import GitError, dirty_paths
-from agent6.git_ops import status as git_status
+from agent6.git_ops import GitError, modified_paths
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.sessions.id import friendly_token
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
@@ -130,20 +129,20 @@ def dispatch_parallel(
             print(f"REFUSING: {err}", file=sys.stderr)
             return 2
     try:
-        st = git_status(origin)
+        modified = modified_paths(origin)
     except GitError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    if not st.is_clean and cfg.git.require_clean_worktree:
-        dirty = dirty_paths(origin)
-        listed = "\n".join(f"    {p}" for p in dirty)
-        more = "\n    ..." if len(dirty) >= 10 else ""
+    if modified and cfg.git.require_clean_worktree:
+        listed = "\n".join(f"    {p}" for p in modified[:10])
+        more = f"\n    ... {len(modified) - 10} more" if len(modified) > 10 else ""
+        n = len(modified)
         print(
-            "REFUSING: working tree is not clean:\n"
-            f"{listed}{more}\n"
-            "Commit, stash, or discard your changes, or set"
-            " [git].require_clean_worktree=false to override. Lanes clone from"
-            " committed HEAD, so uncommitted work is not carried into them.",
+            f"REFUSING: {n} tracked {'file has' if n == 1 else 'files have'} uncommitted"
+            f" changes:\n{listed}{more}\n"
+            "Lanes clone committed HEAD, so those changes would not reach them. Commit or"
+            " stash them first, or set [git].require_clean_worktree = false to fan out"
+            " without them.",
             file=sys.stderr,
         )
         return 2

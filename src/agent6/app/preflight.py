@@ -8,9 +8,10 @@ terminal) and are injected by the front-end."""
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from agent6.app._setup import apply_git_ops_policy
 from agent6.app.providers import (
@@ -24,7 +25,6 @@ from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
-    GitStatus,
     is_git_repo,
     verify_git_identity,
 )
@@ -34,6 +34,7 @@ from agent6.git_ops import (
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import effective_run_commands
+from agent6.tools.schema import UserQuestion
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 from agent6.workflows.review import parse_seat_spec
 
@@ -127,12 +128,10 @@ def warn_if_prompt_override_incomplete(cfg: Config) -> None:
 @dataclass(frozen=True, slots=True)
 class GitPreflight:
     """Where the run starts: HEAD + branch at submission (empty for ask, which
-    is read-only and may run outside a repo), and the pre-run status the tree
-    policy reads."""
+    is read-only and may run outside a repo)."""
 
     base_sha: str
     base_branch: str
-    pre_status: GitStatus | None
 
 
 def git_preflight(
@@ -159,7 +158,7 @@ def git_preflight(
     # ask is read-only and may run outside a git repo (e.g. agent6 self-help),
     # so it skips the commit-oriented git pre-flight entirely.
     if mode == "ask":
-        return GitPreflight(base_sha="", base_branch="", pre_status=None)
+        return GitPreflight(base_sha="", base_branch="")
     try:
         verify_git_identity(cwd, identity)
         # Captured BEFORE a run branch exists, so `agent6 sessions diff <id>`
@@ -181,8 +180,61 @@ def git_preflight(
             "[agent6] aborted. Merge (agent6 sessions merge) or switch branches first, then re-run."
         )
         raise SessionRefused(2)
-    return GitPreflight(
-        base_sha=pre_status.head_sha, base_branch=pre_status.branch, pre_status=pre_status
+    return GitPreflight(base_sha=pre_status.head_sha, base_branch=pre_status.branch)
+
+
+# What a run does with the operator's uncommitted changes to tracked files.
+# Untracked files are never in question: the run leaves them out of its
+# commits and dirty checks (`untracked_at_start`).
+DirtyTreeChoice = Literal["stash", "include", "cancel"]
+DIRTY_TREE_OPTIONS: tuple[str, ...] = ("stash", "include", "cancel")
+
+
+def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10) -> str:
+    # No leading indentation: a modal's text pane drops it, so a listing that
+    # depends on it reads differently per surface.
+    n = len(paths)
+    head = f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted changes:"
+    lines = [f"- {p}" for p in paths[:cap]]
+    if n > cap:
+        lines.append(f"- ... {n - cap} more")
+    return "\n".join([head, *lines])
+
+
+def dirty_tree_question(paths: Sequence[str]) -> UserQuestion:
+    """The start question a run with uncommitted tracked changes asks the
+    operator (over the same channel as `ask_user`); the answer's first word is
+    the choice, anything else cancels."""
+    return UserQuestion(
+        question=(
+            f"{_dirty_tree_listing(paths)}\n"
+            "How should this run treat them?\n"
+            "stash: set them aside for the run (applied back at the end when the tree is"
+            " clean, else the `git stash apply` line is printed)\n"
+            "include: the run's first commit records them with its own work\n"
+            "cancel: park the run; resume it once they are committed or stashed"
+        ),
+        options=DIRTY_TREE_OPTIONS,
+    )
+
+
+def dirty_tree_choice(answer: str) -> DirtyTreeChoice:
+    word = answer.strip().split(maxsplit=1)[0].rstrip(":").lower() if answer.strip() else ""
+    if word == "stash":
+        return "stash"
+    if word == "include":
+        return "include"
+    return "cancel"
+
+
+def dirty_tree_refusal(paths: Sequence[str]) -> str:
+    """The refusal when nobody can answer :func:`dirty_tree_question`."""
+    return (
+        f"{_dirty_tree_listing(paths)}\n"
+        "This run has no terminal and no front-end to ask how to treat them."
+        " Commit or stash them first, or decide in config: [git].auto_stash = true"
+        " stashes them for the run; [git].require_clean_worktree = false lets the run's"
+        " first commit record them."
     )
 
 

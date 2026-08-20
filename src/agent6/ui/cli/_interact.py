@@ -240,8 +240,8 @@ def build_questioner(
                     answers = tuple("" for _ in questions)
                     source = "headless-default"
                     tty_message(
-                        "[agent6] ask_user: no front-end attached and no terminal;"
-                        " returning empty answers\n"
+                        "[agent6] no front-end attached and no terminal to answer the"
+                        " question; returning empty answers\n"
                     )
                 else:
                     answers = stdin_answers

@@ -75,7 +75,6 @@ def write_session_manifest(
     preset_from_flag: bool = False,
     gate: tuple[Sequence[str], str] | None = None,
     isolation: str = "",
-    parked_task: str = "",
     parent_session_id: str | None = None,
     forked_from_turn: int | None = None,
     forked_from_sha: str | None = None,
@@ -134,7 +133,6 @@ def write_session_manifest(
             isolation=isolation or str(cfg.sandbox.isolation),
             network=str(cfg.sandbox.network),
         ),
-        parked_task=parked_task,
         parent_session_id=parent_session_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,
@@ -156,6 +154,17 @@ def _parallel_lineage() -> tuple[str, int] | None:
     if not sep or not fanout or not lane.isdigit():
         return None
     return fanout, int(lane)
+
+
+def stamp_parked(session_dir: Path, *, task: str, reason: str) -> None:
+    """Record that this run was submitted and never started: the verbatim
+    task (resume starts it fresh), why it waits, and no run branch (none was
+    cut). The fresh start's manifest rewrite replaces all three."""
+    m = read_manifest(session_dir)
+    write_manifest(
+        session_dir / "manifest.json",
+        m.model_copy(update={"parked_task": task, "parked_reason": reason, "run_branch": None}),
+    )
 
 
 def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> None:

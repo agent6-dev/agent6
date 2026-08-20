@@ -29,6 +29,7 @@
     "network": ""
   },
   "parked_task": "",
+  "parked_reason": "",
   "parent_session_id": "r-parent",
   "forked_from_turn": 7,
   "forked_from_sha": "2222222222222222222222222222222222222222",

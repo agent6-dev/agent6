@@ -161,8 +161,8 @@ This is the field summary.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `require_clean_worktree` | `true` | Refuse to start on a dirty worktree. |
-| `auto_stash` | `false` | Stash uncommitted changes before the run; restored per `auto_stash_pop`, else the `git stash apply <sha>` line is printed (by sha, never silently left). |
+| `require_clean_worktree` | `true` | When tracked files have uncommitted changes at start, ask how the run treats them (`stash` them for the run, `include` them in its commits, or `cancel`, which parks the run for a later resume); a run nobody can answer refuses to start. `false`: start without asking, the run's first commit records them. Untracked files never count and are never committed. |
+| `auto_stash` | `false` | Stash the tracked files' uncommitted changes at start without asking; at the end the stash is applied back per `auto_stash_pop`, else its `git stash apply <sha>` line is printed (by sha, never silently left). |
 | `auto_stash_pop` | `false` | Pop the stash back at run end when safe (clean tree, conflict-free apply). On any doubt, leave it and print how to restore. Never `reset --hard`. |
 | `branch_per_run` | `true` | Also advance a visible `agent6/<id>` branch to the run's chain tip (else the hidden `refs/agent6/<id>/head` ref only). Forced on for `--parallel` lanes (work is imported by branch). |
 | `commit_per_step` | `true` | Per-step commits onto the run's detached chain (a temp index; HEAD, your index, and your checkout are never touched). Off: agent6 never commits; work stays only in the worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch from a changed tree degrade. |

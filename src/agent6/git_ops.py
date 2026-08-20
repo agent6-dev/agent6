@@ -19,7 +19,7 @@ import subprocess
 import tempfile
 import textwrap
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -41,6 +41,11 @@ _GIT_TERM_GRACE_S = 5.0
 
 @dataclass(frozen=True, slots=True)
 class GitStatus:
+    """The worktree against HEAD. `is_clean` means no tracked file is modified
+    and no untracked file exists outside the caller's `exclude` set (a run's
+    `untracked_at_start`); `modified_count` alone is the operator's uncommitted
+    work, which is what a start gate reads."""
+
     branch: str
     head_sha: str
     is_clean: bool
@@ -403,23 +408,43 @@ def paths_dirty(path: Path, rel_paths: tuple[str, ...]) -> bool:
     return bool(res.stdout.strip())
 
 
-def dirty_paths(path: Path, *, limit: int = 10) -> list[str]:
-    """Up to *limit* working-tree paths with uncommitted changes, each tagged
-    `M` (modified/staged) or `?` (untracked), for a dirty-tree refusal that
-    names what to deal with instead of just saying 'not clean'."""
-    res = _run(path, "status", "--porcelain=v1", "--untracked-files=all", check=False)
-    out: list[str] = []
-    for line in res.stdout.splitlines():
-        if not line.strip():
+def _porcelain_entries(path: Path) -> list[tuple[str, str]]:
+    """`(code, repo-root-relative path)` per changed or untracked file, from
+    `status --porcelain=v1 -z` (NUL-separated, so any filename round-trips;
+    a rename's second field, the source path, is skipped)."""
+    res = _run(path, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False)
+    fields = res.stdout.split("\0")
+    out: list[tuple[str, str]] = []
+    i = 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:
             continue
-        tag = "?" if line.startswith("??") else "M"
-        out.append(f"{tag} {line[3:]}")
-        if len(out) >= limit:
-            break
+        code, rel = entry[:2], entry[3:]
+        out.append((code, rel))
+        if code[0] in "RC":
+            i += 1
     return out
 
 
-def status(path: Path) -> GitStatus:
+def modified_paths(path: Path) -> list[str]:
+    """Tracked files with uncommitted changes (modified, staged, or deleted),
+    repo-root-relative. Untracked files are never listed: they are the
+    operator's, outside a run's commits."""
+    return [rel for code, rel in _porcelain_entries(path) if code != "??"]
+
+
+def untracked_paths(path: Path) -> frozenset[str]:
+    """Every untracked, non-ignored file, repo-root-relative. Taken once at run
+    start as the run's `untracked_at_start`: those files are the operator's,
+    so chain commits and dirty checks leave them out (`exclude`)."""
+    return frozenset(rel for code, rel in _porcelain_entries(path) if code == "??")
+
+
+def status(path: Path, *, exclude: Collection[str] = ()) -> GitStatus:
+    """The worktree against HEAD; untracked files in *exclude* (a run's
+    `untracked_at_start`) are not counted."""
     if not is_git_repo(path):
         raise GitError(f"Not a git repository: {path}")
     branch_res = _run(path, "rev-parse", "--abbrev-ref", "HEAD", check=False)
@@ -433,13 +458,13 @@ def status(path: Path) -> GitStatus:
         branch = _run(path, "branch", "--show-current", check=False).stdout.strip()
     head_res = _run(path, "rev-parse", "HEAD", check=False)
     head_sha = head_res.stdout.strip() if head_res.ok else ""
-    porcelain = _run(path, "status", "--porcelain=v1", "--untracked-files=all").stdout
     untracked = 0
     modified = 0
-    for line in porcelain.splitlines():
-        if line.startswith("??"):
-            untracked += 1
-        elif line.strip():
+    for code, rel in _porcelain_entries(path):
+        if code == "??":
+            if rel not in exclude:
+                untracked += 1
+        else:
             modified += 1
     return GitStatus(
         branch=branch,
@@ -450,8 +475,11 @@ def status(path: Path) -> GitStatus:
     )
 
 
-def stash_all(path: Path, message: str) -> None:
-    _run(path, "stash", "push", "--include-untracked", "--message", message)
+def stash_tracked_changes(path: Path, message: str) -> None:
+    """Stash the tracked files' uncommitted changes under *message*. Untracked
+    files stay where they are: a run leaves them out of its commits, so
+    nothing needs moving them aside."""
+    _run(path, "stash", "push", "--message", message)
 
 
 def auto_stash_message(session_id: str) -> str:
@@ -822,7 +850,7 @@ def chain_tip(path: Path, ref: str) -> str | None:
     return sha if res.returncode == 0 and sha else None
 
 
-def _worktree_tree(path: Path, seed: str | None) -> str:
+def _worktree_tree(path: Path, seed: str | None, exclude: Collection[str]) -> str:
     """Tree sha of the worktree's CURRENT content, staged into a temp index;
     the shared index is never read or written.
 
@@ -832,13 +860,33 @@ def _worktree_tree(path: Path, seed: str | None) -> str:
     made `add -A` skip tracked-but-ignored files and every chain commit
     silently dropped them, which a later merge turned into deletions. New
     ignored files stay out, and a file deleted from the worktree still leaves
-    the tree, exactly as `add -A` behaves on the real index."""
+    the tree, exactly as `add -A` behaves on the real index.
+
+    *exclude* (repo-root-relative paths, the run's `untracked_at_start`) never
+    enters the tree: `:(top,exclude,literal)` pathspecs, read from a file so
+    the set's size and any filename are fine."""
     tmp = Path(tempfile.mkdtemp(prefix="agent6-chain-"))
     env = {"GIT_INDEX_FILE": str(tmp / "index")}
     try:
         if seed is not None:
             _run(path, "read-tree", seed, env_extra=env)
-        _run(path, "add", "-A", env_extra=env)
+        if exclude:
+            spec = tmp / "pathspec"
+            spec.write_bytes(
+                b"\0".join(
+                    [b":/", *(f":(top,exclude,literal){rel}".encode() for rel in sorted(exclude))]
+                )
+            )
+            _run(
+                path,
+                "add",
+                "-A",
+                f"--pathspec-from-file={spec}",
+                "--pathspec-file-nul",
+                env_extra=env,
+            )
+        else:
+            _run(path, "add", "-A", env_extra=env)
         return _run(path, "write-tree", env_extra=env).stdout.strip()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -848,21 +896,33 @@ def _worktree_tree(path: Path, seed: str | None) -> str:
 _EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
-def chain_dirty(path: Path, ref: str, fallback_parent: str | None) -> bool:
-    """True when the worktree's content differs from the chain tip's tree
-    (*ref*, else *fallback_parent*, else the empty tree in an unborn repo).
-    Raises GitError outside a repo -- callers treat that as clean."""
+def chain_dirty(
+    path: Path, ref: str, fallback_parent: str | None, *, exclude: Collection[str] = ()
+) -> bool:
+    """True when the worktree's content (minus *exclude*) differs from the
+    chain tip's tree (*ref*, else *fallback_parent*, else the empty tree in an
+    unborn repo). Raises GitError outside a repo -- callers treat that as
+    clean."""
     base = chain_tip(path, ref) or fallback_parent
     base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
-    return base_tree != _worktree_tree(path, base)
+    return base_tree != _worktree_tree(path, base, exclude)
 
 
-def chain_dirty_paths(path: Path, ref: str, fallback_parent: str | None, limit: int) -> list[str]:
-    """Paths whose worktree content differs from the chain tip's tree, capped
-    at *limit* (an unborn chain diffs against the empty tree)."""
+def chain_dirty_paths(
+    path: Path,
+    ref: str,
+    fallback_parent: str | None,
+    limit: int,
+    *,
+    exclude: Collection[str] = (),
+) -> list[str]:
+    """Paths whose worktree content (minus *exclude*) differs from the chain
+    tip's tree, capped at *limit* (an unborn chain diffs against the empty
+    tree)."""
     base = chain_tip(path, ref) or fallback_parent
     base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
-    out = _run(path, "diff-tree", "-r", "--name-only", base_tree, _worktree_tree(path, base)).stdout
+    tree = _worktree_tree(path, base, exclude)
+    out = _run(path, "diff-tree", "-r", "--name-only", base_tree, tree).stdout
     return [line for line in out.splitlines() if line][:limit]
 
 
@@ -875,9 +935,11 @@ def chain_commit(
     trailers: dict[str, str] | None = None,
     identity: CommitIdentity | None = None,
     also_branch: str | None = None,
+    exclude: Collection[str] = (),
 ) -> str | None:
-    """Record the worktree's current content on the agent's own commit chain,
-    touching neither HEAD, the operator's index, nor any checkout.
+    """Record the worktree's current content (minus *exclude*, the run's
+    `untracked_at_start`) on the agent's own commit chain, touching neither
+    HEAD, the operator's index, nor any checkout.
 
     Stages everything into a TEMP index, writes the tree, and `commit-tree`s
     it parented on *ref*'s current value -- the ref itself is the chain state,
@@ -890,7 +952,7 @@ def chain_commit(
     to record).
     """
     parent = chain_tip(path, ref) or fallback_parent
-    tree = _worktree_tree(path, parent)
+    tree = _worktree_tree(path, parent, exclude)
     parent_args: list[str] = []
     if parent is not None:
         if _run(path, "rev-parse", f"{parent}^{{tree}}").stdout.strip() == tree:

@@ -227,13 +227,13 @@ def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -
     to do, or why the word applies). The pre-unification words lied twice: a
     crashed run led with "stopped" (the hub's word for an OPERATOR stop) and a
     launching run with "running" (the hub said "starting")."""
-    word, _reason = status_for_session_dir(session_dir, scan.status_facts())
+    word, reason = status_for_session_dir(session_dir, scan.status_facts())
     if scan.finished:
         return f"{word} ({scan.end_reason})"
     detail = {
         "waiting": "needs answer; attach to respond",
         "stale": "no worker, no session.end: likely crashed or killed",
-        "parked": "resume to start",
+        "parked": f"{reason}; resume to start" if reason else "resume to start",
         # "no events yet" was claimed unconditionally, over logs that HAD
         # events (a worker that died launching writes preflight events).
         "created": "no events yet" if scan.last_type is None else "never started",

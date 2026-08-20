@@ -98,7 +98,12 @@ from agent6.sessions.ipc import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.sessions.layout import bucket_dir, session_layout, session_matches
+from agent6.sessions.layout import (
+    bucket_dir,
+    read_untracked_at_start,
+    session_layout,
+    session_matches,
+)
 from agent6.sessions.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -339,8 +344,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         role = session_kind(mode).role
 
         if manifest.parked_task:
-            # Parked at submission (the checkout was busy): nothing ever ran, so
-            # "resume" is its fresh start. Hand the verbatim saved task to
+            # Parked at submission: nothing ever ran, so "resume" is its fresh
+            # start. Hand the verbatim saved task to
             # run_task under the same run id; it re-acquires both locks itself
             # (and re-parks with a fresh message if the checkout is STILL busy),
             # so release ours first. Its manifest rewrite clears parked_task.
@@ -361,9 +366,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             except ConfigError as exc:
                 reporter.err(f"ERROR: {exc}")
                 return 2
+            why = f" ({manifest.parked_reason})" if manifest.parked_reason else ""
             reporter.err(
-                f"[agent6] run {session_id!r} was parked at submission (the checkout was"
-                " busy); starting it now."
+                f"[agent6] run {session_id!r} was parked at submission{why}; starting it now."
             )
             saved_task = manifest.parked_task
             clear_worker_pid(layout.session_dir)
@@ -675,6 +680,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 chain_ref=chain_ref_for(session_id) if mode == "run" else None,
                 chain_branch=run_branch or None,
                 chain_fallback_parent=resume_base_sha or None,
+                untracked_at_start=read_untracked_at_start(layout.session_dir),
                 commit_per_step=cfg.git.commit_per_step,
                 provider=session.provider,
                 dispatcher=dispatcher,

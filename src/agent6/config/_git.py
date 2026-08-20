@@ -109,15 +109,25 @@ class GitCommitConfig(BaseModel):
 class GitConfig(BaseModel):
     model_config = MODEL_CONFIG
 
+    # Untracked files are never in question: a run records the ones present
+    # at its start (`untracked-at-start`) and leaves them out of every commit
+    # and dirty check.
     require_clean_worktree: bool = Field(
         default=True,
-        description="Refuse to start on a dirty worktree.",
+        description=(
+            "When tracked files have uncommitted changes at start, ask how the run treats them "
+            "(`stash` them for the run, `include` them in its commits, or `cancel`, which parks "
+            "the run for a later resume); a run nobody can answer refuses to start. `false`: "
+            "start without asking, the run's first commit records them. Untracked files never "
+            "count and are never committed."
+        ),
     )
     auto_stash: bool = Field(
         default=False,
         description=(
-            "Stash uncommitted changes before the run; restored per `auto_stash_pop`, else the "
-            "`git stash apply <sha>` line is printed (by sha, never silently left)."
+            "Stash the tracked files' uncommitted changes at start without asking; at the end "
+            "the stash is applied back per `auto_stash_pop`, else its `git stash apply <sha>` "
+            "line is printed (by sha, never silently left)."
         ),
     )
     # When auto_stash stashed pre-run changes, restore them at run end. Default

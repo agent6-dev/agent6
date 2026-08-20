@@ -344,6 +344,53 @@ def test_render_and_modals(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_start_question_before_session_start_is_answerable(tmp_path: Path) -> None:
+    """A run asks about the working tree's uncommitted changes BEFORE
+    session.start (the same channel as ask_user); a TUI opened on that dir
+    reads it as waiting, shows the question, and answers over the bridge."""
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"mode": "run", "session_id": tmp_path.name, "user_task": "t"}),
+        encoding="utf-8",
+    )
+    (tmp_path / "logs.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "question.prompt",
+                "id": "question-1",
+                "questions": [
+                    {
+                        "question": "1 tracked file has uncommitted changes:\n    seed.txt\n"
+                        "How should this run treat them?",
+                        "options": ["stash", "include", "cancel"],
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _wait_for(
+                pilot, lambda: isinstance(app.screen, QuestionModal), "the question modal"
+            )
+            app._heartbeat_at = 0.0
+            app._tick()
+            assert app.dir_status == ("waiting", "needs answer")
+            app.screen.query_one("#opt-0-0", Button).press()  # stash
+            await pilot.pause()
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            assert (tmp_path / "questions" / "question-1.answer").read_text(
+                encoding="utf-8"
+            ) == json.dumps(["stash"])
+
+    asyncio.run(scenario())
+
+
 def test_back_and_quit_exit_codes(tmp_path: Path) -> None:
     """Esc leaves the run view for the hub (exit 0) from both the conversation and
     the dashboard (their composer bars own plain letters, so there is no q alias);

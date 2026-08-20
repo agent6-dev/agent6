@@ -149,7 +149,7 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A parked submission (the busy-checkout refusal saved it) has no log yet.
-    Every listing calls it "parked · resume to start"; attach answered "ERROR: no
+    Every listing calls it "parked · checkout busy"; attach answered "ERROR: no
     logs.jsonl in <path>" and exited 2, so the operator who clicked through from
     a listing got a path instead of the state and the way out."""
     monkeypatch.chdir(tmp_path)

@@ -527,7 +527,7 @@ class DashboardScreen(Screen[None]):
         """The top-line status label, from THE dir decision (status_for_session_dir,
         the same word the hub row shows): coloured end words for a finished run
         (green passed, yellow deliberate end, red involuntary), red "stale" for
-        a lost worker, yellow "parked · resume to start", dim created/starting
+        a lost worker, yellow "parked · <cause>", dim created/starting
         pre-start; empty while running (the heartbeat line carries live
         activity)."""
         word, reason = self._tui.dir_status
@@ -631,9 +631,11 @@ class DashboardScreen(Screen[None]):
                 style="bold red",
             )
         elif tui.dir_status[0] == "parked":
-            # No model is coming: the busy-checkout refusal saved the task and
-            # the run never started. Resume is the one action.
-            st.append("parked — the checkout was busy at submission\n", style="bold yellow")
+            # No model is coming: the run was saved at submission and never
+            # started (the cause rides in the status detail). Resume is the
+            # one action.
+            cause = f" ({tui.dir_status[1]})" if tui.dir_status[1] else ""
+            st.append(f"parked at submission{cause}\n", style="bold yellow")
             st.append("type the go-ahead below (Enter resumes)", style="dim")
         elif tui.dir_status[0] == "created":
             st.append("created — the run has not started\n", style="bold")

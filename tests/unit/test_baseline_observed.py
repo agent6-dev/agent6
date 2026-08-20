@@ -41,7 +41,7 @@ def _quiet(*_a: object, **_k: object) -> None:
 
 
 def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: Workflow) -> None:
-    def _status(_root: object) -> object:
+    def _status(_root: object, **_kw: object) -> object:
         return wf._git_status()  # pyright: ignore[reportAttributeAccessIssue]
 
     monkeypatch.setattr("agent6.workflows.loop.git_status", _status)
@@ -106,7 +106,7 @@ def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> No
     would exonerate the run for its own breakage, so it fails closed."""
     from agent6.git_ops import GitError
 
-    def _boom(_root: object) -> object:
+    def _boom(_root: object, **_kw: object) -> object:
         raise GitError("index.lock held")
 
     state, turn = _state(), _turn()

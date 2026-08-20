@@ -9,6 +9,7 @@ in any of them.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +33,10 @@ def is_safe_session_id(session_id: str) -> bool:
 # hardcodes the wrong one silently finds nothing, which is indistinguishable
 # from an empty session.
 LOGS_NAME = "logs.jsonl"
+# The files that were untracked when the run started (repo-root-relative,
+# NUL-separated). They are the operator's: every chain commit and dirty check
+# of the run leaves them out.
+UNTRACKED_AT_START_NAME = "untracked-at-start"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +101,10 @@ class SessionLayout:
     def logs_path(self) -> Path:
         return self.session_dir / LOGS_NAME
 
+    @property
+    def untracked_at_start_path(self) -> Path:
+        return self.session_dir / UNTRACKED_AT_START_NAME
+
     def ensure(self) -> None:
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.graph_dir.mkdir(exist_ok=True)
@@ -105,6 +114,21 @@ class SessionLayout:
     def checkpoint_path(self, turn: int) -> Path:
         """Path of the checkpoint for `turn` (zero-padded to 4 digits)."""
         return self.checkpoints_dir / f"{turn:04d}.json"
+
+
+def read_untracked_at_start(session_dir: Path) -> frozenset[str]:
+    """The run's `untracked-at-start` set; empty when the run recorded none."""
+    try:
+        raw = (session_dir / UNTRACKED_AT_START_NAME).read_bytes()
+    except FileNotFoundError:
+        return frozenset()
+    return frozenset(p.decode("utf-8", "surrogateescape") for p in raw.split(b"\0") if p)
+
+
+def write_untracked_at_start(session_dir: Path, paths: Collection[str]) -> None:
+    (session_dir / UNTRACKED_AT_START_NAME).write_bytes(
+        b"\0".join(p.encode("utf-8", "surrogateescape") for p in sorted(paths))
+    )
 
 
 # Every session directory lives under this one root, so the state dir's own

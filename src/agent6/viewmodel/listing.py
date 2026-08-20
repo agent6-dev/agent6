@@ -197,9 +197,10 @@ OPERATOR_PROMPT_EVENTS = frozenset({"approval.prompt", "question.prompt"})
 OPERATOR_ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
 
 
-# The word + detail a parked submission reads as, defined once: the hub
-# listing and every run header print this pair.
-PARKED_STATUS = ("parked", "resume to start")
+# The word a parked submission reads as; the detail beside it is the
+# manifest's short cause ("checkout busy", "uncommitted changes"), and every
+# surface says the same thing about it: a resume starts it.
+PARKED_WORD = "parked"
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,28 +237,31 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
     """
     if facts.finished:
         return status_word(finished=True, all_passed=facts.all_passed, end_reason=facts.end_reason)
+    if facts.operator_blocked and worker_is_alive(session_dir):
+        # Before session.start too: a run asks about the working tree's
+        # uncommitted changes before it starts.
+        return "waiting", "needs answer"
     if not facts.started:
         return _unstarted_status(session_dir)
     if not worker_is_alive(session_dir):
         return "stale", ""
-    if facts.operator_blocked:
-        return "waiting", "needs answer"
     return "running", ""
 
 
 def _unstarted_status(session_dir: Path) -> tuple[str, str]:
     """Status before any session.start: a live worker is still launching (egress +
     verify inference run before the loop's first turn) -> "starting". No live
-    worker is a parked submission (the busy-checkout refusal saved it; resume
-    starts it), a worker that died launching (its pid file survives the kill;
-    a clean refusal clears it), or a never-started dir (`fork --no-run`) ->
-    "created". The dead-pid case is kept distinct from "created": a killed
-    preflight spent real dollars and must not wear the never-ran word."""
+    worker is a parked submission (saved with its cause; resume starts it), a
+    worker that died launching (its pid file survives the kill; a clean
+    refusal clears it), or a never-started dir (`fork --no-run`) -> "created".
+    The dead-pid case is kept distinct from "created": a killed preflight
+    spent real dollars and must not wear the never-ran word."""
     if worker_is_alive(session_dir):
         return "starting", ""
     with contextlib.suppress(ManifestError):
-        if read_manifest(session_dir).parked_task:
-            return PARKED_STATUS
+        manifest = read_manifest(session_dir)
+        if manifest.parked_task:
+            return PARKED_WORD, manifest.parked_reason
     if read_worker_pid(session_dir) is not None:
         return "stale", "died launching"
     return "created", ""

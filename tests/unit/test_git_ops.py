@@ -26,19 +26,20 @@ from agent6.git_ops import (
     create_branch_at,
     diff_range,
     diff_since,
-    dirty_paths,
     fetch_branch,
     find_stash,
     init_repo,
     is_git_repo,
     list_run_commits,
+    modified_paths,
     plumb_merge,
     recent_log,
     restore_stash,
     set_repo_hook_policy,
-    stash_all,
+    stash_tracked_changes,
     status,
     unignored,
+    untracked_paths,
     verify_git_identity,
 )
 
@@ -52,18 +53,46 @@ def _init_repo(path: Path) -> None:
     subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
 
 
-def test_dirty_paths_tags_and_caps(tmp_path: Path) -> None:
+def _stash_change(path: Path, name: str, content: str, message: str) -> None:
+    """Write *content* into the tracked file *name* (committed empty first when
+    it is new) and stash that change: a stash holds tracked changes only."""
+    target = path / name
+    if not target.exists():
+        target.write_text("", encoding="utf-8")
+        subprocess.run(["git", "-C", str(path), "add", "--", name], check=True)
+        subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", f"track {name}"], check=True)
+    target.write_text(content, encoding="utf-8")
+    stash_tracked_changes(path, message)
+
+
+def test_modified_and_untracked_paths_split_the_operators_work(tmp_path: Path) -> None:
+    """Tracked modifications are the run's start question; untracked files are
+    the operator's and never count."""
     _init_repo(tmp_path)
-    assert dirty_paths(tmp_path) == []  # clean tree
+    assert modified_paths(tmp_path) == []
+    assert untracked_paths(tmp_path) == frozenset()
     (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")  # untracked
+    (tmp_path / "odd name:here.txt").write_text("x\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")  # modified
-    paths = dirty_paths(tmp_path)
-    assert "? new.txt" in paths
-    assert "M README.md" in paths
-    # the cap bounds the listing
-    for i in range(15):
-        (tmp_path / f"f{i}.txt").write_text("y\n", encoding="utf-8")
-    assert len(dirty_paths(tmp_path, limit=5)) == 5
+    assert modified_paths(tmp_path) == ["README.md"]
+    assert untracked_paths(tmp_path) == {"new.txt", "odd name:here.txt"}
+    st = status(tmp_path)
+    assert (st.modified_count, st.untracked_count, st.is_clean) == (1, 2, False)
+    # The run's untracked_at_start set makes them invisible to status.
+    (tmp_path / "README.md").write_text("hi\n", encoding="utf-8")
+    scoped = status(tmp_path, exclude={"new.txt", "odd name:here.txt"})
+    assert (scoped.modified_count, scoped.untracked_count, scoped.is_clean) == (0, 0, True)
+    assert status(tmp_path, exclude={"new.txt"}).untracked_count == 1
+
+
+def test_stash_tracked_changes_leaves_untracked_files_in_place(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "notes.txt").write_text("mine\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
+    stash_tracked_changes(tmp_path, "agent6 auto-stash")
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "mine\n"
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\n"
+    assert untracked_paths(tmp_path) == {"notes.txt"}
 
 
 def test_commit_paths_ignores_unrelated_staged_work(tmp_path: Path) -> None:
@@ -492,9 +521,8 @@ def test_commit_error_surfaces_stdout_when_stderr_empty(tmp_path: Path) -> None:
 
 def test_restore_stash_clean_apply_restores_and_drops(tmp_path: Path) -> None:
     _init_repo(tmp_path)
-    (tmp_path / "wip.txt").write_text("work in progress\n", encoding="utf-8")
-    stash_all(tmp_path, "agent6 auto-stash")
-    assert not (tmp_path / "wip.txt").exists()  # stashed away, tree clean
+    _stash_change(tmp_path, "wip.txt", "work in progress\n", "agent6 auto-stash")
+    assert (tmp_path / "wip.txt").read_text(encoding="utf-8") == ""  # stashed away, tree clean
     entry = find_stash(tmp_path, "agent6 auto-stash")
     assert entry is not None
     assert restore_stash(tmp_path, entry) is True
@@ -508,7 +536,7 @@ def test_restore_stash_clean_apply_restores_and_drops(tmp_path: Path) -> None:
 def test_restore_stash_conflict_keeps_stash(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     (tmp_path / "README.md").write_text("stashed change\n", encoding="utf-8")
-    stash_all(tmp_path, "agent6 auto-stash")
+    stash_tracked_changes(tmp_path, "agent6 auto-stash")
     # A conflicting commit on the same line means the stash cannot apply cleanly.
     (tmp_path / "README.md").write_text("committed change\n", encoding="utf-8")
     commit_all(tmp_path, "conflicting commit")
@@ -527,16 +555,17 @@ def test_find_stash_targets_the_run_stash_not_the_latest(tmp_path: Path) -> None
     run's stash is found by its run-id message and restored; the other stash
     is untouched."""
     _init_repo(tmp_path)
-    (tmp_path / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
-    stash_all(tmp_path, auto_stash_message("sunny-otter-AAA111"))
-    (tmp_path / "mid.txt").write_text("mid-run stash by someone else\n", encoding="utf-8")
-    stash_all(tmp_path, "user work stashed mid-run")
+    _stash_change(tmp_path, "pre.txt", "pre-run work\n", auto_stash_message("sunny-otter-AAA111"))
+    _stash_change(
+        tmp_path, "mid.txt", "mid-run stash by someone else\n", "user work stashed mid-run"
+    )
     entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
     assert entry.ref == "stash@{1}"
     assert restore_stash(tmp_path, entry) is True
     assert (tmp_path / "pre.txt").read_text(encoding="utf-8") == "pre-run work\n"
-    assert not (tmp_path / "mid.txt").exists()  # the mid-run stash stays a stash
+    # the mid-run stash stays a stash
+    assert (tmp_path / "mid.txt").read_text(encoding="utf-8") == ""
     listing = subprocess.run(
         ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
     ).stdout
@@ -551,8 +580,7 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
     stash pushed between the list that resolves ours and the drop shifts the
     stack and the drop takes a bystander's entry. Its commit must come back."""
     _init_repo(tmp_path)
-    (tmp_path / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
-    stash_all(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    _stash_change(tmp_path, "pre.txt", "pre-run work\n", auto_stash_message("sunny-otter-AAA111"))
     entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
 
@@ -568,7 +596,18 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
             raced = True  # ours slides to stash@{1}; the recorded ref now names theirs
             (tmp_path / "README.md").write_text("bystander work\n", encoding="utf-8")
             subprocess.run(
-                ["git", "-C", str(tmp_path), "stash", "push", "-q", "-m", "bystander", "--"],
+                [
+                    "git",
+                    "-C",
+                    str(tmp_path),
+                    "stash",
+                    "push",
+                    "-q",
+                    "-m",
+                    "bystander",
+                    "--",
+                    "README.md",
+                ],
                 check=True,
             )
         return res
@@ -592,10 +631,9 @@ def test_find_stash_does_not_prefix_match_another_runs_stash(tmp_path: Path) -> 
     then applied and dropped the wrong work. The lookup must match the
     pushed message exactly."""
     _init_repo(tmp_path)
-    (tmp_path / "one.txt").write_text("lane l1 work\n", encoding="utf-8")
-    stash_all(tmp_path, auto_stash_message("fanout-l1"))
-    (tmp_path / "ten.txt").write_text("lane l10 work\n", encoding="utf-8")
-    stash_all(tmp_path, auto_stash_message("fanout-l10"))  # newer: listed first
+    _stash_change(tmp_path, "one.txt", "lane l1 work\n", auto_stash_message("fanout-l1"))
+    # newer: listed first
+    _stash_change(tmp_path, "ten.txt", "lane l10 work\n", auto_stash_message("fanout-l10"))
     entry = find_stash(tmp_path, auto_stash_message("fanout-l1"))
     assert entry is not None
     assert entry.ref == "stash@{1}"  # the l1 stash, not the newer l10 one
@@ -610,8 +648,7 @@ def test_raced_drop_failed_putback_raises_with_recovery(
     the restore raises, naming the orphaned commit and the exact
     `git stash store` command that puts it back."""
     _init_repo(tmp_path)
-    (tmp_path / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
-    stash_all(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    _stash_change(tmp_path, "pre.txt", "pre-run work\n", auto_stash_message("sunny-otter-AAA111"))
     entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
 
@@ -631,7 +668,18 @@ def test_raced_drop_failed_putback_raises_with_recovery(
             raced = True  # ours slides to stash@{1}; the recorded ref now names theirs
             (tmp_path / "README.md").write_text("bystander work\n", encoding="utf-8")
             subprocess.run(
-                ["git", "-C", str(tmp_path), "stash", "push", "-q", "-m", "bystander", "--"],
+                [
+                    "git",
+                    "-C",
+                    str(tmp_path),
+                    "stash",
+                    "push",
+                    "-q",
+                    "-m",
+                    "bystander",
+                    "--",
+                    "README.md",
+                ],
                 check=True,
             )
         return res
@@ -779,17 +827,15 @@ def test_restore_stash_survives_index_shift_after_lookup(tmp_path: Path) -> None
     the recorded position applied the wrong stash (and dropped it). The entry
     is applied and dropped by its sha, resolved fresh at drop time."""
     _init_repo(tmp_path)
-    (tmp_path / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
-    stash_all(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    _stash_change(tmp_path, "pre.txt", "pre-run work\n", auto_stash_message("sunny-otter-AAA111"))
     entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None and entry.ref == "stash@{0}"
     # The shift: a stash pushed after the lookup makes the recorded position
     # point at someone else's work.
-    (tmp_path / "mid.txt").write_text("mid work\n", encoding="utf-8")
-    stash_all(tmp_path, "pushed after lookup")
+    _stash_change(tmp_path, "mid.txt", "mid work\n", "pushed after lookup")
     assert restore_stash(tmp_path, entry) is True
     assert (tmp_path / "pre.txt").read_text(encoding="utf-8") == "pre-run work\n"
-    assert not (tmp_path / "mid.txt").exists()  # the other stash stays a stash
+    assert (tmp_path / "mid.txt").read_text(encoding="utf-8") == ""  # the other stash stays a stash
     listing = subprocess.run(
         ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
     ).stdout
@@ -1311,6 +1357,44 @@ def test_chain_commit_keeps_tracked_but_ignored_files(tmp_path: Path) -> None:
     assert "scratch.log" not in files  # new ignored files still stay out
     diff = _run_git(repo, "diff", "--name-only", f"{head}..{sha}").splitlines()
     assert diff == ["code.py"], diff
+
+
+def test_chain_commit_leaves_the_operators_untracked_files_out(tmp_path: Path) -> None:
+    """Files untracked when the run started (`untracked_at_start`) are the
+    operator's: `add -A` into the chain temp index swept them into every
+    per-step commit, so a run's diff carried the operator's scratch files and a
+    tree holding only them read as dirty. With the set excluded, the commit
+    records the model's edits and its new files only, from any cwd."""
+    _init_repo(tmp_path)
+    head = _rev(tmp_path, "HEAD")
+    ref = "refs/agent6/u/head"
+    (tmp_path / "notes.txt").write_text("mine\n", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "we ird:name.txt").write_text("mine too\n", encoding="utf-8")
+    mine = untracked_paths(tmp_path)
+    assert mine == {"notes.txt", "sub/we ird:name.txt"}
+
+    assert git_ops.chain_dirty(tmp_path, ref, head, exclude=mine) is False
+    assert git_ops.chain_dirty(tmp_path, ref, head) is True  # the same tree, unscoped
+    assert (
+        git_ops.chain_commit(tmp_path, "nothing", ref=ref, fallback_parent=head, exclude=mine)
+        is None
+    )
+
+    (tmp_path / "README.md").write_text("edited\n", encoding="utf-8")
+    (tmp_path / "sub" / "made.py").write_text("print(1)\n", encoding="utf-8")  # the model's
+    assert git_ops.chain_dirty_paths(tmp_path / "sub", ref, head, 10, exclude=mine) == [
+        "README.md",
+        "sub/made.py",
+    ]
+    sha = git_ops.chain_commit(
+        tmp_path / "sub", "step", ref=ref, fallback_parent=head, exclude=mine
+    )
+    assert sha is not None
+    files = _run_git(tmp_path, "ls-tree", "-r", "--name-only", sha).splitlines()
+    assert files == ["README.md", "sub/made.py"], files
+    assert git_ops.chain_dirty(tmp_path, ref, head, exclude=mine) is False
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "mine\n"
 
 
 def _run_git(repo: Path, *args: str) -> str:

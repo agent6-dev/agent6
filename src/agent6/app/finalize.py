@@ -9,6 +9,7 @@ import contextlib
 import json
 import shlex
 import subprocess
+from collections.abc import Collection
 from pathlib import Path
 
 from agent6.app.merge import execute_merge
@@ -35,7 +36,7 @@ from agent6.git_ops import (
 from agent6.git_ops import (
     status as git_status,
 )
-from agent6.sessions.layout import LOGS_NAME, SessionLayout
+from agent6.sessions.layout import LOGS_NAME, SessionLayout, read_untracked_at_start
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
 from agent6.viewmodel.format import format_cost
@@ -101,7 +102,8 @@ def stranded_edits(result: SessionResult, layout: SessionLayout) -> bool:
         return False
     dirty = False
     with contextlib.suppress(GitError):
-        dirty = not git_status(Path.cwd()).is_clean
+        exclude = read_untracked_at_start(layout.session_dir)
+        dirty = not git_status(Path.cwd(), exclude=exclude).is_clean
     return dirty
 
 
@@ -325,7 +327,8 @@ def _print_run_branch_footer(
         # the same predicate); a clean tree means the run recorded nothing. A
         # tree git cannot READ gets the honest unknown, never a claim.
         try:
-            tree_clean: bool | None = git_status(Path.cwd()).is_clean
+            exclude = read_untracked_at_start(layout.session_dir)
+            tree_clean: bool | None = git_status(Path.cwd(), exclude=exclude).is_clean
         except GitError as exc:
             tree_clean = None
             reporter.out(
@@ -504,12 +507,15 @@ def finalize_auto_stash(
     run_branch: str | None,
     auto_pop: bool,
     session_id: str,
+    exclude: Collection[str] = (),
     reporter: Reporter,
 ) -> None:
     """Restore or report the pre-run auto-stash so the user's work is never left in a
     hidden stash. With auto_pop off, print how to pop it. With auto_pop on, pop it
     onto the base branch when that is safe (clean worktree, conflict-free apply);
     otherwise leave the stash with a message. Never reset --hard (refused).
+    *exclude* is the run's `untracked_at_start`: the operator's own untracked
+    files do not make the tree unclean for the pop.
 
     The stash is found by the run-id message the run pushed it with, and
     restored by its immutable sha, never by position: a stash pushed DURING
@@ -530,7 +536,7 @@ def finalize_auto_stash(
         reporter.err(f"[agent6] pre-run changes are stashed; restore them with: {recover}")
         return
     try:
-        st = git_status(cwd)
+        st = git_status(cwd, exclude=exclude)
     except GitError:
         st = None
     if st is None or not st.is_clean:

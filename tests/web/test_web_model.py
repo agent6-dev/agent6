@@ -391,9 +391,16 @@ def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
     d = _bucket(tmp_path, "runs") / "parked1"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
-        json.dumps({"session_id": "parked1", "parked_task": "do the thing"}), encoding="utf-8"
+        json.dumps(
+            {
+                "session_id": "parked1",
+                "parked_task": "do the thing",
+                "parked_reason": "checkout busy",
+            }
+        ),
+        encoding="utf-8",
     )
-    assert model.session_snapshot(d)["status_label"] == "parked · resume to start"
+    assert model.session_snapshot(d)["status_label"] == "parked · checkout busy"
     (hub_row,) = model.hub_payload(tmp_path)["sessions"]
     assert hub_row["status"] == "parked"  # the two surfaces lead with one word
 

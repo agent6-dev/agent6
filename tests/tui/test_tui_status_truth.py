@@ -38,6 +38,7 @@ def _mk_parked(d: Path) -> None:
                 "mode": "run",
                 "user_task": "fix the flaky test",
                 "parked_task": "fix the flaky test",
+                "parked_reason": "checkout busy",
             }
         ),
         encoding="utf-8",
@@ -71,8 +72,8 @@ async def _open_dash(app: Agent6TUI, pilot: Any) -> None:
 
 
 def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: Any) -> None:
-    """A parked run's dashboard leads with the hub's words ("parked · resume to
-    start"), the stream pane says parked (never the "(waiting for the model…)"
+    """A parked run's dashboard leads with the hub's words ("parked · checkout
+    busy"), the stream pane says parked (never the "(waiting for the model…)"
     lie -- no model is coming), and the composer routes to resume, exactly like
     a finished run's."""
     from agent6.ui.tui import app as app_mod
@@ -92,7 +93,7 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
             await _open_dash(app, pilot)
             assert app.session_controllable() is False  # resume is the one action
             top = str(app._dash.query_one("#top", Static).render())
-            assert "parked · resume to start" in top
+            assert "parked · checkout busy" in top
             assert "task: fix the flaky test" in top  # manifest fallback, not a blank line
             body = str(app._dash.query_one("#stream-body", Static).render())
             assert "parked" in body
