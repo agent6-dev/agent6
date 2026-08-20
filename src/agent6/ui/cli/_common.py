@@ -23,8 +23,6 @@ from agent6.sessions.layout import (
     bucket_dir,
     layout_of,
 )
-from agent6.viewmodel import is_session_husk, newest_session_dir, session_mtime
-from agent6.viewmodel.format import StatusLevel, status_label, status_level
 
 
 def _sub(
@@ -208,6 +206,8 @@ def resolve_session_layout(
     `sessions rm`, whose whole job is deleting one.
     """
     layout = resolve_session(resolved_state_dir(repo_root), query)
+    from agent6.viewmodel import is_session_husk  # noqa: PLC0415
+
     if not allow_husk and is_session_husk(layout.session_dir):
         raise SessionIdError(
             f"session {layout.session_id} crashed before it ever started (no log, nothing"
@@ -233,6 +233,8 @@ def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
     ]
     if not candidates:
         return None
+    from agent6.viewmodel import session_mtime  # noqa: PLC0415
+
     return layout_of(max(candidates, key=session_mtime))
 
 
@@ -251,6 +253,8 @@ def resolve_or_newest_layout(
     """
     if session_id:
         return resolve_session_layout(repo_root, session_id, allow_husk=allow_husk)
+    from agent6.viewmodel import newest_session_dir  # noqa: PLC0415
+
     newest = newest_session_dir(session_bucket_dirs(repo_root))
     if newest is None:
         return None
@@ -290,7 +294,7 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
 # The ANSI SGR for each `viewmodel.format.status_level`, tty only: a listing
 # where a provider_error death reads as plain text is how dead runs went
 # unnoticed. The TUI's Rich map and the web's pill classes are the siblings.
-_LEVEL_SGR: dict[StatusLevel, str] = {
+_LEVEL_SGR: dict[str, str] = {
     "ok": "32",
     "info": "35",  # magenta (mauve on the TUI/web)
     "active": "1;36",
@@ -306,6 +310,8 @@ def styled_status(
     """(possibly-colored label, plain label) for a listing row -- the plain form
     drives width math. *label* overrides the text (the sessions listing's
     mode-folded cell); the colour always follows the status word."""
+    from agent6.viewmodel.format import status_label, status_level  # noqa: PLC0415
+
     text = status_label(status, reason) if label is None else label
     sgr_code = _LEVEL_SGR[status_level(status)]
     if color and sgr_code:

@@ -221,7 +221,7 @@ def test_plan_takes_tui_like_run(monkeypatch: pytest.MonkeyPatch) -> None:
         seen.update(kw, task=task)
         return 0
 
-    monkeypatch.setattr(cli, "_cmd_run", _fake_run)
+    monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _fake_run)
 
     def _no_prompt(_args: object, rc: int, _sid: str) -> int:
         return rc

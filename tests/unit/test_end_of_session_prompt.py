@@ -70,7 +70,7 @@ def test_follow_up_legs_run_under_the_invocations_flags(
 
     layout = _seed_session(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
     seen: list[dict[str, object]] = []
 
     def fake_resume(_cfg: Path | None, session_id: str, **kw: object) -> int:
@@ -163,7 +163,6 @@ def test_no_terminal_ends_the_session_as_before(
 ) -> None:
     """A headless run (CI, a detached spawn) has nobody to type: it must end,
     not block on a prompt nothing will answer."""
-    from agent6.ui import cli
     from agent6.ui.cli import _prompt_for_the_next_input  # pyright: ignore[reportPrivateUsage]
 
     # A real session dir so the ONLY short-circuit under test is the tty guard;
@@ -171,14 +170,14 @@ def test_no_terminal_ends_the_session_as_before(
     # into `cli`, not the source module).
     layout = _seed_session(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "prompting_is_possible", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: False)
     called: list[str] = []
 
     def spy(**_kw: object) -> int:
         called.append("asked")
         return 0
 
-    monkeypatch.setattr(cli, "end_of_session_prompt", spy)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
     assert _prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0
     assert not called
 
@@ -228,7 +227,7 @@ def test_a_refused_runs_discarded_id_ends_quietly(
     from agent6.ui import cli
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
     assert cli._prompt_for_the_next_input(_run_args(), 2, "gone-run-QQQQQQ") == 2  # pyright: ignore[reportPrivateUsage]
 
 
@@ -248,19 +247,19 @@ def test_a_resumed_leg_ends_by_asking_like_a_fresh_one(
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
 
     def _resumed(*_a: object, **_k: object) -> int:
         return 0
 
-    monkeypatch.setattr(cli, "_cmd_resume", _resumed)
+    monkeypatch.setattr("agent6.ui.cli.resume._cmd_resume", _resumed)
     asked: list[str] = []
 
     def spy(**kw: object) -> int:
         asked.append(str(kw["session_id"]))
         return 0
 
-    monkeypatch.setattr(cli, "end_of_session_prompt", spy)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
     args = _run_args(session_id="resumed-run", force=False, tui=False, preset="", steer="")
     assert cli._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
     assert asked == (["resumed-run-AAAAAA"] if asks else [])
@@ -312,12 +311,12 @@ def test_a_detached_run_is_not_followed_by_the_prompt(
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
 
     def _must_not_prompt(**_kw: object) -> int:
         pytest.fail("prompted")
 
-    monkeypatch.setattr(cli, "end_of_session_prompt", _must_not_prompt)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", _must_not_prompt)
     args = _run_args()
     assert cli._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
 
@@ -346,14 +345,14 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
     asked: list[str] = []
 
     def spy(**_kw: object) -> int:
         asked.append("asked")
         return 0
 
-    monkeypatch.setattr(cli, "end_of_session_prompt", spy)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
     assert cli._prompt_for_the_next_input(_run_args(), 2, layout.session_id) == 2  # pyright: ignore[reportPrivateUsage]
     assert asked == []
 
@@ -371,13 +370,13 @@ def test_an_undone_run_is_not_followed_by_the_prompt(
         fh.write('{"type": "session.undone", "new_session_id": "fork-BBBBBB"}\n')
         fh.write('{"type": "session.end", "reason": "undone", "all_passed": false}\n')
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
     asked: list[str] = []
 
     def spy(**_kw: object) -> int:
         asked.append("asked")
         return 0
 
-    monkeypatch.setattr(cli, "end_of_session_prompt", spy)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
     assert cli._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
     assert asked == []

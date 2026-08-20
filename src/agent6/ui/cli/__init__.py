@@ -13,120 +13,17 @@ import tempfile
 import traceback
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import argcomplete
 
-from agent6.app._setup import (
-    BudgetOverrides,
-    SandboxOverrides,
-)
-from agent6.config import ConfigError
-from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.errors import OperatorError, read_operator_file
+from agent6.errors import OperatorError
 from agent6.events import EventWriteError
-from agent6.sessions.id import SessionIdError, unused_session_id
-from agent6.sessions.ipc import listening_ports, read_session_netns_pid
-from agent6.sessions.layout import SessionLayout, session_layout
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.types import session_bucket
-from agent6.ui.acp import serve_acp
-from agent6.ui.cli._ask import (
-    build_ask_session_digest,
-    cmd_ask_list,
-    seed_files,
-)
-from agent6.ui.cli._common import (
-    _enforce_root_policy,
-    _plans_dir,
-    resolve_or_newest_layout,
-    session_bucket_dirs,
-)
-from agent6.ui.cli._session_prompt import (
-    end_of_session_prompt,
-    follow_up_on_offer,
-    prompting_is_possible,
-)
-from agent6.ui.cli.check_cmds import _cmd_check
-from agent6.ui.cli.completions_cmd import cmd_completions
-from agent6.ui.cli.config_cmds import (
-    _cmd_config_add,
-    _cmd_config_fill,
-    _cmd_config_fix,
-    _cmd_config_get,
-    _cmd_config_path,
-    _cmd_config_presets,
-    _cmd_config_remove,
-    _cmd_config_set,
-    _cmd_config_show,
-    _cmd_config_unset,
-)
-from agent6.ui.cli.connect import _cmd_connect
-from agent6.ui.cli.fork import _cmd_fork
-from agent6.ui.cli.history_cmds import (
-    _cmd_history_graph,
-    _cmd_history_search,
-    _cmd_history_transcript,
-)
-from agent6.ui.cli.init_cmds import _cmd_init
-from agent6.ui.cli.machine_check import (
-    _cmd_machine_check,
-    _cmd_machine_graph,
-    _cmd_machine_test,
-)
-from agent6.ui.cli.machine_cmds import (
-    _cmd_machine_create,
-    _cmd_machine_list,
-    _cmd_machine_poke,
-    _cmd_machine_replay,
-    _cmd_machine_run,
-    _cmd_machine_status,
-    _cmd_machine_stop,
-)
-from agent6.ui.cli.mcp_cmds import _cmd_mcp_serve
-from agent6.ui.cli.mcp_connect import cmd_mcp_connect, cmd_mcp_list
-from agent6.ui.cli.memory_cmds import (
-    _cmd_memory_add,
-    _cmd_memory_list,
-    _cmd_memory_rm,
-    _cmd_memory_show,
-)
-from agent6.ui.cli.model import _cmd_model
-from agent6.ui.cli.net_cmds import exec_in_session, forward, no_session_network_reason
+from agent6.ui.cli._common import _enforce_root_policy
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
-from agent6.ui.cli.plan_watch import (
-    _cmd_plan_edit,
-    _cmd_plan_show,
-    _cmd_tui,
-    _most_recent_plan_session_id,
-    _resolve_plan_session_id,
-)
-from agent6.ui.cli.prompt_cmds import _cmd_prompt_show
-from agent6.ui.cli.resume import _cmd_resume
-from agent6.ui.cli.review_cmds import _cmd_review
-from agent6.ui.cli.run import _cmd_run
-from agent6.ui.cli.sessions_cmds import (
-    _cmd_commits,
-    _cmd_compare,
-    _cmd_diff,
-    _cmd_list,
-    _cmd_sessions_dir,
-    _cmd_sessions_rm,
-    _cmd_stop,
-)
-from agent6.ui.cli.sessions_merge import _cmd_merge, _cmd_prune
-from agent6.ui.cli.sessions_show import _cmd_status
-from agent6.ui.cli.skills_cmds import (
-    _cmd_skills_disable,
-    _cmd_skills_enable,
-    _cmd_skills_install,
-    _cmd_skills_list,
-    _cmd_skills_remove,
-    _cmd_skills_update,
-)
-from agent6.ui.cli.system_cmds import _cmd_system_apparmor
-from agent6.ui.cli.watch import _cmd_watch_target
-from agent6.ui.cli.web_cmds import _cmd_web
-from agent6.viewmodel.listing import newest_session_dir
+
+if TYPE_CHECKING:
+    from agent6.sessions.layout import SessionLayout
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -188,6 +85,15 @@ def cli_main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
+    from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
+    from agent6.errors import read_operator_file  # noqa: PLC0415
+    from agent6.ui.cli._common import _plans_dir  # noqa: PLC0415
+    from agent6.ui.cli.plan_watch import (  # noqa: PLC0415
+        _most_recent_plan_session_id,
+        _resolve_plan_session_id,
+    )
+    from agent6.ui.cli.run import _cmd_run  # noqa: PLC0415
+
     if args.interactive and not sys.stdin.isatty():
         # -i is explicit and needs the terminal its help names; run on a pipe,
         # the REPL's first prompt reads EOF and stops the run mid-task after
@@ -286,6 +192,10 @@ def _minted_session_id(explicit: str, mode: str) -> str:
     that one rather than whatever the repo's newest happens to be. Minting
     reserves nothing on disk, so a run that refuses leaves no session behind.
     """
+    from agent6.config.layer import resolved_state_dir  # noqa: PLC0415
+    from agent6.sessions.id import unused_session_id  # noqa: PLC0415
+    from agent6.types import session_bucket  # noqa: PLC0415
+
     if explicit:
         return explicit
     return unused_session_id(resolved_state_dir(Path.cwd()), session_bucket(mode))
@@ -306,6 +216,16 @@ def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: st
     set them for the run, and a leg that dropped them ran under the config's
     defaults instead.
     """
+    from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
+    from agent6.sessions.id import SessionIdError  # noqa: PLC0415
+    from agent6.sessions.manifest import ManifestError, read_manifest  # noqa: PLC0415
+    from agent6.ui.cli._common import resolve_or_newest_layout  # noqa: PLC0415
+    from agent6.ui.cli._session_prompt import (  # noqa: PLC0415
+        end_of_session_prompt,
+        follow_up_on_offer,
+        prompting_is_possible,
+    )
+
     if not prompting_is_possible():
         return rc
     try:
@@ -336,6 +256,10 @@ def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: st
 
 
 def _dispatch_plan(args: argparse.Namespace) -> int:
+    from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
+    from agent6.ui.cli.plan_watch import _cmd_plan_edit, _cmd_plan_show  # noqa: PLC0415
+    from agent6.ui.cli.run import _cmd_run  # noqa: PLC0415
+
     if args.plan_command == "show":
         return _cmd_plan_show(args.session_id)
     if args.plan_command == "edit":
@@ -361,6 +285,14 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
 
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
+    from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
+    from agent6.ui.cli._ask import (  # noqa: PLC0415
+        build_ask_session_digest,
+        cmd_ask_list,
+        seed_files,
+    )
+    from agent6.ui.cli.run import _cmd_run  # noqa: PLC0415
+
     if args.ask_command == "list":
         return cmd_ask_list()
     # REPL when -i is given, or no question + an interactive stdin.
@@ -398,6 +330,8 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
 
 
 def _dispatch_attach(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.watch import _cmd_watch_target  # noqa: PLC0415
+
     return _cmd_watch_target(
         args.target,
         tui=args.tui,
@@ -411,6 +345,11 @@ def _dispatch_attach(args: argparse.Namespace) -> int:
 def _resolve_target(target: str) -> SessionLayout | None:
     """The named session, or the newest when the operator omitted one -- the
     same resolution `attach` uses, so the verbs agree about "the session"."""
+    from agent6.config.layer import resolved_state_dir  # noqa: PLC0415
+    from agent6.sessions.layout import session_layout  # noqa: PLC0415
+    from agent6.ui.cli._common import session_bucket_dirs  # noqa: PLC0415
+    from agent6.viewmodel.listing import newest_session_dir  # noqa: PLC0415
+
     state_dir = resolved_state_dir(Path.cwd())
     if target:
         return session_layout(state_dir, target)
@@ -419,6 +358,10 @@ def _resolve_target(target: str) -> SessionLayout | None:
 
 
 def _dispatch_exec(args: argparse.Namespace) -> int:
+    from agent6.config import ConfigError  # noqa: PLC0415
+    from agent6.config.layer import load_effective  # noqa: PLC0415
+    from agent6.ui.cli.net_cmds import exec_in_session  # noqa: PLC0415
+
     # `[SESSION --] CMD...`: only the FIRST `--` separates the optional session
     # from the command, and the command rides verbatim (a later `--`, as in
     # `git log -- path`, belongs to it). No `--` at all = the whole tail is the
@@ -453,6 +396,9 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
 
 
 def _dispatch_forward(args: argparse.Namespace) -> int:
+    from agent6.sessions.ipc import listening_ports, read_session_netns_pid  # noqa: PLC0415
+    from agent6.ui.cli.net_cmds import forward, no_session_network_reason  # noqa: PLC0415
+
     target, port = args.target, args.port
     if port is None and target.isdigit():
         # `forward 8000` means "port 8000 of the newest session": a bare number
@@ -478,6 +424,22 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
 
 
 def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    from agent6.ui.cli.history_cmds import (  # noqa: PLC0415
+        _cmd_history_graph,
+        _cmd_history_transcript,
+    )
+    from agent6.ui.cli.sessions_cmds import (  # noqa: PLC0415
+        _cmd_commits,
+        _cmd_compare,
+        _cmd_diff,
+        _cmd_list,
+        _cmd_sessions_dir,
+        _cmd_sessions_rm,
+        _cmd_stop,
+    )
+    from agent6.ui.cli.sessions_merge import _cmd_merge, _cmd_prune  # noqa: PLC0415
+    from agent6.ui.cli.sessions_show import _cmd_status  # noqa: PLC0415
+
     if args.sessions_command in (None, "list"):
         return _cmd_list()
     if args.sessions_command == "show":
@@ -518,14 +480,20 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
 
 def _dispatch_tui(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.plan_watch import _cmd_tui  # noqa: PLC0415
+
     return _cmd_tui(args.config)
 
 
 def _dispatch_completions(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.completions_cmd import cmd_completions  # noqa: PLC0415
+
     return cmd_completions(args.shell, print_only=args.print_only)
 
 
 def _dispatch_web(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.web_cmds import _cmd_web  # noqa: PLC0415
+
     return _cmd_web(
         args.target,
         config_path=args.config,
@@ -536,12 +504,20 @@ def _dispatch_web(args: argparse.Namespace) -> int:
 
 
 def _dispatch_prompt(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.prompt_cmds import _cmd_prompt_show  # noqa: PLC0415
+
     if args.prompt_command == "show":
         return _cmd_prompt_show(args.config, mode=args.mode, as_json=args.json)
     raise AssertionError("unreachable")  # pragma: no cover -- prompt subparser is required
 
 
 def _dispatch_resume(args: argparse.Namespace) -> int:
+    from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
+    from agent6.sessions.id import SessionIdError  # noqa: PLC0415
+    from agent6.sessions.manifest import ManifestError, read_manifest  # noqa: PLC0415
+    from agent6.ui.cli._common import resolve_or_newest_layout  # noqa: PLC0415
+    from agent6.ui.cli.resume import _cmd_resume  # noqa: PLC0415
+
     if getattr(args, "interactive", False) and not sys.stdin.isatty():
         # Same terminal need as `run -i` (the REPL reads stdin).
         print(
@@ -577,6 +553,9 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
 
 
 def _dispatch_fork(args: argparse.Namespace) -> int:
+    from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
+    from agent6.ui.cli.fork import _cmd_fork  # noqa: PLC0415
+
     return _cmd_fork(
         args.config,
         args.session_id,
@@ -591,6 +570,19 @@ def _dispatch_fork(args: argparse.Namespace) -> int:
 
 
 def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    from agent6.ui.cli.config_cmds import (  # noqa: PLC0415
+        _cmd_config_add,
+        _cmd_config_fill,
+        _cmd_config_fix,
+        _cmd_config_get,
+        _cmd_config_path,
+        _cmd_config_presets,
+        _cmd_config_remove,
+        _cmd_config_set,
+        _cmd_config_show,
+        _cmd_config_unset,
+    )
+
     if args.config_command == "show":
         return _cmd_config_show(
             args.config, as_json=args.as_json, keys=args.keys, descriptions=args.descriptions
@@ -621,16 +613,22 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
 
 def _dispatch_check(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.check_cmds import _cmd_check  # noqa: PLC0415
+
     return _cmd_check(args.config, section=args.section)
 
 
 def _dispatch_connect(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.connect import _cmd_connect  # noqa: PLC0415
+
     return _cmd_connect(
         provider=args.provider, to_repo=args.repo, verify=args.verify, logout=args.logout
     )
 
 
 def _dispatch_model(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.model import _cmd_model  # noqa: PLC0415
+
     return _cmd_model(
         args.config,
         role=args.role,
@@ -642,6 +640,13 @@ def _dispatch_model(args: argparse.Namespace) -> int:
 
 
 def _dispatch_memory(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.memory_cmds import (  # noqa: PLC0415
+        _cmd_memory_add,
+        _cmd_memory_list,
+        _cmd_memory_rm,
+        _cmd_memory_show,
+    )
+
     if args.memory_command == "add":
         return _cmd_memory_add(args.name, args.body)
     if args.memory_command == "list":
@@ -654,6 +659,15 @@ def _dispatch_memory(args: argparse.Namespace) -> int:
 
 
 def _dispatch_skills(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.skills_cmds import (  # noqa: PLC0415
+        _cmd_skills_disable,
+        _cmd_skills_enable,
+        _cmd_skills_install,
+        _cmd_skills_list,
+        _cmd_skills_remove,
+        _cmd_skills_update,
+    )
+
     if args.skills_command == "install":
         return _cmd_skills_install(args.url, force=args.force, config_path=args.config)
     if args.skills_command == "update":
@@ -672,16 +686,22 @@ def _dispatch_skills(args: argparse.Namespace) -> int:
 
 
 def _dispatch_history(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.history_cmds import _cmd_history_search  # noqa: PLC0415
+
     if args.history_command == "search":
         return _cmd_history_search(args.query, fixed=not args.regex, session_id=args.session)
     raise AssertionError("unreachable")  # pragma: no cover -- history subparser is required
 
 
 def _dispatch_init(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.init_cmds import _cmd_init  # noqa: PLC0415
+
     return _cmd_init(ecosystem=args.ecosystem, assume_yes=args.yes, config_path=args.config)
 
 
 def _dispatch_review(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.review_cmds import _cmd_review  # noqa: PLC0415
+
     return _cmd_review(
         args.config,
         base=args.base,
@@ -694,6 +714,9 @@ def _dispatch_review(args: argparse.Namespace) -> int:
 
 
 def _dispatch_mcp(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.mcp_cmds import _cmd_mcp_serve  # noqa: PLC0415
+    from agent6.ui.cli.mcp_connect import cmd_mcp_connect, cmd_mcp_list  # noqa: PLC0415
+
     if args.mcp_command == "serve":
         return _cmd_mcp_serve(args.config)
     if args.mcp_command == "connect":
@@ -710,6 +733,21 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
 
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    from agent6.ui.cli.machine_check import (  # noqa: PLC0415
+        _cmd_machine_check,
+        _cmd_machine_graph,
+        _cmd_machine_test,
+    )
+    from agent6.ui.cli.machine_cmds import (  # noqa: PLC0415
+        _cmd_machine_create,
+        _cmd_machine_list,
+        _cmd_machine_poke,
+        _cmd_machine_replay,
+        _cmd_machine_run,
+        _cmd_machine_status,
+        _cmd_machine_stop,
+    )
+
     if args.machine_command == "list":
         return _cmd_machine_list()
     if args.machine_command == "check":
@@ -742,7 +780,15 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     raise AssertionError("unreachable")  # pragma: no cover -- machine subparser is required
 
 
+def _dispatch_acp(args: argparse.Namespace) -> int:
+    from agent6.ui.acp import serve_acp  # noqa: PLC0415
+
+    return serve_acp(config_path=args.config)
+
+
 def _dispatch_system(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.system_cmds import _cmd_system_apparmor  # noqa: PLC0415
+
     if args.system_command == "apparmor":
         return _cmd_system_apparmor(args.action)
     raise AssertionError("unreachable")  # pragma: no cover -- system subparser is required
@@ -775,7 +821,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "review": _dispatch_review,
     "machine": _dispatch_machine,
     "mcp": _dispatch_mcp,
-    "acp": lambda args: serve_acp(config_path=args.config),
+    "acp": _dispatch_acp,
     "system": _dispatch_system,
 }
 

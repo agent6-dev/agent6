@@ -311,8 +311,8 @@ def test_i_on_a_pipe_refuses_up_front(
     def _must_not_run(*_a: object, **_k: object) -> int:
         pytest.fail("the run must not start")
 
-    monkeypatch.setattr(cli, "_cmd_run", _must_not_run)
-    monkeypatch.setattr(cli, "_cmd_resume", _must_not_run)
+    monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _must_not_run)
+    monkeypatch.setattr("agent6.ui.cli.resume._cmd_resume", _must_not_run)
     assert cli.main(["run", "-i", "do the thing"]) == 2
     assert "-i needs a TTY" in capsys.readouterr().err
     assert cli.main(["resume", "some-run-AAAAAA", "-i"]) == 2

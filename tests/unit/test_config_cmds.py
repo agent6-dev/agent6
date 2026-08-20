@@ -120,7 +120,7 @@ def test_parallel_models_completer_completes_after_last_comma(
         return {"w": ["gpt-5", "gpt-5-mini", "opus"], "s": ["gpt-sibling-only"]}[str(provider)]
 
     monkeypatch.setattr(completers, "load_effective", _eff)
-    monkeypatch.setattr(completers, "_models_for", _models)
+    monkeypatch.setattr("agent6.ui.cli.model._models_for", _models)
     assert completers._complete_parallel_models("gpt") == [  # pyright: ignore[reportPrivateUsage]
         "gpt-5",
         "gpt-5-mini",

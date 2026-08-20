@@ -11,7 +11,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import (
     Config,
     ConfigError,
@@ -24,17 +23,10 @@ from agent6.config.layer import (
     preset_catalog,
     resolved_state_dir,
 )
-from agent6.config.write import PROVIDER_DEFAULTS
-from agent6.models.choices import config_value_choices
-from agent6.sessions.ipc import listening_ports
-from agent6.sessions.layout import machines_root, session_layout
 from agent6.ui.cli._common import (
     _plans_dir,
     session_bucket_dirs,
 )
-from agent6.ui.cli.model import _connected_providers, _models_for
-from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
-from agent6.viewmodel.config_view import build_config_view
 
 
 def _explicit_config(kw: dict[str, object]) -> Path | None:
@@ -67,6 +59,9 @@ def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
 @_never_raises
 def _complete_providers(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: connected provider names + known presets."""
+    from agent6.config.write import PROVIDER_DEFAULTS  # noqa: PLC0415
+    from agent6.ui.cli.model import _connected_providers  # noqa: PLC0415
+
     names = set(_connected_providers(None)) | set(PROVIDER_DEFAULTS)
     return sorted(n for n in names if n.startswith(prefix))
 
@@ -82,6 +77,8 @@ def _complete_presets(prefix: str, **kw: object) -> list[str]:
 @_never_raises
 def _complete_skills(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: installed + extra_dirs skill names."""
+    from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion  # noqa: PLC0415
+
     return [n for n in resolved_skill_names_for_completion(Path.cwd()) if n.startswith(prefix)]
 
 
@@ -93,6 +90,8 @@ def _complete_models(
     provider = getattr(parsed_args, "provider", "") or ""
     if not provider:
         return []
+    from agent6.ui.cli.model import _models_for  # noqa: PLC0415
+
     return [m for m in _models_for(None, provider) if m.startswith(prefix)]
 
 
@@ -107,6 +106,8 @@ def _all_parallel_model_names(config_path: Path | None = None) -> list[str]:
     worker = eff.config.models.worker
     if worker is None:
         return []
+    from agent6.ui.cli.model import _models_for  # noqa: PLC0415
+
     return sorted(set(_models_for(None, worker.provider)))
 
 
@@ -131,6 +132,8 @@ def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str
     """Every enum leaf's allowed values, read from the schema through the same
     view the config surfaces render. A hand-kept copy drifted: leaves added
     since offered nothing on TAB."""
+    from agent6.viewmodel.config_view import build_config_view  # noqa: PLC0415
+
     try:
         view = build_config_view(load_effective(Path.cwd(), config_path))
     except ConfigError:
@@ -215,6 +218,8 @@ def _complete_config_values(
         choices += list(_EXTRA_BODY_RECIPES)
     if not choices:
         with contextlib.suppress(ConfigError):
+            from agent6.models.choices import config_value_choices  # noqa: PLC0415
+
             choices = config_value_choices(load_effective(Path.cwd(), config_path), key)
     return [v for v in choices if v.startswith(prefix)]
 
@@ -257,6 +262,9 @@ def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: obje
     inside the run's network can see it.
     """
     target = str(getattr(parsed_args, "target", "") or "")
+    from agent6.sessions.ipc import listening_ports  # noqa: PLC0415
+    from agent6.sessions.layout import session_layout  # noqa: PLC0415
+
     layout = session_layout(resolved_state_dir(Path.cwd()), target) if target else None
     if layout is None:
         return []
@@ -272,6 +280,8 @@ def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
     verb accepts, no less and no more.
     """
     out: list[str] = []
+    from agent6.app.resume import resumable_bucket_dirs  # noqa: PLC0415
+
     for bucket in resumable_bucket_dirs(resolved_state_dir(Path.cwd())):
         if not bucket.is_dir():
             continue
@@ -295,6 +305,8 @@ def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
 @_never_raises
 def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: live machine instance ids (dirs under the per-repo state dir's machines/)."""
+    from agent6.sessions.layout import machines_root  # noqa: PLC0415
+
     base = machines_root(resolved_state_dir(Path.cwd()))
     if not base.is_dir():
         return []
@@ -313,6 +325,8 @@ def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: machine `*.asm.toml` files under cwd and the machines dir."""
     out: set[str] = set()
+    from agent6.sessions.layout import machines_root  # noqa: PLC0415
+
     for base in (Path.cwd(), machines_root(resolved_state_dir(Path.cwd()))):
         if base.is_dir():
             out.update(str(p) for p in base.rglob("*.asm.toml"))

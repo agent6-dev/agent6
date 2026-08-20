@@ -41,9 +41,9 @@ def seen(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         return type("E", (), {"config": None})()
 
     monkeypatch.setattr(cli, "_resolve_target", _resolve)
-    monkeypatch.setattr(cli, "exec_in_session", _exec)
-    monkeypatch.setattr(cli, "forward", _forward)
-    monkeypatch.setattr(cli, "load_effective", _effective)
+    monkeypatch.setattr("agent6.ui.cli.net_cmds.exec_in_session", _exec)
+    monkeypatch.setattr("agent6.ui.cli.net_cmds.forward", _forward)
+    monkeypatch.setattr("agent6.config.layer.load_effective", _effective)
     return calls
 
 
