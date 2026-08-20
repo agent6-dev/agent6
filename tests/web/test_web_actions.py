@@ -232,7 +232,7 @@ def test_machine_steer_refuses_when_no_state_is_executing(tmp_path: Path) -> Non
 
 
 def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
-    """A run killed while blocked on a prompt still renders its Approve/Deny box
+    """A run killed while blocked on a prompt still renders its Allow/Deny box
     (the client filters on `answered`, not liveness), and these two POSTs wrote
     the answer and reported success with no worker left to consume it -- the
     same shape as the typed steer that used to reach a corpse. Every sibling

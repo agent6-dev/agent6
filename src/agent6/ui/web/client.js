@@ -1051,7 +1051,7 @@ function paintPrompts(cards, s) {
       const box = el('div', 'prompt-box');
       box.appendChild(el('div', 'q', ap.prompt || 'Approve this action?'));
       const row = el('div', 'form-row');
-      const yes = el('button', 'primary', 'Approve');
+      const yes = el('button', 'primary', 'Allow');
       const no = el('button', 'danger', 'Deny');
       const send = (answer) => async () => { try { await postJSON(base + '/approve', { id: ap.id, answer, ...extra }); } catch (e) { toast(e.message, true); } };
       yes.onclick = send('yes'); no.onclick = send('no');
@@ -1114,7 +1114,7 @@ function paintRun(cards, s) {
   // Stop/compact/answers only mean something on a live run; a finished run
   // ignores the bridge markers. The composer flips to resume mode instead of
   // disabling, and a dead run's prompt boxes reconcile away like the machine
-  // view's: the server refuses the POST, so live-looking Approve/Deny beside
+  // view's: the server refuses the POST, so live-looking Allow/Deny beside
   // a "stale" header could only manufacture a red toast.
   const isDead = notLive(s);
   if (!cards._readOnly) paintPrompts(cards, isDead ? {} : s);
