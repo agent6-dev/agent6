@@ -156,6 +156,39 @@ def test_default_verb_sets_are_the_parsers_real_subcommands() -> None:
         assert default in real
 
 
+def test_bare_default_groups_are_those_whose_default_verb_takes_no_positional() -> None:
+    """The set is derived from the parser: a group is in it exactly when its
+    default verb accepts no positional, so a bare word after the group can
+    only be a mistyped verb."""
+    from agent6.ui.cli.parser import (
+        _BARE_DEFAULT_GROUPS,  # pyright: ignore[reportPrivateUsage]
+        _DEFAULT_VERBS,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    groups = _subcommands(build_parser())
+    bare = {
+        group
+        for group, (default, _verbs) in _DEFAULT_VERBS.items()
+        if not any(
+            not a.option_strings and a.dest != "==SUPPRESS=="
+            for a in _subcommands(groups[group])[default]._actions  # pyright: ignore[reportPrivateUsage]
+        )
+    }
+    assert bare == _BARE_DEFAULT_GROUPS
+
+
+def test_a_mistyped_verb_after_a_bare_group_names_the_choices(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`agent6 skills show`: no verb `show`, and `skills list` takes nothing,
+    so argparse names the verbs (it read "unrecognized arguments: show")."""
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(_inject_default_verb(["skills", "show"]))
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "invalid choice: 'show'" in err and "install" in err
+
+
 @pytest.mark.parametrize(
     ("argv", "dest", "verb"),
     [

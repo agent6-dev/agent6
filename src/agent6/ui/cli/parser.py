@@ -55,6 +55,11 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     ),
 }
 
+# The groups whose default verb takes no positional: a bare word after them is
+# a mistyped verb, left for argparse to name the choices (injecting the verb
+# made `skills show` read "unrecognized arguments: show").
+_BARE_DEFAULT_GROUPS: frozenset[str] = frozenset({"skills", "memory", "mcp", "prompt", "machine"})
+
 
 # Top-level options that may precede the subcommand. `--config` takes a value;
 # the rest are flags. _inject_default_verb skips past these to find the command.
@@ -117,6 +122,8 @@ def _inject_default_verb(argv: list[str]) -> list[str]:
     # the most recent plan / start the ask REPL) still runs; only an explicit
     # verb or -h/--help is left alone.
     if rest and (rest[0] in verbs or rest[0] in ("-h", "--help")):
+        return argv
+    if rest and argv[ci] in _BARE_DEFAULT_GROUPS and not rest[0].startswith("-"):
         return argv
     return [*argv[: ci + 1], default_verb, *rest]
 
