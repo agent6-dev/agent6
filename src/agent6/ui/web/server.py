@@ -458,6 +458,11 @@ class _Handler(BaseHTTPRequestHandler):
         elif verb == "rm":
             self._read_body()  # drain the `{}` body (keep-alive framing)
             ok, msg = actions.remove_session(self.cwd, session_id, self.config_path)
+        elif verb == "run_plan":
+            self._read_body()  # drain the `{}` body (keep-alive framing)
+            payload, err = actions.run_plan(self.cwd, session_id, self.config_path)
+            self._ok_or_err(payload is not None, payload or {}, err)
+            return
         else:
             self._post_not_found(f"run/{session_id}/{verb}")
             return

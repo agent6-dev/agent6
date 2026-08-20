@@ -262,3 +262,50 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
             assert spawned == [(run.name, "")]
 
     asyncio.run(scenario())
+
+
+def test_run_this_plan_spawns_from_plan_detached(tmp_path: Path, monkeypatch: Any) -> None:
+    """Run > Run this plan on a finished plan spawns `agent6 run --from-plan
+    <id>` with the detached env; a non-plan session refuses without spawning."""
+    seen: dict[str, Any] = {}
+
+    def _fake_spawn(argv: list[str], _cwd: Path, **kw: Any) -> tuple[Path | None, str]:
+        seen["argv"] = argv
+        seen["env"] = kw.get("env")
+        return tmp_path / "sessions" / "runs" / "fresh-run-CCCCCC", ""
+
+    monkeypatch.setattr(app_mod, "spawn_and_locate", _fake_spawn)
+    plan = tmp_path / "sessions" / "plans" / "planny-one-AAAAAA"
+    plan.mkdir(parents=True)
+    (plan / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": plan.name, "mode": "plan", "user_task": "t"}),
+        encoding="utf-8",
+    )
+    (plan / "logs.jsonl").write_text("", encoding="utf-8")
+    (plan / "plan.md").write_text("# Plan\n", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(plan)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.action_run_plan()
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert seen["argv"][-3:] == ["run", "--from-plan", "planny-one-AAAAAA"]
+    assert seen["env"]["AGENT6_DETACHED_AWAY"] == "wait"
+
+    seen.clear()
+    run = tmp_path / "sessions" / "runs" / "runny-one-AAAAAA"
+    run.mkdir(parents=True)
+    (run / "logs.jsonl").write_text("", encoding="utf-8")
+
+    async def refuse() -> None:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.action_run_plan()
+            await pilot.pause()
+
+    asyncio.run(refuse())
+    assert not seen

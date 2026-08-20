@@ -34,7 +34,7 @@ Every page docks its text entry at the bottom, like a chat: type, Enter sends, S
     - A detail toggle cycles collapsed / expanded / hidden; any clipped item expands on click.
     - The run's context (status, task graph, budget, tool calls, latest commit diff, event log) lives in a resizable details drawer.
     - The docked composer steers a live run or resumes an ended one; `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages.
-    - Stop now / stop after step, compact, merge, delete history, approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline.
+    - Stop now / stop after step, compact, merge, delete history, run a finished plan (`run --from-plan`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline.
       "Allow session" appears only where it would grant something beyond the one call it is clicked on.
 - **Machine view**: the state overview, the path taken, and the current agent state's conversation.
   Approve and answer the current agent state's prompts inline (same controls as a run).
@@ -79,7 +79,7 @@ curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per chang
 ```
 
 `curl /api/session/<id>` returns what `agent6 attach <id> --json` prints, plus the manifest's branch and compare facts.
-Writes are small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,resume,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn / answer-file contracts, never arbitrary execution.
+Writes are small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,resume,run_plan,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn / answer-file contracts, never arbitrary execution.
 A machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (with an optional `message`/`data` payload) on the instance.
 The machine name and every answer id are validated to a single path component, so a request cannot traverse out of the instance dir.
 

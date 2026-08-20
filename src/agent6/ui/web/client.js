@@ -954,8 +954,21 @@ async function renderRun(id, opts, gen) {
         location.hash = '#/';
       } catch (e) { toast(e.message, true); }
     };
-    for (const b of [stopBtn, stepBtn, compactBtn, mergeBtn, rmBtn]) actions.appendChild(b);
+    // Execute a finished plan: spawns `agent6 run --from-plan <id>` detached
+    // and opens the run; the plan itself is untouched (the composer keeps
+    // revising it). paintRun shows this only on a plan with a plan.md.
+    const planBtn = el('button', null, 'Run this plan');
+    planBtn.style.display = 'none';
+    planBtn.onclick = async () => {
+      try {
+        const d = await postJSON(base + '/run_plan', {});
+        toast('run started: ' + d.run_id);
+        location.hash = '#session/' + encodeURIComponent(d.run_id);
+      } catch (e) { toast(e.message, true); }
+    };
+    for (const b of [stopBtn, stepBtn, compactBtn, planBtn, mergeBtn, rmBtn]) actions.appendChild(b);
     cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
+    cards._plan_btn = planBtn;
   }
   app.appendChild(actions);
 
@@ -1278,6 +1291,9 @@ function paintRun(cards, s) {
   cards.log.appendChild(log);
   cards.log.scrollTop = cards.log.scrollHeight;
 
+  if (cards._plan_btn) {
+    cards._plan_btn.style.display = s.mode === 'plan' && s.plan_md ? '' : 'none';
+  }
   // plan.md: the planning run's deliverable (the CLI prints it at the end).
   cards.plan.innerHTML = '';
   const planCard = cards.plan.parentElement;

@@ -224,6 +224,8 @@ depends_on = [
   # One branch-tips snapshot per hub poll (the listing's unmerged mark).
   "agent6.git_ops",
   "agent6.sessions.layout",
+  # run_plan reads the session's mode from its manifest before spawning.
+  "agent6.sessions.manifest",
   "agent6",
   "agent6.directive",
   "agent6.viewmodel",

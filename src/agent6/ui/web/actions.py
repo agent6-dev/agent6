@@ -13,6 +13,8 @@ is trusted exactly as far as the operator behind the loopback/tailnet bind.
 
 from __future__ import annotations
 
+import contextlib
+import os
 from pathlib import Path
 from typing import Any
 
@@ -35,8 +37,10 @@ from agent6.sessions.ipc import (
     write_answer,
     write_question_answers,
 )
-from agent6.sessions.layout import is_safe_session_id, machines_root
+from agent6.sessions.layout import bucket_dir, is_safe_session_id, machines_root
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.ui.spawn import (
+    DETACHED_RUN_ENV,
     agent6_argv,
     run_cli_capture,
     spawn_and_confirm,
@@ -193,6 +197,36 @@ def resume_run(
         cwd, session_dir.name, steer=text, preset=preset, config_path=config_path
     )
     return (err == ""), (err or "resuming")
+
+
+def run_plan(
+    cwd: Path, session_id: str, config_path: Path | None = None
+) -> tuple[dict[str, str] | None, str]:
+    """Execute a finished plan: spawn `agent6 run --from-plan <id>` detached and
+    return {"run_id": ...} to open, or (None, why). The plan session itself is
+    untouched, so revising it (the composer) keeps working."""
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return None, f"no session {session_id!r}"
+    manifest_mode = ""
+    with contextlib.suppress(ManifestError):
+        manifest_mode = read_manifest(session_dir).mode
+    if manifest_mode != "plan":
+        return None, f"{session_id!r} is not a plan"
+    if not (session_dir / "plan.md").is_file():
+        return None, "this plan has no plan.md yet (it is still planning, or never finished)"
+    runs = bucket_dir(resolved_state_dir(cwd), "runs")
+    runs.mkdir(parents=True, exist_ok=True)
+    new_dir, err = spawn_and_locate(
+        [*agent6_argv(config_path), "run", "--from-plan", session_id],
+        cwd,
+        before={p for p in runs.iterdir() if p.is_dir()},
+        list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
+        env={**os.environ, **DETACHED_RUN_ENV},
+    )
+    if new_dir is None:
+        return None, err or "could not start the run"
+    return {"run_id": new_dir.name}, ""
 
 
 def stop_after_step(cwd: Path, session_id: str) -> tuple[bool, str]:

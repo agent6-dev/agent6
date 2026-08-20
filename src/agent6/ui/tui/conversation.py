@@ -303,6 +303,7 @@ RUN_MENU = Menu(
         MenuItem("Stop after this step", "stop_step"),
         MenuItem("Stop now", "stop_now"),
         MenuItem("Resume this session", "resume"),
+        MenuItem("Run this plan", "run_plan"),
         MenuItem("Fork this session", "fork"),
         MenuItem("Delete this session…", "delete_session"),
     ),

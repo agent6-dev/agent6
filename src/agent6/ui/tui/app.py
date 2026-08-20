@@ -67,9 +67,15 @@ from agent6.sessions.ipc import (
     submit_steer,
     unregister_frontend,
 )
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME, bucket_dir, layout_of
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.ui.spawn import agent6_argv, run_cli_capture, spawn_detached_resume
+from agent6.ui.spawn import (
+    DETACHED_RUN_ENV,
+    agent6_argv,
+    run_cli_capture,
+    spawn_and_locate,
+    spawn_detached_resume,
+)
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.conversation import (
     RUN_MENU,
@@ -1278,6 +1284,30 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             err or f"resuming {self.session_dir.name} in the background…",
             severity="error" if err else "information",
         )
+
+    def action_run_plan(self) -> None:
+        """Execute a finished plan: spawn `agent6 run --from-plan <id>` detached
+        (the hub lists and opens it). The plan session is untouched, so the
+        composer keeps revising it."""
+        if self.mode != "plan":
+            self.notify("this session is not a plan", severity="warning")
+            return
+        if not (self.session_dir / "plan.md").is_file():
+            self.notify("no plan.md yet (still planning, or never finished)", severity="warning")
+            return
+        runs = bucket_dir(layout_of(self.session_dir).state_dir, "runs")
+        runs.mkdir(parents=True, exist_ok=True)
+        new_dir, err = spawn_and_locate(
+            [*agent6_argv(self.config_path), "run", "--from-plan", self.session_dir.name],
+            Path.cwd(),
+            before={p for p in runs.iterdir() if p.is_dir()},
+            list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
+            env={**os.environ, **DETACHED_RUN_ENV},
+        )
+        if new_dir is None:
+            self.notify(err or "could not start the run", severity="error")
+            return
+        self.notify(f"run started: {new_dir.name} (open it from the hub)")
 
     def action_fork(self) -> None:
         """Fork this run at its latest checkpoint into a NEW run, unstarted. On
