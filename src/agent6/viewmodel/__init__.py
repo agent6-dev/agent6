@@ -65,6 +65,12 @@ from agent6.viewmodel.machine_state import (
     read_complete_lines,
 )
 from agent6.viewmodel.policy import SessionPolicy, session_policy
+from agent6.viewmodel.snapshot import (
+    machine_snapshot,
+    manifest_branches,
+    manifest_header,
+    session_snapshot,
+)
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,
@@ -132,9 +138,12 @@ __all__ = [
     "is_winner",
     "machine_files",
     "machine_is_parked",
+    "machine_snapshot",
     "machine_state_as_dict",
     "machine_status_word",
     "machine_word_for_dir",
+    "manifest_branches",
+    "manifest_header",
     "newest_session_dir",
     "newest_state_log",
     "notification_key",
@@ -149,6 +158,7 @@ __all__ = [
     "session_is_live",
     "session_mtime",
     "session_policy",
+    "session_snapshot",
     "session_state_as_dict",
     "session_status_label",
     "status_facts",

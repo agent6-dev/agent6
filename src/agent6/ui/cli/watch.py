@@ -18,9 +18,9 @@ import sys
 from pathlib import Path
 
 from agent6.config.layer import resolved_state_dir
-from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
+from agent6.machine import JournalError, MachineError, load_machine
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.layout import LOGS_NAME, machines_root
+from agent6.sessions.layout import machines_root
 from agent6.ui.cli._common import (
     _runs_dir,
     print_no_session_match,
@@ -29,11 +29,8 @@ from agent6.ui.cli._common import (
 from agent6.ui.cli.machine_cmds import _cmd_machine_watch
 from agent6.ui.cli.plan_watch import _cmd_watch, _resolve_session_dir
 from agent6.viewmodel import (
-    fold_machine,
-    fold_session,
-    machine_state_as_dict,
-    session_state_as_dict,
-    tail_events,
+    machine_snapshot,
+    session_snapshot,
 )
 
 
@@ -51,34 +48,24 @@ def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
 
 
 def _session_json_snapshot(session_dir: Path) -> int:
-    """Print a run's folded SessionState as one JSON object (the web wire form)."""
-    logs = session_dir / LOGS_NAME
-    # No log yet is a STATE, not an error: a parked submission (the busy-checkout
-    # refusal saved it) or a `fork --no-run`. Every listing names it; this path
-    # answered with a raw filesystem error instead. Fold nothing and let the dir
-    # supply the word.
-    events = tail_events(logs, follow=False) if logs.is_file() else []
-    # With the run dir in hand the label is the dir-aware status (parked /
-    # stale / waiting), not the fold's blanket "running".
-    snap = session_state_as_dict(fold_session(events), session_dir)
-    print(json.dumps(snap))
+    """Print a session's snapshot as one JSON object (the wire form the web
+    serves; `viewmodel.session_snapshot`)."""
+    print(json.dumps(session_snapshot(session_dir)))
     return 0
 
 
 def _machine_json_snapshot(machine_dir: Path) -> int:
-    """Print a machine's folded MachineState as one JSON object (the web wire form)."""
-    source = machine_dir / "machine.asm.toml"
+    """Print a machine's snapshot as one JSON object (`viewmodel.machine_snapshot`)."""
     try:
-        spec = load_machine(source)
-    except MachineError as exc:
-        print(f"FAIL: {source}: {'; '.join(exc.problems)}", file=sys.stderr)
-        return 1
-    try:
-        ms = fold_machine(spec, MachineJournal(machine_dir).read())
-    except JournalError as exc:
+        snap = machine_snapshot(machine_dir)
+    except JournalError as exc:  # a MachineError too: the corrupt-journal wording first
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps(machine_state_as_dict(ms, machine_dir)))
+    except MachineError as exc:
+        source = machine_dir / "machine.asm.toml"
+        print(f"FAIL: {source}: {'; '.join(exc.problems)}", file=sys.stderr)
+        return 1
+    print(json.dumps(snap))
     return 0
 
 

@@ -13,6 +13,7 @@ import pytest
 from agent6.config.layer import resolved_state_dir
 from agent6.sessions.layout import bucket_dir, machines_root
 from agent6.ui.web import model
+from agent6.viewmodel import machine_snapshot, session_snapshot
 
 
 def _bucket(cwd: Path, sub: str) -> Path:
@@ -109,12 +110,12 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )  # fmt: skip
-    snap = model.session_snapshot(d)
+    snap = session_snapshot(d)
     assert snap["compare"]["winner"] is True and snap["compare"]["rank"] == 1
     assert snap["compare"]["rationale"] == "cleanest diff"
     # A run with no compare block carries no `compare` key (non-lane runs).
     plain = _run(tmp_path, "plain", [{"type": "session.start", "user_task": "y"}])
-    assert "compare" not in model.session_snapshot(plain)
+    assert "compare" not in session_snapshot(plain)
 
 
 def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> None:
@@ -128,7 +129,7 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> Non
         json.dumps({"mode": "run", "user_task": "queued work", "parked_task": "queued work"}),
         encoding="utf-8",
     )
-    snap = model.session_snapshot(d)
+    snap = session_snapshot(d)
     assert snap["user_task"] == "queued work"
     assert "fallback_task" not in snap
 
@@ -214,9 +215,9 @@ def test_machine_snapshot_carries_the_dir_status_word(tmp_path: Path) -> None:
     md.mkdir(parents=True)
     (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
     (md / "journal.jsonl").write_text("", encoding="utf-8")
-    assert model.machine_snapshot(md)["status"] == "stopped"  # no wait, no worker
+    assert machine_snapshot(md)["status"] == "stopped"  # no wait, no worker
     (md / "wait.json").write_text('{"state":"route","wake_epoch":9999999999.0}\n', encoding="utf-8")
-    assert model.machine_snapshot(md)["status"] == "waiting"  # parked
+    assert machine_snapshot(md)["status"] == "waiting"  # parked
 
 
 def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: Path) -> None:
@@ -414,7 +415,7 @@ def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    assert model.session_snapshot(d)["status_label"] == "parked · checkout busy"
+    assert session_snapshot(d)["status_label"] == "parked · checkout busy"
     (hub_row,) = model.hub_payload(tmp_path)["sessions"]
     assert hub_row["status"] == "parked"  # the two surfaces lead with one word
 
@@ -425,7 +426,7 @@ def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: Path) -> None:
     the page first paints from has to say so too, not only the SSE frame."""
     d = _run(tmp_path, "crashed1", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")  # dead pid
-    assert model.session_snapshot(d)["status_label"] == "stale"
+    assert session_snapshot(d)["status_label"] == "stale"
 
 
 def test_run_snapshot_labels_waiting_starting_created(tmp_path: Path) -> None:
@@ -447,15 +448,15 @@ def test_run_snapshot_labels_waiting_starting_created(tmp_path: Path) -> None:
         ],
     )
     write_worker_pid(d, os.getpid())
-    assert model.session_snapshot(d)["status_label"] == "waiting · needs answer"
+    assert session_snapshot(d)["status_label"] == "waiting · needs answer"
 
     e = _bucket(tmp_path, "runs") / "fresh1"
     e.mkdir(parents=True)
     (e / "manifest.json").write_text(json.dumps({"session_id": "fresh1"}), encoding="utf-8")
     write_worker_pid(e, os.getpid())
-    assert model.session_snapshot(e)["status_label"] == "starting"
+    assert session_snapshot(e)["status_label"] == "starting"
     (e / "worker.pid").unlink()
-    assert model.session_snapshot(e)["status_label"] == "created"
+    assert session_snapshot(e)["status_label"] == "created"
 
 
 def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
@@ -474,7 +475,7 @@ def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
         ],
     )
     (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")
-    assert model.session_snapshot(d)["status_label"] == "passed"
+    assert session_snapshot(d)["status_label"] == "passed"
 
 
 def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
@@ -491,17 +492,17 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
     (parked / "manifest.json").write_text(
         json.dumps({"session_id": "parked2", "parked_task": "do the thing"}), encoding="utf-8"
     )
-    assert model.session_snapshot(parked)["live"] is False
+    assert session_snapshot(parked)["live"] is False
 
     crashed = _run(
         tmp_path, "crashed2", [{"type": "session.start", "mode": "run", "user_task": "t"}]
     )
     (crashed / "worker.pid").write_text("999999999", encoding="utf-8")
-    assert model.session_snapshot(crashed)["live"] is False
+    assert session_snapshot(crashed)["live"] is False
 
     alive = _run(tmp_path, "alive2", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     write_worker_pid(alive, os.getpid())
-    assert model.session_snapshot(alive)["live"] is True
+    assert session_snapshot(alive)["live"] is True
 
     done = _run(
         tmp_path,
@@ -516,7 +517,7 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
             },
         ],
     )
-    assert model.session_snapshot(done)["live"] is False
+    assert session_snapshot(done)["live"] is False
 
 
 def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
@@ -537,6 +538,6 @@ def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
     (stale / "worker.pid").write_text("999999 12345678", encoding="utf-8")  # dead pid
 
     for d in (parked, stale):
-        snap = model.session_snapshot(d)
+        snap = session_snapshot(d)
         assert snap["finished"] is False, d.name  # why the old poll fired at once
         assert snap["live"] is False, d.name  # ...and what actually distinguishes them

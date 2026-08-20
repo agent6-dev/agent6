@@ -26,7 +26,6 @@ from agent6.sessions.layout import (
     is_safe_session_id,
     machines_root,
 )
-from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
     fold_machine,
     fold_session,
@@ -34,12 +33,10 @@ from agent6.viewmodel import (
     is_session_husk,
     is_winner,
     machine_files,
-    machine_state_as_dict,
     machine_word_for_dir,
     newest_state_log,
     operator_inputs,
     restate,
-    session_compare,
     session_dirs,
     session_state_as_dict,
     summarize_session_dir,
@@ -196,49 +193,6 @@ def hub_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
 # --- run snapshot + conversation ----------------------------------------------
 
 
-def manifest_branches(session_dir: Path) -> dict[str, str]:
-    """Branch facts from the run's manifest (run_branch / base_branch /
-    merged_into) for the run header. The event fold doesn't carry them, but a
-    web user needs to SEE where a run's work lives and where Merge lands --
-    consecutive spawns chain branches invisibly otherwise. Empty for a run with
-    no manifest (or branch_per_run off)."""
-    try:
-        manifest = read_manifest(session_dir)
-    except ManifestError:
-        return {}
-    out: dict[str, str] = {}
-    if manifest.run_branch:
-        out["run_branch"] = manifest.run_branch
-    if manifest.base_branch:
-        out["base_branch"] = manifest.base_branch
-    if manifest.merged and manifest.merged.into:
-        out["merged_into"] = manifest.merged.into
-    return out
-
-
-def manifest_header(session_dir: Path) -> dict[str, Any]:
-    """Manifest-derived session-header fields the event fold doesn't carry:
-    branch facts (run/base/merged) and the fan-out compare outcome
-    (rank/winner/rationale). Merged into the SessionState snapshot by BOTH the one-shot
-    `/api/session/<id>` and the SSE stream, so the header the page paints from can
-    never drift between them. Empty for a run with no (readable) manifest."""
-    header: dict[str, Any] = dict(manifest_branches(session_dir))
-    compare = session_compare(session_dir)
-    if compare is not None:
-        header["compare"] = compare.model_dump(mode="json")
-    return header
-
-
-def session_snapshot(session_dir: Path) -> dict[str, Any]:
-    """A run's folded SessionState as the wire dict (the same fold as
-    `agent6 attach <id> --json`, which owns the dir-backed session_id/user_task
-    fill), plus the manifest's branch/compare facts."""
-    state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
-    snap = session_state_as_dict(state, session_dir)
-    snap.update(manifest_header(session_dir))
-    return snap
-
-
 def conversation_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The events folded into rendered conversation items, one entry per
     `TranscriptItem`: its `kind`, the collapsed `lines` (lists of
@@ -287,14 +241,6 @@ def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
 
 
 # --- machine snapshot (structure + watch + reasoning) -----------------------
-
-
-def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
-    """A machine instance's folded MachineState as the wire dict. Identical to
-    `agent6 attach <name> --json`."""
-    spec = load_machine(machine_dir / "machine.asm.toml")
-    ms = fold_machine(spec, MachineJournal(machine_dir).read())
-    return machine_state_as_dict(ms, machine_dir)
 
 
 def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:

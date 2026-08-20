@@ -17,6 +17,7 @@ import pytest
 
 from agent6.sessions.layout import bucket_dir
 from agent6.ui.web import model
+from agent6.viewmodel import session_snapshot
 
 
 def _session(state: Path, bucket: str, session_id: str, mode: str) -> Path:
@@ -36,7 +37,7 @@ def _session(state: Path, bucket: str, session_id: str, mode: str) -> Path:
 @pytest.mark.parametrize(("bucket", "mode"), [("runs", "run"), ("plans", "plan"), ("asks", "ask")])
 def test_the_snapshot_carries_the_mode(tmp_path: Path, bucket: str, mode: str) -> None:
     session = _session(tmp_path, bucket, "brave-oak-AAAAAA", mode)
-    assert model.session_snapshot(session)["mode"] == mode
+    assert session_snapshot(session)["mode"] == mode
 
 
 def test_the_page_heads_the_panel_with_the_mode_not_a_fixed_word() -> None:

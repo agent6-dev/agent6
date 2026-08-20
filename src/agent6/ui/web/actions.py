@@ -45,7 +45,7 @@ from agent6.ui.spawn import (
     spawn_detached_resume,
 )
 from agent6.ui.web import model
-from agent6.viewmodel import newest_state_log, session_is_live
+from agent6.viewmodel import machine_snapshot, newest_state_log, session_is_live
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
 
 
@@ -248,7 +248,7 @@ def _machine_has_ended(cwd: Path, name: str) -> bool:
     if machine_dir is None:
         return False
     try:
-        return model.machine_snapshot(machine_dir).get("ended") is not None
+        return machine_snapshot(machine_dir).get("ended") is not None
     except (MachineError, OSError):
         return False
 

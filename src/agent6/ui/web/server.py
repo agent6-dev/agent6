@@ -55,6 +55,9 @@ from agent6.viewmodel import (
     died_without_end,
     initial_state,
     machine_is_parked,
+    machine_snapshot,
+    manifest_header,
+    session_snapshot,
     session_state_as_dict,
     summarize_session_dir,
     tail_events,
@@ -557,7 +560,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"no draft {name!r}"}, status=404)
             return
         if sub == "":
-            self._send_json(model.session_snapshot(draft_dir))
+            self._send_json(session_snapshot(draft_dir))
         elif sub == "conversation":
             self._send_json(model.conversation_payload(draft_dir))
         elif sub == "events":
@@ -571,7 +574,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"no session {session_id!r}"}, status=404)
             return
         if sub == "":
-            self._send_json(model.session_snapshot(session_dir))
+            self._send_json(session_snapshot(session_dir))
         elif sub == "conversation":
             self._send_json(model.conversation_payload(session_dir))
         elif sub == "restate":
@@ -588,7 +591,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             if sub == "":
-                self._send_json(model.machine_snapshot(machine_dir))
+                self._send_json(machine_snapshot(machine_dir))
             elif sub == "reasoning":
                 self._send_json(model.machine_reasoning_snapshot(machine_dir))
             elif sub == "conversation":
@@ -690,7 +693,7 @@ class _Handler(BaseHTTPRequestHandler):
         # Manifest-derived header fields (branch facts + the fan-out compare
         # outcome), read once per connection: they are fixed for the run's life
         # (merged_into lands after the run ends; a reopen/reconnect re-reads).
-        header = model.manifest_header(session_dir)
+        header = manifest_header(session_dir)
 
         def frame(*, dead: bool = False) -> dict[str, Any]:
             # session_dir per frame, not once at connect: a parked run the operator
@@ -775,7 +778,7 @@ class _Handler(BaseHTTPRequestHandler):
         while True:
             try:
                 payload = {
-                    "machine": model.machine_snapshot(machine_dir),
+                    "machine": machine_snapshot(machine_dir),
                     "reasoning": model.machine_reasoning_snapshot(machine_dir),
                 }
             except MachineError as exc:

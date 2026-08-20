@@ -227,8 +227,7 @@ depends_on = [
   "agent6.sessions.ipc",
   # new-work preflight: refuse a run submission while a live worker holds the
   # checkout, instead of spawning a doomed detached run
-  "agent6.sessions.manifest",
-  "agent6.config",
+    "agent6.config",
   "agent6.config.layer",
   "agent6.machine",
   # config-editor value suggestions: the one owner every editor and TAB
@@ -246,6 +245,7 @@ depends_on = [
   "agent6.sessions.layout",
   "agent6.types",
   "agent6.config.layer",
+  "agent6.machine",
   "agent6.machine.journal",
   "agent6.machine.model",
   "agent6.sessions.ipc",
