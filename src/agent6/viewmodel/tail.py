@@ -48,16 +48,22 @@ def tail_events(
 
     pos = _size_or_zero(path) if start_at_end else 0
     pending = b""
+    final_drain = False  # should_stop fired: read what is already appended, then stop
     while True:
-        if should_stop is not None and should_stop():
-            return
+        if should_stop is not None and not final_drain and should_stop():
+            # The writer is gone (a dead worker) or the caller is leaving: what
+            # sits in the file is final, so hand it over before returning. A
+            # worker that finishes and exits within one poll otherwise had its
+            # last events (the finish, session.end) unread, and `attach`
+            # stopped one step short of the run's end.
+            final_drain = True
         try:
             with path.open("rb") as fh:
                 fh.seek(pos)
                 chunk = fh.read()
                 pos = fh.tell()
         except FileNotFoundError:
-            if not follow:
+            if not follow or final_drain:
                 return
             time.sleep(poll_s)
             continue
@@ -77,7 +83,7 @@ def tail_events(
                 if stop_when_finished and i == len(parsed) - 1 and evt.get("type") == "session.end":
                     return
 
-        if not follow:
+        if not follow or final_drain:
             evt = _parse_event_line(pending)
             if evt is not None:
                 yield evt

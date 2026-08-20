@@ -140,6 +140,30 @@ def test_follow_cancels_via_should_stop(tmp_path: Path) -> None:
     assert seen == ["first"]
 
 
+def test_should_stop_still_hands_over_what_was_appended(tmp_path: Path) -> None:
+    """A worker that finishes and exits within one poll leaves its last events
+    (the finish, session.end) in the file as the liveness probe flips; the
+    follow drains them before returning instead of stopping one step short."""
+    p = tmp_path / "logs.jsonl"
+    p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")
+    polls = {"n": 0}
+
+    def _dead_after_writing_the_end() -> bool:
+        polls["n"] += 1
+        if polls["n"] == 2:  # between polls: the worker's last events land, then it exits
+            with p.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"type": "done"}) + "\n")
+                fh.write(json.dumps({"type": "session.end"}) + "\n")
+            return True
+        return polls["n"] > 2
+
+    got = [
+        e["type"]
+        for e in tail_events(p, follow=True, poll_s=0.01, should_stop=_dead_after_writing_the_end)
+    ]
+    assert got == ["first", "done", "session.end"]
+
+
 def test_tail_follows_appended_lines(tmp_path: Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")
