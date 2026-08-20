@@ -91,11 +91,10 @@ from agent6.sessions.ipc import (
     clear_stop_request,
     clear_worker_pid,
     read_compact_request,
-    request_steer,
     session_allow_set,
     stop_request_pending,
+    submit_steer,
     write_session_netns_pid,
-    write_steer_answer,
     write_worker_pid,
 )
 from agent6.sessions.layout import (
@@ -317,8 +316,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # --steer: queue the operator's follow-up as the first steering
         # instruction. Seeded AFTER the stale-state clear (which drops steer
         # files), so the loop's steer poll injects it at its first boundary.
-        request_steer(layout.session_dir)
-        write_steer_answer(layout.session_dir, steer.strip())
+        submit_steer(layout.session_dir, steer.strip())
     # Record this worker's pid so `agent6 sessions show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.session_dir, os.getpid())

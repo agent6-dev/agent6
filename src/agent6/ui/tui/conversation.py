@@ -40,7 +40,7 @@ from textual.timer import Timer
 from textual.widgets import Footer, Select, Static, TextArea
 
 from agent6.directive import STEER_COMMANDS
-from agent6.sessions.ipc import clear_steer_answer, request_steer, write_steer_answer
+from agent6.sessions.ipc import submit_steer
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import (
@@ -839,12 +839,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             )
             return
         if self._live:
-            session_dir = self._logs_path.parent
-            clear_steer_answer(
-                session_dir
-            )  # discard any stale answer -> the run waits for this one
-            request_steer(session_dir)
-            write_steer_answer(session_dir, message.text)
+            submit_steer(self._logs_path.parent, message.text)
             self.notify("steering this session…")
 
     def action_history_search(self) -> None:

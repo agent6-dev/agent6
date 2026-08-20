@@ -29,12 +29,11 @@ from agent6.machine import (
 from agent6.sessions.ipc import (
     read_worker_pid,
     request_compact,
-    request_steer,
     request_stop,
+    submit_steer,
     worker_is_alive,
     write_answer,
     write_question_answers,
-    write_steer_answer,
 )
 from agent6.sessions.layout import is_safe_session_id
 from agent6.ui.spawn import (
@@ -141,8 +140,7 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
         if not request_compact(session_dir, focus=focus):
             return False, "could not write the compaction request"
         return True, "compaction requested"
-    write_steer_answer(session_dir, text)  # ready before the run reads it
-    request_steer(session_dir)
+    submit_steer(session_dir, text)
     return True, "steer requested"
 
 
@@ -362,8 +360,7 @@ def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
-    write_steer_answer(state_dir, text)
-    request_steer(state_dir)
+    submit_steer(state_dir, text)
     return True, "steer requested"
 
 

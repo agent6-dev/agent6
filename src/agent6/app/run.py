@@ -99,11 +99,10 @@ from agent6.sessions.ipc import (
     clear_stop_request,
     clear_worker_pid,
     read_compact_request,
-    request_steer,
     session_allow_set,
     stop_request_pending,
+    submit_steer,
     write_session_netns_pid,
-    write_steer_answer,
     write_worker_pid,
 )
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, write_untracked_at_start
@@ -315,8 +314,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # re-prompting; dead front-end claims are pruned by the liveness probe).
         clear_pending_answers(layout.session_dir)
         if initial_steer.strip():
-            request_steer(layout.session_dir)
-            write_steer_answer(layout.session_dir, initial_steer.strip())
+            submit_steer(layout.session_dir, initial_steer.strip())
         if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
             clear_away_mode(layout.session_dir)
         else:

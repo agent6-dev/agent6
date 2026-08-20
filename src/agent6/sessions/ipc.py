@@ -677,6 +677,14 @@ def steer_request_pending(session_dir: Path) -> bool:
     return (session_dir / STEER_REQUEST_FILE).exists()
 
 
+def submit_steer(session_dir: Path, text: str) -> None:
+    """Queue *text* as the session's next steer (a front-end composer, a
+    `--steer` seed): the answer lands before the request marker, so the loop
+    finds it the moment it notices the request and never waits on a modal."""
+    write_steer_answer(session_dir, text)
+    request_steer(session_dir)
+
+
 def clear_steer_request(session_dir: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
         (session_dir / STEER_REQUEST_FILE).unlink()

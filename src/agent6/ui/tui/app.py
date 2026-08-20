@@ -61,15 +61,13 @@ from agent6.config.layer import available_preset_names
 from agent6.directive import parse_compact
 from agent6.models.registry import context_window
 from agent6.sessions.ipc import (
-    clear_steer_answer,
     register_frontend,
     request_compact,
-    request_steer,
     request_stop,
+    submit_steer,
     unregister_frontend,
     write_answer,
     write_question_answers,
-    write_steer_answer,
 )
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
@@ -1053,12 +1051,6 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
 
     # --- run control (dispatched from the composer bars, keys, and menus) --
 
-    def _seed_steer(self, text: str) -> None:
-        """Seed the file bridge with this steer; any stale answer goes first."""
-        clear_steer_answer(self.session_dir)
-        request_steer(self.session_dir)
-        write_steer_answer(self.session_dir, text)
-
     def submit_instruction(self, text: str) -> None:
         """A composer-bar line. Live: inject it at the run's next safe boundary
         (after the current step, never mid tool-call) -- the run keeps going.
@@ -1080,7 +1072,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
                 else:
                     self.notify("could not write the compaction request", severity="warning")
                 return
-            self._seed_steer(text)
+            submit_steer(self.session_dir, text)
             self.notify("steering this session…")
         else:
             self.resume_with_instruction(text)
@@ -1092,7 +1084,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         if self.session_controllable():
             # The loop forks at its next boundary and emits session.undone;
             # the fold's undone_to hands the follow-up to this app.
-            self._seed_steer("/undo")
+            submit_steer(self.session_dir, "/undo")
             self.notify("undo requested; applies at the next step")
             return
         said: list[str] = []
@@ -1163,7 +1155,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
 
         def _confirmed(yes: bool | None) -> None:
             if yes:
-                self._seed_steer("abort")
+                submit_steer(self.session_dir, "abort")
 
         self.push_screen(
             ConfirmModal(
