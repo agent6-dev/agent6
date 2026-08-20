@@ -246,3 +246,39 @@ def test_a_resumed_leg_ends_by_asking_like_a_fresh_one(
     args = _run_args(session_id="resumed-run", force=False, tui=False, preset="", steer="")
     assert cli._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
     assert asked == (["resumed-run-AAAAAA"] if asks else [])
+
+
+def test_a_parked_start_is_not_followed_by_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A start that parked (busy checkout, uncommitted changes) never ran; the
+    resume line it printed is the next step. Asking "next:" there offered a
+    follow-up to a leg that does not exist and re-parked on the same cause."""
+    import json
+
+    from agent6.ui import cli
+
+    layout = _seed_session(tmp_path, monkeypatch, session_id="parked-run-AAAAAA")
+    (layout.session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": layout.session_id,
+                "mode": "run",
+                "user_task": "t",
+                "parked_task": "t",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    asked: list[str] = []
+
+    def spy(**_kw: object) -> int:
+        asked.append("asked")
+        return 0
+
+    monkeypatch.setattr(cli, "end_of_session_prompt", spy)
+    assert cli._prompt_for_the_next_input(_run_args(), 2, layout.session_id) == 2  # pyright: ignore[reportPrivateUsage]
+    assert asked == []

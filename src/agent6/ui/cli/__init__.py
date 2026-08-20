@@ -300,6 +300,12 @@ def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: st
         return rc
     if layout is None or not layout.session_dir.is_dir():
         return rc
+    # A parked start never ran: its next step is the resume line already
+    # printed (once the checkout is free or the changes settled), not a
+    # follow-up to a leg that does not exist yet.
+    with contextlib.suppress(ManifestError):
+        if read_manifest(layout.session_dir).parked_task:
+            return rc
     return end_of_session_prompt(
         rc=rc,
         session_id=layout.session_id,
