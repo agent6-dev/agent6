@@ -50,7 +50,7 @@ from agent6.viewmodel import (
     status_for_session_dir,
     tail_events,
 )
-from agent6.viewmodel.format import format_compare, format_cost
+from agent6.viewmodel.format import format_branch, format_compare, format_cost
 from agent6.viewmodel.state import SESSION_START_EVENTS
 
 
@@ -389,11 +389,11 @@ def _changes(session_id: str, manifest: SessionManifest) -> _Changes:
     stamp = manifest.merged
     if stamp is not None and merge_stamp_holds(run_branch, stamp.tip):
         into = stamp.into or manifest.base_branch
-        return _Changes(f"{run_branch} (merged into {into})", into)
+        return _Changes(format_branch(run_branch, manifest.base_branch, into), into)
     if not branch_exists(Path.cwd(), run_branch):
         return _Changes(f"{run_branch} (no commits)", "")
-    base = f" → merges into {manifest.base_branch}" if manifest.base_branch else ""
-    return _Changes(f"{run_branch}{base}; merge with: agent6 sessions merge {session_id}", "")
+    line = format_branch(run_branch, manifest.base_branch, "")
+    return _Changes(f"{line}; merge with: agent6 sessions merge {session_id}", "")
 
 
 def _print_listening_ports(session_dir: Path) -> None:

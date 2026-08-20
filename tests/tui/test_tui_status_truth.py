@@ -513,3 +513,33 @@ def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: Path) ->
             assert app.dir_status[1] != "needs answer"
 
     asyncio.run(scenario())
+
+
+def test_dashboard_header_says_where_the_changes_are(tmp_path: Path) -> None:
+    """The header carries the run's branch line (the web header's and
+    `sessions show`'s wording): the run branch and the base a merge lands on;
+    reopened after the merge stamp lands, the branch merged."""
+    d = tmp_path / "branched"
+    d.mkdir()
+    evs = [
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    manifest: dict[str, Any] = {
+        "mode": "run",
+        "run_branch": "agent6/branched",
+        "base_branch": "main",
+    }
+    (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    async def header() -> str:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            return str(app._dash.query_one("#top", Static).render())
+
+    assert "branch: agent6/branched → merges into main" in asyncio.run(header())
+    manifest["merged"] = {"into": "main", "sha": "abc", "tip": "abc"}
+    (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    assert "branch: agent6/branched (merged into main)" in asyncio.run(header())  # a reopen

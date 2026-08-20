@@ -12,6 +12,7 @@ from typing import Any
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.viewmodel.format import format_branch
 from agent6.viewmodel.listing import session_compare
 from agent6.viewmodel.machine_state import fold_machine, machine_state_as_dict
 from agent6.viewmodel.state import fold_session, session_state_as_dict
@@ -20,10 +21,11 @@ from agent6.viewmodel.tail import tail_events
 
 def manifest_branches(session_dir: Path) -> dict[str, str]:
     """Branch facts from the run's manifest (run_branch / base_branch /
-    merged_into) for the run header. The event fold does not carry them, and
-    an operator needs to SEE where a run's work lives and where Merge lands
-    (consecutive spawns chain branches invisibly otherwise). Empty for a run
-    with no manifest (or branch_per_run off)."""
+    merged_into, and `branch_line`, their one wording) for the run header.
+    The event fold does not carry them, and an operator needs to SEE where a
+    run's work lives and where Merge lands (consecutive spawns chain branches
+    invisibly otherwise). Empty for a run with no manifest (or branch_per_run
+    off)."""
     try:
         manifest = read_manifest(session_dir)
     except ManifestError:
@@ -35,6 +37,11 @@ def manifest_branches(session_dir: Path) -> dict[str, str]:
         out["base_branch"] = manifest.base_branch
     if manifest.merged and manifest.merged.into:
         out["merged_into"] = manifest.merged.into
+    line = format_branch(
+        out.get("run_branch", ""), out.get("base_branch", ""), out.get("merged_into", "")
+    )
+    if line:
+        out["branch_line"] = line
     return out
 
 

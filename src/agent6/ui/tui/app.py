@@ -97,7 +97,7 @@ from agent6.ui.tui.theme import (
     setup_theme,
     status_style,
 )
-from agent6.viewmodel import restate, session_compare
+from agent6.viewmodel import manifest_branches, restate, session_compare
 from agent6.viewmodel.format import (
     TASK_STATUS_GLYPH,
     format_compare,
@@ -263,6 +263,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         self._rendered_tools: tuple[object, object] | None = None
         self._rendered_diff: tuple[object, object, object, object] | None = None
         self._compare_line: str | None = None  # cached fan-out compare header (terminal state)
+        self._branch_line: str | None = None  # cached branch header (fixed for the leg)
 
     def _compare_top(self) -> str:
         """The fan-out compare outcome for the header's task line (empty for a
@@ -277,6 +278,20 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         rat = f" — {rationale[:100]}" if rationale else ""
         self._compare_line = f"\ncompare: {headline}{rat}"
         return self._compare_line
+
+    def _branch_top(self) -> str:
+        """Where the run's work lives, for the header: the run branch and the
+        base a merge lands on, or the branch merged (the web header's line and
+        `sessions show`'s `changes:`). Read from the manifest once it names a
+        branch and cached: the merge stamp lands after the run ends, when this
+        screen no longer repaints (a reopen re-reads)."""
+        if self._branch_line is not None:
+            return self._branch_line
+        line = manifest_branches(self._tui.session_dir).get("branch_line", "")
+        if not line:
+            return ""  # no manifest yet (a launching run); don't cache
+        self._branch_line = f"\nbranch: {line}"
+        return self._branch_line
 
     @property
     def _tui(self) -> Agent6TUI:
@@ -507,7 +522,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{ctx}"
             f"   {finished}\n"
             f"task: {escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))}"
-            f"{escape(self._compare_top())}"
+            f"{escape(self._branch_top())}{escape(self._compare_top())}"
         )
 
         # Live reasoning / response pane. Built as rich Text so model output is

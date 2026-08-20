@@ -15,13 +15,14 @@ from agent6.sessions.manifest import CompareStamp
 from agent6.viewmodel import (
     is_session_husk,
     is_winner,
+    manifest_branches,
     session_compare,
     session_is_live,
     session_mtime,
     summarize_session_dir,
     task_snippet,
 )
-from agent6.viewmodel.format import format_compare
+from agent6.viewmodel.format import format_branch, format_compare
 
 
 def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
@@ -91,6 +92,30 @@ def test_format_compare_headline_and_rationale() -> None:
     assert lost == ("rank 2/3 · mechanical", "")
     # No stamp -> None.
     assert format_compare(None) is None
+
+
+def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(tmp_path: Path) -> None:
+    """The run header's branch line (TUI, web, `sessions show`): the run branch
+    merged into its base, else the base a merge lands on; "" without a run
+    branch. `manifest_branches` hands it to every header as `branch_line`."""
+    import json
+
+    assert format_branch("agent6/x", "main", "") == "agent6/x → merges into main"
+    assert format_branch("agent6/x", "main", "main") == "agent6/x (merged into main)"
+    assert format_branch("agent6/x", "", "") == "agent6/x"
+    assert format_branch("", "main", "") == ""
+    d = tmp_path / "run-x"
+    d.mkdir()
+    (d / "manifest.json").write_text(
+        json.dumps({"mode": "run", "run_branch": "agent6/x", "base_branch": "main"})
+    )
+    assert manifest_branches(d) == {
+        "run_branch": "agent6/x",
+        "base_branch": "main",
+        "branch_line": "agent6/x → merges into main",
+    }
+    (d / "manifest.json").write_text(json.dumps({"mode": "ask"}))
+    assert manifest_branches(d) == {}
 
 
 # --- summarize_session_dir / status_word (shared by TUI hub, web hub, runs list) --

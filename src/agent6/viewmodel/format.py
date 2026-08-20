@@ -86,6 +86,17 @@ def winner_id(session_id: str, *, winner: bool) -> str:
     return f"{session_id} {WINNER_GLYPH}" if winner else session_id
 
 
+def format_branch(run_branch: str, base_branch: str, merged_into: str) -> str:
+    """Where a run's work lives, one wording for every header: the run branch
+    merged into its base, or the run branch and the base a merge lands on.
+    "" for a session with no run branch (an ask, branch_per_run off)."""
+    if not run_branch:
+        return ""
+    if merged_into:
+        return f"{run_branch} (merged into {merged_into})"
+    return f"{run_branch} → merges into {base_branch}" if base_branch else run_branch
+
+
 def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
     """A lane's fan-out compare outcome as `(headline, rationale)`, or None when
     the run carries no `compare` stamp. The headline reads e.g.

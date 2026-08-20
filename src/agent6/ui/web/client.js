@@ -1142,11 +1142,7 @@ function paintRun(cards, s) {
   add('state', s.status_label || (s.finished ? 'finished' : 'running'));
   // Where the run's work lives and where Merge lands: consecutive spawns chain
   // branches, which is invisible without this line.
-  if (s.run_branch) {
-    add('branch', s.merged_into
-      ? s.run_branch + ' (merged into ' + s.merged_into + ')'
-      : s.run_branch + (s.base_branch ? ' → merges into ' + s.base_branch : ''));
-  }
+  if (s.branch_line) add('branch', s.branch_line);
   // Fan-out compare outcome (stamped into a lane's manifest by --parallel's
   // auto-compare): where this lane placed and why. Absent for a non-lane run.
   if (s.compare && typeof s.compare.rank === 'number') {
