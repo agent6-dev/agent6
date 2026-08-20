@@ -71,6 +71,7 @@ from agent6.viewmodel.config_view import (
     ConfigSetting,
     ConfigView,
     build_config_view,
+    plain_description,
 )
 
 
@@ -226,6 +227,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
         border: round $accent; padding: 1 2; background: $surface;
     }
     #edit-title { text-style: bold; }
+    #edit-description { padding-top: 1; color: $text-muted; }
     #edit-actions { padding-top: 1; height: auto; }
     """
     )
@@ -270,6 +272,10 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                     style="dim",
                 )
             )
+            if s.description:
+                # What the leaf means, as the docs table and the web editor
+                # say it; Text, never markup (a description names `[git]`).
+                yield Static(Text(plain_description(s.description)), id="edit-description")
             # The DISPLAY formatter (_fmt) renders lists unquoted ([uv, run,
             # pytest]) -- friendly in the table, but not valid TOML, so an
             # untouched Save of a list/dict field failed revalidation ("Input
@@ -516,6 +522,12 @@ class ConfigScreen(ScreenChrome, Screen[None]):
        and the dashboard panels); the border tracks focus via :focus-within. */
     #config-card { height: 1fr; border: round $primary; background: $surface; }
     #config-card:focus-within { border: round $accent; }
+    /* The highlighted setting's meaning, under the card: key, type and
+       default on one line, the description wrapped below (the card above
+       yields the rows a long description needs; nothing is clipped). */
+    #detail { height: auto; padding: 0 1; background: $surface; }
+    #detail-key { color: $text-muted; }
+    #detail-text { height: auto; }
     #settings { height: 1fr; background: $surface; }
     .section-table { height: auto; margin: 0; background: transparent; }
     #status { height: auto; padding: 0 1; color: $text-muted; }
@@ -641,6 +653,9 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                     yield Collapsible(
                         table, title=escape(f"[{section}]"), collapsed=False, id=f"sec-{section}"
                     )
+        with Vertical(id="detail"):
+            yield Static("", id="detail-key")
+            yield Static("", id="detail-text")
         yield Footer()
 
     def _sections(self) -> tuple[str, ...]:
@@ -737,6 +752,28 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             if 0 <= row < len(keys):
                 return self._settings.get(keys[row])
         return None
+
+    def _show_detail(self) -> None:
+        """The detail pane follows the highlighted setting: what it means, its
+        type and default. Empty when nothing is highlighted (a section title,
+        the filter box)."""
+        setting = self._current_setting()
+        head = self.query_one("#detail-key", Static)
+        body = self.query_one("#detail-text", Static)
+        if setting is None:
+            head.update("")
+            body.update("")
+            return
+        head.update(
+            Text(f"{setting.key}  ·  {setting.py_type}  ·  default {_fmt(setting.default)}")
+        )
+        body.update(Text(plain_description(setting.description)))
+
+    def on_data_table_row_highlighted(self, _event: DataTable.RowHighlighted) -> None:
+        self._show_detail()
+
+    def on_descendant_focus(self, _event: events.DescendantFocus) -> None:
+        self._show_detail()
 
     # --- continuous arrow nav across section headers + their rows -----------
 

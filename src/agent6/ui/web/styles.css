@@ -253,6 +253,12 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   max-height: 90vh; overflow: auto;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
 }
+/* The config editor's description: a readable measure, code spans as code. */
+.cfg-desc { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; max-width: 62ch; }
+.cfg-desc code {
+  font-family: var(--mono); font-size: 12px; color: var(--text);
+  background: var(--surface2); padding: 0 3px; border-radius: 3px;
+}
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }

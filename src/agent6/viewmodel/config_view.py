@@ -263,11 +263,16 @@ def _truncate(text: str, width: int) -> str:
     return text[: width - 1] + "\u2026"
 
 
+def plain_description(description: str) -> str:
+    """A leaf's description as a terminal shows it: markdown bold stripped
+    (backticks read fine there; `**` is noise)."""
+    return description.replace("**", "")
+
+
 def _description_lines(description: str, indent: str) -> list[str]:
-    """The description wrapped for a terminal, markdown bold stripped (backticks
-    read fine in a terminal; `**` is noise there)."""
+    """The description wrapped for a terminal (see `plain_description`)."""
     return textwrap.wrap(
-        description.replace("**", ""),
+        plain_description(description),
         width=92,
         initial_indent=indent,
         subsequent_indent=indent,

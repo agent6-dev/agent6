@@ -1557,7 +1557,7 @@ async function renderConfig(gen) {
     tr.appendChild(el('td', 'src', esc(s.source)));
     // Hover text: the leaf's meaning (the docs table cell), from the same
     // per-key payload the editor overlay shows it in.
-    tr.title = s.description || 'click to edit';
+    tr.title = s.description ? plainDescription(s.description) : 'click to edit';
     tr.style.cursor = 'pointer';
     actionable(tr, () => editConfig(k, s), 'edit ' + k);
     tbl.appendChild(tr); rows.push([k.toLowerCase(), tr]);
@@ -1566,6 +1566,19 @@ async function renderConfig(gen) {
   filter.oninput = () => { const q = filter.value.toLowerCase(); for (const [key, tr] of rows) tr.style.display = key.includes(q) ? '' : 'none'; };
   view.appendChild(card);
 }
+// A leaf's description is the docs table cell: markdown-lite. Backtick spans
+// render as code; `**bold**` is dropped (the terminal renderers do the same).
+function plainDescription(text) { return String(text).replace(/\*\*/g, ''); }
+function descriptionNode(text) {
+  const frag = document.createDocumentFragment();
+  const parts = plainDescription(text).split('`');
+  parts.forEach((part, i) => {
+    if (!part) return;
+    frag.appendChild(i % 2 ? el('code', null, part) : document.createTextNode(part));
+  });
+  return frag;
+}
+
 // A proper editor overlay (not a browser prompt): choices and booleans get a
 // select, everything else a text field, with the default, source, and type
 // shown; "set for this repo" writes the per-repo config instead of the global.
@@ -1587,9 +1600,8 @@ function editConfig(key, s) {
   meta.style.marginBottom = '10px';
   box.appendChild(meta);
   if (s.description) {
-    const desc = el('div', 'sub muted');
-    desc.textContent = s.description;
-    desc.style.marginBottom = '10px';
+    const desc = el('div', 'cfg-desc');
+    desc.appendChild(descriptionNode(s.description));
     box.appendChild(desc);
   }
   let field;

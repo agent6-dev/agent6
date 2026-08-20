@@ -1119,3 +1119,39 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: Path
             await pilot.pause()
 
     asyncio.run(scenario())
+
+
+def test_the_highlighted_setting_shows_its_description(repo: Path) -> None:
+    """The detail pane under the table says what the highlighted leaf means
+    (key, type, default, the description), and the edit modal repeats it: the
+    TUI editor read as bare knobs while the web and the docs explained them."""
+    from textual.widgets import Static
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(120, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            tbl = screen.query_one("#tbl-sandbox", DataTable)
+            tbl.focus()
+            ridx = next(
+                r
+                for r in range(tbl.row_count)
+                if str(tbl.get_row_at(r)[0]).strip() == "run_commands"
+            )
+            tbl.move_cursor(row=ridx)
+            await pilot.pause()
+            head = str(screen.query_one("#detail-key", Static).render())
+            body = str(screen.query_one("#detail-text", Static).render())
+            assert head.startswith("sandbox.run_commands")
+            assert "choice" in head and "default ask" in head
+            assert "run_command" in body and "**" not in body
+            screen.action_edit()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, EditModal)
+            shown = str(modal.query_one("#edit-description", Static).render())
+            assert "run_command" in shown
+
+    asyncio.run(scenario())
