@@ -71,6 +71,8 @@ from agent6.viewmodel.config_view import (
     ConfigSetting,
     ConfigView,
     build_config_view,
+    display_value,
+    format_value,
     plain_description,
 )
 
@@ -109,25 +111,9 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
 )
 
 
-def _fmt(value: object) -> str:
-    if value is None:
-        return "(unset)"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (list, tuple)):
-        return "[" + ", ".join(_fmt(v) for v in value) + "]" if value else "[]"
-    return str(value)
-
-
 # Fixed (label, width) columns shared by the single pinned header and every
 # section table, so all the section tables align under that one header.
 _COLUMNS: tuple[tuple[str, int], ...] = (("setting", 26), ("value", 28), ("source", 12))
-
-
-def _display_value(s: ConfigSetting) -> str:
-    if s.is_adaptive:
-        return f"{_fmt(s.effective_value)}  (adaptive)"
-    return _fmt(s.value)
 
 
 class _NavTable(DataTable[str]):
@@ -268,7 +254,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
             yield Static(f"Edit {s.key}", id="edit-title")
             yield Static(
                 Text(
-                    f"type={s.py_type}  ·  default={_fmt(s.default)}  ·  source={s.source}",
+                    f"type={s.py_type}  ·  default={format_value(s.default)}  ·  source={s.source}",
                     style="dim",
                 )
             )
@@ -282,7 +268,11 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
             # should be a valid tuple"). Prefill the edit box with the exact
             # inverse of parse_cli_value instead; scalars stay bare.
             raw = s.value if s.value is not None else s.default
-            current = format_toml_value(raw) if isinstance(raw, (list, tuple, dict)) else _fmt(raw)
+            current = (
+                format_toml_value(raw)
+                if isinstance(raw, (list, tuple, dict))
+                else format_value(raw)
+            )
             if self._typeahead is not None:
                 # Big open list (e.g. model ids): type to narrow over suggestions.
                 yield TypeaheadField(
@@ -316,7 +306,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                     initial = preset_url
                 yield Input(
                     value=initial,
-                    placeholder=str(_fmt(s.default)),
+                    placeholder=str(format_value(s.default)),
                     id="edit-value",
                     classes="edit-input edit-gap",
                 )
@@ -732,7 +722,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 src = s.source + (" *" if s.modified else "")
                 # Values/keys may carry brackets (lists, regexes) -> render as
                 # Text so they are never parsed as Rich markup.
-                table.add_row(Text(leaf), Text(_display_value(s)), Text(src), key=s.key)
+                table.add_row(Text(leaf), Text(display_value(s)), Text(src), key=s.key)
             # Pin each table to its full row count so it never scrolls internally --
             # only #settings scrolls. (DataTable's height:auto otherwise gets clamped
             # to the viewport in a short window, giving a table scrollbar AND the
@@ -765,7 +755,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             body.update("")
             return
         head.update(
-            Text(f"{setting.key}  ·  {setting.py_type}  ·  default {_fmt(setting.default)}")
+            Text(f"{setting.key}  ·  {setting.py_type}  ·  default {format_value(setting.default)}")
         )
         body.update(Text(plain_description(setting.description)))
 

@@ -29,11 +29,6 @@ from agent6.config.layer import (
 )
 
 
-def format_value(val: Any) -> str:
-    """Render a config leaf value the same way `config show` does."""
-    return _fmt_value(val)
-
-
 @dataclass(frozen=True, slots=True)
 class ConfigSetting:
     """One config leaf, fully described for display + editing."""
@@ -241,7 +236,9 @@ def build_config_view(
 # ---------------------------------------------------------------------------
 
 
-def _fmt_value(val: Any) -> str:
+def format_value(val: Any) -> str:
+    """A config leaf value as every surface prints it: `(unset)`, TOML
+    booleans, `[a, b]` lists, `{...}` for a non-empty table."""
     if val is None:
         return "(unset)"
     if isinstance(val, bool):
@@ -249,10 +246,18 @@ def _fmt_value(val: Any) -> str:
     if isinstance(val, (list, tuple)):
         if not val:
             return "[]"
-        return "[" + ", ".join(_fmt_value(v) for v in val) + "]"
+        return "[" + ", ".join(format_value(v) for v in val) + "]"
     if isinstance(val, dict):
         return "{...}" if val else "{}"
     return str(val)
+
+
+def display_value(s: ConfigSetting) -> str:
+    """The value column: the resolved value marked `(adaptive)` when a
+    setting resolved away from its raw value, else the raw value."""
+    if s.is_adaptive:
+        return f"{format_value(s.effective_value)}  (adaptive)"
+    return format_value(s.value)
 
 
 def _truncate(text: str, width: int) -> str:
@@ -319,14 +324,12 @@ def render_key_detail(
         )
     lines: list[str] = []
     for s in matched:
-        value = (
-            f"{_fmt_value(s.effective_value)}  (adaptive)" if s.is_adaptive else _fmt_value(s.value)
-        )
+        value = display_value(s)
         header = f"{'*' if s.modified else ' '} {s.key}"
         lines.append(f"\x1b[1m{header}\x1b[0m" if color else header)
         lines.append(f"    value:   {value}")
         if s.modified:
-            lines.append(f"    default: {_fmt_value(s.default)}")
+            lines.append(f"    default: {format_value(s.default)}")
         lines.append(f"    source:  {s.source}")
         if s.choices:
             lines.append(f"    choices: {', '.join(str(c) for c in s.choices)}")
@@ -377,9 +380,7 @@ def render_show(
     lines: list[str] = []
 
     def emit(s: ConfigSetting) -> None:
-        value = (
-            f"{_fmt_value(s.effective_value)}  (adaptive)" if s.is_adaptive else _fmt_value(s.value)
-        )
+        value = display_value(s)
         mark = "*" if s.modified else " "
         key, val = _truncate(s.key, key_w), _truncate(value, val_w)
         row = f"{mark} {key:<{key_w}} {val:<{val_w}} {s.source}"
