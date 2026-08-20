@@ -53,8 +53,10 @@ def main() -> int:
                 str(args.max_workers),
                 "--run_id",
                 run_id,
+                # none: each eval removes its image after running; the
+                # instance level kept ~3G per pred and filled the 147G mount.
                 "--cache_level",
-                "instance",
+                "none",
             ],
             cwd=str(args.out),
             check=False,
