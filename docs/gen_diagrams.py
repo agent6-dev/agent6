@@ -153,11 +153,15 @@ def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
     return "\n".join(lines)
 
 
-def _calls_in_order(rel_path: str, func: str, tier: tuple[str, ...]) -> list[str]:
+def _calls_in_order(
+    rel_path: str, func: str, tier: tuple[str, ...], *, own_body_only: bool = False
+) -> list[str]:
     """The *tier* functions *func* calls, in source order, first call only.
 
     A composition function's information is its ORDER; a star of edges from
-    the caller carries none of it.
+    the caller carries none of it. *own_body_only* leaves the bodies of nested
+    functions out (a closure's calls happen when it is called, not where it
+    is defined).
     """
     tree = ast.parse((_ROOT / rel_path).read_text(encoding="utf-8"))
     target = next(
@@ -176,6 +180,10 @@ def _calls_in_order(rel_path: str, func: str, tier: tuple[str, ...]) -> list[str
             if name in members and name not in seen:
                 seen.append(name)
             self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            if node is target or not own_body_only:
+                self.generic_visit(node)
 
     V().visit(target)
     return seen
@@ -210,8 +218,18 @@ _DISPATCH_TIER = (
 
 
 def _run_lifecycle_mermaid() -> str:
-    """`run_task`'s stages as one chain, in the order it calls them."""
-    stages = _calls_in_order("src/agent6/app/run.py", "run_task", _RUN_LIFECYCLE_TIER)
+    """`run_task`'s stages as one chain, in the order it calls them; the leg
+    body it hands off to (`_leg.run_leg`, shared with resume) is spliced in
+    where the hand-off happens."""
+    outer = _calls_in_order(
+        "src/agent6/app/run.py", "run_task", (*_RUN_LIFECYCLE_TIER, "run_leg"), own_body_only=True
+    )
+    # The leg calls the lifecycle's gate step (`inputs.gate`) between the
+    # providers and the tools; run's is the `_gate` closure in run_task.
+    gate = _calls_in_order("src/agent6/app/run.py", "_gate", _RUN_LIFECYCLE_TIER)
+    leg = _calls_in_order("src/agent6/app/_leg.py", "run_leg", (*_RUN_LIFECYCLE_TIER, "gate"))
+    body = [stage for name in leg for stage in (gate if name == "gate" else [name])]
+    stages = [stage for name in outer for stage in (body if name == "run_leg" else [name])]
     lines = ["graph TD", '    n_run_task["run_task"]']
     lines += [f'    {_nid(name)}["{name}"]' for name in stages]
     chain = ["run_task", *stages]

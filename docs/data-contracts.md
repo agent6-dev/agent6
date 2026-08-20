@@ -89,7 +89,7 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 | `graph_version` | `int` | `0` |
 
 - **Written by:** workflows/loop
-- **Read by:** app/{fork, resume, run}
+- **Read by:** app/{_leg, fork, resume}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (12 test files exercise it)
 
 ## ToolResult family

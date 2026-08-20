@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+import agent6.app._leg as leg_mod
 import agent6.app._setup as setup_mod
 import agent6.app.preflight as preflight_mod
 import agent6.app.run as app_run_mod
@@ -102,8 +103,9 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
     monkeypatch.setattr(run_mod, "validate_configured_model", _model_ok)
     monkeypatch.setattr(preflight_mod, "verify_git_identity", _noop)
     if stop_after_policy:
-        # The first step after the tree policy and the untracked snapshot.
-        monkeypatch.setattr(app_run_mod, "build_session_providers", _stop)
+        # The first step after the tree policy and the untracked snapshot: the
+        # leg body's provider session.
+        monkeypatch.setattr(leg_mod, "build_session_providers", _stop)
 
 
 def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[UserQuestion]:

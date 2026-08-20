@@ -12,13 +12,10 @@ import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
 
+from agent6.app._leg import LegInputs, run_leg
 from agent6.app._session import (
-    build_session_providers,
-    build_session_tools,
     select_isolation,
-    session_facts_provider,
     warn_install_inside_workspace,
 )
 from agent6.app._setup import (
@@ -26,17 +23,6 @@ from agent6.app._setup import (
     SandboxOverrides,
     check_provider_keys,
     load_session_config,
-    start_mcp_manager_if_enabled,
-    wants_session_network,
-)
-from agent6.app.finalize import (
-    auto_merge_eligible,
-    finalize_auto_merge,
-    fire_notify_hook,
-    print_interrupt_end,
-    print_session_end,
-    session_exit_code,
-    stranded_edits,
 )
 from agent6.app.frontend import (
     SessionFrontend,
@@ -50,12 +36,9 @@ from agent6.app.preflight import (
     headless_approval_refusal,
     require_git_repo,
 )
-from agent6.app.providers import (
-    build_prompt_reviser_provider,
-    role_temperature,
-)
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.run import run_task
+from agent6.budget import BudgetTracker
 from agent6.config import (
     Config,
     ConfigError,
@@ -63,37 +46,26 @@ from agent6.config import (
 from agent6.config.layer import (
     resolved_state_dir,
 )
-from agent6.events import EventSink, EventWriteError
+from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
     chain_ref_for,
     chain_tip,
     is_ancestor,
-    render_commit_trailer,
     verify_git_identity,
-)
-from agent6.paths import (
-    chown_to_real_user,
 )
 from agent6.providers import (
     TranscriptSink,
 )
-from agent6.sandbox.jail import SessionNetwork
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
     clear_away_mode,
-    clear_compact_request,
     clear_pending_answers,
-    clear_session_netns_pid,
-    clear_stop_request,
     clear_worker_pid,
-    read_compact_request,
     session_allow_set,
-    stop_request_pending,
     submit_steer,
-    write_session_netns_pid,
     write_worker_pid,
 )
 from agent6.sessions.layout import (
@@ -108,19 +80,16 @@ from agent6.sessions.lock import (
     repo_writer_holder,
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.types import SESSION_KINDS, IsolationLevel, session_bucket, session_kind
+from agent6.types import SESSION_KINDS, session_bucket, session_kind
 from agent6.viewmodel import newest_session_dir
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
 from agent6.workflows._context import agents_md_notices
 from agent6.workflows._session_state import (
     TURN_IN_FLIGHT_NAME,
-    SessionEndReason,
     clear_turn_marker,
     load_session_snapshot,
     read_turn_marker,
 )
-from agent6.workflows.loop import ResumeError, SessionResult, Workflow
 
 
 def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
@@ -317,9 +286,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     detach_requested = False
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
     repo_lock_fd: int | None = None
-    # Bound before the lock scope so the teardown can report on the leg.
-    result: SessionResult | None = None
-    isolation: IsolationLevel | None = None
     try:
         # The original run's manifest drives resume: `mode` (a plan run resumes
         # read-only with the plan tools, never as a write run), `preset` (unless
@@ -537,310 +503,91 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         if refusal is not None:
             reporter.refuse(refusal)
             return 2
-        stream_text, console_stream = frontend.stream_modes(tui_enabled)
-        if console_stream:
-            frontend.attach_console_view(events)
-        session = build_session_providers(
-            cfg, role=role, events=events, transcript_sink=transcript_sink, stream_text=stream_text
-        )
-        budget = session.budget
-        # The same revision wiring as a fresh leg: dropping it made every
-        # resumed leg silently lose prompt revision.
-        effective_revise_prompt = cfg.prompt.revise_prompt
-        if effective_revise_prompt == "interactive" and tui_enabled:
-            reporter.note(
-                "prompt.revise_prompt='interactive' needs the terminal; the TUI"
-                " owns it. Skipping prompt revision for this leg."
+
+        def _gate(cfg: Config, _budget: BudgetTracker) -> Config:
+            # Resume reuses the verify command the ORIGINAL run resolved
+            # (stored in the snapshot), so the tool list, prompt, and commit
+            # branch stay consistent with the frozen system prompt -- never
+            # re-inferring, which could flip and diverge. Config the operator
+            # has pinned since outranks it (announced below, and to the worker,
+            # since the prompt still names the old one). `()` means the
+            # original run was gateless: stay gateless.
+            leg_configured = bool(cfg.workflow.verify_command)
+            if not leg_configured and snapshot.verify_command:
+                cfg = cfg.with_verify_command(snapshot.verify_command)
+                gate = " ".join(snapshot.verify_command)
+                reporter.note(f"reusing this run's verify command: {gate}")
+            # The same leg-start decision a fresh run makes, LAST so nothing
+            # hands the gate back: a leg that cannot run a command cannot run
+            # its gate, so it is gateless rather than unwinnable. Frozen here,
+            # with the system prompt.
+            cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
+            # Re-pin for this leg: config outranks the pin, the pin outranks a
+            # re-inference, and the manifest has to say which one this leg used.
+            pinned_origin, pinned_gate = "", ()
+            with contextlib.suppress(ManifestError, OSError):
+                pinned = read_manifest(layout.session_dir).workflow
+                pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
+            if tuple(pinned_gate) != cfg.workflow.verify_command:
+                # Both directions, including none -> gate: the frozen system
+                # prompt names the OLD gate either way, so the operator has to
+                # know which command is now judging the run.
+                was = " ".join(pinned_gate) or "none"
+                now = " ".join(cfg.workflow.verify_command) or "none"
+                reporter.note(f"this run's verify gate changed: was {was}, now {now}")
+            pin_gate(
+                layout.session_dir,
+                cfg.workflow.verify_command,
+                leg_gate_origin(
+                    configured=leg_configured,
+                    has_gate=bool(cfg.workflow.verify_command),
+                    pinned=pinned_origin,
+                ),
+                events=events,
+                reporter=reporter,
             )
-            effective_revise_prompt = "off"
-        prompt_reviser_provider = build_prompt_reviser_provider(
-            cfg, transcript_sink=transcript_sink, budget=budget, events=events
-        )
-        # Resume reuses the verify command the ORIGINAL run resolved (stored in the
-        # snapshot), so the tool list, prompt, and commit branch stay consistent
-        # with the frozen system prompt -- never re-inferring, which could flip and
-        # diverge. Config the operator has pinned since outranks it (announced
-        # below, and to the worker, since the prompt still names the old one).
-        # `()` means the original run was gateless: stay gateless.
-        leg_configured = bool(cfg.workflow.verify_command)
-        if not leg_configured and snapshot.verify_command:
-            cfg = cfg.with_verify_command(snapshot.verify_command)
-            gate = " ".join(snapshot.verify_command)
-            reporter.note(f"reusing this run's verify command: {gate}")
-        # The same leg-start decision a fresh run makes, LAST so nothing hands
-        # the gate back: a leg that cannot run a command cannot run its gate,
-        # so it is gateless rather than unwinnable. Frozen here, with the
-        # system prompt.
-        cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
-        # Re-pin for this leg: config outranks the pin, the pin outranks a
-        # re-inference, and the manifest has to say which one this leg used.
-        pinned_origin, pinned_gate = "", ()
-        with contextlib.suppress(ManifestError, OSError):
-            pinned = read_manifest(layout.session_dir).workflow
-            pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
-        if tuple(pinned_gate) != cfg.workflow.verify_command:
-            # Both directions, including none -> gate: the frozen system prompt
-            # names the OLD gate either way, so the operator has to know which
-            # command is now judging the run.
-            was = " ".join(pinned_gate) or "none"
-            now = " ".join(cfg.workflow.verify_command) or "none"
-            reporter.note(f"this run's verify gate changed: was {was}, now {now}")
-        pin_gate(
-            layout.session_dir,
-            cfg.workflow.verify_command,
-            leg_gate_origin(
-                configured=leg_configured,
-                has_gate=bool(cfg.workflow.verify_command),
-                pinned=pinned_origin,
-            ),
-            events=events,
-            reporter=reporter,
-        )
+            return cfg
 
-        steer_state = frontend.make_steer_state(
-            events,
-            layout.session_dir,
-            session_facts_provider(
-                budget, session.rm_role.model, cfg.sandbox.run_commands, isolation
-            ),
-        )
+        def _undo_forker() -> tuple[str, str] | None:
+            # Lazy: app.fork imports this module (see run.py's twin).
+            from agent6.app.fork import undo_fork  # noqa: PLC0415
 
-        interrupted = False
-        dispatcher: ToolDispatcher | None = None
-        # Spawned inside the try so the finally below tears it down even if a
-        # spawn (MCP) fails.
-        mcp_manager = None
-        session_net: SessionNetwork | None = None
-        try:
-            reporter.note(f"resume session id: {session_id}")
+            return undo_fork(config_path, session_id, cwd=cwd, reporter=reporter)
 
-            # The run's session network, before its first member: the
-            # commands and any server that joins it share this one.
-            if wants_session_network(cfg, isolation):
-                session_net = SessionNetwork.open()
-                # Published so `agent6 exec`/`forward` can join it: a separate
-                # process names a namespace only through a live /proc entry.
-                write_session_netns_pid(layout.session_dir, session_net.holder_pid)
-            mcp_manager = start_mcp_manager_if_enabled(
-                cfg, cwd, isolation, reporter=reporter, events=events, session_net=session_net
-            )
-
-            loop_log = frontend.loop_logger(mode)
-            tools = build_session_tools(
-                cfg,
-                cwd=cwd,
-                state_dir=state_dir,
-                layout=layout,
+        end = run_leg(
+            cfg,
+            layout,
+            LegInputs(
+                session_id=session_id,
+                mode=mode,
+                role=role,
                 isolation=isolation,
-                mode=mode,
-                events=events,
-                approver=frontend.build_approver(layout.session_dir, events),
-                questioner=frontend.build_questioner(layout.session_dir, events),
-                loop_log=loop_log,
-                mcp_manager=mcp_manager,
-                session_net=session_net,
-                rm_role=session.rm_role,
-            )
-            curator = tools.curator
-            dispatcher = tools.dispatcher
-            cfg = tools.cfg
-            undo_outcome: list[tuple[str, str]] = []
-
-            def _undo_forker() -> tuple[str, str] | None:
-                # Lazy: app.fork imports this module (see run.py's twin).
-                from agent6.app.fork import undo_fork  # noqa: PLC0415
-
-                got = undo_fork(config_path, session_id, cwd=cwd, reporter=reporter)
-                if got is not None:
-                    undo_outcome.append(got)
-                return got
-
-            after_auto_commit: Callable[[int, str], Literal["continue", "stop"]] = (
-                frontend.build_repl_hook(cwd, budget, session_id, mcp_manager)
-                if interactive and mode == "run"
-                else (lambda _i, _s: "continue")
-            )
-            wf = Workflow(
-                root=cwd,
-                config=cfg,
+                tui_enabled=tui_enabled,
                 interactive=interactive,
-                state_dir=state_dir,
-                after_auto_commit=after_auto_commit,
-                commit_trailer=render_commit_trailer(
-                    cfg.git.commit.trailer, models=(session.rm_role.model,)
-                ),
-                chain_ref=chain_ref_for(session_id) if mode == "run" else None,
+                task=None,
+                gate=_gate,
                 chain_branch=run_branch or None,
-                chain_fallback_parent=resume_base_sha or None,
-                untracked_at_start=read_untracked_at_start(layout.session_dir),
-                commit_per_step=cfg.git.commit_per_step,
-                provider=session.provider,
-                dispatcher=dispatcher,
-                logger=loop_log,
-                events=events,
-                curator=curator,
-                steer_requested=steer_state.requested,
-                steer_clear=steer_state.clear,
-                steer_reset=steer_state.reset_stage,
-                steer_prompt=steer_state.prompt,
-                # "Compact now" from a front-end: the same file-bridge
-                # pattern as steer, honored at the next pre-call boundary.
-                compact_requested=lambda: read_compact_request(layout.session_dir),
-                compact_clear=lambda: clear_compact_request(layout.session_dir),
-                stop_requested=lambda: stop_request_pending(layout.session_dir),
-                stop_clear=lambda: clear_stop_request(layout.session_dir),
-                should_abort=steer_state.abort_pending,
-                undo_forker=_undo_forker,
-                should_interrupt=steer_state.interrupt,
-                # `/parallel` steer dispatch: the coordinator's group spawner
-                # (None in plan resume, and inside a lane -- depth 1).
-                lane_spawner=frontend.build_coordinator_spawner(
-                    cfg,
-                    cwd,
-                    state_dir,
-                    mode,
-                    session_id,
-                    budget_overrides.max_usd if budget_overrides is not None else None,
-                    sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
-                ),
-                budget=budget,
-                prompt_reviser_provider=prompt_reviser_provider,
-                revise_prompt=effective_revise_prompt,
-                prompt_reviser_temperature=role_temperature(cfg, "reviewer"),
-                prompt_revision_selector=(
-                    frontend.select_revised_prompt
-                    if effective_revise_prompt == "interactive"
-                    else None
-                ),
-                resume_state_path=snapshot_path,
-                mode=mode,
-                plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
-                review_trigger=cfg.review.trigger,
-                review_period=cfg.review.period,
-                review_seats=session.review_seats,
-                review_decision=cfg.review.decision,
-                review_quorum=cfg.review.quorum,
-                review_max_total_rejections=cfg.review.max_total_rejections,
-                review_budget_fraction=cfg.review.budget_fraction,
-                review_concurrency=cfg.review.concurrency,
                 base_sha=resume_base_sha,
-                temperature=role_temperature(cfg, role),
-                summariser_provider=session.summariser_provider,
-                compact_drop_at_chars=tools.compact_drop_at_chars,
-                compact_summarise_at_chars=tools.compact_summarise_at_chars,
-                context_summary_max_tokens=cfg.context.summary_max_tokens,
-                keep_recent_chars=cfg.context.keep_recent_chars,
-                keep_thinking_turns=cfg.context.keep_thinking_turns,
-                compact_elision_gists=cfg.context.elision_gists,
-            )
-            try:
-                with frontend.tui_session(layout.session_dir, tui_enabled):
-                    result = wf.resume()
-            except ResumeError as exc:
-                reporter.error(str(exc))
-                return 1
-            except KeyboardInterrupt:
-                interrupted = True
-                reporter.err("\n[agent6] resume interrupted")
-                # suppress: the interrupt exit (130 + resume hint) must not be
-                # masked by a dead journal.
-                reason: SessionEndReason = "interrupted"
-                with contextlib.suppress(EventWriteError):
-                    events.emit(
-                        "session.end",
-                        reason=reason,
-                        iterations=wf.iterations_reached,
-                        all_passed=False,
-                    )
-            except Exception:
-                # Any other escape (a broken stdout pipe from `| head`, an
-                # unexpected fault) also leaves the loop without a session.end,
-                # and the outer finally then clears worker.pid -- the only
-                # immediate liveness evidence -- so every surface read the
-                # dead run as "running" until the silence window expired.
-                # Record the end, then let the error surface as before.
-                with contextlib.suppress(EventWriteError):
-                    events.emit(
-                        "session.end",
-                        reason="crashed",
-                        iterations=wf.iterations_reached,
-                        all_passed=False,
-                    )
-                raise
-        finally:
-            steer_state.restore()
-            if dispatcher is not None:
-                dispatcher.close()
-            if mcp_manager is not None:
-                mcp_manager.close()
-            if session_net is not None:
-                # The last handles on the run's network: closing them is what
-                # lets the kernel reclaim it.
-                session_net.close()
-                clear_session_netns_pid(layout.session_dir)
-            if (
-                not interrupted
-                and result is not None
-                and auto_merge_eligible(result)
-                and cfg.git.auto_merge
-            ):
-                finalize_auto_merge(
-                    cwd, layout=layout, cfg=cfg, reporter=reporter, budget=budget, events=events
-                )
-            # Never leave root-owned run state in the user's repo (sudo case).
-            chown_to_real_user(state_dir)
-
-        if interrupted:
-            # Same close the run path prints: the leg's spend, the cross-leg
-            # run total, the resume hint, the on-the-run-branch note.
-            print_interrupt_end(layout=layout, budget=budget, reporter=reporter)
-            return 130
-        if result is None:
-            return 1
-
-        if mode == "ask":
-            # The answer IS result.summary, same as a fresh ask: a resumed one
-            # that printed only a run banner left the operator with nothing to
-            # read and a transcript.md still holding the first leg's answer.
-            reporter.out(result.summary)
-            # The follow-up this leg answered, not the run's original task: a
-            # `--steer` question that never appeared made the second answer
-            # read as more of the answer to the first.
-            frontend.save_ask_transcript(
-                layout, steer.strip() or manifest.user_task, result.summary
-            )
-            reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
-            reporter.err(budget.format_summary())
-            return 0 if result.completed else 1
-
-        if result.reason == "undone" and undo_outcome:
-            new_id, undone_text = undo_outcome[-1]
-            reporter.out(f"\n[agent6] undone: continue as {new_id} with your message back to edit:")
-            reporter.out(f"    agent6 resume {new_id} --steer {undone_text!r}")
-            return 0
-        if result.reason == "detached":
-            detach_requested = True
-            reporter.out(f"\n[agent6] detached: {layout.session_id} continues in the background.")
-            reporter.out(f"          reattach:  agent6 attach {layout.session_id}")
-            return 0
-
-        print_session_end(
-            result,
-            layout=layout,
-            budget=budget,
-            console_stream=console_stream,
+                untracked_at_start=read_untracked_at_start(layout.session_dir),
+                resume_state_path=snapshot_path,
+                undo_forker=_undo_forker,
+                # The follow-up this leg answered, not the run's original task:
+                # a `--steer` question that never appeared made the second
+                # answer read as more of the answer to the first.
+                ask_transcript_task=steer.strip() or manifest.user_task,
+                budget_overrides=budget_overrides,
+                sandbox_overrides=sandbox_overrides,
+                resuming=True,
+            ),
+            frontend=frontend,
             reporter=reporter,
+            events=events,
+            transcript_sink=transcript_sink,
+            cwd=cwd,
+            state_dir=state_dir,
         )
-        fire_notify_hook(
-            cfg.notify,
-            session_id=layout.session_id,
-            session_dir=layout.session_dir,
-            ok=result.completed,
-            reason=result.reason,
-            verified=result.verified,
-            reporter=reporter,
-        )
-        return session_exit_code(result, stranded=stranded_edits(result, layout))
+        detach_requested = end.detach_requested
+        return end.rc
     finally:
         # Single owner of worker.pid for every resume exit path, refusals and
         # Ctrl-C during verify inference included.
