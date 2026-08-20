@@ -21,7 +21,7 @@ It can be empty or absent when the global config supplies a provider and model; 
 ## Creating and inspecting
 
 - `agent6 connect`: add a provider + API key (stored `0600`), global.
-- `agent6 model <role> <provider> <model> [--thinking off|low|medium|high]`.
+- `agent6 model <role> <provider> <model> [--effort off|low|medium|high|xhigh|max]`.
 - `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.
@@ -155,7 +155,7 @@ Cross-vendor mixes are fine.
 | `provider` | *(required)* | A `[providers.<name>]` entry, by name. |
 | `model` | *(required)* | Model id as that provider names it (`agent6 model` lists them). |
 | `temperature` | `0.0` | Sampling temperature pinned on every call, `0.0` to `2.0`. `0.0` keeps tool use stable; unset leaves the provider's default. |
-| `thinking` | none | Reasoning effort: `off`, `low`, `medium`, or `high`. Anthropic maps it to a thinking budget of about 4k, 8k, or 16k tokens; models without reasoning ignore it. Unset: the provider's default. |
+| `effort` | none | Reasoning effort: `off`, `low`, `medium`, `high`, `xhigh`, or `max` (the top tiers where the model offers them; Anthropic collapses them to its highest). Unset: the provider's default. |
 
 ## `[sandbox]`
 

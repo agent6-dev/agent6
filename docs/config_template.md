@@ -20,7 +20,7 @@ It can be empty or absent when the global config supplies a provider and model; 
 ## Creating and inspecting
 
 - `agent6 connect`: add a provider + API key (stored `0600`), global.
-- `agent6 model <role> <provider> <model> [--thinking off|low|medium|high]`.
+- `agent6 model <role> <provider> <model> [--effort off|low|medium|high|xhigh|max]`.
 - `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.

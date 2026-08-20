@@ -358,7 +358,7 @@ def run_one(
         cfg = load_effective_with_overlay(req.cwd, req.overlay).config.with_machine_agent_overrides(
             provider=r.provider,
             model=r.model,
-            thinking=r.thinking,
+            effort=r.effort,
             temperature=r.temperature,
             max_usd=r.max_usd,
             max_tokens_fallback=r.max_tokens_fallback,

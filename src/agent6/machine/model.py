@@ -281,12 +281,12 @@ class AgentState(BaseModel):
     # Optional per-state overrides for how this agent loop is driven. When
     # unset each falls back through the effective config (machine `[config]`
     # overlay, then repo, then global, then the built-in default). `provider` selects which
-    # `[providers.*]` entry backs the call; `thinking` and `temperature`
+    # `[providers.*]` entry backs the call; `effort` and `temperature`
     # tune reasoning/sampling; the budget caps bound this single agent slice.
     # Secrets/connection keys are never expressed here, only the provider
     # *name*, which must already exist in the effective config.
     provider: str | None = None
-    thinking: Literal["off", "low", "medium", "high"] | None = None
+    effort: Literal["off", "low", "medium", "high", "xhigh", "max"] | None = None
     temperature: float | None = None
     # Per-state overrides of the effective config's [budget] ledgers: metered
     # spend (max_usd) and the unmetered input+output token bound

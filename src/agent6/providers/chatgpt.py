@@ -278,8 +278,9 @@ class ChatGPTProvider:
     timeout_s: float = 600.0
     transcript_sink: TranscriptRecorder | None = None
     budget: BudgetTracker | None = None
-    # Default reasoning effort, wired from `[models.<role>].thinking`; the
-    # backend's own default ("medium") applies when unset.
+    # Default reasoning effort, wired from `[models.<role>].effort`; the
+    # model's own default applies when unset, and "off" sends the wire's
+    # explicit "none".
     reasoning_effort: str | None = None
     # Stable per-provider id: the backend's `prompt_cache_key` (<= 64 chars)
     # and `session-id` header, so caching keys to this run's conversation.
@@ -341,8 +342,12 @@ class ChatGPTProvider:
         if tools:
             body["tools"] = tools_to_responses(tools)
         effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort
-        if effort and effort != "off":
-            body["reasoning"] = {"effort": effort, "summary": "auto"}
+        if effort:
+            # The wire has an explicit "none" (verified live); merely omitting
+            # the field would leave the model's own default on, so "off" maps
+            # to it rather than silently meaning "default".
+            wire = "none" if effort == "off" else effort
+            body["reasoning"] = {"effort": wire, "summary": "auto"}
         if self.extra_body:
             reserved = {
                 "model",

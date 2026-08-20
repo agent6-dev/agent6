@@ -2,14 +2,14 @@
 # Copyright 2026 Eric Lesiuta
 """Tests for Anthropic extended-thinking wiring.
 
-Validate that the provider's ``thinking`` level (off/low/medium/high):
+Validate that the provider's ``effort`` level:
 
 * enables the ``thinking`` block per model: adaptive + output_config.effort
   (with summarized display where display defaults to omitted) on models that
   removed budget_tokens, the mapped ``budget_tokens`` on older models, always
   lifting ``max_tokens`` for room to answer;
 * drops ``temperature`` (Anthropic rejects temperature with thinking);
-* leaves the body unchanged when ``thinking`` is off/unset;
+* leaves the body unchanged when ``effort`` is off/unset;
 * preserves streamed ``thinking`` blocks (with signature) in the
   reconstructed assistant content so they round-trip on the next turn.
 """
@@ -63,7 +63,7 @@ def test_thinking_enables_budget_and_drops_temperature(
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
     provider = AnthropicProvider(
-        api_key="sk-test", model="claude-test", prompt_caching=False, thinking=level
+        api_key="sk-test", model="claude-test", prompt_caching=False, effort=level
     )
     provider.call(
         system="sys",
@@ -91,7 +91,7 @@ def test_adaptive_models_use_adaptive_effort_and_summary(
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
     provider = AnthropicProvider(
-        api_key="sk-test", model=model, prompt_caching=False, thinking="high"
+        api_key="sk-test", model=model, prompt_caching=False, effort="high"
     )
     provider.call(
         system="sys",
@@ -115,7 +115,7 @@ def test_46_generation_uses_adaptive_without_display(
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
     provider = AnthropicProvider(
-        api_key="sk-test", model=model, prompt_caching=False, thinking="medium"
+        api_key="sk-test", model=model, prompt_caching=False, effort="medium"
     )
     provider.call(
         system="sys",
@@ -134,7 +134,7 @@ def test_legacy_models_keep_budget_tokens(monkeypatch: pytest.MonkeyPatch, model
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
     provider = AnthropicProvider(
-        api_key="sk-test", model=model, prompt_caching=False, thinking="high"
+        api_key="sk-test", model=model, prompt_caching=False, effort="high"
     )
     provider.call(
         system="sys",
@@ -154,7 +154,7 @@ def test_thinking_off_is_a_plain_call(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
     provider = AnthropicProvider(
-        api_key="sk-test", model="claude-test", prompt_caching=False, thinking="off"
+        api_key="sk-test", model="claude-test", prompt_caching=False, effort="off"
     )
     provider.call(
         system="sys",
@@ -280,7 +280,7 @@ def test_streaming_preserves_thinking_blocks(
         model="claude-test",
         prompt_caching=False,
         transcript_sink=sink,
-        thinking="high",
+        effort="high",
     )
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:

@@ -334,7 +334,7 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
             assert isinstance(screen, MachineWatchScreen)
             assert screen._ended  # pyright: ignore[reportPrivateUsage]
             log = screen.query_one("#mw-log", RichLog)
-            assert not any("thinking" in strip.text for strip in log.lines)
+            assert not any("effort" in strip.text for strip in log.lines)
 
     asyncio.run(scenario())
 
@@ -346,7 +346,7 @@ def test_discrete_log_line_renders_tool_events_only() -> None:
     from agent6.ui.tui.machines import _discrete_log_line
 
     # A tool call renders compactly; a thinking delta is not a discrete line.
-    assert _discrete_log_line({"type": "role.thinking_delta", "text": "hm"}) is None
+    assert _discrete_log_line({"type": "role.effort_delta", "text": "hm"}) is None
     line = _discrete_log_line({"type": "tool.call", "name": "grep", "args": {"q": "x"}})
     assert line is not None and "grep" in line.plain
     # The verdict goes through the shared coercion (tool_result_ok), never

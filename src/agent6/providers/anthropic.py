@@ -55,8 +55,8 @@ def _anthropic_version(deployment: str) -> tuple[str, str]:
     return ("header", ANTHROPIC_VERSION)
 
 
-# Legacy extended-thinking `budget_tokens` per cross-provider `thinking`
-# level (off/low/medium/high). Anthropic REMOVED budget_tokens (a 400) on the
+# Legacy extended-thinking `budget_tokens` per cross-provider `effort`
+# level. Anthropic REMOVED budget_tokens (a 400) on the
 # models in _ADAPTIVE_THINKING_MARKERS below in favour of adaptive thinking plus
 # output_config.effort, so this map is only for older models. Anthropic requires
 # `budget_tokens < max_tokens`; the call site lifts `max_tokens` so the
@@ -65,6 +65,9 @@ _THINKING_BUDGET_TOKENS: dict[str, int] = {
     "low": 4096,
     "medium": 8192,
     "high": 16384,
+    # The above-high tiers collapse to the top budget on this wire.
+    "xhigh": 16384,
+    "max": 16384,
 }
 
 # Models whose extended thinking must be adaptive: Anthropic removed
@@ -191,11 +194,11 @@ class AnthropicProvider:
     timeout_s: float = 120.0
     transcript_sink: TranscriptRecorder | None = None
     budget: BudgetTracker | None = None
-    # Extended-thinking level (off/low/medium/high). When not "off" the
+    # Reasoning-effort level (config `effort`). When not "off" the
     # call enables Anthropic extended thinking with a budget drawn from
     # `_THINKING_BUDGET_TOKENS` and drops `temperature` (Anthropic
     # rejects temperature overrides while thinking is enabled).
-    thinking: str | None = None
+    effort: str | None = None
     extra_headers: tuple[tuple[str, str], ...] = ()
     extra_body: dict[str, Any] = field(default_factory=dict)
     extra_query: dict[str, str] = field(default_factory=dict)
@@ -247,7 +250,7 @@ class AnthropicProvider:
         timeout_s: float = 120.0,
         transcript_sink: TranscriptRecorder | None = None,
         budget: BudgetTracker | None = None,
-        thinking: str | None = None,
+        effort: str | None = None,
     ) -> AnthropicProvider:
         key = os.environ.get(env_var, "").strip()
         if not key:
@@ -259,7 +262,7 @@ class AnthropicProvider:
             timeout_s=timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
-            thinking=thinking,
+            effort=effort,
         )
 
     def call(  # noqa: PLR0912
@@ -278,7 +281,7 @@ class AnthropicProvider:
     ) -> ProviderResponse:
         # `reasoning_effort` is the OpenAI-reasoning-model knob; Anthropic
         # extended thinking uses a different shape and is configured on the
-        # provider itself (`self.thinking`), so the cross-provider call
+        # provider itself (`self.effort`), so the cross-provider call
         # argument is ignored here.
         del reasoning_effort
         # Hard-stop: refuse the call up front if the run is already over budget.
@@ -320,7 +323,7 @@ class AnthropicProvider:
         # Extended thinking. Modern models (see _ADAPTIVE_THINKING_MARKERS) took
         # adaptive thinking + output_config.effort and dropped budget_tokens;
         # older models still use budget_tokens. "off" sends neither.
-        level = self.thinking or "off"
+        level = self.effort or "off"
         adaptive_thinking = level != "off" and _is_adaptive_thinking(self.model)
         thinking_budget = None if adaptive_thinking else _THINKING_BUDGET_TOKENS.get(level)
         if adaptive_thinking or thinking_budget is not None:
@@ -350,7 +353,8 @@ class AnthropicProvider:
             if _summarise_thinking_display(self.model):
                 thinking_cfg["display"] = "summarized"
             body["thinking"] = thinking_cfg
-            body["output_config"] = {"effort": level}
+            # xhigh/max are OpenAI-tier spellings; Anthropic tops out at high.
+            body["output_config"] = {"effort": "high" if level in ("xhigh", "max") else level}
         elif thinking_budget is not None:
             # Legacy extended thinking; incompatible with temperature overrides.
             body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}

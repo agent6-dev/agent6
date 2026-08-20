@@ -388,7 +388,7 @@ def test_extended_thinking_silently_ignored(monkeypatch: pytest.MonkeyPatch) -> 
         messages=[{"role": "user", "content": "u"}],
         extended_thinking={"type": "enabled", "budget_tokens": 1000},
     )
-    assert "thinking" not in captured["body"]
+    assert "effort" not in captured["body"]
     assert "extended_thinking" not in captured["body"]
 
 
@@ -875,7 +875,7 @@ def test_translate_thinking_only_assistant_sends_empty_content() -> None:
         "sys",
         [
             {"role": "user", "content": "go"},
-            {"role": "assistant", "content": [{"type": "thinking", "thinking": "hmm"}]},
+            {"role": "assistant", "content": [{"type": "effort", "effort": "hmm"}]},
             {"role": "user", "content": "continue"},
         ],
     )

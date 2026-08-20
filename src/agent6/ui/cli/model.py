@@ -92,11 +92,11 @@ def _show_assignments(config_path: Path | None) -> int:
         if rm is None:
             print(f"  {r:<9} (unset)")
         else:
-            think = rm.thinking or "-"
-            print(f"  {r:<9} {rm.provider}/{rm.model}  thinking={think}  [{src}]")
+            effort = rm.effort or "-"
+            print(f"  {r:<9} {rm.provider}/{rm.model}  effort={effort}  [{src}]")
     print(
         "\nSet one with: agent6 model worker <provider> <model>"
-        " [--thinking low|medium|high]  (provider/model are prompted if omitted)"
+        " [--effort low|medium|high|xhigh|max]  (provider/model are prompted if omitted)"
     )
     return 0
 
@@ -161,10 +161,10 @@ def _cmd_model(
     role: str | None,
     provider: str,
     model: str,
-    thinking: str,
+    effort: str,
     to_repo: bool,
 ) -> int:
-    """Show or set the model + thinking level for a role."""
+    """Show or set the model + reasoning effort for a role."""
     if not role:
         return _show_assignments(config_path)
     # `role` is validated by argparse `choices`: planner/worker/reviewer or the
@@ -181,10 +181,10 @@ def _cmd_model(
         print("ERROR: no provider given.", file=sys.stderr)
         return 2
     if not model and not interactive:
-        if thinking:
+        if effort:
             # The flag only means something for a set; a silent drop would read
             # as applied.
-            print("note: --thinking ignored (no model named; this is a listing).", file=sys.stderr)
+            print("note: --effort ignored (no model named; this is a listing).", file=sys.stderr)
         return _print_catalog(config_path, role, provider)
     if not model:
         model = _prompt_for_model(config_path, provider)
@@ -193,8 +193,8 @@ def _cmd_model(
         return 2
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
     fields: dict[str, ConfigLeafValue] = {"provider": provider, "model": model}
-    if thinking:
-        fields["thinking"] = thinking
+    if effort:
+        fields["effort"] = effort
     roles: tuple[RoleName, ...] = (
         ("planner", "worker", "reviewer") if role == "all" else (cast("RoleName", role),)
     )
@@ -212,9 +212,6 @@ def _cmd_model(
             )
             return 2
     where = "[models.*] (all roles)" if role == "all" else f"[models.{role}]"
-    print(
-        f"Set {where} = {provider}/{model}"
-        f"{f' (thinking={thinking})' if thinking else ''} in {target}."
-    )
+    print(f"Set {where} = {provider}/{model}{f' (effort={effort})' if effort else ''} in {target}.")
     _warn_unusable_provider(config_path, provider)
     return 0

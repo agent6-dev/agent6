@@ -670,13 +670,13 @@ def test_with_machine_agent_overrides(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     out = cfg.with_machine_agent_overrides(
         model="claude-y",
-        thinking="high",
+        effort="high",
         temperature=0.5,
         max_usd=2.0,
     )
     assert out.models.worker is not None
     assert out.models.worker.model == "claude-y"
-    assert out.models.worker.thinking == "high"
+    assert out.models.worker.effort == "high"
     assert out.models.worker.temperature == 0.5
     assert out.budget.max_usd == 2.0
     # Provider name untouched when not overridden.

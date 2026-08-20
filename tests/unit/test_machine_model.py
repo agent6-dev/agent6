@@ -580,7 +580,7 @@ model = "claude-sonnet-4-5"''',
 kind  = "agent"
 model = "claude-sonnet-4-5"
 provider = "anthropic"
-thinking = "high"
+effort = "high"
 temperature = 0.2
 max_usd = 1.5
 max_tokens_fallback = 100000""",
@@ -589,7 +589,7 @@ max_tokens_fallback = 100000""",
     state = spec.states["classify"]
     assert isinstance(state, AgentState)
     assert state.provider == "anthropic"
-    assert state.thinking == "high"
+    assert state.effort == "high"
     assert state.temperature == 0.2
     assert state.max_usd == 1.5
     assert state.max_tokens_fallback == 100000
@@ -600,15 +600,15 @@ def test_agent_state_knobs_default_none(tmp_path: Path) -> None:
     state = spec.states["classify"]
     assert isinstance(state, AgentState)
     assert state.provider is None
-    assert state.thinking is None
+    assert state.effort is None
     assert state.temperature is None
     assert state.max_usd is None
 
 
-def test_agent_state_unknown_thinking_rejected(tmp_path: Path) -> None:
+def test_agent_state_unknown_effort_rejected(tmp_path: Path) -> None:
     body = VALID_MACHINE.replace(
         'model = "claude-sonnet-4-5"',
-        'model = "claude-sonnet-4-5"\nthinking = "extreme"',
+        'model = "claude-sonnet-4-5"\neffort = "extreme"',
     )
     assert _problems(tmp_path, body)
 

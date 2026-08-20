@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 from functools import partial
 from pathlib import Path
+from typing import get_args
 
+from agent6.config import EffortLevel
 from agent6.ui.cli._common import _sub
 from agent6.ui.cli.completers import (
     _complete_config_keys,
@@ -184,7 +186,7 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     model_p = _sub(
         sub,
         "model",
-        help="Show or set which model + thinking level each role uses (planner/worker/reviewer).",
+        help="Show or set which model + reasoning effort each role uses (planner/worker/reviewer).",
     )
     # choices gives both argparse validation and argcomplete tab-completion for
     # free. default=None (not "") so the omitted case isn't checked against
@@ -220,10 +222,10 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     )
     model_model.completer = _complete_models  # type: ignore[attr-defined]
     model_p.add_argument(
-        "--thinking",
-        choices=("off", "low", "medium", "high"),
+        "--effort",
+        choices=get_args(EffortLevel),
         default="",
-        help="Reasoning/thinking effort for the role.",
+        help="Reasoning effort for the role (the top tiers where the model offers them).",
     )
     model_p.add_argument(
         "--repo",

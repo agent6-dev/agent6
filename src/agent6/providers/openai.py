@@ -14,7 +14,7 @@ tool_result inline, the most expressive shape); translation both ways lives in
 providers. Deliberately NOT translated: `cache_control` markers are stripped
 (OpenAI caches server-side), and Anthropic's `extended_thinking` budget_tokens
 has no equivalent -- OpenAI reasoning is the `reasoning_effort` knob, wired
-from `[models.<role>].thinking`.
+from `[models.<role>].effort`.
 """
 
 from __future__ import annotations
@@ -182,8 +182,8 @@ class OpenAIProvider:
     timeout_s: float = 120.0
     transcript_sink: TranscriptRecorder | None = None
     budget: BudgetTracker | None = None
-    # Default reasoning effort for this provider (off|low|medium|high), wired
-    # from the role's `[models.<role>].thinking`. A per-call `reasoning_effort`
+    # Default reasoning effort for this provider (config EffortLevel), wired
+    # from the role's `[models.<role>].effort`. A per-call `reasoning_effort`
     # argument takes precedence; below this sits the AGENT6_REASONING_EFFORT
     # env override. Only affects OpenAI-compatible reasoning models.
     reasoning_effort: str | None = None
@@ -350,7 +350,9 @@ class OpenAIProvider:
             if effective_reasoning is None:
                 env_override = os.environ.get("AGENT6_REASONING_EFFORT", "").strip().lower()
                 effective_reasoning = (
-                    env_override if env_override in ("off", "low", "medium", "high") else "low"
+                    env_override
+                    if env_override in ("off", "low", "medium", "high", "xhigh", "max")
+                    else "low"
                 )
             effort = effective_reasoning.strip().lower()
             if is_openai_direct_reasoning:

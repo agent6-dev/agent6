@@ -68,7 +68,7 @@ class ConfigError(OperatorError):
     """
 
 
-ThinkingLevel = Literal["off", "low", "medium", "high"]
+EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
 
 
 class RoleModel(BaseModel):
@@ -110,16 +110,16 @@ class RoleModel(BaseModel):
             "stable; unset leaves the provider's default."
         ),
     )
-    # Reasoning/thinking effort for this role. `None` leaves the
-    # provider default; `off` disables it explicitly. Mapped per
-    # provider: OpenAI-compatible reasoning models receive a
-    # `reasoning.effort` knob, Anthropic models receive an
-    # `extended_thinking` budget. Non-reasoning models ignore it.
-    thinking: ThinkingLevel | None = Field(
+    # Reasoning effort for this role. `None` leaves the provider default;
+    # `off` disables it explicitly. Mapped per wire: OpenAI-family models
+    # receive `reasoning.effort`, Anthropic adaptive models
+    # `output_config.effort` (older ones a thinking budget, `xhigh`/`max`
+    # collapsing to the top tier). Non-reasoning models ignore it.
+    effort: EffortLevel | None = Field(
         default=None,
         description=(
-            "Reasoning effort: `off`, `low`, `medium`, or `high`. Anthropic maps it to a thinking "
-            "budget of about 4k, 8k, or 16k tokens; models without reasoning ignore it. Unset: the "
+            "Reasoning effort: `off`, `low`, `medium`, `high`, `xhigh`, or `max` (the top tiers "
+            "where the model offers them; Anthropic collapses them to its highest). Unset: the "
             "provider's default."
         ),
     )
@@ -364,7 +364,7 @@ class Config(BaseModel):
         *,
         provider: str | None = None,
         model: str | None = None,
-        thinking: str | None = None,
+        effort: str | None = None,
         temperature: float | None = None,
         max_usd: float | None = None,
         max_tokens_fallback: int | None = None,
@@ -383,8 +383,8 @@ class Config(BaseModel):
             worker["provider"] = provider
         if model is not None:
             worker["model"] = model
-        if thinking is not None:
-            worker["thinking"] = thinking
+        if effort is not None:
+            worker["effort"] = effort
         if temperature is not None:
             worker["temperature"] = temperature
         budget = data.setdefault("budget", {})

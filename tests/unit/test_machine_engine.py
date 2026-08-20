@@ -1141,7 +1141,7 @@ def test_agent_per_state_knobs_threaded_to_request(tmp_path: Path) -> None:
         'prompt = "Review the change."',
         'prompt = "Review the change."\n'
         'provider = "anthropic"\n'
-        'thinking = "high"\n'
+        'effort = "high"\n'
         "temperature = 0.3\n"
         "max_usd = 2.5\n"
         "max_tokens_fallback = 90000",
@@ -1152,7 +1152,7 @@ def test_agent_per_state_knobs_threaded_to_request(tmp_path: Path) -> None:
     drive(spec, journal, world, live=True)
     req = world.agent_calls[0]
     assert req.provider == "anthropic"
-    assert req.thinking == "high"
+    assert req.effort == "high"
     assert req.temperature == 0.3
     # min(2.5 state cap, 1.0 machine budget): a state can never be handed
     # more than the machine has.

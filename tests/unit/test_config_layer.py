@@ -299,7 +299,7 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
     still landed (the TUI provider editor and `agent6 model` write through this)."""
     from agent6.config.write import set_config_table
 
-    # The repo layer masks models.worker.thinking with a valid value, so only the
+    # The repo layer masks models.worker.effort with a valid value, so only the
     # standalone per-leaf check catches a bad `thinking` written to global.
     repo_config_path_for(repo).write_text(
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude"\nthinking = "off"\n',
@@ -311,11 +311,11 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
     err = set_config_table(
         repo,
         "models.worker",
-        {"provider": "anthropic", "model": "claude", "thinking": "garbage_level"},
+        {"provider": "anthropic", "model": "claude", "effort": "garbage_level"},
         to_repo=False,
     )
 
-    assert err is not None and "thinking" in err
+    assert err is not None and "effort" in err
     assert gpath.read_text(encoding="utf-8") == before  # the masked bad leaf rolled back
 
 

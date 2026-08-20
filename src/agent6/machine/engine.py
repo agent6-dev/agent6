@@ -146,7 +146,7 @@ class AgentRequest(BaseModel):
     # fail min_length validation.
     model: str | None = None
     provider: str | None = None
-    thinking: str | None = None
+    effort: str | None = None
     temperature: float | None = None
     max_usd: float | None = None
     max_tokens_fallback: int | None = None
@@ -707,7 +707,7 @@ def _execute(
                 prompt=prompt,
                 timeout_s=float(state.timeout_secs),
                 provider=state.provider,
-                thinking=state.thinking,
+                effort=state.effort,
                 temperature=state.temperature,
                 max_usd=_agent_usd_cap(state.max_usd, remaining_usd),
                 max_tokens_fallback=state.max_tokens_fallback,

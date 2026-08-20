@@ -27,7 +27,7 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 ## Features
 
 - **Jailed commands**: Landlock + seccomp, and under `strict` (what the default `auto` picks when the host allows it) user namespaces, `pivot_root`, read-only `.git`, no route off the box ([Security](https://agent6.dev/security/))
-- **Providers**: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), or a ChatGPT subscription (`agent6 connect chatgpt`); model + thinking level per role ([Config](https://agent6.dev/config/))
+- **Providers**: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), or a ChatGPT subscription (`agent6 connect chatgpt`); model + reasoning effort per role ([Config](https://agent6.dev/config/))
 - **Clean checkout**: per-step commits on a detached ref, `sessions merge` to land them, snapshot resume, fork at any turn
 - **Verify gate**: inferred when unset, pinned for the run, green/red on every surface; a worker can propose a replacement gate instead of reverting
 - **Budget**: hard `max_usd` cap, token cap for calls the provider does not price

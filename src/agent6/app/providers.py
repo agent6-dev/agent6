@@ -13,9 +13,9 @@ from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
     Config,
+    EffortLevel,
     RoleModel,
     RoleName,
-    ThinkingLevel,
 )
 from agent6.events import EventSink
 from agent6.models import registry as models_registry
@@ -101,7 +101,7 @@ def build_role_provider(
     Resolves the API key via `agent6.secrets.resolve_api_key` (env var named
     by `api_key_env` first, then `secrets.toml`). `model_override` (if
     truthy) replaces the model string; provider routing is unchanged. The
-    role's `thinking` level is wired to the provider's default reasoning
+    role's `effort` level is wired to the provider's default reasoning
     effort. Callers should have validated routing via
     `cfg.require_runnable(role)` first.
     """
@@ -118,7 +118,7 @@ def build_role_provider(
         rm.provider,
         entry,
         model,
-        rm.thinking,
+        rm.effort,
         # Stamp the seat on this provider's transcripts: the conversation fold
         # keeps the worker's round-trips and skips compaction's side-calls,
         # whose one-message requests otherwise read as a restart.
@@ -131,13 +131,13 @@ def _provider_from_entry(
     provider_name: str,
     entry: Any,
     model: str,
-    thinking: ThinkingLevel | None,
+    effort: EffortLevel | None,
     *,
     transcript_sink: TranscriptRecorder,
     budget: BudgetTracker,
 ) -> Provider:
     """Build a Provider for an explicit `[providers.<provider_name>]` entry +
-    model + thinking. Shared by `build_role_provider` (role routing) and the
+    model + effort. Shared by `build_role_provider` (role routing) and the
     review panel's explicit per-seat `provider/model` routing."""
     extra_headers = tuple(sorted(entry.extra_headers.items()))
     extra_body = dict(entry.extra_body)
@@ -163,7 +163,7 @@ def _provider_from_entry(
             timeout_s=entry.http_timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
-            reasoning_effort=thinking,
+            reasoning_effort=effort,
         )
     key = resolve_api_key(provider_name, entry.api_key_env)
     credential = (
@@ -189,7 +189,7 @@ def _provider_from_entry(
             timeout_s=entry.http_timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
-            thinking=thinking,
+            effort=effort,
             extra_headers=extra_headers,
             extra_body=extra_body,
             extra_query=extra_query,
@@ -207,7 +207,7 @@ def _provider_from_entry(
         timeout_s=entry.http_timeout_s,
         transcript_sink=transcript_sink,
         budget=budget,
-        reasoning_effort=thinking,
+        reasoning_effort=effort,
         credential=credential,
     )
 

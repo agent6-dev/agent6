@@ -324,7 +324,7 @@ def test_is_reasoning_model_detects_thinking_models() -> None:
     assert _is_reasoning_model("o1-preview")
     assert _is_reasoning_model("o3-mini")
     assert _is_reasoning_model("Reasoning-Pro-2")
-    # bare-name reasoning emitters (no "thinking" suffix advertised).
+    # bare-name reasoning emitters (no "effort" suffix advertised).
     assert _is_reasoning_model("moonshotai/kimi-k2.6")
     assert _is_reasoning_model("moonshotai/kimi-k2.5")
     # The whole Moonshot K family reasons, not one generation: kimi-k3 missed

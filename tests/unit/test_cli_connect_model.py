@@ -228,7 +228,7 @@ def test_connect_local_endpoint_no_key(
 
 
 def test_model_set_and_show(iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    rc = main(["model", "worker", "anthropic", "claude-x", "--thinking", "medium"])
+    rc = main(["model", "worker", "anthropic", "claude-x", "--effort", "medium"])
     assert rc == 0
     gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
     assert "[models.worker]" in gc
@@ -403,9 +403,9 @@ def test_model_piped_listing_notes_an_ignored_thinking_flag(
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.models.choices.list_models", _models_stub(["claude-a"]))
-    rc = main(["model", "worker", "anthropic", "--thinking", "high"])
+    rc = main(["model", "worker", "anthropic", "--effort", "high"])
     assert rc == 0
-    assert "--thinking ignored" in capsys.readouterr().err
+    assert "--effort ignored" in capsys.readouterr().err
 
 
 def test_model_aborts_without_provider(iso: Path, monkeypatch: pytest.MonkeyPatch) -> None:

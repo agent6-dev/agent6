@@ -636,7 +636,7 @@ def _dispatch_model(args: argparse.Namespace) -> int:
         role=args.role,
         provider=args.provider,
         model=args.model,
-        thinking=args.thinking,
+        effort=args.effort,
         to_repo=args.repo,
     )
 

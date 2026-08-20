@@ -161,7 +161,7 @@ on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt
 # mode = "agent"                   # "agent" (default, read-only) | "run"
 # Optional per-state overrides (inherit the effective config when unset):
 # provider = "anthropic"           # which [providers.*] entry backs this call
-# thinking = "high"                # off | low | medium | high (extended thinking)
+# effort = "high"                 # off | low | medium | high | xhigh | max
 # temperature = 0.2
 # max_usd = 1.5                    # this agent slice's metered-spend cap
 # max_tokens_fallback = 100000     # ...and its unmetered-token cap (-1/0/>0)
@@ -185,7 +185,7 @@ Grant it per invocation with `agent6 machine run <file> --auto-approve` (the sam
 A machine `[config]` overlay cannot grant it (sandbox policy is operator-only).
 Edits, verify, and the auto-commit need no approval, so prefer `tool` states or the verify slot over shelling out where you can.
 
-The optional per-state knobs above tune *how* that loop runs: `provider` / `thinking` / `temperature` select and tune the model, and the `max_usd` / `max_tokens_fallback` caps bound this one agent slice.
+The optional per-state knobs above tune *how* that loop runs: `provider` / `effort` / `temperature` select and tune the model, and the `max_usd` / `max_tokens_fallback` caps bound this one agent slice.
 Each falls back through the effective config (machine `[config]` overlay, then repo, then global, then the built-in default; see [Machine config overlay](#47-machine-config-overlay-config)) when omitted.
 Connection secrets are never expressed here, only a `provider` *name* that must already exist in the effective config.
 
