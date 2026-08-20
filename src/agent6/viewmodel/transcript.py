@@ -328,6 +328,10 @@ class TranscriptFold:
         self._first_ep: float | None = None
         self._last_ep: float | None = None
         self._commit_subject = ""
+        # Pins already shown: a pin renders once, where it enters the
+        # conversation (a /pin, a --pin at leg start), never again at a resume
+        # boundary that restates the list.
+        self._pins_shown: set[str] = set()
 
     def _fold_receipt(self, event: dict[str, Any], etype: str) -> bool:
         """Track the done item's receipt pieces (wall-clock span, cost, last
@@ -366,6 +370,19 @@ class TranscriptFold:
         if self._commit_subject:
             parts.append(_clip(self._commit_subject, 60))
         return " · ".join(parts)
+
+    def _pin_items(self, event: dict[str, Any], etype: str) -> list[TranscriptItem]:
+        """The operator's pins as an operator item (the other half of the
+        dialogue, like a steer): the ones this fold has not shown yet."""
+        raw = [event.get("text", "")] if etype == "loop.pin.added" else event.get("pins") or ()
+        texts = [str(t).strip() for t in raw] if isinstance(raw, (list, tuple)) else []
+        fresh = [t for t in texts if t and t not in self._pins_shown]
+        if not fresh:
+            return []
+        self._pins_shown.update(fresh)
+        out = self._flush_message()
+        out.append(TranscriptItem("operator", body="pinned: " + " | ".join(fresh)))
+        return out
 
     def feed(self, event: dict[str, Any]) -> list[TranscriptItem]:  # noqa: PLR0911, PLR0912
         etype = event.get("type", "")
@@ -425,6 +442,8 @@ class TranscriptFold:
             out = self._flush_message()  # a turn's prose precedes the marker
             out.append(TranscriptItem("marker", body=body))
             return out
+        if etype in ("loop.pin.added", "loop.pin.restored"):
+            return self._pin_items(event, etype)
         aside = _BETWEEN_TURNS.get(etype)
         if aside is not None:
             kind, field = aside

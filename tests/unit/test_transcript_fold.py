@@ -271,6 +271,23 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
     assert fold.feed({"type": "loop.steer.injected", "chars": 9}) == []
 
 
+def test_pins_render_once_as_operator_items() -> None:
+    """A pin is the operator's own instruction, shown like a steer where it
+    enters the conversation: the leg-start announcement (a --pin run, a fork)
+    and each /pin. A resume boundary restating the same list adds nothing;
+    the conversation carried no pin at all before."""
+    from agent6.viewmodel.transcript import TranscriptFold
+
+    fold = TranscriptFold()
+    items = fold.feed({"type": "loop.pin.restored", "pins": ["never touch tests"], "count": 1})
+    assert [(i.kind, i.body) for i in items] == [("operator", "pinned: never touch tests")]
+    items = fold.feed({"type": "loop.pin.added", "text": "keep the API", "chars": 12, "count": 2})
+    assert [(i.kind, i.body) for i in items] == [("operator", "pinned: keep the API")]
+    restated = {"type": "loop.pin.restored", "pins": ["never touch tests", "keep the API"]}
+    assert fold.feed(restated) == []
+    assert fold.feed({"type": "loop.pin.restored", "pins": [], "count": 0}) == []
+
+
 def test_an_internal_side_call_is_not_rendered_as_agent_speech() -> None:
     """Only the role DRIVING the session speaks to the operator.
 
