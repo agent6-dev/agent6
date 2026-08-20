@@ -65,13 +65,15 @@ def test_ask_logger_flushes_each_line() -> None:
 def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) -> None:
     """On the live console the loop's state narration (LOOP: transitions, a
     compaction, the thresholds compaction will fire at) is noise between the
-    glyphs; genuine notices pass. `AGENT6_DEBUG=1` shows everything."""
+    glyphs, and a tool_error line repeats the error the stream shows under its
+    red glyph; genuine notices pass. `AGENT6_DEBUG=1` shows everything."""
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     out = io.StringIO()
     log = loop_logger("run", ConsoleView(out, color=False))
     log("[agent6] LOOP: LOAD_CONTEXT")
     log("compaction: dropped 3 old tool results")
     log("compaction thresholds: drop at 471,859 chars, summarise at 983,040 [adaptive]")
+    log("[agent6]   tool_error: apply_edit: old_string not found in calc.py\n<<<ON_DISK\n...")
     log("[agent6] auto-commit: 2 files")
     assert out.getvalue().strip() == "[agent6] auto-commit: 2 files"
     monkeypatch.setenv("AGENT6_DEBUG", "1")
