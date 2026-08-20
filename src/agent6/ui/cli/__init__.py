@@ -343,6 +343,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         args.task,
         session_id=session_id,
         mode="plan",
+        tui=args.tui,
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),

@@ -48,7 +48,7 @@ A run that can infer nothing still proceeds, committing every editing step as an
 Pin one in the per-repo config, or with `agent6 init`, to make it deterministic.
 
 `agent6 run` streams the run in your terminal, with no full-screen UI.
-`--tui` opens the full-screen TUI instead (the run's conversation, with the dashboard on Ctrl+D), and `-i` drives the run from a stdin REPL.
+`--tui` opens the full-screen TUI instead (the run's conversation, with the dashboard on Ctrl+D; `agent6 plan --tui` does the same for a planning run), and `-i` drives the run from a stdin REPL.
 
 ## Inspect a run
 

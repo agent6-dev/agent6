@@ -43,6 +43,15 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     plan_run.add_argument(
         "--session-id", default="", help="Explicit session id (default: generate one)."
     )
+    plan_run.add_argument(
+        "--tui",
+        action="store_true",
+        help=(
+            "Open the full-screen TUI on the planning run (the conversation view; Ctrl+D"
+            " toggles the dashboard) instead of the default headless CLI stream. Needs a"
+            " TTY. (Or run `agent6 tui` and start the plan from there.)"
+        ),
+    )
     plan_profile = plan_run.add_argument(
         "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
     )

@@ -208,3 +208,25 @@ def test_an_unreadable_plan_refuses_in_plan_show_too(
         assert "report this" not in err
     finally:
         plan.chmod(0o600)
+
+
+def test_plan_takes_tui_like_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`agent6 plan --tui "<task>"` opens the TUI on the planning run as `run
+    --tui` does on a run (it read "unrecognized arguments: --tui")."""
+    from agent6.ui import cli
+
+    seen: dict[str, object] = {}
+
+    def _fake_run(_cfg: object, task: str, **kw: object) -> int:
+        seen.update(kw, task=task)
+        return 0
+
+    monkeypatch.setattr(cli, "_cmd_run", _fake_run)
+
+    def _no_prompt(_args: object, rc: int, _sid: str) -> int:
+        return rc
+
+    monkeypatch.setattr(cli, "_prompt_for_the_next_input", _no_prompt)
+    assert main(["plan", "--tui", "lay out the work"]) == 0
+    assert seen["task"] == "lay out the work"
+    assert seen["mode"] == "plan" and seen["tui"] is True

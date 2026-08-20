@@ -246,7 +246,10 @@ def test_should_spawn_tui_gating(monkeypatch: pytest.MonkeyPatch) -> None:
     assert should(tui=True, interactive=False, mode="run") is True
     # --tui asked for but can't honour -> warn and stay headless.
     assert should(tui=True, interactive=True, mode="run") is False
-    assert should(tui=True, interactive=False, mode="plan") is False
+    # A planning run opens the same view (the hub already views plans there);
+    # an ask stays text: its answer is the deliverable.
+    assert should(tui=True, interactive=False, mode="plan") is True
+    assert should(tui=True, interactive=False, mode="ask") is False
     # textual not installed.
     monkeypatch.setattr(livemod, "_tui_available", _no)
     assert should(tui=True, interactive=False, mode="run") is False

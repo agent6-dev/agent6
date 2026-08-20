@@ -80,16 +80,16 @@ def _tui_available() -> bool:
 
 
 def should_spawn_tui(*, tui: bool, interactive: bool, mode: str) -> bool:
-    """Whether `agent6 run`/`resume` opens the dashboard TUI.
+    """Whether `agent6 run`/`plan`/`resume` opens the dashboard TUI.
 
     Headless by default (a scrolling CLI event stream); `--tui` opts into the
-    full-screen dashboard. It needs the `tui` extra and a real TTY, is for `run`
-    mode only (`plan`/`ask` stay text), and is mutually exclusive with `-i` (the
-    stdin REPL). When `--tui` is asked for but cannot run, warn and stay
-    headless rather than fail the run."""
+    full-screen dashboard. It needs a real TTY, is for `run` and `plan` (an ask
+    stays text: its answer is the deliverable), and is mutually exclusive with
+    `-i` (the stdin REPL). When `--tui` is asked for but cannot run, warn and
+    stay headless rather than fail the run."""
     if not tui:
         return False
-    if interactive or mode != "run":
+    if interactive or mode not in ("run", "plan"):
         print("[agent6] --tui is not available here; continuing in CLI mode.", file=sys.stderr)
         return False
     if not sys.stdout.isatty():
