@@ -18,6 +18,7 @@ from pathlib import Path
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
 from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
+from agent6.task_text import operator_task_text
 from agent6.viewmodel.events import event_epoch
 
 
@@ -83,28 +84,15 @@ _ASK_ANSWER_HEADER = re.compile(r"^## (Answer|A\d+)$")
 
 
 def first_task_line(lines: Iterable[str]) -> str | None:
-    """First user-authored line, skipping the ask headers (one-shot and
-    interactive) and the multi-line body of a `<file ...>` / `<prior-run ...>`
-    block (a seeded ask prepends those). Returns None when nothing stands out."""
-    skip_until: str | None = None
-    for line in lines:
+    """First user-authored line: the ask headers (one-shot and interactive)
+    skipped, the composed context (`operator_task_text`: seed digests, file
+    seeds, skill blocks) stripped. Returns None when nothing stands out."""
+    for line in operator_task_text("\n".join(lines)).splitlines():
         s = line.strip()
-        if skip_until is not None:
-            if s == skip_until:
-                skip_until = None
-            continue
         if s.startswith("# agent6 ask") or _ASK_QUESTION_HEADER.match(s):
             continue
         if _ASK_ANSWER_HEADER.match(s):
             break
-        if s.startswith("<file "):
-            if "</file>" not in s:
-                skip_until = "</file>"
-            continue
-        if s.startswith("<prior-run "):
-            if "</prior-run>" not in s:
-                skip_until = "</prior-run>"
-            continue
         if s and not s.startswith("<"):
             return s
     return None

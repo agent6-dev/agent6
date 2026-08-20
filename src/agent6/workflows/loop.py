@@ -68,6 +68,7 @@ from agent6.providers import (
 )
 from agent6.sessions.ipc import emit_session_start
 from agent6.skills import ResolvedSkills
+from agent6.task_text import operator_task_text
 from agent6.tools.dispatch import (
     OperatorCommandUnexecutable,
     ToolDenied,
@@ -759,8 +760,14 @@ class Workflow:
         # The run dir name is the authoritative run id; stamped into session.start so
         # every fold reports it without re-deriving it from the path.
         session_id = self.events.path.parent.name if self.events is not None else ""
+        # The event carries the operator's own words (a seed digest or skill
+        # block prepended by `run --from`/`--skill` is context, not the task),
+        # clipped: every headline reads this field.
         self._emit_start(
-            "session.start", session_id=session_id, user_task=user_task[:200], mode=self.mode
+            "session.start",
+            session_id=session_id,
+            user_task=operator_task_text(user_task)[:200],
+            mode=self.mode,
         )
         self._log("LOOP: LOAD_CONTEXT")
         repo = self._load_repo_summary()

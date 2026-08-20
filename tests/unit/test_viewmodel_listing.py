@@ -51,6 +51,30 @@ def test_task_snippet_skips_seeded_file_block() -> None:
     assert task_snippet(task) == "why is the broker slow?"
 
 
+def test_task_snippet_is_the_operators_words_under_a_from_seed_and_skills() -> None:
+    """`run --from` prepends a `<prior-run>` digest and `--skill` a preamble +
+    `<skill>` blocks + `---`; the headline everywhere is what the operator
+    typed. A clipped copy that cuts inside the block (the 200-char event of
+    the older writers) drops the open block instead of showing its opener."""
+    from agent6.task_text import operator_task_text
+
+    seeded = (
+        '<prior-run id="agile-echo-H2EWX5">\nThis question is about a PRIOR agent6 run.\n'
+        "## Run task\nhow many functions?\n</prior-run>\n\n"
+        "add a module docstring to calc.py"
+    )
+    assert task_snippet(seeded) == "add a module docstring to calc.py"
+    skilled = (
+        "Apply the operator-installed skill(s) below to this task.\n\n"
+        '<skill name="tdd">\nwrite the test first\n</skill>\n\n---\n\n'
+        "add a --json flag\nmore detail"
+    )
+    assert task_snippet(skilled) == "add a --json flag"
+    assert operator_task_text(skilled) == "add a --json flag\nmore detail"
+    assert operator_task_text(seeded[:60]) == ""  # clipped inside the block: nothing invented
+    assert task_snippet("plain words") == "plain words"
+
+
 def test_task_snippet_plain_task() -> None:
     assert task_snippet("add a --json flag\nmore detail") == "add a --json flag"
 

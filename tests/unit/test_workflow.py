@@ -6061,6 +6061,31 @@ def test_standing_goal_seeds_a_standing_child_under_the_root() -> None:
     assert drafts[1].created_by == "steering"
 
 
+def test_session_start_carries_the_operators_words_under_a_seed() -> None:
+    """`run --from` composes a `<prior-run>` digest ahead of the operator's
+    task; the session.start event (every headline's source) carries the
+    operator's words, not the digest's opening tag."""
+    events: list[dict[str, Any]] = []
+
+    class _Events:
+        path = Path("/tmp/x/logs.jsonl")
+
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            events.append({"type": event_type, **fields})
+
+    provider = MagicMock()
+    provider.call.return_value = _resp("done")
+    wf = _wf(mode="run", budget=None, provider=provider, events=_Events())
+    composed = (
+        '<prior-run id="agile-echo-H2EWX5">\nThis question is about a PRIOR agent6 run.\n'
+        "## Run task\nhow many functions?\n</prior-run>\n\n"
+        "add a module docstring to calc.py"
+    )
+    wf.run(composed)
+    start = next(e for e in events if e["type"] == "session.start")
+    assert start["user_task"] == "add a module docstring to calc.py"
+
+
 def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -> None:
     """G: interactively, going quiet is a TURN BOUNDARY. The run parks (same
     in-memory conversation) and the operator's steer continues it -- no

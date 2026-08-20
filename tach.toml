@@ -129,6 +129,7 @@ depends_on = [
   "agent6.skills",  # operator-installed skills indexed in the system prompt
   "agent6.graph.order",  # the one walk order the frontier and list_tasks share
   "agent6.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
+  "agent6.task_text",  # the session.start headline is the operator's own words
 ]
 
 [[modules]]
@@ -251,6 +252,7 @@ depends_on = [
   "agent6.sessions.ipc",
   "agent6.sessions.manifest",
   "agent6.git_ops",
+  "agent6.task_text",
 ]
 
 [[modules]]
@@ -420,6 +422,10 @@ depends_on = ["agent6.sandbox.landlock", "agent6.types"]
 
 [[modules]]
 path = "agent6.types"
+depends_on = []
+
+[[modules]]
+path = "agent6.task_text"
 depends_on = []
 
 [[modules]]
