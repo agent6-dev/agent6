@@ -9,7 +9,7 @@ from pathlib import Path
 
 from agent6 import __version__
 from agent6.paths import cache_dir, data_dir, effective_user, global_config_path, state_base
-from agent6.ui.cli._common import _sub
+from agent6.ui.cli._common import _add_config_flag, _sub
 from agent6.ui.cli._config_args import _add_config_parser, _add_connect_parser, _add_model_parser
 from agent6.ui.cli._machine_args import _add_machine_parser
 from agent6.ui.cli._mcp_args import _add_mcp_server_parsers
@@ -327,15 +327,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " command."
         ),
     )
-    mcp_serve.add_argument(
-        "--config",
-        type=Path,
-        # SUPPRESS so a top-level `agent6 --config F <cmd>` is not clobbered;
-        # rationale at `_run_args._add_run_parser`.
-        default=argparse.SUPPRESS,
-        metavar="FILE",
-        help="Explicit config file (layered over global + repo configs).",
-    )
+    _add_config_flag(mcp_serve)
 
     _sub(
         sub,

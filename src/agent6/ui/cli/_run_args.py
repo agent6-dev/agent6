@@ -6,10 +6,9 @@ paused one from its snapshot, or fork a new run off a prior checkpoint."""
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from agent6.config.layer import BUILTIN_PRESETS
-from agent6.ui.cli._common import _add_budget_flags, _add_sandbox_flags, _sub
+from agent6.ui.cli._common import _add_budget_flags, _add_config_flag, _add_sandbox_flags, _sub
 from agent6.ui.cli.completers import (
     _complete_parallel_models,
     _complete_plan_session_ids,
@@ -63,18 +62,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         ),
     )
     run_profile.completer = _complete_presets  # type: ignore[attr-defined]
-    run_p.add_argument(
-        "--config",
-        type=Path,
-        # SUPPRESS (not None): a subparser default would otherwise clobber a
-        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
-        # subparser only sets `config` when --config is given AFTER the
-        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
-        # work; the top-level --config supplies the always-present default.
-        default=argparse.SUPPRESS,
-        metavar="FILE",
-        help="Explicit config file (layered over global + repo configs).",
-    )
+    _add_config_flag(run_p)
     run_p.add_argument(
         "-i",
         "--interactive",
@@ -162,15 +150,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Session id under the per-repo state dir (omit for the most recent).",
     )
     resume_run.completer = _complete_resumable_ids  # type: ignore[attr-defined]
-    resume_p.add_argument(
-        "--config",
-        type=Path,
-        # SUPPRESS so a top-level `agent6 --config F <cmd>` is not clobbered;
-        # rationale at `_run_args._add_run_parser`.
-        default=argparse.SUPPRESS,
-        metavar="FILE",
-        help="Explicit config file (layered over global + repo configs).",
-    )
+    _add_config_flag(resume_p)
     resume_preset = resume_p.add_argument(
         "--preset",
         default="",
@@ -250,13 +230,7 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         action="store_true",
         help="Only create the fork dir; do not continue it (resume it later).",
     )
-    fork_p.add_argument(
-        "--config",
-        type=Path,
-        default=argparse.SUPPRESS,
-        metavar="FILE",
-        help="Explicit config file (layered over global + repo configs).",
-    )
+    _add_config_flag(fork_p)
     fork_p.add_argument(
         "--tui",
         action="store_true",

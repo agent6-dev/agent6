@@ -32,6 +32,20 @@ def _sub(
     return subparsers.add_parser(name, help=help, description=help)
 
 
+def _add_config_flag(parser: argparse.ArgumentParser) -> None:
+    """A subcommand's `--config FILE`. Its default is SUPPRESS, not None: the
+    subparser sets `config` only when the flag follows the subcommand, so both
+    `agent6 --config F run` and `agent6 run --config F` work and the top-level
+    flag supplies the always-present default."""
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=argparse.SUPPRESS,
+        metavar="FILE",
+        help="Explicit config file (layered over global + repo configs).",
+    )
+
+
 def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
     """Add per-run budget override flags (override `[budget]` config)."""
     parser.add_argument(

@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 
-from agent6.ui.cli._common import _add_budget_flags, _add_sandbox_flags, _sub
+from agent6.ui.cli._common import _add_budget_flags, _add_config_flag, _add_sandbox_flags, _sub
 from agent6.ui.cli.completers import (
     _complete_plan_session_ids,
     _complete_presets,
@@ -48,15 +47,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
     )
     plan_profile.completer = _complete_presets  # type: ignore[attr-defined]
-    plan_run.add_argument(
-        "--config",
-        type=Path,
-        # SUPPRESS so a top-level `agent6 --config F <cmd>` is not clobbered;
-        # rationale at `_run_args._add_run_parser`.
-        default=argparse.SUPPRESS,
-        metavar="FILE",
-        help="Explicit config file (layered over global + repo configs).",
-    )
+    _add_config_flag(plan_run)
     _add_budget_flags(plan_run)
     _add_sandbox_flags(plan_run)
     plan_show = _sub(plan_sub, "show", help="Print the plan.md for a prior plan run and exit.")
@@ -109,15 +100,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         help='Question (in quotes), e.g. "why does the retry loop double the timeout?".',
     )
-    ask_query.add_argument(
-        "--config",
-        type=Path,
-        # SUPPRESS so a top-level `agent6 --config F <cmd>` is not clobbered;
-        # rationale at `_run_args._add_run_parser`.
-        default=argparse.SUPPRESS,
-        metavar="FILE",
-        help="Explicit config file (layered over global + repo configs).",
-    )
+    _add_config_flag(ask_query)
     # One seed, named one way: the two spellings are mutually exclusive.
     seed = ask_query.add_mutually_exclusive_group()
     ask_session = seed.add_argument(

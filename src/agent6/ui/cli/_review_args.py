@@ -7,9 +7,8 @@ the repo (diff review, pre-flight checks) and privileged host/OS setup
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
-from agent6.ui.cli._common import _sub
+from agent6.ui.cli._common import _add_config_flag, _sub
 
 
 def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -31,15 +30,7 @@ def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
             " and prints a single PASS/FAIL summary."
         ),
     )
-    check_p.add_argument(
-        "--config",
-        type=Path,
-        # SUPPRESS so a top-level `agent6 --config F <cmd>` is not clobbered;
-        # rationale at `_run_args._add_run_parser`.
-        default=argparse.SUPPRESS,
-        metavar="FILE",
-        help="Explicit config file (layered over global + repo configs).",
-    )
+    _add_config_flag(check_p)
 
 
 def _add_system_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
