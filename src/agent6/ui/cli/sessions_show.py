@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.config.layer import resolved_state_dir
-from agent6.git_ops import branch_exists, merge_stamp_holds
+from agent6.git_ops import branch_exists, chain_ref_for, chain_tip, merge_stamp_holds
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import pid_alive, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
@@ -216,19 +216,24 @@ class _Changes:
 def _changes(session_id: str, manifest: SessionManifest) -> _Changes:
     """Where the run's work lives, checked against git as the end-of-run
     footer checks it: merged into the base (the stamp still describes the
-    branch), on the run branch awaiting `sessions merge`, or a branch no
-    commit ever reached."""
+    branch), on the run branch awaiting `sessions merge`, on the hidden chain
+    ref alone (the branch deleted, the commits kept), or a branch no commit
+    ever reached."""
     run_branch = manifest.run_branch or ""
     if not run_branch:
         return _Changes("", "")
+    cwd = Path.cwd()
     stamp = manifest.merged
-    if stamp is not None and merge_stamp_holds(Path.cwd(), run_branch, stamp.tip):
+    if stamp is not None and merge_stamp_holds(cwd, run_branch, stamp.tip):
         into = stamp.into or manifest.base_branch
         return _Changes(format_branch(run_branch, manifest.base_branch, into), into)
-    if not branch_exists(Path.cwd(), run_branch):
-        return _Changes(f"{run_branch} (no commits)", "")
-    line = format_branch(run_branch, manifest.base_branch, "")
-    return _Changes(f"{line}; merge with: agent6 sessions merge {session_id}", "")
+    merge_hint = f"merge with: agent6 sessions merge {session_id}"
+    if not branch_exists(cwd, run_branch):
+        chain = chain_ref_for(session_id)
+        if chain_tip(cwd, chain) is None:
+            return _Changes(f"{run_branch} (no commits)", "")
+        return _Changes(f"{chain} ({run_branch} is gone; the commits are kept); {merge_hint}", "")
+    return _Changes(f"{format_branch(run_branch, manifest.base_branch, '')}; {merge_hint}", "")
 
 
 def _print_listening_ports(session_dir: Path) -> None:

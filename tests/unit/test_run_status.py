@@ -596,6 +596,15 @@ def test_status_says_where_the_changes_are(
     assert (obj["run_branch"], obj["base_branch"], obj["merged_into"]) == (branch, "main", "main")
     _stamp_manifest(d, mode="ask")
     assert "changes:" not in show()
+    # The branch deleted (no merge stamp) while the chain ref keeps the
+    # commits: the ref is named, and the merge still offered.
+    _stamp_manifest(d, run_branch=branch, base_branch="main")
+    chain = "refs/agent6/winsome-dawn-YWH5ZS/head"
+    subprocess.run(["git", "update-ref", chain, tip], cwd=Path.cwd(), check=True)
+    subprocess.run(["git", "branch", "-D", branch], cwd=Path.cwd(), check=True, capture_output=True)
+    out = show()
+    assert "changes:    refs/agent6/winsome-dawn-YWH5ZS/head (" in out
+    assert "is gone; the commits are kept); merge with: agent6 sessions merge" in out
 
 
 def test_status_of_an_ask_does_not_repeat_its_word(
