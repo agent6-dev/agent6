@@ -437,6 +437,41 @@ def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:
     assert not shown_dead, "a dead worker has no in-progress turn to show"
 
 
+def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: Path) -> None:
+    """Blocked on an approval or a question, the run is neither thinking nor
+    running a tool; the pane kept pulsing "thinking…" (the last turn's streamed
+    reasoning) under the very modal asking. The host's dir status says
+    "waiting"; the pane says so too."""
+
+    class _WaitingHost(_LivenessHost):
+        dir_status = ("waiting", "needs answer")
+
+    logs = tmp_path / "logs.jsonl"
+    _write(
+        logs,
+        [
+            {"type": "session.start", "user_task": "fix it"},
+            {"type": "role.call", "role": "worker"},
+            {"type": "role.thinking_delta", "text": "I will run the tests"},
+            {"type": "role.result", "role": "worker"},
+            {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: pytest"},
+        ],
+    )
+
+    async def scenario() -> str:
+        app = _WaitingHost(logs, live=True)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            pane = app.screen.query_one("#conv-live", Static)
+            assert pane.display
+            return str(pane.content)
+
+    text = asyncio.run(scenario())
+    assert "waiting for your answer" in text
+    assert "thinking" not in text and "working" not in text
+
+
 def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: Path) -> None:
     """The conversation pane is the first thing a run opens on, and it promised
     a dead run's output "appears as the run streams". The web already gates the

@@ -656,6 +656,13 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             # view, which carries no status label to contradict it.
             live.display = False
             return
+        if self._host_waiting():
+            # Blocked on the operator (an approval or a question is open): the
+            # model is not thinking and no tool is running, so the pulse that
+            # says so would lie under the very modal asking.
+            live.display = True
+            live.update(Text("waiting for your answer…", style="bold yellow"))
+            return
         think = "".join(self._live_think).strip()
         text = "".join(self._live_text).strip()
         frame = spinner_frame(self._spin)
@@ -769,6 +776,12 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         # RESUMES the run with the typed follow-up); a pushed viewer shows it
         # only while there is a live run to steer.
         return self._live or self._primary
+
+    def _host_waiting(self) -> bool:
+        """Whether the run is blocked on the operator, per the Agent6TUI host's
+        dir status ("waiting"); False on a pushed viewer with no host."""
+        status = getattr(self.app, "dir_status", None)
+        return isinstance(status, tuple) and status[0] == "waiting"
 
     def _host_live(self) -> bool:
         """Whether the run is still live, per the Agent6TUI host's dir status

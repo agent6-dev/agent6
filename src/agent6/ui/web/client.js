@@ -484,9 +484,23 @@ function makeConv(url, box, body) {
     const follow = following();
     liveHost.innerHTML = '';
     const note = itemsHost.querySelector('.conv-empty');
-    if (notLive(s) || !r) {
+    if (notLive(s)) {
       liveHost.style.display = 'none';
       if (note) { note.textContent = emptyNote(); note.style.display = ''; } // re-tense if already painted
+      return;
+    }
+    if (s.status === 'waiting') {
+      // Blocked on the operator (the prompt card above): no thinking, no tool
+      // running, so neither pulse may say so -- nor "appears as the run
+      // streams" over a run that has not started its first turn.
+      liveHost.style.display = '';
+      if (note) note.style.display = 'none';
+      liveHost.appendChild(el('div', 'muted', '· waiting for your answer'));
+      return;
+    }
+    if (!r) {
+      liveHost.style.display = 'none';
+      if (note) { note.textContent = emptyNote(); note.style.display = ''; }
       return;
     }
     const think = r.streamed_thinking, text = r.streamed_text;
