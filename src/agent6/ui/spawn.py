@@ -98,6 +98,19 @@ def _capture_message(stdout: str, stderr: str) -> str:
     return "\n".join(ln for ln in lines if ln)
 
 
+def _child_exit_message(label: str, rc: int | None, captured: str) -> str:
+    """What a front-end shows when a spawned child ended before it began: the
+    child's own words (its REFUSING / PARKED / ERROR message), or the exit
+    code when it said nothing."""
+    said = _capture_message("", captured)
+    return said or f"agent6 {label} exited {rc} without a word"
+
+
+def _not_started_message(label: str, timeout_s: float, captured: str) -> str:
+    said = _capture_message("", captured)
+    return f"agent6 {label} has not started after {timeout_s:.0f}s" + (f":\n{said}" if said else "")
+
+
 def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
     """Run a quick agent6 subcommand synchronously, capturing its output, and
     return `(ok, message)`. For the fast, foreground CLI ops a front-end drives
@@ -171,9 +184,9 @@ def spawn_and_confirm(
                 # Recheck once: the signal may have landed in the same instant.
                 if started(proc.pid) or rc == 0:
                     return ""
-                return f"agent6 {label} exited ({rc}) before starting:\n{err_tail()}"
+                return _child_exit_message(label, rc, err_tail())
             time.sleep(0.2)
-        return f"timed out waiting for `agent6 {label}` to start:\n{err_tail()}"
+        return _not_started_message(label, timeout_s, err_tail())
     finally:
         # Same lifetime note as spawn_and_locate: the detached child keeps the
         # unlinked-but-open inode as its stderr until it exits.
@@ -246,12 +259,9 @@ def spawn_and_locate(
                 found = _located(list_dirs, before)
                 if found is not None:
                     return found, ""
-                return (
-                    None,
-                    f"agent6 {label} exited ({proc.returncode}) before starting:\n{err_tail()}",
-                )
+                return None, _child_exit_message(label, proc.returncode, err_tail())
             time.sleep(0.2)
-        return None, f"timed out waiting for `agent6 {label}` to start:\n{err_tail()}"
+        return None, _not_started_message(label, timeout_s, err_tail())
     finally:
         # On the success/timeout paths the child is a detached process still
         # holding this file as its stderr; closing + unlinking is intentional (its

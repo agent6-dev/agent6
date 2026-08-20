@@ -99,8 +99,7 @@ def test_spawn_and_confirm_surfaces_refusal_stderr(tmp_path: Path) -> None:
     # (lock held, network refusal) must surface its stderr, not "" (started).
     argv = [sys.executable, "-c", "import sys; sys.stderr.write('lock held'); sys.exit(2)"]
     err = spawn.spawn_and_confirm(argv, tmp_path, started=lambda _pid: False, timeout_s=10.0)
-    assert "exited (2)" in err
-    assert "lock held" in err
+    assert err == "lock held"  # the child's own words, no plumbing prefix
 
 
 def test_spawn_and_confirm_returns_clean_once_started(tmp_path: Path) -> None:

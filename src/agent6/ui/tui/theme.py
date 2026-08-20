@@ -16,7 +16,7 @@ palettes and remembers the choice (in `ui.toml`, never the agent config).
 from __future__ import annotations
 
 from math import ceil
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 try:
     from rich.color import Color
@@ -27,6 +27,7 @@ try:
     from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.containers import Vertical, VerticalScroll
+    from textual.notifications import SeverityLevel
     from textual.screen import ModalScreen
     from textual.scrollbar import ScrollBar, ScrollBarRender
     from textual.theme import Theme
@@ -255,6 +256,31 @@ class ThinScrollBarRender(ScrollBarRender):
                 meta = before if right < start else after
                 segments.append(Segment(" ", Style(bgcolor=back_color, meta=meta)))
         return Segments([*segments, Segment.line()] * thickness, new_lines=False)
+
+
+class PlainNotify:
+    """Mix into an App (before App in the bases): notifications carry text,
+    never markup. Every toast here relays a message assembled elsewhere (a
+    refusal naming `[git].auto_stash`, a path, an error), and textual's
+    default markup parse ate the bracketed parts ("set .auto_stash=true")."""
+
+    def notify(
+        self,
+        message: str,
+        *,
+        title: str = "",
+        severity: SeverityLevel = "information",
+        timeout: float | None = None,
+        markup: bool = False,
+    ) -> None:
+        App.notify(
+            cast(App[Any], self),
+            message,
+            title=title,
+            severity=severity,
+            timeout=timeout,
+            markup=markup,
+        )
 
 
 class MuxPointerShapes:

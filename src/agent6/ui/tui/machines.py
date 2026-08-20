@@ -67,7 +67,13 @@ from agent6.ui.tui.modals import (
     SteerModal,
     TextInputModal,
 )
-from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
+from agent6.ui.tui.theme import (
+    PALETTE_CSS,
+    MuxPointerShapes,
+    PlainNotify,
+    open_theme_picker,
+    setup_theme,
+)
 from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
@@ -841,7 +847,7 @@ class MachinesScreen(Screen[None]):
         self.dismiss()
 
 
-class _MachineWatchApp(MuxPointerShapes, App[None]):
+class _MachineWatchApp(PlainNotify, MuxPointerShapes, App[None]):
     """One-screen host for `agent6 attach <machine> --tui`: the same live machine
     view the Machines page opens, runnable straight from the CLI."""
 
