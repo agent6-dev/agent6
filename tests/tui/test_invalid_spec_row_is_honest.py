@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A file that does not parse has no machine name, so the row does not invent one.
+"""A file that does not parse has no machine name, so the row does not invent one
+(the TUI machines page and `machine list` share the row).
 
 `path.stem` on `lint-and-test.asm.toml` renders `lint-and-test.asm`: half a
 filename, and neither the machine's declared name nor the file's. The name is
@@ -12,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent6.ui.tui.machines import _machine_row  # pyright: ignore[reportPrivateUsage]
+from agent6.app.machine import summarize_machine_file
 
 _VALID = """
 machine = "lint-and-test"
@@ -34,10 +35,10 @@ def test_an_unparsable_file_claims_no_name(tmp_path: Path) -> None:
     path = tmp_path / "lint-and-test.asm.toml"
     path.write_text("this is not toml {{{", encoding="utf-8")
 
-    name, states, spec = _machine_row(path)
-    assert spec == "invalid"
-    assert states == "-"
-    assert name == "-", f"invented a name: {name!r}"
+    row = summarize_machine_file(path)
+    assert row.spec == "invalid"
+    assert row.states == "-"
+    assert row.name == "-", f"invented a name: {row.name!r}"
 
 
 def test_a_valid_file_shows_its_declared_name(tmp_path: Path) -> None:
@@ -45,17 +46,15 @@ def test_a_valid_file_shows_its_declared_name(tmp_path: Path) -> None:
     path = tmp_path / "some-other-filename.asm.toml"
     path.write_text(_VALID, encoding="utf-8")
 
-    name, _states, spec = _machine_row(path)
-    assert name == "lint-and-test"
-    assert spec != "invalid"
+    row = summarize_machine_file(path)
+    assert row.name == "lint-and-test"
+    assert row.spec != "invalid"
 
 
 def test_row_validity_covers_the_scripts_bundle(tmp_path: Path) -> None:
     """The list's "valid" must not contradict `machine check`/`run`: a machine
     whose `scripts/` reference is missing is exactly what they refuse, so the
     row flags it instead of calling the file valid."""
-    from agent6.ui.tui.machines import _machine_row  # pyright: ignore[reportPrivateUsage]
-
     f = tmp_path / "runner.asm.toml"
     f.write_text(
         """\
@@ -79,6 +78,6 @@ reason = "r"
 """,
         encoding="utf-8",
     )
-    name, _states, validity = _machine_row(f)
-    assert name == "runner"
-    assert validity != "valid" and "issue" in validity
+    row = summarize_machine_file(f)
+    assert row.name == "runner"
+    assert row.spec != "valid" and "issue" in row.spec

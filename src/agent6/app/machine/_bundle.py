@@ -13,9 +13,10 @@ by a tool on an isolation level that cannot RO-bind the bundle.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.machine import MachineSpec, ToolState
+from agent6.machine import MachineError, MachineSpec, ToolState, load_machine, validate_semantics
 
 
 def is_inside(path: Path, root: Path) -> bool:
@@ -108,3 +109,26 @@ def validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
         if isinstance(state, ToolState):
             problems.extend(_check_command_scripts(name, state, bundle))
     return problems
+
+
+@dataclass(frozen=True, slots=True)
+class MachineFileSummary:
+    """One authored-file row for a machines listing."""
+
+    name: str  # the declared `machine` name; "-" when the file does not parse
+    states: str  # the state count; "-" when the file does not parse
+    spec: str  # "valid", "N issue(s)", or "invalid" (does not parse)
+
+
+def summarize_machine_file(path: Path) -> MachineFileSummary:
+    """Whether the FILE checks out ("valid", never "ok": that word is a
+    machine-run terminal status): parsed, then semantics + bundle, exactly what
+    `machine check`/`run` refuse. A file that does not parse has no name to
+    show (its declared `machine` is unknown), so the row keeps its path only."""
+    try:
+        spec = load_machine(path)
+    except (MachineError, OSError):
+        return MachineFileSummary("-", "-", "invalid")
+    problems = validate_semantics(spec) + validate_bundle(spec, path)
+    verdict = "valid" if not problems else f"{len(problems)} issue(s)"
+    return MachineFileSummary(spec.machine, str(len(spec.states)), verdict)

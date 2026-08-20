@@ -13,7 +13,12 @@ preflight, and spawns the per-`agent`-state runner.
 
 from __future__ import annotations
 
-from agent6.app.machine._bundle import is_inside, validate_bundle
+from agent6.app.machine._bundle import (
+    MachineFileSummary,
+    is_inside,
+    summarize_machine_file,
+    validate_bundle,
+)
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
     build_machine_notify_hook,
@@ -34,6 +39,7 @@ from agent6.app.machine._spend import Spend, book_crashed_attempt, machine_spend
 # `app.machine_agent`, which imports this package's `_spend` submodule, so
 # re-exporting them from this `__init__` would loop back through it.
 __all__ = [
+    "MachineFileSummary",
     "MachineFrontend",
     "OfflineTestOutcome",
     "Spend",
@@ -47,5 +53,6 @@ __all__ = [
     "machine_spend",
     "read_budget_totals",
     "run_offline_tests",
+    "summarize_machine_file",
     "validate_bundle",
 ]

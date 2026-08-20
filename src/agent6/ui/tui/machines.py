@@ -32,7 +32,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.app.machine import validate_bundle
+from agent6.app.machine import summarize_machine_file
 from agent6.machine import (
     JournalError,
     MachineError,
@@ -410,29 +410,6 @@ class MachineWatchScreen(Screen[None]):
                 log.write(discrete)
 
 
-def _machine_row(path: Path) -> tuple[str, str, str]:
-    """(name, state count, spec validity) for the list -- parsed if it loads,
-    else flagged. The column says whether the FILE checks out ("valid", never
-    "ok": that word is a machine-run terminal status); a run's live status
-    shows on the watch screen, not this list."""
-    try:
-        spec = load_machine(path)
-    except (MachineError, OSError):
-        # No name to show: the file did not parse, so its declared `machine` is
-        # unknown, and `path.stem` on `<name>.asm.toml` renders half a filename
-        # that is neither. The `file` column already says which file it was.
-        return ("-", "-", "invalid")
-    # The bundle is part of validity: a missing or escaping `scripts/` entry is
-    # exactly what `machine check`/`run` refuse, so "valid" here must not
-    # contradict them.
-    problems = validate_semantics(spec) + validate_bundle(spec, path)
-    return (
-        spec.machine,
-        str(len(spec.states)),
-        "valid" if not problems else f"{len(problems)} issue(s)",
-    )
-
-
 def machine_detail_text(path: Path) -> str:
     """A read-only text view of a parsed machine: name, initial, states, validation,
     and the mermaid graph. On a load error, the error itself (so the page never
@@ -623,8 +600,8 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         table.clear()
         self._machines = machine_files(self.repo_cwd)
         for path in self._machines:
-            name, states, status = _machine_row(path)
-            table.add_row(Text(name), states, status, Text(path.name))
+            row = summarize_machine_file(path)
+            table.add_row(Text(row.name), row.states, row.spec, Text(path.name))
         table.show_cursor = table.row_count > 0
 
     def _selected(self) -> Path | None:

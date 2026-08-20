@@ -34,7 +34,7 @@ from agent6.machine.journal import (
 )
 from agent6.machine.model import MachineSpec
 from agent6.sessions.ipc import worker_is_alive
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME, machines_root
 
 # How many recent machine.notify events a MachineState carries. Front-ends render
 # them as ephemeral surfaces, so only the tail matters; the journal keeps them all.
@@ -193,6 +193,59 @@ def machine_is_parked(machine_dir: Path) -> bool:
         return MachineJournal(machine_dir).read_pending_wait() is not None
     except JournalError:
         return True
+
+
+@dataclass(frozen=True, slots=True)
+class MachineSummary:
+    """One machine-instance row: what a hub or `machine list` shows, uncolored."""
+
+    name: str  # the instance dir name (the machine's name)
+    machine: str  # the spec's declared name; "" when unreadable
+    current: str  # where the machine is; "" when unreadable
+    status: str  # machine_word_for_dir's word, or "unreadable"
+    reason: str  # a failed end's reason, else ""
+    mtime: float
+
+
+def machine_mtime(machine_dir: Path) -> float:
+    """Last activity: the journal's mtime, else the dir's."""
+    for candidate in (machine_dir / "journal.jsonl", machine_dir):
+        try:
+            return candidate.stat().st_mtime
+        except OSError:
+            continue
+    return 0.0
+
+
+def machine_instance_dirs(state_dir: Path) -> list[Path]:
+    """Every machine instance under the state machines/ dir (holds
+    machine.asm.toml + journal), newest first."""
+    root = machines_root(state_dir)
+    if not root.is_dir():
+        return []
+    dirs = [d for d in root.iterdir() if d.is_dir() and (d / "machine.asm.toml").is_file()]
+    return sorted(dirs, key=machine_mtime, reverse=True)
+
+
+def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
+    """The instance row from its dir: spec + journal folded to the shared status
+    word. A corrupt source or journal (JournalError is a MachineError) reads
+    "unreadable" rather than vanishing from a listing."""
+    mtime = machine_mtime(machine_dir)
+    try:
+        spec = load_machine(machine_dir / "machine.asm.toml")
+        ms = fold_machine(spec, MachineJournal(machine_dir).read())
+    except (MachineError, OSError):
+        return MachineSummary(machine_dir.name, "", "", "unreadable", "", mtime)
+    reason = ms.ended.reason if ms.ended is not None and ms.ended.status == "failed" else ""
+    return MachineSummary(
+        name=machine_dir.name,
+        machine=ms.machine,
+        current=ms.current,
+        status=machine_word_for_dir(ms, machine_dir),
+        reason=reason,
+        mtime=mtime,
+    )
 
 
 def machine_files(cwd: Path) -> list[Path]:

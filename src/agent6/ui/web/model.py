@@ -17,7 +17,6 @@ from typing import Any
 
 from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
-from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.models.choices import config_value_choices
 from agent6.sessions.layout import (
     HUB_BUCKETS,
@@ -27,18 +26,18 @@ from agent6.sessions.layout import (
     machines_root,
 )
 from agent6.viewmodel import (
-    fold_machine,
     fold_session,
     fold_transcript,
     is_session_husk,
     is_winner,
     machine_files,
-    machine_word_for_dir,
+    machine_instance_dirs,
     newest_state_log,
     operator_inputs,
     restate,
     session_dirs,
     session_state_as_dict,
+    summarize_machine_dir,
     summarize_session_dir,
     tail_events,
     task_snippet,
@@ -122,44 +121,24 @@ def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
 
 
 def _list_machines(cwd: Path) -> list[dict[str, Any]]:
-    """Machine instances under the state machines/ dir, newest first. Each is a
-    watchable run of an authored machine (holds machine.asm.toml + journal)."""
-    root = machines_root(resolved_state_dir(cwd))
-    if not root.is_dir():
-        return []
+    """Machine instances, newest first (`viewmodel.machine_instance_dirs`), each
+    a watchable run of an authored machine, summarized by the shared fold."""
     out: list[dict[str, Any]] = []
-    for d in root.iterdir():
-        if not d.is_dir() or not (d / "machine.asm.toml").is_file():
-            continue
-        entry: dict[str, Any] = {"name": d.name, "mtime": _machine_mtime(d)}
-        try:
-            spec = load_machine(d / "machine.asm.toml")
-            ms = fold_machine(spec, MachineJournal(d).read())
-        except (MachineError, OSError):
-            # A corrupt source or journal (JournalError is a MachineError) must
-            # not drop the instance from the hub or 500 the listing; show it as
-            # unreadable so the operator sees something is wrong.
-            entry["status"] = "unreadable"
-        else:
-            entry["machine"] = ms.machine
-            entry["current"] = ms.current
-            entry["status"] = machine_word_for_dir(ms, d)
-            # Keep the failure reason on the pill, like run/draft rows.
-            if ms.ended is not None and ms.ended.status == "failed":
-                entry["label"] = f"failed · {ms.ended.reason}"
-        entry["level"] = status_level(entry["status"])
+    for d in machine_instance_dirs(resolved_state_dir(cwd)):
+        s = summarize_machine_dir(d)
+        entry: dict[str, Any] = {
+            "name": s.name,
+            "mtime": s.mtime,
+            "status": s.status,
+            "level": status_level(s.status),
+        }
+        if s.status != "unreadable":
+            entry["machine"] = s.machine
+            entry["current"] = s.current
+        if s.reason:  # keep the failure reason on the pill, like run/draft rows
+            entry["label"] = f"failed · {s.reason}"
         out.append(entry)
-    out.sort(key=lambda e: e["mtime"], reverse=True)
     return out
-
-
-def _machine_mtime(machine_dir: Path) -> float:
-    for candidate in (machine_dir / "journal.jsonl", machine_dir):
-        try:
-            return candidate.stat().st_mtime
-        except OSError:
-            continue
-    return 0.0
 
 
 def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
