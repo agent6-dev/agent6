@@ -114,8 +114,8 @@ def test_config_fill_keeps_the_presets_the_file_defines(
 def test_descriptions_mode_prints_the_meaning_under_each_row() -> None:
     """`--descriptions` adds each leaf's meaning; the default stays values-only."""
     eff = EffectiveConfig(config=Config(), sources={}, layers=())
-    assert "Cap on metered spend" not in render_show(eff)
-    assert "Cap on metered spend" in render_show(eff, descriptions=True)
+    assert "Cap on the metered spend" not in render_show(eff)
+    assert "Cap on the metered spend" in render_show(eff, descriptions=True)
 
 
 def test_key_detail_always_carries_the_meaning() -> None:
@@ -124,4 +124,4 @@ def test_key_detail_always_carries_the_meaning() -> None:
     eff = EffectiveConfig(config=Config(), sources={}, layers=())
     detail = render_key_detail(eff, "budget.max_usd")
     assert detail is not None
-    assert "meaning: Cap on metered spend" in detail
+    assert "meaning: Cap on the metered spend" in detail

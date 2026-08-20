@@ -114,8 +114,8 @@ class _ProviderBase(BaseModel):
     deployment: Deployment = Field(
         default="direct",
         description=(
-            '`"direct"`, `"vertex"`, or `"azure"` (`openai` only). Selects URL shape + '
-            "model/version placement."
+            "`direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format "
+            "only): the URL shape and where the model name and API version go."
         ),
     )
     # Resolved by _fill_defaults from (api_format, deployment) when omitted;
@@ -123,16 +123,18 @@ class _ProviderBase(BaseModel):
     base_url: str = Field(
         default="",
         description=(
-            "Endpoint host + path prefix; required for vertex/azure. Its host is the only network "
-            "destination the agent dials for this provider."
+            "The endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for "
+            "`vertex` and `azure`. Its host is the only network destination the agent dials for "
+            "this provider."
         ),
     )
     # Auth header style; defaults from (api_format, deployment) in _fill_defaults.
     auth_style: AuthStyle = Field(
         default="bearer",
         description=(
-            '`"x_api_key"`, `"bearer"`, `"api_key_header"` (Azure), or `"none"` (local). '
-            "Rarely set by hand."
+            "How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the "
+            "OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local "
+            "endpoint). `agent6 connect` sets it; rarely typed by hand."
         ),
     )
     # Static key: env var name (falls back to secrets.toml by provider name).
@@ -141,38 +143,42 @@ class _ProviderBase(BaseModel):
         default=None,
         min_length=1,
         description=(
-            "Env var holding the key (wins over `secrets.toml`). Omit for `agent6 connect` keys or "
-            "unauthenticated local endpoints."
+            "The environment variable holding the API key; it wins over `secrets.toml`. Unset for "
+            "a key `agent6 connect` stored, or an unauthenticated local endpoint."
         ),
     )
     token_command: list[str] | None = Field(
         default=None,
         description=(
-            "argv that prints a short-lived bearer to stdout; re-run on TTL and once on "
-            "`401`/`403`. Wins over `api_key_env`."
+            "A command (argv) that prints a short-lived bearer token to stdout, re-run when "
+            "`token_command_ttl_s` expires and once after a `401` or `403`. Wins over "
+            "`api_key_env`."
         ),
     )
     token_command_ttl_s: float = Field(
         gt=0.0,
         default=300.0,
-        description="Seconds to cache `token_command` output.",
+        description="Seconds a `token_command` token is reused before the command runs again.",
     )
     extra_headers: dict[str, str] = Field(
         default_factory=dict,
-        description="Extra HTTP headers on every request. Not for secrets.",
+        description=(
+            "Extra HTTP headers on every request to this provider. Never a secret: the config file "
+            "is not `0600`."
+        ),
     )
     extra_body: dict[str, Any] = Field(
         default_factory=dict,
         description=(
             "Provider-specific JSON merged last into every request body, so tuning keys "
-            "(max_tokens, temperature) win; the structural keys agent6 owns (messages, model, "
-            "stream, tools, tool choice, response shape) are filtered. Values must be "
-            "JSON-shaped: a TOML date/time is refused. e.g. OpenRouter routing options."
+            "(`max_tokens`, `temperature`) win; the structural keys agent6 owns (messages, model, "
+            "stream, tools, tool choice, response shape) are filtered out. Values must be "
+            "JSON-shaped (a TOML date or time is refused). OpenRouter's routing options go here."
         ),
     )
     extra_query: dict[str, str] = Field(
         default_factory=dict,
-        description="Extra URL query params (e.g. Azure's `api-version`).",
+        description="Extra URL query parameters on every request (Azure's `api-version`).",
     )
     # Per-HTTP-call read/write budget in seconds; the connect phase is bounded
     # separately (providers._transport.CONNECT_TIMEOUT_S) so a blackholed
@@ -181,7 +187,10 @@ class _ProviderBase(BaseModel):
     http_timeout_s: float = Field(
         gt=0.0,
         default=600.0,
-        description="Per-HTTP-call timeout (read/write; connect is bounded at 20s).",
+        description=(
+            "Seconds one HTTP call may take to read or write; the connect phase is bounded at 20 s "
+            "regardless."
+        ),
     )
 
     @model_validator(mode="before")
@@ -252,13 +261,19 @@ class AnthropicProviderEntry(_ProviderBase):
     # The narrowing override is sound: the model is frozen, so the attribute
     # can never be written back through the wider base type.
     api_format: Literal["anthropic"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        Field(description=_API_FORMAT_DESCRIPTION)
+        Field(
+            description=(
+                "The wire format: `anthropic` (the Messages API) or `openai` (Chat Completions: "
+                "OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI "
+                "endpoint)."
+            )
+        )
     )
     prompt_caching: bool = Field(
         default=True,
         description=(
-            "(`anthropic`) Prompt caching: system prompt, tools, and the growing conversation "
-            "re-read at 0.1x input price."
+            "Anthropic prompt caching: the system prompt, the tools, and the growing conversation "
+            "are re-read at 0.1x the input price. `anthropic` format only."
         ),
     )
 
@@ -274,7 +289,13 @@ class OpenAIProviderEntry(_ProviderBase):
     """
 
     api_format: Literal["openai"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        Field(description=_API_FORMAT_DESCRIPTION)
+        Field(
+            description=(
+                "The wire format: `anthropic` (the Messages API) or `openai` (Chat Completions: "
+                "OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI "
+                "endpoint)."
+            )
+        )
     )
 
 

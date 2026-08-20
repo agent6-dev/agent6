@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from agent6.config.layer import BUILTIN_PRESETS
 from agent6.ui.cli._common import _add_budget_flags, _add_sandbox_flags, _sub
 from agent6.ui.cli.completers import (
     _complete_parallel_models,
@@ -55,9 +56,11 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     run_profile = run_p.add_argument(
         "--preset",
         default="",
-        help="Strategy preset (quick/standard/ultra/paranoid or a custom"
-        " [presets.<name>]). Overrides the top-level `preset` key and your config"
-        " files; an explicit --config FILE or individual flags still win.",
+        help=(
+            f"Strategy preset ({'/'.join(BUILTIN_PRESETS)}, or a custom [presets.<name>])."
+            " Overrides the top-level `preset` key and your config files; an explicit"
+            " --config FILE or individual flags still win."
+        ),
     )
     run_profile.completer = _complete_presets  # type: ignore[attr-defined]
     run_p.add_argument(

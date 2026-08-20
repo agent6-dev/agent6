@@ -109,7 +109,7 @@ agent6 ask "how does the task-graph curator work?"
 
 ## Run options
 
-- `--preset quick|standard|ultra|paranoid` selects a strategy.
+- `--preset <name>` selects a strategy preset (`standard`, `quick`, `ultra`, `paranoid`, or your own; the [presets table](config.md#presets) says what each sets).
   `agent6 config presets` lists them and `agent6 config set preset <name>` persists one.
   A preset cannot change mid-run; `agent6 resume <id> --preset <name>` continues a stopped run under another one and records it for later resumes.
 - `agent6 run "task" --parallel 3` (or `model-a,model-b`) fans out isolated lanes and prints a ranked comparison.

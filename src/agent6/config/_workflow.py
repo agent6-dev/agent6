@@ -35,14 +35,23 @@ class MetricConfig(BaseModel):
 
     command: Argv = Field(
         min_length=1,
-        description="argv to run.",
+        description=(
+            "The command that prints the score, as argv (no shell). Runs after every "
+            "verify-passing edit, and on the model's `run_metric_command` call."
+        ),
     )
     pattern: str = Field(
         min_length=1,
-        description="Regex; first capture group = the number.",
+        description=(
+            "A regular expression over the command's output; its first capture group is the "
+            'number, e.g. `"score: ([0-9.]+)"`.'
+        ),
     )
     goal: Literal["minimize", "maximize"] = Field(
-        description='`"minimize"` or `"maximize"`.',
+        description=(
+            "Which way is better: `minimize` (a smaller number wins) or `maximize`. The run "
+            "reports the trajectory and can finish once a verified edit only ties the best."
+        ),
     )
 
 
@@ -57,11 +66,11 @@ class WorkflowConfig(BaseModel):
     verify_command: Argv = Field(
         default=(),
         description=(
-            'argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a '
-            '&& b"]`). Set it to pin one. Left unset, each run infers a gate and prints it: '
-            "AGENTS.md `## Verify command` first, then the repo's manifest files, then a "
-            "model call over those manifests. A run that can infer none starts gateless and "
-            "adopts the first gate a recognizable project created mid-run yields."
+            "The command that decides whether a step succeeded, as argv (no shell; wrap a pipeline "
+            'as `["sh", "-c", "a && b"]`). Set it to pin the gate. Unset: each run infers one and '
+            "prints it (an AGENTS.md `## Verify command` block first, then the repo's manifest "
+            "files, then a model call over those manifests); a run that can infer none starts "
+            "gateless and adopts the first gate a recognizable project created mid-run yields."
         ),
     )
     # per-call timeout for verify_command (and metric_command) in
@@ -75,9 +84,9 @@ class WorkflowConfig(BaseModel):
         gt=0.0,
         default=600.0,
         description=(
-            "Per-call timeout for `verify_command` / `metric.command`. The operator's gate needs a "
-            "verdict, so it is bounded; a model-chosen `run_command` is not (see "
-            "`command_checkin_s`)."
+            "Seconds one `verify_command` or `metric.command` call may take before it is killed "
+            "and counted as failed. The operator's gate needs a verdict, so it is bounded; a "
+            "model-chosen `run_command` is not (see `command_checkin_s`)."
         ),
     )
     # How long a run_command may run before the model is handed it back as a
@@ -92,11 +101,11 @@ class WorkflowConfig(BaseModel):
         ge=0.0,
         default=900.0,
         description=(
-            "How long a model's `run_command` may run before it is **handed back** as a "
-            "background job. Not a timeout: nothing is killed, the command keeps running, and "
-            "the model is told (`returncode: null`, `still_running: true`, a `background_id`) so "
-            "it can wait with `read_background`, stop it, or carry on. `0` disables the "
-            "hand-back, which is right when a human is watching and can interrupt."
+            "Seconds a model's `run_command` may run before it is handed back as a background job. "
+            "Not a timeout: nothing is killed, the command keeps running, and the model is told "
+            "(`returncode: null`, `still_running: true`, a `background_id`) so it can wait with "
+            "`read_background`, stop it, or carry on. `0` disables the hand-back, which is right "
+            "when a human is watching and can interrupt."
         ),
     )
     # When true, finish_session is refused while the last verify is red (or a verify
@@ -108,15 +117,18 @@ class WorkflowConfig(BaseModel):
     require_verify_to_finish: bool = Field(
         default=False,
         description=(
-            "Refuse `finish_session` while the last verify is red or never ran (bounded nudges). "
-            'Regardless, a finish over red is always reported "finished", never "passed".'
+            "Refuse `finish_session` while the last verify is red or never ran (with bounded "
+            "nudges toward getting it green). `false`: the finish is honored, and a finish over a "
+            'red verify is still reported as "finished", never "passed".'
         ),
     )
     metric: MetricConfig | None = Field(
         default=None,
         description=(
-            "Optional continuous-score metric. Unset, `run_metric_command` stays on the"
-            " tool list and refuses the call, naming this key."
+            "An optional score to iterate on beside the pass/fail gate (a benchmark, a size, a "
+            "count): the run calls it after every verify-passing edit and shows the model the "
+            "trend. Unset: `run_metric_command` stays on the tool list and refuses, naming this "
+            "key."
         ),
     )
 
@@ -149,38 +161,43 @@ class ContextConfig(BaseModel):
         default=None,
         gt=0,
         description=(
-            "Tier 1: oldest tool results become placeholders. Unset sizes from the worker's "
-            "context window (~45%); set both thresholds to pin."
+            "Tier-1 compaction threshold: once the accumulated tool results exceed this many "
+            "characters (about 4 per token), the oldest results are replaced by short placeholders "
+            "the model can re-fetch. Unset: sized from the model's context window (about 45% of "
+            "it); set both thresholds to pin them."
         ),
     )
     summarise_at_chars: int | None = Field(
         default=None,
         gt=0,
         description=(
-            "Tier 2: summarise elided history and restart (the task DAG survives). Unset = the "
-            "window minus a 16k-token reserve. Must exceed `drop_at_chars`."
+            "Tier-2 compaction threshold: once the whole context exceeds this many characters, the "
+            "elided history is summarized and the conversation restarts on the summary (the task "
+            "DAG survives). Unset: the model's window minus a 16k-token reserve. Must exceed "
+            "`drop_at_chars`."
         ),
     )
     keep_recent_chars: int = Field(
         ge=0,
         default=80_000,
         description=(
-            "Verbatim recent-history tail kept through a tier-2 restart (chars; 0 keeps none)."
+            "How many characters of the most recent history a tier-2 restart keeps verbatim after "
+            "the summary. `0` keeps none."
         ),
     )
     keep_thinking_turns: int = Field(
         ge=0,
         default=0,
         description=(
-            "Drop thinking from assistant turns older than N assistant turns, at tier-1 "
-            "moments. `0` (default) keeps all thinking, matching pi; Claude Code clears old "
-            "thinking. Anthropic-format providers only: the openai wire never re-sends thinking."
+            "At tier-1 moments, drop the model's thinking from assistant turns older than this "
+            "many turns. `0` keeps all thinking. Anthropic-format providers only; the OpenAI wire "
+            "never re-sends thinking."
         ),
     )
     summary_max_tokens: int = Field(
         gt=0,
         default=2048,
-        description="Cap on the tier-2 summary (and gist distillation calls).",
+        description="Cap on the tokens a tier-2 summary (and a gist distillation) may produce.",
     )
     # Tier-1 gist elision: a large read_file result about to be elided decays
     # to a placeholder carrying a model-written gist of the file first (one
@@ -191,9 +208,9 @@ class ContextConfig(BaseModel):
     elision_gists: bool = Field(
         default=True,
         description=(
-            "Tier 1 decays a large `read_file` to a model-written gist before the bare marker "
-            "(demoted under continued pressure so the byte bound holds). `false` = straight to "
-            "bare markers."
+            "At tier 1, replace a large `read_file` result with a model-written gist before the "
+            "bare placeholder (the gist is dropped too under continued pressure, so the byte bound "
+            "holds). `false`: straight to bare placeholders."
         ),
     )
 
@@ -234,8 +251,10 @@ class PromptConfig(BaseModel):
     system_prompt_file: str = Field(
         default="",
         description=(
-            "Advanced: replace run-mode's static base prompt with this file (dynamic blocks still "
-            "append). Warned at startup if core tool names are missing."
+            "Path of a file that replaces run mode's built-in base system prompt (the dynamic "
+            "blocks still append). The tool contracts become yours to state; a file missing the "
+            "core tool names is warned about at startup. Empty: the built-in base. `agent6 prompt "
+            "show` prints the assembled prompt."
         ),
     )
     # Include the structural-prior blocks in the run-mode <repo-priors>: hot
@@ -246,8 +265,9 @@ class PromptConfig(BaseModel):
     structural_priors: bool = Field(
         default=True,
         description=(
-            "Include the `<repo-priors>` block (hot symbols, co-change, outline). `false` for a "
-            "leaner prompt."
+            "Include the `<repo-priors>` block in the system prompt: the repo map, the symbol "
+            "outline, co-change and hot-symbol hints, recent commits. `false` for a leaner, "
+            "cheaper prompt."
         ),
     )
     # one-shot task prompt revision before the worker loop starts.
@@ -257,7 +277,9 @@ class PromptConfig(BaseModel):
     revise_prompt: Literal["off", "auto", "interactive"] = Field(
         default="off",
         description=(
-            "One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`."
+            "Rewrite the task prompt once with the reviewer model before the loop starts: `off`, "
+            "`auto` (the revision is used as written), or `interactive` (you accept, keep the "
+            "original, or edit; needs the terminal, so a run under the TUI skips it)."
         ),
     )
     # Front-load task decomposition (run mode). When on the worker's system
@@ -275,10 +297,12 @@ class PromptConfig(BaseModel):
     decompose: Literal["auto", "on", "off"] = Field(
         default="auto",
         description=(
-            "Front-load task decomposition (run mode): `on` helps small models that under-finish "
-            "multi-part tasks (measured on mistral-small; capable models just pay 2-4x overhead). "
-            "`auto` resolves per worker model from the capability registry; `config show` displays "
-            "the resolved value. `--decompose` forces one run."
+            "Front-load task decomposition in run mode: the model lays the task out as ordered DAG "
+            "subtasks before editing and works them one at a time. `on` helps small models that "
+            "under-finish multi-part tasks (measured on mistral-small; capable models just pay "
+            "2-4x overhead), `off` never, `auto` decides per worker model from the capability "
+            "registry (`config show` prints the resolved value). `--decompose` forces it for one "
+            "run."
         ),
     )
 
@@ -310,13 +334,17 @@ class ReviewConfig(BaseModel):
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = Field(
         default="off",
         description=(
-            "In-loop review panel trigger: `off` / `on_verify_fail` / `before_finish` / `periodic`."
+            "When the in-loop review panel runs on the diff so far and its findings reach the "
+            "model as a message: `off` (never), `on_verify_fail` (after each failed verify), "
+            "`before_finish` (when the model calls `finish_session`; a gating `decision` can "
+            "reject the finish), or `periodic` (every `period` iterations). With no `seats` the "
+            "panel is one reviewer seat on `[models.reviewer]`, the model `agent6 review` uses."
         ),
     )
     period: int = Field(
         ge=1,
         default=10,
-        description="Iterations between reviews for `periodic`.",
+        description='Iterations between panels when `trigger = "periodic"`.',
     )
     # `seats` is THE roster: flat
     # "persona[@provider/model]" strings (e.g. "security" routes via
@@ -326,19 +354,30 @@ class ReviewConfig(BaseModel):
     # (default) just injects findings as guidance and never blocks.
     decision: Literal["advisory", "veto", "quorum", "all"] = Field(
         default="advisory",
-        description="`advisory` (inject findings, never block) / `veto` / `quorum` / `all`.",
+        description=(
+            "What a panel's BLOCK verdicts do: `advisory` (the findings are injected as guidance, "
+            "nothing is blocked), `veto` (one blocking seat rejects the finish), `quorum` "
+            "(`quorum` distinct models must block), or `all` (every seat must block). A gate "
+            "applies to `before_finish` only; the other triggers always advise."
+        ),
     )
     quorum: int = Field(
         ge=1,
         default=2,
-        description="K for `quorum`; counts distinct models, so same-model seats can't fake it.",
+        description=(
+            'How many seats must block for `decision = "quorum"`, counted per distinct model (two '
+            "seats on one model count once, so a same-model panel cannot reach it)."
+        ),
     )
     # Per-run cap on total panel blocks before the gate auto-downgrades to
     # advisory for the rest of the run (so a gating panel can never stall forever).
     max_total_rejections: int = Field(
         ge=1,
         default=4,
-        description="Per-run blocks before the gate auto-disarms to advisory.",
+        description=(
+            "How many finishes a gating panel may reject per run before it disarms to `advisory` "
+            "for the rest of the run, so a panel can never stall a run forever."
+        ),
     )
     # Budget floor: the in-loop review panel is SKIPPED (approve-and-proceed) once
     # the run's remaining token budget falls below this fraction -- reviewing costs
@@ -348,14 +387,22 @@ class ReviewConfig(BaseModel):
         gt=0.0,
         le=1.0,
         default=0.25,
-        description="Skip the in-loop panel once remaining budget falls below this fraction.",
+        description=(
+            "Skip the panel (the finish is accepted) once the run's remaining budget falls below "
+            "this fraction of the whole; reviewing costs most exactly when the budget is scarcest. "
+            "`0.25`: no panel in the last quarter."
+        ),
     )
     seats: StrTuple = Field(
         default=(),
         description=(
-            'Panel roster: `"persona"` routes via `[models.reviewer]`; '
-            '`"persona@provider/model"` pins a model per seat. `agent6 review --reviewers N '
-            "[--personas …]` synthesizes an equivalent."
+            'The panel roster, one entry per seat: a persona name (`"security"`), routed via '
+            '`[models.reviewer]`, or `"<persona>@<provider>/<model>"` to pin a model per seat '
+            '(`"correctness@openrouter/moonshotai/kimi-k2"`). A persona is any short stance the '
+            "reviewer's prompt adopts; the built-in set cycled when none is named is `security`, "
+            "`correctness`, `tests`, `over-engineering`, `edge-cases`. Empty: one reviewer seat "
+            "when `trigger` is on. `agent6 review --reviewers N --personas ...` builds the same "
+            "roster for a one-off review."
         ),
     )
     # Seat concurrency for the in-loop panel (1 = sequential). The post-hoc
@@ -363,7 +410,10 @@ class ReviewConfig(BaseModel):
     concurrency: int = Field(
         ge=1,
         default=1,
-        description="In-loop seat parallelism (post-hoc `agent6 review` is always parallel).",
+        description=(
+            "How many seats the in-loop panel runs at once (`1` = one after another; the panel's "
+            "latency is its slowest seat). `agent6 review` always runs every seat in parallel."
+        ),
     )
     # Reviewer tier: "diff" (one grounded call over the diff) or "explore" (a
     # read-only tool-using mini-loop that reads the broader repo first to catch
@@ -371,8 +421,9 @@ class ReviewConfig(BaseModel):
     tier: ReviewTier = Field(
         default="diff",
         description=(
-            "`diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer, "
-            "cross-file)."
+            "How much a seat reads: `diff` (one call over the diff, the task, and the verify "
+            "result) or `explore` (a read-only tool-using reviewer that also reads the repo around "
+            "the diff to catch cross-file impact; several calls per seat)."
         ),
     )
 
@@ -425,12 +476,21 @@ class BudgetConfig(BaseModel):
 
     max_usd: float = Field(
         default=10.0,
-        description="Cap on metered spend (cache-aware, per model).",
+        description=(
+            "Cap on the metered spend of one run (provider-reported cost, else price times tokens "
+            "at the model's fetched rates, cache-aware). Hitting it ends the run resumably "
+            "(`budget_exhausted`); each resumed leg gets a fresh budget. `-1`: unlimited; `0`: "
+            "refuse every metered call. `--max-usd` overrides per run."
+        ),
     )
     max_tokens_fallback: int = Field(
         ge=-1,
         default=2_000_000,
-        description="Token cap for unmetered calls only (local models, price gaps).",
+        description=(
+            "Token cap (input plus output) for the calls the run cannot price: local models, a "
+            "model with no price data. `-1`: unlimited; `0`: never run an unmeterable model. "
+            "`--max-tokens-fallback` overrides per run."
+        ),
     )
 
     @field_validator("max_usd")

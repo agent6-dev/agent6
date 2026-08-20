@@ -30,10 +30,12 @@ class SandboxConfig(BaseModel):
     isolation: Literal["auto", "strict", "hardened", "none"] = Field(
         default="auto",
         description=(
-            "`auto` picks the strongest the host supports (`strict`, else `hardened`; `none` only "
-            "when the host offers no confinement, loudly). Explicit `strict`/`hardened` refuse "
-            "where unsupported, never downgrade. Explicit `none` runs unsandboxed (also "
-            "`--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`)."
+            "How jailed commands are confined: `strict` (user + mount namespaces, Landlock, "
+            "seccomp), `hardened` (Landlock + seccomp, no namespaces), or `none` (unconfined). "
+            "`auto` picks the strongest the host supports and says so when that is `none`. An "
+            "explicit `strict` or `hardened` refuses to start where the host cannot honor it. "
+            "`none` also via `--dangerously-disable-sandbox` or "
+            "`AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`."
         ),
     )
     # Which network JAILED commands (`run_command`, `verify`, `metric`, and
@@ -59,23 +61,23 @@ class SandboxConfig(BaseModel):
     network: Literal["auto", "session", "only_explicit_states", "host"] = Field(
         default="auto",
         description=(
-            "Which network jailed commands join. `auto`: the run's private network (commands "
-            "reach each other, nothing off the box, nothing outside reaches in), enforced on "
-            "`strict`, degraded to the host's with a warning on `hardened`/`none`. `session`: "
-            "the same, refusing where unenforceable. `only_explicit_states`: strict-only; "
-            "machine `tool` states opt in. `host`: the machine's network. No per-command "
-            "`none`: a run's commands share one launcher."
+            "Which network jailed commands join. `session`: the run's private network (commands "
+            "reach each other, nothing off the box, nothing outside reaches in), refused where it "
+            "cannot be enforced. `host`: the machine's network. `only_explicit_states`: strict "
+            "only, machine `tool` states opt in. `auto`: `session` under `strict`, degraded to the "
+            "host's network with a warning under `hardened` or `none`. A run's commands share one "
+            "launcher, so there is no per-command `none`."
         ),
     )
     run_commands: Literal["yes", "no", "ask"] = Field(
         default="ask",
         description=(
-            "May the LLM run commands (`run_command`, `run_verify_command`, `stop_background`: "
-            "one decision for all three): `yes` auto-approves, `no` withholds the tools (and the "
-            "verify gate with them), `ask` prompts per call with session-wide allow/deny "
-            "answers. `agent6 ask`/`plan` clamp `yes` to `ask`. Per-invocation: `--auto-approve` "
-            "(never over a configured `no`), `--no-commands`. A run that cannot ask anyone "
-            "refuses to start."
+            "Whether the model may run commands (`run_command`, `run_verify_command`, "
+            "`stop_background`, one decision for all three): `yes` runs them, `no` withholds the "
+            "tools (and the verify gate with them), `ask` prompts per call with "
+            "allow-for-this-session answers. `ask` and `plan` clamp `yes` to `ask`. Per "
+            "invocation: `--auto-approve` (never over a configured `no`), `--no-commands`. A run "
+            "set to `ask` with nobody to answer refuses to start."
         ),
     )
     # Hosts the `fetch` tool may read WITHOUT asking. Empty (the default) means
@@ -93,13 +95,10 @@ class SandboxConfig(BaseModel):
         default=(),
         description=(
             "Hosts the `fetch` tool reads without asking; any other host prompts, and an absent "
-            'operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as '
-            "a choice; a leading dot allows subdomains (`.readthedocs.io`). Each entry is a "
-            "host, never a URL prefix. The rest of fetch is fixed (https only, 1 MiB cap, "
-            "redirects returned not followed: security.md, Fixed tool surface). Hidden when "
-            '`network = "host"`; withheld from '
-            "machine/agent states. A GET can still encode data in its path, hence the empty "
-            "default."
+            'operator is a no. Empty: every fetch prompts. `["*"]`: any host. A leading dot allows '
+            "subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix; the rest of "
+            "fetch is fixed (https only, 1 MiB cap, redirects returned, not followed). Hidden when "
+            '`network = "host"`; withheld from machine and agent states.'
         ),
     )
     # Make `.git/` read-only from the child's view so a worker that gains
@@ -115,12 +114,11 @@ class SandboxConfig(BaseModel):
     protect_git: bool = Field(
         default=True,
         description=(
-            "Keep `.git/` unwritable by jailed commands (else one can plant a git filter that "
-            "agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a "
-            "mount namespace (security.md, Git invariants). On `hardened` the "
-            "default degrades with a warning; "
-            "an explicit `true` refuses. The in-process edit tools refuse `.git` writes "
-            "everywhere regardless."
+            "Keep `.git/` unwritable by jailed commands, so a command cannot plant a git filter "
+            "that agent6's host-side commits would execute. Needs a mount namespace: `strict` "
+            "only. Under `hardened` the default `true` degrades with a warning; an explicit `true` "
+            "refuses to start. The in-process edit tools refuse `.git` writes at every level "
+            "regardless."
         ),
     )
     # Per-process memory cap in MiB for every JAILED child (`run_command`,
@@ -138,9 +136,9 @@ class SandboxConfig(BaseModel):
         default=0,
         ge=0,
         description=(
-            "`RLIMIT_DATA` cap (MiB) per jailed process (inherited). Off by default: the kernel "
-            "already handles a memory bomb, and a cap costs real builds more than it buys. Set one "
-            "to bound a specific task; a runaway then fails as an ordinary command error."
+            "`RLIMIT_DATA` cap in MiB on each jailed process (inherited by its children). `0`: no "
+            "cap (the kernel handles a runaway; a cap costs real builds more than it buys). Set "
+            "one to bound a specific task; a process over it fails as an ordinary command error."
         ),
     )
     # Extra filesystem paths a JAILED command may READ and EXECUTE, on top of
@@ -154,10 +152,10 @@ class SandboxConfig(BaseModel):
     extra_read_paths: StrTuple = Field(
         default=(),
         description=(
-            "Extra absolute paths **the run** may **read + execute**, at their real locations: a "
-            "toolchain or interpreter outside the repo (conda, Go/Rust/Node, a shared data dir). "
-            "Mounted for jailed commands, readable by the in-process tools (name one with an "
-            "absolute path). Loosens confinement; list only what the build needs."
+            "Absolute paths outside the repo the run may read and execute, at their real "
+            "locations: a toolchain, an interpreter (conda, Go, Rust, Node), a shared data dir. "
+            "Mounted for jailed commands and readable by the in-process tools. Widens the sandbox; "
+            "list only what the build needs."
         ),
     )
 
@@ -183,9 +181,9 @@ class SandboxConfig(BaseModel):
     extra_write_paths: StrTuple = Field(
         default=(),
         description=(
-            "Extra absolute paths **the run** may **read + write**, at their real locations: a "
-            "build cache, an output dir, a sibling checkout the task edits. Write implies read. "
-            "List only what the task writes."
+            "Absolute paths outside the repo the run may read and write, at their real locations: "
+            "a build cache, an output dir, a sibling checkout the task edits. Write implies read. "
+            "Widens the sandbox; list only what the task writes."
         ),
     )
 
@@ -208,14 +206,14 @@ class SandboxConfig(BaseModel):
     hide_paths: StrTuple = Field(
         default=(),
         description=(
-            "Paths **the run** may never read or write, even under a broader grant. agent6's "
+            "Absolute paths the run may never read or write, even under a broader grant. agent6's "
             "config dir and state base are always hidden, so an `extra_read_paths` grant of "
-            "`$HOME` never exposes `secrets.toml` or your run history (the data dir and cache "
-            "are not: installed skills stay usable). Enforced twice: the in-process tools refuse "
-            "them at **every** isolation level (`none` included), and jailed commands see them "
-            "masked (a dir appears empty, a file reads empty). Masking needs the mount "
-            "namespace: on `hardened` an entry it cannot mask refuses the run, and a grant "
-            "exposing the always-hidden dirs warns loudly instead."
+            "`$HOME` never exposes `secrets.toml` or run history (the data dir and cache stay "
+            "readable: installed skills work). Enforced twice: the in-process tools refuse them at "
+            "every isolation level, and jailed commands see them masked (a dir reads empty, a file "
+            "reads empty). Masking needs the mount namespace: under `hardened` an entry it cannot "
+            "mask refuses the run, and a grant exposing the always-hidden dirs warns loudly "
+            "instead."
         ),
     )
 
@@ -373,13 +371,16 @@ class MCPServerEntry(BaseModel):
     # runs a server that wants a browser or a device.
     command: Argv = Field(
         default=(),
-        description="argv for a stdio server agent6 spawns. Exactly one of this or `url`.",
+        description=(
+            "argv of a stdio MCP server agent6 spawns (jailed like a command, plus `sandbox`). "
+            "Exactly one of `command` or `url`."
+        ),
     )
     url: str = Field(
         default="",
         description=(
-            "An http(s) endpoint the operator runs; agent6 only connects, owning none of its "
-            "environment or confinement."
+            "An http(s) MCP endpoint you run yourself; agent6 only connects, owning none of its "
+            "environment or confinement. Exactly one of `command` or `url`."
         ),
     )
     # The env var holding the bearer token for `url`. Named, never inlined: a
@@ -387,14 +388,16 @@ class MCPServerEntry(BaseModel):
     token_env: str = Field(
         default="",
         description=(
-            "For a `url` server: env var holding the bearer. Named, never inlined; never logged. "
-            "Over plaintext `http://` to a non-loopback host the token is readable on the wire: "
-            "`mcp connect` asks first, and every run warns."
+            "For a `url` server: the environment variable holding its bearer token, named here and "
+            "never inlined or logged. Over plaintext `http://` to a non-loopback host the token is "
+            "readable on the wire: `mcp connect` asks first, and every run warns."
         ),
     )
     enabled: bool = Field(
         default=True,
-        description="Per-server toggle.",
+        description=(
+            "`false` withholds this server's tools from the model without deleting the entry."
+        ),
     )
     # Environment variables this server needs, BY NAME (e.g. ["GITHUB_TOKEN"]).
     # Everything else comes from the curated base agent6 gives any child it
@@ -402,13 +405,16 @@ class MCPServerEntry(BaseModel):
     # never among them, because nobody would write it down.
     pass_env: StrTuple = Field(
         default=(),
-        description="Env vars the server needs, by name. Everything else is the curated base.",
+        description=(
+            "Environment variables a spawned server needs, by name; everything else is agent6's "
+            "curated base environment."
+        ),
     )
     sandbox: MCPSandbox | None = Field(
         default=None,
         description=(
-            "Extra grants for a spawned server beyond the sandbox a jailed command gets; absent "
-            "= exactly that sandbox. A `url` server is your own process: confine it where you "
+            "Extra grants for a spawned server beyond the sandbox a jailed command gets; unset "
+            "means exactly that sandbox. A `url` server is your own process: confine it where you "
             "start it."
         ),
     )
@@ -419,11 +425,11 @@ class MCPServerEntry(BaseModel):
     approve: Literal["ask", "yes"] = Field(
         default="ask",
         description=(
-            "Ask before each of this server's tool calls, showing the arguments the model "
-            'chose; `yes` never asks. The session answers are per server: "allow all" covers '
+            "`ask` prompts before each of this server's tool calls, showing the arguments the "
+            'model chose; `yes` never asks. The session answers are per server: "allow all" covers '
             'this server for the run (not the command tools, not a sibling server), "deny all" '
             "withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. "
-            "No `no`: withholding a server's tools is what `enabled = false` says."
+            "There is no `no`: `enabled = false` is how a server's tools are withheld."
         ),
     )
     # Time budget for the initialize + tools/list handshake. If the
@@ -431,22 +437,24 @@ class MCPServerEntry(BaseModel):
     startup_timeout_s: float = Field(
         gt=0.0,
         default=10.0,
-        description="`initialize` + `tools/list` budget.",
+        description=(
+            "Seconds the server gets to answer `initialize` and `tools/list` before it is given up "
+            "on."
+        ),
     )
     # Per-call timeout for `tools/call` requests. Surfaces as a tool
     # failure (ToolError) if exceeded.
     call_timeout_s: float = Field(
         gt=0.0,
         default=60.0,
-        description="Per `tools/call` timeout.",
+        description="Seconds one `tools/call` may take before it is treated as failed.",
     )
     httpx_trust_env: bool = Field(
         default=False,
         description=(
-            "For a `url` server: forward httpx's `trust_env`, so the connection honors the "
-            "ambient HTTP(S)_PROXY (and .netrc / SSL_CERT_FILE). Off by default so a local "
-            "server's bearer token never routes to a proxy; set it for a server reachable only "
-            "through the environment's proxy."
+            "For a `url` server: honor the ambient `HTTP(S)_PROXY`, `.netrc`, and `SSL_CERT_FILE` "
+            "(httpx's `trust_env`). `false` so a local server's bearer token never routes to a "
+            "proxy; set it for a server reachable only through the environment's proxy."
         ),
     )
 
@@ -528,11 +536,17 @@ class MCPConfig(BaseModel):
 
     enabled: bool = Field(
         default=False,
-        description="Master switch; `false` = zero `mcp__*` tools.",
+        description=(
+            "Master switch for MCP servers: `false` means no `mcp__*` tools reach the model, "
+            "whatever `[mcp.servers]` lists."
+        ),
     )
     servers: dict[str, MCPServerEntry] = Field(
         default_factory=dict,
-        description="MCP servers by name (`[mcp.servers.<name>]`).",
+        description=(
+            "MCP servers by name (`[mcp.servers.<name>]`); their tools reach the model as "
+            "`mcp__<name>__<tool>` in run mode when `enabled` is on."
+        ),
     )
 
     @field_validator("servers")

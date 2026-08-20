@@ -95,17 +95,20 @@ class RoleModel(BaseModel):
 
     provider: str = Field(
         min_length=1,
-        description="A `[providers.*]` name.",
+        description="A `[providers.<name>]` entry, by name.",
     )
     model: str = Field(
         min_length=1,
-        description="Model id at that provider.",
+        description="Model id as that provider names it (`agent6 model` lists them).",
     )
     temperature: float | None = Field(
         default=0.0,
         ge=0.0,
         le=2.0,
-        description="Pinned per call (`0.0` to `2.0`). `0.0` keeps tool use stable.",
+        description=(
+            "Sampling temperature pinned on every call, `0.0` to `2.0`. `0.0` keeps tool use "
+            "stable; unset leaves the provider's default."
+        ),
     )
     # Reasoning/thinking effort for this role. `None` leaves the
     # provider default; `off` disables it explicitly. Mapped per
@@ -115,8 +118,9 @@ class RoleModel(BaseModel):
     thinking: ThinkingLevel | None = Field(
         default=None,
         description=(
-            "Reasoning effort: `off`/`low`/`medium`/`high`. Anthropic maps it to a thinking budget "
-            "(≈ 4k/8k/16k tokens); non-reasoning models ignore it."
+            "Reasoning effort: `off`, `low`, `medium`, or `high`. Anthropic maps it to a thinking "
+            "budget of about 4k, 8k, or 16k tokens; models without reasoning ignore it. Unset: the "
+            "provider's default."
         ),
     )
 
@@ -196,7 +200,7 @@ class Agent6Section(BaseModel):
         ge=1,
         le=1,
         default=1,
-        description="Config schema version (must be `1`).",
+        description="Config schema version; only `1` is accepted.",
     )
     # Absolute base directory for per-repo agent6 state (this per-repo config +
     # all run state), which lives OUT of the workspace under `<base>/<repo-id>/`
@@ -208,10 +212,10 @@ class Agent6Section(BaseModel):
     state_dir: str | None = Field(
         default=None,
         description=(
-            "Absolute base for all per-repo state (`<state_dir>/<repo-id>/`), out of the "
-            "workspace. Global-config only; when set it wins over `AGENT6_STATE_HOME` and the "
-            "XDG default. In a devcontainer the default is ephemeral: point it at a persisted "
-            "volume to keep runs across rebuilds."
+            "Absolute base directory for all per-repo state (runs, machines, memory), as "
+            "`<state_dir>/<repo-id>/`. Global config only. Unset: `AGENT6_STATE_HOME`, else "
+            "`$XDG_STATE_HOME/agent6`. In a devcontainer the default is wiped on rebuild; point it "
+            "at a persisted volume to keep runs."
         ),
     )
 
@@ -239,7 +243,8 @@ class Config(BaseModel):
     providers: dict[str, ProviderEntry] = Field(
         default_factory=dict,
         description=(
-            "Provider endpoints by name (`[providers.<name>]`), referenced from `[models.*]`."
+            "Provider endpoints by name (`[providers.<name>]`); a `[models.*]` role names one. "
+            "`agent6 connect` writes them."
         ),
     )
     models: ModelsConfig = Field(default_factory=ModelsConfig)
@@ -262,9 +267,11 @@ class Config(BaseModel):
     preset: str = Field(
         default="",
         description=(
-            "Named strategy preset: fills many settings at once (see the Presets section). "
-            "Top-level because it overrides every section. `agent6 config set preset <name>` "
-            "(`--repo`); `--preset` overrides per run."
+            "The strategy preset in force: `standard` (plain defaults), `quick` (no review panel), "
+            "`ultra` (a three-seat panel that advises and vetoes before finish), `paranoid` (five "
+            "explore-tier seats), or a `[presets.<name>]` of your own. Fills many settings at once "
+            "and overrides every section of the layer that selects it; `--preset` overrides per "
+            "run, `resume --preset` per resumed leg. Empty: no preset."
         ),
     )
 

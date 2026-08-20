@@ -190,7 +190,14 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
 # the [review] / budget knobs by hand. Each value is a nested config dict spliced
 # ABOVE the layer that SELECTED the preset (so the preset's settings OVERRIDE
 # that layer's; see _apply_preset). Users add their own via [presets.<name>]
-# tables in config.toml.
+# tables in config.toml. BUILTIN_PRESET_NOTES says what each is for, one line,
+# the docs table and the `--preset` help print it.
+BUILTIN_PRESET_NOTES: dict[str, str] = {
+    "standard": "the plain defaults, no review panel",
+    "quick": "no review panel: fast and cheap",
+    "ultra": "a three-seat review panel that vetoes the finish it does not pass",
+    "paranoid": "five explore-tier review seats vetoing the finish: maximum scrutiny",
+}
 BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     # The pre-feature baseline: plain defaults, no review panel.
     "standard": {},

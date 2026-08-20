@@ -25,8 +25,10 @@ class GitCommitCheckpointConfig(BaseModel):
     message: Literal["agent6", "conventional", "model"] = Field(
         default="agent6",
         description=(
-            "Per-step message style: `agent6` (`agent6 iter N:`), `conventional` (derived from the "
-            "diff, no model call), or `model` (model-written, degrading to `agent6` on failure)."
+            "The message of each per-step commit: `agent6` (`agent6 iter N: <summary>`), "
+            "`conventional` (a `type(scope): subject` derived from the diff, no model call), or "
+            "`model` (the model writes it from the git facts, falling back to `agent6` with a "
+            "warning on any failure)."
         ),
     )
 
@@ -41,8 +43,10 @@ class GitCommitSquashConfig(BaseModel):
     message: Literal["agent6", "conventional", "combine", "model"] = Field(
         default="agent6",
         description=(
-            "Squash-commit style: checkpoint's styles plus `combine` (git's concatenated per-step "
-            "log)."
+            "The message of the one commit a squash merge produces: `agent6` (`agent6 iter N: "
+            "<summary>` style), `conventional` (a `type(scope): subject` derived from the diff, no "
+            "model call), `combine` (git's own squash message: the per-step log concatenated), or "
+            "`model` (model-written, falling back to `agent6` with a warning on any failure)."
         ),
     )
 
@@ -61,15 +65,15 @@ class GitCommitConfig(BaseModel):
     name: str | None = Field(
         default=None,
         description=(
-            "Override the commit identity (else the project's `git config`). `agent6 run` refuses "
-            "to start with no resolvable identity."
+            "Author and committer name on the commits agent6 makes; unset uses the repo's own `git "
+            "config`. A run with no resolvable identity refuses to start."
         ),
     )
     email: str | None = Field(
         default=None,
         description=(
-            "Override the commit identity (else the project's `git config`). `agent6 run` refuses "
-            "to start with no resolvable identity."
+            "Author and committer email on the commits agent6 makes; unset uses the repo's own "
+            "`git config`. A run with no resolvable identity refuses to start."
         ),
     )
     # Appended to every commit agent6 makes when non-empty, e.g.
@@ -78,9 +82,10 @@ class GitCommitConfig(BaseModel):
     trailer: str = Field(
         default="",
         description=(
-            'Appended to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` or '
-            '`"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`. `{model}` = the model(s) '
-            'that wrote the code, `", "`-joined when several contributed.'
+            "A git trailer line (`Key: value`) appended to every commit agent6 makes, e.g. "
+            '`"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} '
+            '<noreply@agent6.dev>"`. `{model}` is the model that wrote the code (several are '
+            "joined with `, `). Empty: no trailer."
         ),
     )
     checkpoint: GitCommitCheckpointConfig = GitCommitCheckpointConfig()
@@ -117,17 +122,17 @@ class GitConfig(BaseModel):
         description=(
             "When tracked files have uncommitted changes at start, ask how the run treats them "
             "(`stash` them for the run, `include` them in its commits, or `cancel`, which parks "
-            "the run for a later resume); a run nobody can answer refuses to start. `false`: "
-            "start without asking, the run's first commit records them. Untracked files never "
-            "count and are never committed."
+            "the run for a later resume); a run nobody can answer refuses to start. `false`: start "
+            "without asking, the run's first commit records them. Untracked files never count and "
+            "are never committed."
         ),
     )
     auto_stash: bool = Field(
         default=False,
         description=(
-            "Stash the tracked files' uncommitted changes at start without asking; at the end "
-            "the stash is applied back per `auto_stash_pop`, else its `git stash apply <sha>` "
-            "line is printed (by sha, never silently left)."
+            "Stash the tracked files' uncommitted changes at start without asking; at the end the "
+            "stash is applied back per `auto_stash_pop`, else its `git stash apply <sha>` line is "
+            "printed (by sha, never silently left)."
         ),
     )
     # When auto_stash stashed pre-run changes, restore them at run end. Default
@@ -138,8 +143,9 @@ class GitConfig(BaseModel):
     auto_stash_pop: bool = Field(
         default=False,
         description=(
-            "Pop the stash back at run end when safe (clean tree, conflict-free apply). On any "
-            "doubt, leave it and print how to restore. Never `reset --hard`."
+            "Apply the pre-run stash back when the run ends and the tree is clean (a clean apply, "
+            "no conflicts). On any doubt the stash stays and the apply line is printed. Never "
+            "`reset --hard`. Requires `auto_stash`."
         ),
     )
     # Per-step commits land on the run's own detached chain
@@ -151,9 +157,9 @@ class GitConfig(BaseModel):
     branch_per_run: bool = Field(
         default=True,
         description=(
-            "Also advance a visible `agent6/<id>` branch to the run's chain tip (else the hidden "
-            "`refs/agent6/<id>/head` ref only). Forced on for `--parallel` lanes (work is imported "
-            "by branch)."
+            "Also advance a visible `agent6/<run-id>` branch to the run's chain tip; `false` keeps "
+            "only the hidden `refs/agent6/<run-id>/head` ref. Forced on for `--parallel` lanes "
+            "(their work is imported by branch)."
         ),
     )
     # Off = no per-step commits at all: sessions diff/commits/merge, fork
@@ -162,10 +168,10 @@ class GitConfig(BaseModel):
     commit_per_step: bool = Field(
         default=True,
         description=(
-            "Per-step commits onto the run's detached chain (a temp index; HEAD, your index, and "
-            "your checkout are never touched). Off: agent6 never commits; work stays only in the "
-            "worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch "
-            "from a changed tree degrade."
+            "Commit each editing step onto the run's detached chain (a temp index; HEAD, your "
+            "index, and your checkout are never touched). `false`: agent6 never commits; the work "
+            "stays only in the worktree, and resume-from-git, `sessions diff`/`merge`, and "
+            "`/parallel` dispatch from a changed tree degrade."
         ),
     )
     # Default strategy for `agent6 sessions merge`: how the run branch lands on
@@ -176,9 +182,9 @@ class GitConfig(BaseModel):
     merge_strategy: Literal["squash", "merge", "ff"] = Field(
         default="squash",
         description=(
-            "`agent6 sessions merge` default: `squash` (one commit), `merge` (--no-ff, keeps "
-            "per-step history), `ff`. Governs consolidation only; per-step commits always land on "
-            "the run's chain."
+            "How `agent6 sessions merge` lands a run on its base: `squash` (one commit), `merge` "
+            "(a `--no-ff` merge that keeps the per-step history), or `ff` (fast-forward). "
+            "Consolidation only; per-step commits always land on the run's chain."
         ),
     )
     # After a successful run, automatically run `merge_strategy` to land the
@@ -190,9 +196,9 @@ class GitConfig(BaseModel):
     auto_merge: bool = Field(
         default=False,
         description=(
-            "After a run with nothing red, land the run's work on its base automatically (never "
-            "over a red/stale verify). With `branch_per_run` off it merges the hidden chain ref. "
-            "On conflict nothing moves and instructions are printed."
+            "After a run that finished with nothing red, merge its work into its base branch "
+            "automatically (never over a red or stale verify). With `branch_per_run` off it merges "
+            "the hidden chain ref. On a conflict nothing moves and the instructions are printed."
         ),
     )
     # After auto_merge, delete the run branch when it is safely deletable
@@ -206,9 +212,9 @@ class GitConfig(BaseModel):
     auto_prune: bool = Field(
         default=False,
         description=(
-            "After `auto_merge`, delete the run branch when `git branch -d` can (merge/ff). A "
-            "squash-merged branch is reported with the `-D` line, never force-deleted. Requires "
-            "`auto_merge`; no-op without a run branch."
+            "After an `auto_merge`, delete the run branch when `git branch -d` can (a `merge` or "
+            "`ff` merge). A squash-merged branch is reported with its `-D` line, never "
+            "force-deleted. Requires `auto_merge`; nothing to do without a run branch."
         ),
     )
     # Whether the repo's own git hooks (`.git/hooks/*`) run during agent6's
@@ -223,9 +229,10 @@ class GitConfig(BaseModel):
     run_repo_hooks: bool = Field(
         default=False,
         description=(
-            "Run the repo's own `.git/hooks/*` during agent6's git ops. Off: a repo hook is "
-            "repo-controlled host code, an RCE vector on an untrusted repo. "
-            "`core.fsmonitor`/`diff.external` are always neutralized."
+            "Run the repo's own `.git/hooks/*` during agent6's git operations. `false`: hooks are "
+            "skipped, since a repo hook is repo-controlled code that would run on the host (an RCE "
+            "vector on an untrusted repo). `core.fsmonitor` and `diff.external` are always "
+            "neutralized."
         ),
     )
     # Whether the repo's own content drivers -- `filter.<n>.clean/smudge/process`
@@ -239,11 +246,11 @@ class GitConfig(BaseModel):
     run_repo_filters: bool = Field(
         default=False,
         description=(
-            "Honor the repo's own content drivers (`filter.<n>.clean/smudge/process`, "
-            "`merge.<n>.driver`) during agent6's git ops. Off: a driver defined in `.git/config` "
-            "is repo-controlled host code that runs on the auto-commit's `git add` (or a chain "
-            "merge), the same RCE class as a hook; agent6 neutralizes each by name. Turn on to "
-            "support **Git-LFS** (its clean/smudge filters are exactly these)."
+            "Honor the repo's content drivers (`filter.<name>.clean/smudge/process`, "
+            "`merge.<name>.driver`) during agent6's git operations. `false`: each is neutralized "
+            "by name, since a driver defined in `.git/config` is repo-controlled code that would "
+            "run on the host at every commit (the same class as a hook). `true` is what Git LFS "
+            "needs (its clean/smudge filters are exactly these)."
         ),
     )
     commit: GitCommitConfig = Field(default_factory=GitCommitConfig)

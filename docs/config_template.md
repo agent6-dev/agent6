@@ -182,12 +182,7 @@ A preset fills many settings at once.
 A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
 A `--config FILE` or machine overlay cannot select one.
 
-| Preset | Bundles |
-|---|---|
-| `quick` | review off; fast/cheap. |
-| `standard` | the plain defaults. The default. |
-| `ultra` | a 3-seat grounded `before_finish` veto panel. |
-| `paranoid` | 5 explore-tier seats, `before_finish` veto. |
+<!-- presets-table -->
 
 Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
 

@@ -29,10 +29,12 @@ import json
 import re
 import typing
 from pathlib import Path
+from typing import Any, cast
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
+from agent6.config.layer import BUILTIN_PRESET_NOTES, BUILTIN_PRESETS
 from agent6.config.model import Config
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +43,7 @@ _OUT = _ROOT / "docs" / "config.md"
 REGEN_CMD = "uv run python docs/gen_config.py"
 
 _MARKER = re.compile(r"^<!-- config-table:\s*(.+?)\s*-->$")
+_PRESETS_MARKER = "<!-- presets-table -->"
 
 # Fields whose default is resolved at RUNTIME, so the model holds None and only
 # the page can say what it becomes. The one hand-declared thing here, for the
@@ -140,6 +143,27 @@ def render_table(sections: list[str], all_leaves: dict[str, tuple[str, str]]) ->
     return rows
 
 
+def _flatten(prefix: str, node: dict[str, Any]) -> list[str]:
+    out: list[str] = []
+    for key, value in node.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            out.extend(_flatten(path, cast(dict[str, Any], value)))
+        else:
+            out.append(f"`{path} = {json.dumps(value)}`")
+    return out
+
+
+def render_presets_table() -> list[str]:
+    """The built-in presets from `BUILTIN_PRESETS` + `BUILTIN_PRESET_NOTES`:
+    a renamed or re-tuned preset moves its row."""
+    rows = ["| Preset | For | Sets |", "|---|---|---|"]
+    for name, overrides in BUILTIN_PRESETS.items():
+        sets = ", ".join(_flatten("", overrides)) or "nothing (the defaults)"
+        rows.append(f"| `{name}` | {BUILTIN_PRESET_NOTES[name]} | {sets} |")
+    return rows
+
+
 def render(template: str) -> str:
     all_leaves = leaves()
     out: list[str] = [
@@ -149,6 +173,9 @@ def render(template: str) -> str:
         " edit those, then regenerate. -->",
     ]
     for line in template.splitlines():
+        if line.strip() == _PRESETS_MARKER:
+            out.extend(render_presets_table())
+            continue
         marker = _MARKER.match(line)
         if marker is None:
             out.append(line)

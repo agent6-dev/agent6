@@ -30,14 +30,20 @@ class SkillsConfig(BaseModel):
     # use_skill tool, slash commands don't register.
     enabled: bool = Field(
         default=True,
-        description="Master switch: off = no index, no `use_skill`, no slash commands.",
+        description=(
+            "Master switch for skills: `false` means no skill index in the prompt, no `use_skill` "
+            "tool, and no slash commands."
+        ),
     )
     # Additional skill directories scanned before the installed dir (a local
     # checkout during skill development wins over an installed copy). Each may
     # hold skill subdirectories or be a single skill dir itself.
     extra_dirs: StrTuple = Field(
         default=(),
-        description="Additional skill dirs, scanned before the installed dir.",
+        description=(
+            "Additional directories scanned for skills, before the installed skills dir; a skill "
+            "of the same name in an earlier dir wins."
+        ),
     )
     # Per-skill exceptions, one value per skill so contradictory states are
     # unrepresentable: "disabled" drops it from the index; "always" injects
@@ -47,9 +53,9 @@ class SkillsConfig(BaseModel):
     state: dict[str, Literal["enabled", "disabled", "always"]] = Field(
         default_factory=dict,
         description=(
-            'Per-skill: `"disabled"` drops it; `"always"` injects the full text into the '
-            "system prompt. Layers merge key-wise; `agent6 skills enable/disable [--repo]` "
-            "writes it."
+            "Per-skill state by name: `enabled` (indexed, loaded on `use_skill`), `disabled` "
+            "(dropped), or `always` (its full text sits in the system prompt). Layers merge key by "
+            "key; `agent6 skills enable|disable [--repo]` writes it."
         ),
     )
 
@@ -79,12 +85,15 @@ class MachineNotifyConfig(BaseModel):
 
     on_event: Argv = Field(
         default=(),
-        description="argv per notify/end (empty = disabled).",
+        description=(
+            "A command run on every machine notify event and at the machine's end, as argv (no "
+            "shell), with the event in `AGENT6_MACHINE_*` variables. Empty: no hook."
+        ),
     )
     timeout_s: float = Field(
         gt=0.0,
         default=30.0,
-        description="Hook timeout.",
+        description="Seconds the hook may run before it is killed.",
     )
 
 
@@ -102,16 +111,17 @@ class MachineConfig(BaseModel):
         ge=0,
         default=5,
         description=(
-            "Blackboard snapshots kept per instance (recovery reads only the latest; `machine "
-            "replay` rebuilds from the journal). `0` keeps all."
+            "How many blackboard snapshots a machine instance keeps (recovery reads only the "
+            "latest; `machine replay` rebuilds any state from the journal). `0` keeps all."
         ),
     )
     state_log_keep: int = Field(
         ge=0,
         default=50,
         description=(
-            "Per-state watchable log dirs kept per instance (`<instance>/states/`); the journal "
-            "keeps the full transition history regardless. `0` keeps all."
+            "How many per-state log dirs a machine instance keeps under `<instance>/states/` (the "
+            "watchable logs of each state's leg; the journal keeps the full transition history "
+            "regardless). `0` keeps all."
         ),
     )
     notify: MachineNotifyConfig = Field(default_factory=MachineNotifyConfig)
@@ -145,20 +155,24 @@ class WebConfig(BaseModel):
 
     host: str = Field(
         default="127.0.0.1",
-        description="Bind address; non-loopback requires `allow_non_loopback = true`.",
+        description=(
+            "Address `agent6 web` binds; a non-loopback address also needs `allow_non_loopback = "
+            "true`."
+        ),
     )
     port: int = Field(
         ge=1,
         le=65535,
         default=7658,
-        description="Listen port.",
+        description="Port `agent6 web` listens on.",
     )
     # Opt-in required to bind a non-loopback host. Off by default so a typo or a
     # copied config can never silently expose the agent to the local network.
     allow_non_loopback: bool = Field(
         default=False,
         description=(
-            "Opt-in for a non-loopback bind, so a typo can never silently expose the write surface."
+            "Allow `host` to be a non-loopback address, so a typo can never silently expose the "
+            "write surface (approvals, steers, config writes) beyond this machine."
         ),
     )
 
@@ -201,12 +215,15 @@ class NotifyConfig(BaseModel):
 
     on_complete: Argv = Field(
         default=(),
-        description="argv to run (empty = disabled).",
+        description=(
+            "A command run when a run or resume ends, as argv (no shell), with "
+            "`AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON` in its environment. Empty: no hook."
+        ),
     )
     timeout_s: float = Field(
         gt=0.0,
         default=30.0,
-        description="Hook timeout.",
+        description="Seconds the hook may run before it is killed.",
     )
 
 
@@ -230,7 +247,10 @@ class ParallelConfig(BaseModel):
         ge=1,
         le=1024,
         default=4,
-        description="Hard cap per fan-out (1-1024); more refuses up front.",
+        description=(
+            "The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for "
+            "more is refused before anything is cloned."
+        ),
     )
     # Base directory for subordinate clones (a fan-out gets
     # `<workdir>/<repo-id>/<fanout-id>/lane-<i>`; a machine's run states use a
@@ -240,7 +260,7 @@ class ParallelConfig(BaseModel):
     workdir: str = Field(
         default="",
         description=(
-            "Base dir for subordinate clones (lanes, machine run states), in a per-repo"
-            ' subdir. `""` = `<cache_dir>/parallel`; cleaned up after import.'
+            "Base directory for the clones lanes and machine run states work in, in a per-repo "
+            "subdirectory. Empty: `<cache_dir>/parallel`. Cleaned up after the work is imported."
         ),
     )

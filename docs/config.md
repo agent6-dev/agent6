@@ -42,8 +42,8 @@ It can be empty or absent when the global config supplies a provider and model; 
 
 | Field | Default | Meaning |
 |---|---|---|
-| `config_version` | `1` | Config schema version (must be `1`). |
-| `state_dir` | `"$XDG_STATE_HOME/agent6"` | Absolute base for all per-repo state (`<state_dir>/<repo-id>/`), out of the workspace. Global-config only; when set it wins over `AGENT6_STATE_HOME` and the XDG default. In a devcontainer the default is ephemeral: point it at a persisted volume to keep runs across rebuilds. |
+| `config_version` | `1` | Config schema version; only `1` is accepted. |
+| `state_dir` | `"$XDG_STATE_HOME/agent6"` | Absolute base directory for all per-repo state (runs, machines, memory), as `<state_dir>/<repo-id>/`. Global config only. Unset: `AGENT6_STATE_HOME`, else `$XDG_STATE_HOME/agent6`. In a devcontainer the default is wiped on rebuild; point it at a persisted volume to keep runs. |
 
 ## `[providers.<name>]`
 
@@ -53,18 +53,18 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `api_format` | *(required)* | `"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …). |
-| `deployment` | `"direct"` | `"direct"`, `"vertex"`, or `"azure"` (`openai` only). Selects URL shape + model/version placement. |
-| `base_url` | per (format, deployment) | Endpoint host + path prefix; required for vertex/azure. Its host is the only network destination the agent dials for this provider. |
-| `auth_style` | per (format, deployment) | `"x_api_key"`, `"bearer"`, `"api_key_header"` (Azure), or `"none"` (local). Rarely set by hand. |
-| `api_key_env` | none | Env var holding the key (wins over `secrets.toml`). Omit for `agent6 connect` keys or unauthenticated local endpoints. |
-| `token_command` | none | argv that prints a short-lived bearer to stdout; re-run on TTL and once on `401`/`403`. Wins over `api_key_env`. |
-| `token_command_ttl_s` | `300.0` | Seconds to cache `token_command` output. |
-| `extra_headers` | `{}` | Extra HTTP headers on every request. Not for secrets. |
-| `extra_body` | `{}` | Provider-specific JSON merged last into every request body, so tuning keys (max_tokens, temperature) win; the structural keys agent6 owns (messages, model, stream, tools, tool choice, response shape) are filtered. Values must be JSON-shaped: a TOML date/time is refused. e.g. OpenRouter routing options. |
-| `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). |
-| `http_timeout_s` | `600.0` | Per-HTTP-call timeout (read/write; connect is bounded at 20s). |
-| `prompt_caching` | `true` | (`anthropic`) Prompt caching: system prompt, tools, and the growing conversation re-read at 0.1x input price. |
+| `api_format` | *(required)* | The wire format: `anthropic` (the Messages API) or `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint). |
+| `deployment` | `"direct"` | `direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format only): the URL shape and where the model name and API version go. |
+| `base_url` | per (format, deployment) | The endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for `vertex` and `azure`. Its host is the only network destination the agent dials for this provider. |
+| `auth_style` | per (format, deployment) | How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local endpoint). `agent6 connect` sets it; rarely typed by hand. |
+| `api_key_env` | none | The environment variable holding the API key; it wins over `secrets.toml`. Unset for a key `agent6 connect` stored, or an unauthenticated local endpoint. |
+| `token_command` | none | A command (argv) that prints a short-lived bearer token to stdout, re-run when `token_command_ttl_s` expires and once after a `401` or `403`. Wins over `api_key_env`. |
+| `token_command_ttl_s` | `300.0` | Seconds a `token_command` token is reused before the command runs again. |
+| `extra_headers` | `{}` | Extra HTTP headers on every request to this provider. Never a secret: the config file is not `0600`. |
+| `extra_body` | `{}` | Provider-specific JSON merged last into every request body, so tuning keys (`max_tokens`, `temperature`) win; the structural keys agent6 owns (messages, model, stream, tools, tool choice, response shape) are filtered out. Values must be JSON-shaped (a TOML date or time is refused). OpenRouter's routing options go here. |
+| `extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
+| `http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is bounded at 20 s regardless. |
+| `prompt_caching` | `true` | Anthropic prompt caching: the system prompt, the tools, and the growing conversation are re-read at 0.1x the input price. `anthropic` format only. |
 
 ### Deployments
 
@@ -134,10 +134,10 @@ Cross-vendor mixes are fine.
 <!-- the three roles are the same shape, so the table is rendered once -->
 | Field | Default | Meaning |
 |---|---|---|
-| `provider` | *(required)* | A `[providers.*]` name. |
-| `model` | *(required)* | Model id at that provider. |
-| `temperature` | `0.0` | Pinned per call (`0.0` to `2.0`). `0.0` keeps tool use stable. |
-| `thinking` | none | Reasoning effort: `off`/`low`/`medium`/`high`. Anthropic maps it to a thinking budget (≈ 4k/8k/16k tokens); non-reasoning models ignore it. |
+| `provider` | *(required)* | A `[providers.<name>]` entry, by name. |
+| `model` | *(required)* | Model id as that provider names it (`agent6 model` lists them). |
+| `temperature` | `0.0` | Sampling temperature pinned on every call, `0.0` to `2.0`. `0.0` keeps tool use stable; unset leaves the provider's default. |
+| `thinking` | none | Reasoning effort: `off`, `low`, `medium`, or `high`. Anthropic maps it to a thinking budget of about 4k, 8k, or 16k tokens; models without reasoning ignore it. Unset: the provider's default. |
 
 ## `[sandbox]`
 
@@ -147,15 +147,15 @@ This is the field summary.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `isolation` | `"auto"` | `auto` picks the strongest the host supports (`strict`, else `hardened`; `none` only when the host offers no confinement, loudly). Explicit `strict`/`hardened` refuse where unsupported, never downgrade. Explicit `none` runs unsandboxed (also `--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`). |
-| `network` | `"auto"` | Which network jailed commands join. `auto`: the run's private network (commands reach each other, nothing off the box, nothing outside reaches in), enforced on `strict`, degraded to the host's with a warning on `hardened`/`none`. `session`: the same, refusing where unenforceable. `only_explicit_states`: strict-only; machine `tool` states opt in. `host`: the machine's network. No per-command `none`: a run's commands share one launcher. |
-| `run_commands` | `"ask"` | May the LLM run commands (`run_command`, `run_verify_command`, `stop_background`: one decision for all three): `yes` auto-approves, `no` withholds the tools (and the verify gate with them), `ask` prompts per call with session-wide allow/deny answers. `agent6 ask`/`plan` clamp `yes` to `ask`. Per-invocation: `--auto-approve` (never over a configured `no`), `--no-commands`. A run that cannot ask anyone refuses to start. |
-| `fetch_hosts` | `[]` | Hosts the `fetch` tool reads without asking; any other host prompts, and an absent operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as a choice; a leading dot allows subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix. The rest of fetch is fixed (https only, 1 MiB cap, redirects returned not followed: security.md, Fixed tool surface). Hidden when `network = "host"`; withheld from machine/agent states. A GET can still encode data in its path, hence the empty default. |
-| `protect_git` | `true` | Keep `.git/` unwritable by jailed commands (else one can plant a git filter that agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a mount namespace (security.md, Git invariants). On `hardened` the default degrades with a warning; an explicit `true` refuses. The in-process edit tools refuse `.git` writes everywhere regardless. |
-| `memory_limit_mb` | `0` (off) | `RLIMIT_DATA` cap (MiB) per jailed process (inherited). Off by default: the kernel already handles a memory bomb, and a cap costs real builds more than it buys. Set one to bound a specific task; a runaway then fails as an ordinary command error. |
-| `extra_read_paths` | `[]` | Extra absolute paths **the run** may **read + execute**, at their real locations: a toolchain or interpreter outside the repo (conda, Go/Rust/Node, a shared data dir). Mounted for jailed commands, readable by the in-process tools (name one with an absolute path). Loosens confinement; list only what the build needs. |
-| `extra_write_paths` | `[]` | Extra absolute paths **the run** may **read + write**, at their real locations: a build cache, an output dir, a sibling checkout the task edits. Write implies read. List only what the task writes. |
-| `hide_paths` | `[]` | Paths **the run** may never read or write, even under a broader grant. agent6's config dir and state base are always hidden, so an `extra_read_paths` grant of `$HOME` never exposes `secrets.toml` or your run history (the data dir and cache are not: installed skills stay usable). Enforced twice: the in-process tools refuse them at **every** isolation level (`none` included), and jailed commands see them masked (a dir appears empty, a file reads empty). Masking needs the mount namespace: on `hardened` an entry it cannot mask refuses the run, and a grant exposing the always-hidden dirs warns loudly instead. |
+| `isolation` | `"auto"` | How jailed commands are confined: `strict` (user + mount namespaces, Landlock, seccomp), `hardened` (Landlock + seccomp, no namespaces), or `none` (unconfined). `auto` picks the strongest the host supports and says so when that is `none`. An explicit `strict` or `hardened` refuses to start where the host cannot honor it. `none` also via `--dangerously-disable-sandbox` or `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. |
+| `network` | `"auto"` | Which network jailed commands join. `session`: the run's private network (commands reach each other, nothing off the box, nothing outside reaches in), refused where it cannot be enforced. `host`: the machine's network. `only_explicit_states`: strict only, machine `tool` states opt in. `auto`: `session` under `strict`, degraded to the host's network with a warning under `hardened` or `none`. A run's commands share one launcher, so there is no per-command `none`. |
+| `run_commands` | `"ask"` | Whether the model may run commands (`run_command`, `run_verify_command`, `stop_background`, one decision for all three): `yes` runs them, `no` withholds the tools (and the verify gate with them), `ask` prompts per call with allow-for-this-session answers. `ask` and `plan` clamp `yes` to `ask`. Per invocation: `--auto-approve` (never over a configured `no`), `--no-commands`. A run set to `ask` with nobody to answer refuses to start. |
+| `fetch_hosts` | `[]` | Hosts the `fetch` tool reads without asking; any other host prompts, and an absent operator is a no. Empty: every fetch prompts. `["*"]`: any host. A leading dot allows subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix; the rest of fetch is fixed (https only, 1 MiB cap, redirects returned, not followed). Hidden when `network = "host"`; withheld from machine and agent states. |
+| `protect_git` | `true` | Keep `.git/` unwritable by jailed commands, so a command cannot plant a git filter that agent6's host-side commits would execute. Needs a mount namespace: `strict` only. Under `hardened` the default `true` degrades with a warning; an explicit `true` refuses to start. The in-process edit tools refuse `.git` writes at every level regardless. |
+| `memory_limit_mb` | `0` (off) | `RLIMIT_DATA` cap in MiB on each jailed process (inherited by its children). `0`: no cap (the kernel handles a runaway; a cap costs real builds more than it buys). Set one to bound a specific task; a process over it fails as an ordinary command error. |
+| `extra_read_paths` | `[]` | Absolute paths outside the repo the run may read and execute, at their real locations: a toolchain, an interpreter (conda, Go, Rust, Node), a shared data dir. Mounted for jailed commands and readable by the in-process tools. Widens the sandbox; list only what the build needs. |
+| `extra_write_paths` | `[]` | Absolute paths outside the repo the run may read and write, at their real locations: a build cache, an output dir, a sibling checkout the task edits. Write implies read. Widens the sandbox; list only what the task writes. |
+| `hide_paths` | `[]` | Absolute paths the run may never read or write, even under a broader grant. agent6's config dir and state base are always hidden, so an `extra_read_paths` grant of `$HOME` never exposes `secrets.toml` or run history (the data dir and cache stay readable: installed skills work). Enforced twice: the in-process tools refuse them at every isolation level, and jailed commands see them masked (a dir reads empty, a file reads empty). Masking needs the mount namespace: under `hardened` an entry it cannot mask refuses the run, and a grant exposing the always-hidden dirs warns loudly instead. |
 
 ## `[git]`
 
@@ -163,58 +163,58 @@ This is the field summary.
 |---|---|---|
 | `require_clean_worktree` | `true` | When tracked files have uncommitted changes at start, ask how the run treats them (`stash` them for the run, `include` them in its commits, or `cancel`, which parks the run for a later resume); a run nobody can answer refuses to start. `false`: start without asking, the run's first commit records them. Untracked files never count and are never committed. |
 | `auto_stash` | `false` | Stash the tracked files' uncommitted changes at start without asking; at the end the stash is applied back per `auto_stash_pop`, else its `git stash apply <sha>` line is printed (by sha, never silently left). |
-| `auto_stash_pop` | `false` | Pop the stash back at run end when safe (clean tree, conflict-free apply). On any doubt, leave it and print how to restore. Never `reset --hard`. |
-| `branch_per_run` | `true` | Also advance a visible `agent6/<id>` branch to the run's chain tip (else the hidden `refs/agent6/<id>/head` ref only). Forced on for `--parallel` lanes (work is imported by branch). |
-| `commit_per_step` | `true` | Per-step commits onto the run's detached chain (a temp index; HEAD, your index, and your checkout are never touched). Off: agent6 never commits; work stays only in the worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch from a changed tree degrade. |
-| `merge_strategy` | `"squash"` | `agent6 sessions merge` default: `squash` (one commit), `merge` (--no-ff, keeps per-step history), `ff`. Governs consolidation only; per-step commits always land on the run's chain. |
-| `auto_merge` | `false` | After a run with nothing red, land the run's work on its base automatically (never over a red/stale verify). With `branch_per_run` off it merges the hidden chain ref. On conflict nothing moves and instructions are printed. |
-| `auto_prune` | `false` | After `auto_merge`, delete the run branch when `git branch -d` can (merge/ff). A squash-merged branch is reported with the `-D` line, never force-deleted. Requires `auto_merge`; no-op without a run branch. |
-| `run_repo_hooks` | `false` | Run the repo's own `.git/hooks/*` during agent6's git ops. Off: a repo hook is repo-controlled host code, an RCE vector on an untrusted repo. `core.fsmonitor`/`diff.external` are always neutralized. |
-| `run_repo_filters` | `false` | Honor the repo's own content drivers (`filter.<n>.clean/smudge/process`, `merge.<n>.driver`) during agent6's git ops. Off: a driver defined in `.git/config` is repo-controlled host code that runs on the auto-commit's `git add` (or a chain merge), the same RCE class as a hook; agent6 neutralizes each by name. Turn on to support **Git-LFS** (its clean/smudge filters are exactly these). |
+| `auto_stash_pop` | `false` | Apply the pre-run stash back when the run ends and the tree is clean (a clean apply, no conflicts). On any doubt the stash stays and the apply line is printed. Never `reset --hard`. Requires `auto_stash`. |
+| `branch_per_run` | `true` | Also advance a visible `agent6/<run-id>` branch to the run's chain tip; `false` keeps only the hidden `refs/agent6/<run-id>/head` ref. Forced on for `--parallel` lanes (their work is imported by branch). |
+| `commit_per_step` | `true` | Commit each editing step onto the run's detached chain (a temp index; HEAD, your index, and your checkout are never touched). `false`: agent6 never commits; the work stays only in the worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch from a changed tree degrade. |
+| `merge_strategy` | `"squash"` | How `agent6 sessions merge` lands a run on its base: `squash` (one commit), `merge` (a `--no-ff` merge that keeps the per-step history), or `ff` (fast-forward). Consolidation only; per-step commits always land on the run's chain. |
+| `auto_merge` | `false` | After a run that finished with nothing red, merge its work into its base branch automatically (never over a red or stale verify). With `branch_per_run` off it merges the hidden chain ref. On a conflict nothing moves and the instructions are printed. |
+| `auto_prune` | `false` | After an `auto_merge`, delete the run branch when `git branch -d` can (a `merge` or `ff` merge). A squash-merged branch is reported with its `-D` line, never force-deleted. Requires `auto_merge`; nothing to do without a run branch. |
+| `run_repo_hooks` | `false` | Run the repo's own `.git/hooks/*` during agent6's git operations. `false`: hooks are skipped, since a repo hook is repo-controlled code that would run on the host (an RCE vector on an untrusted repo). `core.fsmonitor` and `diff.external` are always neutralized. |
+| `run_repo_filters` | `false` | Honor the repo's content drivers (`filter.<name>.clean/smudge/process`, `merge.<name>.driver`) during agent6's git operations. `false`: each is neutralized by name, since a driver defined in `.git/config` is repo-controlled code that would run on the host at every commit (the same class as a hook). `true` is what Git LFS needs (its clean/smudge filters are exactly these). |
 
 ### `[git.commit]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `name` | none | Override the commit identity (else the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
-| `email` | none | Override the commit identity (else the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
-| `trailer` | `""` | Appended to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`. `{model}` = the model(s) that wrote the code, `", "`-joined when several contributed. |
+| `name` | none | Author and committer name on the commits agent6 makes; unset uses the repo's own `git config`. A run with no resolvable identity refuses to start. |
+| `email` | none | Author and committer email on the commits agent6 makes; unset uses the repo's own `git config`. A run with no resolvable identity refuses to start. |
+| `trailer` | `""` | A git trailer line (`Key: value`) appended to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`. `{model}` is the model that wrote the code (several are joined with `, `). Empty: no trailer. |
 
 ### `[git.commit.checkpoint]` and `[git.commit.squash]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `checkpoint.message` | `"agent6"` | Per-step message style: `agent6` (`agent6 iter N:`), `conventional` (derived from the diff, no model call), or `model` (model-written, degrading to `agent6` on failure). |
-| `squash.message` | `"agent6"` | Squash-commit style: checkpoint's styles plus `combine` (git's concatenated per-step log). |
+| `checkpoint.message` | `"agent6"` | The message of each per-step commit: `agent6` (`agent6 iter N: <summary>`), `conventional` (a `type(scope): subject` derived from the diff, no model call), or `model` (the model writes it from the git facts, falling back to `agent6` with a warning on any failure). |
+| `squash.message` | `"agent6"` | The message of the one commit a squash merge produces: `agent6` (`agent6 iter N: <summary>` style), `conventional` (a `type(scope): subject` derived from the diff, no model call), `combine` (git's own squash message: the per-step log concatenated), or `model` (model-written, falling back to `agent6` with a warning on any failure). |
 
 ## `preset` (top-level)
 
 | Field | Default | Meaning |
 |---|---|---|
-| `preset` | `""` | Named strategy preset: fills many settings at once (see the Presets section). Top-level because it overrides every section. `agent6 config set preset <name>` (`--repo`); `--preset` overrides per run. |
+| `preset` | `""` | The strategy preset in force: `standard` (plain defaults), `quick` (no review panel), `ultra` (a three-seat panel that advises and vetoes before finish), `paranoid` (five explore-tier seats), or a `[presets.<name>]` of your own. Fills many settings at once and overrides every section of the layer that selects it; `--preset` overrides per run, `resume --preset` per resumed leg. Empty: no preset. |
 
 ## `[workflow]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `verify_command` | `[]` | argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a && b"]`). Set it to pin one. Left unset, each run infers a gate and prints it: AGENTS.md `## Verify command` first, then the repo's manifest files, then a model call over those manifests. A run that can infer none starts gateless and adopts the first gate a recognizable project created mid-run yields. |
-| `verify_timeout_s` | `600.0` | Per-call timeout for `verify_command` / `metric.command`. The operator's gate needs a verdict, so it is bounded; a model-chosen `run_command` is not (see `command_checkin_s`). |
-| `command_checkin_s` | `900.0` | How long a model's `run_command` may run before it is **handed back** as a background job. Not a timeout: nothing is killed, the command keeps running, and the model is told (`returncode: null`, `still_running: true`, a `background_id`) so it can wait with `read_background`, stop it, or carry on. `0` disables the hand-back, which is right when a human is watching and can interrupt. |
-| `require_verify_to_finish` | `false` | Refuse `finish_session` while the last verify is red or never ran (bounded nudges). Regardless, a finish over red is always reported "finished", never "passed". |
+| `verify_command` | `[]` | The command that decides whether a step succeeded, as argv (no shell; wrap a pipeline as `["sh", "-c", "a && b"]`). Set it to pin the gate. Unset: each run infers one and prints it (an AGENTS.md `## Verify command` block first, then the repo's manifest files, then a model call over those manifests); a run that can infer none starts gateless and adopts the first gate a recognizable project created mid-run yields. |
+| `verify_timeout_s` | `600.0` | Seconds one `verify_command` or `metric.command` call may take before it is killed and counted as failed. The operator's gate needs a verdict, so it is bounded; a model-chosen `run_command` is not (see `command_checkin_s`). |
+| `command_checkin_s` | `900.0` | Seconds a model's `run_command` may run before it is handed back as a background job. Not a timeout: nothing is killed, the command keeps running, and the model is told (`returncode: null`, `still_running: true`, a `background_id`) so it can wait with `read_background`, stop it, or carry on. `0` disables the hand-back, which is right when a human is watching and can interrupt. |
+| `require_verify_to_finish` | `false` | Refuse `finish_session` while the last verify is red or never ran (with bounded nudges toward getting it green). `false`: the finish is honored, and a finish over a red verify is still reported as "finished", never "passed". |
 
 ## `[review]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `trigger` | `"off"` | In-loop review panel trigger: `off` / `on_verify_fail` / `before_finish` / `periodic`. |
-| `period` | `10` | Iterations between reviews for `periodic`. |
-| `decision` | `"advisory"` | `advisory` (inject findings, never block) / `veto` / `quorum` / `all`. |
-| `quorum` | `2` | K for `quorum`; counts distinct models, so same-model seats can't fake it. |
-| `max_total_rejections` | `4` | Per-run blocks before the gate auto-disarms to advisory. |
-| `budget_fraction` | `0.25` | Skip the in-loop panel once remaining budget falls below this fraction. |
-| `seats` | `[]` | Panel roster: `"persona"` routes via `[models.reviewer]`; `"persona@provider/model"` pins a model per seat. `agent6 review --reviewers N [--personas …]` synthesizes an equivalent. |
-| `concurrency` | `1` | In-loop seat parallelism (post-hoc `agent6 review` is always parallel). |
-| `tier` | `"diff"` | `diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer, cross-file). |
+| `trigger` | `"off"` | When the in-loop review panel runs on the diff so far and its findings reach the model as a message: `off` (never), `on_verify_fail` (after each failed verify), `before_finish` (when the model calls `finish_session`; a gating `decision` can reject the finish), or `periodic` (every `period` iterations). With no `seats` the panel is one reviewer seat on `[models.reviewer]`, the model `agent6 review` uses. |
+| `period` | `10` | Iterations between panels when `trigger = "periodic"`. |
+| `decision` | `"advisory"` | What a panel's BLOCK verdicts do: `advisory` (the findings are injected as guidance, nothing is blocked), `veto` (one blocking seat rejects the finish), `quorum` (`quorum` distinct models must block), or `all` (every seat must block). A gate applies to `before_finish` only; the other triggers always advise. |
+| `quorum` | `2` | How many seats must block for `decision = "quorum"`, counted per distinct model (two seats on one model count once, so a same-model panel cannot reach it). |
+| `max_total_rejections` | `4` | How many finishes a gating panel may reject per run before it disarms to `advisory` for the rest of the run, so a panel can never stall a run forever. |
+| `budget_fraction` | `0.25` | Skip the panel (the finish is accepted) once the run's remaining budget falls below this fraction of the whole; reviewing costs most exactly when the budget is scarcest. `0.25`: no panel in the last quarter. |
+| `seats` | `[]` | The panel roster, one entry per seat: a persona name (`"security"`), routed via `[models.reviewer]`, or `"<persona>@<provider>/<model>"` to pin a model per seat (`"correctness@openrouter/moonshotai/kimi-k2"`). A persona is any short stance the reviewer's prompt adopts; the built-in set cycled when none is named is `security`, `correctness`, `tests`, `over-engineering`, `edge-cases`. Empty: one reviewer seat when `trigger` is on. `agent6 review --reviewers N --personas ...` builds the same roster for a one-off review. |
+| `concurrency` | `1` | How many seats the in-loop panel runs at once (`1` = one after another; the panel's latency is its slowest seat). `agent6 review` always runs every seat in parallel. |
+| `tier` | `"diff"` | How much a seat reads: `diff` (one call over the diff, the task, and the verify result) or `explore` (a read-only tool-using reviewer that also reads the repo around the diff to catch cross-file impact; several calls per seat). |
 
 Grounding is mechanical, not prose: a `block` gates only if its `file:line` is in the diff and its category is in a fixed allowed set (security / sandbox-bypass / off-topic-edit / data-loss / verify-uncovered-correctness); everything else is advisory and cannot stall the run.
 
@@ -224,21 +224,21 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `drop_at_chars` | _adaptive_ | Tier 1: oldest tool results become placeholders. Unset sizes from the worker's context window (~45%); set both thresholds to pin. |
-| `summarise_at_chars` | _adaptive_ | Tier 2: summarise elided history and restart (the task DAG survives). Unset = the window minus a 16k-token reserve. Must exceed `drop_at_chars`. |
-| `keep_recent_chars` | `80000` | Verbatim recent-history tail kept through a tier-2 restart (chars; 0 keeps none). |
-| `keep_thinking_turns` | `0` | Drop thinking from assistant turns older than N assistant turns, at tier-1 moments. `0` (default) keeps all thinking, matching pi; Claude Code clears old thinking. Anthropic-format providers only: the openai wire never re-sends thinking. |
-| `summary_max_tokens` | `2048` | Cap on the tier-2 summary (and gist distillation calls). |
-| `elision_gists` | `true` | Tier 1 decays a large `read_file` to a model-written gist before the bare marker (demoted under continued pressure so the byte bound holds). `false` = straight to bare markers. |
+| `drop_at_chars` | _adaptive_ | Tier-1 compaction threshold: once the accumulated tool results exceed this many characters (about 4 per token), the oldest results are replaced by short placeholders the model can re-fetch. Unset: sized from the model's context window (about 45% of it); set both thresholds to pin them. |
+| `summarise_at_chars` | _adaptive_ | Tier-2 compaction threshold: once the whole context exceeds this many characters, the elided history is summarized and the conversation restarts on the summary (the task DAG survives). Unset: the model's window minus a 16k-token reserve. Must exceed `drop_at_chars`. |
+| `keep_recent_chars` | `80000` | How many characters of the most recent history a tier-2 restart keeps verbatim after the summary. `0` keeps none. |
+| `keep_thinking_turns` | `0` | At tier-1 moments, drop the model's thinking from assistant turns older than this many turns. `0` keeps all thinking. Anthropic-format providers only; the OpenAI wire never re-sends thinking. |
+| `summary_max_tokens` | `2048` | Cap on the tokens a tier-2 summary (and a gist distillation) may produce. |
+| `elision_gists` | `true` | At tier 1, replace a large `read_file` result with a model-written gist before the bare placeholder (the gist is dropped too under continued pressure, so the byte bound holds). `false`: straight to bare placeholders. |
 
 ## `[prompt]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `system_prompt_file` | `""` | Advanced: replace run-mode's static base prompt with this file (dynamic blocks still append). Warned at startup if core tool names are missing. |
-| `structural_priors` | `true` | Include the `<repo-priors>` block (hot symbols, co-change, outline). `false` for a leaner prompt. |
-| `revise_prompt` | `"off"` | One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`. |
-| `decompose` | `"auto"` | Front-load task decomposition (run mode): `on` helps small models that under-finish multi-part tasks (measured on mistral-small; capable models just pay 2-4x overhead). `auto` resolves per worker model from the capability registry; `config show` displays the resolved value. `--decompose` forces one run. |
+| `system_prompt_file` | `""` | Path of a file that replaces run mode's built-in base system prompt (the dynamic blocks still append). The tool contracts become yours to state; a file missing the core tool names is warned about at startup. Empty: the built-in base. `agent6 prompt show` prints the assembled prompt. |
+| `structural_priors` | `true` | Include the `<repo-priors>` block in the system prompt: the repo map, the symbol outline, co-change and hot-symbol hints, recent commits. `false` for a leaner, cheaper prompt. |
+| `revise_prompt` | `"off"` | Rewrite the task prompt once with the reviewer model before the loop starts: `off`, `auto` (the revision is used as written), or `interactive` (you accept, keep the original, or edit; needs the terminal, so a run under the TUI skips it). |
+| `decompose` | `"auto"` | Front-load task decomposition in run mode: the model lays the task out as ordered DAG subtasks before editing and works them one at a time. `on` helps small models that under-finish multi-part tasks (measured on mistral-small; capable models just pay 2-4x overhead), `off` never, `auto` decides per worker model from the capability registry (`config show` prints the resolved value). `--decompose` forces it for one run. |
 
 ## `[skills]`
 
@@ -251,9 +251,9 @@ Trust model: [security.md](security.md).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `enabled` | `true` | Master switch: off = no index, no `use_skill`, no slash commands. |
-| `extra_dirs` | `[]` | Additional skill dirs, scanned before the installed dir. |
-| `state` | `{}` | Per-skill: `"disabled"` drops it; `"always"` injects the full text into the system prompt. Layers merge key-wise; `agent6 skills enable/disable [--repo]` writes it. |
+| `enabled` | `true` | Master switch for skills: `false` means no skill index in the prompt, no `use_skill` tool, and no slash commands. |
+| `extra_dirs` | `[]` | Additional directories scanned for skills, before the installed skills dir; a skill of the same name in an earlier dir wins. |
+| `state` | `{}` | Per-skill state by name: `enabled` (indexed, loaded on `use_skill`), `disabled` (dropped), or `always` (its full text sits in the system prompt). Layers merge key by key; `agent6 skills enable|disable [--repo]` writes it. |
 
 Measured (2026-07): small and frontier open models alike almost never invoke a skill organically from the passive index, and no prompt lever made it reliable.
 When a skill must apply, use `always`, `/name`, or `--skill`.
@@ -265,12 +265,12 @@ A preset fills many settings at once.
 A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
 A `--config FILE` or machine overlay cannot select one.
 
-| Preset | Bundles |
-|---|---|
-| `quick` | review off; fast/cheap. |
-| `standard` | the plain defaults. The default. |
-| `ultra` | a 3-seat grounded `before_finish` veto panel. |
-| `paranoid` | 5 explore-tier seats, `before_finish` veto. |
+| Preset | For | Sets |
+|---|---|---|
+| `standard` | the plain defaults, no review panel | nothing (the defaults) |
+| `quick` | no review panel: fast and cheap | `review.trigger = "off"` |
+| `ultra` | a three-seat review panel that vetoes the finish it does not pass | `review.trigger = "before_finish"`, `review.decision = "veto"`, `review.seats = ["security", "correctness", "tests"]`, `review.concurrency = 3` |
+| `paranoid` | five explore-tier review seats vetoing the finish: maximum scrutiny | `review.trigger = "before_finish"`, `review.decision = "veto"`, `review.tier = "explore"`, `review.seats = ["security", "correctness", "tests", "edge-cases", "over-engineering"]`, `review.concurrency = 5` |
 
 Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
 
@@ -292,9 +292,9 @@ A continuous score for measurable goals; `command` runs in the jail like `verify
 
 | Field | Default | Meaning |
 |---|---|---|
-| `command` | *(required)* | argv to run. |
-| `pattern` | *(required)* | Regex; first capture group = the number. |
-| `goal` | *(required)* | `"minimize"` or `"maximize"`. |
+| `command` | *(required)* | The command that prints the score, as argv (no shell). Runs after every verify-passing edit, and on the model's `run_metric_command` call. |
+| `pattern` | *(required)* | A regular expression over the command's output; its first capture group is the number, e.g. `"score: ([0-9.]+)"`. |
+| `goal` | *(required)* | Which way is better: `minimize` (a smaller number wins) or `maximize`. The run reports the trajectory and can finish once a verified edit only ties the best. |
 
 ## `[budget]`
 
@@ -304,8 +304,8 @@ Both: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `max_usd` | `10.0` | Cap on metered spend (cache-aware, per model). |
-| `max_tokens_fallback` | `2000000` | Token cap for unmetered calls only (local models, price gaps). |
+| `max_usd` | `10.0` | Cap on the metered spend of one run (provider-reported cost, else price times tokens at the model's fetched rates, cache-aware). Hitting it ends the run resumably (`budget_exhausted`); each resumed leg gets a fresh budget. `-1`: unlimited; `0`: refuse every metered call. `--max-usd` overrides per run. |
+| `max_tokens_fallback` | `2000000` | Token cap (input plus output) for the calls the run cannot price: local models, a model with no price data. `-1`: unlimited; `0`: never run an unmeterable model. `--max-tokens-fallback` overrides per run. |
 
 `--max-usd` / `--max-tokens-fallback` override per run; an explicit `--max-usd` refuses to start when the worker has no price data.
 Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its OpenRouter listing.
@@ -314,8 +314,8 @@ Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/
 
 | Field | Default | Meaning |
 |---|---|---|
-| `snapshot_keep` | `5` | Blackboard snapshots kept per instance (recovery reads only the latest; `machine replay` rebuilds from the journal). `0` keeps all. |
-| `state_log_keep` | `50` | Per-state watchable log dirs kept per instance (`<instance>/states/`); the journal keeps the full transition history regardless. `0` keeps all. |
+| `snapshot_keep` | `5` | How many blackboard snapshots a machine instance keeps (recovery reads only the latest; `machine replay` rebuilds any state from the journal). `0` keeps all. |
+| `state_log_keep` | `50` | How many per-state log dirs a machine instance keeps under `<instance>/states/` (the watchable logs of each state's leg; the journal keeps the full transition history regardless). `0` keeps all. |
 
 ### `[machine.notify]` (optional)
 
@@ -325,8 +325,8 @@ Fan out to ntfy/Pushover/email/Telegram yourself.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `on_event` | `[]` | argv per notify/end (empty = disabled). |
-| `timeout_s` | `30.0` | Hook timeout. |
+| `on_event` | `[]` | A command run on every machine notify event and at the machine's end, as argv (no shell), with the event in `AGENT6_MACHINE_*` variables. Empty: no hook. |
+| `timeout_s` | `30.0` | Seconds the hook may run before it is killed. |
 
 ## `[notify]` (optional)
 
@@ -335,8 +335,8 @@ Runs after `run`/`resume` with the same minimal env plus `AGENT6_SESSION_ID/DIR/
 
 | Field | Default | Meaning |
 |---|---|---|
-| `on_complete` | `[]` | argv to run (empty = disabled). |
-| `timeout_s` | `30.0` | Hook timeout. |
+| `on_complete` | `[]` | A command run when a run or resume ends, as argv (no shell), with `AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON` in its environment. Empty: no hook. |
+| `timeout_s` | `30.0` | Seconds the hook may run before it is killed. |
 
 ## `[web]`
 
@@ -345,9 +345,9 @@ Loopback only by default, no app auth: remote access is expected behind `tailsca
 
 | Field | Default | Meaning |
 |---|---|---|
-| `host` | `"127.0.0.1"` | Bind address; non-loopback requires `allow_non_loopback = true`. |
-| `port` | `7658` | Listen port. |
-| `allow_non_loopback` | `false` | Opt-in for a non-loopback bind, so a typo can never silently expose the write surface. |
+| `host` | `"127.0.0.1"` | Address `agent6 web` binds; a non-loopback address also needs `allow_non_loopback = true`. |
+| `port` | `7658` | Port `agent6 web` listens on. |
+| `allow_non_loopback` | `false` | Allow `host` to be a non-loopback address, so a typo can never silently expose the write surface (approvals, steers, config writes) beyond this machine. |
 
 ## `[parallel]`
 
@@ -358,8 +358,8 @@ A live run dispatches lanes the same way via the `/parallel` steer directive (de
 
 | Field | Default | Meaning |
 |---|---|---|
-| `max_lanes` | `4` | Hard cap per fan-out (1-1024); more refuses up front. |
-| `workdir` | `""` | Base dir for subordinate clones (lanes, machine run states), in a per-repo subdir. `""` = `<cache_dir>/parallel`; cleaned up after import. |
+| `max_lanes` | `4` | The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for more is refused before anything is cloned. |
+| `workdir` | `""` | Base directory for the clones lanes and machine run states work in, in a per-repo subdirectory. Empty: `<cache_dir>/parallel`. Cleaned up after the work is imported. |
 
 ## `[mcp]` and `[mcp.servers.<name>]` (optional)
 
@@ -391,16 +391,16 @@ Anything else that reaches an unconfined process is still a way out, so name the
 
 | Field | Default | Meaning |
 |---|---|---|
-| `enabled` | `false` | Master switch; `false` = zero `mcp__*` tools. |
-| `servers.<name>.command` | `[]` | argv for a stdio server agent6 spawns. Exactly one of this or `url`. |
-| `servers.<name>.url` | `""` | An http(s) endpoint the operator runs; agent6 only connects, owning none of its environment or confinement. |
-| `servers.<name>.token_env` | `""` | For a `url` server: env var holding the bearer. Named, never inlined; never logged. Over plaintext `http://` to a non-loopback host the token is readable on the wire: `mcp connect` asks first, and every run warns. |
-| `servers.<name>.enabled` | `true` | Per-server toggle. |
-| `servers.<name>.pass_env` | `[]` | Env vars the server needs, by name. Everything else is the curated base. |
-| `servers.<name>.approve` | `"ask"` | Ask before each of this server's tool calls, showing the arguments the model chose; `yes` never asks. The session answers are per server: "allow all" covers this server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. No `no`: withholding a server's tools is what `enabled = false` says. |
-| `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` budget. |
-| `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |
-| `servers.<name>.httpx_trust_env` | `false` | For a `url` server: forward httpx's `trust_env`, so the connection honors the ambient HTTP(S)_PROXY (and .netrc / SSL_CERT_FILE). Off by default so a local server's bearer token never routes to a proxy; set it for a server reachable only through the environment's proxy. |
+| `enabled` | `false` | Master switch for MCP servers: `false` means no `mcp__*` tools reach the model, whatever `[mcp.servers]` lists. |
+| `servers.<name>.command` | `[]` | argv of a stdio MCP server agent6 spawns (jailed like a command, plus `sandbox`). Exactly one of `command` or `url`. |
+| `servers.<name>.url` | `""` | An http(s) MCP endpoint you run yourself; agent6 only connects, owning none of its environment or confinement. Exactly one of `command` or `url`. |
+| `servers.<name>.token_env` | `""` | For a `url` server: the environment variable holding its bearer token, named here and never inlined or logged. Over plaintext `http://` to a non-loopback host the token is readable on the wire: `mcp connect` asks first, and every run warns. |
+| `servers.<name>.enabled` | `true` | `false` withholds this server's tools from the model without deleting the entry. |
+| `servers.<name>.pass_env` | `[]` | Environment variables a spawned server needs, by name; everything else is agent6's curated base environment. |
+| `servers.<name>.approve` | `"ask"` | `ask` prompts before each of this server's tool calls, showing the arguments the model chose; `yes` never asks. The session answers are per server: "allow all" covers this server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. There is no `no`: `enabled = false` is how a server's tools are withheld. |
+| `servers.<name>.startup_timeout_s` | `10.0` | Seconds the server gets to answer `initialize` and `tools/list` before it is given up on. |
+| `servers.<name>.call_timeout_s` | `60.0` | Seconds one `tools/call` may take before it is treated as failed. |
+| `servers.<name>.httpx_trust_env` | `false` | For a `url` server: honor the ambient `HTTP(S)_PROXY`, `.netrc`, and `SSL_CERT_FILE` (httpx's `trust_env`). `false` so a local server's bearer token never routes to a proxy; set it for a server reachable only through the environment's proxy. |
 
 ### `[mcp.servers.<name>.sandbox]`
 
