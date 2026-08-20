@@ -137,9 +137,10 @@ class GitConfig(BaseModel):
     )
     # When auto_stash stashed pre-run changes, restore them at run end. Default
     # off (safe): the run-end reporter always prints how to pop the stash; with
-    # this on, agent6 also pops it for you when it can do so cleanly (switching
-    # back to the base branch first under branch_per_run), and otherwise leaves
-    # the stash with a message rather than risk a conflicted auto-apply.
+    # this on, agent6 also pops it for you when it can do so cleanly (a clean
+    # tree: a run that edited leaves its unmerged work in the tree, so this
+    # fires after auto_merge or a no-edit run), and otherwise leaves the stash
+    # with a message rather than risk a conflicted auto-apply.
     auto_stash_pop: bool = Field(
         default=False,
         description=(
