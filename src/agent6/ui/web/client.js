@@ -1164,11 +1164,12 @@ function paintRun(cards, s) {
     add('compare', parts.join(' · '));
   }
   cards.head.appendChild(kv);
-  // The same one-line fold the CLI banner and the TUI composer read.
-  if (s.policy) cards.head.appendChild(el('div', 'sub muted', esc(s.policy)));
+  // The judge's reason sits under its compare row (as sessions show prints it).
   if (s.compare && s.compare.rationale) {
     cards.head.appendChild(el('div', 'sub muted', 'judge: ' + s.compare.rationale));
   }
+  // The same one-line fold the CLI banner and the TUI composer read.
+  if (s.policy) cards.head.appendChild(el('div', 'sub muted', esc(s.policy)));
   if (s.last_role) {
     const r = s.last_role;
     cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${r.in_flight ? ' …' : ''}`));
