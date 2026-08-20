@@ -16,8 +16,13 @@ from agent6.paths import (
     is_root,
     root_optin_enabled,
 )
-from agent6.sessions.id import SessionIdError, list_session_ids
-from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout, bucket_dir, layout_of
+from agent6.sessions.id import SessionIdError, resolve_session
+from agent6.sessions.layout import (
+    SESSION_BUCKETS,
+    SessionLayout,
+    bucket_dir,
+    layout_of,
+)
 from agent6.viewmodel import is_session_husk, newest_session_dir, session_mtime
 
 
@@ -207,50 +212,11 @@ def resolve_session_layout(
     an empty session and advising a resume that fails. `allow_husk` is for
     `sessions rm`, whose whole job is deleting one.
     """
-    if not query:
-        raise SessionIdError("empty run id")
-    state = _state_dir(repo_root)
-    exact: list[tuple[str, str]] = []
-    prefix: list[tuple[str, str]] = []
-    for subdir in SESSION_BUCKETS:
-        d = bucket_dir(state, subdir)
-        if not d.is_dir():
-            continue
-        for rid in list_session_ids(d):
-            if rid == query:
-                exact.append((subdir, rid))
-            elif rid.startswith(query):
-                prefix.append((subdir, rid))
-    if len(exact) == 1:
-        subdir, rid = exact[0]
-        return _checked_layout(state, subdir, rid, allow_husk=allow_husk)
-    if len(exact) > 1:
-        preview = ", ".join(f"{subdir}/{rid}" for subdir, rid in sorted(exact)[:5])
-        raise SessionIdError(
-            f"run id {query!r} is ambiguous ({len(exact)} exact matches): {preview}",
-            ambiguous=True,
-        )
-    if len(prefix) == 1:
-        subdir, rid = prefix[0]
-        return _checked_layout(state, subdir, rid, allow_husk=allow_husk)
-    if len(prefix) > 1:
-        preview = ", ".join(f"{subdir}/{rid}" for subdir, rid in sorted(prefix)[:5])
-        raise SessionIdError(
-            f"run id {query!r} is ambiguous ({len(prefix)} matches): {preview}",
-            ambiguous=True,
-        )
-    raise SessionIdError(f"no session matches {query!r} (looked under {state})")
-
-
-def _checked_layout(
-    state: Path, subdir: str, session_id: str, *, allow_husk: bool
-) -> SessionLayout:
-    """The resolved layout, refusing a husk unless the caller deletes one."""
-    layout = SessionLayout(state_dir=state, session_id=session_id, subdir=subdir)
+    layout = resolve_session(_state_dir(repo_root), query)
     if not allow_husk and is_session_husk(layout.session_dir):
         raise SessionIdError(
-            f"session {session_id} crashed before it ever started (no log, nothing to"
-            f" resume); `agent6 sessions rm {session_id}` removes it"
+            f"session {layout.session_id} crashed before it ever started (no log, nothing"
+            f" to resume); `agent6 sessions rm {layout.session_id}` removes it"
         )
     return layout
 

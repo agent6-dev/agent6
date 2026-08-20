@@ -376,7 +376,7 @@ def test_an_id_matching_two_buckets_is_refused_by_name(
 
     assert rc == 2
     err = capsys.readouterr().err
-    assert "more than one session" in err
+    assert "ambiguous" in err
     assert "quiet-fox-AAAAAA" in err and "quiet-fox-BBBBBB" in err
 
 

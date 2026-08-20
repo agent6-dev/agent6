@@ -25,7 +25,7 @@ from pathlib import Path
 from agent6._data.words import ADJECTIVES, NOUNS
 from agent6.git_ops import valid_branch_name
 from agent6.graph.ulid import new_ulid
-from agent6.sessions.layout import SESSION_BUCKETS, bucket_dir
+from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout, bucket_dir, session_matches
 
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -123,6 +123,25 @@ def list_session_ids(runs_dir: Path) -> list[str]:
     if not runs_dir.is_dir():
         return []
     return [p.name for p in runs_dir.iterdir() if p.is_dir()]
+
+
+def resolve_session(state_dir: Path, query: str) -> SessionLayout:
+    """The one session *query* names (an id, or a prefix of exactly one id) in
+    any bucket. Raises SessionIdError otherwise, `ambiguous` set when the
+    prefix names several: every surface words a bad id the same way, and an
+    ambiguous prefix never reads as "no such session"."""
+    if not query:
+        raise SessionIdError("empty run id")
+    matches = session_matches(state_dir, query)
+    if len(matches) > 1:
+        preview = ", ".join(f"{m.subdir}/{m.session_id}" for m in matches[:5])
+        raise SessionIdError(
+            f"run id {query!r} is ambiguous ({len(matches)} matches): {preview}",
+            ambiguous=True,
+        )
+    if not matches:
+        raise SessionIdError(f"no session matches {query!r} (looked under {state_dir})")
+    return matches[0]
 
 
 def resolve_session_id(runs_dir: Path, query: str) -> str:

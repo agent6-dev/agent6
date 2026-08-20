@@ -80,6 +80,7 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.sandbox.jail import SessionNetwork
+from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
     clear_away_mode,
@@ -98,8 +99,6 @@ from agent6.sessions.ipc import (
 from agent6.sessions.layout import (
     bucket_dir,
     read_untracked_at_start,
-    session_layout,
-    session_matches,
 )
 from agent6.sessions.lock import (
     SINGLE_WRITER_BUSY,
@@ -270,14 +269,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     # continues one by id instead of only finding what lives under runs/.
     # One resolver, no per-bucket fallback: a runs/-only fallback would make an
     # id that prefixes BOTH a run and an ask silently pick the run.
-    layout = session_layout(state_dir, session_id)
-    if layout is None:
-        candidates = session_matches(state_dir, session_id)
-        if candidates:
-            named = ", ".join(c.session_id for c in candidates)
-            reporter.err(f"ERROR: {session_id!r} matches more than one session: {named}")
-        else:
-            reporter.err(f"ERROR: no session {session_id!r} under {state_dir}")
+    try:
+        layout = resolve_session(state_dir, session_id)
+    except SessionIdError as exc:
+        reporter.err(f"ERROR: {exc}")
         return 2
     session_id = layout.session_id
     # Read the manifest BEFORE taking the lock or clearing any state: resume

@@ -14,7 +14,8 @@ from typing import Any
 
 from agent6.budget import BudgetTracker
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
-from agent6.sessions.layout import SessionLayout, bucket_dir, session_layout
+from agent6.sessions.id import SessionIdError, resolve_session
+from agent6.sessions.layout import SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import (
     _state_dir,
@@ -181,13 +182,13 @@ def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str
         if newest is None:
             print(f"ERROR: --from-latest: no run or ask under {state_dir}", file=sys.stderr)
             return None
-        found = session_layout(state_dir, newest.name)
-    else:
-        found = session_layout(state_dir, session_id)
-    if found is None:
-        print(f"ERROR: no session {session_id!r} in this project", file=sys.stderr)
+        session_id = newest.name
+    try:
+        layout = resolve_session(state_dir, session_id)
+    except SessionIdError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return None
-    layout, target = found, found.session_id
+    target = layout.session_id
     if not layout.manifest_path.is_file():
         print(f"ERROR: run {target} has no manifest.json", file=sys.stderr)
         return None

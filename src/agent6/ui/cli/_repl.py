@@ -22,7 +22,7 @@ from agent6.git_ops import (
     revert_head,
 )
 from agent6.init import init_workspace
-from agent6.sessions.layout import session_layout
+from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.tools.mcp_client import MCPManager
 from agent6.ui.cli._common import _state_dir
 from agent6.ui.cli._interact import _pause
@@ -155,9 +155,10 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
         return
     # Across buckets: the REPL runs inside an ask, whose dir is asks/ -- a
     # runs/-only path never found the session's own log.
-    layout = session_layout(_state_dir(root), session_id)
-    if layout is None:
-        print(f"[agent6] /watch: no session {session_id}", file=sys.stderr)
+    try:
+        layout = resolve_session(_state_dir(root), session_id)
+    except SessionIdError as exc:
+        print(f"[agent6] /watch: {exc}", file=sys.stderr)
         return
     events_path = layout.logs_path
     if not events_path.is_file():

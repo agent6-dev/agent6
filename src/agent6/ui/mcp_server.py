@@ -38,11 +38,11 @@ from agent6 import __version__
 from agent6.config import Config
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.graph.storage import load_graph
+from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import (
     SESSION_BUCKETS,
     bucket_dir,
     is_safe_session_id,
-    session_layout,
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
@@ -482,9 +482,10 @@ class MCPServer:
             if resolved is None:
                 raise ToolError("no sessions found under the agent6 state dir")
             session_id = resolved
-        layout = session_layout(self._agent6_dir, session_id)
-        if layout is None or not layout.session_dir.is_dir():
-            raise ToolError(f"session not found: {session_id}")
+        try:
+            layout = resolve_session(self._agent6_dir, session_id)
+        except SessionIdError as exc:
+            raise ToolError(str(exc)) from exc
         nodes = load_graph(layout)
         return {
             "session_id": session_id,

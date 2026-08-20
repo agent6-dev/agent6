@@ -51,6 +51,7 @@ from agent6.graph.storage import (
 from agent6.portable import atomic_write
 from agent6.sessions.id import (
     SessionIdError,
+    resolve_session,
     session_id_bucket,
     unused_session_id,
     validate_explicit_session_id,
@@ -58,8 +59,6 @@ from agent6.sessions.id import (
 from agent6.sessions.layout import (
     SessionLayout,
     read_untracked_at_start,
-    session_layout,
-    session_matches,
     write_untracked_at_start,
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
@@ -92,15 +91,11 @@ def _resolve_source(state_dir: Path, query: str, *, reporter: Reporter) -> Sessi
             return None
         query = latest.name
         reporter.err(f"[agent6] forking most recent session: {query}")
-    src = session_layout(state_dir, query)
-    if src is None:
-        candidates = session_matches(state_dir, query)
-        if candidates:
-            named = ", ".join(c.session_id for c in candidates)
-            reporter.err(f"ERROR: {query!r} matches more than one session: {named}")
-        else:
-            reporter.err(f"ERROR: no session {query!r} under {state_dir}")
-    return src
+    try:
+        return resolve_session(state_dir, query)
+    except SessionIdError as exc:
+        reporter.err(f"ERROR: {exc}")
+        return None
 
 
 def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> None:
