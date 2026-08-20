@@ -212,3 +212,37 @@ def test_a_refused_runs_discarded_id_ends_quietly(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
     assert cli._prompt_for_the_next_input(_run_args(), 2, "gone-run-QQQQQQ") == 2  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(("mode", "asks"), [("run", True), ("plan", True), ("ask", False)])
+def test_a_resumed_leg_ends_by_asking_like_a_fresh_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, asks: bool
+) -> None:
+    """`agent6 resume <id>` ended without the "next:" prompt a run ends with;
+    a resumed run or plan asks the same way (a resumed ask stays a one-shot)."""
+    import json
+
+    from agent6.ui import cli
+
+    layout = _seed_session(tmp_path, monkeypatch, session_id="resumed-run-AAAAAA")
+    (layout.session_dir / "manifest.json").write_text(
+        json.dumps({"version": 3, "session_id": layout.session_id, "mode": mode}),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+
+    def _resumed(*_a: object, **_k: object) -> int:
+        return 0
+
+    monkeypatch.setattr(cli, "_cmd_resume", _resumed)
+    asked: list[str] = []
+
+    def spy(**kw: object) -> int:
+        asked.append(str(kw["session_id"]))
+        return 0
+
+    monkeypatch.setattr(cli, "end_of_session_prompt", spy)
+    args = _run_args(session_id="resumed-run", force=False, tui=False, preset="", steer="")
+    assert cli._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
+    assert asked == (["resumed-run-AAAAAA"] if asks else [])

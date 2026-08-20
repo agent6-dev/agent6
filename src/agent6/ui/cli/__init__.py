@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sys
 import tempfile
@@ -25,6 +26,7 @@ from agent6.errors import OperatorError, read_operator_file
 from agent6.events import EventWriteError
 from agent6.sessions.id import SessionIdError, unused_session_id
 from agent6.sessions.layout import SessionLayout, session_layout
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import session_bucket
 from agent6.ui.acp import serve_acp
 from agent6.ui.cli._ask import (
@@ -513,7 +515,7 @@ def _dispatch_prompt(args: argparse.Namespace) -> int:
 
 
 def _dispatch_resume(args: argparse.Namespace) -> int:
-    return _cmd_resume(
+    rc = _cmd_resume(
         args.config,
         args.session_id,
         force=args.force,
@@ -524,6 +526,20 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         steer=args.steer,
         interactive=getattr(args, "interactive", False),
     )
+    # A resumed leg ends the way a fresh one does: asking for the next input
+    # (the TUI owns its screen; an ask stays a one-shot).
+    if args.tui:
+        return rc
+    try:
+        layout = resolve_or_newest_layout(Path.cwd(), args.session_id)
+    except SessionIdError:
+        return rc
+    if layout is None:
+        return rc
+    with contextlib.suppress(ManifestError):
+        if read_manifest(layout.session_dir).mode == "ask":
+            return rc
+    return _prompt_for_the_next_input(args, rc, layout.session_id)
 
 
 def _dispatch_fork(args: argparse.Namespace) -> int:
