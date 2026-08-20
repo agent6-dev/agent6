@@ -38,6 +38,20 @@ def test_format_log_line_keeps_the_compaction_reason() -> None:
     assert "keep the auth work" in requested
 
 
+def test_format_log_line_names_the_pins_in_force() -> None:
+    """loop.pin.restored announces the pins in force at leg start, whether a
+    fresh run's --pin or a resume's snapshot; the line said "restored from the
+    snapshot" for both, false for --pin, and named none of them."""
+    line = format_log_line(
+        {"type": "loop.pin.restored", "pins": ["never touch test_calc.py"], "count": 1}
+    )
+    assert "1 pinned: never touch test_calc.py" in line
+    assert "snapshot" not in line
+    assert "no pinned instructions" in format_log_line(
+        {"type": "loop.pin.restored", "pins": [], "count": 0}
+    )
+
+
 def test_format_log_line_tool_result_appends_output_tail() -> None:
     """An execution tool's tool.result line shows a one-line stderr/stdout hint
     (full tail is in the event), while a plain result stays summary-only."""
