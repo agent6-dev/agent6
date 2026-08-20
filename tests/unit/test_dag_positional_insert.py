@@ -154,3 +154,38 @@ def test_standing_survives_the_storage_round_trip(tmp_path: Path) -> None:
     reloaded = GraphCurator(layout)
     assert reloaded.nodes()[sid].standing is True
     assert reloaded.nodes()[root].standing is False
+
+
+def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: Path) -> None:
+    """`run --standing` seeds the goal with created_by="steering"; update_task
+    (the model's route) refuses to skip/obsolete it, or the never-finishing
+    fallback becomes an ordinary early finish (seen live: the goal worked
+    once, marked skipped, run over at half budget). The model's OWN standing
+    task (add_task standing=true) stays retirable; the curator itself stays
+    permissive (the operator's surfaces go through it)."""
+    from agent6.graph.models import TaskNodeDraft, UpdateStatusIntent
+    from agent6.tools._dag_tools import update_task
+    from agent6.tools.errors import ToolError
+
+    cur = _curator(tmp_path)
+    root = _add(cur, None, "root")
+    operators = cur.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root,
+            draft=TaskNodeDraft(
+                title="docstrings everywhere", created_by="steering", standing=True
+            ),
+        )
+    ).id
+    models_own = cur.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root,
+            draft=TaskNodeDraft(title="keep tests green", created_by="worker", standing=True),
+        )
+    ).id
+    for status in ("skipped", "obsolete"):
+        with pytest.raises(ToolError, match="operator's standing goal"):
+            update_task(cur, {"id": operators, "status": status})
+    assert update_task(cur, {"id": models_own, "status": "skipped"}).status == "skipped"
+    # The curator (the operator's route) can still retire it.
+    cur.update_status(UpdateStatusIntent(id=operators, new_status="skipped"))

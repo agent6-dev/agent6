@@ -61,6 +61,17 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     args = DagUpdateTaskInput.model_validate(raw)
     node = None
     if args.status is not None:
+        if args.status in ("skipped", "obsolete"):
+            current = curator.get(args.id)
+            if current.standing and current.created_by == "steering":
+                # The operator's --standing goal: the operator retires it (a
+                # steer, or stopping the run). The model retiring it converts
+                # the never-finishing fallback into an ordinary early finish.
+                raise ToolError(
+                    f"update_task: {args.id} is the operator's standing goal;"
+                    " it stays until the operator retires it. Work it when"
+                    " nothing else is ready, or finish_session on a hard limit."
+                )
         intent = UpdateStatusIntent(
             id=args.id,
             new_status=args.status,  # type: ignore[arg-type]  # pydantic validates the literal

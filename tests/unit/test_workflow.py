@@ -6009,9 +6009,14 @@ def test_standing_task_converts_silent_finish_into_reentry() -> None:
     # No tool call happened since: the spin guard honours the end.
     second = wf._handle_silent_finish("Done.", conv, state, iteration=4)  # pyright: ignore[reportPrivateUsage]
     assert second is not None and second.reason == "silent_finish"
-    # A tool call re-arms the absorb.
+    # An EXECUTED tool call re-arms the absorb; a refused one does not (a
+    # retirement the curator rejects must not turn the spin into "work", or
+    # the D8 no-retire rule loops a fruitless goal to its budget).
     state.tool_calls += 1
-    third = wf._handle_silent_finish("Done.", conv, state, iteration=5)  # pyright: ignore[reportPrivateUsage]
+    still = wf._handle_silent_finish("Done.", conv, state, iteration=5)  # pyright: ignore[reportPrivateUsage]
+    assert still is not None and still.reason == "silent_finish"
+    state.ok_tool_calls += 1
+    third = wf._handle_silent_finish("Done.", conv, state, iteration=6)  # pyright: ignore[reportPrivateUsage]
     assert third is None
 
 
@@ -6027,7 +6032,7 @@ def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     assert turn.finish_signal is None  # revoked: the goal continues
     assert any("standing task" in getattr(n, "text", "") for n in turn.tool_results)
     # Soft stop: verify_settled absorbs and clears its streak.
-    state.tool_calls += 1
+    state.ok_tool_calls += 1
     turn2 = _turn(iteration=3)
     turn2.verify_settled_stop = True
     state.verify_settled_idle = 9

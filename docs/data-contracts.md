@@ -82,6 +82,7 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 | `last_verify_ok` | `bool | None` | `None` |
 | `edited_since_verify` | `bool` | `False` |
 | `baseline_ok` | `bool | None` | `None` |
+| `ok_tool_calls` | `int` | `0` |
 | `standing_tools_mark` | `int` | `-1` |
 | `parallel_groups_dispatched` | `int` | `0` |
 | `pins` | `tuple[str, ...]` | `()` |

@@ -299,6 +299,11 @@ class _LoopState:
 
     original_task: str
     tool_calls: int
+    # Dispatches that EXECUTED (no ToolError): the standing-goal spin guard
+    # reads this, so a refused call (a malformed edit, a retirement the
+    # curator rejects) is not "work since the last re-entry" -- a goal round
+    # that produced nothing ends the run instead of re-entering to its budget.
+    ok_tool_calls: int = 0
     metric_history: list[MetricSample] = field(default_factory=list)
     # Tier-2 re-fires only after the context grew 25% past the last restart's
     # size: a restart that lands near the threshold (tiny explicit thresholds,
@@ -360,8 +365,8 @@ class _LoopState:
     gateless_ever_committed: bool = False
     verify_settled_idle: int = 0
     verify_settled_nudged: bool = False
-    # Spin guard for the standing-goal re-entry: the tool-call count at the
-    # last absorption. A re-entry with no tool call since is a spin, not work,
+    # Spin guard for the standing-goal re-entry: `ok_tool_calls` at the last
+    # absorption. A re-entry with no executed call since is a spin, not work,
     # and the original end is honoured instead. -1 = never absorbed.
     standing_tools_mark: int = -1
     run_budget_nudged: bool = False
@@ -953,6 +958,7 @@ class Workflow:
         moves: it carries unconditionally."""
         state.verify.baseline_ok = snap.baseline_ok
         state.standing_tools_mark = snap.standing_tools_mark
+        state.ok_tool_calls = snap.ok_tool_calls
         if snap.last_verify_ok is None or not snap.head_sha:
             return
         try:
@@ -1306,6 +1312,7 @@ class Workflow:
                         }
                     )
                 state.spiral.note_success(content)
+                state.ok_tool_calls += 1
                 self._note_jail_exec_failure(state, turn, name, tool_input, result)
                 # Only a DISPATCHED finish counts: a refused finish tool (mode
                 # backstop, schema error) is an error result the model recovers
@@ -2293,10 +2300,12 @@ class Workflow:
         remaining = self._budget_fraction_remaining()
         if remaining is not None and remaining <= 0.0:
             return None
-        if state.tool_calls == state.standing_tools_mark:
-            self._log(f"  standing: no tool call since the last re-entry; honouring {reason}")
+        if state.ok_tool_calls == state.standing_tools_mark:
+            self._log(
+                f"  standing: no executed tool call since the last re-entry; honouring {reason}"
+            )
             return None
-        state.standing_tools_mark = state.tool_calls
+        state.standing_tools_mark = state.ok_tool_calls
         nid, title = st
         self._log(f"  standing re-entry ({reason}) -> {nid} at iter {iteration}")
         self._emit("loop.standing.resumed", reason=reason, task_id=nid, iteration=iteration)
@@ -3373,6 +3382,7 @@ class Workflow:
             edited_since_verify=state.verify.edited_since,
             baseline_ok=state.verify.baseline_ok,
             standing_tools_mark=state.standing_tools_mark,
+            ok_tool_calls=state.ok_tool_calls,
             head_sha=self._checkpoint_head_sha(),
             graph_version=self._checkpoint_graph_version(),
         )
