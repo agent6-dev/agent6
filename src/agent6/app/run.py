@@ -424,10 +424,16 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     choice = dirty_tree_choice(answers[0] if answers else "")
                     stash_pop = stash_pop or choice == "stash"
                 if choice == "cancel":
+                    settle = (
+                        f"`agent6 sessions merge {unmerged_run}` lands them (the unmerged work"
+                        f" of run {unmerged_run})"
+                        if unmerged_run
+                        else "commit or stash them"
+                    )
                     return _park(
                         "uncommitted changes",
-                        "the working tree has uncommitted changes to tracked files; commit or"
-                        " stash them, then start the run",
+                        f"the working tree has uncommitted changes to tracked files; {settle},"
+                        " then start the run",
                     )
                 if choice == "stash":
                     try:

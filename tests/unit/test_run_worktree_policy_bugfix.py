@@ -317,6 +317,12 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     assert "the unmerged work of run prior-run-AAAAAA, on agent6/prior-run-AAAAAA" in err
     assert "agent6 sessions merge prior-run-AAAAAA" in err
 
+    # Answered "cancel", the parked message names the merge as well.
+    _answering_frontend(monkeypatch, "cancel")
+    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
+    parked = capsys.readouterr().err
+    assert "PARKED" in parked and "agent6 sessions merge prior-run-AAAAAA" in parked, parked
+
     # A further edit of the operator's own is not the run's work.
     (repo / "seed.txt").write_text("edited by the prior run\nand by me\n", encoding="utf-8")
     assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
