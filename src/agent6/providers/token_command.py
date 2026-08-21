@@ -67,7 +67,7 @@ class CommandToken:
             self._fetched_at = now
             return token
 
-    def invalidate(self, status: int = 401) -> None:
+    def invalidate(self, status: int = 401) -> bool:
         """Drop the cached token so the next `token()` re-runs the command.
 
         Both 401 and 403 re-mint here: a command-minted bearer is typically
@@ -77,6 +77,7 @@ class CommandToken:
         with self._lock:
             self._token = ""
             self._fetched_at = 0.0
+        return True
 
     def _run(self) -> str:
         try:

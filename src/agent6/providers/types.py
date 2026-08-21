@@ -263,12 +263,13 @@ class BearerCredential(Protocol):
     """A refreshable bearer source (`CommandToken`, `ChatGPTCredential`).
 
     `token()` returns a fresh-enough bearer; `invalidate(status)` reacts to
-    one auth failure (the transport passes the 401/403 it saw; each
-    credential decides what recovery that status warrants)."""
+    one auth failure (the transport passes the 401/403 it saw) and returns
+    whether a retry is worthwhile -- False when recovery changed nothing,
+    so the transport does not repeat the identical request."""
 
     def token(self) -> str: ...
 
-    def invalidate(self, status: int = 401) -> None: ...
+    def invalidate(self, status: int = 401) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)

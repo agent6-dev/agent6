@@ -114,14 +114,16 @@ def parse_callback(pasted: str, *, state: str) -> str:
     text = pasted.strip()
     query = urlsplit(text).query if "?" in text else text
     params = dict(parse_qsl(query, keep_blank_values=True))
+    # State first, for the error path too: a request agent6's own sign-in did
+    # not start gets nothing reflected or processed from its parameters.
+    if params.get("state", "") != state:
+        raise ValueError("state mismatch: this callback is not from the sign-in agent6 started")
     if params.get("error"):
         detail = params.get("error_description") or params["error"]
         raise ValueError(f"sign-in was refused: {detail}")
     code = params.get("code", "")
     if not code:
         raise ValueError("no `code` parameter found; paste the full URL the browser landed on")
-    if params.get("state", "") != state:
-        raise ValueError("state mismatch: this callback is not from the sign-in agent6 started")
     return code
 
 
@@ -488,6 +490,18 @@ class ChatGPTCredential:
                 " run `agent6 connect chatgpt`.",
                 status_code=401,
             )
+        # The stored id must match the token's own claim: an entry written by
+        # an older parser can hold a USER id where the account id belongs, and
+        # trusting it would send a wrong chatgpt-account-id header. The repair
+        # is a reconnect, never a silent migration.
+        claimed = account_id_of(TokenGrant(tokens.access_token, "", 0.0, ""))
+        if claimed and tokens.account_id and claimed != tokens.account_id:
+            raise ProviderError(
+                f"The stored ChatGPT sign-in for {self._provider!r} carries an account id"
+                " that does not match its own token; run `agent6 connect chatgpt` to sign"
+                " in again.",
+                status_code=401,
+            )
         return self._same_account(tokens)
 
     def _same_account(self, tokens: OAuthTokens) -> OAuthTokens:
@@ -517,10 +531,18 @@ class ChatGPTCredential:
                 return self._adopt(tokens)
             # Interprocess: the refresh token is SINGLE-USE, so the whole
             # reload-refresh-save transaction serializes on the secrets lock
-            # (reentrant with save_oauth_tokens' own take). locked_file fails
-            # open on pathological lock states; the adopt-first re-read and
-            # the reused re-read below are the recovery for that residue.
-            with locked_file(secrets_path()):
+            # (reentrant with save_oauth_tokens' own take). Unlike config
+            # writes (atomic either way), an unserialized rotation can kill
+            # the sign-in for every process, so an unheld lock REFUSES with a
+            # retryable error instead of proceeding on a fiction.
+            with locked_file(secrets_path()) as held:
+                if not held:
+                    raise ProviderError(
+                        "could not take the credential-refresh lock beside"
+                        f" {secrets_path()}; refusing to rotate the single-use"
+                        " ChatGPT refresh token (remove a stale .lock sibling"
+                        " if one is left over)"
+                    )
                 # Re-read UNDER the lock: a sibling that finished first is
                 # adopted (after a 401 that means retry with its token, not
                 # burn another rotation on a grant that may already be fresh).
@@ -552,15 +574,17 @@ class ChatGPTCredential:
                 save_oauth_tokens(self._provider, fresh)
                 return self._adopt(fresh)
 
-    def invalidate(self, status: int = 401) -> None:
+    def invalidate(self, status: int = 401) -> bool:
         """Arm recovery for the next `token()` after an auth failure. Only a
         401 means the bearer itself is bad; a 403 is permission or
         entitlement, and neither a newer sibling grant nor a rotation can
-        change what the account is allowed to do."""
+        change what the account is allowed to do -- recovery changes
+        nothing, so the caller gets False and does not retry."""
         if status != 401:
-            return
+            return False
         with self._lock:
             self._force_refresh = True
+        return True
 
     def account_id(self) -> str:
         """The account id the backend requires as `chatgpt-account-id`."""

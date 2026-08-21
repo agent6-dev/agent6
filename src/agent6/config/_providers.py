@@ -45,8 +45,10 @@ _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 _OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 _CHATGPT_DEFAULT_BASE_URL = "https://chatgpt.com/backend-api/codex"
 _CHATGPT_DEFAULT_ISSUER = "https://auth.openai.com"
-# The Codex CLI's public OAuth client id. OpenAI permits ChatGPT sign-in for
-# third-party agents through it; the redirect is pinned to localhost:1455.
+# The Codex CLI's public OAuth client id (from the open-source Codex CLI);
+# its registration pins the sign-in redirect to localhost:1455. agent6
+# identifies itself honestly (`originator: agent6`) and never impersonates
+# the Codex client version.
 _CHATGPT_DEFAULT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
 
@@ -323,6 +325,33 @@ class ChatGPTProviderEntry(_ProviderBase):
             "client, whose registration pins the sign-in redirect to `localhost:1455`)."
         ),
     )
+
+    @field_validator("base_url")
+    @classmethod
+    def _chatgpt_base_url_is_https(cls, v: str) -> str:
+        # The bearer and account id ride every request; unlike a generic
+        # base_url (where plain http serves LAN Ollama), cleartext for this
+        # backend is never right off-loopback.
+        if v.startswith("http://") and not is_loopback_url(v):
+            raise ValueError(
+                "a chatgpt base_url must use https (plain http is allowed only"
+                " for a loopback test endpoint)"
+            )
+        return v
+
+    @field_validator("extra_headers")
+    @classmethod
+    def _reserved_headers_stay_structural(cls, v: dict[str, str]) -> dict[str, str]:
+        # authorization / chatgpt-account-id / originator / session-id are the
+        # authentication structure; an overlay replacing them would silently
+        # re-route or mislabel every call.
+        reserved = {"authorization", "chatgpt-account-id", "originator", "session-id"}
+        clash = sorted(k for k in v if k.lower() in reserved)
+        if clash:
+            raise ValueError(
+                f"extra_headers may not override the chatgpt auth headers: {', '.join(clash)}"
+            )
+        return v
 
     @field_validator("oauth_issuer")
     @classmethod

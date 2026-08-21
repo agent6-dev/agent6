@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import json
 import time
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
@@ -400,3 +401,80 @@ def test_reused_rotation_rereads_once(gcfg: Path, monkeypatch: pytest.MonkeyPatc
     cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
     save_oauth_tokens("chatgpt", OAuthTokens("old", "RT1", 5000.0, "acct"))
     assert cred.token() == "winner"
+
+
+def test_callback_state_checked_before_the_error_param() -> None:
+    """A request the sign-in did not start gets nothing processed or
+    reflected from its parameters, error path included: the state check
+    outranks the error param."""
+    with pytest.raises(ValueError, match="state mismatch"):
+        parse_callback("error=x&error_description=<script>alert(1)</script>", state="S")
+
+
+def test_callback_error_page_escapes_the_description() -> None:
+    """The 400 page renders the refusal escaped: an attacker-supplied
+    error_description must not run script on the localhost callback origin."""
+    import urllib.error
+    import urllib.request
+
+    from agent6.ui.cli.connect import _CallbackServer  # pyright: ignore[reportPrivateUsage]
+
+    srv = _CallbackServer("STATE", port=0)
+    try:
+        port = srv.port
+        url = (
+            f"http://127.0.0.1:{port}/auth/callback"
+            "?state=STATE&error=x&error_description=<script>alert(1)</script>"
+        )
+        with pytest.raises(urllib.error.HTTPError) as ei:
+            urllib.request.urlopen(url, timeout=5)
+        body = ei.value.read().decode()
+        assert "<script>" not in body
+        assert "&lt;script&gt;" in body
+        assert ei.value.headers.get("content-security-policy") == "default-src 'none'"
+    finally:
+        srv.close()
+
+
+def test_unheld_refresh_lock_refuses_the_rotation(
+    gcfg: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refresh token is single-use: with the interprocess lock NOT held,
+    the credential refuses (retryable) rather than risking a rotation that
+    kills the sign-in for every process."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def unheld(_path: Path) -> Generator[bool]:
+        yield False
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.locked_file", unheld)
+    clock = {"now": 6000.0}
+    fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    save_oauth_tokens("chatgpt", OAuthTokens("old", "RT1", 5000.0, "acct"))
+    with pytest.raises(ProviderError, match="refresh lock"):
+        cred.token()
+
+
+def test_stored_account_must_match_the_tokens_own_claim(
+    gcfg: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An entry written by an older parser can hold a USER id in the account
+    field; the stored id is checked against the access token's own claim and
+    refuses with the connect hint instead of sending a wrong header."""
+    clock = {"now": 1000.0}
+    fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
+    tok = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "acct-real"}})
+    save_oauth_tokens("chatgpt", OAuthTokens(tok, "RT1", 5000.0, "user-legacy"))
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    with pytest.raises(ProviderError, match="does not match its own token"):
+        cred.token()
+
+
+def test_403_reports_no_retry_worthwhile() -> None:
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    assert cred.invalidate(403) is False
+    assert cred.invalidate(401) is True

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import getpass
+import html as html_module
 import http.server
 import os
 import re
@@ -195,10 +196,18 @@ class _CallbackServer:
                     body = b"<html><body>Signed in. Return to the terminal.</body></html>"
                     status = 200
                 except ValueError as exc:
-                    body = f"<html><body>{exc}</body></html>".encode()
+                    # Escaped: the query is attacker-reachable while this
+                    # listener is up, and a reflected error_description would
+                    # otherwise run script on this localhost origin. The
+                    # terminal keeps the exact detail; the page stays generic
+                    # for the refusal text itself.
+                    body = f"<html><body>{html_module.escape(str(exc))}</body></html>".encode()
                     status = 400
                 self.send_response(status)
-                self.send_header("content-type", "text/html")
+                self.send_header("content-type", "text/html; charset=utf-8")
+                self.send_header("content-security-policy", "default-src 'none'")
+                self.send_header("x-content-type-options", "nosniff")
+                self.send_header("cache-control", "no-store")
                 self.send_header("content-length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
