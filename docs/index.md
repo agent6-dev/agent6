@@ -11,7 +11,6 @@ hide:
 <p class="a6-tagline">A coding agent that jails model commands and uses editable state machines for long-running tasks.</p>
 
 <div class="a6-cta" markdown>
-[Usage](usage.md){ .md-button .md-button--primary }
 [:material-github: GitHub](https://github.com/agent6-dev/agent6){ .md-button }
 [:simple-pypi: PyPI](https://pypi.org/project/agent6/){ .md-button }
 </div>
@@ -29,8 +28,7 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 
 <div class="a6-card" markdown>
 ### Command sandbox
-Commands the model runs go through a jail with Landlock and seccomp, one per run.
-Under `strict`, what `auto` picks when the host allows it, they also get a read-only `.git` and the run's own network, with no route off the box.
+Commands the model runs go through a jail to give you control over what the model can read and write, and to restrict network access.
 </div>
 
 <div class="a6-card" markdown>
