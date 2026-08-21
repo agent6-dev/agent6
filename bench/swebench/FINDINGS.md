@@ -322,6 +322,24 @@ distinct-model review panels, contract search (find how the existing
 suite pins the surface), and stronger models (harness is model-agnostic;
 vendor-scaffold co-training is the competition's edge).
 
+### Condition-v2 tranche (gateless, random-100, official scorer, 2026-08-21)
+
+The A/B's canonical condition (0.0.27 wheel with reasoning replay,
+AGENT6_SB_VERIFY=none) on 100 fresh instances (seed 20260823, disjoint
+from the earlier draws): 79/100 = 79.0% resolved, Wilson95
+[70.0, 85.8]; empty=1 (a real DNF), err=0.
+
+Cross-condition (disjoint instance sets, so a summary not a paired
+test): verify-on 82/110 = 74.5% [65.7, 81.8]; gateless-v2 79/100 =
+79.0% [70.0, 85.8]. Directions agree with the paired A/B (gateless
+does not cost resolve rate and runs 3-4x faster). Total coverage
+across all draws: 161/210 = 76.7% [70.5, 81.9].
+
+Data-integrity note: 6 of this tranche's initial empties were Docker
+Hub 429 PULL-FAILURES, not model DNFs (a full /mnt/bench forced
+re-pulls). Purged and rerun before scoring; the harness now writes no
+pred on a failed pull (status pull_failed) so this cannot recur.
+
 ### Paired A/B: verify shape, heal ladder, reasoning replay (2026-08-21)
 
 Paired 30-instance sample from the scored 110 (15 baseline-resolved +
