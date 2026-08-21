@@ -1435,3 +1435,17 @@ def test_diff_since_excludes_untracked_at_start(tmp_path: Path) -> None:
     out = diff_since(tmp_path, base, exclude=frozenset({"operator-notes.toml"}))
     assert "new-work.py" in out
     assert "operator-notes.toml" not in out
+
+
+def test_diff_since_leaves_the_real_index_untouched(tmp_path: Path) -> None:
+    """The intent-add runs against a temp index copy: `-N` entries left in
+    the real index survived the run and turned a later ref-plumbing merge
+    into a staged-deletion (`DA`) artifact that read as dirt."""
+    _init_repo(tmp_path)
+    base = _run_git(tmp_path, "rev-parse", "HEAD").strip()
+    (tmp_path / "new-work.py").write_text("x = 1\n", encoding="utf-8")
+    out = diff_since(tmp_path, base)
+    assert "new-work.py" in out
+    porcelain = _run_git(tmp_path, "status", "--porcelain")
+    assert "?? new-work.py" in porcelain
+    assert "A  new-work.py" not in porcelain and " A new-work.py" not in porcelain

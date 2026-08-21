@@ -1521,10 +1521,25 @@ def diff_since(path: Path, base_sha: str, *, exclude: Collection[str] = ()) -> s
     # intent-add and the diff: the chain already excludes those files, and a
     # review diff that showed them as the run's own additions had a panel
     # order their removal -- the model deleted an operator's untracked file.
+    #
+    # The intent-add runs against a TEMP COPY of the index (the chain's own
+    # temp-index pattern): `-N` entries left in the real index survive the
+    # run (chain commits never consume them) and turned a later ref-plumbing
+    # merge into a staged-deletion artifact (`DA` in status) that read as
+    # dirt and blocked the next run.
     specs = [f":(top,exclude,literal){rel}" for rel in sorted(exclude)]
-    _run(path, "add", "-N", "--", ".", *specs, check=False)
-    res = _run(path, "diff", base_sha, "--", ".", *specs, check=False)
-    return res.stdout if res.ok else ""
+    tmp = Path(tempfile.mkdtemp(prefix="agent6-review-diff-"))
+    try:
+        index_copy = tmp / "index"
+        real_index = path / ".git" / "index"
+        if real_index.is_file():
+            shutil.copyfile(real_index, index_copy)
+        env = {"GIT_INDEX_FILE": str(index_copy)}
+        _run(path, "add", "-N", "--", ".", *specs, check=False, env_extra=env)
+        res = _run(path, "diff", base_sha, "--", ".", *specs, check=False, env_extra=env)
+        return res.stdout if res.ok else ""
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def diff_range(path: Path, base_sha: str, ref: str) -> str:
