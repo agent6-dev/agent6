@@ -262,12 +262,13 @@ class TranscriptSink:
 class BearerCredential(Protocol):
     """A refreshable bearer source (`CommandToken`, `ChatGPTCredential`).
 
-    `token()` returns a fresh-enough bearer; `invalidate()` forces the next
-    `token()` to mint anew (the transport calls it once after a 401/403)."""
+    `token()` returns a fresh-enough bearer; `invalidate(status)` reacts to
+    one auth failure (the transport passes the 401/403 it saw; each
+    credential decides what recovery that status warrants)."""
 
     def token(self) -> str: ...
 
-    def invalidate(self) -> None: ...
+    def invalidate(self, status: int = 401) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)

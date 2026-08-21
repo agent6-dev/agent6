@@ -287,3 +287,116 @@ def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> Non
     tokens = chatgpt_oauth.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
     warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
     assert warn is not None and tok not in warn and "<REDACTED>" in warn
+
+
+def test_account_id_never_guesses_from_user_id() -> None:
+    """`user_id` is the ChatGPT USER id, not an account id: a grant whose
+    claims carry only user_id reads as account-less (the caller demands a
+    re-connect) instead of sending a guessed `chatgpt-account-id` header."""
+    tok = _jwt({_AUTH_CLAIM: {"user_id": "user-123"}})
+    assert chatgpt_oauth.account_id_of(chatgpt_oauth.TokenGrant(tok, "", 100.0, tok)) == ""
+    good = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "acct-9"}})
+    assert chatgpt_oauth.account_id_of(chatgpt_oauth.TokenGrant(good, "", 100.0, good)) == "acct-9"
+
+
+def test_credential_refuses_an_account_swap(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The first read pins the account; a stored grant bound to a DIFFERENT
+    account (a login from another process) refuses with the connect hint
+    instead of riding under the old `chatgpt-account-id` header."""
+    clock = {"now": 1000.0}
+    fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    save_oauth_tokens("chatgpt", OAuthTokens("tokA", "RT1", 5000.0, "acct-A"))
+    assert cred.token() == "tokA"
+    save_oauth_tokens("chatgpt", OAuthTokens("tokB", "RT2", 9000.0, "acct-B"))
+    cred.invalidate(401)
+    with pytest.raises(ProviderError, match="different account"):
+        cred.token()
+
+
+def test_post_401_recovery_adopts_a_sibling_grant_first(
+    gcfg: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After a 401 the credential adopts a NEWER stored grant and retries
+    with it; it only rotates the refresh token when no fresher grant exists.
+    The old path refused adoption under force-refresh and burned the
+    sibling's just-rotated (single-use) token again."""
+
+    def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        pytest.fail("refresh must not run when a fresh sibling grant exists")
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", never)
+    clock = {"now": 1000.0}
+    fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    save_oauth_tokens("chatgpt", OAuthTokens("revoked", "RT1", 5000.0, "acct"))
+    assert cred.token() == "revoked"
+    save_oauth_tokens("chatgpt", OAuthTokens("fresh", "RT2", 9000.0, "acct"))
+    cred.invalidate(401)
+    assert cred.token() == "fresh"
+
+
+def test_403_does_not_arm_a_refresh(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 403 is permission or entitlement: neither a sibling grant nor a
+    rotation changes what the account may do, so the credential keeps its
+    cached bearer instead of burning a single-use refresh token."""
+
+    def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        pytest.fail("a 403 must not trigger a refresh")
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", never)
+    clock = {"now": 1000.0}
+    fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    save_oauth_tokens("chatgpt", OAuthTokens("tok", "RT1", 5000.0, "acct"))
+    assert cred.token() == "tok"
+    cred.invalidate(403)
+    assert cred.token() == "tok"
+
+
+def test_invalid_grant_is_a_dead_signin(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The standard OAuth `{"error": "invalid_grant"}` (HTTP 400) means the
+    grant is expired or revoked: the error names the repair (connect), not a
+    generic HTTP 400 the retry policy would hammer."""
+
+    def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        return _Resp(400, {"error": "invalid_grant"})
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", dead)
+    clock = {"now": 6000.0}
+    fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    save_oauth_tokens("chatgpt", OAuthTokens("old", "RT1", 5000.0, "acct"))
+    with pytest.raises(ProviderError, match="no longer valid"):
+        cred.token()
+
+
+def test_reused_rotation_rereads_once(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`refresh_token_reused` with a fresher grant on disk (a process on
+    ANOTHER host won the rotation and synced) adopts that grant instead of
+    declaring the sign-in dead."""
+
+    def reused(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        # A sibling's rotation lands between our read and the endpoint's answer.
+        save_oauth_tokens("chatgpt", OAuthTokens("winner", "RT9", 9000.0, "acct"))
+        return _Resp(401, {"error": {"code": "refresh_token_reused"}})
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", reused)
+
+    def no_sleep(_s: float) -> None:
+        return None
+
+    clock = {"now": 6000.0}
+    fake_time = type(
+        "T",
+        (),
+        {"time": staticmethod(lambda: clock["now"]), "sleep": staticmethod(no_sleep)},
+    )
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    save_oauth_tokens("chatgpt", OAuthTokens("old", "RT1", 5000.0, "acct"))
+    assert cred.token() == "winner"

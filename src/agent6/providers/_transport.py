@@ -218,7 +218,7 @@ class ProviderCall:
                         and attempt + 1 < max_attempts
                         and exc.status_code in (401, 403)
                     ):
-                        cred.invalidate()
+                        cred.invalidate(exc.status_code)
                         continue
                     raise
 
@@ -239,7 +239,7 @@ class ProviderCall:
                 # transcript contract is one file per round-trip (the streaming
                 # path already records it; only this branch dropped it).
                 self.record(headers, resp.status_code, resp.text[:8192])
-                cred.invalidate()
+                cred.invalidate(resp.status_code)
                 continue
             if resp.status_code >= 400:
                 self.record(headers, resp.status_code, resp.text[:8192])

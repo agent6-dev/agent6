@@ -30,6 +30,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import httpx2
 
+from agent6.paths import secrets_path
+from agent6.portable import locked_file
 from agent6.providers.types import ProviderError
 from agent6.secrets import OAuthTokens, load_oauth_tokens, save_oauth_tokens
 
@@ -51,7 +53,7 @@ _TOKEN_TIMEOUT_S = 30.0
 # Token-endpoint error codes that mean the refresh token itself is dead
 # (re-consent is the only repair); everything else is worth retrying.
 _PERMANENT_REFRESH_CODES = frozenset(
-    {"refresh_token_expired", "refresh_token_reused", "refresh_token_invalidated"}
+    {"refresh_token_expired", "refresh_token_reused", "refresh_token_invalidated", "invalid_grant"}
 )
 
 
@@ -402,7 +404,9 @@ def account_id_of(grant: TokenGrant) -> str:
     for token in (grant.access_token, grant.id_token):
         auth = jwt_claims(token).get(_CLAIMS_KEY)
         if isinstance(auth, dict):
-            account = auth.get("chatgpt_account_id") or auth.get("user_id")
+            # Only the real account claim: `user_id` is the ChatGPT USER id,
+            # not an account id, and a guessed header is worse than none.
+            account = auth.get("chatgpt_account_id")
             if isinstance(account, str) and account:
                 return account
     return ""
@@ -437,14 +441,34 @@ class ChatGPTCredential:
     """Cached, refreshing bearer over the stored ChatGPT OAuth tokens.
 
     The `token()` / `invalidate()` twin of :class:`CommandToken`, so the
-    shared transport refreshes it once after a 401/403. Thread-safe;
-    refreshes re-read `secrets.toml` first so a sibling agent6 process that
-    already rotated the (single-use) refresh token is adopted instead of
-    tripping a `refresh_token_reused` dead end, and every successful refresh
-    is persisted for the same reason.
+    shared transport refreshes it once after an auth failure. Thread-safe in
+    process; the reload-refresh-save transaction also holds an interprocess
+    flock beside `secrets.toml`, because the refresh token is SINGLE-USE and
+    rotates: two processes submitting the same one trips
+    `refresh_token_reused` and kills the sign-in for both.
+
+    The first account id read PINS the credential to that account: a stored
+    or refreshed grant bound to a different account refuses with the connect
+    hint (fail closed) rather than sending a bearer under a stale
+    `chatgpt-account-id` header.
+
+    After a 401 (`invalidate`), recovery adopts a NEWER stored grant first
+    and only refreshes when none exists; on `refresh_token_reused` it
+    re-reads once after a beat, in case a process on another host completed
+    the rotation. A 403 never refreshes: that is entitlement or policy, and
+    rotating a working token cannot fix it.
     """
 
-    __slots__ = ("_client_id", "_force_refresh", "_issuer", "_lock", "_provider", "_tokens")
+    __slots__ = (
+        "_account",
+        "_client_id",
+        "_force_refresh",
+        "_issuer",
+        "_last_returned",
+        "_lock",
+        "_provider",
+        "_tokens",
+    )
 
     def __init__(self, provider_name: str, *, issuer: str, client_id: str) -> None:
         self._provider = provider_name
@@ -453,6 +477,8 @@ class ChatGPTCredential:
         self._lock = threading.Lock()
         self._tokens: OAuthTokens | None = None
         self._force_refresh = False
+        self._account = ""
+        self._last_returned = ""
 
     def _stored(self) -> OAuthTokens:
         tokens = load_oauth_tokens(self._provider)
@@ -462,37 +488,77 @@ class ChatGPTCredential:
                 " run `agent6 connect chatgpt`.",
                 status_code=401,
             )
+        return self._same_account(tokens)
+
+    def _same_account(self, tokens: OAuthTokens) -> OAuthTokens:
+        """Pin on first sight; refuse a grant bound to another account."""
+        account = tokens.account_id
+        if not self._account:
+            self._account = account
+        elif account and account != self._account:
+            raise ProviderError(
+                f"The stored ChatGPT sign-in for {self._provider!r} now belongs to a"
+                f" different account than this run started under;"
+                " run `agent6 connect chatgpt` to sign in again.",
+                status_code=401,
+            )
         return tokens
+
+    def _adopt(self, tokens: OAuthTokens) -> str:
+        self._tokens = tokens
+        self._force_refresh = False
+        self._last_returned = tokens.access_token
+        return tokens.access_token
 
     def token(self) -> str:
         with self._lock:
             tokens = self._tokens or self._stored()
             if not self._force_refresh and time.time() < tokens.expires_at - _REFRESH_SKEW_S:
-                self._tokens = tokens
-                return tokens.access_token
-            # Re-read before refreshing: another process may have rotated.
-            stored = self._stored()
-            if stored.expires_at > tokens.expires_at and not self._force_refresh:
-                self._tokens = stored
-                if time.time() < stored.expires_at - _REFRESH_SKEW_S:
-                    return stored.access_token
-            tokens = stored
-            if not tokens.refresh_token:
-                raise ProviderError(
-                    f"Stored ChatGPT sign-in for {self._provider!r} has no refresh token;"
-                    " run `agent6 connect chatgpt`.",
-                    status_code=401,
-                )
-            grant = refresh_grant(self._issuer, self._client_id, tokens.refresh_token)
-            fresh = tokens_from_grant(grant, previous=tokens)
-            save_oauth_tokens(self._provider, fresh)
-            self._tokens = fresh
-            self._force_refresh = False
-            return fresh.access_token
+                return self._adopt(tokens)
+            # Interprocess: the refresh token is SINGLE-USE, so the whole
+            # reload-refresh-save transaction serializes on the secrets lock
+            # (reentrant with save_oauth_tokens' own take). locked_file fails
+            # open on pathological lock states; the adopt-first re-read and
+            # the reused re-read below are the recovery for that residue.
+            with locked_file(secrets_path()):
+                # Re-read UNDER the lock: a sibling that finished first is
+                # adopted (after a 401 that means retry with its token, not
+                # burn another rotation on a grant that may already be fresh).
+                stored = self._stored()
+                fresh_enough = time.time() < stored.expires_at - _REFRESH_SKEW_S
+                if fresh_enough and stored.access_token != self._last_returned:
+                    return self._adopt(stored)
+                tokens = stored
+                if not tokens.refresh_token:
+                    raise ProviderError(
+                        f"Stored ChatGPT sign-in for {self._provider!r} has no refresh token;"
+                        " run `agent6 connect chatgpt`.",
+                        status_code=401,
+                    )
+                try:
+                    grant = refresh_grant(self._issuer, self._client_id, tokens.refresh_token)
+                except ProviderError as exc:
+                    grant = None
+                    if "refresh_token_reused" not in str(exc):
+                        raise
+                    # Another HOST may have rotated (the flock covers only this
+                    # one). One beat, one re-read; a fresh sibling grant wins.
+                    time.sleep(1.0)
+                    rescued = self._stored()
+                    if rescued.access_token == tokens.access_token:
+                        raise
+                    return self._adopt(rescued)
+                fresh = self._same_account(tokens_from_grant(grant, previous=tokens))
+                save_oauth_tokens(self._provider, fresh)
+                return self._adopt(fresh)
 
-    def invalidate(self) -> None:
-        """Force the next `token()` to refresh (the transport calls this
-        after a 401/403 so a revoked-then-reissued token self-heals)."""
+    def invalidate(self, status: int = 401) -> None:
+        """Arm recovery for the next `token()` after an auth failure. Only a
+        401 means the bearer itself is bad; a 403 is permission or
+        entitlement, and neither a newer sibling grant nor a rotation can
+        change what the account is allowed to do."""
+        if status != 401:
+            return
         with self._lock:
             self._force_refresh = True
 

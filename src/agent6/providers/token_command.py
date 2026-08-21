@@ -67,8 +67,13 @@ class CommandToken:
             self._fetched_at = now
             return token
 
-    def invalidate(self) -> None:
-        """Drop the cached token so the next `token()` re-runs the command."""
+    def invalidate(self, status: int = 401) -> None:
+        """Drop the cached token so the next `token()` re-runs the command.
+
+        Both 401 and 403 re-mint here: a command-minted bearer is typically
+        short-lived and scoped, so either can mean it aged out. (The OAuth
+        credential differs: only a 401 refreshes there.)"""
+        del status
         with self._lock:
             self._token = ""
             self._fetched_at = 0.0
