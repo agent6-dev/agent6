@@ -91,8 +91,20 @@ def run_one(
     (work / "problem.txt").write_text(inst["problem_statement"], encoding="utf-8")
 
     image = _image_for(iid)
-    # ensure image present (pull is a no-op if cached)
-    _docker("pull", "-q", image, capture_output=True)
+    # Ensure the image is present (a no-op if cached). A FAILED pull (Docker
+    # Hub's anonymous 429, a network blip) must NOT fall through to an empty
+    # patch that scores as a real DNF: write no pred and report it, so a
+    # resume reruns the instance instead of banking a false zero.
+    if _docker("image", "inspect", image, capture_output=True).returncode != 0:
+        pull = _docker("pull", "-q", image, capture_output=True)
+        if pull.returncode != 0:
+            tail = (pull.stderr or pull.stdout or "").strip().splitlines()[-1:]
+            return {
+                "instance_id": iid,
+                "model": model,
+                "status": "pull_failed",
+                "detail": (tail[0] if tail else "")[:200],
+            }
 
     uv = shutil.which("uv") or "/usr/local/bin/uv"
     # AGENT6_SB_RG: path to a STATIC rg on the host; mounted at /usr/bin/rg
@@ -266,14 +278,29 @@ def main() -> int:
             ): (inst["instance_id"], m)
             for inst, m in jobs
         }
+        results: list[dict] = []
         for fut in as_completed(futs):
             r = fut.result()
+            results.append(r)
             done += 1
+            extra = (
+                f" ({r.get('patch_bytes', 0)}b)"
+                if "patch_bytes" in r
+                else (f" [{r['detail']}]" if r.get("detail") else "")
+            )
             print(
                 f"[{done}/{len(jobs)}] {r['model'].split('/')[-1]} / {r['instance_id']} "
-                f"-> {r['status']} ({r.get('patch_bytes', 0)}b)",
+                f"-> {r['status']}{extra}",
                 flush=True,
             )
+    pull_failed = [r["instance_id"] for r in results if r.get("status") == "pull_failed"]
+    if pull_failed:
+        print(
+            f"{len(pull_failed)} instance(s) had NO pred written (image pull failed, "
+            f"likely a Docker Hub 429): {', '.join(pull_failed[:8])}"
+            f"{' ...' if len(pull_failed) > 8 else ''}. Re-run to fill them.",
+            flush=True,
+        )
     print(f"predictions in {args.out / 'preds'}. Score with bench/swebench/score.sh")
     return 0
 
