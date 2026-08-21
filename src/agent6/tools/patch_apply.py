@@ -331,7 +331,9 @@ def apply_parsed_patch(  # noqa: PLR0912
                     f"On-disk lines:\n{_render_lines(actual_old)}"
                 )
             buf_start, replacement_new, kind = heal
-            healed.append(f"@@ -{hunk.old_start},{hunk.old_count} ~{kind}")
+            # The label leads with the file like the V4A one: a multi-file
+            # patch's "healed" list is unattributable without it.
+            healed.append(f"{patch.target_path} @@ -{hunk.old_start},{hunk.old_count} ~{kind}")
 
         # Determine whether this hunk touches the file's tail. For a pure-
         # insertion the anchor is `old_start` itself; for a replacement it is

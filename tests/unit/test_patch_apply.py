@@ -360,7 +360,7 @@ def test_unified_hunk_heals_a_uniform_indent_shift() -> None:
     )
     _, new, healed = apply_patch_text(patch, original)
     assert new == "def f():\n    if x:\n        a = 10\n        b = 20\n"
-    assert healed == ("@@ -3,2 ~indent",)
+    assert healed == ("f.py @@ -3,2 ~indent",)
 
 
 def test_unified_hunk_heals_trailing_whitespace() -> None:
@@ -368,7 +368,7 @@ def test_unified_hunk_heals_trailing_whitespace() -> None:
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,1 @@\n-a\n+A\n"
     _, new, healed = apply_patch_text(patch, original)
     assert new == "A\nb\n"
-    assert healed == ("@@ -1,1 ~rstrip",)
+    assert healed == ("f.py @@ -1,1 ~rstrip",)
 
 
 def test_unified_hunk_heals_stale_line_numbers_when_unique() -> None:
@@ -377,7 +377,7 @@ def test_unified_hunk_heals_stale_line_numbers_when_unique() -> None:
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,1 @@\n-target\n+TARGET\n"
     _, new, healed = apply_patch_text(patch, original)
     assert new == "x\ny\nz\nTARGET\nw\n"
-    assert healed == ("@@ -1,1 ~moved",)
+    assert healed == ("f.py @@ -1,1 ~moved",)
 
 
 def test_unified_heal_refuses_ambiguity() -> None:
