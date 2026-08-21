@@ -428,3 +428,49 @@ seat: 22/25, zero vetoes in 22 reviews (+1 is variance; the gate never
 fired). A diff-tier reviewer of either family approves the worker's
 confident contract misses; catching them likely needs a reviewer that
 runs tests or sees more than the diff.
+
+### Failure census over the unresolved instances (2026-08-21)
+
+Union across all scored sol draws: 211/267 distinct instances resolved;
+56 unresolved, none with an empty pred (every miss is a WRONG patch, not
+a DNF). Newest transcript per unresolved instance, official event log:
+
+- Ends: 51 gate_stale, 3 finish_session, 2 unreadable. django is 26 of
+  the 56; matplotlib 8.
+- Verify-on arm misses: 12 ended with EVERY verify a 240s timeout (the
+  django full suite cannot finish under the cap; the gate never gave a
+  verdict). 22 more had at least one completed (red) verify.
+- Tool friction: 40/56 runs hit at least one tool error (23 apply_patch
+  errors, 17 red run_verify_command calls, 10 run_command). The heal
+  ladder fired zero times in these runs (its base rate is ~7% of runs).
+- Self-verification: 47/56 ran targeted tests via run_command (median 2
+  per run); 9 ran none. Median 12 iterations / 20 tool calls; no
+  compactions (context was never the binding constraint).
+- Reading: the frontier is contract misses, confirmed at census scale:
+  the model edits plausibly, runs a couple of targeted tests, and still
+  misses the hidden FAIL_TO_PASS contract. Prompt prose is not implicated
+  anywhere in the 56.
+
+### Correction: the "gateless" condition adopted a broken gate
+
+The AGENT6_SB_VERIFY=none arms (v2, v3, armV) started gateless, but
+mid-run verify ADOPTION then armed the inferred `python3 -m pytest -q`
+inside the container, where /usr/bin/python3 has no pytest: every
+verify exited 1 in 0.0s with "No module named pytest". Effects:
+
+- Wall clock and resolve rate match true gateless (the red gate cost
+  0.0s per call), so the A/B's speed and resolve conclusions stand.
+- Predictions are tree diffs, unaffected by commit gating; scores stand.
+- Ends read gate_stale (exit 4) instead of a clean settle, which is
+  where the census's gate_stale majority comes from.
+- Product defects exposed: an operator could not PIN gatelessness
+  (empty verify_command is indistinguishable from unset, so inference
+  and adoption always re-armed) -- fixed: `[workflow].verify_infer =
+  false` pins a gateless run (no inference, no adoption). The none arm
+  switches to it with the first wheel that carries the knob (0.0.27
+  rejects unknown keys, and in_container.sh is bind-mounted live into
+  each new container, so the harness edit waits for the running tail).
+  Adoption also probes only argv[0] on PATH,
+  not that the command can run (`python -m mod` with the module absent
+  for that interpreter adopted the no-op gate) -- queued with its
+  candidate fix shapes.
