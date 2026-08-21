@@ -24,14 +24,6 @@ Work in this repository.
   new_string).
 - apply_patch: standard unified diff. Best for multi-hunk edits to one
   file.
-- run_verify_command runs the operator's test gate in its configured
-  environment; run project tests only through it, never via
-  run_command.
-- If the gate no longer matches the task (it pins behaviour this run
-  deliberately changed, or cannot run), finish with stale_gate set to
-  the command you believe is right; it records a proposal for the
-  operator and does not move the gate. Never revert correct work to
-  turn a stale gate green.
 """
     "__HARDENED_FS_RULE__"
     "__GIT_PROTECT_RULE__"
@@ -54,10 +46,15 @@ __DAG_RULES_BLOCK__
 # isolation with protect_git on: elsewhere the constraint does not exist and
 # stating it would misdirect the model.
 # Rendered into run mode's __AUTO_COMMIT_RULE__ sentinel, keyed on
-# [git].control: under agent6 control the harness auto-commits each passing
-# verify; under model control nothing commits automatically and saying so
-# would misdirect the model into never committing.
+# [git].control AND gate presence: under agent6 control the harness
+# auto-commits each passing verify (gateless: each editing step); under model
+# control nothing commits automatically and saying so would misdirect the
+# model into never committing.
 AUTO_COMMIT_RULE = """- The harness commits automatically after each passing verify; manual
+  git commit is optional.
+"""
+
+AUTO_COMMIT_RULE_GATELESS = """- The harness commits each editing step automatically; manual
   git commit is optional.
 """
 
@@ -299,31 +296,32 @@ This run's verify_command (call via `run_verify_command`):
 
 Returncode 0 passes. Non-zero means the change broke something: fix or
 revert before proceeding.
+- Run project tests only through `run_verify_command` (it runs this gate
+  in its configured environment), never via `run_command`.
+- If the gate no longer matches the task (it pins behaviour this run
+  deliberately changed, or cannot run), finish with stale_gate set to
+  the command you believe is right; it records a proposal for the
+  operator and does not move the gate. Never revert correct work to
+  turn a stale gate green.
 </verify-command>
 """
 
 V2_NO_VERIFY_BLOCK_TEMPLATE = """<no-verify-command>
 No verify command is configured for this run, so `run_verify_command` is not
-available and there is no automated pass/fail gate.{mode_guidance} Ignore any
-other instruction to call `run_verify_command`.
+available and there is no automated pass/fail gate.{mode_guidance}
 </no-verify-command>
 """
 
 
-def no_verify_block(
-    mode: Literal["run", "plan", "ask", "machine", "agent"], *, auto_commit: bool = True
-) -> str:
+def no_verify_block(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> str:
     """The <no-verify-command> block, worded for the mode's tool surface.
 
     The terminal tool is `finish_session` in run mode and `finish_planning` in
-    plan mode; ask has none (it answers with its final message). The edit +
-    auto-commit guidance applies only in run mode, the one editing mode;
-    `auto_commit=False` ([git].control = "model") drops the auto-commit claim,
-    which would be false there."""
+    plan mode; ask has none (it answers with its final message). Commit
+    behaviour is the base's __AUTO_COMMIT_RULE__ sentinel, one owner."""
     if mode == "run":
-        commit_claim = " agent6 commits each editing step automatically." if auto_commit else ""
         guidance = (
-            f" Call `finish_session` with a short summary when done;{commit_claim}"
+            " Call `finish_session` with a short summary when done."
             " Tests via `run_command` are allowed, not required."
         )
     elif mode == "plan":

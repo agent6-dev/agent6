@@ -22,6 +22,7 @@ from agent6.prompts.loop import (
     AGENT_SYSTEM_PROMPT_BASE,
     ASK_SYSTEM_PROMPT_BASE,
     AUTO_COMMIT_RULE,
+    AUTO_COMMIT_RULE_GATELESS,
     GIT_PROTECT_RULE,
     HARDENED_FS_RULE,
     MACHINE_SYSTEM_PROMPT_BASE,
@@ -73,11 +74,12 @@ SKILLS_INDEX_MAX_CHARS = 8000
 SKILL_ALWAYS_MAX_CHARS = 24000
 
 
-def initial_instructions(mode: str, run_commands: str) -> str:
+def initial_instructions(mode: str, run_commands: str, *, has_gate: bool) -> str:
     """The operational header on the first user message, derived from the
     mode's REAL tool surface (tools/schema.py): ask has no edit or finish
     tools and answers by prose; a `run_commands = "no"` run has no verify
-    gate to run."""
+    gate to run, and neither does a gateless run (`has_gate` false), so
+    "run verify" appears only where the tool exists."""
     if mode == "plan":
         return (
             "Begin planning. Use the investigation tools to gather what you"
@@ -104,7 +106,7 @@ def initial_instructions(mode: str, run_commands: str) -> str:
             " know the answer, your final prose message IS the answer -- there"
             " is no finish call and nothing to edit."
         )
-    if run_commands == "no":
+    if run_commands == "no" or not has_gate:
         return (
             "Begin. Use the tools to read what you need, make edits, and"
             " call `finish_session` when done."
@@ -291,11 +293,16 @@ def build_system_prompt(
         GIT_PROTECT_RULE if isolation == "strict" and config.sandbox.protect_git else "",
     )
     # Auto-commit is the agent6-control chain; under [git].control = "model"
-    # nothing commits automatically and the model owns the record.
-    base = base.replace(
-        "__AUTO_COMMIT_RULE__",
-        MODEL_GIT_RULE if config.git.control == "model" else AUTO_COMMIT_RULE,
-    )
+    # nothing commits automatically and the model owns the record. Under
+    # agent6 control the WHEN is the gate's presence: each passing verify,
+    # or each editing step on a gateless run.
+    if config.git.control == "model":
+        commit_rule = MODEL_GIT_RULE
+    elif config.workflow.verify_command:
+        commit_rule = AUTO_COMMIT_RULE
+    else:
+        commit_rule = AUTO_COMMIT_RULE_GATELESS
+    base = base.replace("__AUTO_COMMIT_RULE__", commit_rule)
     parts = [base]
 
     # When the bench harness sets
@@ -345,7 +352,7 @@ def build_system_prompt(
             )
         )
     else:
-        parts.append(no_verify_block(mode, auto_commit=config.git.control != "model"))
+        parts.append(no_verify_block(mode))
 
     # Run mode only: plan/ask do not expose `run_metric_command`, and the
     # "harness automatically runs this metric" behaviour is the run loop's.

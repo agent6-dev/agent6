@@ -103,7 +103,9 @@ def model_exchange_for(
         state_dir=state_dir,
     )
     tools = tuple(tool_definitions(dispatcher, mode=mode))
-    header = initial_instructions(mode, config.sandbox.run_commands)
+    header = initial_instructions(
+        mode, config.sandbox.run_commands, has_gate=bool(config.workflow.verify_command)
+    )
     hint = initial_dag_hint("<root task id>", mode, config.prompt.decompose == "on")
     return ModelExchange(
         mode=mode,

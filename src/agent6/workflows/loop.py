@@ -840,7 +840,11 @@ class Workflow:
         # Cache breakpoints are rolled by the conversation each iteration,
         # so the growing history stays cached across turns.
         dag_hint = initial_dag_hint(root_id, self.mode, self.config.prompt.decompose == "on")
-        instructions = initial_instructions(self.mode, self.config.sandbox.run_commands)
+        instructions = initial_instructions(
+            self.mode,
+            self.config.sandbox.run_commands,
+            has_gate=bool(self.config.workflow.verify_command),
+        )
         initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
         conversation = Conversation()
         conversation.notice(initial_user)

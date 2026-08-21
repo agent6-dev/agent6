@@ -66,6 +66,15 @@ def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
     gateless = build_system_prompt(config=_cfg(verify=False), repo=repo, mode="run", skills=None)
     assert "<verify-command>" in with_verify and "<no-verify-command>" not in with_verify
     assert "<no-verify-command>" in gateless and "<verify-command>" not in gateless
+    # Every verify rule lives INSIDE the conditional block: the base leaked
+    # gate prose ("run project tests only through...", the stale_gate rule,
+    # "after each passing verify") into gateless prompts, which then needed
+    # an "Ignore any other instruction" patch-line to disarm it.
+    assert gateless.count("run_verify_command") == 1  # the block's own "not available"
+    assert "stale_gate" not in gateless and "passing verify" not in gateless
+    assert "commits each editing step" in gateless  # the gate-aware commit rule
+    assert "run project tests only through" not in gateless.lower()
+    assert "stale_gate" in with_verify and "after each passing verify" in with_verify
 
 
 def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
@@ -83,14 +92,17 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
         return text[start : text.index("</no-verify-command>", start)]
 
     run_block, plan_block, ask_block = block(run), block(plan), block(ask)
-    assert "finish_session" in run_block and "commits each editing step" in run_block
+    assert "finish_session" in run_block
     assert "finish_planning" in plan_block
     assert "finish_session" not in plan_block and "commits" not in plan_block
     assert "finish_session" not in ask_block and "finish_planning" not in ask_block
     assert "commits" not in ask_block
-    # All three still disarm stray instructions to call the absent verify tool.
+    # The commit claim is the base sentinel's, one owner (run mode only);
+    # the block no longer needs an "Ignore any other instruction" patch-line
+    # because no verify prose leaks outside the verify block.
+    assert "commits" not in run_block and "commits each editing step" in run
     for b in (run_block, plan_block, ask_block):
-        assert "Ignore any" in b and "run_verify_command" in b
+        assert "Ignore any" not in b
 
 
 def test_a_leg_that_cannot_run_commands_is_gateless_wherever_it_starts(tmp_path: Path) -> None:
