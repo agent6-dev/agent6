@@ -846,3 +846,36 @@ def test_a_crashed_run_reads_dead_at_once(tmp_path: Path) -> None:
     summary = summarize_session_dir(session_dir)
     assert (summary.status, summary.reason) == ("failed", "crashed")
     assert session_is_live(session_dir) is False
+
+
+def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
+    tmp_path: Path,
+) -> None:
+    """session.end's all_passed is a tri-state on the wire: an explicit null
+    (ungated: no verify command) words as "finished" whatever the reason -- a
+    gateless silent finish listed as "passed" for a tree nothing verified. An
+    ABSENT key (a pre-tri-state log) still reads False, so old failure ends
+    keep their word."""
+    ungated = _write_run(
+        tmp_path,
+        "runs",
+        "r-ungated",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "reason": "silent_finish", "all_passed": None},
+        ],
+    )
+    assert (summarize_session_dir(ungated).status, summarize_session_dir(ungated).reason) == (
+        "finished",
+        "",
+    )
+    legacy = _write_run(
+        tmp_path,
+        "runs",
+        "r-legacy",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "reason": "went_quiet"},
+        ],
+    )
+    assert summarize_session_dir(legacy).status == "failed"

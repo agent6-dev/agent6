@@ -273,7 +273,9 @@ class SteerRequested:
 
 @dataclass(frozen=True, slots=True)
 class SessionEnd:
-    all_passed: bool
+    # The verify tri-state: True = final tree observed verify-green, False =
+    # not green (red/stale/error), None = nothing gated it (no verify command).
+    all_passed: bool | None
     reason: str
 
 
@@ -476,8 +478,11 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
                 undone_text=str(raw.get("undone_text", "") or ""),
             )
         case "session.end":
+            # An explicit null is the ungated tri-state; an absent key (a
+            # pre-tri-state log) stays False, reading as it always did.
+            raw_ap = raw.get("all_passed", False)
             return SessionEnd(
-                all_passed=bool(raw.get("all_passed", False)),
+                all_passed=None if raw_ap is None else bool(raw_ap),
                 reason=str(raw.get("reason", "") or ""),
             )
         case other:

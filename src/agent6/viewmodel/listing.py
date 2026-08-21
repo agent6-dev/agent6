@@ -166,7 +166,7 @@ class SessionSummary:
     verify_ok: bool | None = None
 
 
-def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[str, str]:
+def status_word(*, finished: bool, all_passed: bool | None, end_reason: str) -> tuple[str, str]:
     """Map an end state to `(word, reason-detail)`.
 
     The single place that decides how a run's outcome reads -- shared by
@@ -176,6 +176,12 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
     pass / an ask, where "passed" would mislead); "passed" means all verify
     gates green, "finished" is a deliberate finish without all-passed, and
     anything else is "failed" with the reason (provider_error, went_quiet, ...).
+
+    `all_passed` is the wire's verify tri-state: True = the final tree was
+    observed verify-green, False = it was not (red, stale, or an error end),
+    None = NOTHING gated it (no verify command). None reads "finished"
+    whatever the reason: an ungated end never claims "passed" and never
+    reads "failed".
     """
     if not finished:
         return "running", ""
@@ -198,7 +204,9 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
         return no_verify[end_reason]
     if all_passed:
         return "passed", ""
-    if end_reason and end_reason != "finish_session":
+    # Only an OBSERVED not-green (False) can word "failed"; the ungated None
+    # falls through to "finished" whatever the reason.
+    if all_passed is False and end_reason and end_reason != "finish_session":
         return "failed", end_reason
     return "finished", ""
 
@@ -226,7 +234,7 @@ class StatusFacts:
 
     started: bool = False  # a session.start was seen (a parked/created run has none)
     finished: bool = False
-    all_passed: bool = False
+    all_passed: bool | None = False  # None = the end was ungated (no verify command)
     end_reason: str = ""
     operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
 
@@ -348,7 +356,7 @@ class LogScan:
     mode: str = "?"
     task: str = ""
     finished: bool = False  # a later resume un-finishes
-    all_passed: bool = False
+    all_passed: bool | None = False  # None = the end was ungated (no verify command)
     end_reason: str = ""
     cost_usd: float | None = None
     usd_partial: bool = False  # sticky: unpriced spend in any leg -> under-estimate
@@ -440,7 +448,8 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     decoding would take down the whole listing. The mangled line just fails
     json.loads and is skipped."""
     mode, task = "?", ""
-    finished, all_passed, end_reason = False, False, ""
+    finished, end_reason = False, ""
+    all_passed: bool | None = False
     saw_start = False
     usd_leg = 0.0  # latest leg's running total
     usd_prior_legs = 0.0  # summed totals of completed (resumed-past) legs
@@ -497,7 +506,10 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         start_ep = ep
                 elif etype == "session.end":
                     finished = True
-                    all_passed = bool(ev.get("all_passed"))
+                    # An explicit null is the ungated tri-state; an ABSENT key
+                    # (a pre-tri-state log) stays False, reading as it always did.
+                    raw_ap = ev.get("all_passed", False)
+                    all_passed = None if raw_ap is None else bool(raw_ap)
                     end_reason = str(ev.get("reason", ""))
                 elif etype == "loop.resume.start":
                     if saw_start:

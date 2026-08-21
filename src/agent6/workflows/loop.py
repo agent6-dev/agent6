@@ -2900,12 +2900,12 @@ class Workflow:
                 f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
             )
         self._final_checkpoint(iteration)
-        # Honest finish, same rule as the explicit finish_session path: a run/plan
-        # silent finish over a red or stale verify is "finished", not "passed".
-        # Ask mode's prose answer is the success (it never runs verify), so it
-        # always ends passed.
-        if reason == "silent_finish" and self._tree_is_verify_green(state) is False:
-            self._emit("session.end", reason=reason, iterations=iteration, all_passed=False)
+        # Honest finish: run/plan ground exactly like the explicit
+        # finish_session path (observed green -> "passed", red or stale ->
+        # "failed", ungated -> "finished"). Ask mode's prose answer is the
+        # success (it never runs verify), so it always ends passed.
+        if reason == "silent_finish":
+            self._emit_run_end_grounded(reason=reason, iteration=iteration, state=state)
         else:
             self._emit_run_end_passed(reason=reason, iterations=iteration)
         return SessionResult(
@@ -3281,19 +3281,25 @@ class Workflow:
         return turn.finish_kind
 
     def _emit_run_end_grounded(self, *, reason: str, iteration: int, state: _LoopState) -> None:
-        """Emit a clean end honestly: all_passed only when the FINAL tree is
-        OBSERVED verify-green. finish_session and metric_plateau ground the
-        same way, so 'passed' can never mean 'ended over a red or stale
-        verify' -- nor 'nothing gated it': the gateless None reads False here,
-        matching the settled sibling ("finished - unverified") and the
-        not_applicable verdict `_verification` gives the same state.
+        """Emit a clean end honestly: `all_passed` carries the verify
+        tri-state. True only when the FINAL tree is OBSERVED verify-green,
+        False when it is not (red or stale), None when nothing gated it (no
+        verify command) -- so 'passed' can never mean 'ended over a red or
+        stale verify' or 'nothing gated it', and an ungated end reads
+        "finished", never "failed". finish_session, metric_plateau, and a
+        run/plan silent finish ground the same way; `_verification` gives the
+        same state its not_applicable verdict.
 
         The roots pass either way, like the settled path: the DAG tracks work
         items and the run-level word carries the verify truth, so grounding it
         there too left a red-verify finish reading `tasks 0/1` forever."""
         self._pass_pending_root_tasks()
-        green = self._tree_is_verify_green(state) is True
-        self._emit("session.end", reason=reason, iterations=iteration, all_passed=green)
+        self._emit(
+            "session.end",
+            reason=reason,
+            iterations=iteration,
+            all_passed=self._tree_is_verify_green(state),
+        )
 
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.

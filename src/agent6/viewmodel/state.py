@@ -773,7 +773,7 @@ def session_status_label(state: SessionState) -> str:
     `listing.status_for_session_dir` with `status_facts` instead -- the dir
     knows parked/starting/created/stale/waiting, this cannot."""
     word, reason = status_word(
-        finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason
+        finished=state.finished, all_passed=state.all_passed, end_reason=state.end_reason
     )
     return status_label(word, reason)
 
@@ -785,7 +785,7 @@ def status_facts(state: SessionState) -> StatusFacts:
     return StatusFacts(
         started=state.started,
         finished=state.finished,
-        all_passed=bool(state.all_passed),
+        all_passed=state.all_passed,
         end_reason=state.end_reason,
         operator_blocked=any(not a.answered for a in state.pending_approvals)
         or any(not q.answered for q in state.pending_questions),
@@ -862,7 +862,7 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         # liveness is unknowable here.
         d["live"] = None
         word, reason = status_word(
-            finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason
+            finished=state.finished, all_passed=state.all_passed, end_reason=state.end_reason
         )
     # The raw status WORD, not only the human label, so a client can branch on it
     # -- e.g. render the waiting line instead of the "working" heartbeat when the

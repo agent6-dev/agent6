@@ -90,16 +90,17 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
     """`_emit_run_end_grounded` turned the gateless None into all_passed=True
     (`is not False`) while `_verification` mapped the same None to
     not_applicable: the run read "passed" on every surface though nothing ever
-    gated it, and the docstring claimed the two could never disagree. The
-    sibling gateless end (settled) reads "finished - unverified"; match it:
-    all_passed only for an OBSERVED green."""
+    gated it, and the docstring claimed the two could never disagree.
+    all_passed=True needs an OBSERVED green; the gateless end carries the
+    tri-state's None on the wire (words as "finished", never "passed" or
+    "failed"), agreeing with the not_applicable verdict."""
     emitted: list[dict[str, Any]] = []
 
     def _capture(_type: str, **fields: Any) -> None:
         emitted.append(fields)
 
-    cases: tuple[tuple[bool, VerifyVerdict, bool, str], ...] = (
-        (False, VerifyVerdict(last_ok=None), False, "not_applicable"),
+    cases: tuple[tuple[bool, VerifyVerdict, bool | None, str], ...] = (
+        (False, VerifyVerdict(last_ok=None), None, "not_applicable"),
         (True, VerifyVerdict(last_ok=True, edited_since=False), True, "passed"),
         (True, VerifyVerdict(last_ok=False), False, "failed"),
     )

@@ -326,7 +326,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-iteration usage heartbeat, read by `agent6 sessions show` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |
-| `session.end` | `reason`, `iterations`, `all_passed`; one shape from every exit path |
+| `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, false = not green, null = nothing gated it); one shape from every exit path |
 
 A `run_command` approval publishes as `approval.prompt`.
 The TUI shows an Allow/Deny modal and writes the operator's literal choice to `approvals/<id>.answer`, which the workflow reads before recording `approval.answer`.

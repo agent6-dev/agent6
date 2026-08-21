@@ -226,6 +226,29 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
     assert ends and ends[-1]["all_passed"] is True
 
 
+def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
+    """A GATELESS run's silent finish emitted all_passed=True and every surface
+    read "passed" for a tree nothing verified. The end carries the ungated
+    tri-state (all_passed None), which words as "finished"."""
+    from agent6.viewmodel.listing import status_word
+
+    ev = _EventCapture()
+    wf = _wf(mode="run", events=ev)  # _wf's default config has no verify_command
+    result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+        "READY",
+        Conversation(),
+        _state(ever_edited=True),
+        iteration=5,
+    )
+    assert result is not None and result.reason == "silent_finish"
+    ends = [e for e in ev.events if e["type"] == "session.end"]
+    assert ends and ends[-1]["all_passed"] is None
+    assert status_word(finished=True, all_passed=None, end_reason="silent_finish") == (
+        "finished",
+        "",
+    )
+
+
 def _turn(**kw: Any) -> Any:
     """A bare _TurnState for direct turn-phase method tests."""
     from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
