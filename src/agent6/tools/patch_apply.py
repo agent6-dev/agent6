@@ -20,8 +20,12 @@ Design choices (pre-1.0):
   single-file. A bare multi-file unified diff WITHOUT `diff --git`
   separators is still rejected: a `--- ` line is indistinguishable from a
   removal of `-- comment` content without hunk-structural context.
-- Zero fuzz. Context lines must match the on-disk file exactly. If any
-  hunk fails to apply, no change is written (all-or-nothing).
+- Near-zero fuzz. A hunk matches exactly, or heals through a strict
+  ladder (trailing whitespace; a single uniform indent shift, byte-
+  verified, replacement re-indented to match; a unique exact match away
+  from stale line numbers) with the heal named on the wire. Ambiguity
+  and every looser miss stay hard errors; if any hunk fails, no change
+  is written (all-or-nothing).
 - `--- /dev/null` is allowed and means "create a new file"; the target
   file must not already exist.
 - `+++ /dev/null` deletes the file; the hunk body must remove the entire
@@ -256,11 +260,17 @@ def _split_lines_keepends(text: str) -> tuple[list[str], bool]:
     return lines, has_trailing
 
 
-def apply_parsed_patch(patch: ParsedPatch, original: str | None) -> str:  # noqa: PLR0912
+def apply_parsed_patch(  # noqa: PLR0912
+    patch: ParsedPatch, original: str | None
+) -> tuple[str, tuple[str, ...]]:
     """Apply *patch* to *original* file contents (None means file does not exist).
 
-    Returns the new file content. Raises PatchError on any context mismatch or
-    impossible-to-apply hunk. All-or-nothing: caller writes the returned string.
+    Returns `(new_content, healed)`: `healed` names each hunk the matcher
+    healed rather than matched exactly (`rstrip` trailing whitespace,
+    `indent` a uniform leading-whitespace shift, `moved` a unique exact
+    match away from the anchored line numbers), for the wire to report.
+    Raises PatchError on any context mismatch or impossible-to-apply hunk.
+    All-or-nothing: caller writes the returned string.
     """
     if patch.is_create:
         if original is not None:
@@ -281,6 +291,7 @@ def apply_parsed_patch(patch: ParsedPatch, original: str | None) -> str:  # noqa
     # Work on a mutable copy. Apply hunks in original order; track the cumulative
     # offset between original-file line numbers and current-buffer line numbers.
     buf = list(base_lines)
+    healed: list[str] = []
     offset = 0  # buf_index = original_index + offset
     # Track whether the final newline should be present after all hunks have been
     # applied. Starts at the file's current state; a hunk that touches the last
@@ -311,12 +322,16 @@ def apply_parsed_patch(patch: ParsedPatch, original: str | None) -> str:  # noqa
 
         actual_old = buf[buf_start : buf_start + hunk.old_count]
         if actual_old != expected_old:
-            raise PatchError(
-                f"Context mismatch in {patch.target_path!r} at "
-                f"hunk @@ -{hunk.old_start},{hunk.old_count} @@.\n"
-                f"Expected lines:\n{_render_lines(expected_old)}\n"
-                f"On-disk lines:\n{_render_lines(actual_old)}"
-            )
+            heal = _heal_hunk(buf, buf_start, expected_old, replacement_new)
+            if heal is None:
+                raise PatchError(
+                    f"Context mismatch in {patch.target_path!r} at "
+                    f"hunk @@ -{hunk.old_start},{hunk.old_count} @@.\n"
+                    f"Expected lines:\n{_render_lines(expected_old)}\n"
+                    f"On-disk lines:\n{_render_lines(actual_old)}"
+                )
+            buf_start, replacement_new, kind = heal
+            healed.append(f"@@ -{hunk.old_start},{hunk.old_count} ~{kind}")
 
         # Determine whether this hunk touches the file's tail. For a pure-
         # insertion the anchor is `old_start` itself; for a replacement it is
@@ -336,11 +351,76 @@ def apply_parsed_patch(patch: ParsedPatch, original: str | None) -> str:  # noqa
 
     if not buf:
         # Empty file, write empty string regardless of trailing-newline state.
-        return ""
+        return "", tuple(healed)
     out = "\n".join(buf)
     if result_has_trailing:
         out += "\n"
+    return out, tuple(healed)
+
+
+def _common_shift(actual: list[str], expected: list[str]) -> tuple[str, str] | None:
+    """The single uniform leading-whitespace transform turning *expected* into
+    *actual*: (strip_prefix, add_prefix), byte-verified over every non-blank
+    line. None when no one transform explains all of them."""
+    if len(actual) != len(expected):
+        return None
+    transform: tuple[str, str] | None = None
+    for act, exp in zip(actual, expected, strict=True):
+        if act == exp:
+            continue
+        if not act.strip() and not exp.strip():
+            continue
+        exp_body = exp.lstrip()
+        act_body = act.lstrip()
+        if exp_body != act_body:
+            return None
+        pair = (exp[: len(exp) - len(exp_body)], act[: len(act) - len(act_body)])
+        if transform is None:
+            transform = pair
+        elif transform != pair:
+            return None
+    return transform
+
+
+def _reindent(lines: list[str], strip: str, add: str) -> list[str]:
+    out: list[str] = []
+    for ln in lines:
+        if ln.startswith(strip) and ln.strip():
+            out.append(add + ln[len(strip) :])
+        else:
+            out.append(ln)
     return out
+
+
+def _heal_hunk(
+    buf: list[str], buf_start: int, expected_old: list[str], replacement_new: list[str]
+) -> tuple[int, list[str], str] | None:
+    """The context-miss ladder for one anchored hunk, strictest first.
+
+    (new_buf_start, new_replacement, kind) or None. The passes mirror the
+    field (Codex heals trailing whitespace and location; apply_edit heals a
+    uniform indent shift) with this repo's uniqueness discipline:
+
+    - `rstrip`: on-disk lines equal modulo trailing whitespace, in place.
+    - `indent`: ONE leading-whitespace transform explains every line, in
+      place; the replacement is re-indented by the same transform.
+    - `moved`: the exact expected block exists at EXACTLY ONE other position
+      (stale line numbers); ambiguity stays a hard error.
+    """
+    count = len(expected_old)
+    actual = buf[buf_start : buf_start + count]
+    if len(actual) == count and [a.rstrip() for a in actual] == [e.rstrip() for e in expected_old]:
+        return buf_start, replacement_new, "rstrip"
+    shift = _common_shift(actual, expected_old) if len(actual) == count else None
+    if shift is not None:
+        strip, add = shift
+        if _reindent(expected_old, strip, add) == actual:
+            return buf_start, _reindent(replacement_new, strip, add), "indent"
+    if count:
+        hits = [i for i in range(len(buf) - count + 1) if buf[i : i + count] == expected_old]
+        if len(hits) == 1:
+            return hits[0], replacement_new, "moved"
+    return None
 
 
 def _render_lines(lines: list[str]) -> str:
@@ -349,20 +429,23 @@ def _render_lines(lines: list[str]) -> str:
     return "\n".join(f"  {i + 1}| {ln}" for i, ln in enumerate(lines))
 
 
-def apply_patch_text(patch_text: str, original: str | None) -> tuple[str, str | None]:
-    """Convenience: parse + apply. Returns (target_path, new_content);
+def apply_patch_text(
+    patch_text: str, original: str | None
+) -> tuple[str, str | None, tuple[str, ...]]:
+    """Convenience: parse + apply. Returns (target_path, new_content, healed);
     new_content None means the patch deletes the file (its hunks removed
-    the entire content, verified)."""
+    the entire content, verified), and healed names each hunk the matcher
+    healed rather than matched exactly."""
     patch = parse_patch(patch_text)
-    new_content = apply_parsed_patch(patch, original)
+    new_content, healed = apply_parsed_patch(patch, original)
     if patch.is_delete:
         if new_content != "":
             raise PatchError(
                 "a deletion patch (`+++ /dev/null`) must remove the entire file; "
                 f"{len(new_content)} chars of content survive the hunks"
             )
-        return patch.target_path, None
-    return patch.target_path, new_content
+        return patch.target_path, None, healed
+    return patch.target_path, new_content, healed
 
 
 # ---------- OpenAI "*** Begin Patch" (V4A) format ----------
@@ -460,13 +543,16 @@ def _v4a_delete(path: str, section: list[str], original: str | None) -> tuple[st
     return path, None
 
 
-def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str | None]:  # noqa: PLR0912
+def apply_v4a_text(
+    patch_text: str, original: str | None
+) -> tuple[str, str | None, tuple[str, ...]]:
     """Parse and apply a single-file OpenAI V4A patch.
 
-    Returns `(target_path, new_content)`; None content means `*** Delete
-    File:` (that format deletes by name, no content assertion). Raises
-    `PatchError` on a malformed envelope, a multi-file patch, a
-    missing/ambiguous context, or a file create/update mismatch.
+    Returns `(target_path, new_content, healed)`; None content means
+    `*** Delete File:` (that format deletes by name, no content assertion),
+    and `healed` names each hunk the matcher healed rather than matched
+    exactly. Raises `PatchError` on a malformed envelope, a multi-file
+    patch, a missing/ambiguous context, or a file create/update mismatch.
     All-or-nothing: the caller writes (or unlinks) from the returned value.
     """
     raw = patch_text.strip().splitlines()
@@ -498,28 +584,43 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str | No
     ]
 
     if verb == "Delete":
-        return _v4a_delete(path, section, original)
+        p, none = _v4a_delete(path, section, original)
+        return p, none, ()
 
     if verb == "Add":
         if original is not None:
             raise PatchError(f"V4A `*** Add File: {path}` but the file already exists")
-        added: list[str] = []
-        for ln in section:
-            if ln.startswith("+"):
-                added.append(ln[1:])
-            elif ln.strip() == "":
-                added.append("")
-            else:
-                raise PatchError(f"V4A Add File body must be all `+` lines, got: {ln!r}")
-        return path, ("\n".join(added) + "\n" if added else "")
+        return path, _v4a_added_content(path, section), ()
 
     # Update File.
     if original is None:
         raise PatchError(f"V4A `*** Update File: {path}` but the file does not exist")
+    return _v4a_apply_update(path, section, original)
+
+
+def _v4a_added_content(path: str, section: list[str]) -> str:
+    """An Add File body is all `+` lines (blank lines tolerated)."""
+    added: list[str] = []
+    for ln in section:
+        if ln.startswith("+"):
+            added.append(ln[1:])
+        elif ln.strip() == "":
+            added.append("")
+        else:
+            raise PatchError(f"V4A Add File body must be all `+` lines, got: {ln!r}")
+    return "\n".join(added) + "\n" if added else ""
+
+
+def _v4a_apply_update(
+    path: str, section: list[str], original: str
+) -> tuple[str, str, tuple[str, ...]]:
+    """Apply an Update File body: locate each hunk (healing per the ladder),
+    splice, and report `(path, content, healed)`."""
     hunks = _v4a_split_hunks(section)
     if not hunks:
         raise PatchError(f"V4A `*** Update File: {path}` has no hunks")
     content = original
+    healed: list[str] = []
     for hints, old_block, new_block in hunks:
         if old_block == "":
             raise PatchError(
@@ -529,11 +630,16 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str | No
         matches = _line_anchored_indices(content, old_block)
         count = len(matches)
         if count == 0:
-            raise PatchError(
-                f"V4A hunk context not found in {path!r}. The ` `/`-` lines must match "
-                f"the file byte-for-byte. Closest-anchor failed; re-read and retry.\n"
-                f"Expected block:\n{_render_lines(old_block.split(chr(10)))}"
-            )
+            heal = _v4a_heal(content, old_block, new_block)
+            if heal is None:
+                raise PatchError(
+                    f"V4A hunk context not found in {path!r}. The ` `/`-` lines must match "
+                    f"the file byte-for-byte. Closest-anchor failed; re-read and retry.\n"
+                    f"Expected block:\n{_render_lines(old_block.split(chr(10)))}"
+                )
+            content, kind = heal
+            healed.append(f"{path} ~{kind}")
+            continue
         if count == 1:
             content = _v4a_splice(content, matches[0], old_block, new_block)
             continue
@@ -548,7 +654,38 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str | No
                 "enclosing def/class, so the location is unique"
             )
         content = _v4a_splice(content, idx, old_block, new_block)
-    return path, content
+    return path, content, tuple(healed)
+
+
+def _v4a_heal(content: str, old_block: str, new_block: str) -> tuple[str, str] | None:
+    """The V4A context-miss ladder, strictest first, uniqueness required:
+    `rstrip` (on-disk lines equal modulo trailing whitespace) then `indent`
+    (one leading-whitespace transform explains every line; the new block is
+    re-indented the same way). Ambiguity or anything looser stays a miss."""
+    expected = old_block.split("\n")
+    lines = content.split("\n")
+    count = len(expected)
+    rstrip_hits: list[int] = []
+    indent_hits: list[tuple[int, tuple[str, str]]] = []
+    for i in range(len(lines) - count + 1):
+        window = lines[i : i + count]
+        if [w.rstrip() for w in window] == [e.rstrip() for e in expected]:
+            rstrip_hits.append(i)
+            continue
+        shift = _common_shift(window, expected)
+        if shift is not None and _reindent(expected, *shift) == window:
+            indent_hits.append((i, shift))
+
+    def _splice_lines(i: int, new_lines: list[str]) -> str:
+        return "\n".join(lines[:i] + new_lines + lines[i + count :])
+
+    if len(rstrip_hits) == 1:
+        return _splice_lines(rstrip_hits[0], new_block.split("\n") if new_block else []), "rstrip"
+    if not rstrip_hits and len(indent_hits) == 1:
+        i, (strip, add) = indent_hits[0]
+        new_lines = _reindent(new_block.split("\n"), strip, add) if new_block else []
+        return _splice_lines(i, new_lines), "indent"
+    return None
 
 
 def _v4a_splice(content: str, idx: int, old_block: str, new_block: str) -> str:

@@ -326,10 +326,10 @@ def _stage_patch_section(
     *,
     path_arg: str,
     section: str,
-) -> tuple[SafePath, str, str | None, str | None]:
+) -> tuple[SafePath, str, str | None, str | None, tuple[str, ...]]:
     """Resolve, security-check, and apply ONE single-file patch section in
-    memory: (resolved, target, existing, new_content); new_content None =
-    the section deletes its file. Nothing touches disk here."""
+    memory: (resolved, target, existing, new_content, healed); new_content
+    None = the section deletes its file. Nothing touches disk here."""
     # The write location: the explicit `path` arg if given, else derived
     # from the patch headers (V4A always embeds it; GPT-family models omit
     # `path`). Either way it is resolved + protected-path-checked below, so
@@ -353,12 +353,12 @@ def _stage_patch_section(
     existing = _existing_text(sp, target)
     try:
         applier = apply_v4a_text if is_v4a_patch(section) else apply_patch_text
-        _, new_content = applier(section, existing)
+        _, new_content, healed = applier(section, existing)
     except PatchError as exc:
         raise ToolError(f"apply_patch failed for {target}: {exc}") from exc
     if new_content is None and existing is None:
         raise ToolError(f"apply_patch: cannot delete {target}: not a file")
-    return sp, target, existing, new_content
+    return sp, target, existing, new_content, healed
 
 
 def apply_patch(
@@ -381,10 +381,12 @@ def apply_patch(
     # None = the section deletes its file.
     staged: list[tuple[SafePath, str, str | None]] = []
     previews: list[PreviewResult] = []
+    healed_all: list[str] = []
     for section in sections:
-        sp, target, existing, new_content = _stage_patch_section(
+        sp, target, existing, new_content, healed = _stage_patch_section(
             ws, config, extra_protect_paths, path_arg=args.path, section=section
         )
+        healed_all.extend(healed)
         if args.preview:
             # A deletion previews as the full-removal diff (bytes_after 0).
             previews.append(preview_result(target, existing, new_content or ""))
@@ -418,4 +420,5 @@ def apply_patch(
         bytes_written=sum(b for _p, b in rows),
         files=rows if len(staged) > 1 else (),
         deleted=deleted,
+        healed=tuple(healed_all),
     )

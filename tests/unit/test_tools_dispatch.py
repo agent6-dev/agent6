@@ -2080,3 +2080,17 @@ def test_apply_patch_multi_file_preview_concatenates(tmp_path: Path) -> None:
     assert out["hunks"] == 2
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "x\n"
     assert (tmp_path / "b.py").read_text(encoding="utf-8") == "p\n"
+
+
+def test_apply_patch_reports_heals_on_the_wire(tmp_path: Path) -> None:
+    """A healed hunk applied, but not verbatim: the wire says so, so the
+    model knows its context was off instead of trusting a silent success."""
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("def f():\n    a = 1\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch(
+        "apply_patch",
+        {"patch": ("*** Begin Patch\n*** Update File: a.py\n@@\n-a = 1\n+a = 10\n*** End Patch")},
+    ).to_wire()
+    assert out["healed"] == ["a.py ~indent"]
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "def f():\n    a = 10\n"

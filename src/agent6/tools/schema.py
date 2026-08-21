@@ -111,7 +111,9 @@ class ApplyPatchInput(_ToolInput):
         " deletes, the hunks must remove the whole file) or OpenAI's"
         " *** Begin/Add/Update/Delete File/End Patch format. Multi-file"
         " patches apply all-or-nothing (unified needs `diff --git` separators"
-        " between files). Context lines must match the file exactly. `path`"
+        " between files). Context lines match exactly or heal through a strict"
+        " ladder (trailing whitespace / uniform indent / unique moved block;"
+        " the result names each heal). `path`"
         " optional (taken from headers; single-file only)."
         " preview=true echoes the diffs without writing."
     )

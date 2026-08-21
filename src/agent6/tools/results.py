@@ -193,6 +193,10 @@ class PatchResult(ToolResult):
     # Paths this patch DELETED (unified `+++ /dev/null` or V4A
     # `*** Delete File:`); disjoint from the written `files` rows.
     deleted: tuple[str, ...] = ()
+    # Hunks the matcher HEALED rather than matched exactly (`~rstrip`,
+    # `~indent`, `~moved`): the patch applied, but not verbatim, and the
+    # model should know its context was off.
+    healed: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
         wire: dict[str, Any] = {"path": self.path, "bytes_written": self.bytes_written}
@@ -200,6 +204,8 @@ class PatchResult(ToolResult):
             wire["files"] = [{"path": p, "bytes_written": b} for p, b in self.files]
         if self.deleted:
             wire["deleted"] = list(self.deleted)
+        if self.healed:
+            wire["healed"] = list(self.healed)
         return wire
 
     def summary(self) -> str:
