@@ -322,7 +322,17 @@ distinct-model review panels, contract search (find how the existing
 suite pins the surface), and stronger models (harness is model-agnostic;
 vendor-scaffold co-training is the competition's edge).
 
-### gpt-5.6-sol sweep (random-80, official scorer, 2026-08-20)
+### gpt-5.6-sol sweep (random-110, official scorer, 2026-08-21)
+
+Coverage grew to 110 random instances (three seeded draws, same config:
+sol at effort medium, $1/instance token cap, auto-detected verify at
+240s, wheel 0.0.26): 82/110 = 74.5% resolved, Wilson95 [65.6, 81.8];
+empty=1, err=0. Reference full-500 numbers: mini-swe-agent 67.3,
+KimiCode 67.5, Claude Code 73.7 (vendor tables; cross-table caveats,
+and this is a sample). A spark side-arm stopped at n=11 (2 resolved,
+7 empty) when its per-model window bound; smoke-quality only.
+
+### gpt-5.6-sol sweep (random-80, official scorer, 2026-08-20, superseded)
 
 ChatGPT-subscription provider, sol at effort medium, $1/instance token
 cap, verify auto-detected with `verify_timeout_s = 240`, conc 2-3.
