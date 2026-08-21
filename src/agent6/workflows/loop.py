@@ -4120,14 +4120,15 @@ class Workflow:
 
     def _run_diff(self) -> str:
         """The run's cumulative change: base commit vs the working tree, so it
-        includes committed AND uncommitted edits, with untracked files as
-        additions. Empty if no base is known or git fails. Routed through
+        includes committed AND uncommitted edits, with the RUN'S new
+        untracked files as additions (untracked-at-start files excluded,
+        matching the chain). Empty if no base is known or git fails. Routed through
         git_ops so the repo-controlled fsmonitor/diff.external/hooks keys stay
         neutralized (a raw `git diff` here would run a poisoned `.git/config`
         payload on the host)."""
         if not self.base_sha:
             return ""
-        return diff_since(self.root, self.base_sha)
+        return diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)
 
     def _read_agents_md(self) -> str:
         # The same text the run prompt injects (repo root's file included on a

@@ -1421,3 +1421,17 @@ def _repo_with_ignored_tracked(tmp_path: Path) -> Path:
     _run_git(repo, "commit", "-q", "-m", "ignore logs")
     (repo / "scratch.log").write_text("never tracked\n", encoding="utf-8")
     return repo
+
+
+def test_diff_since_excludes_untracked_at_start(tmp_path: Path) -> None:
+    """The review diff must agree with the chain: a file untracked BEFORE the
+    run started is not the run's work. Included, it read as the run's own
+    addition and a review panel ordered its removal -- the model deleted an
+    operator's untracked file."""
+    _init_repo(tmp_path)
+    base = _run_git(tmp_path, "rev-parse", "HEAD").strip()
+    (tmp_path / "operator-notes.toml").write_text("k = 1\n", encoding="utf-8")
+    (tmp_path / "new-work.py").write_text("x = 1\n", encoding="utf-8")
+    out = diff_since(tmp_path, base, exclude=frozenset({"operator-notes.toml"}))
+    assert "new-work.py" in out
+    assert "operator-notes.toml" not in out

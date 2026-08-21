@@ -1508,7 +1508,7 @@ def co_change_pairs(
     return qualifying[:max_pairs]
 
 
-def diff_since(path: Path, base_sha: str) -> str:
+def diff_since(path: Path, base_sha: str, *, exclude: Collection[str] = ()) -> str:
     # `git diff <base>` only considers tracked content. Newly created files
     # from a worker edit are untracked at this point (commit_all stages and
     # commits later, after the reviewer is consulted), so a plain diff would
@@ -1516,8 +1516,14 @@ def diff_since(path: Path, base_sha: str) -> str:
     # nothing". Register untracked files with `git add -N` (intent-to-add)
     # so they show up as additions in the diff. -N doesn't add content to the
     # index; commit_all's later `git add -A` overwrites the intent entries.
-    _run(path, "add", "-N", "--", ".", check=False)
-    res = _run(path, "diff", base_sha, "--", ".", check=False)
+    #
+    # *exclude* (the run's `untracked_at_start`) stays OUT of both the
+    # intent-add and the diff: the chain already excludes those files, and a
+    # review diff that showed them as the run's own additions had a panel
+    # order their removal -- the model deleted an operator's untracked file.
+    specs = [f":(top,exclude,literal){rel}" for rel in sorted(exclude)]
+    _run(path, "add", "-N", "--", ".", *specs, check=False)
+    res = _run(path, "diff", base_sha, "--", ".", *specs, check=False)
     return res.stdout if res.ok else ""
 
 
