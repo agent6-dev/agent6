@@ -475,3 +475,24 @@ def test_prompt_git_rules_match_git_control(tmp_path: Path) -> None:
     block = gateless[start : gateless.index("</no-verify-command>", start)]
     assert "finish_session" in block
     assert "commits each editing step" not in block
+
+
+def test_budget_block_names_the_plan_meter_for_subscription_runs(tmp_path: Path) -> None:
+    """A subscription run meters in plan percent; a budget block naming only
+    USD and fallback caps describes meters that never bind it. The plan line
+    renders exactly when a configured role rides a chatgpt provider."""
+    repo = _repo(tmp_path)
+    sub = Config.model_validate(
+        {
+            "providers": {"gpt": {"api_format": "chatgpt"}},
+            "models": {
+                "worker": {"provider": "gpt", "model": "gpt-5.6-sol"},
+                "reviewer": {"provider": "gpt", "model": "gpt-5.6-sol"},
+            },
+            "budget": {"max_percent": 3},
+        }
+    )
+    prompt = build_system_prompt(config=sub, repo=repo, mode="run", skills=None)
+    assert "meter in plan percent (max_percent 3 points per run)" in prompt
+    plain = build_system_prompt(config=Config(), repo=repo, mode="run", skills=None)
+    assert "plan percent" not in plain

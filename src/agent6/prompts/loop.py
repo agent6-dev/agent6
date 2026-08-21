@@ -348,10 +348,15 @@ the best may finish the run automatically.
 
 V2_BUDGET_BLOCK_TEMPLATE = """<budget-awareness>
 Hard budget: {usd_cap} metered; {fallback_cap} tokens for unpriced
-calls. The loop halts when a cap is crossed. Tool results re-enter the
+calls.{plan_line} The loop halts when a cap is crossed. Tool results re-enter the
 input on every later turn.
 </budget-awareness>
 """
+
+# Rendered into {plan_line} when a configured role rides a subscription
+# provider: those calls meter in plan PERCENT, not dollars, and the block
+# would otherwise name only caps that never bind them.
+PLAN_BUDGET_LINE = " Subscription-plan calls meter in plan percent ({percent_cap})."
 
 V2_REPO_BLOCK_TEMPLATE = """<repo-priors>
 {repo_line}

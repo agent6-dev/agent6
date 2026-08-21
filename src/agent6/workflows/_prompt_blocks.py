@@ -26,6 +26,7 @@ from agent6.prompts.loop import (
     HARDENED_FS_RULE,
     MACHINE_SYSTEM_PROMPT_BASE,
     MODEL_GIT_RULE,
+    PLAN_BUDGET_LINE,
     PLAN_SYSTEM_PROMPT_BASE,
     SKILLS_HEADER,
     SYSTEM_PROMPT_BASE,
@@ -214,6 +215,25 @@ def repo_priors_block(repo: RepoSummary) -> str:
     )
 
 
+def _plan_budget_line(config: Config) -> str:
+    """The plan-percent sentence when any role rides a subscription
+    provider; empty otherwise (a line about a meter that cannot bind
+    would misdirect)."""
+    formats = {
+        getattr(config.providers.get(rm.provider), "api_format", "")
+        for rm in (config.models.worker, config.models.reviewer, config.models.planner)
+        if rm is not None
+    }
+    if "chatgpt" not in formats:
+        return ""
+    cap = (
+        "uncapped per run"
+        if config.budget.max_percent == -1
+        else f"max_percent {config.budget.max_percent:g} points per run"
+    )
+    return PLAN_BUDGET_LINE.format(percent_cap=cap)
+
+
 def build_system_prompt(
     *,
     config: Config,
@@ -311,6 +331,7 @@ def build_system_prompt(
                     if config.budget.max_tokens_fallback == -1
                     else f"{config.budget.max_tokens_fallback:,}"
                 ),
+                plan_line=_plan_budget_line(config),
             )
         )
         return "\n".join(parts)
@@ -348,6 +369,7 @@ def build_system_prompt(
                 if config.budget.max_tokens_fallback == -1
                 else f"{config.budget.max_tokens_fallback:,}"
             ),
+            plan_line=_plan_budget_line(config),
         )
     )
 
