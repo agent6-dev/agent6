@@ -536,6 +536,18 @@ class BudgetConfig(BaseModel):
         ),
     )
 
+    # Purchased Codex credits are real money after the included window; a
+    # chatgpt call that would draw on them refuses unless this is set.
+    allow_paid_credits: bool = Field(
+        default=False,
+        description=(
+            "Allow chatgpt calls to spend PURCHASED credits once the included plan window "
+            "is exhausted (auto top-up can buy more with the saved payment method). "
+            "Default false: such a call refuses and the run ends at its next boundary; "
+            "included-plan usage is unaffected."
+        ),
+    )
+
     @field_validator("max_usd", "max_percent")
     @classmethod
     def _usd_unlimited_is_exactly_minus_one(cls, v: float) -> float:

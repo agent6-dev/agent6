@@ -472,3 +472,26 @@ def test_tool_calling_completed_turn_reports_tool_use(signed_in: ChatGPTCredenti
     with mock.patch("httpx2.stream", side_effect=_serve(lines)):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert resp.stop_reason == "tool_use" and len(resp.tool_uses) == 1
+
+
+def test_plan_usage_parses_the_credits_family() -> None:
+    """The x-codex credits headers ride every response; the parse feeds the
+    paid-credit guard (has/unlimited booleans, balance string)."""
+    from agent6.providers.chatgpt import _plan_usage_of  # pyright: ignore[reportPrivateUsage]
+
+    plan = _plan_usage_of(
+        {
+            "x-codex-primary-used-percent": "100",
+            "x-codex-primary-window-minutes": "10080",
+            "x-codex-primary-reset-at": "2000000000",
+            "x-codex-credits-has-credits": "true",
+            "x-codex-credits-unlimited": "false",
+            "x-codex-credits-balance": " $12.50 ",
+        }
+    )
+    assert plan is not None
+    assert plan.has_credits is True
+    assert plan.credits_unlimited is False
+    assert plan.credits_balance == "$12.50"
+    bare = _plan_usage_of({"x-codex-primary-used-percent": "40"})
+    assert bare is not None and bare.has_credits is False

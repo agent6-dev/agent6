@@ -90,6 +90,7 @@ def rank(
         budget = BudgetTracker(
             max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
             max_percent=cfg.budget.max_percent,
+            allow_paid_credits=cfg.budget.allow_paid_credits,
             max_tokens_fallback=cfg.budget.max_tokens_fallback,
         )
         try:

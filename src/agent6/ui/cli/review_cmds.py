@@ -239,6 +239,7 @@ def _cmd_review(  # noqa: PLR0911
         max_usd=cfg.budget.max_usd,
         max_tokens_fallback=cfg.budget.max_tokens_fallback,
         max_percent=cfg.budget.max_percent,
+        allow_paid_credits=cfg.budget.allow_paid_credits,
     )
     layout_root = resolved_state_dir(root) / "reviews"
     layout_root.mkdir(parents=True, exist_ok=True)

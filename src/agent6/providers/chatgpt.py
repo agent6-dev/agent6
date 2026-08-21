@@ -274,7 +274,14 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
     resets_at = _num("x-codex-primary-reset-at")
     if not resets_at:
         resets_at = time.time() + _num("x-codex-primary-reset-after-seconds")
+
+    def _flag(name: str) -> bool:
+        return (headers.get(name) or "").strip().lower() == "true"
+
     return PlanUsage(
+        has_credits=_flag("x-codex-credits-has-credits"),
+        credits_unlimited=_flag("x-codex-credits-unlimited"),
+        credits_balance=(headers.get("x-codex-credits-balance") or "").strip(),
         used_percent=used,
         window_minutes=int(_num("x-codex-primary-window-minutes")),
         resets_at=resets_at,

@@ -55,6 +55,11 @@ class PlanUsage:
     used_percent: float
     window_minutes: int
     resets_at: float
+    # The account's purchased-credit state (the x-codex credits family):
+    # after the included window, calls draw on these, which is real money.
+    has_credits: bool = False
+    credits_unlimited: bool = False
+    credits_balance: str = ""
 
 
 @dataclass(slots=True)
@@ -137,7 +142,7 @@ def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | No
     field, so the 1.25x branch is a no-op for them.
     """
     if t.percent_metered:
-        # Subscription calls: nothing is billed per token, so the figure is
+        # Included-plan subscription calls: not billed per token, so the figure is
         # an authoritative $0 -- never "unknown", never table-priced.
         return _ModelCost(0.0, reported=True, estimated=False, partial=t.reported_calls < t.calls)
     reported = t.reported_cost_usd > 0.0
@@ -209,6 +214,9 @@ class BudgetTracker:
     max_usd: float
     max_tokens_fallback: int
     max_percent: float
+    # False forgets SAFE (credits refused): unlike the metering caps above,
+    # an omitted value can never widen spend, so sites may rely on it.
+    allow_paid_credits: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _per_model: dict[str, _ModelTotals] = field(default_factory=dict)
     _input_total: int = 0
@@ -240,8 +248,9 @@ class BudgetTracker:
         a table price meters the call instead, and a call with neither
         lands in the fallback token ledger. `plan_usage` marks a
         percent-metered call (subscription providers): it feeds the
-        `max_percent` ledger, reports an authoritative $0 (nothing is
-        billed per token), and never drains the fallback ledger.
+        `max_percent` ledger, reports an authoritative $0 for included-plan
+        usage, and never drains the fallback ledger; a call that would draw
+        on PURCHASED credits refuses unless `allow_paid_credits` is set.
         """
         with self._lock:
             # A gateway is third-party arithmetic: a negative count (malformed
@@ -278,18 +287,7 @@ class BudgetTracker:
             self._cache_read_total += cache_read_tokens
             self._cache_creation_total += cache_creation_tokens
             if plan_usage is not None:
-                if self.max_percent == 0.0:
-                    self._exceeded_reason = (
-                        "percent budget is 0: plan-metered calls are refused"
-                        f" (model {model!r} draws on a subscription plan;"
-                        " raise [budget].max_percent)"
-                    )
-                elif self.max_percent > 0.0 and self._plan_consumed >= self.max_percent:
-                    self._exceeded_reason = (
-                        f"plan budget exhausted: this run consumed ~{self._plan_consumed:.1f}"
-                        f" percentage points >= max_percent {self.max_percent:g}"
-                        f" (account at {plan_usage.used_percent:g}%)"
-                    )
+                self._check_plan_ceilings(model, plan_usage)
                 return
             metered = cost_usd > 0.0 or lookup_price(model) is not None
             if not metered:
@@ -331,6 +329,34 @@ class BudgetTracker:
             self._plan_consumed += delta if delta >= 0 else plan.used_percent
         self._plan_last_percent = plan.used_percent
         self._plan_latest = plan
+
+    def _check_plan_ceilings(self, model: str, plan_usage: PlanUsage) -> None:
+        """The plan-metered ceilings, most binding first: the paid-credit
+        guard (real money), then the zero refusal, then this run's cap."""
+        if (
+            plan_usage.has_credits
+            and not plan_usage.credits_unlimited
+            and not self.allow_paid_credits
+            and plan_usage.used_percent >= 100.0
+        ):
+            balance = plan_usage.credits_balance or "unknown"
+            self._exceeded_reason = (
+                "the plan window is exhausted and the account holds purchased"
+                f" credits (balance {balance}): continuing would spend them."
+                " Set [budget].allow_paid_credits = true to allow that"
+            )
+        elif self.max_percent == 0.0:
+            self._exceeded_reason = (
+                "percent budget is 0: plan-metered calls are refused"
+                f" (model {model!r} draws on a subscription plan;"
+                " raise [budget].max_percent)"
+            )
+        elif self.max_percent > 0.0 and self._plan_consumed >= self.max_percent:
+            self._exceeded_reason = (
+                f"plan budget exhausted: this run consumed ~{self._plan_consumed:.1f}"
+                f" percentage points >= max_percent {self.max_percent:g}"
+                f" (account at {plan_usage.used_percent:g}%)"
+            )
 
     def check(self) -> None:
         """Raise `BudgetExceeded` if a prior `record()` crossed a ceiling."""
@@ -511,4 +537,9 @@ def format_plan_usage(snap: BudgetSnapshot) -> str:
     return (
         f"plan usage: {plan.used_percent:g}% of the {window} window"
         f" (this run ~{snap.plan_consumed:g} points{cap}; resets in {resets_h:.0f}h)"
+        + (
+            f"; purchased credits balance {plan.credits_balance or 'present'}"
+            if plan.has_credits and not plan.credits_unlimited
+            else ""
+        )
     )

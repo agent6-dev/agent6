@@ -390,6 +390,7 @@ def run_one(
         max_usd=cfg.budget.max_usd,
         max_tokens_fallback=cfg.budget.max_tokens_fallback,
         max_percent=cfg.budget.max_percent,
+        allow_paid_credits=cfg.budget.allow_paid_credits,
     )
     provider, summariser_provider, events_sink = _build_agent_providers(
         cfg, req, budget=budget, attach_console=attach_console
