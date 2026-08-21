@@ -15,10 +15,15 @@ import argparse
 import collections
 import glob
 import json
+import os
 import subprocess
 from pathlib import Path
 
-SWEPY = "/tmp/swebench-venv/bin/python"
+# On disk, never /tmp: tmpfiles aged the venv out mid-campaign and the
+# harness died at import. AGENT6_SB_SWEPY overrides.
+SWEPY = os.environ.get(
+    "AGENT6_SB_SWEPY", str(Path.home() / "agent6-work" / "swebench-venv" / "bin" / "python")
+)
 
 
 def main() -> int:
