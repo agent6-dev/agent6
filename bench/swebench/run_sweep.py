@@ -91,7 +91,9 @@ def run_one(
     work.mkdir(parents=True)
     (work / "problem.txt").write_text(inst["problem_statement"], encoding="utf-8")
 
-    image = _image_for(iid)
+    # SWE-rebench rows name their prebuilt image (`swerebench/` namespace);
+    # SWE-bench Verified rows carry no image field and derive the official one.
+    image = inst.get("image_name") or _image_for(iid)
     # Ensure the image is present (a no-op if cached). A FAILED pull (Docker
     # Hub's anonymous 429, a network blip) must NOT fall through to an empty
     # patch that scores as a real DNF: write no pred and report it, so a
