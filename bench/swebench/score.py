@@ -31,6 +31,20 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=Path("/tmp/a6swebench"))
     ap.add_argument("--run-id", default="a6_pilot")
     ap.add_argument("--max-workers", type=int, default=4)
+    ap.add_argument(
+        "--dataset",
+        default="princeton-nlp/SWE-bench_Verified",
+        help="HF dataset the predictions target; SWE-rebench: "
+        "nebius/SWE-rebench-leaderboard (needs --split, --namespace swerebench, "
+        "and AGENT6_SB_SWEPY pointing at a venv of the SWE-rebench/SWE-bench-fork "
+        "harness, which reads each task's install_config)",
+    )
+    ap.add_argument("--split", default=None, help="dataset split (rebench: the monthly split)")
+    ap.add_argument(
+        "--namespace",
+        default=None,
+        help="Docker Hub namespace for prebuilt eval images (rebench: swerebench)",
+    )
     args = ap.parse_args()
 
     by_model: dict[str, list[dict]] = collections.defaultdict(list)
@@ -51,7 +65,9 @@ def main() -> int:
                 "-m",
                 "swebench.harness.run_evaluation",
                 "--dataset_name",
-                "princeton-nlp/SWE-bench_Verified",
+                args.dataset,
+                *(["--split", args.split] if args.split else []),
+                *(["--namespace", args.namespace] if args.namespace else []),
                 "--predictions_path",
                 str(combined.resolve()),
                 "--max_workers",
@@ -79,7 +95,7 @@ def main() -> int:
                 "errors": r.get("error_instances", 0),
             }
 
-    print("\n===== SWE-bench Verified resolve rates =====")
+    print(f"\n===== {args.dataset} resolve rates =====")
     for model, s in sorted(summary.items(), key=lambda kv: -kv[1]["rate"]):
         print(
             f"  {model:36} {s['resolved']:3}/{s['total']:<3} "
