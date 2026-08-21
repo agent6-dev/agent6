@@ -322,6 +322,31 @@ distinct-model review panels, contract search (find how the existing
 suite pins the surface), and stronger models (harness is model-agnostic;
 vendor-scaffold co-training is the competition's edge).
 
+### Paired A/B: verify shape, heal ladder, reasoning replay (2026-08-21)
+
+Paired 30-instance sample from the scored 110 (15 baseline-resolved +
+15 baseline-unresolved, seed registered), official scorer, baseline on
+those ids = 15/30 by construction:
+
+| arm | resolved | gained | lost |
+|---|---|---|---|
+| armN: 0.0.27 wheel (heal ladder + reasoning replay), verify on | 17/30 | 2 | 0 |
+| armV: 0.0.26 wheel, GATELESS (AGENT6_SB_VERIFY=none) | 19/30 | 4 | 0 |
+
+- Reasoning replay engaged in 29/29 armN runs (encrypted items present
+  in every snapshot); the heal ladder fired 0 times in 29 (base miss
+  rate ~7% of runs makes n=30 underpowered for it; its guard is the
+  zero-regression row plus unit pins).
+- armV's gains include the twice-DNF sympy-13031; its wall clock ran
+  ~3-4x faster than verify-on arms (no 240s timeout stacks), matching
+  the transcript mining (79/103 verify calls were timeouts).
+- Neither arm lost a baseline-resolved instance. Sign-test one-sided
+  p: armN 0.25, armV 0.0625; directions positive, n small; the
+  wall/cost effect for gateless is large and unambiguous.
+- Harness conclusion: coverage sweeps default to AGENT6_SB_VERIFY=none
+  (speed + no resolve cost measured); verify-on remains a flag for
+  arms that study the gate itself.
+
 ### gpt-5.6-sol sweep (random-110, official scorer, 2026-08-21)
 
 Coverage grew to 110 random instances (three seeded draws, same config:
