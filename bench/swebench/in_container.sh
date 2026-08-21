@@ -81,7 +81,8 @@ fi
 # won't resolve the container's conda interpreter; use its ABSOLUTE path (exec is
 # granted via sandbox.extra_read_paths). Auto-detect django's runner; default to
 # pytest. Override with AGENT6_SB_VERIFY (space-separated argv) for odd repos.
-CONDA_PY=$(ls /opt/miniconda3/envs/*/bin/python 2>/dev/null | head -1)
+# SWE-bench images root conda at /opt/miniconda3; SWE-rebench at /opt/conda.
+CONDA_PY=$(ls /opt/miniconda3/envs/*/bin/python /opt/conda/envs/*/bin/python 2>/dev/null | head -1)
 CONDA_PY="${CONDA_PY:-python3}"
 # AGENT6_SB_VERIFY=none: a PINNED-GATELESS arm; the model self-verifies with
 # targeted run_command tests. verify_infer = false is required: with only an
@@ -145,7 +146,7 @@ isolation = "none"
 network = "session"
 run_commands = "yes"
 protect_git = false
-extra_read_paths = ["/opt/miniconda3"]
+extra_read_paths = ["/opt/miniconda3", "/opt/conda"]
 
 [git]
 require_clean_worktree = true
@@ -193,7 +194,7 @@ BASE=$(git rev-parse HEAD)
 
 # Pass the (long, special-char-laden) issue text as a single argv via Python so
 # no shell quoting can corrupt it.
-AGENT6_SB_TIMEOUT="$TIMEOUT_S" /opt/miniconda3/envs/testbed/bin/python - <<'PYEOF'
+AGENT6_SB_TIMEOUT="$TIMEOUT_S" "$CONDA_PY" - <<'PYEOF'
 import os, subprocess
 problem = open("/mnt/problem.txt", encoding="utf-8").read()
 try:
