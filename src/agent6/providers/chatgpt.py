@@ -59,8 +59,10 @@ def responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Block order is preserved: text runs flush as one message item;
     `tool_use` becomes a `function_call` item (arguments as a JSON string,
     keyed by `call_id`); `tool_result` becomes `function_call_output` with
-    the content flattened to a string. Thinking blocks are dropped (not
-    replayed, and the paired-item rules make a partial replay a 400).
+    the content flattened to a string. `chatgpt_reasoning` blocks replay
+    their raw Responses item verbatim, each only WITH its following kept
+    call (orphans violate the paired-item rules). Visible `thinking`
+    blocks are display-only and dropped.
     """
     items: list[dict[str, Any]] = []
     # Ids of blank-name tool_use blocks skipped below (a resumed history can
@@ -84,6 +86,10 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
     """One message's content blocks -> input items, text runs batched."""
     items: list[dict[str, Any]] = []
     text_run: list[str] = []
+    # A reasoning item is replayed only WITH its following kept item: an
+    # orphaned reasoning item (its paired call was dropped) violates the
+    # paired-item rules and would 400 the whole request.
+    pending_reasoning: list[dict[str, Any]] = []
 
     def flush() -> None:
         if text_run:
@@ -96,11 +102,19 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
         btype = block.get("type")
         if btype == "text":
             text_run.append(str(block.get("text", "")))
+        elif btype == "chatgpt_reasoning" and role == "assistant":
+            item = block.get("item")
+            if isinstance(item, dict):
+                flush()
+                pending_reasoning.append(item)
         elif btype == "tool_use" and role == "assistant":
             if not str(block.get("name") or "").strip():
                 dropped_ids.add(str(block.get("id", "")))
+                pending_reasoning.clear()
                 continue
             flush()
+            items.extend(pending_reasoning)
+            pending_reasoning.clear()
             items.append(
                 {
                     "type": "function_call",
@@ -121,6 +135,7 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
                 }
             )
     flush()
+    items.extend(pending_reasoning)
     return items
 
 
@@ -156,15 +171,27 @@ def tools_to_responses(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
 
 
 def _content_blocks(
-    text: str, reasoning_parts: list[str], tool_uses: list[dict[str, Any]]
+    text: str,
+    reasoning_parts: list[str],
+    tool_uses: list[dict[str, Any]],
+    ordered: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """The Anthropic-shape content blocks mirrored into `raw` (a leading
-    thinking block, then text, then tool_use), one shape across providers."""
+    thinking block for display, then text, then the wire-ordered opaque
+    reasoning items and tool_use blocks), one shape across providers.
+
+    *ordered* interleaves `chatgpt_reasoning` (the raw Responses item,
+    replayed verbatim next request) with the tool_use blocks in output-item
+    order, so a reasoning item stays adjacent to the call it preceded; when
+    absent (other callers), tool_uses alone are appended."""
     blocks: list[dict[str, Any]] = []
     if reasoning_parts:
         blocks.append({"type": "thinking", "thinking": "\n\n".join(reasoning_parts)})
     if text:
         blocks.append({"type": "text", "text": text})
+    if ordered is not None:
+        blocks.extend(ordered)
+        return blocks
     blocks.extend(
         {"type": "tool_use", "id": tu["id"], "name": tu["name"], "input": tu["input"]}
         for tu in tool_uses
@@ -206,6 +233,7 @@ def parse_output_items(
     text_parts: list[str] = []
     reasoning_parts: list[str] = []
     tool_uses: list[dict[str, Any]] = []
+    ordered: list[dict[str, Any]] = []
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -218,10 +246,23 @@ def parse_output_items(
             for part in item.get("summary") or []:
                 if isinstance(part, dict) and str(part.get("text", "")):
                     reasoning_parts.append(str(part["text"]))
+            # The raw item (id + encrypted content), kept opaque and replayed
+            # in order on the next request: with store=false this is the
+            # model's own chain-of-thought state across tool calls. Never
+            # decrypted, never displayed (the summary above is the display).
+            ordered.append({"type": "chatgpt_reasoning", "item": item})
         elif itype == "function_call":
             tool_use = _tool_use_of(item, n=len(tool_uses))
             if tool_use is not None:
                 tool_uses.append(tool_use)
+                ordered.append(
+                    {
+                        "type": "tool_use",
+                        "id": tool_use["id"],
+                        "name": tool_use["name"],
+                        "input": tool_use["input"],
+                    }
+                )
     text = "".join(text_parts)
     if tool_uses and stop_reason == "end_turn":
         # Anthropic-shape semantics: a turn that stopped to call tools says
@@ -232,7 +273,7 @@ def parse_output_items(
     cached = int(details.get("cached_tokens", 0) or 0) if isinstance(details, Mapping) else 0
     prompt_total = int(usage.get("input_tokens") or 0)
     cached = min(cached, prompt_total)
-    raw_content = _content_blocks(text, reasoning_parts, tool_uses)
+    raw_content = _content_blocks(text, reasoning_parts, tool_uses, ordered)
     return ProviderResponse(
         text=text,
         tool_uses=tuple(tool_uses),
@@ -376,6 +417,9 @@ class ChatGPTProvider:
             "parallel_tool_calls": True,
             "store": False,
             "stream": True,
+            # Explicit: the encrypted reasoning items we replay for stateless
+            # chain-of-thought continuity across tool calls.
+            "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": self.session_id,
         }
         if tools:

@@ -149,6 +149,7 @@ def test_request_body_and_headers_speak_the_codex_dialect(
     body = captured["body"]
     assert body["model"] == "gpt-5-codex" and body["instructions"] == "SYS"
     assert body["store"] is False and body["stream"] is True
+    assert body["include"] == ["reasoning.encrypted_content"]
     assert body["prompt_cache_key"] == provider.session_id
     assert len(provider.session_id) <= 64
     assert body["reasoning"] == {"effort": "medium", "summary": "auto"}
@@ -495,3 +496,55 @@ def test_plan_usage_parses_the_credits_family() -> None:
     assert plan.credits_balance == "$12.50"
     bare = _plan_usage_of({"x-codex-primary-used-percent": "40"})
     assert bare is not None and bare.has_credits is False
+
+
+def test_reasoning_items_are_captured_and_replayed_in_order() -> None:
+    """With store=false the encrypted reasoning item is the model's own
+    chain-of-thought state: the parse keeps the raw item opaque and in
+    output order, and the next request replays it verbatim immediately
+    before its function_call."""
+    from agent6.providers.chatgpt import parse_output_items, responses_input
+
+    reasoning = {
+        "type": "reasoning",
+        "id": "rs_1",
+        "encrypted_content": "OPAQUE",
+        "summary": [{"type": "summary_text", "text": "plan"}],
+    }
+    call = {
+        "type": "function_call",
+        "call_id": "c1",
+        "name": "read_file",
+        "arguments": '{"path": "x"}',
+    }
+    got = parse_output_items([reasoning, call], usage={}, stop_reason="end_turn")
+    blocks = got.raw["content"]
+    kinds = [b["type"] for b in blocks]
+    assert kinds == ["thinking", "chatgpt_reasoning", "tool_use"]
+    assert blocks[1]["item"] == reasoning
+
+    items = responses_input(
+        [
+            {"role": "assistant", "content": blocks},
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "hi"}],
+            },
+        ]
+    )
+    assert [i["type"] for i in items] == ["reasoning", "function_call", "function_call_output"]
+    assert items[0] == reasoning
+
+
+def test_orphaned_reasoning_is_dropped_with_its_call() -> None:
+    """A reasoning item whose paired call is dropped (blank tool name from a
+    cross-provider resume) must not replay alone: an orphan violates the
+    paired-item rules and 400s the whole request."""
+    from agent6.providers.chatgpt import responses_input
+
+    blocks = [
+        {"type": "chatgpt_reasoning", "item": {"type": "reasoning", "id": "rs_1"}},
+        {"type": "tool_use", "id": "c1", "name": "", "input": {}},
+    ]
+    items = responses_input([{"role": "assistant", "content": blocks}])
+    assert items == []

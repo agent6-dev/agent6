@@ -575,3 +575,26 @@ def test_streaming_with_budget_requires_usage_tokens(
         )
     assert exc_info.value.status_code == 422
     assert budget.snapshot().per_model == {}
+
+
+def test_foreign_opaque_blocks_never_reach_the_wire() -> None:
+    """A cross-provider resume can carry another wire's opaque replay state
+    (the ChatGPT reasoning item); sent verbatim it would 400 this API."""
+    from agent6.providers.anthropic import drop_foreign_blocks
+
+    messages = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "hi"},
+                {"type": "chatgpt_reasoning", "item": {"type": "reasoning", "id": "rs_1"}},
+            ],
+        },
+        {"role": "user", "content": "next"},
+    ]
+    out = drop_foreign_blocks(messages)
+    assert out[0]["content"] == [{"type": "text", "text": "hi"}]
+    assert out[1] is messages[1]
+    original = messages[0]["content"]
+    assert isinstance(original, list)
+    assert original[1]["type"] == "chatgpt_reasoning"  # caller list untouched

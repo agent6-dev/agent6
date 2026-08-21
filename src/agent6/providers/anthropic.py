@@ -172,6 +172,36 @@ def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[st
     return out if changed else messages
 
 
+def drop_foreign_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return `messages` without other wires' opaque blocks.
+
+    agent6's canonical blocks are Anthropic-shaped and pass through verbatim,
+    so a block another provider minted for its own replay (the ChatGPT
+    `chatgpt_reasoning` item) would reach this API raw and 400 the request
+    on a cross-provider resume. Copy-on-write like the cache_control strip.
+    """
+    foreign = {"chatgpt_reasoning"}
+    out: list[dict[str, Any]] = []
+    changed = False
+    for msg in messages:
+        content = msg.get("content")
+        if not isinstance(content, list) or not any(
+            isinstance(b, dict) and b.get("type") in foreign for b in content
+        ):
+            out.append(msg)
+            continue
+        out.append(
+            {
+                **msg,
+                "content": [
+                    b for b in content if not (isinstance(b, dict) and b.get("type") in foreign)
+                ],
+            }
+        )
+        changed = True
+    return out if changed else messages
+
+
 def _is_temperature_400(status: int | None, text: str, body: dict[str, Any]) -> bool:
     """True when a 400 says the model rejects `temperature` (e.g. claude-opus-4-8:
     "temperature is deprecated for this model") AND temperature is still in the
@@ -335,7 +365,7 @@ class AnthropicProvider:
         body: dict[str, Any] = {
             "max_tokens": max_tokens,
             "system": system_blocks,
-            "messages": messages,
+            "messages": drop_foreign_blocks(messages),
         }
         # Direct carries the model in the body; Vertex carries it in the URL
         # path and moves the protocol version into the body.
