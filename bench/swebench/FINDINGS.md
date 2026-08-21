@@ -322,6 +322,17 @@ distinct-model review panels, contract search (find how the existing
 suite pins the surface), and stronger models (harness is model-agnostic;
 vendor-scaffold co-training is the competition's edge).
 
+### Coverage total across all draws (2026-08-21)
+
+268 distinct SWE-bench Verified instances scored (official evaluator):
+206/268 = 76.9% resolved [71.5, 81.5]. By condition: verify-on 82/110
+= 74.5%; gateless (v2 79/100 + v3 45/58 partial) pooled 124/158 =
+78.5% [71.4, 84.2]. v3 is a partial tranche (58 of 100; the rest defer
+to the next day's plan allowance) and scored 0 empty -- the
+pull-failure fix held the count clean under the same disk/429 pressure
+that had corrupted v2's first pass. Reference full-500: mini-swe-agent
+67.3, KimiCode 67.5, Claude Code 73.7.
+
 ### Condition-v2 tranche (gateless, random-100, official scorer, 2026-08-21)
 
 The A/B's canonical condition (0.0.27 wheel with reasoning replay,
