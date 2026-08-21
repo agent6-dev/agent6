@@ -83,7 +83,12 @@ fi
 # pytest. Override with AGENT6_SB_VERIFY (space-separated argv) for odd repos.
 CONDA_PY=$(ls /opt/miniconda3/envs/*/bin/python 2>/dev/null | head -1)
 CONDA_PY="${CONDA_PY:-python3}"
-if [ -z "${AGENT6_SB_VERIFY:-}" ]; then
+# AGENT6_SB_VERIFY=none: a GATELESS arm (no verify_command at all); the model
+# self-verifies with targeted run_command tests.
+if [ "${AGENT6_SB_VERIFY:-}" = "none" ]; then
+  AGENT6_SB_VERIFY=""
+  VERIFY_TOML=""
+elif [ -z "${AGENT6_SB_VERIFY:-}" ]; then
   if [ -f /testbed/tests/runtests.py ]; then
     AGENT6_SB_VERIFY="$CONDA_PY tests/runtests.py --verbosity 1 --parallel 2"
   elif "$CONDA_PY" -m pytest --version >/dev/null 2>&1; then
@@ -99,9 +104,11 @@ if [ -z "${AGENT6_SB_VERIFY:-}" ]; then
     AGENT6_SB_VERIFY="$CONDA_PY -m pytest -q"
   fi
 fi
-VARR=""
-for w in $AGENT6_SB_VERIFY; do VARR="${VARR}\"${w}\", "; done
-VERIFY_TOML="verify_command = [${VARR%, }]"
+if [ -n "${AGENT6_SB_VERIFY:-}" ]; then
+  VARR=""
+  for w in $AGENT6_SB_VERIFY; do VARR="${VARR}\"${w}\", "; done
+  VERIFY_TOML="verify_command = [${VARR%, }]"
+fi
 
 # A/B arm: the orchestrator mounts a replacement run-mode base prompt.
 PROMPT_FILE_LINE=""
