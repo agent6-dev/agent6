@@ -187,9 +187,13 @@ def _models_endpoint(entry: ProviderEntry, api_key: str | None) -> tuple[str, di
 
 
 # The backend hides models newer than the claimed client, keyed on each
-# model's minimal_client_version. agent6 speaks the plain Responses dialect
-# every listed model accepts, so it claims the ceiling and lists them all.
-_CHATGPT_CLIENT_VERSION = "9.9.9"
+# model's minimal_client_version. This pin names the wire feature set agent6
+# implements and has verified live (Responses SSE, function tools, reasoning
+# summaries with the effort tiers through max); every current model gates at
+# or below it. A future model gated ABOVE the pin stays hidden until its wire
+# needs are implemented and the pin is raised deliberately: the server's
+# compatibility filter is authoritative, never claimed past.
+_CHATGPT_CLIENT_VERSION = "1.0.0"
 
 
 def _chatgpt_models_endpoint(

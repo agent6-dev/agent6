@@ -262,7 +262,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     ids = models_cache.list_models("chatgpt", entry, None, ttl_s=0)
     assert ids == ["gpt-5.6-sol"]
-    assert str(seen["url"]).endswith("/models?client_version=9.9.9")
+    assert str(seen["url"]).endswith("/models?client_version=1.0.0")
     headers = seen["headers"]
     assert isinstance(headers, dict)
     assert headers["authorization"] == "Bearer AT"
