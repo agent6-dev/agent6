@@ -43,6 +43,7 @@ import contextlib
 import json
 import os
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -56,6 +57,7 @@ from agent6.sandbox.jail import (
     JailedProcess,
     JailUnavailableError,
     SessionNetwork,
+    die_with_parent,
     spawn_in_jail,
 )
 from agent6.tools.mcp_http import HttpTransport, MCPHttpError, MCPSessionExpired
@@ -228,6 +230,10 @@ def _spawn_server(
             # group, and an MCP server that dies with it breaks its tools for
             # the rest of the run.
             start_new_session=True,
+            # Dies with the agent (PDEATHSIG, same tie the jailed branch gets
+            # through the launcher): a server that ignores stdin EOF must not
+            # outlive a SIGKILLed agent6.
+            preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
         )
     )
 

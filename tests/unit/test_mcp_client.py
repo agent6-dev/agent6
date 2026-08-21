@@ -529,3 +529,29 @@ def test_initialize_sends_the_canonical_version(tmp_path: Path) -> None:
         srv.close()
     init = json.loads(seen.read_text(encoding="utf-8"))
     assert init["params"]["clientInfo"]["version"] == agent6.__version__
+
+
+def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The operator-opted-out (no-jail) MCP spawn carries the parent-death
+    tie: a stdio server that ignores stdin EOF must not outlive a SIGKILLed
+    agent6 (the jailed branch gets the same tie through the launcher)."""
+    from agent6.tools import mcp_client
+
+    captured: dict[str, object] = {}
+
+    class _P:
+        pid = 4242
+        stdin = None
+        stdout = None
+        stderr = None
+
+    def fake_popen(*args: object, **kwargs: object) -> _P:
+        captured.update(kwargs)
+        return _P()
+
+    monkeypatch.setattr(mcp_client.subprocess, "Popen", fake_popen)
+    mcp_client._spawn_server(  # pyright: ignore[reportPrivateUsage]
+        ("fake-server",), pass_env=(), policy=None
+    )
+    assert captured.get("preexec_fn") is not None
+    assert captured.get("start_new_session") is True
