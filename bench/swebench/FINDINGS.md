@@ -474,3 +474,16 @@ verify exited 1 in 0.0s with "No module named pytest". Effects:
   not that the command can run (`python -m mod` with the module absent
   for that interpreter adopted the no-op gate) -- queued with its
   candidate fix shapes.
+
+### apply_patch friction does not discriminate (2026-08-21)
+
+Paired mining, the 56 unresolved vs a seeded 60-run resolved control:
+error rates 19% vs 22% of apply_patch calls (23 vs 26 errors), zero
+abandonments in either group (every error was followed by a later
+successful write). sol speaks V4A almost exclusively (239/243 calls).
+Classes: ambiguous context 33/49 (the error names the fix; the model
+adds context and recovers, about one turn each), multi-file V4A 11/49
+(all from the 0.0.26 wheel; 0.0.27 accepts multi-file and v2/v3 show
+zero), misc 5. Conclusion: patch friction is background noise, not a
+differentiator; no tool-description A/B is warranted here, and the
+uniqueness discipline stays.
