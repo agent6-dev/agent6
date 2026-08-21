@@ -83,11 +83,14 @@ fi
 # pytest. Override with AGENT6_SB_VERIFY (space-separated argv) for odd repos.
 CONDA_PY=$(ls /opt/miniconda3/envs/*/bin/python 2>/dev/null | head -1)
 CONDA_PY="${CONDA_PY:-python3}"
-# AGENT6_SB_VERIFY=none: a GATELESS arm (no verify_command at all); the model
-# self-verifies with targeted run_command tests.
+# AGENT6_SB_VERIFY=none: a PINNED-GATELESS arm; the model self-verifies with
+# targeted run_command tests. verify_infer = false is required: with only an
+# unset verify_command, mid-run adoption armed the inferred `python3 -m
+# pytest` whose interpreter lacks pytest, an always-red 0.0s no-op gate.
+# Needs a wheel that carries the knob (0.0.27 rejects unknown keys).
 if [ "${AGENT6_SB_VERIFY:-}" = "none" ]; then
   AGENT6_SB_VERIFY=""
-  VERIFY_TOML=""
+  VERIFY_TOML="verify_infer = false"
 elif [ -z "${AGENT6_SB_VERIFY:-}" ]; then
   if [ -f /testbed/tests/runtests.py ]; then
     AGENT6_SB_VERIFY="$CONDA_PY tests/runtests.py --verbosity 1 --parallel 2"
