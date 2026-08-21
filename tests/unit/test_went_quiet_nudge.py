@@ -318,7 +318,47 @@ def test_a_billed_empty_turn_says_so(tmp_path: Path) -> None:
     wf.run("do something")
 
     quiet = [ln for ln in lines if "went_quiet at iter" in ln]
-    assert quiet and "128 output tokens billed" in quiet[0], quiet
+    # Non-subscription run: dollar-metered, so the word is "billed".
+    assert quiet and "128 output tokens billed on it" in quiet[0], quiet
     events = [json.loads(ln) for ln in (tmp_path / "logs.jsonl").read_text().splitlines()]
     nudge = next(e for e in events if e["type"] == "loop.went_quiet.nudge")
     assert nudge["output_tokens"] == 128
+
+
+def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: Path) -> None:
+    """On a subscription plan the tokens cost $0; the went-quiet line must not
+    claim they were "billed" (a dollar word). Same count, honest verb."""
+    from agent6.budget import BudgetTracker, PlanUsage
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    billed = ProviderResponse(
+        text="\n\n",
+        tool_uses=(),
+        stop_reason="stop",
+        input_tokens=1,
+        output_tokens=128,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={"content": []},
+    )
+    provider = MagicMock()
+    provider.call.side_effect = [billed, _resp_text("done"), _resp_text("done"), _resp_text("done")]
+    lines: list[str] = []
+    wf = _build_wf(repo, provider, went_quiet_max_nudges=2)
+    wf.logger = lines.append
+    wf.events = EventSink(tmp_path / "logs.jsonl")
+    wf.budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    wf.budget.record(
+        model="gpt-5.6-sol",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        plan_usage=PlanUsage(used_percent=2.0, window_minutes=10080, resets_at=2e9),
+    )
+    wf.run("do something")
+
+    quiet = [ln for ln in lines if "went_quiet at iter" in ln]
+    assert quiet and "128 output tokens spent on it" in quiet[0], quiet
+    assert "billed" not in quiet[0]

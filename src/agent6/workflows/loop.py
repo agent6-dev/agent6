@@ -3016,8 +3016,12 @@ class Workflow:
         # (seen on OpenRouter-routed qwen at temperature 0, deterministically
         # per prompt). Say so, in the log and on the event, so the transcript
         # file is not the only place the difference shows.
+        # "billed" is a dollar word: on a subscription plan those tokens cost
+        # $0, so the plan-metered run says "spent" instead of claiming a bill.
+        plan_metered = self.budget is not None and self.budget.snapshot().plan_latest is not None
+        spent_word = "spent" if plan_metered else "billed"
         billed = (
-            f" ({resp.output_tokens} output tokens billed for it: reasoning that never"
+            f" ({resp.output_tokens} output tokens {spent_word} on it: reasoning that never"
             " surfaced, or a tool call the provider dropped)"
             if resp.output_tokens > 0 and not starved
             else ""
