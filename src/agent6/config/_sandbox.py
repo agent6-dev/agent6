@@ -490,6 +490,13 @@ class MCPServerEntry(BaseModel):
         return self.sandbox.network if self.sandbox else "auto"
 
 
+def is_cleartext_url(url: str) -> bool:
+    """Whether *url* dials plain http: the PARSED scheme (urlsplit lowercases
+    it), never a prefix match, which `HTTP://` would evade while the client
+    still dialled cleartext."""
+    return urlsplit(url).scheme == "http"
+
+
 def is_loopback_url(url: str) -> bool:
     """Whether *url*'s host is this machine: `is_loopback_host` over the PARSED
     hostname, never a prefix match (`127.evil.com` resolves wherever its owner

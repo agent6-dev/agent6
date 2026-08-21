@@ -41,7 +41,7 @@ from pydantic import (
 from agent6.config._base import MODEL_CONFIG
 from agent6.config._git import GitConfig
 from agent6.config._providers import ProviderEntry
-from agent6.config._sandbox import MCPConfig, SandboxConfig, is_loopback_url
+from agent6.config._sandbox import MCPConfig, SandboxConfig, is_cleartext_url, is_loopback_url
 from agent6.config._surfaces import (
     MachineConfig,
     NotifyConfig,
@@ -429,13 +429,13 @@ class Config(BaseModel):
         out: list[str] = []
         for name, entry in sorted(self.providers.items()):
             if (
-                entry.base_url.startswith("http://")
+                is_cleartext_url(entry.base_url)
                 and entry.auth_style != "none"
                 and not is_loopback_url(entry.base_url)
             ):
                 out.append(f"[providers.{name}] {entry.base_url}")
         for name, srv in sorted(self.mcp.servers.items()):
-            if srv.token_env and srv.url.startswith("http://") and not is_loopback_url(srv.url):
+            if srv.token_env and is_cleartext_url(srv.url) and not is_loopback_url(srv.url):
                 out.append(f"[mcp.servers.{name}] {srv.url}")
         return tuple(out)
 

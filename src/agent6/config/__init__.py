@@ -19,6 +19,7 @@ from agent6.config._sandbox import (
     MCPConfig,
     MCPServerEntry,
     SandboxConfig,
+    is_cleartext_url,
     is_loopback_url,
     mcp_server_name_refusal,
 )
@@ -80,6 +81,7 @@ __all__ = [
     "SandboxConfig",
     "WebConfig",
     "WorkflowConfig",
+    "is_cleartext_url",
     "is_loopback_host",
     "is_loopback_url",
     "load_config",

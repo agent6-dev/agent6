@@ -966,3 +966,18 @@ def test_max_iterations_zero_is_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigError, match="exactly -1 for unlimited"):
         load_config(_write(tmp_path, body))
+
+
+def test_cleartext_rejection_is_scheme_case_insensitive(tmp_path: Path) -> None:
+    """URL schemes are case-insensitive on the wire: `HTTP://` dials cleartext
+    exactly like `http://`, so a prefix match would let a mixed-case scheme
+    evade the https requirement on the chatgpt endpoints."""
+    for field, extra in (
+        ("base_url", 'base_url = "HTTP://api.example.com/codex"'),
+        ("oauth_issuer", 'oauth_issuer = "HTTP://auth.example.com"'),
+    ):
+        body = _VALID_TOML + f'\n[providers.gpt]\napi_format = "chatgpt"\n{extra}\n'
+        d = tmp_path / field
+        d.mkdir()
+        with pytest.raises(ConfigError, match="https"):
+            load_config(_write(d, body))

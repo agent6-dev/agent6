@@ -17,7 +17,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from agent6.config import Config, is_loopback_url, mcp_server_name_refusal
+from agent6.config import Config, is_cleartext_url, is_loopback_url, mcp_server_name_refusal
 from agent6.config.layer import load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves
 from agent6.tools.mcp_client import MCPError, MCPServerSpec, MCPToolDescriptor, _MCPServer
@@ -89,7 +89,7 @@ def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
     internal-network or VPN endpoint is a real case): interactive asks, default
     no; headless warns and proceeds.
     """
-    if not (token_env and url.startswith("http://") and not is_loopback_url(url)):
+    if not (token_env and is_cleartext_url(url) and not is_loopback_url(url)):
         return True
     print(
         f"WARNING: {url} is plaintext http to a non-loopback host: the token"
