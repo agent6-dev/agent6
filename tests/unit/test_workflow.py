@@ -927,6 +927,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal=None),
         ),
     )
@@ -977,6 +978,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal=None),
         ),
     )
@@ -4111,6 +4113,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal=None),
         ),
     )
@@ -5191,6 +5194,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),  # GATELESS
+            verify_infer=True,
             metric=SimpleNamespace(goal=None),
         ),
     )
@@ -5252,6 +5256,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal=None),
         ),
     )
@@ -5316,6 +5321,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal=None),
         ),
     )
@@ -5549,6 +5555,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal=None),
         ),
     )
@@ -5604,6 +5611,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal=None),
         ),
     )

@@ -496,3 +496,70 @@ def test_budget_block_names_the_plan_meter_for_subscription_runs(tmp_path: Path)
     assert "meter in plan percent (max_percent 3 points per run)" in prompt
     plain = build_system_prompt(config=Config(), repo=repo, mode="run", skills=None)
     assert "plan percent" not in plain
+
+
+def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: Path) -> None:
+    """An unset verify_command always ran the inference tiers; with a repo
+    that infers (an AGENTS.md fence here) the run could never be made
+    gateless on purpose. verify_infer = false skips every tier."""
+    import json
+    from unittest.mock import MagicMock
+
+    from agent6.app.preflight import infer_verify_if_unset
+    from agent6.budget import BudgetTracker
+    from agent6.config import Config
+    from agent6.events import EventSink
+
+    (tmp_path / "AGENTS.md").write_text(
+        "## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8"
+    )
+    budget = BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=-1.0)
+
+    cfg_on = infer_verify_if_unset(
+        Config(),
+        tmp_path,
+        mode="run",
+        events=EventSink(tmp_path / "on.jsonl"),
+        transcript_sink=MagicMock(),
+        budget=budget,
+    )
+    assert cfg_on.workflow.verify_command, "the fence must infer when the knob is on"
+
+    off_log = tmp_path / "off.jsonl"
+    cfg_off = infer_verify_if_unset(
+        Config.model_validate({"workflow": {"verify_infer": False}}),
+        tmp_path,
+        mode="run",
+        events=EventSink(off_log),
+        transcript_sink=MagicMock(),
+        budget=budget,
+    )
+    assert cfg_off.workflow.verify_command == ()
+    rows = [json.loads(line) for line in off_log.read_text(encoding="utf-8").splitlines()]
+    assert any(r["type"] == "loop.verify_inferred" and r["source"] == "disabled" for r in rows)
+
+
+def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> None:
+    """The mid-run adoption re-armed a gate on every gateless run whose tree
+    is a recognizable project; inside a container whose python3 lacks pytest
+    that gate was an always-red no-op. The same knob turns adoption off."""
+    from unittest.mock import MagicMock
+
+    from agent6.config import Config
+    from agent6.workflows.loop import Workflow, _TurnState  # pyright: ignore[reportPrivateUsage]
+
+    (tmp_path / "AGENTS.md").write_text(
+        "## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8"
+    )
+    dispatcher = MagicMock()
+    wf = Workflow(
+        root=tmp_path,
+        config=Config.model_validate({"workflow": {"verify_infer": False}}),
+        provider=MagicMock(),
+        dispatcher=dispatcher,
+        logger=lambda _line: None,
+    )
+    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
+    wf._maybe_adopt_verify(turn)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.adopt_verify_command.assert_not_called()
+    assert wf.config.workflow.verify_command == ()

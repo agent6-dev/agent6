@@ -437,6 +437,17 @@ def infer_verify_if_unset(
     """
     if mode not in ("run", "plan") or cfg.workflow.verify_command:
         return cfg
+    if not cfg.workflow.verify_infer:
+        # Pinned gateless: the operator said no gate, so no tier runs and the
+        # mid-run adoption stays off too (the loop reads the same knob).
+        events.emit("loop.verify_inferred", command=[], source="disabled")
+        if mode == "run":
+            print(
+                "[agent6] verify_infer = false: running gateless"
+                " (per-step commits, no green gate; nothing is inferred or adopted).",
+                file=sys.stderr,
+            )
+        return cfg
     agents_md = read_agents_md(cwd)
 
     def _llm_call(context: str) -> str:

@@ -74,6 +74,17 @@ class WorkflowConfig(BaseModel):
             "gate a recognizable project created mid-run yields."
         ),
     )
+    # False pins gatelessness for a run with no verify_command: neither the
+    # preflight inference nor the mid-run adoption arms a gate.
+    verify_infer: bool = Field(
+        default=True,
+        description=(
+            "Infer a verify command when `verify_command` is unset (AGENTS.md fence, repo "
+            "signals, a model call), and adopt one mid-run when a gateless run materializes a "
+            "recognizable project. false: such a run stays gateless, no inference and no "
+            "adoption; a set `verify_command` is unaffected."
+        ),
+    )
     # per-call timeout for verify_command (and metric_command) in
     # seconds. Defaults to the jail's general 600s but should be cranked
     # MUCH lower for benches where the verify is a fast correctness test

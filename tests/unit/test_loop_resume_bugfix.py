@@ -90,6 +90,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
         ),
     )
@@ -174,6 +175,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
         ),
     )
@@ -207,6 +209,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
         ),
     )
@@ -292,6 +295,7 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
         ),
     )
@@ -371,6 +375,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
         ),
     )
@@ -449,6 +454,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
         ),
     )
@@ -500,6 +506,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
         ),
     )
@@ -567,6 +574,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal=None),
         ),
     )
@@ -808,6 +816,7 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             verify_command=(),
+            verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
         ),
     )

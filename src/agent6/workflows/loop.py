@@ -1583,7 +1583,10 @@ class Workflow:
         it for the rest of the run: the loop's gates, the dispatcher's
         run_verify_command, and the resume snapshot all read the adopted
         command. The model is told, so the gate flip is never silent; first
-        adoption wins (the config gaining a command ends the gateless branch)."""
+        adoption wins (the config gaining a command ends the gateless branch).
+        `verify_infer = false` pins gatelessness: no adoption either."""
+        if not self.config.workflow.verify_infer:
+            return
         inferred = infer_verify_command(self.root, read_agents_md(self.root), llm_call=None)
         if inferred is None:
             return
