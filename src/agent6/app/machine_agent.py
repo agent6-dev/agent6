@@ -26,7 +26,6 @@ module never imports `agent6.ui`.
 from __future__ import annotations
 
 import contextlib
-import ctypes
 import os
 import shutil
 import signal
@@ -68,6 +67,7 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.machine import AgentExecResult, AgentRequest
 from agent6.providers import Provider, TranscriptSink
+from agent6.sandbox.jail import die_with_parent
 from agent6.sessions.ipc import (
     await_frontend_reply,
     away_mode,
@@ -469,31 +469,6 @@ def run_one(
     result = wf.run(r.prompt)
     payload = result.finish_payload if result.reason == "finish_session" else None
     return _result(result.reason, payload, budget)
-
-
-# Loaded at import, never between fork and exec: dlopen allocates, and another
-# thread mid-malloc at fork would deadlock a post-fork load.
-_LIBC: ctypes.CDLL | None = ctypes.CDLL(None, use_errno=True) if sys.platform == "linux" else None
-
-
-def die_with_parent(parent_pid: int) -> Callable[[], None]:
-    """A `preexec_fn` tying the child's life to *parent_pid* (Linux PDEATHSIG).
-
-    The kernel delivers SIGTERM to the child when its parent dies -- any death,
-    SIGKILL included. The re-check closes the fork window: a parent that died
-    before the prctl landed leaves the child re-parented, so the signal would
-    never come. Elsewhere (macOS best-effort) this is a no-op; the platform has
-    no equivalent tie.
-    """
-
-    def _setup() -> None:
-        if _LIBC is None:
-            return
-        _LIBC.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG = 1
-        if os.getppid() != parent_pid:
-            os._exit(128 + signal.SIGTERM)
-
-    return _setup
 
 
 def build_machine_agent_runner(

@@ -328,6 +328,7 @@ fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Optio
     // pid namespace — only its children, forked after the unshare, enter the new
     // pid namespace. Anything that requires being inside the new pid ns (most
     // notably mounting a fresh /proc) must therefore happen in a forked child.
+    let launcher_pid = std::process::id() as libc::pid_t;
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child }) => match waitpid(child, None) {
             Ok(WaitStatus::Exited(_, code)) => std::process::exit(code),
@@ -336,6 +337,28 @@ fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Optio
             Err(e) => die(format!("waitpid failed: {e}")),
         },
         Ok(ForkResult::Child) => {
+            // This process is PID 1 of the new pid namespace: when it dies the
+            // kernel kills everything in the namespace. Tying it to the
+            // launcher completes the chain (agent6 -> launcher -> here ->
+            // every jailed process), so a SIGKILLed agent6 cannot strand a
+            // running command. The fork race (launcher dead before the prctl
+            // lands = no signal ever) cannot be closed with getppid: inside
+            // the fresh pid namespace it reads 0 whether the launcher lives
+            // or died. The inherited host /proc is still mounted here
+            // (setup_rootfs runs below), so consult it; if /proc itself is
+            // absent there is nothing to consult and the tie stands alone.
+            unsafe {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
+                    die(format!(
+                        "PR_SET_PDEATHSIG failed: {}",
+                        io::Error::last_os_error()
+                    ));
+                }
+            }
+            let launcher_proc = format!("/proc/{launcher_pid}");
+            if Path::new("/proc/self").exists() && !Path::new(&launcher_proc).exists() {
+                die("launcher died before the death-signal tie landed");
+            }
             if let Err(e) = setup_rootfs(policy, real_uid) {
                 die(format!("rootfs setup failed: {e}"));
             }
@@ -1894,7 +1917,13 @@ impl Policy {
 /// stdio is wired. Shared so a served/one-shot command and an exec-mode
 /// long-lived server are launched identically; a second spelling here is how
 /// one of them would quietly stop getting a hardening.
-fn build_command(spec: &ChildSpec<'_>, cwd: &Path) -> Command {
+///
+/// `tie_to_parent` sets PR_SET_PDEATHSIG(SIGKILL) in the child before exec,
+/// so a jailed command cannot outlive a dead launcher.
+/// The one caller that passes false is `spawn_detached`: a backgrounded
+/// command is DESIGNED to outlive its request (the roster owns its lifetime,
+/// and the escapee sweep covers the crash case).
+fn build_command(spec: &ChildSpec<'_>, cwd: &Path, tie_to_parent: bool) -> Command {
     let mut cmd = Command::new(&spec.argv[0]);
     cmd.args(&spec.argv[1..]);
     cmd.env_clear();
@@ -1918,6 +1947,27 @@ fn build_command(spec: &ChildSpec<'_>, cwd: &Path) -> Command {
     // inherited our stdout/stderr write-end keeps the pipe open and the reader
     // threads' read_to_string() never sees EOF — hanging the launcher.
     cmd.process_group(0);
+    if tie_to_parent {
+        // Between our fork and the prctl the parent can die, leaving the child
+        // re-parented and the signal never delivered: re-check the parent and
+        // refuse to exec a command nobody owns. getppid/prctl are async-signal
+        // -safe (pre_exec contract), and prctl is not in the seccomp denylist
+        // (PR_SET_DUMPABLE already runs behind the same filter).
+        let parent = std::process::id() as libc::pid_t;
+        unsafe {
+            cmd.pre_exec(move || {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::getppid() != parent {
+                    return Err(io::Error::other(
+                        "parent died before the death-signal tie landed",
+                    ));
+                }
+                Ok(())
+            });
+        }
+    }
     cmd
 }
 
@@ -1969,7 +2019,7 @@ fn run_child_exec(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
     }
-    let mut cmd = build_command(spec, cwd);
+    let mut cmd = build_command(spec, cwd, true);
     apply_child_limits(&mut cmd, spec.memory_limit_mb);
     // Inherited, not piped: these three fds are the caller's pipe to the
     // server. fork/exec does not touch the fd table, so the JSON-RPC stream
@@ -1993,7 +2043,7 @@ fn run_child(
     let _ = CString::new(spec.argv[0].as_bytes());
     let _ = OsStr::new(""); // silence unused import on some targets
 
-    let mut cmd = build_command(spec, cwd);
+    let mut cmd = build_command(spec, cwd, true);
     apply_child_limits(&mut cmd, spec.memory_limit_mb);
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
@@ -2310,7 +2360,7 @@ fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {
     // process group, capability drop, memory limit): a backgrounded command
     // outlives the request, so it is the one with time to go looking for the
     // launcher's fds, and its rlimits must not depend on the transport.
-    let mut cmd = build_command(spec, cwd);
+    let mut cmd = build_command(spec, cwd, false);
     apply_child_limits(&mut cmd, spec.memory_limit_mb);
     // The caller redirects its own output (as the background tool does), so
     // nothing here holds a pipe open across requests.

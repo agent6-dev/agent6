@@ -20,6 +20,7 @@ import select
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -30,6 +31,32 @@ from typing import IO
 
 from agent6.paths import hidden_paths, private_dirs
 from agent6.types import BackgroundHandoff, CommandResult, JailPolicy
+
+# Loaded at import, never between fork and exec: dlopen allocates, and another
+# thread mid-malloc at fork would deadlock a post-fork load.
+_LIBC: ctypes.CDLL | None = ctypes.CDLL(None, use_errno=True) if sys.platform == "linux" else None
+
+
+def die_with_parent(parent_pid: int, sig: int = signal.SIGTERM) -> Callable[[], None]:
+    """A `preexec_fn` tying the child's life to *parent_pid* (Linux PDEATHSIG).
+
+    The kernel delivers *sig* to the child when its parent dies -- any death,
+    SIGKILL included. The re-check closes the fork window: a parent that died
+    before the prctl landed leaves the child re-parented, so the signal would
+    never come. Elsewhere (macOS best-effort) this is a no-op; the platform has
+    no equivalent tie. Launcher spawns tie with SIGKILL (a dead agent cannot
+    tear anything down gracefully); machine children tie with SIGTERM.
+    """
+
+    def _setup() -> None:
+        if _LIBC is None:
+            return
+        _LIBC.prctl(1, sig)  # PR_SET_PDEATHSIG = 1
+        if os.getppid() != parent_pid:
+            os._exit(128 + sig)
+
+    return _setup
+
 
 # --- operator tool reachability ----------------------------------------------
 # The jail's baseline PATH is /usr/bin:/bin and it bind-mounts only the system
@@ -304,6 +331,7 @@ class SessionNetwork:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=_LAUNCHER_ENV,
+            preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
         )
         fds: list[int] = []
         try:
@@ -439,6 +467,7 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
             env=env,
             capture_output=True,
             check=False,
+            preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),
             # <= 0 is "no wall-clock kill" (agent6 exec, a model command whose
             # check-in replaces the kill); None is subprocess's way to say it.
             timeout=policy.timeout_s if policy.timeout_s > 0 else None,
@@ -729,6 +758,7 @@ def spawn_in_jail(
                 env=dict(policy.env),
                 cwd=policy.cwd,
                 start_new_session=True,
+                preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
             )
             # Registered like the jailed branch's launcher: the server sits in
             # its own session, so without this a SIBLING handle's close would
@@ -753,6 +783,7 @@ def spawn_in_jail(
                 stderr=stderr,
                 pass_fds=(policy_r, *join_fds),
                 start_new_session=True,
+                preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
                 env=_LAUNCHER_ENV,
             )
             _live_launchers.add(proc.pid)
@@ -810,6 +841,7 @@ def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None
             stderr=subprocess.PIPE,
             pass_fds=join_fds,
             start_new_session=True,
+            preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
             env=_LAUNCHER_ENV,
         )
         _live_launchers.add(launcher.pid)
@@ -1283,6 +1315,7 @@ class JailSession:
                     stderr=subprocess.PIPE,
                     pass_fds=(interrupt_r, *join_fds),
                     start_new_session=True,
+                    preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
                     env=_LAUNCHER_ENV,
                 )
                 _live_launchers.add(proc.pid)
