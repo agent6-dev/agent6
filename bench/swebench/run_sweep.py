@@ -70,6 +70,7 @@ def run_one(
     prompt_file: Path | None = None,
     container_script: Path = IN_CONTAINER,
     extra_mounts: tuple[str, ...] = (),
+    prune_images: bool = False,
 ) -> dict:
     iid = inst["instance_id"]
     pred_path = out_dir / "preds" / f"{model_label(model)}__{iid}.json"
@@ -187,6 +188,13 @@ def run_one(
         ),
         encoding="utf-8",
     )
+    # Synchronous prune: drop THIS instance's ~3G image now that its pred is
+    # written, bounding the working set to ~conc images. A background poller
+    # races concurrent pulls and loses (a full mount kills in-flight runs);
+    # pruning inline cannot. Off by default (--prune-images) so an A/B that
+    # re-scores from cache keeps them.
+    if prune_images:
+        _docker("rmi", "-f", image, capture_output=True)
     return {
         "instance_id": iid,
         "model": model,
@@ -207,6 +215,14 @@ def main() -> int:
     ap.add_argument("--models", required=True, help="comma-separated OpenRouter model slugs")
     ap.add_argument("--n", type=int, default=0, help="first N sample instances (0 = all)")
     ap.add_argument("--conc", type=int, default=2)
+    ap.add_argument(
+        "--prune-images",
+        action="store_true",
+        help="drop each instance's ~3G image right after its pred is written, "
+        "bounding the working set to ~conc images (a full /mnt/bench kills "
+        "in-flight runs; a background poller cannot keep pace). Re-pulls on "
+        "resume, so leave off for an A/B that re-scores from cache.",
+    )
     ap.add_argument(
         "--max-usd", type=float, default=1.0, help="per-instance USD cap (SWE-agent uses $1)"
     )
@@ -275,6 +291,7 @@ def main() -> int:
                 prompt_file=args.prompt_file,
                 container_script=args.container_script,
                 extra_mounts=tuple(args.extra_mount),
+                prune_images=args.prune_images,
             ): (inst["instance_id"], m)
             for inst, m in jobs
         }
