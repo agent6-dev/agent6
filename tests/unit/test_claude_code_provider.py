@@ -242,6 +242,18 @@ def test_handshake_answers_mcp_initialize_first_and_advertises_tools_verbatim(
     provider.close()
 
 
+def test_malformed_inline_frame_is_reported_instead_of_stranding_the_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
+    binary, cap = _install(tmp_path, {"malformed_initialize": True})
+
+    with pytest.raises(ProviderError, match="invalid stream-json message"):
+        _provider(binary).call(system="s", messages=USER0, tools=TOOLS)
+
+    assert not _alive(_spawns(cap)[0]["pid"])
+
+
 def test_account_email_is_scrubbed_and_never_recorded(tmp_path: Path) -> None:
     email = "leak@example.test"
     binary, _ = _install(
@@ -427,6 +439,30 @@ def test_non_continuation_restarts_with_the_rendered_history(tmp_path: Path) -> 
     provider.close()
 
 
+def test_changed_tool_definition_restarts_the_session(tmp_path: Path) -> None:
+    binary, cap = _install(tmp_path, {"turns": [[_round(text="first")], [_round(text="second")]]})
+    provider = _provider(binary)
+    first = provider.call(system="s", messages=USER0, tools=TOOLS)
+    changed_tools = [
+        ToolDefinition(
+            name="read_file",
+            description="Read one UTF-8 file.",
+            input_schema=TOOLS[0].input_schema,
+        ),
+        TOOLS[1],
+    ]
+    history = [
+        *USER0,
+        {"role": "assistant", "content": first.raw["content"]},
+        {"role": "user", "content": [{"type": "text", "text": "continue"}]},
+    ]
+
+    provider.call(system="s", messages=history, tools=changed_tools)
+
+    assert len(_spawns(cap)) == 2
+    provider.close()
+
+
 def test_live_context_past_the_window_reserve_restarts(tmp_path: Path) -> None:
     binary, cap = _install(
         tmp_path,
@@ -493,6 +529,28 @@ def test_budget_sums_rounds_and_fails_closed_without_a_reading_or_usage(tmp_path
     assert refused.budget is not None and refused.budget.snapshot().output_total == 5
 
 
+def test_message_start_input_usage_is_combined_with_message_delta_output_usage(
+    tmp_path: Path,
+) -> None:
+    """Anthropic streams input usage at message_start and output usage at message_delta."""
+    binary, _ = _install(
+        tmp_path,
+        {
+            "split_usage": True,
+            "turns": [[_round(text="x", usage=_usage(1200, 40, read=300, create=20))]],
+        },
+    )
+
+    resp = _provider(binary).call(system="s", messages=USER0, tools=None)
+
+    assert (
+        resp.input_tokens,
+        resp.output_tokens,
+        resp.cache_read_tokens,
+        resp.cache_creation_tokens,
+    ) == (1200, 40, 300, 20)
+
+
 def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(tmp_path: Path) -> None:
     binary, cap = _install(tmp_path, {"hang_s": 30, "turns": [[_round(text="x")]]})
     provider = _provider(binary)
@@ -520,6 +578,19 @@ def test_idle_child_is_killed_after_the_stream_timeout(
         provider.call(system="s", messages=USER0, tools=TOOLS)
     assert not exc.value.fatal
     assert not _alive(_spawns(cap)[0]["pid"])
+
+
+def test_stream_ping_does_not_mask_an_idle_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
+    binary, _ = _install(
+        tmp_path,
+        {"hang_s": 0.8, "ping_while_hanging": True, "turns": [[_round(text="late")]]},
+    )
+
+    with pytest.raises(ProviderError, match="produced no output"):
+        _provider(binary).call(system="s", messages=USER0, tools=TOOLS)
 
 
 def test_failures_map_to_provider_errors(tmp_path: Path) -> None:
@@ -636,6 +707,19 @@ def test_transcript_round_is_anthropic_shaped(tmp_path: Path) -> None:
     assert payload["response"]["body"]["role"] == "assistant"
     turns = fold_conversation([payload])
     assert any("hello" in getattr(t, "text", "") for t in turns)
+
+
+def test_transcript_failure_reaps_the_completed_child(tmp_path: Path) -> None:
+    binary, cap = _install(tmp_path, {"turns": [[_round(text="hello")]]})
+    sink = MagicMock()
+    sink.record.side_effect = OSError("disk full")
+
+    with pytest.raises(OSError, match="disk full"):
+        _provider(binary, transcript_sink=sink).call(system="s", messages=USER0, tools=None)
+
+    spawn = _spawns(cap)[0]
+    assert not _alive(spawn["pid"])
+    assert not Path(spawn["cwd"]).exists()
 
 
 def test_login_status_reads_logged_in_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -976,6 +1060,17 @@ def test_streamed_deltas_never_carry_the_account_email(tmp_path: Path) -> None:
     assert "".join(text) == resp.text == "Hi <operator-email>, done"
     assert "".join(thinking) == "user is <operator-email>!"
     assert all(email not in piece for piece in text + thinking)
+
+
+def test_streaming_callback_exception_does_not_break_the_round(tmp_path: Path) -> None:
+    binary, _ = _install(tmp_path, {"turns": [[_round(text="done")]]})
+
+    def boom(_piece: str) -> None:
+        raise RuntimeError("renderer exploded")
+
+    resp = _provider(binary).call(system="s", messages=USER0, tools=None, text_delta_callback=boom)
+
+    assert resp.text == "done"
 
 
 def test_result_and_stderr_error_text_is_scrubbed(tmp_path: Path) -> None:

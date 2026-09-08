@@ -13,6 +13,7 @@ Scenario keys (all optional):
 - `auth`: `{"loggedIn": bool, "rc": int}` for `auth status --json`; the body
   also carries an email and org, as the real one does.
 - `account_email`: what the initialize response's account block carries.
+- `malformed_initialize`: send a non-object initialize response.
 - `init`: `{"model", "apiKeySource", "tools" (null = the advertised set),
   "version"}` for the `system/init` line.
 - `rate_limit`: `{"five_hour", "seven_day", "status", "overageStatus",
@@ -32,6 +33,7 @@ Scenario keys (all optional):
 - `can_use_tool`: ask `can_use_tool` before every `tools/call`.
 - `ping`: send an MCP `ping` request after `tools/list`.
 - `hang_s`: sleep this long before each round's `message_start`.
+- `ping_while_hanging`: emit stream `ping` events during that sleep.
 - `die_in_round`: exit 3 with `die_message` (default `boom`) on stderr after
   that round's `message_start` (rounds count across turns).
 - `synthetic_error`: `{"text"}`: the signed-out shape, a synthetic
@@ -155,6 +157,9 @@ class _Fake:
             }
         )
         self.wait_response(rid)
+        if self.scenario.get("malformed_initialize"):
+            _emit({"type": "control_response", "response": "bad"})
+            return
         _emit(
             {
                 "type": "control_response",
@@ -279,7 +284,12 @@ class _Fake:
         """Stream one API round; return the tool calls it left pending."""
         self.round_no += 1
         hang = float(self.scenario.get("hang_s", 0))
-        if hang:
+        if hang and self.scenario.get("ping_while_hanging"):
+            deadline = time.monotonic() + hang
+            while time.monotonic() < deadline:
+                self.stream({"type": "ping"})
+                time.sleep(0.05)
+        elif hang:
             time.sleep(hang)
         rl = self.scenario.get("rate_limit", {})
         if rl.get("when") == "before_round":
@@ -402,7 +412,11 @@ class _Fake:
             {
                 "type": "message_delta",
                 "delta": {"stop_reason": stop_reason, "stop_sequence": None},
-                "usage": usage,
+                "usage": (
+                    {"output_tokens": usage.get("output_tokens", 0)}
+                    if self.scenario.get("split_usage")
+                    else usage
+                ),
             }
         )
         self.stream({"type": "message_stop"})

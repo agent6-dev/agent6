@@ -202,10 +202,6 @@ class _Session:
     def __post_init__(self) -> None:
         self.reap = weakref.finalize(self, _reap, self.proc, self.private_dir)
 
-    @property
-    def tool_names(self) -> tuple[str, ...]:
-        return tuple(td.name for td in self.tools)
-
 
 @dataclass(frozen=True, slots=True)
 class _Tail:
@@ -342,6 +338,17 @@ def _read_stdout(s: _Session) -> None:
         except ProviderError as exc:
             s.lines.put({"type": "_agent6_error", "text": str(exc)})
             break
+        except Exception as exc:
+            # Deliberately broad: this is the reader thread's boundary, and a
+            # frame of any unexpected shape must reach the round as an error
+            # rather than end the thread with the round waiting on it.
+            s.lines.put(
+                {
+                    "type": "_agent6_error",
+                    "text": f"claude wrote an invalid stream-json message: {exc}",
+                }
+            )
+            break
         if not consumed:
             s.lines.put(msg)
     stream.close()
@@ -457,11 +464,11 @@ class ClaudeCodeProvider:
                 s = self._spawn(system, [], messages, watch)
             s.consumed = history_skeleton(messages)
             resp = self._read_round(s, watch, text_delta_callback, thinking_delta_callback)
+            self._record_transcript(s, system, messages, resp)
         except BaseException:
             if s is not None:
                 self._close(s)  # an exceptional exit leaves no half-consumed process behind
             raise
-        self._record_transcript(s, system, messages, resp)
         if not tool_list:
             s.reap()
         return resp
@@ -493,7 +500,7 @@ class ClaudeCodeProvider:
             and s.proc.poll() is None
             and not s.restart_next
             and s.system == system
-            and s.tool_names == tuple(td.name for td in tools)
+            and s.tools == tools
         ):
             tail = _continuation(s, messages)
             if tail is not None:
@@ -733,6 +740,14 @@ class ClaudeCodeProvider:
                 raise ProviderError(f"claude exited {rc}: {tail}")
             if line.get("type") == "_agent6_error":
                 raise ProviderError(str(line.get("text")))
+            event = line.get("event")
+            if (
+                line.get("type") == "stream_event"
+                and isinstance(event, Mapping)
+                and event.get("type") == "ping"
+            ):
+                watch.tick()
+                continue
             watch.mark()
             return line
 
@@ -783,7 +798,9 @@ class ClaudeCodeProvider:
     ) -> None:
         kind = event.get("type")
         if kind == "message_start":
-            r.message_id = str((event.get("message") or {}).get("id", ""))
+            message = event.get("message") or {}
+            r.message_id = str(message.get("id", ""))
+            r.usage.update(message.get("usage") or {})
             watch.limit = STREAM_IDLE_TIMEOUT_S
         elif kind == "content_block_start":
             thinking = (event.get("content_block") or {}).get("type") == "thinking"
@@ -799,7 +816,7 @@ class ClaudeCodeProvider:
                 self._emit_delta(s, r, str(delta.get("thinking", "")), thinking_cb)
         elif kind == "message_delta":
             r.stop_reason = str((event.get("delta") or {}).get("stop_reason") or "")
-            r.usage = dict(event.get("usage") or {})
+            r.usage.update(event.get("usage") or {})
         elif kind == "message_stop":
             r.ended = True
 
@@ -824,7 +841,8 @@ class ClaudeCodeProvider:
         if keep:
             out = out[:-keep]
         if out:
-            cb(out)
+            with contextlib.suppress(Exception):
+                cb(out)
 
     def _finish_round(self, s: _Session, r: _Round) -> ProviderResponse:
         input_tokens = _int(r.usage.get("input_tokens"))
