@@ -7564,6 +7564,26 @@ def test_a_steer_answering_a_prose_question_records_after_the_nudge(tmp_path: Pa
     assert question in decisions_path(tmp_path / "state").read_text(encoding="utf-8")
 
 
+def test_a_steer_answering_an_optioned_question_records_the_question(tmp_path: Path) -> None:
+    """Options after a prose question do not become the recorded question."""
+    from agent6.memory import decisions_path
+    from agent6.workflows._nudges import QUESTION_NUDGE
+
+    question = "Which merge strategy should remain the default?"
+    wf = _ruling_wf(tmp_path)
+    conversation = Conversation()
+    conversation.notice("TASK: do the thing")
+    conversation.assistant([{"type": "text", "text": f"{question}\n1. merge\n2. squash"}])
+    conversation.notice(QUESTION_NUDGE)
+    state = LoopState(original_task="t", tool_calls=0)
+
+    wf._maybe_handle_steer(conversation, 4, state)  # pyright: ignore[reportPrivateUsage]
+
+    text = decisions_path(tmp_path / "state").read_text(encoding="utf-8")
+    assert f"Q: {question}\n  A: keep squash\n" in text
+    assert "Q: 2. squash" not in text
+
+
 @pytest.mark.parametrize(
     ("label", "standing", "created_by"),
     [("standing run", True, "steering"), ("patience finish", False, "planner")],

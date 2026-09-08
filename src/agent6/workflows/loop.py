@@ -189,6 +189,7 @@ from agent6.workflows._nudges import (
     VERIFY_SETTLED_STOP_AFTER,
     VERIFY_UNADOPTED_NOTICE,
     WENT_QUIET_NUDGE,
+    ending_question,
     ends_with_question,
     is_test_path,
     reasoning_starved_nudge,
@@ -4622,8 +4623,8 @@ class Workflow:
         self._log(f"  injecting steering instruction ({len(steer_text)} chars)")
         self._emit("loop.steer.injected", chars=len(steer_text), text=steer_text)
         asked = _last_assistant_prose(conversation)
-        if ends_with_question(asked):
-            self._record_decision(state, asked.strip().splitlines()[-1], steer_text)
+        if question := ending_question(asked):
+            self._record_decision(state, question, steer_text)
         conversation.notice(
             "OPERATOR STEERING (mid-run instruction; "
             "incorporate this into your next step):\n"

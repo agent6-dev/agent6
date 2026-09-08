@@ -319,21 +319,26 @@ def _asks(line: str) -> bool:
     return _ASKS.search(line) is not None
 
 
-def ends_with_question(text: str) -> bool:
-    """The model's prose ends by asking the operator something: the last
-    non-empty line asks (a trailing "(y/n)" or markdown decoration does not
-    hide the '?'), or the lines after the asking line are all options
-    ("1. yes / 2. no"). Feeds the question nudge and the steer-answer
-    recorder, so a miss here is an operator ruling never recorded."""
+def ending_question(text: str) -> str:
+    """The question at the end of the model's prose, or ``""``.
+
+    Option lines may follow the question; return the asking line rather than
+    the final option so a later steer is recorded against the right ruling.
+    """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if not lines:
-        return False
+        return ""
     if _asks(lines[-1]):
-        return True
+        return lines[-1]
     for back in range(2, min(6, len(lines) + 1)):
-        if _asks(lines[-back]):
-            return all(_OPTION_LINE.match(after) for after in lines[-back + 1 :])
-    return False
+        if _asks(lines[-back]) and all(_OPTION_LINE.match(after) for after in lines[-back + 1 :]):
+            return lines[-back]
+    return ""
+
+
+def ends_with_question(text: str) -> bool:
+    """Whether the model's prose ends with a question and optional choices."""
+    return bool(ending_question(text))
 
 
 def standing_fruitless_nudge(reason: str, task_id: str, title: str, streak: int) -> str:
