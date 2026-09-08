@@ -121,8 +121,8 @@ DAG_RULES_OPTIONAL = """<dag-rules>
 add_task / update_task / list_tasks keep a persistent task breakdown.
 depends_on orders subtasks; a task surfaces once its dependencies are
 settled (passed, skipped or obsolete). Statuses: in_progress is the
-current focus, passed records a finish
-the verify confirmed, or one you checked yourself when the run has no gate.
+current focus, passed records a finish the verify confirmed, or one you
+checked yourself when the run has no gate.
 </dag-rules>"""
 
 DAG_RULES_DECOMPOSE = """<decompose-first>
