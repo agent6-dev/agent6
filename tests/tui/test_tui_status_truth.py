@@ -790,9 +790,39 @@ def test_dashboard_header_says_where_the_changes_are(
     tip = subprocess.run(
         [*git, "rev-parse", "agent6/branched"], check=True, capture_output=True, text=True
     ).stdout.strip()
-    manifest["merged"] = {"into": "main", "sha": tip, "tip": tip}
-    (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    assert "branch: agent6/branched (merged into main)" in asyncio.run(header())  # a reopen
+
+    async def held_header() -> tuple[str, str, str]:
+        """The stamp lands while the finished screen is held: the header
+        re-reads it without a reopen (the line was cached for the leg). A
+        resume in place then commits past the stamp: the merge no longer
+        holds, and the header follows."""
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            before = str(app._dash.query_one("#top", Static).render())
+            manifest["merged"] = {"into": "main", "sha": tip, "tip": tip}
+            (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            app._dash._branch_recheck_at = 0.0  # pyright: ignore[reportPrivateUsage]
+            app._dash.render_heartbeat()
+            await pilot.pause()
+            after = str(app._dash.query_one("#top", Static).render())
+            with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"type": "loop.resume.start", "iteration": 2}) + "\n")
+            subprocess.run([*git, "checkout", "-q", "agent6/branched"], check=True)
+            subprocess.run(
+                [*git, "commit", "-q", "--allow-empty", "-m", "past the stamp"], check=True, env=env
+            )
+            subprocess.run([*git, "checkout", "-q", "main"], check=True)
+            await _wait_for(pilot, lambda: not app.state.finished, "the resume to fold")
+            app._dash.render_heartbeat()
+            await pilot.pause()
+            return before, after, str(app._dash.query_one("#top", Static).render())
+
+    before, after, resumed = asyncio.run(held_header())
+    assert "branch: agent6/branched → merges into main" in before
+    assert "branch: agent6/branched (merged into main)" in after
+    assert "branch: agent6/branched → merges into main" in resumed
+    assert "branch: agent6/branched → merges into main" in asyncio.run(header())  # a reopen agrees
 
 
 def test_dashboard_header_says_what_the_run_serves(tmp_path: Path) -> None:

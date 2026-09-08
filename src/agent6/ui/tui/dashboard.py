@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import subprocess
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
@@ -274,7 +275,9 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         self._nav_steps = -1  # how many steps the selector lists
         self._step_state: tuple[str, SessionState] | None = None  # the fold as of _step_sel
         self._compare_line: str | None = None  # cached fan-out compare header (terminal state)
-        self._branch_line: str | None = None  # cached branch header (fixed for the leg)
+        self._branch_line: str | None = None  # cached branch header
+        self._branch_finished = False  # the run state the cached line was read under
+        self._branch_recheck_at = 0.0  # a finished run re-reads every few seconds
         self._lineage_line: str | None = None  # cached fork lineage (never changes)
 
     def _compare_top(self) -> str:
@@ -303,14 +306,23 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         """Where the run's work lives, for the header: the run branch and the
         base a merge lands on, or the branch merged (the web header's line and
         `sessions show`'s `changes:`). Read from the manifest once it names a
-        branch and cached: the merge stamp lands after the run ends, once this
-        screen has stopped repainting (a reopen re-reads)."""
-        if self._branch_line is not None:
+        branch and cached while the run lives; a finished run re-reads it every
+        few seconds, since the auto-merge lands after session.end while a held
+        screen keeps repainting, and a resume in place (finished again False)
+        drops the cache, since a leg committing past the stamp unmakes the
+        merge."""
+        finished = self._tui.state.finished
+        if finished != self._branch_finished:
+            self._branch_finished = finished
+            self._branch_line = None
+        now = time.monotonic()
+        if self._branch_line is not None and (not finished or now < self._branch_recheck_at):
             return self._branch_line
         line = manifest_branches(self._tui.session_dir, repo=Path.cwd()).get("branch_line", "")
         if not line:
             return ""  # no manifest yet (a launching run); don't cache
         self._branch_line = f"\nbranch: {line}"
+        self._branch_recheck_at = now + 5.0
         return self._branch_line
 
     @staticmethod
