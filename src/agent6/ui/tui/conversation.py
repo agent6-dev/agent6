@@ -405,8 +405,11 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             # dashboard's fold un-finishes on ResumeStart; this screen must
             # agree, or its composer mislabels the live leg "resume" and a
             # submit spawns a second resume that dies on the run lock while
-            # the toast claims success).
+            # the toast claims success). An unanswered approval belongs to the
+            # leg that ended; the new leg re-asks it if needed.
             self._live = True
+            self._approval = None
+            self._approval_done = None
         elif etype == "session.end":
             self._live = False
         if etype == "approval.prompt":
@@ -445,6 +448,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             if open_ones:
                 ap = open_ones[-1]  # the newest: a resumed leg reuses prompt ids
                 return ap.id, ap.prompt, ap.standing
+        if self._approval is not None and self._taken(self._approval[0]):
+            # Answered from this screen; a reload replays the prompt before the
+            # worker journals the answer, and must not reopen the row.
+            return None
         return self._approval
 
     def _taken(self, aid: str) -> bool:

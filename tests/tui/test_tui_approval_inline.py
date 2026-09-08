@@ -113,6 +113,54 @@ def test_a_typed_message_never_answers_the_approval(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_a_resumed_leg_drops_the_previous_legs_approval(tmp_path: Path) -> None:
+    """A leg boundary must withdraw an unanswered approval from the dead leg."""
+    run = tmp_path / "live-run-HHHHHH"
+    _live_run(run)
+
+    async def scenario() -> None:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            prompt: dict[str, object] = {
+                "type": "approval.prompt",
+                "id": "ap1",
+                "prompt": "Allow run_command: ls",
+            }
+            _append(run, prompt)
+            app._handle_event(prompt)  # pyright: ignore[reportPrivateUsage]
+            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            assert app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            boundary: dict[str, object] = {"type": "loop.resume.start", "iteration": 2}
+            _append(run, boundary)
+            app._handle_event(boundary)  # pyright: ignore[reportPrivateUsage]
+            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+
+    asyncio.run(scenario())
+
+
+def test_an_answered_approval_stays_closed_on_reload(tmp_path: Path) -> None:
+    """Reload before the worker journals its answer must not reopen the row."""
+    run = tmp_path / "live-run-GGGGGG"
+    _live_run(run)
+
+    async def scenario() -> None:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_approval(app, pilot, run)
+            await pilot.press("a")
+            await pilot.pause()
+            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            app._conv.action_reload()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+
+    asyncio.run(scenario())
+
+
 def test_a_click_on_a_row_label_answers(tmp_path: Path) -> None:
     run = tmp_path / "live-run-DDDDDD"
     _live_run(run)
