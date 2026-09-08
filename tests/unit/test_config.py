@@ -919,6 +919,23 @@ def test_extra_paths_never_target_the_private_dirs(
     assert load_config(_write(tmp_path, body)).sandbox.extra_read_paths
 
 
+def test_a_symlink_to_a_private_dir_is_refused_like_the_dir_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A grant naming a SYMLINK whose target is an agent6-private dir is
+    refused the same as one naming the dir directly: the mount follows the
+    link, so a literal-path check that never resolves it lets the grant
+    through (`jail_home_refusal` resolves for the same reason)."""
+    cfg_home = tmp_path / "home" / ".config" / "agent6"
+    cfg_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home.parent))
+    link = tmp_path / "link-to-private"
+    link.symlink_to(cfg_home)
+    body = f'[sandbox]\nextra_read_paths = ["{link}"]\n'
+    with pytest.raises(ConfigError, match="agent6-private"):
+        load_config(_write(tmp_path, body))
+
+
 def test_hide_paths_validate_like_the_other_path_lists(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="absolute"):
         load_config(_write(tmp_path, '[sandbox]\nhide_paths = ["relative/x"]\n'))

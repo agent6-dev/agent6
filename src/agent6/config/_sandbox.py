@@ -275,8 +275,13 @@ class SandboxConfig(BaseModel):
         # legitimate case. A grant containing one (e.g. $HOME) is allowed on
         # strict, where the private dirs are masked out of it.
         for p in (*self.extra_read_paths, *self.extra_write_paths):
+            # Resolved on both sides: a symlink named here would still mount
+            # its target (the launcher binds what it points at), so a literal
+            # comparison would let one dodge the refusal (`jail_home_refusal`
+            # resolves for the same reason).
+            resolved = Path(p).resolve()
             for d in private_dirs():
-                if Path(p).is_relative_to(d):
+                if resolved.is_relative_to(d.resolve()):
                     raise ValueError(
                         f"sandbox extra path {p!r} is inside the agent6-private dir"
                         f" {str(d)!r} (secrets/state); it never enters the jail."
@@ -358,8 +363,11 @@ class MCPSandbox(BaseModel):
                             " directory agent6 happened to start in."
                         )
             for raw in (*self.read_paths, *self.write_paths):
+                # Resolved on both sides, like the sandbox's own extra paths:
+                # a symlink named here still mounts its target.
+                resolved = Path(raw).expanduser().resolve()
                 for private in private_dirs():
-                    if Path(raw).expanduser().is_relative_to(private):
+                    if resolved.is_relative_to(private.resolve()):
                         raise ValueError(
                             f"sandbox path {raw!r} is inside the agent6-private dir"
                             f" {str(private)!r} (secrets/state); it never enters a"
