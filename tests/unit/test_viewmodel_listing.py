@@ -23,7 +23,7 @@ from agent6.viewmodel import (
     summarize_session_dir,
     task_snippet,
 )
-from agent6.viewmodel.format import format_branch, format_compare, format_lineage
+from agent6.viewmodel.format import format_branch, format_compare, format_lineage, status_level
 from agent6.viewmodel.listing import finished_needs_new_work
 
 
@@ -1219,3 +1219,9 @@ def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
     assert lanes[1]["coordinator"] == "fan" and lanes[1]["lanes"] == []
     assert lanes[0]["lanes"][0]["session_id"] == "fan-l1-p1-l1"
     assert fan["lane"] is None and fan["coordinator"] == ""
+
+
+def test_a_never_started_run_reads_at_the_parked_level() -> None:
+    """A `fork --no-run` dir waits for a resume as a parked submission does;
+    its word rendered plain, fading into the listing while "parked" warned."""
+    assert status_level("created") == status_level("parked") == "warn"

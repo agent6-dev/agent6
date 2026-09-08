@@ -229,6 +229,7 @@ STATUS_LEVEL: dict[str, StatusLevel] = {
     "running": "active",
     "waiting": "warn",  # blocked on the operator (approval / question)
     "parked": "warn",  # needs a resume to start
+    "created": "warn",  # never started (`fork --no-run`): a resume starts it
     "stopped": "warn",  # the operator's own act, not a failure
     "stale": "error",  # a lost worker: a crash is not neutral
     "failed": "error",
