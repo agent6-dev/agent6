@@ -27,6 +27,7 @@ from agent6.graph.models import TaskNode
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.ui.cli.parallel import lane_runtime
+from agent6.viewmodel.transcript import fold_transcript
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask
 
@@ -669,7 +670,15 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
     assert _git(repo, "show", "refs/agent6/coord:wip.txt") == "uncommitted work"
     chain_log = _git(repo, "log", "--oneline", "refs/agent6/coord")
     assert "checkpoint before /parallel dispatch" in chain_log
-    assert events.of("loop.auto_commit")  # a checkpoint commit was emitted
+    commits = events.of("loop.auto_commit")
+    diffs = events.of("diff.updated")
+    assert commits  # the state fold sees the checkpoint step
+    assert diffs and diffs[-1]["sha"] == commits[-1]["sha"]
+    transcript = fold_transcript(
+        [{"type": event_type, **fields} for event_type, fields in events.emitted]
+    )
+    shown = [item for item in transcript if item.kind == "commit"]
+    assert shown and shown[-1].detail.startswith(commits[-1]["sha"][:12])
 
 
 def test_dirty_tree_that_cannot_be_cleaned_refuses(

@@ -321,6 +321,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 started=True,
                 finished=False,
                 end_reason="",
+                last_verify=None,
                 pending_approvals=_answered_only(state.pending_approvals),
                 pending_questions=_answered_only(state.pending_questions),
             )
@@ -342,6 +343,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 started=True,
                 finished=False,
                 end_reason="",
+                last_verify=None,
                 pending_approvals=_answered_only(state.pending_approvals),
                 pending_questions=_answered_only(state.pending_questions),
                 budget=replace(

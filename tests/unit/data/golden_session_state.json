@@ -59,17 +59,7 @@
       "call_id": null
     }
   ],
-  "last_verify": {
-    "cmd": [
-      "pytest",
-      "-x",
-      "-q"
-    ],
-    "exit_code": 1,
-    "duration_s": 1.714,
-    "stdout_tail": "1 failed",
-    "stderr_tail": ""
-  },
+  "last_verify": null,
   "budget": {
     "input_total": 0,
     "output_total": 0,

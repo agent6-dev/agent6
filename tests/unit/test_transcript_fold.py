@@ -619,6 +619,31 @@ def test_a_resumed_legs_receipt_is_its_own() -> None:
     assert dones[-1].detail == "$0.0020 · 3s · 0 tools · 0 commits"
 
 
+def test_a_resumed_leg_that_stops_before_spending_has_no_stale_cost() -> None:
+    """A resumed leg can honor a queued stop before its first provider call,
+    so no budget.update resets the leg's receipt; its prior leg's cost must not
+    be presented as spend by the zero-call resumed leg."""
+    events = [
+        {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "mode": "run"},
+        {"type": "budget.update", "usd_total": 0.01},
+        {
+            "type": "session.end",
+            "ts": "2026-08-09T20:00:45+00:00",
+            "reason": "steer_abort",
+            "all_passed": False,
+        },
+        {"type": "loop.resume.start", "ts": "2026-08-09T20:10:00+00:00", "mode": "run"},
+        {
+            "type": "session.end",
+            "ts": "2026-08-09T20:10:01+00:00",
+            "reason": "steer_abort",
+            "all_passed": False,
+        },
+    ]
+    dones = [it for it in fold_transcript(events) if it.kind == "done"]
+    assert dones[-1].detail == "1s · 0 tools · 0 commits"
+
+
 def test_a_tool_call_is_in_flight_until_its_result_settles_it() -> None:
     """The fold yields a call as soon as it is seen (`ok=None`: "running" on
     every surface), then its settled twin under the same call_id, which

@@ -4869,10 +4869,16 @@ class Workflow:
         if not self.commit_per_step:
             return False
         try:
-            sha = self._chain_commit(f"checkpoint before /parallel dispatch (iter {iteration})")
+            subject = f"checkpoint before /parallel dispatch (iter {iteration})"
+            sha = self._chain_commit(subject)
             if sha:
                 self._log(f"  pre-dispatch checkpoint: {sha[:12]}")
-                self._emit("loop.auto_commit", iteration=iteration, sha=sha)
+                self._emit("loop.auto_commit", iteration=iteration, sha=sha, subject=subject)
+                self._emit(
+                    "diff.updated",
+                    sha=sha,
+                    patch=commit_diff(self.root, sha, max_bytes=8000),
+                )
         except (GitError, OSError) as exc:
             self._log(f"PARALLEL: pre-dispatch checkpoint failed: {exc}")
         return not self._worktree_dirty()

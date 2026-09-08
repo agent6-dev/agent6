@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from agent6.viewmodel.listing import scan_session_log
-from agent6.viewmodel.state import fold_session
+from agent6.viewmodel.state import fold_session, status_facts
 
 _GOLDEN = Path(__file__).parent / "data" / "golden_session_logs.jsonl"
 
@@ -61,6 +61,18 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
         },
         {**_END_PASSED, "ts": "2026-07-14T10:03:00+00:00", "reason": "steer_abort"},
     ],
+    "resumed_after_red": [
+        _START,
+        {
+            "ts": "2026-07-14T10:00:30+00:00",
+            "type": "verify.end",
+            "cmd": ["pytest"],
+            "exit_code": 1,
+        },
+        {**_END_PASSED, "all_passed": False},
+        {"ts": "2026-07-14T10:02:00+00:00", "type": "loop.resume.start", "iteration": 3},
+        {**_END_PASSED, "ts": "2026-07-14T10:03:00+00:00", "all_passed": False},
+    ],
     "blocked": [
         _START,
         {"ts": "2026-07-14T10:00:30+00:00", "type": "question.prompt", "id": "question-1"},
@@ -90,6 +102,7 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
         "end_reason": scan.end_reason if scan.finished else "",
         "all_passed": scan.all_passed if scan.finished else None,
         "verify_scoped": scan.verify_scoped,
+        "gate_red": scan.status_facts().gate_red,
         "cost_usd": scan.cost_usd,
         "usd_partial": scan.usd_partial,
         "pins": scan.pins,
@@ -101,6 +114,7 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
         "end_reason": state.end_reason if state.finished else "",
         "all_passed": state.all_passed if state.finished else None,
         "verify_scoped": state.verify_scoped,
+        "gate_red": status_facts(state).gate_red,
         "cost_usd": state.budget.usd_total if scan.cost_usd is not None else None,
         "usd_partial": state.budget.usd_partial,
         "pins": state.pins,
