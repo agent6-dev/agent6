@@ -94,6 +94,78 @@ def test_agent6_connects_instead_of_spawning() -> None:
         httpd.shutdown()
 
 
+def test_a_failed_initialized_notification_fails_the_handshake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An HTTP error is not a successful notification: ignoring it registered
+    tools from a server that rejected the required initialized notification."""
+    from agent6.tools.mcp_client import (
+        MCPError,
+        _MCPServer,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    transport = HttpTransport(name="s", url="https://example.invalid/mcp")
+
+    def send(
+        _transport: HttpTransport, payload: dict[str, Any], *, timeout_s: float
+    ) -> dict[str, Any] | None:
+        del timeout_s
+        method = payload["method"]
+        if method == "initialize":
+            return {"jsonrpc": "2.0", "id": payload["id"], "result": {}}
+        if method == "notifications/initialized":
+            raise MCPHttpError("notification refused")
+        if method == "tools/list":
+            return {"jsonrpc": "2.0", "id": payload["id"], "result": {"tools": []}}
+        pytest.fail(f"unexpected request: {payload}")
+
+    monkeypatch.setattr(HttpTransport, "send", send)
+    srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+        name="s",
+        command=(),
+        startup_timeout_s=5.0,
+        call_timeout_s=5.0,
+        http=transport,
+    )
+
+    with pytest.raises(MCPError, match="notification refused"):
+        srv.start()
+
+
+def test_a_transport_error_is_redacted_of_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A proxy or server can echo the bearer token in its error; the MCPError
+    every caller journals must not carry it."""
+    from agent6.tools.mcp_client import (
+        MCPError,
+        _MCPServer,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    monkeypatch.setenv("MCP_TEST_TOKEN", "secret-token-value")
+    transport = HttpTransport(
+        name="s", url="https://example.invalid/mcp", token_env="MCP_TEST_TOKEN"
+    )
+
+    def send(
+        _transport: HttpTransport, payload: dict[str, Any], *, timeout_s: float
+    ) -> dict[str, Any] | None:
+        del payload, timeout_s
+        raise MCPHttpError("proxy rejected bearer secret-token-value")
+
+    monkeypatch.setattr(HttpTransport, "send", send)
+    srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+        name="s",
+        command=(),
+        startup_timeout_s=5.0,
+        call_timeout_s=5.0,
+        http=transport,
+    )
+
+    with pytest.raises(MCPError) as caught:
+        srv.start()
+    assert "secret-token-value" not in str(caught.value)
+    assert "<REDACTED>" in str(caught.value)
+
+
 def test_a_streamed_answer_is_read_like_any_other() -> None:
     """Streamable HTTP lets a server answer one request with an SSE frame.
     Reading only a bare body made every such server look like it sent

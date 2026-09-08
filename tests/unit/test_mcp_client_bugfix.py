@@ -14,6 +14,7 @@ from __future__ import annotations
 import sys
 import textwrap
 import time
+from typing import Any
 
 import pytest
 
@@ -65,6 +66,90 @@ def _iserror_server_argv() -> tuple[str, ...]:
     return (sys.executable, "-c", script)
 
 
+def _echoed_secret_server_argv(*, tool_level: bool = False) -> tuple[str, ...]:
+    script = textwrap.dedent(
+        f"""
+        import json, os, sys
+        TOOL_LEVEL = {tool_level!r}
+        def send(obj):
+            sys.stdout.write(json.dumps(obj) + "\\n")
+            sys.stdout.flush()
+        for line in sys.stdin:
+            msg = json.loads(line)
+            if "id" not in msg:
+                continue
+            method = msg.get("method")
+            if method == "initialize":
+                result = {{}}
+            elif method == "tools/list":
+                result = {{"tools": [{{"name": "fail", "inputSchema": {{}}}}]}}
+            else:
+                if TOOL_LEVEL:
+                    result = {{"isError": True, "content": [
+                        {{"type": "text", "text": os.environ["MCP_TEST_SECRET"]}}]}}
+                else:
+                    send({{"jsonrpc": "2.0", "id": msg["id"], "error": {{
+                        "code": -1, "message": os.environ["MCP_TEST_SECRET"]}}}})
+                    continue
+            send({{"jsonrpc": "2.0", "id": msg["id"], "result": result}})
+        """
+    )
+    return (sys.executable, "-c", script)
+
+
+def test_a_passed_secret_echoed_in_a_protocol_error_is_redacted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A passed credential stays out of the transcript even when the server
+    copies it into a JSON-RPC error rather than stderr."""
+    secret = "secret-from-environment-" + "x" * 3000
+    monkeypatch.setenv("MCP_TEST_SECRET", secret)
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="leaky",
+                command=_echoed_secret_server_argv(),
+                startup_timeout_s=5.0,
+                call_timeout_s=5.0,
+                pass_env=("MCP_TEST_SECRET",),
+            )
+        ]
+    )
+    try:
+        with pytest.raises(MCPError) as caught:
+            mgr.call(f"{MCP_TOOL_PREFIX}leaky__fail", {})
+    finally:
+        mgr.close()
+
+    assert "secret-from-environment" not in str(caught.value)
+    assert "<REDACTED>" in str(caught.value)
+
+
+def test_a_passed_secret_echoed_in_a_tool_error_is_redacted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MCP_TEST_SECRET", "secret-from-environment")
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="leaky",
+                command=_echoed_secret_server_argv(tool_level=True),
+                startup_timeout_s=5.0,
+                call_timeout_s=5.0,
+                pass_env=("MCP_TEST_SECRET",),
+            )
+        ]
+    )
+    try:
+        with pytest.raises(MCPError) as caught:
+            mgr.call(f"{MCP_TOOL_PREFIX}leaky__fail", {})
+    finally:
+        mgr.close()
+
+    assert "secret-from-environment" not in str(caught.value)
+    assert "<REDACTED>" in str(caught.value)
+
+
 def _server_request_collision_argv() -> tuple[str, ...]:
     """A server that, when tools/call arrives, FIRST emits its own request
     (id=1, method='roots/list') — colliding with the client's first id — and
@@ -113,6 +198,26 @@ def _server_request_collision_argv() -> tuple[str, ...]:
     return (sys.executable, "-c", script)
 
 
+def test_a_json_rpc_error_cannot_flood_the_context() -> None:
+    """A server controls its JSON-RPC error message, which reaches the model's
+    context, so it gets the same inline bound as a tool-level error."""
+    from agent6.tools.mcp_client import (
+        _MAX_INLINE_TEXT_CHARS,  # pyright: ignore[reportPrivateUsage]
+        _result_of,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    with pytest.raises(MCPError) as caught:
+        _result_of(
+            {"error": {"message": "x" * (_MAX_INLINE_TEXT_CHARS * 4)}},
+            name="fake",
+            method="tools/call",
+        )
+
+    message = str(caught.value)
+    assert len(message) < _MAX_INLINE_TEXT_CHARS + 100
+    assert "[agent6: truncated]" in message
+
+
 def test_iserror_tool_result_surfaces_as_error() -> None:
     mgr = MCPManager.start(
         [
@@ -151,6 +256,81 @@ def test_server_initiated_request_not_treated_as_response() -> None:
         assert out["content"][0]["text"] == "ok"
     finally:
         mgr.close()
+
+
+def test_tools_list_follows_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every tools/list page is part of one listing; stopping at nextCursor
+    silently hid every tool after the server's first page."""
+    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
+    from agent6.tools.mcp_http import HttpTransport
+
+    def send(
+        _transport: HttpTransport, payload: dict[str, Any], *, timeout_s: float
+    ) -> dict[str, Any] | None:
+        del timeout_s
+        method = payload["method"]
+        if method == "notifications/initialized":
+            return None
+        if method == "initialize":
+            result: dict[str, Any] = {}
+        elif payload["params"].get("cursor") == "page-2":
+            result = {"tools": [{"name": "second", "description": "", "inputSchema": {}}]}
+        else:
+            result = {
+                "tools": [{"name": "first", "description": "", "inputSchema": {}}],
+                "nextCursor": "page-2",
+            }
+        return {"jsonrpc": "2.0", "id": payload["id"], "result": result}
+
+    monkeypatch.setattr(HttpTransport, "send", send)
+    srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+        name="pages",
+        command=(),
+        startup_timeout_s=5.0,
+        call_timeout_s=5.0,
+        http=HttpTransport(name="pages", url="https://example.invalid/mcp"),
+    )
+
+    srv.start()
+
+    assert [tool.tool_name for tool in srv.tools] == ["first", "second"]
+
+
+def test_tools_list_pagination_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A server minting a fresh nextCursor on every page would otherwise hold
+    the handshake forever and grow the roster without bound."""
+    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
+    from agent6.tools.mcp_http import HttpTransport
+
+    pages = 0
+
+    def send(
+        _transport: HttpTransport, payload: dict[str, Any], *, timeout_s: float
+    ) -> dict[str, Any] | None:
+        nonlocal pages
+        del timeout_s
+        method = payload["method"]
+        if method == "notifications/initialized":
+            return None
+        if method == "initialize":
+            result: dict[str, Any] = {}
+        else:
+            pages += 1
+            result = {"tools": [], "nextCursor": f"page-{pages}"}
+        return {"jsonrpc": "2.0", "id": payload["id"], "result": result}
+
+    monkeypatch.setattr(HttpTransport, "send", send)
+    srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+        name="endless",
+        command=(),
+        startup_timeout_s=5.0,
+        call_timeout_s=5.0,
+        http=HttpTransport(name="endless", url="https://example.invalid/mcp"),
+    )
+
+    with pytest.raises(MCPError, match="paged past"):
+        srv.start()
+    assert pages == 64
 
 
 def _poison_tools_server_argv() -> tuple[str, ...]:

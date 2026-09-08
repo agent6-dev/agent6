@@ -313,6 +313,30 @@ def test_a_timeout_carries_the_servers_own_words() -> None:
         mgr.close()
 
 
+def test_a_broken_stdin_carries_the_servers_own_words() -> None:
+    """A server can print its startup failure and close stdin before the first
+    request; reporting only Broken pipe hid the actionable failure."""
+    from agent6.sandbox.jail import JailedProcess
+    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
+
+    proc = subprocess.Popen(
+        ["/bin/sh", "-c", "exit 1"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    proc.wait(timeout=5)
+    srv = _MCPServer(name="dead", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0)
+    srv._proc = JailedProcess(proc)  # pyright: ignore[reportPrivateUsage]
+    srv._errors = [b"executable was not found\n"]  # pyright: ignore[reportPrivateUsage]
+    try:
+        with pytest.raises(MCPError, match="executable was not found"):
+            srv._write_line({"jsonrpc": "2.0"})  # pyright: ignore[reportPrivateUsage]
+    finally:
+        srv.close()
+
+
 def test_a_timed_out_call_restarts_the_server_before_the_next_call() -> None:
     """A stdio server still busy with the call it never answered is wedged
     for the next one, which then timed out too. agent6 owns the spawn: the

@@ -39,7 +39,6 @@ the dispatcher, which converts it to a `tool.result ok=false` event.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import re
@@ -152,6 +151,9 @@ _VALID_MCP_TOOL_NAME = re.compile(r"[A-Za-z0-9_-]+")
 # qualified name (prefix + operator server name + separators + tool name):
 # one over-limit entry would invalidate the entire tools array.
 _MAX_QUALIFIED_TOOL_NAME_LEN = 64
+# Pages a tools/list may span: a server minting fresh cursors forever would
+# otherwise hold the handshake and grow the roster without bound.
+_MAX_TOOL_PAGES = 64
 
 
 class MCPError(RuntimeError):
@@ -237,12 +239,22 @@ def _spawn_server(
     )
 
 
-def _result_of(response: dict[str, Any], *, name: str, method: str) -> Any:
+def _result_of(
+    response: dict[str, Any],
+    *,
+    name: str,
+    method: str,
+    redact: Callable[[str], str] | None = None,
+) -> Any:
     """The `result` of a JSON-RPC response, or raise its `error`."""
     if "error" in response:
         err = response["error"]
-        msg = err.get("message", "(no message)") if isinstance(err, dict) else str(err)
-        raise MCPError(f"server {name!r} {method} returned error: {msg}")
+        detail = err.get("message", "(no message)") if isinstance(err, dict) else err
+        text = str(detail)
+        if redact is not None:
+            text = redact(text)
+        text = _bounded_inline_text(text)
+        raise MCPError(f"server {name!r} {method} returned error: {text}")
     return response.get("result")
 
 
@@ -306,6 +318,7 @@ class _MCPServer:
     _pending: dict[int, dict[str, Any] | None] = field(default_factory=dict)
     _pending_cv: threading.Condition = field(default_factory=threading.Condition)
     _reader: threading.Thread | None = None
+    _stderr_reader: threading.Thread | None = None
     _reader_stop: threading.Event = field(default_factory=threading.Event)
     _tools: tuple[MCPToolDescriptor, ...] = ()
     # Bumped under `_restart_lock` by the caller whose timed-out call replaces
@@ -320,15 +333,24 @@ class _MCPServer:
     _keeper_release: threading.Event | None = None
 
     def _redact_secrets(self, text: str) -> str:
-        """Strip `pass_env` credential VALUES from a diagnostic string. A
-        third-party server may echo a passed secret to its stderr, and that
-        tail rides into `MCPError` and the durable `mcp.server_unavailable`
-        event, so it is redacted before it leaves here."""
-        for name in self.pass_env:
+        """Strip passed stdio and HTTP credential values from a diagnostic.
+
+        A third-party server may echo one through stderr or a protocol error,
+        both of which can reach the transcript and durable journal.
+        """
+        names = self.pass_env
+        if self.http is not None and self.http.token_env:
+            names = (*names, self.http.token_env)
+        for name in names:
             value = os.environ.get(name, "")
             if value:
                 text = text.replace(value, "<REDACTED>")
         return text
+
+    def _stderr_tail(self, *, settle: bool = False) -> str:
+        if settle and self._stderr_reader is not None:
+            self._stderr_reader.join(timeout=0.1)
+        return self._redact_secrets(stderr_tail(self._errors))
 
     def start(self) -> None:
         """Spawn the subprocess and pump it through `initialize` +
@@ -345,22 +367,47 @@ class _MCPServer:
             )
         except (OSError, FileNotFoundError, JailUnavailableError) as exc:
             raise MCPError(f"could not spawn MCP server {self.name!r}: {exc}") from exc
-        # Start the reader before issuing the first request so the
-        # initialize response can't race the reader thread.
+        if self._proc.stderr is not None:
+            self._stderr_reader = threading.Thread(
+                target=drain_stderr,
+                args=(self._proc.stderr, self._errors),
+                name=f"mcp-stderr[{self.name}]",
+                daemon=True,
+            )
+            self._stderr_reader.start()
+        # Start the reader before issuing the first request so the initialize
+        # response cannot race the reader thread.
         self._reader = threading.Thread(
             target=self._read_loop,
             name=f"mcp-reader[{self.name}]",
             daemon=True,
         )
         self._reader.start()
-        if self._proc.stderr is not None:
-            threading.Thread(
-                target=drain_stderr,
-                args=(self._proc.stderr, self._errors),
-                name=f"mcp-stderr[{self.name}]",
-                daemon=True,
-            ).start()
         self._handshake()
+
+    def _list_tools(self) -> list[Any]:
+        """Every page of `tools/list`, followed through `nextCursor`."""
+        tools_raw: list[Any] = []
+        cursor = ""
+        seen_cursors: set[str] = set()
+        while True:
+            params = {"cursor": cursor} if cursor else {}
+            listed = self._request("tools/list", params, timeout_s=self.startup_timeout_s)
+            page = listed.get("tools") if isinstance(listed, dict) else None
+            if not isinstance(page, list):
+                raise MCPError(f"server {self.name!r} tools/list returned no tools array")
+            tools_raw.extend(page)
+            next_cursor = listed.get("nextCursor")
+            if next_cursor is None:
+                return tools_raw
+            if not isinstance(next_cursor, str) or not next_cursor or next_cursor in seen_cursors:
+                raise MCPError(f"server {self.name!r} tools/list returned an invalid nextCursor")
+            if len(seen_cursors) + 1 >= _MAX_TOOL_PAGES:
+                raise MCPError(
+                    f"server {self.name!r} tools/list paged past {_MAX_TOOL_PAGES} pages"
+                )
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
 
     def _handshake(self) -> None:
         """`initialize` + `tools/list`, the same either way the bytes move."""
@@ -374,22 +421,13 @@ class _MCPServer:
                 },
                 timeout_s=self.startup_timeout_s,
             )
+            if not isinstance(init_result, dict):
+                raise MCPError(f"server {self.name!r} returned non-dict initialize result")
+            self._notify("notifications/initialized", {})
+            tools_raw = self._list_tools()
         except MCPError:
             self.close()
             raise
-        if not isinstance(init_result, dict):
-            self.close()
-            raise MCPError(f"server {self.name!r} returned non-dict initialize result")
-        self._notify("notifications/initialized", {})
-        try:
-            listed = self._request("tools/list", {}, timeout_s=self.startup_timeout_s)
-        except MCPError:
-            self.close()
-            raise
-        tools_raw = listed.get("tools") if isinstance(listed, dict) else None
-        if not isinstance(tools_raw, list):
-            self.close()
-            raise MCPError(f"server {self.name!r} tools/list returned no tools array")
         descs: list[MCPToolDescriptor] = []
         seen: set[str] = set()
         for entry in tools_raw:
@@ -503,7 +541,7 @@ class _MCPServer:
                     for c in content
                     if isinstance(c, dict) and isinstance(c.get("text"), str)
                 ).strip()
-            detail = _bounded_inline_text(text) or "(no detail)"
+            detail = _bounded_inline_text(self._redact_secrets(text)) or "(no detail)"
             raise MCPError(f"server {self.name!r} tool {tool_name!r} reported error: {detail}")
         return _bounded_result(result)
 
@@ -590,9 +628,9 @@ class _MCPServer:
                 try:
                     response = self.http.send(payload, timeout_s=timeout_s)
                 except MCPHttpError as exc:
-                    raise MCPError(str(exc)) from exc
+                    raise self._http_error(exc) from exc
             except MCPHttpError as exc:
-                raise MCPError(str(exc)) from exc
+                raise self._http_error(exc) from exc
             if response is None:
                 raise MCPError(f"server {self.name!r} sent no response to {method}")
             # The same two checks the stdio reader applies, for the same
@@ -610,7 +648,7 @@ class _MCPServer:
                     f"server {self.name!r} answered {method} with a response to"
                     f" id {response.get('id')!r}, not to {req_id}"
                 )
-            return _result_of(response, name=self.name, method=method)
+            return _result_of(response, name=self.name, method=method, redact=self._redact_secrets)
         generation = self._generation
         with self._pending_cv:
             self._pending[req_id] = None
@@ -628,7 +666,7 @@ class _MCPServer:
                         # reason and then waits on stdin (the common shape)
                         # otherwise reads as a bare timeout pointing at the
                         # sandbox grants.
-                        said = self._redact_secrets(stderr_tail(self._errors))
+                        said = self._stderr_tail()
                         detail = f": {said}" if said else ""
                         raise MCPTimeout(
                             f"server {self.name!r} timed out after"
@@ -640,7 +678,7 @@ class _MCPServer:
                         # Its own words if it left any: a command that does not
                         # exist, a refused grant, the launcher's setup failure
                         # all read the same from out here otherwise.
-                        said = self._redact_secrets(stderr_tail(self._errors))
+                        said = self._stderr_tail(settle=True)
                         detail = f": {said}" if said else ""
                         raise MCPError(
                             f"server {self.name!r} died before responding to {method}{detail}"
@@ -649,16 +687,23 @@ class _MCPServer:
         finally:
             with self._pending_cv:
                 self._pending.pop(req_id, None)
-        return _result_of(response, name=self.name, method=method)
+        return _result_of(response, name=self.name, method=method, redact=self._redact_secrets)
 
     def _notify(self, method: str, params: dict[str, Any]) -> None:
         # JSON-RPC notifications have no id and expect no response.
         payload = {"jsonrpc": "2.0", "method": method, "params": params}
         if self.http is not None:
-            with contextlib.suppress(MCPHttpError):
+            try:
                 self.http.send(payload, timeout_s=self.startup_timeout_s)
+            except MCPHttpError as exc:
+                raise self._http_error(exc) from exc
             return
         self._write_line(payload)
+
+    def _http_error(self, exc: MCPHttpError) -> MCPError:
+        """A transport failure as the MCPError every caller handles, its text
+        redacted: a server or proxy can echo the bearer token back."""
+        return MCPError(self._redact_secrets(str(exc)))
 
     def _write_line(self, obj: dict[str, Any]) -> None:
         proc = self._proc
@@ -672,7 +717,9 @@ class _MCPServer:
                 proc.stdin.write(line)
                 proc.stdin.flush()
         except (BrokenPipeError, OSError) as exc:
-            raise MCPError(f"server {self.name!r} stdin closed: {exc}") from exc
+            said = self._stderr_tail(settle=True)
+            detail = f": {said}" if said else ""
+            raise MCPError(f"server {self.name!r} stdin closed: {exc}{detail}") from exc
 
     def _read_loop(self) -> None:
         proc = self._proc
