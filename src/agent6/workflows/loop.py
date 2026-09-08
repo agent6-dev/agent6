@@ -285,6 +285,29 @@ PINS_MAX_CHARS = 4_000
 # Paths counted for the operator-stop dirty-tree note; a bigger tree reads "N+".
 _DIRTY_NOTE_CAP = 500
 
+# The before-finish panel's rejection, by the ending it rejected; the
+# findings follow.
+_REVIEW_REJECTED = {
+    "finish_session": (
+        "The review panel rejected your finish_session call. Address the"
+        " issues below before calling finish_session again.\n\n"
+    ),
+    "silent_finish": (
+        "The review panel rejected your silent finish (no tool_use, just"
+        " text). Address the issues below and continue the task.\n\n"
+    ),
+    "settled": (
+        "The review panel rejected the settled end. Address the issues"
+        " below; the run ends when it settles again or finish_session"
+        " passes.\n\n"
+    ),
+    "metric_plateau": (
+        "The review panel rejected the end at the metric plateau. Address the"
+        " issues below; the run ends when the plateau holds again or"
+        " finish_session passes.\n\n"
+    ),
+}
+
 
 def _first_prose_line(text: str, *, fallback: str) -> str:
     """The agent's first prose line (leading `<thinking>` blocks dropped,
@@ -1934,8 +1957,9 @@ class Workflow:
         turn.finish_payload = None
 
     def _end_is_reviewed(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
-        """The before-finish panel over an end (`finish_session`, or the
-        settled stop the harness declares): True when the panel rejected it
+        """The before-finish panel over an end (`finish_session`, a silent
+        finish, or the settled stop or metric plateau the harness declares):
+        True when the panel rejected it
         and the run carries on with the findings injected. After
         `max_consecutive_review_rejections` back-to-back rejections the end
         goes through (findings still injected) so the worker can't bounce
@@ -1958,23 +1982,7 @@ class Workflow:
             self._log(f"  review rejected {ending} at iter {turn.iteration}")
             self._emit("loop.review.rejected_finish", iteration=turn.iteration, ending=ending)
             state.consecutive_review_rejections += 1
-            turn.review_text = (
-                (
-                    "The review panel rejected your finish_session call. Address the"
-                    " issues below before calling finish_session again.\n\n"
-                )
-                if ending == "finish_session"
-                else (
-                    "The review panel rejected your silent finish (no tool_use, just"
-                    " text). Address the issues below and continue the task.\n\n"
-                )
-                if ending == "silent_finish"
-                else (
-                    "The review panel rejected the settled end. Address the issues"
-                    " below; the run ends when it settles again or finish_session"
-                    " passes.\n\n"
-                )
-            ) + critique.text
+            turn.review_text = _REVIEW_REJECTED[ending] + critique.text
             return True
         if not critique.satisfied:
             self._log(
@@ -2197,6 +2205,7 @@ class Workflow:
         trigger."""
         if turn.review_text:
             turn.tool_results.append(Notice(review_notice(turn.review_text)))
+            turn.review_text = None
         if turn.metric_feedback:
             turn.tool_results.append(Notice(turn.metric_feedback))
         if (
@@ -2382,7 +2391,14 @@ class Workflow:
                 iteration=turn.iteration,
                 nudges_used=state.verify_finish_retries_used,
             )
-        turn.end_returned = red_returned or self._end_is_reviewed(state, turn, ending=ending)
+        # A red gate returns the end before the panel sits.
+        reviewed = not red_returned and self._end_is_reviewed(state, turn, ending=ending)
+        if turn.review_text:
+            # The turn's notices went out before the settled and plateau
+            # checks, so the panel's findings are delivered here.
+            turn.tool_results.append(Notice(review_notice(turn.review_text)))
+            turn.review_text = None
+        turn.end_returned = red_returned or reviewed
         if not turn.end_returned and (task_nudge := self._task_finish_gate_nudge(state)):
             turn.tool_results.append(Notice(task_nudge))
             turn.end_returned = True
@@ -3065,8 +3081,6 @@ class Workflow:
         for item in turn.tool_results:
             if isinstance(item, Notice):
                 conversation.notice(item.text)
-        if turn.review_text:
-            conversation.notice(review_notice(turn.review_text))
         return aborted
 
     def _handle_silent_finish(

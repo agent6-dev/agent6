@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 from agent6.providers import ProviderResponse
 from agent6.tools.results import ExecResult, RawResult
-from agent6.workflows._conversation import Conversation
+from agent6.workflows._conversation import Conversation, Notice
 from agent6.workflows._review import CritiqueResult
 from agent6.workflows.loop import Workflow
 
@@ -441,12 +441,55 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
         assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
         assert turn.verify_settled_stop is False
         assert state.verify_settled_idle == 0
-        assert turn.review_text is not None and "a test is missing" in turn.review_text
+        # The turn's notices went out before the settled check, so the panel's
+        # findings ride the settled path's own notice.
+        assert turn.review_text is None
+        assert any(
+            isinstance(item, Notice) and "a test is missing" in item.text
+            for item in turn.tool_results
+        )
         state = _settled_state()
         turn = _idle_turn()
         wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
         assert turn.verify_settled_stop is True
     assert panel.calls == 2
+
+
+def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
+    """The turn's notices deliver a periodic panel's text, and the settled
+    gate then delivers whatever the turn still holds: the same finding went
+    out twice on a turn that reviewed and settled."""
+    wf = _wf(review_trigger="periodic")
+    wf.mode = "run"
+    wf.config.workflow.metric = None
+    wf.review_period = 1
+    panel = _PanelScript([CritiqueResult(text="* one periodic finding", satisfied=True)])
+    state = _settled_state()
+    turn = _idle_turn()
+    with patch.object(Workflow, "_run_review_panel", panel):
+        wf._turn_review_triggers(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
+        wf._turn_notices(state, turn)  # pyright: ignore[reportPrivateUsage]
+        wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
+    delivered = [
+        item
+        for item in turn.tool_results
+        if isinstance(item, Notice) and "one periodic finding" in item.text
+    ]
+    assert len(delivered) == 1 and panel.calls == 1
+
+
+def test_a_rejected_plateau_end_is_named_as_one() -> None:
+    """The panel's rejection tells the worker which ending it rejected: the
+    metric plateau's wording names the plateau, not a settled end."""
+    wf = _wf(review_trigger="before_finish")
+    wf.mode = "run"
+    panel = _PanelScript([CritiqueResult(text="* the gain is unmeasured", satisfied=False)])
+    turn = _idle_turn()
+    with patch.object(Workflow, "_run_review_panel", panel):
+        assert wf._end_is_reviewed(_settled_state(), turn, ending="metric_plateau")  # pyright: ignore[reportPrivateUsage]
+    assert turn.review_text is not None
+    assert turn.review_text.startswith("The review panel rejected the end at the metric plateau")
+    assert "the gain is unmeasured" in turn.review_text
 
 
 def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
