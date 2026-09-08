@@ -369,3 +369,32 @@ reason = "r"
         )
     ]
     assert fold_machine(spec, ok_events).transitions[0].detail == ""
+
+
+def test_the_ledger_carries_the_cached_tokens_and_sums_them(tmp_path: Path) -> None:
+    """`machine status` printed `in=18 tok, out=2194 tok` for a state that had
+    read 65k cached tokens; the ledger reads the cached side from the same
+    event and sums it across states."""
+    import json
+
+    from agent6.viewmodel.machine_state import Spend, read_budget_totals
+
+    log = tmp_path / "events.jsonl"
+    log.write_text(
+        json.dumps(
+            {
+                "type": "budget.update",
+                "usd_total": 0.25,
+                "input_total": 18,
+                "output_total": 2194,
+                "cache_read_total": 42486,
+                "cache_creation_total": 22617,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    spend = read_budget_totals(log)
+    assert (spend.cache_read_tokens, spend.cache_creation_tokens) == (42486, 22617)
+    total = spend + Spend(0.0, 1, 1, False, 4, 6)
+    assert (total.cache_read_tokens, total.cache_creation_tokens) == (42490, 22623)

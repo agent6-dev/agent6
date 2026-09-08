@@ -534,6 +534,8 @@ class LogScan:
     legs: int = 1  # 1 + completed resume legs
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_creation_tokens: int | None = None
     iteration: int | None = None  # last event carrying an int iteration
     # session.start's ts (epoch seconds), else the first event's: a fork's log
     # opens with loop.resume.start and never carries a session.start.
@@ -639,6 +641,8 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     legs = 1
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_creation_tokens: int | None = None
     iteration: int | None = None
     start_ep: float | None = None
     first_ep: float | None = None
@@ -714,6 +718,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         usd_prior_legs += usd_leg
                         usd_leg = 0.0
                         input_tokens = output_tokens = None
+                        cache_read_tokens = cache_creation_tokens = None
                         last_verify_rc = None  # leg-scoped, like the token counters
                         legs += 1
                     saw_start = True  # a leg has begun; a fork's log has only this
@@ -734,7 +739,15 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     usd_leg = _tolerant_usd(ev.get("usd_total"), usd_leg)
                     usd_partial = bool(ev.get("usd_partial")) or usd_partial
                     ti, to = ev.get("input_total"), ev.get("output_total")
-                    input_tokens = ti if isinstance(ti, int) else input_tokens
+                    if isinstance(ti, int):
+                        # The four counters travel as one group: an event
+                        # carrying totals without the cached side (an aggregate
+                        # a draft writes, an older journal) shows none rather
+                        # than a stale one from an earlier event.
+                        cr, cc = ev.get("cache_read_total"), ev.get("cache_creation_total")
+                        input_tokens = ti
+                        cache_read_tokens = cr if isinstance(cr, int) else None
+                        cache_creation_tokens = cc if isinstance(cc, int) else None
                     output_tokens = to if isinstance(to, int) else output_tokens
     except OSError:
         pass
@@ -751,6 +764,8 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         legs=legs,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        cache_read_tokens=cache_read_tokens,
+        cache_creation_tokens=cache_creation_tokens,
         iteration=iteration,
         start_ep=start_ep if start_ep is not None else first_ep,
         last_ep=last_ep,

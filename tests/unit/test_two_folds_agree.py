@@ -39,7 +39,15 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
     "passed": [_START, _END_PASSED],
     "failed": [
         _START,
-        {"ts": "2026-07-14T10:00:30+00:00", "type": "budget.update", "usd_total": 0.25},
+        {
+            "ts": "2026-07-14T10:00:30+00:00",
+            "type": "budget.update",
+            "input_total": 18,
+            "output_total": 2194,
+            "cache_read_total": 42486,
+            "cache_creation_total": 22617,
+            "usd_total": 0.25,
+        },
         {
             "ts": "2026-07-14T10:01:00+00:00",
             "type": "session.end",
@@ -105,6 +113,12 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
         "gate_red": scan.status_facts().gate_red,
         "cost_usd": scan.cost_usd,
         "usd_partial": scan.usd_partial,
+        "tokens": (
+            scan.input_tokens or 0,
+            scan.output_tokens or 0,
+            scan.cache_read_tokens or 0,
+            scan.cache_creation_tokens or 0,
+        ),
         "pins": scan.pins,
         "blocked": scan.operator_blocked,
     }
@@ -117,6 +131,12 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
         "gate_red": status_facts(state).gate_red,
         "cost_usd": state.budget.usd_total if scan.cost_usd is not None else None,
         "usd_partial": state.budget.usd_partial,
+        "tokens": (
+            state.budget.input_total,
+            state.budget.output_total,
+            state.budget.cache_read_total,
+            state.budget.cache_creation_total,
+        ),
         "pins": state.pins,
         "blocked": any(
             not p.answered for p in (*state.pending_approvals, *state.pending_questions)

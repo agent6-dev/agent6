@@ -106,6 +106,8 @@ class BudgetView:
     # (listing.scan_session_log) sums legs the same way, so the surfaces agree.
     input_total: int = 0
     output_total: int = 0
+    cache_read_total: int = 0  # the cached side of the input, leg-local too
+    cache_creation_total: int = 0
     usd_total: float = 0.0
     usd_prior_legs: float = 0.0  # banked spend of completed resume legs
     usd_partial: bool = False  # True if some models had no price (under-estimate)
@@ -501,6 +503,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
         case events.BudgetUpdate(
             input_total=it,
             output_total=ot,
+            cache_read_total=cr,
+            cache_creation_total=cc,
             usd_total=usd,
             usd_partial=partial,
             usd_cap=ucap,
@@ -519,6 +523,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 budget=BudgetView(
                     input_total=it,
                     output_total=ot,
+                    cache_read_total=cr,
+                    cache_creation_total=cc,
                     usd_total=state.budget.usd_prior_legs + usd,
                     usd_prior_legs=state.budget.usd_prior_legs,
                     usd_partial=partial or state.budget.usd_partial,

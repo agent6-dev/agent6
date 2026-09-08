@@ -63,6 +63,8 @@
   "budget": {
     "input_total": 0,
     "output_total": 0,
+    "cache_read_total": 0,
+    "cache_creation_total": 0,
     "usd_total": 0.004841036,
     "usd_prior_legs": 0.004841036,
     "usd_partial": false,

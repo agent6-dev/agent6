@@ -244,6 +244,9 @@ class Spend:
     input_tokens: int = 0
     output_tokens: int = 0
     partial: bool = False
+    # The cached side of the input; 0 where a ledger never recorded it.
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
 
     def __add__(self, other: Spend) -> Spend:
         return Spend(
@@ -251,6 +254,8 @@ class Spend:
             self.input_tokens + other.input_tokens,
             self.output_tokens + other.output_tokens,
             self.partial or other.partial,
+            self.cache_read_tokens + other.cache_read_tokens,
+            self.cache_creation_tokens + other.cache_creation_tokens,
         )
 
 
@@ -269,7 +274,7 @@ def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
     in-flight state whose `StepEvent` is not written yet (an agent state's spend
     would otherwise book as $0, so a 24/7 machine burns real money against a $0
     ledger and its budget guard never trips)."""
-    usd, tin, tout = 0.0, 0, 0
+    usd, tin, tout, cr, cc = 0.0, 0, 0, 0, 0
     partial = False
     with contextlib.suppress(OSError):
         with log_path.open("rb") as fh:
@@ -285,10 +290,12 @@ def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
                 usd = float(e.get("usd_total", usd) or 0.0)
                 tin = int(e.get("input_total", tin) or 0)
                 tout = int(e.get("output_total", tout) or 0)
+                cr = int(e.get("cache_read_total", cr) or 0)
+                cc = int(e.get("cache_creation_total", cc) or 0)
                 # Sticky, like the run surface: once any update flags an
                 # under-estimate the whole figure is one.
                 partial = partial or bool(e.get("usd_partial", False))
-    return Spend(usd, tin, tout, partial)
+    return Spend(usd, tin, tout, partial, cr, cc)
 
 
 def state_dir_seq(dir_name: str) -> int | None:

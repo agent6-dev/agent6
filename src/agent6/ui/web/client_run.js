@@ -355,7 +355,12 @@ function paintDetails(cards, s, asOf) {
   // The context-window fill at the last model call (the TUI's `ctx: N%`, the
   // pause menu's readout): the fold's one rule, served as context_pct.
   const ctxPct = typeof s.context_pct === 'number' ? ` · context ${s.context_pct}%` : '';
-  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${b.input_total||0} · out ${b.output_total||0}${ctxPct}`));
+  // The cached side of the input is the bulk of a long run's tokens (the run
+  // summary's cache_r/cache_c columns); absent from journals written before it
+  // was recorded, so it shows only when nonzero.
+  const cached = (b.cache_read_total || b.cache_creation_total)
+    ? ` · cached read ${b.cache_read_total||0} · cached written ${b.cache_creation_total||0}` : '';
+  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${b.input_total||0} · out ${b.output_total||0}${cached}${ctxPct}`));
 
   // task tree
   cards.tasks.innerHTML = '';

@@ -113,3 +113,39 @@ def test_show_marks_a_lane_unmerged_like_the_listing(
     assert main(["sessions", "show", "fan", "--json"]) == 0
     lanes = json.loads(capsys.readouterr().out)["lanes"]
     assert lanes[0]["session_id"] == "fan-l1" and lanes[0]["unmerged"] is True
+
+
+def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The usage line kept only the uncached `in=` (a 500k-token run read as
+    `in=18`) and spelled a clean $0 as `cost $0.0000` where the listing blanks
+    it; the cached side rides along and the cost is the listing's cell."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "cached", {})
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="cached")
+    budget = {
+        "type": "budget.update",
+        "input_total": 18,
+        "output_total": 2194,
+        "cache_read_total": 42486,
+        "cache_creation_total": 22617,
+        "usd_total": 0.0,
+    }
+    lines = layout.logs_path.read_text(encoding="utf-8").splitlines()
+    layout.logs_path.write_text(
+        "\n".join([lines[0], json.dumps(budget), *lines[1:]]) + "\n", encoding="utf-8"
+    )
+    assert main(["sessions", "show", "cached"]) == 0
+    usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
+    assert usage.split(None, 1)[1] == "in=18 out=2194 cache_r=42486 cache_c=22617"
+    layout.logs_path.write_text(
+        "\n".join([lines[0], json.dumps({**budget, "usd_total": 0.5}), *lines[1:]]) + "\n",
+        encoding="utf-8",
+    )
+    assert main(["sessions", "show", "cached"]) == 0
+    usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
+    assert usage.endswith("cache_c=22617  cost $0.50")

@@ -177,6 +177,9 @@ class VerifyEnd:
 class BudgetUpdate:
     input_total: int
     output_total: int
+    # The cached side of the input (0 in a journal written before it was recorded).
+    cache_read_total: int
+    cache_creation_total: int
     usd_total: float
     usd_partial: bool
     usd_cap: float
@@ -437,6 +440,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             return BudgetUpdate(
                 input_total=int(raw.get("input_total", 0)),
                 output_total=int(raw.get("output_total", 0)),
+                cache_read_total=int(raw.get("cache_read_total", 0)),
+                cache_creation_total=int(raw.get("cache_creation_total", 0)),
                 usd_total=float(raw.get("usd_total", 0.0)),
                 usd_partial=bool(raw.get("usd_partial", False)),
                 # A log written without these keys folds 0.

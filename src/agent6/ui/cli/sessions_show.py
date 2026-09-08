@@ -36,7 +36,6 @@ from agent6.viewmodel.format import (
     format_compare,
     format_cost_cell,
     format_lineage,
-    format_usd,
     lane_count,
     listing_status_label,
     winner_id,
@@ -181,6 +180,27 @@ def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
     )
 
 
+def _usage_line(scan: LogScan) -> str:
+    """The run's tokens and cost: `in`/`out`, the cached side when the journal
+    recorded it (the bulk of a long run's input, the run summary's columns),
+    then the cost as the listing's cell spells it (blank for a clean $0, so
+    the two surfaces agree). Token counters are per leg and the cost is banked
+    across legs, so a resumed run says which is which."""
+    tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
+    if scan.cache_read_tokens is not None or scan.cache_creation_tokens is not None:
+        tokens += f" cache_r={scan.cache_read_tokens or 0}"
+        tokens += f" cache_c={scan.cache_creation_tokens or 0}"
+    leg_s = " (latest leg)" if scan.legs > 1 else ""
+    cell = (
+        format_cost_cell(scan.cost_usd, partial=scan.usd_partial)
+        if scan.cost_usd is not None
+        else ""
+    )
+    legs_s = f" (all {scan.legs} legs)" if scan.legs > 1 else ""
+    cost_s = f"  cost {cell}{legs_s}" if cell else ""
+    return f"{tokens}{leg_s}{cost_s}"
+
+
 def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     """One-shot liveness + progress summary for a run, then exit (no follower).
 
@@ -251,6 +271,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "reason": scan.end_reason if scan.finished else None,
                     "input_tokens": scan.input_tokens,
                     "output_tokens": scan.output_tokens,
+                    "cache_read_tokens": scan.cache_read_tokens,
+                    "cache_creation_tokens": scan.cache_creation_tokens,
                     "cost_usd": scan.cost_usd,
                     # cost_usd is an under-estimate when some spend was
                     # unpriced; the text render marks it, so the JSON must too.
@@ -292,17 +314,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     )
     print(f"elapsed:    {_fmt_dur(elapsed)}")
     if scan.input_tokens is not None or scan.cost_usd is not None:
-        # Token counters are per-leg, cost is banked across legs; on a resumed
-        # run say so, or $0.03 next to the last leg's 10k tokens reads wrong.
-        leg_s = " (latest leg)" if scan.legs > 1 else ""
-        cost_s = (
-            f"  cost {format_usd(scan.cost_usd, partial=scan.usd_partial)}"
-            + (f" (all {scan.legs} legs)" if scan.legs > 1 else "")
-            if scan.cost_usd is not None
-            else ""
-        )
-        tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
-        print(f"usage:      {tokens}{leg_s}{cost_s}")
+        print(f"usage:      {_usage_line(scan)}")
     if changes.line:
         print(f"changes:    {changes.line}")
     if mode_display == "plan":

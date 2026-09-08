@@ -1225,3 +1225,57 @@ def test_a_never_started_run_reads_at_the_parked_level() -> None:
     """A `fork --no-run` dir waits for a resume as a parked submission does;
     its word rendered plain, fading into the listing while "parked" warned."""
     assert status_level("created") == status_level("parked") == "warn"
+
+
+def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: Path) -> None:
+    """A long run's input is mostly cache reads; a scan that kept only the
+    uncached `in=` made `sessions show` read a 500k-token run as a few
+    dozen tokens. Journals written before the fields existed read as None."""
+    from agent6.viewmodel.listing import scan_session_log
+
+    logs = tmp_path / "logs.jsonl"
+    logs.write_text(
+        json.dumps({"type": "session.start", "session_id": "s", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps(
+            {
+                "type": "budget.update",
+                "input_total": 18,
+                "output_total": 2194,
+                "cache_read_total": 42486,
+                "cache_creation_total": 22617,
+                "usd_total": 0.0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scan = scan_session_log(logs)
+    assert (scan.input_tokens, scan.output_tokens) == (18, 2194)
+    assert (scan.cache_read_tokens, scan.cache_creation_tokens) == (42486, 22617)
+    logs.write_text(
+        json.dumps({"type": "budget.update", "input_total": 1, "output_total": 2}) + "\n",
+        encoding="utf-8",
+    )
+    old = scan_session_log(logs)
+    assert (old.cache_read_tokens, old.cache_creation_tokens) == (None, None)
+    # The four travel as one group: an aggregate event without the cached side
+    # (a draft's summed attempts) shows none, not an earlier event's figures.
+    logs.write_text(
+        json.dumps(
+            {
+                "type": "budget.update",
+                "input_total": 18,
+                "output_total": 2194,
+                "cache_read_total": 42486,
+                "cache_creation_total": 22617,
+            }
+        )
+        + "\n"
+        + json.dumps({"type": "budget.update", "input_total": 250, "output_total": 50})
+        + "\n",
+        encoding="utf-8",
+    )
+    aggregate = scan_session_log(logs)
+    assert (aggregate.input_tokens, aggregate.output_tokens) == (250, 50)
+    assert (aggregate.cache_read_tokens, aggregate.cache_creation_tokens) == (None, None)

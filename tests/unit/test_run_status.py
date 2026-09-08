@@ -392,6 +392,8 @@ def test_status_shows_usage_from_budget_update_event(
                 "type": "budget.update",
                 "input_total": 4200,
                 "output_total": 800,
+                "cache_read_total": 42486,
+                "cache_creation_total": 22617,
                 "usd_total": 0.0456,
                 "usd_partial": False,
             },
@@ -400,12 +402,13 @@ def test_status_shows_usage_from_budget_update_event(
     write_worker_pid(d, os.getpid())
     _cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
-    assert "in=4200 out=800" in out  # latest budget.update wins, not the 0/0 loop.budget
+    assert "in=4200 out=800 cache_r=42486 cache_c=22617" in out  # the latest update wins
     assert "$0.05" in out
     # json carries the same
     _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
     assert obj["input_tokens"] == 4200 and obj["cost_usd"] == 0.0456
+    assert (obj["cache_read_tokens"], obj["cache_creation_tokens"]) == (42486, 22617)
 
 
 def test_status_names_the_pins_in_force(
@@ -450,6 +453,8 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
                 "type": "budget.update",
                 "input_total": 1000,
                 "output_total": 200,
+                "cache_read_total": 9000,
+                "cache_creation_total": 100,
                 "usd_total": 0.02,
                 "usd_partial": True,
             },
@@ -474,6 +479,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
     assert obj["usd_partial"] is True  # sticky: leg 1's unpriced spend
     assert obj["status"] == "running"  # not leg 1's "passed (finish_session)"
     assert obj["input_tokens"] == 300  # token gauges stay per-leg
+    assert obj["cache_read_tokens"] is None  # leg 1's cached side does not carry over
 
 
 def test_status_missing_id_and_empty_state_speak_human(

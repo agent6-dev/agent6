@@ -383,6 +383,8 @@ class InstrumentedProvider:
             "budget.update",
             input_total=snap.input_total,
             output_total=snap.output_total,
+            cache_read_total=snap.cache_read_total,
+            cache_creation_total=snap.cache_creation_total,
             usd_total=usd_total,
             usd_partial=usd_partial,
             usd_cap=snap.max_usd,

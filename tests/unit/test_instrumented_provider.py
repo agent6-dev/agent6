@@ -162,8 +162,8 @@ def test_a_failed_call_still_reports_what_it_spent(
             model="anthropic/claude-haiku-4.5",
             input_tokens=50_000,
             output_tokens=120,
-            cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_read_tokens=7_000,
+            cache_creation_tokens=1_100,
         )
         raise ProviderError("stream cut before completion")
 
@@ -187,6 +187,8 @@ def test_a_failed_call_still_reports_what_it_spent(
         if json.loads(line)["type"] == "budget.update"
     ]
     assert [(e["input_total"], e["output_total"]) for e in updates] == [(50_000, 120)]
+    # The cached side rides the same event: the scan and every surface read it there.
+    assert (updates[0]["cache_read_total"], updates[0]["cache_creation_total"]) == (7_000, 1_100)
     assert updates[0]["usd_total"] > 0.0
 
 
