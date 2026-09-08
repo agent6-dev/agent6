@@ -528,6 +528,43 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
         child.wait()
 
 
+def test_a_parked_resume_hands_run_task_the_explicit_leaves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A parked run's task runs through run_task, whose refusal ladder tells an
+    explicit setting the host cannot honor (refuse) from an automatic one
+    (degrade) by the explicit leaves; the parked path handed it none."""
+    from unittest.mock import MagicMock
+
+    from agent6.config import load_config
+    from agent6.config.layer import EffectiveConfig
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    session_dir = state_dir(repo) / "sessions" / "runs" / "parked-LEAVES"
+    _park_manifest(session_dir, preset="", from_flag=False)
+    cfg_path = tmp_path / "cfg.toml"
+    cfg_path.write_text(_PLANNER_AND_WORKER + "[workflow]\nmax_iterations = 7\n", encoding="utf-8")
+    cfg = load_config(cfg_path)
+
+    def _load(*_a: object, **_k: object) -> EffectiveConfig:
+        return EffectiveConfig(config=cfg, sources={"workflow.max_iterations": "global"}, layers=())
+
+    monkeypatch.setattr(setup_mod, "load_effective", _load)
+    seen: dict[str, object] = {}
+
+    def _run_task(*_a: object, **kw: object) -> int:
+        seen.update(kw)
+        return 0
+
+    monkeypatch.setattr(resume_mod, "run_task", _run_task)
+
+    assert resume_mod.resume_task(None, "parked-LEAVES", frontend=MagicMock(), force=False) == 0
+    assert seen["explicit_leaves"] == frozenset({"workflow.max_iterations"})
+
+
 def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

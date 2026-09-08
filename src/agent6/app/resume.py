@@ -392,14 +392,15 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # preset re-resolves from the same files, and handing its name
                 # back would make _select_preset rank it as a flag (the same
                 # rule as the snapshot-resume path below).
-                cfg = load_session_config(
+                effective = load_session_config(
                     repo,
                     config_path,
                     mode=mode,
                     preset=preset or manifest.workflow.replay_preset,
                     budget_overrides=budget_overrides,
                     sandbox_overrides=sandbox_overrides,
-                ).config
+                )
+                cfg = effective.config
             except ConfigError as exc:
                 reporter.error(str(exc))
                 return 2
@@ -418,6 +419,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 preset=preset,
+                explicit_leaves=effective.explicit_leaves,
                 # Pin the ORIGINAL stamp ONLY for a FLAG-selected preset whose
                 # veto must survive, and only when this resume sets no --preset
                 # of its own. A CONFIG-selected preset (from_flag False) re-
