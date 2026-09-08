@@ -17,7 +17,6 @@ from agent6.app._setup import (
     mcp_server_policy,
     mcp_server_spec,
     no_jail_cause,
-    wants_session_network,
 )
 from agent6.app.confine import check_network_support, config_refusal, mcp_network_refusal
 from agent6.app.fork_worktrees import worktree_owners
@@ -44,7 +43,8 @@ from agent6.sandbox.detect import (
     sandbox_disabled_by_env,
 )
 from agent6.sandbox.jail import SessionNetwork
-from agent6.sandbox.tool_paths import tool_mount_notes
+from agent6.sandbox.landlock import LandlockError
+from agent6.sandbox.tool_paths import jail_search_path, tool_mount_notes
 from agent6.tools.mcp_client import MCPManager, tool_count
 from agent6.tools.policy import (
     JAIL_TMP_HOME,
@@ -118,14 +118,17 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
     reports: list[SandboxReport] = []
 
     # Landlock probe
-    abi = landlock_abi()
-    reports.append(
-        SandboxReport(
-            name="landlock_abi",
-            ok=abi > 0,
-            detail=f"abi={abi}",
+    try:
+        abi = landlock_abi()
+        reports.append(
+            SandboxReport(
+                name="landlock_abi",
+                ok=abi > 0,
+                detail=f"abi={abi}",
+            )
         )
-    )
+    except LandlockError as exc:
+        reports.append(SandboxReport(name="landlock_abi", ok=False, detail=str(exc)))
 
     try:
         env = detect_env()
@@ -174,11 +177,11 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
         reports.append(SandboxReport(name="jail", ok=False, detail=_unprobeable(requested)))
         return _print_sandbox_reports(reports)
 
-    cwd = Path.cwd()
-
     def _jail(*argv: str) -> CommandResult:
         return run_in_jail(
-            JailPolicy(cwd=cwd, argv=argv, isolation=isolation, network="none", timeout_s=10.0)
+            JailPolicy(
+                cwd=Path.cwd(), argv=argv, isolation=isolation, network="none", timeout_s=10.0
+            )
         )
 
     # Try running `/usr/bin/true` in the jail.
@@ -300,8 +303,16 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
         )
         print()
 
-    if load_error is not None and section in {"all", "mcp", "verify", "config", "boundaries"}:
-        print(f"== config ==\n[FAIL] cannot load config: {load_error}\n")
+    if load_error is not None and section in {
+        "all",
+        "sandbox",
+        "mcp",
+        "verify",
+        "config",
+        "boundaries",
+    }:
+        if section != "sandbox":  # the sandbox section printed the error itself
+            print(f"== config ==\n[FAIL] cannot load config: {load_error}\n")
         checks.append(_DoctorCheck(name="config_load", status="FAIL", detail=load_error))
 
     if cfg is not None and section in {"all", "config"}:
@@ -311,7 +322,7 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
 
     if cfg is not None and section in {"all", "boundaries"}:
         print("== boundaries ==")
-        checks.extend(_check_boundaries_section(cfg))
+        checks.extend(_check_boundaries_section(cfg, explicit_leaves))
         print()
 
     if cfg is not None and section in {"all", "mcp"}:
@@ -324,8 +335,8 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
         checks.extend(_doctor_check_verify(cfg))
         print()
 
-    # `check boundaries` alone reports facts and reaches no verdict, so it
-    # prints no summary rather than an empty heading that reads "nothing ran".
+    # `check boundaries` alone yields a check only for a refusal, so a clean
+    # report prints no summary rather than an empty heading that reads "nothing ran".
     if checks:
         print("== summary ==")
     failed = False
@@ -526,6 +537,9 @@ def _boundaries_mcp(cfg: Config, root: Path, selected: IsolationLevel) -> None:
         if srv.url:
             where = f"http {srv.url}"
             confinement = "network client only; no filesystem grant"
+        elif selected == "none":
+            where = "spawned UNCONFINED"
+            confinement = "full host access (sandbox.isolation resolved to none)"
         elif (refusal := mcp_network_refusal(name, srv, selected)) is not None:
             # The network it asked for is one this level cannot give: a run
             # refuses, so there is no network to print.
@@ -542,10 +556,13 @@ def _boundaries_mcp(cfg: Config, root: Path, selected: IsolationLevel) -> None:
         print(f"    {name}: {where}  approve={srv.approve}  {confinement}")
 
 
-def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
+def _check_boundaries_section(
+    cfg: Config, explicit_leaves: frozenset[str] = frozenset()
+) -> list[_DoctorCheck]:
     """Every boundary in one place, grouped by actor: who is confined, what
     files it reaches, which network it gets. Resolved values only (what this
-    host and config give), one line per fact; informational, no probes."""
+    host and config give), one line per fact, and the refusal a run would give
+    (a setting this host cannot honor) as the section's one FAIL."""
     try:
         env = detect_env()
         selected = resolve_isolation(cfg.sandbox.isolation, env)
@@ -558,8 +575,19 @@ def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
         print(f"  not strict: {reason}")
 
     ws = workspace_for(cfg, Path.cwd())
+    out: list[_DoctorCheck] = []
+    refusal = check_network_support(cfg, selected) or config_refusal(
+        cfg, selected, ws.root, explicit_leaves=explicit_leaves
+    )
+    if refusal is not None:
+        detail = f"a run would refuse: {refusal}"
+        print(f"  [FAIL] {detail}")
+        out.append(_DoctorCheck(name="boundaries", status="FAIL", detail=detail))
     print()
-    print("  in-process file tools (read_file, list_dir, apply_edit, apply_patch; no approval):")
+    print(
+        "  in-process file tools (read_file, list_dir, outline, find_definition,"
+        " find_references, apply_edit, apply_patch; no approval):"
+    )
     print(f"    rw  {ws.root}  (the workspace)")
     for line in _grant_lines(ws):
         print(line)
@@ -583,7 +611,7 @@ def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
         f"  secrets: {secrets_path()}  (0600; never mounted into any jail,"
         " never passed into a child's env)"
     )
-    return []
+    return out
 
 
 def _probe_refusal(
@@ -659,12 +687,18 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
     if not probed:
         return out or [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
     with contextlib.ExitStack() as stack:
-        # A server set to `session` joins the run's network, so `check` has to
-        # make one the same way a run does; otherwise checking such a server
-        # reports a failure that only `check` would ever see.
-        session_net = None
-        if wants_session_network(cfg, isolation):
-            session_net = stack.enter_context(contextlib.closing(SessionNetwork.open()))
+        # A server set to `session` joins the run's network, so `check` opens
+        # one for it; a probe runs no commands, so nothing else needs it.
+        try:
+            session_net = (
+                stack.enter_context(contextlib.closing(SessionNetwork.open()))
+                if isolation == "strict"
+                and any(srv.effective_network == "session" for srv in probed.values())
+                else None
+            )
+        except JailUnavailableError as exc:
+            print(f"[FAIL] mcp: {exc}")
+            return [*out, _DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
         try:
             specs = [
                 mcp_server_spec(cfg, root, isolation, name, srv, readonly=True)
@@ -724,9 +758,9 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
         print(f"  {detail}")
         return [_DoctorCheck(name="verify.argv", status="INFO", detail=detail)]
     head = argv[0]
-    resolved = shutil.which(head)
+    resolved = shutil.which(head, path=jail_search_path())
     ok = resolved is not None
-    detail = f"resolves to {resolved}" if resolved else f"not found on PATH: {head!r}"
+    detail = f"resolves to {resolved}" if resolved else f"not found on the command PATH: {head!r}"
     print(f"  {head}: {detail}")
     print(f"  argv = {argv}")
     print(f"  timeout = {cfg.workflow.verify_timeout_s}s")

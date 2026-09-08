@@ -19,6 +19,7 @@ import pytest
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox.detect import IsolationUnavailableError
 from agent6.sandbox.jail import JailUnavailableError
+from agent6.sandbox.landlock import LandlockError
 from agent6.types import CommandResult, JailPolicy
 from agent6.ui.cli import check_cmds
 
@@ -71,6 +72,27 @@ def _honour_request(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(check_cmds, "degrade_reason", _reason)
     monkeypatch.setattr(check_cmds, "resolve_isolation", _resolve)
+
+
+def test_check_sandbox_reports_a_landlock_probe_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A host policy denying the Landlock syscall is a failed probe, not a traceback."""
+    _force_profile(monkeypatch, "hardened")
+
+    def _denied() -> int:
+        raise LandlockError("landlock_create_ruleset version probe failed: Operation not permitted")
+
+    def _run(policy: JailPolicy) -> CommandResult:
+        return _fake_result(policy.argv, 0)
+
+    monkeypatch.setattr(check_cmds, "landlock_abi", _denied)
+    monkeypatch.setattr(check_cmds, "run_in_jail", _run)
+
+    rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
+
+    assert rc == 1
+    assert "[FAIL] landlock_abi: landlock_create_ruleset" in capsys.readouterr().out
 
 
 def test_check_sandbox_hardened_passes_and_skips_network(
@@ -228,6 +250,25 @@ def test_check_sandbox_names_which_opt_out_left_nothing_to_probe(
     assert "sandbox.isolation = 'none': commands run unconfined" in out
     assert "no kernel sandbox" not in out
     assert stub_jail == []
+
+
+def test_check_sandbox_fails_when_its_config_cannot_be_loaded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A sandbox probe under defaults cannot certify the unusable config a run would load."""
+    bad = tmp_path / "bad.toml"
+    bad.write_text("not = [valid", encoding="utf-8")
+
+    def _sandbox_passes(_cfg: Config | None) -> int:
+        return 0
+
+    monkeypatch.setattr(check_cmds, "_cmd_check_sandbox", _sandbox_passes)
+
+    rc = check_cmds._cmd_check(bad, section="sandbox")  # pyright: ignore[reportPrivateUsage]
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "[FAIL] config_load:" in out.split("== summary ==", 1)[1]
 
 
 def test_check_config_runs_the_refusal_ladder_a_run_applies(

@@ -76,6 +76,7 @@ depends_on = [
   "agent6.paths",
   "agent6.secrets",
   "agent6.sandbox.detect",
+  "agent6.sandbox.landlock",
   "agent6.sandbox",
   "agent6.workflows",
   "agent6.types",
