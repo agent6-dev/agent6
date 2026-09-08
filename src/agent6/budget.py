@@ -25,6 +25,7 @@ stdlib + cache-file reads); every provider wires it in via constructor.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from dataclasses import dataclass, field, replace
@@ -131,10 +132,12 @@ class PlanUsage:
             return None
         try:
             if raw.startswith("$"):
-                return float(raw.lstrip("$").replace(",", ""))
-            return float(raw.replace(",", "")) / _CREDITS_PER_USD
+                amount = float(raw.lstrip("$").replace(",", ""))
+            else:
+                amount = float(raw.replace(",", "")) / _CREDITS_PER_USD
         except ValueError:
             return None
+        return amount if math.isfinite(amount) and amount >= 0 else None
 
 
 @dataclass(slots=True)
@@ -343,9 +346,9 @@ class BudgetTracker:
     # consumption sawtooth.
     _plan_last_percent: dict[tuple[str, str], float] = field(default_factory=dict)
     _plan_consumed_by_window: dict[tuple[str, str], float] = field(default_factory=dict)
-    # Purchased credits observed leaving the account during this run, in
+    # Purchased credits observed leaving each account during this run, in
     # dollars (the balance header read as dollars); folds into the USD meter.
-    _credits_last_usd: float | None = None
+    _credits_last_usd: dict[str, float] = field(default_factory=dict)
     _credits_spent_usd: float = 0.0
     # model id -> the provider entry it is routed through, so a model id two
     # providers list at different prices is priced by the route that bills.
@@ -479,21 +482,22 @@ class BudgetTracker:
             self._plan_last_percent[key] = w.used_percent
         balance = plan.credits_usd
         if balance is not None:
-            if self._credits_last_usd is not None and balance < self._credits_last_usd:
-                self._credits_spent_usd += self._credits_last_usd - balance
-            self._credits_last_usd = balance
+            previous = self._credits_last_usd.get(route)
+            if previous is not None and balance < previous:
+                self._credits_spent_usd += previous - balance
+            self._credits_last_usd[route] = balance
         self._plans.pop(route, None)
         self._plans[route] = plan
 
     def _check_plan_ceilings(self, model: str, plan_usage: PlanUsage) -> None:
         """The plan-metered ceilings, most binding first: the paid-credit
-        guard (real money), then the zero refusal, then this run's cap."""
-        if (
+        guard (real money), then the zero refusals, then this run's cap."""
+        would_spend_credits = (
             plan_usage.has_credits
             and not plan_usage.credits_unlimited
-            and not self.allow_paid_credits
             and plan_usage.window_exhausted
-        ):
+        )
+        if would_spend_credits and not self.allow_paid_credits:
             balance = plan_usage.credits_balance or "unknown"
             usd = plan_usage.credits_usd
             if usd is not None and not plan_usage.credits_balance.strip().startswith("$"):
@@ -502,6 +506,10 @@ class BudgetTracker:
                 "the plan window is exhausted and the account holds purchased"
                 f" credits (balance {balance}): continuing would spend them."
                 " Set [budget].allow_paid_credits = true to allow that"
+            )
+        elif would_spend_credits and self.max_usd == 0.0:
+            self._exceeded_reason = (
+                "USD budget is 0: purchased-credit calls are refused (raise [budget].max_usd)"
             )
         elif self.max_percent == 0.0:
             self._exceeded_reason = (

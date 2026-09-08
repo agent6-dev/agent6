@@ -294,6 +294,15 @@ def test_credits_spend_allowed_when_opted_in() -> None:
     t.check()
 
 
+def test_zero_usd_refuses_paid_credits_even_when_opted_in() -> None:
+    tracker = BudgetTracker(
+        max_usd=0, max_tokens_fallback=-1, max_percent=-1, allow_paid_credits=True
+    )
+    tracker.record_plan_preflight("chatgpt", _plan_with_credits(100.0))
+    with pytest.raises(BudgetExceeded, match="USD budget is 0"):
+        tracker.check()
+
+
 def test_credits_inside_the_included_window_do_not_refuse() -> None:
     t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     _record_plan(t, _plan_with_credits(41.0))
@@ -428,6 +437,36 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
     assert opaque.estimate_usd()[0] == 0.0
 
 
+def test_credit_balances_are_tracked_per_provider_entry() -> None:
+    """Balances from separate subscription accounts must never be compared."""
+    tracker = BudgetTracker(
+        max_usd=-1, max_tokens_fallback=-1, max_percent=-1, allow_paid_credits=True
+    )
+    tracker.note_route("model-a", "provider-a")
+    tracker.note_route("model-b", "provider-b")
+
+    def record(model: str, balance: str) -> None:
+        tracker.record(
+            model=model,
+            input_tokens=1,
+            output_tokens=1,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            plan_usage=PlanUsage.single(
+                100.0,
+                10080,
+                0.0,
+                has_credits=True,
+                credits_balance=balance,
+            ),
+        )
+
+    record("model-a", "$10.00")
+    record("model-b", "$100.00")
+    record("model-a", "$9.00")
+    assert tracker.estimate_usd()[0] == pytest.approx(1.0)
+
+
 def test_credits_balance_units_convert_to_usd() -> None:
     """The backend sells credits in 1,000-credit packs at $40 (25 per
     dollar): a bare balance number is credits and converts; a "$"-prefixed
@@ -444,6 +483,8 @@ def test_credits_balance_units_convert_to_usd() -> None:
     assert usd("$12.50") == 12.50
     assert usd("") is None
     assert usd("n/a") is None
+    assert usd("nan") is None
+    assert usd("$inf") is None
 
 
 def test_plan_usage_line_names_a_window_with_no_reported_length() -> None:

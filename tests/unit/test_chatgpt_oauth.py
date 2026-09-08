@@ -93,6 +93,15 @@ def test_parse_callback_accepts_url_or_query_and_checks_state() -> None:
         parse_callback(f"{REDIRECT_URI}?error=access_denied&state=S", state="S")
 
 
+@pytest.mark.parametrize(
+    "payload",
+    ["é", base64.urlsafe_b64encode(b'{"claim":true}').rstrip(b"=").decode() + "!!!!"],
+    ids=["non-ascii", "invalid-alphabet"],
+)
+def test_jwt_claims_rejects_malformed_base64(payload: str) -> None:
+    assert jwt_claims(f"h.{payload}.s") == {}
+
+
 def test_account_id_prefers_access_token_claim() -> None:
     access = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "acct-access"}})
     id_tok = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "acct-id"}})
@@ -125,6 +134,35 @@ def test_exchange_and_refresh_post_the_right_grants(monkeypatch: pytest.MonkeyPa
     refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
     _, data = calls[1]
     assert data == {"grant_type": "refresh_token", "refresh_token": "RT", "client_id": "app_X"}
+
+
+def test_initial_exchange_requires_a_refresh_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Connect must not report success for a grant that cannot be loaded later."""
+
+    def incomplete(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        return _Resp(200, {"access_token": "AT", "expires_in": 3600})
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", incomplete)
+    with pytest.raises(ProviderError, match="refresh_token"):
+        exchange_code("https://auth.example", "app_X", code="C", verifier="V", provider="chatgpt")
+
+
+@pytest.mark.parametrize(("field", "value"), [("refresh_token", 3), ("id_token", {})])
+def test_grant_rejects_non_string_token_fields(
+    monkeypatch: pytest.MonkeyPatch, field: str, value: object
+) -> None:
+    def malformed(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        body: dict[str, object] = {
+            "access_token": "AT",
+            "refresh_token": "RT",
+            "expires_in": 3600,
+        }
+        body[field] = value
+        return _Resp(200, body)
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", malformed)
+    with pytest.raises(ProviderError, match=field):
+        refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
 
 
 def test_dead_refresh_token_names_connect(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -344,6 +382,24 @@ def test_credential_refuses_an_account_swap(gcfg: Path, monkeypatch: pytest.Monk
         cred.token()
 
 
+def test_credential_pins_a_claim_when_the_stored_account_is_empty(
+    gcfg: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An empty stored account field must not hide a claimed account switch."""
+    clock = {"now": 1000.0}
+    fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
+    first = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "account-a"}})
+    second = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "account-b"}})
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    save_oauth_tokens("chatgpt", OAuthTokens(first, "RT1", 5000.0, "account-a"))
+    assert cred.token() == first
+    save_oauth_tokens("chatgpt", OAuthTokens(second, "RT2", 9000.0))
+    cred.invalidate(401)
+    with pytest.raises(ProviderError, match="different account"):
+        cred.token()
+
+
 def test_post_401_recovery_adopts_a_sibling_grant_first(
     gcfg: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -431,6 +487,32 @@ def test_reused_rotation_rereads_once(gcfg: Path, monkeypatch: pytest.MonkeyPatc
     assert cred.token() == "winner"
 
 
+def test_reused_rotation_does_not_adopt_an_expired_sibling(
+    gcfg: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A changed access token is not a rescue when it is already stale."""
+
+    def reused(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        save_oauth_tokens("chatgpt", OAuthTokens("stale-sibling", "RT9", 6200.0, "acct"))
+        return _Resp(401, {"error": {"code": "refresh_token_reused"}})
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", reused)
+
+    def no_sleep(_s: float) -> None:
+        return None
+
+    fake_time = type(
+        "T",
+        (),
+        {"time": staticmethod(lambda: 6000.0), "sleep": staticmethod(no_sleep)},
+    )
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
+    cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
+    save_oauth_tokens("chatgpt", OAuthTokens("old", "RT1", 5000.0, "acct"))
+    with pytest.raises(ProviderError, match="refresh_token_reused"):
+        cred.token()
+
+
 def test_callback_state_checked_before_the_error_param() -> None:
     """A request the sign-in did not start gets nothing processed or
     reflected from its parameters, error path included: the state check
@@ -508,14 +590,14 @@ def test_403_reports_no_retry_worthwhile() -> None:
     assert cred.invalidate(401) is True
 
 
-@pytest.mark.parametrize("expires_in", ["soon", int("1" + "0" * 400)])
+@pytest.mark.parametrize(
+    "expires_in", ["soon", int("1" + "0" * 400), 0, -1, float("nan"), float("inf"), True]
+)
 def test_an_unusable_expires_in_is_a_provider_error(
     monkeypatch: pytest.MonkeyPatch, expires_in: object
 ) -> None:
-    """A token body whose `expires_in` cannot be a float (text, or an integer
-    too large for a double) fails like its two neighbours (a non-JSON body, a
-    missing access_token): a ProviderError the sign-in prints at exit 2, not a
-    bare ValueError or OverflowError that `_chatgpt_sign_in` never catches."""
+    """A non-numeric, non-finite, boolean, or non-positive expiry is unusable,
+    rather than a stored token that never expires or refreshes immediately."""
 
     def odd(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": expires_in})

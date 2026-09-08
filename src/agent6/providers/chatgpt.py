@@ -69,7 +69,7 @@ def responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     any other `thinking` block is display-only and dropped.
     """
     items: list[dict[str, Any]] = []
-    # Ids of blank-name tool_use blocks skipped below (a resumed history can
+    # Ids of the blank-name or id-less tool_use blocks skipped below (a resumed history can
     # carry one another provider emitted); their paired tool_result must be
     # skipped too, or the request carries an output with no matching call and
     # the backend rejects the whole conversation.
@@ -105,17 +105,21 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
             continue
         btype = block.get("type")
         if btype == "text":
+            text = str(block.get("text", ""))
+            if not text:
+                continue
             items.extend(pending_reasoning)
             pending_reasoning.clear()
-            text_run.append(str(block.get("text", "")))
+            text_run.append(text)
         elif btype == "thinking" and role == "assistant":
             item = block.get("chatgpt_reasoning")
             if isinstance(item, dict):
                 flush()
                 pending_reasoning.append(item)
         elif btype == "tool_use" and role == "assistant":
-            if not str(block.get("name") or "").strip():
-                dropped_ids.add(str(block.get("id", "")))
+            call_id = str(block.get("id") or "")
+            if not str(block.get("name") or "").strip() or not call_id.strip():
+                dropped_ids.add(call_id)
                 pending_reasoning.clear()
                 continue
             flush()
@@ -124,7 +128,7 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
             items.append(
                 {
                     "type": "function_call",
-                    "call_id": str(block.get("id", "")),
+                    "call_id": call_id,
                     "name": str(block.get("name", "")),
                     "arguments": json.dumps(block.get("input") or {}),
                 }
@@ -187,10 +191,19 @@ def _tool_use_of(item: dict[str, Any], *, n: int) -> dict[str, Any] | None:
 
 
 def _usage_count(value: Any, field_name: str) -> int:
+    if value is None:
+        return 0
     try:
-        return int(value or 0)
+        if isinstance(value, bool):
+            raise TypeError
+        count = int(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ProviderError(f"ChatGPT response usage.{field_name} was not numeric") from exc
+        raise ProviderError(
+            f"ChatGPT response usage.{field_name} was not a non-negative integer"
+        ) from exc
+    if count < 0 or (isinstance(value, float) and not value.is_integer()):
+        raise ProviderError(f"ChatGPT response usage.{field_name} was not a non-negative integer")
+    return count
 
 
 def parse_output_items(
@@ -305,7 +318,7 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
             used = float(lowered[key])
         except (TypeError, ValueError):
             continue
-        if not math.isfinite(used):
+        if not math.isfinite(used) or used < 0:
             continue
         resets_at = _num(lowered.get(f"x-codex-{name}-reset-at"))
         if not resets_at:
@@ -349,7 +362,7 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
             used = float(raw.get("used_percent", ""))
         except (TypeError, ValueError):
             continue
-        if not math.isfinite(used):
+        if not math.isfinite(used) or used < 0:
             continue
         resets_at = _num(raw.get("reset_at"))
         if not resets_at:
@@ -368,10 +381,10 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
     credits = credits if isinstance(credits, Mapping) else {}
     return PlanUsage(
         windows=tuple(sorted(windows, key=lambda w: _window_order(w.name))),
-        has_credits=bool(credits.get("has_credits")),
-        credits_unlimited=bool(credits.get("unlimited")),
+        has_credits=credits.get("has_credits") is True,
+        credits_unlimited=credits.get("unlimited") is True,
         credits_balance=str(credits.get("balance") or "").strip(),
-        limit_reached=bool(limits.get("limit_reached")),
+        limit_reached=limits.get("limit_reached") is True,
     )
 
 
@@ -645,12 +658,19 @@ class ChatGPTProvider:
                     evt_usage = response.get("usage")
                     if isinstance(evt_usage, dict):
                         usage = evt_usage
+                    status = str(response.get("status") or kind.removeprefix("response."))
+                    if status == "failed":
+                        call.record(status=0, response=data_str[:8192])
+                        raise _stream_error(evt)
+                    if status not in ("completed", "incomplete", "done"):
+                        call.record(status=0, response=data_str[:8192])
+                        raise ProviderError(f"ChatGPT response ended with status {status}")
                     final_items = response.get("output")
                     if isinstance(final_items, list) and final_items:
                         # The terminal response is the complete, ordered output;
                         # item.done events may be absent for only some items.
                         items[:] = final_items
-                    if kind == "response.incomplete":
+                    if status == "incomplete":
                         reason = str((response.get("incomplete_details") or {}).get("reason") or "")
                         stop_reason = (
                             "max_tokens"

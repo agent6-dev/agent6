@@ -298,6 +298,74 @@ def test_incomplete_max_output_tokens_maps_to_max_tokens(
     assert resp.stop_reason == "max_tokens" and resp.text == "partial"
 
 
+def test_response_done_uses_an_incomplete_response_status(
+    signed_in: ChatGPTCredential,
+) -> None:
+    message = {
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": "partial"}],
+    }
+    lines = _evt(
+        {
+            "type": "response.done",
+            "response": {
+                "status": "incomplete",
+                "incomplete_details": {"reason": "max_output_tokens"},
+                "usage": _USAGE,
+                "output": [message],
+            },
+        }
+    )
+    provider = _provider(signed_in)
+    with mock.patch("httpx2.stream", side_effect=_serve(lines)):
+        response = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+    assert response.stop_reason == "max_tokens" and response.text == "partial"
+
+
+def test_response_done_raises_and_bills_a_failed_response(
+    signed_in: ChatGPTCredential,
+) -> None:
+    lines = _evt(
+        {
+            "type": "response.done",
+            "response": {
+                "status": "failed",
+                "error": {"code": "server_error", "message": "failed after generation"},
+                "usage": _USAGE,
+            },
+        }
+    )
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = _provider(signed_in, budget=budget)
+    no_preflight, _ = _usage_get({}, status=503)
+    with (
+        mock.patch("httpx2.get", side_effect=no_preflight),
+        mock.patch("httpx2.stream", side_effect=_serve(lines)),
+        pytest.raises(ProviderError, match="failed after generation"),
+    ):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+    snapshot = budget.snapshot()
+    assert (snapshot.input_total, snapshot.cache_read_total, snapshot.output_total) == (35, 7, 9)
+
+
+def test_response_done_raises_and_bills_a_cancelled_response(
+    signed_in: ChatGPTCredential,
+) -> None:
+    lines = _evt({"type": "response.done", "response": {"status": "cancelled", "usage": _USAGE}})
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = _provider(signed_in, budget=budget)
+    no_preflight, _ = _usage_get({}, status=503)
+    with (
+        mock.patch("httpx2.get", side_effect=no_preflight),
+        mock.patch("httpx2.stream", side_effect=_serve(lines)),
+        pytest.raises(ProviderError, match="cancelled"),
+    ):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+    snapshot = budget.snapshot()
+    assert (snapshot.input_total, snapshot.cache_read_total, snapshot.output_total) == (35, 7, 9)
+
+
 def test_failed_event_raises_with_usage_limit_status(signed_in: ChatGPTCredential) -> None:
     lines = _evt(
         {
@@ -424,6 +492,31 @@ def test_malformed_usage_count_is_a_provider_error(signed_in: ChatGPTCredential)
         pytest.raises(ProviderError, match=r"usage\.output_tokens"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, True, {}, [], ""])
+def test_usage_counts_reject_non_integer_values(value: object) -> None:
+    from agent6.providers.chatgpt import parse_output_items
+
+    with pytest.raises(ProviderError, match=r"usage\.output_tokens"):
+        parse_output_items(
+            [], usage={"input_tokens": 1, "output_tokens": value}, stop_reason="end_turn"
+        )
+
+
+def test_usage_counts_accept_integer_strings() -> None:
+    from agent6.providers.chatgpt import parse_output_items
+
+    response = parse_output_items(
+        [],
+        usage={
+            "input_tokens": "10",
+            "input_tokens_details": {"cached_tokens": "3"},
+            "output_tokens": "2",
+        },
+        stop_reason="end_turn",
+    )
+    assert (response.input_tokens, response.cache_read_tokens, response.output_tokens) == (7, 3, 2)
 
 
 def test_responses_input_flattens_odd_content() -> None:
@@ -737,11 +830,30 @@ def test_reasoning_without_a_following_output_item_is_not_replayed() -> None:
         [
             {
                 "role": "assistant",
-                "content": [{"type": "thinking", "thinking": "", "chatgpt_reasoning": item}],
+                "content": [
+                    {"type": "thinking", "thinking": "", "chatgpt_reasoning": item},
+                    {"type": "text", "text": ""},
+                ],
             }
         ]
     )
 
+    assert items == []
+
+
+def test_responses_input_drops_idless_tool_pairs() -> None:
+    items = responses_input(
+        [
+            {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "name": "read_file", "input": {}}],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "content": "orphaned"}],
+            },
+        ]
+    )
     assert items == []
 
 
@@ -788,6 +900,22 @@ def test_usage_body_parses_both_windows_and_the_credit_family() -> None:
     assert plan.credits_usd == 12.5
     assert plan.window_exhausted
     assert plan_usage_from_usage_body({"credits": {}}) is None
+
+
+def test_usage_body_does_not_treat_string_false_as_unlimited_credits() -> None:
+    from agent6.providers.chatgpt import plan_usage_from_usage_body
+
+    plan = plan_usage_from_usage_body(
+        {
+            "rate_limit": {"primary_window": {"used_percent": 100}},
+            "credits": {"has_credits": True, "unlimited": "false", "balance": "500"},
+        }
+    )
+    assert plan is not None and plan.credits_unlimited is False
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget.record_plan_preflight("chatgpt", plan)
+    with pytest.raises(BudgetExceeded, match="purchased"):
+        budget.check()
 
 
 def test_secondary_window_header_rides_into_the_reading() -> None:
@@ -858,9 +986,13 @@ def test_nonfinite_plan_metadata_is_ignored() -> None:
     assert from_body.window_minutes == 0
     assert from_body.resets_at > 0
     assert _plan_usage_of({"x-codex-primary-used-percent": "nan"}) is None
+    assert _plan_usage_of({"x-codex-primary-used-percent": "-1"}) is None
     assert (
         plan_usage_from_usage_body({"rate_limit": {"primary_window": {"used_percent": "inf"}}})
         is None
+    )
+    assert (
+        plan_usage_from_usage_body({"rate_limit": {"primary_window": {"used_percent": -1}}}) is None
     )
 
 

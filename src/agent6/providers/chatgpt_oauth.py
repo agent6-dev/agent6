@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import secrets as pysecrets
 import threading
 import time
@@ -155,17 +156,30 @@ def _grant_from_response(resp: httpx2.Response, *, operation: str) -> TokenGrant
     access = data.get("access_token") if isinstance(data, dict) else None
     if not isinstance(access, str) or not access:
         raise ProviderError(f"ChatGPT token {operation} response carried no access_token")
+    refresh = data.get("refresh_token")
+    if refresh is None:
+        refresh = ""
+    if not isinstance(refresh, str):
+        raise ProviderError(f"ChatGPT token {operation} response carried an unusable refresh_token")
+    identity = data.get("id_token")
+    if identity is None:
+        identity = ""
+    if not isinstance(identity, str):
+        raise ProviderError(f"ChatGPT token {operation} response carried an unusable id_token")
+    expires = data.get("expires_in", 3600.0)
     try:
-        expires_in = float(data.get("expires_in") or 3600.0)
+        expires_in = float(expires)
+        if isinstance(expires, bool) or not math.isfinite(expires_in) or expires_in <= 0:
+            raise ValueError
     except (TypeError, ValueError, OverflowError) as exc:
         raise ProviderError(
             f"ChatGPT token {operation} response carried an unusable expires_in"
         ) from exc
     return TokenGrant(
         access_token=access,
-        refresh_token=str(data.get("refresh_token") or ""),
+        refresh_token=refresh,
         expires_in=expires_in,
-        id_token=str(data.get("id_token") or ""),
+        id_token=identity,
     )
 
 
@@ -239,7 +253,10 @@ def exchange_code(
         raise ProviderError(f"could not reach {url}: {exc}") from exc
     if resp.status_code >= 400:
         raise _token_error(resp, operation="exchange", provider=provider, secrets=(code, verifier))
-    return _grant_from_response(resp, operation="exchange")
+    grant = _grant_from_response(resp, operation="exchange")
+    if not grant.refresh_token.strip():
+        raise ProviderError("ChatGPT token exchange response carried no refresh_token")
+    return grant
 
 
 @dataclass(frozen=True, slots=True)
@@ -405,7 +422,9 @@ def jwt_claims(token: str) -> dict[str, Any]:
         return {}
     payload = parts[1] + "=" * (-len(parts[1]) % 4)
     try:
-        decoded: Any = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+        decoded: Any = json.loads(
+            base64.b64decode(payload.encode("ascii"), altchars=b"-_", validate=True)
+        )
     except (ValueError, UnicodeDecodeError):
         return {}
     return decoded if isinstance(decoded, dict) else {}
@@ -523,11 +542,11 @@ class ChatGPTCredential:
                 " to sign in again.",
                 status_code=401,
             )
-        return self._same_account(tokens)
+        return self._same_account(tokens, claimed=claimed)
 
-    def _same_account(self, tokens: OAuthTokens) -> OAuthTokens:
+    def _same_account(self, tokens: OAuthTokens, *, claimed: str = "") -> OAuthTokens:
         """Pin on the first account id seen; refuse a grant bound to another."""
-        account = tokens.account_id
+        account = claimed or tokens.account_id
         if not self._account:
             self._account = account
         elif account and account != self._account:
@@ -583,7 +602,10 @@ class ChatGPTCredential:
                     # one), and a fresh sibling grant wins.
                     time.sleep(1.0)
                     rescued = self._stored()
-                    if rescued.access_token == tokens.access_token:
+                    if (
+                        rescued.access_token == tokens.access_token
+                        or time.time() >= rescued.expires_at - _REFRESH_SKEW_S
+                    ):
                         raise
                     return self._adopt(rescued)
                 fresh = self._same_account(tokens_from_grant(grant, previous=tokens))
