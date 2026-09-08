@@ -23,7 +23,7 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6.providers import AnthropicProvider, TranscriptSink
+from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
 from agent6.providers.anthropic import (
     _THINKING_BUDGET_TOKENS,  # pyright: ignore[reportPrivateUsage]
 )
@@ -179,6 +179,24 @@ def test_thinking_unset_is_a_plain_call(monkeypatch: pytest.MonkeyPatch) -> None
         max_tokens=8192,
     )
     assert "thinking" not in bodies[0]
+
+
+def test_nonstreaming_thinking_requires_its_replay_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {
+        "content": [{"type": "thinking", "thinking": "unsigned"}],
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 1, "output_tokens": 1},
+    }
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(status_code=200, payload=payload)
+
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="signature"):
+        provider.call(system="sys", messages=[{"role": "user", "content": "go"}])
 
 
 class _FakeStreamResponse:

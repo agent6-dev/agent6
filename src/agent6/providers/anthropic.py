@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 import httpx2
 
 from agent6.budget import BudgetTracker
-from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
+from agent6.providers._stream import SseCall, StreamClock, record_billed_usage, sse_events
 from agent6.providers._transport import ProviderCall, envelope_status, meter_completion
 from agent6.providers.types import (
     ProviderError,
@@ -478,6 +478,8 @@ class AnthropicProvider:
         text_acc: dict[int, list[str]] = {}
         tool_acc: dict[int, dict[str, Any]] = {}
         json_partial: dict[int, list[str]] = {}
+        unknown_acc: dict[int, dict[str, Any]] = {}
+        open_blocks: set[int] = set()
         # Extended-thinking builders. `thinking_acc` collects the visible
         # reasoning text and `signature_acc` the cryptographic signature
         # Anthropic requires to be echoed back on the next turn when a tool
@@ -512,23 +514,13 @@ class AnthropicProvider:
         def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: PLR0912, PLR0915
             nonlocal stop_reason, saw_message_stop, usage_input, usage_output
             nonlocal usage_cache_read, usage_cache_creation, saw_input_usage, saw_output_usage
-            event_type = ""
-            for line in bounded_lines(resp):
-                if not line:
-                    event_type = ""
-                    continue
-                if line.startswith("event:"):
-                    event_type = line[6:].strip()
-                    continue
-                if not line.startswith("data:"):
-                    continue
-                data_str = line[5:].strip()
+            for event_type, data_str in sse_events(resp):
                 if not data_str:
                     continue
                 try:
                     evt: dict[str, Any] = json.loads(data_str)
-                except json.JSONDecodeError:
-                    continue
+                except json.JSONDecodeError as exc:
+                    raise ProviderError("Anthropic stream event was not JSON") from exc
                 et = event_type or str(evt.get("type", ""))
                 # Reset the idle clock on every MEANINGFUL event. `ping`
                 # heartbeats are deliberately excluded: they are exactly the
@@ -552,10 +544,14 @@ class AnthropicProvider:
                     if "input_tokens" in u and u.get("input_tokens") is not None:
                         saw_input_usage = True
                     usage_input = _usage_count(u, "input_tokens")
+                    usage_output = _usage_count(u, "output_tokens")
                     usage_cache_read = _usage_count(u, "cache_read_input_tokens")
                     usage_cache_creation = _usage_count(u, "cache_creation_input_tokens")
                 elif et == "content_block_start":
                     idx = _non_negative_integer(evt.get("index", 0), "content block index")
+                    if idx in open_blocks:
+                        raise ProviderError(f"Anthropic content block {idx} started twice")
+                    open_blocks.add(idx)
                     cb = evt.get("content_block")
                     if not isinstance(cb, Mapping):
                         raise ProviderError("Anthropic response content block was not an object")
@@ -604,12 +600,22 @@ class AnthropicProvider:
                             "input": tool_input,
                         }
                         json_partial[idx] = []
+                    else:
+                        # The Messages API may add content block types. Keep an
+                        # opaque block exactly as it arrived so transcript
+                        # replay does not erase state from a newer wire.
+                        unknown_acc[idx] = dict(cb)
                 elif et == "content_block_delta":
                     idx = _non_negative_integer(evt.get("index", 0), "content block index")
                     d = evt.get("delta")
                     if not isinstance(d, Mapping):
                         raise ProviderError("Anthropic response content delta was not an object")
                     dt = _response_string(d.get("type"), "content delta type", empty=False)
+                    if idx in unknown_acc:
+                        raise ProviderError(
+                            f"Anthropic content block {idx} of type"
+                            f" {unknown_acc[idx].get('type')!r} streamed a {dt}"
+                        )
                     if dt == "text_delta":
                         piece = _response_string(d.get("text", ""), "content text delta")
                         text_acc.setdefault(idx, []).append(piece)
@@ -634,6 +640,11 @@ class AnthropicProvider:
                         )
                 elif et == "content_block_stop":
                     idx = _non_negative_integer(evt.get("index", 0), "content block index")
+                    if idx not in open_blocks:
+                        raise ProviderError(
+                            f"Anthropic content block {idx} stopped before it started"
+                        )
+                    open_blocks.remove(idx)
                     if idx in text_acc:
                         content_blocks.append(
                             {
@@ -650,8 +661,11 @@ class AnthropicProvider:
                             "thinking": "".join(thinking_acc.pop(idx)),
                         }
                         sig = "".join(signature_acc.pop(idx, []))
-                        if sig:
-                            block_out["signature"] = sig
+                        if not sig:
+                            raise ProviderError(
+                                "Anthropic content thinking block omitted its signature"
+                            )
+                        block_out["signature"] = sig
                         content_blocks.append(block_out)
                     elif idx in tool_acc:
                         tu = tool_acc.pop(idx)
@@ -659,12 +673,13 @@ class AnthropicProvider:
                         if partial:
                             try:
                                 tu["input"] = json.loads(partial)
-                            except json.JSONDecodeError:
-                                # Stream truncated mid-JSON; surface
-                                # what arrived rather than dropping
-                                # the tool_use entirely.
-                                tu["input"] = {"_partial_json": partial}
+                            except json.JSONDecodeError as exc:
+                                raise ProviderError(
+                                    "Anthropic content tool_use input JSON was incomplete"
+                                ) from exc
                         content_blocks.append(tu)
+                    elif idx in unknown_acc:
+                        content_blocks.append(unknown_acc.pop(idx))
                 elif et == "message_delta":
                     d = evt.get("delta")
                     if not isinstance(d, Mapping):
@@ -680,6 +695,11 @@ class AnthropicProvider:
                         saw_output_usage = True
                         usage_output = _usage_count(u, "output_tokens")
                 elif et == "message_stop":
+                    if open_blocks:
+                        idx = min(open_blocks)
+                        raise ProviderError(
+                            f"Anthropic message stopped before content block {idx} stopped"
+                        )
                     saw_message_stop = True
                     return
                 elif et == "error":
@@ -821,7 +841,7 @@ def _parse_response(data: dict[str, Any]) -> ProviderResponse:
             )
         elif block_type == "thinking":
             _response_string(block.get("thinking", ""), "content thinking")
-            _response_string(block.get("signature", ""), "content signature")
+            _response_string(block.get("signature", ""), "content signature", empty=False)
         elif block_type == "redacted_thinking":
             _response_string(block.get("data", ""), "content redacted_thinking data", empty=False)
     usage = _usage_mapping(data.get("usage"))

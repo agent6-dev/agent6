@@ -6,9 +6,8 @@ The HTTP providers speak Server-Sent Events over a single POST and need the
 same machinery around their event loops: an idle watchdog that heartbeats cannot
 satisfy, operator stop/steer that ends an in-flight turn promptly, and
 classification of the teardown into `ProviderAborted` /
-`ProviderInterrupted` / a retryable `ProviderError`. Event parsing stays
-per-provider (the wire formats share nothing); this module owns
-everything around it.
+`ProviderInterrupted` / a retryable `ProviderError`, and the SSE event
+framing (`sse_events`); what an event means stays per-provider.
 
 Why a watchdog at all: httpx2's `timeout` (float or `httpx2.Timeout` with
 `read=`) resets on EVERY received byte, and gateways emit heartbeat bytes
@@ -104,6 +103,35 @@ def bounded_lines(resp: httpx2.Response, *, max_line_bytes: int = 8 * 1024 * 102
                 f"stream frame exceeded {max_line_bytes} bytes; refusing to buffer it"
             )
         yield line
+
+
+def sse_events(resp: httpx2.Response) -> Generator[tuple[str, str]]:
+    """Yield one event name and its complete SSE data payload.
+
+    SSE permits multiple `data:` fields in one event; their values are joined
+    with newlines and dispatched only at the blank-line boundary, so a stream
+    cut mid-event ends with no event (the consumer reads that as a cut, not
+    as a malformed event). Comments and fields this client does not use are
+    ignored.
+    """
+    event_type = ""
+    data: list[str] = []
+    for line in bounded_lines(resp):
+        if not line:
+            if data:
+                yield event_type, "\n".join(data)
+            event_type = ""
+            data = []
+            continue
+        if line.startswith(":"):
+            continue
+        field, separator, value = line.partition(":")
+        if separator and value.startswith(" "):
+            value = value[1:]
+        if field == "event":
+            event_type = value
+        elif field == "data":
+            data.append(value)
 
 
 def _error_body_prefix(resp: httpx2.Response) -> str:

@@ -736,3 +736,198 @@ def test_streaming_scalar_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch
             messages=[{"role": "user", "content": "x"}],
             text_delta_callback=lambda _piece: None,
         )
+
+
+def test_streaming_preserves_unknown_content_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    block = {"type": "future_block", "opaque": {"value": 7}}
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=_complete_stream(block=block))
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    response = provider.call(
+        system="sys",
+        messages=[{"role": "user", "content": "x"}],
+        text_delta_callback=lambda _piece: None,
+    )
+    assert response.raw["content"] == [block]
+
+
+def test_streaming_thinking_requires_its_replay_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    block = {"type": "thinking", "thinking": "reasoning without a signature"}
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=_complete_stream(block=block))
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="signature"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+
+
+def test_streaming_completed_tool_input_must_be_valid_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lines = _sse(
+        [
+            ("message_start", {"message": {"usage": {"input_tokens": 1}}}),
+            (
+                "content_block_start",
+                {
+                    "index": 0,
+                    "content_block": {
+                        "type": "tool_use",
+                        "id": "tu_1",
+                        "name": "read_file",
+                        "input": {},
+                    },
+                },
+            ),
+            (
+                "content_block_delta",
+                {
+                    "index": 0,
+                    "delta": {"type": "input_json_delta", "partial_json": '{"path":'},
+                },
+            ),
+            ("content_block_stop", {"index": 0}),
+            (
+                "message_delta",
+                {"delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 1}},
+            ),
+            ("message_stop", {}),
+        ]
+    )
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="tool_use input JSON"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+
+
+def test_streaming_message_stop_refuses_an_open_content_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lines = _sse(
+        [
+            ("message_start", {"message": {"usage": {"input_tokens": 1}}}),
+            (
+                "content_block_start",
+                {"index": 0, "content_block": {"type": "text", "text": ""}},
+            ),
+            (
+                "message_delta",
+                {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 1}},
+            ),
+            ("message_stop", {}),
+        ]
+    )
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="before content block 0 stopped"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+
+
+def test_streaming_malformed_json_event_is_not_silently_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lines = _complete_stream()
+    lines[2:2] = ["event: ping", "data: {not-json}", ""]
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="event was not JSON"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+
+
+def test_streaming_combines_all_data_lines_in_an_sse_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lines = [
+        "event: message_start",
+        'data: {"message": {"usage":',
+        'data: {"input_tokens": 1}}}',
+        "",
+        *_complete_stream()[3:],
+    ]
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    response = provider.call(
+        system="sys",
+        messages=[{"role": "user", "content": "x"}],
+        text_delta_callback=lambda _piece: None,
+    )
+    assert response.stop_reason == "end_turn"
+
+
+def test_a_stream_cut_mid_event_reads_as_cut(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stream that dies inside an event ends with no event: the call reads
+    as cut (no message_stop) and records the cut, never as a malformed event."""
+    lines = [*_complete_stream()[:3], 'data: {"type": "content_block_de']
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="no message_stop"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+
+
+def test_an_unknown_block_streaming_a_delta_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An opaque block is kept as it arrived; one that streams a text delta
+    would otherwise close as a text block, its type lost."""
+    block = {"type": "future_block", "opaque": {"value": 7}}
+    lines = _complete_stream(block=block)
+    lines[6:6] = _sse(
+        [("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "hi"}})]
+    )
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="'future_block' streamed a text_delta"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )

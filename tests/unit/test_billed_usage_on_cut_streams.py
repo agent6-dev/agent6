@@ -97,6 +97,32 @@ def test_anthropic_records_what_a_cut_stream_already_cost(
     assert spent > 0
 
 
+def test_anthropic_cut_stream_keeps_message_start_output_usage() -> None:
+    lines = _sse(
+        "message_start",
+        {"message": {"usage": {"input_tokens": 50, "output_tokens": 7}}},
+    )
+    lines += _sse(
+        "content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}
+    )
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    with (
+        mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=6)),
+        pytest.raises(Exception),
+    ):
+        provider.call(
+            messages=[{"role": "user", "content": "hi"}],
+            system="",
+            tools=[],
+            text_delta_callback=lambda _text: None,
+        )
+
+    snapshot = budget.snapshot()
+    assert snapshot.input_total == 50
+    assert snapshot.output_total == 7
+
+
 def test_openai_records_a_cut_stream_and_keeps_the_cached_split() -> None:
     """Through parse_response, so the cached-vs-fresh mapping has one owner."""
 
