@@ -269,6 +269,28 @@ def test_request_drops_unsigned_thinking_but_keeps_anthropic_signature(
     ]
 
 
+def test_an_extra_body_max_tokens_below_the_thinking_budget_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The provider lifts max_tokens over the budget and extra_body then
+    overrode it, so a contradicting value reached the wire as a 400 on every
+    call; it is refused before the call, naming both numbers."""
+    bodies: list[dict[str, Any]] = []
+    _capture_body(monkeypatch, bodies)
+    provider = AnthropicProvider(
+        api_key="sk-test",
+        model="claude-test",
+        prompt_caching=False,
+        effort="high",
+        extra_body={"max_tokens": 1000},
+    )
+    with pytest.raises(
+        ProviderError, match="max_tokens 1000 is not above the thinking budget"
+    ) as exc_info:
+        provider.call(system="sys", messages=[{"role": "user", "content": "go"}])
+    assert bodies == [] and exc_info.value.fatal  # a config refusal never clears on retry
+
+
 def test_required_prompt_cache_beta_is_merged_with_extra_betas(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

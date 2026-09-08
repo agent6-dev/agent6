@@ -421,6 +421,18 @@ class AnthropicProvider:
                 "tool_choice",
             }
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
+        if thinking_budget is not None:
+            # The wire requires max_tokens above the budget; an extra_body
+            # max_tokens that contradicts the effort is the operator's to fix.
+            configured_max = body.get("max_tokens")
+            if not isinstance(configured_max, int) or isinstance(configured_max, bool):
+                raise ProviderError("Anthropic request max_tokens was not an integer", fatal=True)
+            if configured_max <= thinking_budget:
+                raise ProviderError(
+                    f"extra_body.max_tokens {configured_max} is not above the thinking budget"
+                    f" {thinking_budget} (effort {level}); raise it or lower the effort",
+                    fatal=True,
+                )
 
         # The transport rebuilds headers per attempt (a token_command
         # credential mints a short-lived Vertex bearer; a 401/403 refreshes it
