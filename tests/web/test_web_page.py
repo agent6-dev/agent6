@@ -17,7 +17,7 @@ from agent6.ui.web.page import PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "3720bcd219f534c5057e88256fd1d0c46797a5e3b6c1945283ab75ce564e5a9e"
+PAGE_SHA256 = "5423cd58f7fd356d7dcd9bd3f171941cb3aa3703d064e59cf9c66549df8e8ba4"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -45,3 +45,12 @@ def test_the_sessions_card_folds_a_fan_outs_lanes() -> None:
     # and a lane row is a keyboard-reachable button like every other row.
     assert "toggle.onkeydown = (e) => e.stopPropagation();" in client
     assert "actionable(li, " in client
+
+
+def test_the_config_editor_sends_a_string_leaf_as_a_toml_string() -> None:
+    """A str leaf is posted quoted, as the TUI's editor sends it, so a value
+    that parses as another TOML type (`true`, `42`, `[a]`) stays a string."""
+    config = resources.files("agent6.ui.web").joinpath("client_config.js")
+    assert "s.type === 'str' ? JSON.stringify(field.value) : field.value" in config.read_text(
+        encoding="utf-8"
+    )

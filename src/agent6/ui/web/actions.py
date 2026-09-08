@@ -21,7 +21,7 @@ from typing import Any
 from agent6.app.fork import create_fork
 from agent6.app.reporter import Reporter
 from agent6.app.undo import undo_fork
-from agent6.config.write import ConfigLeafValue, set_config_table
+from agent6.config.write import ConfigLeafValue, set_config_leaves
 from agent6.directive import parse_btw, parse_compact, parse_now
 from agent6.errors import OperatorError
 from agent6.machine import (
@@ -468,10 +468,11 @@ def add_provider(
     api_key_env: str = "",
     repo: bool = False,
 ) -> tuple[bool, str]:
-    """Add a whole `[providers.<name>]` block, the TUI's add-provider form over
-    the same writer (`set_config_table`: revalidates, rolls back on failure).
-    Blank optional fields are omitted: base_url and auth default from the
-    format and deployment, the key from secrets.toml by provider name."""
+    """Add or update `[providers.<name>]`, the TUI's add-provider form over the
+    same writer (`set_config_leaves`: an existing block keeps its other keys;
+    revalidates, rolls back on failure). Blank optional fields are omitted:
+    base_url and auth default from the format and deployment, the key from
+    secrets.toml by provider name."""
     name = name.strip()
     if not name:
         return False, "a provider name is required"
@@ -483,12 +484,12 @@ def add_provider(
     if api_key_env.strip():
         fields["api_key_env"] = api_key_env.strip()
     try:
-        err = set_config_table(cwd, f"providers.{name}", fields, to_repo=repo)
+        err = set_config_leaves(cwd, f"providers.{name}", fields, to_repo=repo)
     except OperatorError as exc:
         return False, str(exc)
     if err:
         return False, err
-    return True, f"added [providers.{name}]"
+    return True, f"set [providers.{name}]"
 
 
 def unset_config(

@@ -1925,7 +1925,7 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
 def test_the_config_page_adds_a_provider_block(server: tuple[WebServer, int]) -> None:
     """The TUI's config page has an add-provider form; the web could only
     edit leaves that already existed, so a `[providers.<name>]` block could not
-    be created from a browser. One POST writes the whole block through the
+    be created from a browser. One POST writes the block through the
     same writer, and the choices endpoint serves the form its fixed values."""
     _srv, port = server
     status, body, _ = _get(port, "/api/config/provider_choices")
@@ -1944,3 +1944,26 @@ def test_the_config_page_adds_a_provider_block(server: tuple[WebServer, int]) ->
     assert json.loads(body)["providers.openrouter.api_format"]["value"] == "openai"
     status, data = _post(port, "/api/config/provider", {"name": "", "api_format": "openai"})
     assert status == 422
+
+
+def test_re_adding_a_provider_keeps_its_other_keys(server: tuple[WebServer, int]) -> None:
+    """The add-provider form over a name that exists updates the block as the
+    TUI's does: a base_url set earlier survives a later POST that omits it. A
+    whole-block replace dropped every key the second form left blank."""
+    _srv, port = server
+    status, data = _post(
+        port,
+        "/api/config/provider",
+        {"name": "openrouter", "api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
+    )
+    assert status == 200 and data["ok"] is True, data
+    status, data = _post(
+        port,
+        "/api/config/provider",
+        {"name": "openrouter", "api_format": "openai", "api_key_env": "OPENROUTER_KEY"},
+    )
+    assert status == 200 and data["ok"] is True, data
+    status, body, _ = _get(port, "/api/config")
+    cfg = json.loads(body)
+    assert cfg["providers.openrouter.base_url"]["value"] == "https://openrouter.ai/api/v1"
+    assert cfg["providers.openrouter.api_key_env"]["value"] == "OPENROUTER_KEY"

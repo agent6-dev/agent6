@@ -49,7 +49,7 @@ Pages that take a task, a steer or a machine message dock their text entry at th
     - the docked entry submits as **Steer** (into the current agent state) or **Message** (a `poke` payload a waiting machine's next tool reads)
     - **Stop** parks the instance at its next transition, as `agent6 machine stop` does; `machine run` resumes it
     - `machine.notify`/end: ephemeral banners and OS notifications
-- **Config page**: every setting with value and source, filterable; click a row to set it; Add provider… writes a whole `[providers.<name>]` block (the TUI form's fields)
+- **Config page**: every setting with value and source, filterable; click a row to set it; Add provider… adds or updates a `[providers.<name>]` block (the TUI form's fields), keeping keys the form leaves blank
     - enum settings offer their choices, `models.<role>.provider` the configured providers; `models.<role>.model` autocompletes that provider's model ids (the TUI/CLI completion)
     - secrets never shown
 

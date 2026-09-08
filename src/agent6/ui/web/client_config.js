@@ -46,7 +46,7 @@ function descriptionNode(text) {
   return frag;
 }
 
-// The TUI's add-provider form: a whole [providers.<name>] block in one write
+// The TUI's add-provider form: a [providers.<name>] block in one write, existing keys kept
 // (base_url and auth default from the format and deployment when left blank;
 // the key comes from secrets.toml by provider name). Typing a known name
 // prefills its format and base_url, as `agent6 connect` would.
@@ -169,7 +169,7 @@ function editConfig(key, s) {
   let unsetBtn = null;
   if (s.source === 'repo' || s.source === 'global') {
     unsetBtn = el('button', null, 'Unset');
-    unsetBtn.title = 'remove from the ' + s.source + ' config; reverts to ' + s.default_display;
+    unsetBtn.title = 'remove from the ' + s.source + ' config; the next layer below takes over';
     row.appendChild(unsetBtn);
   }
   row.appendChild(cancel); box.appendChild(row);
@@ -187,7 +187,10 @@ function editConfig(key, s) {
   const submit = async () => {
     save.disabled = true;
     try {
-      const d = await postJSON('/api/config', { key, value: field.value, repo: repoCb.checked });
+      // A string-valued leaf travels as a TOML string, as the TUI sends it, so
+      // `true`, `42` or `[a]` typed into a str field stays a string.
+      const value = s.type === 'str' ? JSON.stringify(field.value) : field.value;
+      const d = await postJSON('/api/config', { key, value, repo: repoCb.checked });
       toast(d.message || 'set ' + key); close(); renderConfig();
     } catch (e) { toast(e.message, true); save.disabled = false; }
   };
