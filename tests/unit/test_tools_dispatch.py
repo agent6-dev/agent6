@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from pydantic import ValidationError
 
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher, ToolError
@@ -1731,15 +1732,19 @@ def test_stringified_coercion_surfaces_original_error_when_wrong(tmp_path: Path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
     # Parses as JSON but has the wrong inner shape: re-validation fails and the
     # original tuple_type error (not the retry's) reaches the caller.
-    with pytest.raises(ToolError, match=r"tuple_type|valid tuple|list"):
+    with pytest.raises(ToolError, match="edits: expected an array"):
         d.dispatch("apply_edit", {"path": "a.txt", "edits": '[{"nope": 1}]'})
 
 
 def test_non_json_string_still_fails_validation(tmp_path: Path) -> None:
+    """pydantic's "Input should be a valid tuple" names no JSON form; a model
+    that read it sent the same string again."""
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError):
+    with pytest.raises(ToolError, match="edits: expected an array"):
         d.dispatch("apply_edit", {"path": "a.txt", "edits": "not json at all"})
+    with pytest.raises(ToolError, match="edits: expected a non-empty array"):
+        d.dispatch("apply_edit", {"path": "a.txt", "edits": []})
 
 
 def test_under_system_root_classifies_bin_dirs() -> None:
@@ -2471,3 +2476,16 @@ def test_an_edit_or_patch_result_names_the_paths_it_wrote(tmp_path: Path) -> Non
     d.dispatch("apply_patch", {"patch": gone})
     last = json.loads(logs.read_text(encoding="utf-8").splitlines()[-1])
     assert last["type"] == "tool.result" and last.get("paths") == []  # a deletion wrote nothing
+
+
+def test_a_too_long_array_is_named_in_json_words() -> None:
+    """pydantic says "Tuple should have at most 8 items"; the model wrote a
+    JSON array and has never heard of a tuple."""
+    from agent6.tools.dispatch import invalid_arguments
+    from agent6.tools.schema import AskUserInput
+
+    with pytest.raises(ValidationError) as info:
+        AskUserInput.model_validate({"questions": [{"question": f"q{i}"} for i in range(9)]})
+    assert invalid_arguments(info.value) == (
+        "invalid arguments: questions: expected at most 8 items in the array"
+    )

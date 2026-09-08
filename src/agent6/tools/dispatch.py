@@ -163,12 +163,22 @@ def _coerce_stringified_args(
     return coerced
 
 
+# pydantic's container words in JSON's, for a model that writes JSON.
+_JSON_WORDS = {
+    "tuple_type": "expected an array",
+    "list_type": "expected an array",
+    "too_short": "expected a non-empty array",
+    "dict_type": "expected an object",
+    "model_type": "expected an object",
+}
+
+
 def invalid_arguments(exc: ValidationError) -> str:
     """One line per real argument problem, for the model and the log: the
     dotted field, then the message without pydantic's "Value error, " lead
-    and docs URL. A container error caused by an invalid item ("edits: Tuple
-    should have at least 1 item after validation, not 0") is dropped: the
-    item's own line already says what to fix."""
+    and docs URL, a container's in JSON's words. A container error caused by
+    an invalid item ("edits: expected a non-empty array" beside the item's
+    own line) is dropped: the item's line already says what to fix."""
     errors = exc.errors(include_url=False)
     item_locs = [tuple(e["loc"]) for e in errors]
     parts: list[str] = []
@@ -179,7 +189,10 @@ def invalid_arguments(exc: ValidationError) -> str:
         ):
             continue
         field = ".".join(str(p) for p in loc) or "arguments"
-        msg = str(err["msg"]).removeprefix("Value error, ")
+        msg = _JSON_WORDS.get(err["type"]) or str(err["msg"]).removeprefix("Value error, ")
+        if err["type"] == "too_long":
+            ctx = err.get("ctx") or {}
+            msg = f"expected at most {ctx['max_length']} items in the array"
         parts.append(f"{field}: {msg}")
     return "invalid arguments: " + "; ".join(parts)
 
