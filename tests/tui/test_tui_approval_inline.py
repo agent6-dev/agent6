@@ -136,7 +136,12 @@ def test_a_resumed_leg_drops_the_previous_legs_approval(tmp_path: Path) -> None:
             _append(run, boundary)
             app._handle_event(boundary)  # pyright: ignore[reportPrivateUsage]
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
-            await pilot.pause()
+            # The row's removal is an async DOM prune the poll schedules; under
+            # load one pause returns before it lands.
+            for _ in range(40):
+                await pilot.pause(0.05)
+                if not app._conv.query(ApprovalRow):  # pyright: ignore[reportPrivateUsage]
+                    break
             assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
