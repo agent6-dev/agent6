@@ -57,8 +57,10 @@ def _prompt_for_provider(config_path: Path | None) -> str:
     return safe_input("Provider: ") or ""
 
 
-def _prompt_for_model(config_path: Path | None, provider: str) -> str:
-    """Interactively pick a model for *provider* from the live/configured list."""
+def _prompt_for_model(config_path: Path | None, provider: str) -> str | None:
+    """Interactively pick a model for *provider* from the live/configured list:
+    the model, "" when nothing was typed, None after a refusal it printed
+    (a number past the list)."""
     options = _models_for(config_path, provider)
     if options:
         print(f"Models for {provider}:")
@@ -71,6 +73,8 @@ def _prompt_for_model(config_path: Path | None, provider: str) -> str:
             idx = int(choice) - 1
             if 0 <= idx < len(options):
                 return options[idx]
+            error(f"no model {choice}: the list has {len(options)}.")
+            return None
         return choice
     print(f"No known models for {provider} (couldn't reach its API or none configured).")
     return safe_input("Model: ") or ""
@@ -83,12 +87,14 @@ def _show_assignments(config_path: Path | None) -> int:
     show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
     for r in show_roles:
         rm = eff.config.models.resolve(r)
-        src = eff.sources.get(f"models.{r}.model", "default")
+        source = eff.config.models.source_role(r)
+        src = eff.sources.get(f"models.{source}.model", "default")
         if rm is None:
             print(f"  {r:<9} (unset)")
         else:
             effort = rm.effort or "-"
-            print(f"  {r:<9} {rm.provider}/{rm.model}  effort={effort}  [{src}]")
+            origin = src if source == r else f"worker's, {src}"
+            print(f"  {r:<9} {rm.provider}/{rm.model}  effort={effort}  [{origin}]")
     print(
         "\nSet one with: agent6 model worker <provider> <model>"
         " [--effort low|medium|high|xhigh|max]  (prompted if omitted on a TTY)"
@@ -176,10 +182,12 @@ def _cmd_model(
             print("note: --effort ignored (no model named; this is a listing).", file=sys.stderr)
         return _print_catalog(config_path, role, provider)
     if not model:
-        model = _prompt_for_model(config_path, provider)
-    if not model:
-        error("no model given.")
-        return 2
+        picked = _prompt_for_model(config_path, provider)
+        if not picked:
+            if picked == "":
+                error("no model given.")
+            return 2
+        model = picked
     target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
     fields: dict[str, ConfigLeafValue] = {"provider": provider, "model": model}
     if effort:

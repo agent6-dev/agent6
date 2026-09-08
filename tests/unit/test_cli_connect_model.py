@@ -14,6 +14,7 @@ from agent6 import secrets
 from agent6.models.cache import KeyProbeResult
 from agent6.paths import state_dir
 from agent6.ui.cli import main
+from agent6.ui.cli import model as modelmod
 
 
 @pytest.fixture
@@ -810,3 +811,58 @@ def test_connect_eof_at_the_api_format_prompt_says_why(
     rc = main(["connect", "mycustom"])
     assert rc == 2
     assert "no input." in capsys.readouterr().err
+
+
+_WORKER_ONLY = """\
+[providers.anthropic]
+api_format = "anthropic"
+
+[models.worker]
+provider = "anthropic"
+model = "claude-sonnet-4-5"
+"""
+
+
+def test_a_role_that_falls_back_to_the_worker_says_so(
+    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unset planner or reviewer shows the worker's model; its origin
+    names the fallback, where it read `[default]` beside a configured model."""
+    gpath = tmp_path / "g" / "agent6" / "config.toml"
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text(_WORKER_ONLY, encoding="utf-8")
+
+    assert main(["model"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    worker = next(line for line in lines if line.strip().startswith("worker"))
+    planner = next(line for line in lines if line.strip().startswith("planner"))
+    assert "anthropic/claude-sonnet-4-5" in worker and worker.endswith("[global]")
+    assert "anthropic/claude-sonnet-4-5" in planner and planner.endswith("[worker's, global]")
+
+
+def test_a_number_outside_the_model_list_is_refused(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The picker offers numbered models; a number past the list was taken as
+    a model id and written to the config."""
+    typed = ["7", "2"]
+
+    def models(config_path: Path | None, provider: str) -> list[str]:
+        return ["a", "b"]
+
+    def answer(prompt: str) -> str:
+        return typed.pop(0)
+
+    monkeypatch.setattr(modelmod, "_models_for", models)
+    monkeypatch.setattr(modelmod, "safe_input", answer)
+    assert modelmod._prompt_for_model(None, "p") is None  # pyright: ignore[reportPrivateUsage]
+    assert "no model 7: the list has 2" in capsys.readouterr().err
+    assert modelmod._prompt_for_model(None, "p") == "b"  # pyright: ignore[reportPrivateUsage]
+
+    # The verb prints the picker's one refusal, never a second line contradicting it.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    typed[:] = ["7"]
+    assert main(["model", "worker", "anthropic"]) == 2
+    err = capsys.readouterr().err
+    assert err.count("ERROR") == 1 and "no model 7" in err
