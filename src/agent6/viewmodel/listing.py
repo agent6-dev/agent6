@@ -594,8 +594,8 @@ def _tolerant_usd(raw: object, last_good: float) -> float:
     return last_good
 
 
-def finished_needs_new_work(session_dir: Path) -> bool:
-    """Whether resuming this run would have nothing to do.
+def needs_new_work(*, finished: bool, end_reason: str, all_passed: bool | None) -> bool:
+    """Whether a bare resume of a run in this state would have nothing to do.
 
     True only when the agent ended it by calling `finish_session` over a tree
     the gate certified green, or with no gate at all: the resumed leg spends
@@ -603,11 +603,19 @@ def finished_needs_new_work(session_dir: Path) -> bool:
     leaves a run that passed reading as failed for a tree nobody touched.
     Every other ending is exactly what resume is for: budget_exhausted,
     provider_error, steer_abort, a finish the gate did not certify (red, stale,
-    or never run). Read through the same fold the listing uses, so a
-    refusal and the status it contradicts cannot disagree.
+    or never run). The one predicate behind `agent6 resume`'s refusal, the
+    web composer's hint and the wire's `needs_new_work`, so they cannot
+    disagree.
     """
+    return finished and end_reason == "finish_session" and all_passed is not False
+
+
+def finished_needs_new_work(session_dir: Path) -> bool:
+    """`needs_new_work` over the run's log, for a verb that holds only the dir."""
     scan = scan_session_log(session_dir / LOGS_NAME)
-    return scan.finished and scan.end_reason == "finish_session" and scan.all_passed is not False
+    return needs_new_work(
+        finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
+    )
 
 
 def needs_new_work_refusal(session_id: str) -> str:

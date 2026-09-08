@@ -405,6 +405,21 @@ def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: Path) -> None:
     assert finished_needs_new_work(_write_run(tmp_path, "runs", "r-none", gateless)) is True
 
 
+def test_needs_new_work_is_one_predicate_for_every_surface() -> None:
+    """The web composer once re-derived "needs new work" from the end fields
+    and dropped the all_passed clause, so a finish over a red gate told the
+    operator an instruction was required to resume. One predicate decides it;
+    `finished_needs_new_work` (resume's refusal) and the wire both call it."""
+    from agent6.viewmodel.listing import needs_new_work
+
+    fin = "finish_session"
+    assert needs_new_work(finished=True, end_reason=fin, all_passed=True) is True
+    assert needs_new_work(finished=True, end_reason=fin, all_passed=None) is True  # gateless
+    assert needs_new_work(finished=True, end_reason=fin, all_passed=False) is False  # red gate
+    assert needs_new_work(finished=True, end_reason="budget_exhausted", all_passed=True) is False
+    assert needs_new_work(finished=False, end_reason=fin, all_passed=True) is False
+
+
 def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
     """A finish_session over an observed red gate read a bare "finished",
     identical to a gateless deliberate finish; it reads "finished · gate

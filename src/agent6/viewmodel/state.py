@@ -32,6 +32,7 @@ from agent6.viewmodel.format import TASK_STATUS_GLYPH, budget_usd_text, dead_run
 from agent6.viewmodel.listing import (
     LIVE_STATUS_WORDS,
     StatusFacts,
+    needs_new_work,
     status_for_session_dir,
     status_word,
 )
@@ -763,6 +764,11 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     only for a genuinely dir-less stream (the machine reasoning snapshot)."""
     d = asdict(state)
     d["context_pct"] = context_fill(state)
+    # Whether a bare resume has anything to do, decided once here: the web
+    # composer reads this rather than re-deriving it from the end fields.
+    d["needs_new_work"] = needs_new_work(
+        finished=state.finished, end_reason=state.end_reason, all_passed=state.all_passed
+    )
     d["budget"]["usd_text"] = budget_usd_text(
         state.budget.usd_total,
         partial=state.budget.usd_partial,

@@ -23,6 +23,24 @@ from agent6.viewmodel.state import (
 )
 
 
+def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
+    """`session_state_as_dict` stamps `needs_new_work` from the fold's end
+    facts, so a client never re-derives it: a finish over a red gate reads
+    False (resume takes new work or none), a certified finish True."""
+    from agent6.viewmodel.state import apply_event, initial_state, session_state_as_dict
+
+    start = {"type": "session.start", "user_task": "t"}
+
+    def ended(all_passed: bool | None) -> dict[str, object]:
+        end = {"type": "session.end", "reason": "finish_session", "all_passed": all_passed}
+        return session_state_as_dict(apply_event(apply_event(initial_state(), start), end))
+
+    assert ended(False)["needs_new_work"] is False
+    assert ended(True)["needs_new_work"] is True
+    assert ended(None)["needs_new_work"] is True
+    assert session_state_as_dict(apply_event(initial_state(), start))["needs_new_work"] is False
+
+
 def test_a_log_line_is_one_line() -> None:
     """Every log pane paints the return value as a row, and the scrubber keeps
     newlines (a transcript needs them): a provider error carrying an SSE dump

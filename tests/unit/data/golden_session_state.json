@@ -182,6 +182,7 @@
   "pins": [],
   "last_event_ep": 1784023218.5,
   "context_pct": null,
+  "needs_new_work": true,
   "live": null,
   "status": "passed",
   "status_label": "passed",

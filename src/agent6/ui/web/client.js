@@ -944,7 +944,7 @@ function makeComposer(id) {
   // carries no boolean `live`.
   root.setState = (s) => {
     if (busy) return;
-    needsWork = s.finished === true && s.end_reason === 'finish_session';
+    needsWork = s.needs_new_work === true; // the server's predicate, never re-derived here
     if (typeof s.live === 'boolean') { finished = !s.live; apply(); }
     else { finished = notLive(s); apply(); } // resume-style composer for any non-live run (parked/stale/ended)
   };
