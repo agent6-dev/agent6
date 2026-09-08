@@ -695,3 +695,46 @@ def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: Path) -> N
     assert recorded, "the cut attempt was not recorded at all"
     assert [r["response"]["status"] for r in recorded] == [0]  # never a clean 200
     assert "truncat" in str(recorded[0]["response"]["body"]).lower()
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {"choices": [{"index": 0, "delta": {"content": True}}]},
+        {"choices": [{"index": 0, "delta": {"reasoning_content": True}}]},
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": True}]},
+        {
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "c1",
+                                "function": {"name": "list_dir", "arguments": {}},
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        {"choices": [], "usage": {"prompt_tokens": -1, "completion_tokens": 1}},
+    ],
+)
+def test_streaming_wire_fields_are_not_coerced(event: dict[str, Any]) -> None:
+    lines = [*_chunk(event), "data: [DONE]", ""]
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    with (
+        mock.patch("httpx2.stream", side_effect=fake_stream),
+        pytest.raises(ProviderError),
+    ):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )

@@ -619,3 +619,152 @@ def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
 
     snap = budget.snapshot()
     assert (snap.input_total, snap.output_total) == (12000, 16801), "billed tokens went unmetered"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("prompt_tokens", -1),
+        ("prompt_tokens", 1.5),
+        ("prompt_tokens", True),
+        ("completion_tokens", -1),
+        ("completion_tokens", 1.5),
+        ("completion_tokens", True),
+        ("cached_tokens", -1),
+        ("cached_tokens", 1.5),
+        ("cached_tokens", True),
+    ],
+)
+def test_openai_usage_counts_are_non_negative_integers(field: str, value: object) -> None:
+    from agent6.providers._openai_parse import parse_response
+
+    usage: dict[str, object] = {"prompt_tokens": 10, "completion_tokens": 2}
+    if field == "cached_tokens":
+        usage["prompt_tokens_details"] = {field: value}
+    else:
+        usage[field] = value
+
+    with pytest.raises(ProviderError, match=rf"usage\..*{field}"):
+        parse_response(
+            {
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "usage": usage,
+            }
+        )
+
+
+def test_openai_usage_counts_accept_integer_strings_and_integral_floats() -> None:
+    from agent6.providers._openai_parse import parse_response
+
+    response = parse_response(
+        {
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+            "usage": {
+                "prompt_tokens": "10",
+                "completion_tokens": 2.0,
+                "prompt_tokens_details": {"cached_tokens": "3"},
+            },
+        }
+    )
+
+    assert (response.input_tokens, response.output_tokens, response.cache_read_tokens) == (7, 2, 3)
+
+
+@pytest.mark.parametrize(
+    "choice",
+    [
+        {"message": {"content": True}, "finish_reason": "stop"},
+        {"message": {"content": "ok", "reasoning": True}, "finish_reason": "stop"},
+        {"message": {"content": "ok"}, "finish_reason": True},
+        {
+            "message": {
+                "content": "",
+                "tool_calls": [{"id": True, "function": {"name": "list_dir", "arguments": "{}"}}],
+            },
+            "finish_reason": "tool_calls",
+        },
+        {
+            "message": {
+                "content": "",
+                "tool_calls": [{"id": "c1", "function": {"name": True, "arguments": "{}"}}],
+            },
+            "finish_reason": "tool_calls",
+        },
+        {
+            "message": {
+                "content": "",
+                "tool_calls": [{"id": "c1", "function": {"name": "list_dir", "arguments": {}}}],
+            },
+            "finish_reason": "tool_calls",
+        },
+    ],
+)
+def test_openai_response_fields_are_not_coerced(choice: dict[str, Any]) -> None:
+    from agent6.providers._openai_parse import parse_response
+
+    with pytest.raises(ProviderError):
+        parse_response({"choices": [choice], "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
+
+
+def test_a_nameless_tool_call_is_dropped_beside_a_valid_one() -> None:
+    """A native tool_call with no `function.name` is dropped, as the comment
+    above the check says; requiring a string there refused the whole body."""
+    from agent6.providers._openai_parse import parse_response
+
+    body = {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {"id": "x", "function": {"arguments": "{}"}},
+                        {"id": "y", "function": {"name": "read_file", "arguments": None}},
+                    ],
+                },
+                "finish_reason": "",
+            }
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    resp = parse_response(body, tool_names=frozenset({"read_file"}))
+    assert [t["name"] for t in resp.tool_uses] == ["read_file"]
+    assert resp.stop_reason == ""
+
+
+def test_a_nested_usage_count_error_names_its_path() -> None:
+    from agent6.providers._openai_parse import parse_response
+    from agent6.providers.types import ProviderError
+
+    body = {
+        "choices": [],
+        "usage": {
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+            "prompt_tokens_details": {"cached_tokens": -1},
+        },
+    }
+    with pytest.raises(ProviderError, match=r"usage\.prompt_tokens_details\.cached_tokens"):
+        parse_response(body)
+
+
+def test_openai_tool_call_ids_are_unique() -> None:
+    from agent6.providers._openai_parse import parse_response
+
+    with pytest.raises(ProviderError, match=r"duplicate.*tool_call.id"):
+        parse_response(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {"id": "c1", "function": {"name": "list_dir", "arguments": "{}"}},
+                                {"id": "c1", "function": {"name": "read_file", "arguments": "{}"}},
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            }
+        )

@@ -31,7 +31,7 @@ import httpx2
 
 from agent6.budget import BudgetTracker
 from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
-from agent6.providers._openai_parse import parse_response
+from agent6.providers._openai_parse import parse_response, response_string
 from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
 from agent6.providers._transport import ProviderCall, envelope_status, meter_completion
 from agent6.providers.token_command import CommandToken
@@ -81,8 +81,8 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
     for a real call, so require it strictly positive; a run must not proceed on a
     call it cannot meter."""
     if isinstance(usage, Mapping):
-        # Coerce numerically, mirroring parse_response: a gateway serializing
-        # counts as JSON floats/strings (700.0, "700") is meterable.
+        # Coerce numerically, as parse_response's usage_count does: a gateway
+        # serializing counts as JSON floats/strings (700.0, "700") is meterable.
         # Absent/zero/non-numeric still fails closed below. completion_tokens
         # presence is not required: the contract gates on the input side only.
         try:
@@ -575,12 +575,14 @@ class OpenAIProvider:
                 if not isinstance(choice, dict):
                     continue
                 fr = choice.get("finish_reason")
-                if fr:
-                    finish_reason = str(fr)
+                if fr is not None:
+                    finish_reason = response_string(fr, "finish_reason")
                 delta = choice.get("delta") or {}
                 if not isinstance(delta, dict):
                     continue
                 content = delta.get("content")
+                if content is not None and not isinstance(content, str):
+                    raise ProviderError("OpenAI response content delta was not a string")
                 if isinstance(content, str) and content:
                     clock.mark_output()  # real output: the mid-stream idle budget applies
                     # Accumulation is unconditional; the callback is optional
@@ -589,7 +591,11 @@ class OpenAIProvider:
                     if text_delta_callback is not None:
                         with contextlib.suppress(Exception):
                             text_delta_callback(content)
-                reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                reasoning = delta.get("reasoning_content")
+                if reasoning is None:
+                    reasoning = delta.get("reasoning")
+                if reasoning is not None and not isinstance(reasoning, str):
+                    raise ProviderError("OpenAI response reasoning delta was not a string")
                 if isinstance(reasoning, str) and reasoning:
                     clock.mark_output()  # streamed reasoning counts as output too
                     reasoning_parts.append(reasoning)
@@ -605,7 +611,10 @@ class OpenAIProvider:
                     if not isinstance(tc, dict):
                         continue
                     raw_idx = tc.get("index")
-                    tc_id = str(tc.get("id") or "")
+                    raw_id = tc.get("id")
+                    if raw_id is not None and not isinstance(raw_id, str):
+                        raise ProviderError("OpenAI response tool_call.id delta was not a string")
+                    tc_id = raw_id or ""
                     if raw_idx is not None:
                         idx = int(raw_idx)
                     elif tc_id and any(s["id"] == tc_id for s in tool_calls.values()):
@@ -630,14 +639,27 @@ class OpenAIProvider:
                     )
                     if tc.get("id"):
                         slot["id"] = str(tc["id"])
-                    func = tc.get("function") or {}
-                    if isinstance(func, dict):
-                        name = func.get("name")
-                        if isinstance(name, str) and name:
-                            slot["function"]["name"] = name
-                        args_piece = func.get("arguments")
-                        if isinstance(args_piece, str) and args_piece:
-                            tool_arg_buf.setdefault(idx, []).append(args_piece)
+                    func = tc.get("function")
+                    if func is None:
+                        continue
+                    if not isinstance(func, dict):
+                        raise ProviderError(
+                            "OpenAI response tool_call.function delta was not an object"
+                        )
+                    name = func.get("name")
+                    if name is not None and not isinstance(name, str):
+                        raise ProviderError(
+                            "OpenAI response tool_call.function.name delta was not a string"
+                        )
+                    if name:
+                        slot["function"]["name"] = name
+                    args_piece = func.get("arguments")
+                    if args_piece is not None and not isinstance(args_piece, str):
+                        raise ProviderError(
+                            "OpenAI response tool_call.function.arguments delta was not a string"
+                        )
+                    if args_piece:
+                        tool_arg_buf.setdefault(idx, []).append(args_piece)
 
         def _record_billed() -> None:
             # Through parse_response so the usage mapping (cached vs fresh
@@ -665,8 +687,10 @@ class OpenAIProvider:
         except BaseException:
             # Billed already: a mid-stream error, the idle watchdog or an
             # operator steer ends the turn after the provider has accepted the
-            # input, and the retry re-sends and is billed again.
-            _record_billed()
+            # input, and the retry re-sends and is billed again. A usage shape
+            # the parser refuses must not replace the reason the stream ended.
+            with contextlib.suppress(ProviderError):
+                _record_billed()
             raise
 
         # A stream that ended without `[DONE]` and without any `finish_reason`
