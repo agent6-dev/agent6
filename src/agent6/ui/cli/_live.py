@@ -176,8 +176,12 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
     orig_out, orig_err = sys.stdout, sys.stderr
     sys.stdout = log_fh
     sys.stderr = log_fh
+    interrupted = False
     try:
         yield
+    except KeyboardInterrupt:
+        interrupted = True
+        raise
     finally:
         # The TUI holds the finished dashboard until the user leaves (Ctrl+Q),
         # so wait for them, not a deadline. A wedged TUI is visibly wedged
@@ -185,6 +189,9 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
         # still tears everything down, textual restoring the terminal. Keep
         # our own output redirected until it's gone so nothing scribbles its
         # screen.
+        # A dashboard gone before the run ended left the terminal silent for
+        # the rest of the run (an interrupt takes both down together).
+        gone_early = not interrupted and proc.poll() is not None
         try:
             proc.wait()
         except KeyboardInterrupt:
@@ -198,3 +205,10 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
         sys.stdout, sys.stderr = orig_out, orig_err
         with contextlib.suppress(Exception):
             log_fh.close()
+        if gone_early:
+            how = "closed" if proc.returncode == 0 else f"exited with code {proc.returncode}"
+            print(
+                f"[agent6] the dashboard {how} before the run ended; the run's console"
+                f" output is in {log_fh.name}",
+                file=sys.stderr,
+            )

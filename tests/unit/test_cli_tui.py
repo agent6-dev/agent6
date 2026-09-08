@@ -647,6 +647,67 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
     assert len(paused) == 2, "both prompts pause the view the leg attached"
 
 
+def test_a_dashboard_that_dies_before_the_run_ends_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The run's console output is redirected to tui_console.log while the
+    dashboard co-process owns the terminal; a dashboard gone before the run
+    ends (a crash, or the operator leaving it) leaves a silent terminal and a
+    run that still runs, so the end names how it went and where the output
+    is. An interrupt takes both down together and says nothing."""
+    import subprocess
+    import types
+
+    session_dir = tmp_path / "sess"
+    session_dir.mkdir()
+
+    class _Dead:
+        returncode = 3
+
+        def poll(self) -> int:
+            return 3
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 3
+
+    def spawn_dead(argv: list[str], **kwargs: Any) -> _Dead:
+        return _Dead()
+
+    monkeypatch.setattr(
+        livemod,
+        "subprocess",
+        types.SimpleNamespace(Popen=spawn_dead, TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    with livemod.tui_session(session_dir, enabled=True):
+        print("run chatter")
+    err = capsys.readouterr().err
+    assert "dashboard exited with code 3 before the run ended" in err
+    assert str(session_dir / "tui_console.log") in err
+    assert (session_dir / "tui_console.log").read_text(encoding="utf-8") == "run chatter\n"
+
+    class _Left(_Dead):
+        returncode = 0
+
+        def poll(self) -> int:
+            return 0
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    def spawn_left(argv: list[str], **kwargs: Any) -> _Left:
+        return _Left()
+
+    monkeypatch.setattr(livemod.subprocess, "Popen", spawn_left)
+    with livemod.tui_session(session_dir, enabled=True):
+        pass
+    assert "the dashboard closed before the run ended" in capsys.readouterr().err
+
+    monkeypatch.setattr(livemod.subprocess, "Popen", spawn_dead)
+    with pytest.raises(KeyboardInterrupt), livemod.tui_session(session_dir, enabled=True):
+        raise KeyboardInterrupt
+    assert "dashboard" not in capsys.readouterr().err
+
+
 def test_tui_session_degrades_when_console_log_cannot_open(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
