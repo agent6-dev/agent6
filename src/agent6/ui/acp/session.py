@@ -92,6 +92,8 @@ class Sessions:
         if refusal is not None:
             raise RpcError(INVALID_PARAMS, refusal)
         servers = params.get("mcpServers")
+        if servers is not None and not isinstance(servers, list):
+            raise RpcError(INVALID_PARAMS, "mcpServers must be a list")
         if isinstance(servers, list) and servers:
             # agent6's MCP servers are operator config, never editor-supplied
             # (the tool surface is fixed; see docs/security.md). Accepting the
@@ -103,6 +105,8 @@ class Sessions:
                 "them from this agent's entry.",
             )
         additional = params.get("additionalDirectories")
+        if additional is not None and not isinstance(additional, list):
+            raise RpcError(INVALID_PARAMS, "additionalDirectories must be a list")
         if isinstance(additional, list) and additional:
             raise RpcError(
                 INVALID_PARAMS,
@@ -201,13 +205,23 @@ def prompt_text(params: dict[str, Any]) -> str:
     if not isinstance(blocks, list):
         raise RpcError(INVALID_PARAMS, "prompt must be a list of content blocks")
     parts: list[str] = []
-    for b in blocks:
+    for index, b in enumerate(blocks, start=1):
         if not isinstance(b, dict):
-            continue
-        if b.get("type") == "text" and b.get("text"):
-            parts.append(str(b["text"]))
-        elif b.get("type") == "resource_link" and b.get("uri"):
-            parts.append(f"Attached: {b['uri']}")
+            raise RpcError(INVALID_PARAMS, f"prompt content block {index} must be an object")
+        if b.get("type") == "text":
+            text = b.get("text")
+            if not isinstance(text, str):
+                raise RpcError(
+                    INVALID_PARAMS, f"prompt content block {index} text must be a string"
+                )
+            if text:
+                parts.append(text)
+        elif b.get("type") == "resource_link":
+            uri = b.get("uri")
+            if not isinstance(uri, str):
+                raise RpcError(INVALID_PARAMS, f"prompt content block {index} uri must be a string")
+            if uri:
+                parts.append(f"Attached: {uri}")
     text = "\n\n".join(parts).strip()
     if not text:
         raise RpcError(INVALID_PARAMS, "the prompt carried no text")

@@ -87,6 +87,20 @@ def test_a_new_session_refuses_unsupported_additional_directories(tmp_path: Path
     assert "additionalDirectories" in reply["error"]["message"]
 
 
+def test_a_new_session_names_non_list_optional_fields(tmp_path: Path) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    sessions = _sessions(_ends)
+    for field in ("mcpServers", "additionalDirectories"):
+        (reply,) = _drive(
+            _msg(1, "session/new", cwd=str(tmp_path), **{field: "not-a-list"}) + b"\n",
+            sessions,
+        )
+        assert field in reply["error"]["message"]
+        assert "list" in reply["error"]["message"]
+
+
 def test_a_resource_link_rides_as_its_uri() -> None:
     """`resource_link` is ACP's baseline attach-a-file shape; it was dropped,
     so a link-only prompt refused as empty. The uri rides verbatim as text --
@@ -98,6 +112,17 @@ def test_a_resource_link_rides_as_its_uri() -> None:
     assert prompt_text({"prompt": blocks}) == "fix this\n\nAttached: file:///w/x.py"
     only_link = [{"type": "resource_link", "uri": "file:///w/x.py"}]
     assert prompt_text({"prompt": only_link}) == "Attached: file:///w/x.py"
+
+
+def test_a_malformed_prompt_block_names_its_bad_field() -> None:
+    malformed = (
+        (["not-an-object"], "content block 1"),
+        ([{"type": "text", "text": 42}], "text"),
+        ([{"type": "resource_link", "uri": 42}], "uri"),
+    )
+    for prompt, cause in malformed:
+        with pytest.raises(Exception, match=cause):
+            prompt_text({"prompt": prompt})
 
 
 def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
