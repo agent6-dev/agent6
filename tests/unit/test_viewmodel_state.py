@@ -652,6 +652,30 @@ def test_resume_resets_the_leg_token_counters() -> None:
     assert s.budget.usd_prior_legs == pytest.approx(0.2)
 
 
+def test_resume_resets_the_leg_plan_counters() -> None:
+    """Subscription-plan usage is documented as leg-local, like the token
+    counters and caps: until the resumed leg's first budget.update, the header
+    must not keep showing the finished leg's plan percent/consumed/cap."""
+    s = initial_state()
+    s = apply_event(s, {"type": "session.start", "user_task": "t"})
+    s = apply_event(
+        s,
+        {
+            "type": "budget.update",
+            "plan_used_percent": 42.0,
+            "plan_consumed": 3.5,
+            "plan_cap": 80.0,
+            "plan_resets_at": 1_700_000_000.0,
+        },
+    )
+    s = apply_event(s, {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"})
+    s = apply_event(s, {"type": "loop.resume.start"})
+    assert s.budget.plan_used_percent == 0.0
+    assert s.budget.plan_consumed == 0.0
+    assert s.budget.plan_cap == 0.0
+    assert s.budget.plan_resets_at == 0.0
+
+
 def test_concurrent_same_name_results_pair_by_call_id() -> None:
     """Two review seats call read_file concurrently through the shared
     dispatcher; last-entry name pairing cross-stamped the summaries and left

@@ -331,7 +331,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             # same log): it is running again, so clear the terminal state. The new
             # leg's budget counters start fresh, so bank the cumulative spend now
             # (usd_total keeps its value until the leg's first budget.update) and
-            # zero the token counters/caps: BudgetView documents them as the
+            # zero the token and plan counters and caps: BudgetView documents them as the
             # current leg's, and scan_session_log resets for the same reason.
             # Unanswered prompts are the dead leg's: the resumed leg re-asks
             # with restarted ids, so a held-over orphan would read "waiting"
@@ -354,6 +354,10 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                     usd_cap=0.0,
                     tokens_unmetered=0,
                     tokens_fallback_cap=0,
+                    plan_used_percent=0.0,
+                    plan_consumed=0.0,
+                    plan_cap=0.0,
+                    plan_resets_at=0.0,
                 ),
             )
 
