@@ -106,7 +106,23 @@ def test_summary_counts_matching_lines_not_submatches(capsys: pytest.CaptureFixt
     rec["data"]["submatches"].append({"start": 12, "end": 18})
     hits = _parse_rg_matches(json.dumps(rec))
     _render_history_hits(hits, Path("/s/sessions"))
-    assert "1 matching line in 1 run(s)" in capsys.readouterr().out
+    assert "1 matching line in 1 session" in capsys.readouterr().out
+
+
+def test_search_summary_calls_an_ask_a_session(capsys: pytest.CaptureFixture[str]) -> None:
+    hits = _parse_rg_matches(
+        _rg_match(
+            "/s/sessions/asks/ask-one/logs.jsonl",
+            json.dumps({"type": "session.start", "user_task": "find NEEDLE"}),
+            52,
+        )
+    )
+
+    _render_history_hits(hits, Path("/s/sessions"))
+
+    summary = capsys.readouterr().out.splitlines()[-1]
+    assert summary == "1 matching line in 1 session"
+    assert "run" not in summary
 
 
 def test_transcripts_share_one_label(capsys: pytest.CaptureFixture[str]) -> None:
@@ -356,6 +372,30 @@ def test_a_scoped_search_names_the_session_it_searched(
     assert main(["history", "search", "UNIQUETERM123", "--session", "quiet-run-AAAAAA"]) == 1
     out = capsys.readouterr().out
     assert "no matches under" in out and "quiet-run-AAAAAA" in out
+
+
+@pytest.mark.parametrize("verb", ["graph", "transcript"])
+def test_cross_bucket_inspection_errors_call_an_ask_a_session(
+    verb: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent6.paths import state_dir
+    from agent6.sessions.layout import bucket_dir
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    session = bucket_dir(state_dir(tmp_path), "asks") / "ask-one-AAAAAA"
+    session.mkdir(parents=True)
+    (session / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "ask"}) + "\n", encoding="utf-8"
+    )
+
+    assert main(["sessions", verb, "ask-one-AAAAAA"]) == 2
+    err = capsys.readouterr().err
+    assert "session ask-one-AAAAAA has no" in err
+    assert "run ask-one-AAAAAA" not in err
 
 
 def test_an_unscoped_no_match_names_the_sessions_root_it_read(

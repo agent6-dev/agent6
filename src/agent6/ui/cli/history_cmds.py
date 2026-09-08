@@ -71,7 +71,7 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
     return 0 if hits else 1
 
 
-# A search hit rendered readably: which run, when, the event type, and a snippet
+# A search hit rendered readably: which session, when, the event type, and a snippet
 # windowed around the match, never the whole (possibly 400KB) JSON event line.
 @dataclass(frozen=True, slots=True)
 class _SearchHit:
@@ -337,8 +337,8 @@ def _window(text: str, start: int) -> str:
 
 
 def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
-    """Group hits by run, print a faded run header once, then one line per hit.
-    Identical snippets within a run (the same system-prompt boilerplate matched
+    """Group hits by session, print a faded session header once, then one line per hit.
+    Identical snippets within a session (the same system-prompt boilerplate matched
     in every transcript) collapse to one line with an `(xN)` count."""
     if not hits:
         print(f"[agent6] no matches under {target}.")
@@ -372,14 +372,15 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
         total += len(run_hits)
     print(
         sgr(
-            f"\n{total} matching line{'s' if total != 1 else ''} in {len(grouped)} run(s)",
+            f"\n{total} matching line{'s' if total != 1 else ''} in {len(grouped)} "
+            f"session{'s' if len(grouped) != 1 else ''}",
             "2",
         )
     )
 
 
 def _cmd_history_graph(session_id: str) -> int:
-    """Render the persisted TaskNode tree for a run as a DFS-ordered listing."""
+    """Render a session's persisted TaskNode tree as a DFS-ordered listing."""
 
     cwd = Path.cwd()
     if session_id:
@@ -403,7 +404,7 @@ def _cmd_history_graph(session_id: str) -> int:
     target_id = layout.session_id
     nodes = load_graph(layout)
     if not nodes:
-        error(f"run {target_id} has no persisted graph nodes")
+        error(f"session {target_id} has no persisted graph nodes")
         return 2
 
     print(f"Session id: {target_id}")
@@ -429,8 +430,8 @@ def _parse_seq_window(spec: str) -> tuple[int, int] | None:
 
 
 def _transcript_layout(cwd: Path, session_id: str) -> SessionLayout | int:
-    """Resolve the run whose transcripts to render: by id, else the most recent
-    run that has a transcripts/ dir. An int is the exit code of a printed error."""
+    """Resolve the session whose transcripts to render: by id, else the most recent
+    session that has a transcripts/ dir. An int is the exit code of a printed error."""
     if session_id:
         try:
             return resolve_session_layout(cwd, session_id)
@@ -448,7 +449,7 @@ def _transcript_layout(cwd: Path, session_id: str) -> SessionLayout | int:
 def _cmd_history_transcript(
     session_id: str, *, as_json: bool, no_thinking: bool, tools: str, seq: str
 ) -> int:
-    """Render a run's full LLM conversation from its lossless per-call transcripts.
+    """Render a session's full LLM conversation from its lossless per-call transcripts.
 
     The transcripts (`<run>/transcripts/*.json`) are the complete, self-
     contained record, needing no join with logs.jsonl. This is the conversation
@@ -467,7 +468,7 @@ def _cmd_history_transcript(
 
     transcripts = load_transcripts(layout.transcripts_dir)
     if not transcripts:
-        error(f"run {layout.session_id} has no transcripts")
+        error(f"session {layout.session_id} has no transcripts")
         return 2
 
     if as_json:
@@ -481,7 +482,7 @@ def _cmd_history_transcript(
         # e.g. a review-only dir: every round-trip is a side-call seat, so the
         # conversation fold would print nothing at all.
         print(
-            f"run {layout.session_id} has only side-call transcripts (review seats /"
+            f"session {layout.session_id} has only side-call transcripts (review seats /"
             " compaction); --json dumps them raw.",
             file=sys.stderr,
         )
