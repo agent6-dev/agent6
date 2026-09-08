@@ -149,7 +149,7 @@ def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
     """
     state, action = dead_run_note(word, detail)
     if state:
-        return f"{state}: {action}"
+        return f"{state}: {action}" if action else state
     if ended:
         return "this session made no conversation"
     return "(no conversation yet; it appears as the session streams)"

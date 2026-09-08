@@ -58,6 +58,11 @@ def _mk_crashed(d: Path) -> None:
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
 
 
+def _mk_unreadable(d: Path) -> None:
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "manifest.json").write_text("{not json", encoding="utf-8")
+
+
 def _screen_is(app: Agent6TUI, name: str) -> bool:
     """`app.screen` raises while the stack is transiently empty (startup,
     mid-switch); a poll reads that as "not yet", never an error."""
@@ -244,6 +249,27 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
             app.submit_instruction("go ahead")
             await app.workers.wait_for_complete()
             assert spawned == [("parked1", "go ahead")]
+
+    asyncio.run(scenario())
+
+
+def test_an_unreadable_run_tells_the_truth_on_the_stream_pane(tmp_path: Path) -> None:
+    """A session whose manifest will not parse reads "unreadable" on the header;
+    the stream pane once fell through to the "(waiting for the model…)" lie (no
+    model is coming). dead_run_note now has an arm for it, so the pane agrees
+    with the header."""
+    _mk_unreadable(tmp_path / "corrupt1")
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path / "corrupt1")
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            top = str(app._dash.query_one("#top", Static).render())
+            assert "unreadable" in top
+            body = str(app._dash.query_one("#stream-body", Static).render())
+            assert "unreadable" in body
+            assert "waiting for the model" not in body
+            assert "working…" not in body
 
     asyncio.run(scenario())
 

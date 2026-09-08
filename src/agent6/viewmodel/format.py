@@ -54,6 +54,11 @@ def dead_run_note(word: str, detail: str) -> tuple[str, str]:
             "worker exited without finishing (crashed or killed)",
             "type a follow-up below (Enter resumes)",
         )
+    if word == "unreadable":
+        # A corrupt manifest cannot be resumed (fork/resume refuse it), so no
+        # composer action: the pane states the fact its own header shows.
+        detail_s = f" ({detail})" if detail else ""
+        return f"session state is unreadable{detail_s}", ""
     return "", ""
 
 
