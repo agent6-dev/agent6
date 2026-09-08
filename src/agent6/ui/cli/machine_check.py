@@ -30,7 +30,7 @@ from agent6.machine import (
     render_mermaid,
 )
 from agent6.sandbox.tool_paths import jail_search_path
-from agent6.ui.cli._common import plural
+from agent6.ui.cli._common import plural, warn
 
 
 def _fail(path: Path, problems: list[str], label: str = "") -> int:
@@ -107,7 +107,7 @@ def _tool_reachability_warnings(spec: MachineSpec, path: Path) -> list[str]:
     for binary, script in _script_binaries(path.parent / "scripts").items():
         sources.setdefault(binary, f"scripts/{script}")
     return [
-        f"WARNING: `{binary}` ({src}) does not resolve on the jail PATH; that state"
+        f"`{binary}` ({src}) does not resolve on the jail PATH; that state"
         " will fail at run time. Install it into a standard bin dir"
         " (~/.local/bin, /usr/local/bin), or use an absolute path in the"
         " state's command."
@@ -124,7 +124,7 @@ def _cmd_machine_check(path: Path) -> int:
     if script_problems:
         return _fail(path, script_problems, "scripts")
     for warning in _tool_reachability_warnings(spec, path):
-        print(warning, file=sys.stderr)
+        warn(warning)
     for name, state in spec.states.items():
         if isinstance(state, ToolState) and state.pass_env:
             print(

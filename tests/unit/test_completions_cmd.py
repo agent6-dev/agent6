@@ -204,4 +204,5 @@ def test_malformed_completion_markers_are_refused_untouched(
     before = rc.read_text(encoding="utf-8")
     assert cmd_completions("bash", print_only=False) == 2
     assert rc.read_text(encoding="utf-8") == before
-    assert "malformed agent6 completion markers" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR:") and "malformed agent6 completion markers" in err

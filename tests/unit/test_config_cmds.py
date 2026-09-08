@@ -258,14 +258,28 @@ def test_revalidate_machine_accepts_valid_spec(
     assert target.read_text(encoding="utf-8") == _GOOD  # untouched
 
 
-def test_config_show_unknown_key_errors(
+def test_config_show_and_get_share_the_unknown_key_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "show", "nope.nope"]) == 2
-    assert "no config key matches" in capsys.readouterr().err
+    expected = "ERROR: no config key matches 'nope.nope' (see `agent6 config show`).\n"
+    for verb in ("show", "get"):
+        assert main(["config", verb, "nope.nope"]) == 2
+        assert capsys.readouterr().err == expected
+
+
+def test_config_get_distinguishes_a_section_from_an_unknown_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "get", "sandbox"]) == 2
+    assert "'sandbox' is not a config leaf" in capsys.readouterr().err
+    assert main(["config", "get", "sandbox.nope"]) == 2
+    assert "no config key matches 'sandbox.nope'" in capsys.readouterr().err
 
 
 def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
@@ -833,7 +847,7 @@ def test_config_unset_on_an_mcp_server_names_the_verb_that_removes_it(
     assert "agent6 mcp remove calc" in capsys.readouterr().err
 
 
-def test_config_unset_on_an_unknown_key_keeps_the_generic_pointer(
+def test_config_unset_on_an_unknown_key_matches_show_and_get(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -845,7 +859,9 @@ def test_config_unset_on_an_unknown_key_keeps_the_generic_pointer(
     )
 
     assert rc == 2
-    assert "is not a config leaf" in capsys.readouterr().err
+    assert capsys.readouterr().err == (
+        "ERROR: no config key matches 'mcp.servers.nope' (see `agent6 config show`).\n"
+    )
 
 
 def test_config_unset_repairs_a_config_that_no_longer_loads(

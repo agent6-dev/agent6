@@ -88,6 +88,15 @@ def test_forward_session_and_port(seen: dict[str, Any]) -> None:
     assert seen == {"target": "brave-otter", "port": 8000}
 
 
+def test_forward_without_a_listener_is_a_refusal(
+    seen: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A REFUSING diagnostic is the shared exit-2 class, not a runtime failure."""
+    assert cli.main(["forward", "brave-otter"]) == 2
+    assert capsys.readouterr().err.startswith("REFUSING:")
+    assert seen == {}
+
+
 def test_exec_refuses_a_session_network_nobody_holds(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -129,7 +138,8 @@ def test_attach_since_needs_raw(capsys: pytest.CaptureFixture[str]) -> None:
     silently ignored elsewhere."""
     rc = cli.main(["attach", "--since", "5"])
     assert rc == 2
-    assert "--since applies to --raw only" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR:") and "--since applies to --raw only" in err
 
 
 def test_exec_uses_the_runs_recorded_policy_over_current_config(

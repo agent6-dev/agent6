@@ -259,7 +259,10 @@ def test_model_all_sets_every_role(
 
 
 def test_model_invalid_provider_refuses_and_rolls_back(
-    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    iso: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Regression: setting a role to an unconfigured provider makes the merged
     # config invalid. The set must REFUSE (rc 2) and leave config.toml byte-for-
@@ -269,13 +272,30 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
     assert main(["connect", "anthropic"]) == 0
     assert main(["model", "worker", "anthropic", "good-x"]) == 0
+    capsys.readouterr()
     cfg = tmp_path / "g" / "agent6" / "config.toml"
     before = cfg.read_text(encoding="utf-8")
     assert main(["model", "worker", "missing-prov", "gpt"]) == 2
+    assert capsys.readouterr().err.startswith("REFUSING:")
     after = cfg.read_text(encoding="utf-8")
     assert after == before  # rolled back exactly
     assert "missing-prov" not in after
     assert main(["model"]) == 0  # config still loads (not bricked)
+
+
+def test_connect_config_rollback_uses_the_shared_refusal(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
+
+    def bad_combination(*_args: object, **_kwargs: object) -> str:
+        return "bad combination"
+
+    monkeypatch.setattr("agent6.ui.cli.connect.set_config_leaves", bad_combination)
+
+    assert main(["connect", "anthropic", "--no-verify"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("REFUSING:") and "bad combination" in err
 
 
 def test_model_rejects_unknown_role(iso: Path) -> None:
@@ -330,7 +350,7 @@ def test_model_set_warns_when_the_provider_has_no_key(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Setting a role to a configured-but-keyless provider succeeds (config is
-    # just config) but the first run would refuse; the note closes that loop at
+    # just config) but the first run would refuse; the warning closes that loop at
     # set time. README's own quickstart line hits this on a keyless machine.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
@@ -340,7 +360,7 @@ def test_model_set_warns_when_the_provider_has_no_key(
     rc = main(["model", "worker", "anthropic", "claude-x"])
     assert rc == 0
     err = capsys.readouterr().err
-    assert "provider 'anthropic' has no stored API key" in err
+    assert err.startswith("[agent6] WARNING: provider 'anthropic' has no stored API key")
     assert "agent6 connect" in err
 
 

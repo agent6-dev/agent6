@@ -311,7 +311,7 @@ def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None)
     eff = _effective_with_overlay(config_path, machine)
     found = effective_leaf(eff, key)
     if found is None:
-        error(f"{key!r} is not a config leaf (see `agent6 config show`).")
+        error(_config_key_error(key, eff))
         return 2
     value, source = found
     print(f"{key} = {format_value(value)}  [{source}]")
@@ -362,19 +362,25 @@ def _cmd_config_set(
     return 0
 
 
+def _config_key_error(key: str, eff: EffectiveConfig) -> str:
+    """Distinguish a known section from a key that does not exist."""
+    if any(candidate.startswith(key + ".") for candidate in resolved_config_values(eff.config)):
+        return f"{key!r} is not a config leaf (see `agent6 config show`)."
+    return f"no config key matches {key!r} (see `agent6 config show`)."
+
+
 def _not_a_leaf(key: str, config_path: Path | None) -> str:
     """Why *key* cannot be unset. A `[mcp.servers.<name>]` entry is a table,
     not a leaf, so the message names the verb that removes it instead of the
     generic pointer."""
+    try:
+        eff = load_effective(Path.cwd(), config_path)
+    except ConfigError:
+        return f"{key!r} is not a config leaf (see `agent6 config show`)."
     name = key.removeprefix("mcp.servers.")
-    if name != key and "." not in name:
-        try:
-            cfg = load_effective(Path.cwd(), config_path).config
-        except ConfigError:
-            return f"{key!r} is not a config leaf (see `agent6 config show`)."
-        if name in cfg.mcp.servers:
-            return f"{key!r} is an MCP server entry; remove it with `agent6 mcp remove {name}`."
-    return f"{key!r} is not a config leaf (see `agent6 config show`)."
+    if name != key and "." not in name and name in eff.config.mcp.servers:
+        return f"{key!r} is an MCP server entry; remove it with `agent6 mcp remove {name}`."
+    return _config_key_error(key, eff)
 
 
 def _cmd_config_unset(

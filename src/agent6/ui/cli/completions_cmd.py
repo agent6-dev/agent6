@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import os
 import shlex
-import sys
 from pathlib import Path
 
 from argcomplete.shell_integration import shellcode
@@ -195,10 +194,9 @@ def _install_bash_zsh(shell: str, code: str) -> int:
         ):
             # The rc file is the operator's; agent6 edits only its one owned
             # marker block, and a mangled or duplicated one is theirs to fix.
-            print(
-                f"[agent6] ERROR: {rc} holds malformed agent6 completion markers"
-                f" ({_MARK_BEGIN} / {_MARK_END}); fix or remove them and rerun.",
-                file=sys.stderr,
+            error(
+                f"{rc} holds malformed agent6 completion markers"
+                f" ({_MARK_BEGIN} / {_MARK_END}); fix or remove them and rerun."
             )
             return 2
         start = existing.index(_MARK_BEGIN)

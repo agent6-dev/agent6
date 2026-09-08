@@ -693,8 +693,9 @@ def test_poke_refuses_ended_machine(
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
     code = main(["machine", "poke", "tiny"])
-    assert code == 1
-    assert "already ended" in capsys.readouterr().err
+    assert code == 2
+    err = capsys.readouterr().err
+    assert err.startswith("REFUSING:") and "already ended" in err
     root = state_dir(tmp_path) / "machines" / "tiny"
     assert not (root / "signal").exists()  # no signal was dropped
 
@@ -1131,6 +1132,7 @@ def test_check_warns_on_binaries_unreachable_in_the_jail(
     out = capsys.readouterr()
     assert code == 0  # advisory: the operator may install the tool later
     assert "OK:" in out.out
+    assert out.err.startswith("[agent6] WARNING:")
     assert "`definitely-not-a-binary-xyz` ([states.lint] command)" in out.err
     assert "`also-missing-tool-abc` (scripts/helper.py)" in out.err
     assert "python3" not in out.err  # reachable binaries stay quiet
@@ -1151,16 +1153,18 @@ def test_machine_stop_marks_a_running_worker_and_refuses_a_dead_one(
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
     root = state_dir(tmp_path) / "machines" / "tiny"
-    assert main(["machine", "stop", "tiny"]) == 1  # ended: nothing to stop
-    assert "already ended" in capsys.readouterr().err
+    assert main(["machine", "stop", "tiny"]) == 2  # ended: nothing to stop
+    err = capsys.readouterr().err
+    assert err.startswith("REFUSING:") and "already ended" in err
     assert not (root / "stop").exists()
 
     w = _write_machine(tmp_path)  # waiter: parks WAITING, journal not ended
     assert main(["machine", "run", str(w), "--exit-on-wait"]) == 0
     capsys.readouterr()
     wroot = state_dir(tmp_path) / "machines" / "waiter_delayed"
-    assert main(["machine", "stop", "waiter_delayed"]) == 1  # parked, worker dead
-    assert "not running" in capsys.readouterr().err
+    assert main(["machine", "stop", "waiter_delayed"]) == 2  # parked, worker dead
+    err = capsys.readouterr().err
+    assert err.startswith("REFUSING:") and "not running" in err
     assert not (wroot / "stop").exists()
 
     def _alive(_root: Path) -> bool:

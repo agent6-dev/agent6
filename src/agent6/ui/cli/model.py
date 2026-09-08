@@ -21,7 +21,7 @@ from agent6.models.choices import provider_model_choices
 from agent6.paths import global_config_path, repo_config_path
 from agent6.providers.claude_code import login_status
 from agent6.secrets import load_oauth_tokens, resolve_api_key
-from agent6.ui.cli._common import error
+from agent6.ui.cli._common import error, refuse, warn
 
 
 def _safe_input(prompt: str) -> str | None:
@@ -128,23 +128,19 @@ def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
         return
     entry = eff.config.providers.get(provider)
     if entry is None:
-        print(
-            f"note: provider {provider!r} is not configured; run `agent6 connect` first.",
-            file=sys.stderr,
-        )
+        warn(f"provider {provider!r} is not configured; run `agent6 connect` first.")
         return
     if isinstance(entry, ClaudeCodeProviderEntry):
         if (err := login_status(entry.binary)) is not None:
-            print(f"note: provider {provider!r}: {err}", file=sys.stderr)
+            warn(f"provider {provider!r}: {err}")
         return
     if entry.auth_style == "none" or entry.token_command:
         return
     if entry.api_format == "chatgpt":
         if load_oauth_tokens(provider) is None:
-            print(
-                f"note: provider {provider!r} has no ChatGPT sign-in;"
-                f" run `agent6 connect {provider}` before using it.",
-                file=sys.stderr,
+            warn(
+                f"provider {provider!r} has no ChatGPT sign-in;"
+                f" run `agent6 connect {provider}` before using it."
             )
         return
     if resolve_api_key(provider, entry.api_key_env) is None:
@@ -153,10 +149,7 @@ def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
             if entry.api_key_env
             else "run `agent6 connect`"
         )
-        print(
-            f"note: provider {provider!r} has no stored API key; {remedy} before using it.",
-            file=sys.stderr,
-        )
+        warn(f"provider {provider!r} has no stored API key; {remedy} before using it.")
 
 
 def _cmd_model(
@@ -210,10 +203,7 @@ def _cmd_model(
     for r in roles:
         err = set_config_table(Path.cwd(), f"models.{r}", fields, to_repo=to_repo)
         if err is not None:
-            print(
-                f"Refusing: {provider}/{model} would make the config invalid:\n{err}",
-                file=sys.stderr,
-            )
+            refuse(f"{provider}/{model} would make the config invalid:\n{err}")
             return 2
     where = "[models.*] (all roles)" if role == "all" else f"[models.{role}]"
     print(f"Set {where} = {provider}/{model}{f' (effort={effort})' if effort else ''} in {target}.")

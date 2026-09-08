@@ -54,7 +54,7 @@ from agent6.secrets import (
     save_oauth_tokens,
     save_secret,
 )
-from agent6.ui.cli._common import error, warn
+from agent6.ui.cli._common import error, refuse, warn
 
 
 def _prompt_api_key(name: str) -> str:
@@ -502,7 +502,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
     # broken (the key, saved above, is a harmless orphan until a valid retry).
     err = set_config_leaves(Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
     if err is not None:
-        print(f"Refusing: that would make the config invalid:\n{err}", file=sys.stderr)
+        refuse(f"that would make the config invalid:\n{err}")
         return 2
     print(f"Wrote [providers.{name}] to {target}.")
     print(

@@ -411,7 +411,7 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
                 else no_session_network_reason(layout)
             )
             refuse(f"{reason}")
-            return 1
+            return 2
         print(f"{layout.session_id} is listening on: {', '.join(str(p) for p in ports)}")
         return 0
     return forward(layout, port, args.local_port)

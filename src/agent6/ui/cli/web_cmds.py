@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from agent6.config import WebConfig, is_loopback_host
 from agent6.config.layer import load_effective
+from agent6.ui.cli._common import error, refuse
 from agent6.ui.web import run_web
 
 
@@ -40,14 +40,13 @@ def _cmd_web(
         # one below owns that refusal.
         WebConfig(host=eff_host, port=eff_port, allow_non_loopback=True)
     except ValidationError:
-        print(f"agent6 web: --port {eff_port} is out of range (1-65535).", file=sys.stderr)
+        error(f"--port {eff_port} is out of range (1-65535).")
         return 2
     if not is_loopback_host(eff_host) and not (allow_non_loopback or web.allow_non_loopback):
-        print(
-            f"agent6 web: refusing to bind non-loopback host {eff_host!r} without opt-in."
+        refuse(
+            f"binding non-loopback host {eff_host!r} requires opt-in."
             " Pass --allow-non-loopback (or set [web].allow_non_loopback = true), and prefer"
-            " `tailscale serve` in front of a 127.0.0.1 bind.",
-            file=sys.stderr,
+            " `tailscale serve` in front of a 127.0.0.1 bind."
         )
         return 2
     return run_web(target, host=eff_host, port=eff_port, config_path=config_path)

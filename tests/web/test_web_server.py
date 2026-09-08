@@ -631,7 +631,7 @@ def test_web_refuses_non_loopback_host_without_optin(
     # `--host 0.0.0.0` must be refused before binding unless opted in.
     monkeypatch.chdir(tmp_path)
     assert main(["web", "--host", "0.0.0.0"]) == 2
-    assert "refusing to bind non-loopback" in capsys.readouterr().err
+    assert "binding non-loopback host '0.0.0.0' requires opt-in" in capsys.readouterr().err
 
 
 def test_new_work_empty_task_rejected(server: tuple[WebServer, int]) -> None:

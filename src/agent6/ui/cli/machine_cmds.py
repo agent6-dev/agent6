@@ -363,8 +363,8 @@ def _cmd_machine_poke(
     # An ended machine consumes no signals: a poke would sit unread, so the
     # "it will wake on its next signal check" reply would be a lie. Refuse.
     if refusal := machine_verb_refusal(root, machine_id, "poke"):
-        error(f"{refusal}")
-        return 1
+        refuse(f"{refusal}")
+        return 2
     journal = MachineJournal(root)
     if message is not None:
         payload: Any = message
@@ -398,8 +398,8 @@ def _cmd_machine_stop(machine_id: str) -> int:
     if root is None:
         return 2
     if refusal := machine_verb_refusal(root, machine_id, "stop"):
-        error(f"{refusal}")
-        return 1
+        refuse(f"{refusal}")
+        return 2
     write_stop_request(root)
     print(f"stop requested: {machine_id} parks at its next transition boundary")
     return 0
