@@ -603,7 +603,10 @@ def compact_old_tool_results(
     undelivered_turn = _undelivered_result_turn(conversation, pointers)
     older = pointers[:-keep_recent] if keep_recent else pointers
     candidates = [
-        c for c in older if c[0] != undelivered_turn and not _is_operator_answer(conversation, c)
+        c
+        for c in older
+        if c[0] != undelivered_turn
+        and not _is_operator_answer(_result_at(conversation, c[0], c[1]))
     ]
     if protect_paths:
         # Protected reads go last, each group staying oldest-first.
@@ -631,14 +634,14 @@ def compact_old_tool_results(
     )
 
 
-def _is_operator_answer(conversation: Conversation, pointer: tuple[int, int, int]) -> bool:
+def _is_operator_answer(item: ToolResultItem) -> bool:
     """Whether this result is the operator's answer to an `ask_user`.
 
-    Exempt from elision: it is a binding ruling that exists nowhere else in the
-    model's context, and the placeholder's advice ("re-run it") means
-    interrupting the operator to re-ask a question they have already answered.
-    A handful of answers costs less than the re-ask."""
-    return _result_at(conversation, pointer[0], pointer[1]).for_call.name == ASK_USER_TOOL
+    Exempt from elision and dedup: it is a binding ruling that exists nowhere
+    else in the model's context, and the placeholder's advice ("re-run it")
+    means interrupting the operator to re-ask a question they have already
+    answered. A handful of answers costs less than the re-ask."""
+    return item.for_call.name == ASK_USER_TOOL
 
 
 def _result_at(conversation: Conversation, turn_idx: int, item_idx: int) -> ToolResultItem:
@@ -681,8 +684,8 @@ def _dedupe_identical_results(
     context edge, has no tier this could live in.
 
     The undelivered final batch, the `keep_recent` newest results,
-    already-elided placeholders, and sub-`_DEDUP_MIN_CHARS` results are
-    never rewritten.
+    already-elided placeholders, operator answers, and
+    sub-`_DEDUP_MIN_CHARS` results are never rewritten.
     """
     if len(pointers) <= keep_recent:
         return ()
@@ -692,7 +695,11 @@ def _dedupe_identical_results(
     by_key: dict[tuple[str, str, str], list[tuple[int, int]]] = {}
     for turn_idx, item_idx, _size in pointers:
         item = _result_at(conversation, turn_idx, item_idx)
-        if item.content.startswith(ELISION_PREFIX) or len(item.content) < _DEDUP_MIN_CHARS:
+        if (
+            item.content.startswith(ELISION_PREFIX)
+            or len(item.content) < _DEDUP_MIN_CHARS
+            or _is_operator_answer(item)
+        ):
             continue
         call = item.for_call
         try:

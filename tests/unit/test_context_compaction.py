@@ -158,6 +158,27 @@ def test_an_operator_answer_is_never_elided() -> None:
     assert any("elided" in c for c in contents), "the rest still compacts"
 
 
+def test_an_operator_answer_is_never_deduped_either() -> None:
+    """The same `ask_user` question asked (and answered) twice produces two
+    byte-identical results: the dedup pass runs before elision and, unlike it,
+    carried no `_is_operator_answer` exemption, so it replaced the OLDER copy
+    with a "(duplicate)" pointer marker -- dropping the operator's binding
+    ruling exactly like the elision path was carved out to prevent."""
+    answer = '{"answers": ["' + "use the v2 table only. " * 30 + '"]}'
+    big = "y" * 1000
+    conv = Conversation()
+    _add_exchange(conv, ("ask_user", {"questions": [{"question": "which table?"}]}, answer))
+    _add_exchange(conv, ("grep", {}, big))
+    _add_exchange(conv, ("ask_user", {"questions": [{"question": "which table?"}]}, answer))
+    _add_exchange(conv, ("grep", {}, big))
+    _add_exchange(conv, ("grep", {}, big))
+
+    compact_old_tool_results(conv, max_total_bytes=100, keep_recent=1)
+
+    contents = _result_contents(conv)
+    assert contents[0] == answer, "the older ask_user copy must survive whole, not as a pointer"
+
+
 def test_tier2_measures_the_request_not_just_the_conversation() -> None:
     """The model's window bounds the WHOLE request. Measured on the
     conversation alone, the threshold left a band exactly the size of the
