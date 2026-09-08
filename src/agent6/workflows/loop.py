@@ -49,6 +49,7 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
+from agent6.graph.order import OPEN_STATUSES
 from agent6.memory import decisions_path, decisions_text, memory_dir, record_decision
 from agent6.memory import index_text as memory_index_text
 from agent6.paths import mkdir_for_real_user
@@ -3387,7 +3388,7 @@ class Workflow:
             return
         changed = False
         for nid, node in self.curator.nodes().items():
-            if node.parent_id is None and node.status in ("pending", "in_progress"):
+            if node.parent_id is None and node.status in OPEN_STATUSES:
                 try:
                     self.curator.update_status(UpdateStatusIntent(id=nid, new_status="passed"))
                     changed = True
@@ -4110,7 +4111,7 @@ class Workflow:
             # passed and end the run early.
             if node.parent_id is None or node.standing:
                 continue
-            if node.status in ("pending", "in_progress"):
+            if node.status in OPEN_STATUSES:
                 out.append((nid, node.title[:120]))
         return out
 
@@ -4179,7 +4180,7 @@ class Workflow:
             (nid, node.title[:120])
             for nid, node in self.curator.nodes().items()
             if node.parent_id is not None
-            and node.status in ("pending", "in_progress")
+            and node.status in OPEN_STATUSES
             # A standing task is not unfinished work: it gates the finish via
             # its own re-entry, never via this capped nudge.
             and not node.standing
