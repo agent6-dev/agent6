@@ -386,10 +386,10 @@ def config_leaves(config: Config) -> dict[str, Any]:
 def _leaf_fix_hint(
     layers: list[Layer], source_of_leaf: dict[str, str]
 ) -> Callable[[str, str], str | None]:
-    """Locator for validate_config: (dotted leaf, pydantic error type) -> "set in
-    <layer> <path>; fix: <command>", or None when the value came from a built-in
-    default (nothing to fix). Lets a stale value name the exact file and the
-    command to correct it.
+    """Locator for validate_config: (dotted leaf, pydantic error type) -> a line
+    naming the layer that set it (plus the file and fix command when the layer
+    has one), or None when the value came from a built-in default (nothing to
+    fix). Lets a stale value name its source, however that source is held.
 
     A key `Config` has no field for (`extra_forbidden`) points at `agent6 config
     fix`, which drops it: `config set` refuses a key it cannot resolve.
@@ -398,8 +398,13 @@ def _leaf_fix_hint(
 
     def locate(leaf: str, error_type: str) -> str | None:
         layer = by_name.get(source_of_leaf.get(leaf, ""))
-        if layer is None or layer.path is None:
+        if layer is None:
             return None
+        if layer.path is None:
+            # A machine overlay validated without its file attached, or the
+            # selected preset's own override: name the layer, with no single
+            # file to point a fix at.
+            return f"    set by the {layer.name} layer"
         if layer.name == "flag":
             fix = f"edit {layer.path}"
         elif error_type == "extra_forbidden":

@@ -456,6 +456,19 @@ def test_empty_overlay_matches_load_effective(repo: Path) -> None:
     assert eff.config.sandbox.run_commands == "yes"
 
 
+def test_a_bad_leaf_from_a_machine_overlay_names_its_layer(repo: Path) -> None:
+    """A validator error names the layer that holds the bad value, even one
+    with no file path attached (the machine overlay `load_effective_with_overlay`
+    validates), not just the leaf and message."""
+    from agent6.config.layer import load_effective_with_overlay
+
+    with pytest.raises(ConfigError) as exc:
+        load_effective_with_overlay(repo, {"sandbox": {"isolation": "bogus"}})
+    text = str(exc.value)
+    assert "sandbox.isolation" in text
+    assert "machine" in text.split("sandbox.isolation", 1)[1]
+
+
 def test_deep_merge_replaces_provider_when_kind_changes() -> None:
     # A lower layer's kind-specific keys must not survive a kind change, or they
     # surface as a confusing extra_forbidden error under the new kind.
