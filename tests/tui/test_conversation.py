@@ -101,6 +101,31 @@ def test_conversation_screen_cycles_detail_level(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_an_unrendered_finish_call_with_bad_args_does_not_crash_the_screen(
+    tmp_path: Path,
+) -> None:
+    """A corrupt finish call is not a transcript item, so its non-object args
+    must not take down the conversation screen while it tries to find a summary."""
+    logs = tmp_path / "logs.jsonl"
+    _write(
+        logs,
+        [
+            {"type": "session.start", "user_task": "do X"},
+            {"type": "tool.call", "name": "finish_session", "args": "not an object"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        ],
+    )
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert isinstance(app.screen, ConversationScreen)
+            assert "● passed" in _body_text(app)
+
+    asyncio.run(scenario())
+
+
 def test_conversation_screen_follows_live(tmp_path: Path) -> None:
     """Events appended after mount (a live run / a resume) show up via the poll."""
     logs = tmp_path / "logs.jsonl"

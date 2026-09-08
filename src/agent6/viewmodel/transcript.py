@@ -617,11 +617,12 @@ class TranscriptFold:
         """A dispatched call: its in-flight item, kept until the result. A
         finish tool's summary is the done line's, never an item."""
         name = str(event.get("name", ""))
+        raw_args = event.get("args")
+        args = raw_args if isinstance(raw_args, dict) else {}
         if name in _FINISH_TOOLS:
-            self._finish = str((event.get("args") or {}).get("summary", "")).strip()
+            self._finish = str(args.get("summary", "")).strip()
             return []
         self._tools += 1
-        args = event.get("args") or {}
         key = _pending_key(event, name)
         out: list[TranscriptItem] = []
         if key in self._pending:
