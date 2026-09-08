@@ -344,7 +344,7 @@ def poll_device_auth(
             continue
         raise ProviderError(
             "device sign-in failed: "
-            f"HTTP {resp.status_code}: {_scrub(resp.text[:200], (device.device_auth_id,))}"
+            f"HTTP {resp.status_code}: {_scrub(resp.text, (device.device_auth_id,))[:200]}"
         )
     raise ProviderError("device sign-in expired before the code was entered; run connect again")
 
@@ -406,7 +406,7 @@ def revoke_tokens(issuer: str, client_id: str, tokens: OAuthTokens) -> str | Non
     except httpx2.HTTPError as exc:
         return f"could not reach {url}: {exc}"
     if resp.status_code >= 400:
-        return f"HTTP {resp.status_code}: {_scrub(resp.text[:200], (token,))}"
+        return f"HTTP {resp.status_code}: {_scrub(resp.text, (token,))[:200]}"
     return None
 
 

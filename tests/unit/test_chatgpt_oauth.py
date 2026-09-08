@@ -344,6 +344,27 @@ def test_refresh_error_scrubs_an_echoed_refresh_token(monkeypatch: pytest.Monkey
     assert "<REDACTED>" in str(ei.value)
 
 
+def test_device_poll_failure_scrubs_a_device_id_split_across_the_clip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`poll_device_auth`'s failure message clips the body to 200 chars
+    before scrubbing it, so a device_auth_id straddling the cut leaked its
+    leading bytes."""
+    from agent6.providers.chatgpt_oauth import DeviceAuth, poll_device_auth
+
+    device_id = "da-longenoughtomatterandbeused"
+    body = "x" * 190 + device_id
+
+    def fake_json(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        return _Resp(500, body)
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_json", fake_json)
+    device = DeviceAuth(device_auth_id=device_id, user_code="AB-12", interval_s=5.0)
+    with pytest.raises(ProviderError) as ei:
+        poll_device_auth("https://auth.example", "app_X", device, provider="chatgpt")
+    assert device_id[:10] not in str(ei.value)
+
+
 def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
     tok = "at-echoedtokenvalue456789"
 
@@ -354,6 +375,25 @@ def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> Non
     tokens = chatgpt_oauth.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
     warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
     assert warn is not None and tok not in warn and "<REDACTED>" in warn
+
+
+def test_revoke_warning_scrubs_a_token_split_across_the_clip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`revoke_tokens` clips the body to 200 chars before scrubbing it, so a
+    token straddling the cut left its leading bytes -- a real fragment of the
+    live credential -- past the clip and out of `_scrub`'s reach."""
+    tok = "at-echoedtokenvalue456789"
+    body = "x" * 190 + tok  # tok starts at 190: its first 10 chars sit before the 200 clip
+
+    def echoing_post(*args: object, **kwargs: object) -> _Resp:
+        return _Resp(500, body)
+
+    monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
+    tokens = chatgpt_oauth.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
+    warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
+    assert warn is not None
+    assert tok[:10] not in warn
 
 
 def test_account_id_never_guesses_from_user_id() -> None:
