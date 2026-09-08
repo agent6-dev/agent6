@@ -263,6 +263,80 @@ def test_a_resumed_leg_ends_by_asking_like_a_fresh_one(
     assert asked == (["resumed-run-AAAAAA"] if asks else [])
 
 
+@pytest.mark.parametrize("target", ["resumed-run", ""])
+def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """A concurrent session can become newest or make a prefix ambiguous while
+    a resumed leg runs; the follow-up still belongs to the selected session."""
+    from agent6.ui import cli
+
+    selected = _seed_session(tmp_path, monkeypatch, session_id="resumed-run-AAAAAA")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+
+    def fake_resume(*_args: object, **_kwargs: object) -> int:
+        _seed_session(tmp_path, monkeypatch, session_id="resumed-run-BBBBBB")
+        return 0
+
+    monkeypatch.setattr("agent6.ui.cli.resume._cmd_resume", fake_resume)
+    prompted: list[str] = []
+
+    def spy(**kwargs: object) -> int:
+        prompted.append(str(kwargs["session_id"]))
+        return 0
+
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
+    args = _run_args(session_id=target, force=False, tui=False, preset="", steer="")
+    assert cli._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
+    assert prompted == [selected.session_id]
+
+
+def test_a_refused_leg_does_not_prompt_on_an_existing_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused run can leave its explicit id pointing at an older session;
+    that session is not a completed leg of this invocation to follow up."""
+    from agent6.ui import cli
+
+    layout = _seed_session(tmp_path, monkeypatch, session_id="existing-run-AAAAAA")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+
+    def refused(*_args: object, **_kwargs: object) -> int:
+        return 2
+
+    monkeypatch.setattr("agent6.ui.cli.run._cmd_run", refused)
+    monkeypatch.setattr("agent6.ui.cli.resume._cmd_resume", refused)
+
+    def must_not_prompt(**_kwargs: object) -> int:
+        pytest.fail("prompted after a refused leg")
+
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", must_not_prompt)
+    common = {
+        "session_id": layout.session_id,
+        "tui": False,
+        "config": None,
+        "preset": "",
+    }
+    run_args = _run_args(
+        **common,
+        interactive=False,
+        parallel="",
+        standing="",
+        seed_from="",
+        task="new task",
+        skill=[],
+        pins=[],
+        decompose=False,
+    )
+    plan_args = _run_args(**common, plan_command="run", task="new plan")
+    resume_args = _run_args(**common, interactive=False, force=False, steer="")
+    assert cli._dispatch_run(run_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert cli._dispatch_plan(plan_args) == 2  # pyright: ignore[reportPrivateUsage]
+    assert cli._dispatch_resume(resume_args) == 2  # pyright: ignore[reportPrivateUsage]
+
+
 def test_a_leg_that_undoes_or_detaches_ends_the_asking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

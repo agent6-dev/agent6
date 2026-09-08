@@ -103,6 +103,14 @@ def test_bare_agent6_prints_help_not_an_error(capsys: pytest.CaptureFixture[str]
     assert "<command>" in out
 
 
+def test_global_config_without_a_value_is_an_argparse_error() -> None:
+    from agent6.ui.cli import main
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--config"])
+    assert exc.value.code == 2
+
+
 def test_no_em_dashes_in_parser_help() -> None:
     parser = build_parser()
     offenders: list[str] = []

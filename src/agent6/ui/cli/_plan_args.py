@@ -145,8 +145,8 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="store_true",
         help=(
             "Interactive REPL: keep asking follow-ups in one session (the prior"
-            " Q&A is carried as context). /cost, /reset, /quit. Also the default"
-            " when no question is given and stdin is a TTY."
+            " Q&A is carried as context). /cost, /reset, /quit. Requires a TTY in the"
+            " foreground process group; also the default for a bare `ask` there."
         ),
     )
     _add_budget_flags(ask_query)

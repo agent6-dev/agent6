@@ -85,7 +85,6 @@ from agent6.sessions.lock import (
 from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import SESSION_KINDS, session_bucket, session_kind
-from agent6.viewmodel import newest_session_dir
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
 from agent6.workflows._context import agents_md_notices
 from agent6.workflows._session_state import (
@@ -284,18 +283,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     if steer.strip() and (problem := steer_problem(steer)) is not None:
         reporter.error(f"--steer: {problem}")
         return 2
-    if not session_id:
-        # "resume my last session", the common recovery case. Every bucket a
-        # resumable mode writes to, so splitting plans/ out of runs/ does not
-        # hide a plan from the bare form, and so the no-id path finds what the
-        # by-id path below already accepts.
-        buckets = resumable_bucket_dirs(state)
-        latest = newest_session_dir(buckets)
-        if latest is None:
-            reporter.err('nothing to resume yet. Start a session with `agent6 run "<task>"`.')
-            return 2
-        session_id = latest.name
-        reporter.note(f"resuming most recent session: {session_id}")
     # Across buckets: an ask is a session like any other, so `agent6 resume`
     # continues one by id instead of only finding what lives under runs/.
     # One resolver, no per-bucket fallback: a runs/-only fallback would make an

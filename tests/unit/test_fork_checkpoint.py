@@ -843,11 +843,12 @@ def test_fork_without_id_and_no_runs_errors_cleanly(
 def test_resume_without_id_and_no_runs_errors_cleanly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    from agent6.ui import cli
+
     repo = tmp_path / "repo"
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    rc = _cmd_resume(None, "", force=False)
-    assert rc == 2
+    assert cli.main(["resume"]) == 2
     assert "nothing to resume" in capsys.readouterr().err
 
 

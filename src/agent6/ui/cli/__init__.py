@@ -19,9 +19,9 @@ import argcomplete
 from agent6.errors import OperatorError
 from agent6.events import EventWriteError
 from agent6.paths import state_dir
-from agent6.ui.cli._common import _enforce_root_policy, error, refuse
+from agent6.ui.cli._common import _enforce_root_policy, error, note, refuse
 from agent6.ui.cli._terminal_guard import guarded_terminal
-from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
+from agent6.ui.cli.parser import _inject_default_verb, build_parser
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -92,19 +92,19 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
     from agent6.errors import read_operator_file  # noqa: PLC0415
     from agent6.ui.cli._common import _plans_dir  # noqa: PLC0415
+    from agent6.ui.cli._session_prompt import prompting_is_possible  # noqa: PLC0415
     from agent6.ui.cli.plan_watch import (  # noqa: PLC0415
         _most_recent_plan_session_id,
     )
     from agent6.ui.cli.run import _cmd_run  # noqa: PLC0415
 
-    if args.interactive and not sys.stdin.isatty():
-        # -i is explicit and needs the terminal its help names; run on a pipe,
-        # the REPL's first prompt reads EOF and stops the run mid-task after
-        # the first commit.
-        error("-i needs a TTY on stdin (the REPL reads it); drop -i for a headless run.")
-        return 2
     if args.interactive and args.tui:
         error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
+        return 2
+    if args.interactive and not prompting_is_possible():
+        # -i is explicit and needs the terminal its help names; without it the
+        # REPL's first read ends the run mid-task.
+        error("-i needs a TTY in the foreground process group; drop -i for a headless run.")
         return 2
     parallel = getattr(args, "parallel", "")
     if parallel and (args.interactive or args.tui):
@@ -201,7 +201,9 @@ def _minted_session_id(explicit: str, mode: str) -> str:
     return unused_session_id(state_dir(Path.cwd()), session_bucket(mode))
 
 
-def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: str) -> int:
+def _prompt_for_the_next_input(  # noqa: PLR0911
+    args: argparse.Namespace, rc: int, session_id: str
+) -> int:
     """Ask for the next input instead of ending, when someone is there to type.
 
     `run` and `plan` sessions end this way; `ask` does not (a one-shot question
@@ -213,6 +215,9 @@ def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: st
     leg runs under this invocation's flags (`--max-usd`, `--auto-approve`, ...),
     the ones the operator set for the run.
     """
+    if rc == 2:
+        return rc
+
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
     from agent6.sessions.id import SessionIdError  # noqa: PLC0415
     from agent6.sessions.manifest import ManifestError, read_manifest  # noqa: PLC0415
@@ -285,12 +290,16 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
 def _dispatch_ask(args: argparse.Namespace) -> int:
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
     from agent6.ui.cli._ask import build_ask_session_digest, seed_files  # noqa: PLC0415
+    from agent6.ui.cli._session_prompt import prompting_is_possible  # noqa: PLC0415
     from agent6.ui.cli.run import _cmd_run  # noqa: PLC0415
 
-    # REPL when -i is given, or no question + an interactive stdin.
-    repl = args.interactive or (not args.task and sys.stdin.isatty())
+    if args.interactive and not prompting_is_possible():
+        error("-i needs a TTY in the foreground process group; drop -i for a one-shot ask.")
+        return 2
+    # REPL when -i is given, or no question + an interactive foreground stdin.
+    repl = args.interactive or (not args.task and prompting_is_possible())
     if not args.task and not repl:
-        error("'ask' needs a question (in quotes), or -i for the REPL.")
+        error("'ask' needs a question (in quotes), or -i for the REPL on a foreground terminal.")
         return 2
     question = args.task
     prefix: list[str] = []
@@ -507,18 +516,40 @@ def _dispatch_prompt(args: argparse.Namespace) -> int:
 
 def _dispatch_resume(args: argparse.Namespace) -> int:
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
+    from agent6.app.resume import resumable_bucket_dirs  # noqa: PLC0415
+    from agent6.sessions.id import SessionIdError, resolve_session  # noqa: PLC0415
+    from agent6.ui.cli._session_prompt import prompting_is_possible  # noqa: PLC0415
     from agent6.ui.cli.resume import _cmd_resume  # noqa: PLC0415
+    from agent6.viewmodel import newest_session_dir  # noqa: PLC0415
 
-    if getattr(args, "interactive", False) and not sys.stdin.isatty():
-        # Same terminal need as `run -i` (the REPL reads stdin).
-        error("-i needs a TTY on stdin (the REPL reads it); drop -i for a headless resume.")
-        return 2
     if getattr(args, "interactive", False) and args.tui:
         error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
         return 2
+    if getattr(args, "interactive", False) and not prompting_is_possible():
+        # Same terminal need as `run -i` (the REPL reads stdin).
+        error("-i needs a TTY in the foreground process group; drop -i for a headless resume.")
+        return 2
+    session_id = args.session_id
+    state = state_dir(Path.cwd())
+    if session_id:
+        with contextlib.suppress(SessionIdError):
+            session_id = resolve_session(state, session_id).session_id
+    else:
+        # "resume my last session", the common recovery case: every bucket a
+        # resumable mode writes to, so a plan or an ask is found too.
+        latest = newest_session_dir(resumable_bucket_dirs(state))
+        if latest is None:
+            # An empty state dir is not a fault (see print_nothing_yet).
+            print(
+                'nothing to resume yet. Start a session with `agent6 run "<task>"`.',
+                file=sys.stderr,
+            )
+            return 2
+        session_id = latest.name
+        note(f"resuming most recent session: {session_id}")
     rc = _cmd_resume(
         args.config,
-        args.session_id,
+        session_id,
         force=args.force,
         tui=args.tui,
         budget_overrides=BudgetOverrides.from_args(args),
@@ -529,7 +560,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
     )
     # A resumed leg ends the way a fresh one does: asking for the next input
     # (the TUI owns its screen).
-    return rc if args.tui else _prompt_for_the_next_input(args, rc, args.session_id)
+    return rc if args.tui else _prompt_for_the_next_input(args, rc, session_id)
 
 
 def _dispatch_fork(args: argparse.Namespace) -> int:
@@ -844,9 +875,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     argcomplete.autocomplete(parser)
     raw = sys.argv[1:] if argv is None else argv
-    # Bare `agent6` (no command, no -h/--version): print help rather than the
-    # terse argparse "required: <command>" error.
-    if _command_index(raw) is None and not any(a in ("-h", "--help", "--version") for a in raw):
+    # Bare `agent6`: print help rather than the terse argparse
+    # "required: <command>" error.
+    if not raw:
         parser.print_help()
         return 0
     args = parser.parse_args(_inject_default_verb(raw))

@@ -78,7 +78,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " one of /continue (default), /diff, /cost, /undo (take back the last message:"
             " the tree goes back to the turn before it and a fork continues from there),"
             " /watch, /mcp, /init, /help, /quit, /exit (stop and leave without the"
-            " follow-up prompt). Requires a TTY."
+            " follow-up prompt). Requires a TTY in the foreground process group."
         ),
     )
     run_p.add_argument(
@@ -170,7 +170,8 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help=(
             "Interactive resume, like `run -i`: when the model goes quiet the"
-            " run parks for your steer instead of ending."
+            " run parks for your steer instead of ending. Requires a TTY in the"
+            " foreground process group."
         ),
     )
     resume_p.add_argument(

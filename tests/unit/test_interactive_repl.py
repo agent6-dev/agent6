@@ -347,8 +347,8 @@ def test_i_on_a_pipe_refuses_up_front(
 ) -> None:
     """-i promises a stdin REPL ("Requires a TTY"); on a pipe the REPL's first
     prompt read EOF and stopped the run mid-task after its first commit. The
-    explicit-but-unhonourable flag refuses before anything runs, for run and
-    resume alike."""
+    explicit-but-unhonourable flag refuses before anything runs, for run,
+    resume, and ask sessions alike."""
     from agent6.ui import cli
 
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
@@ -362,6 +362,65 @@ def test_i_on_a_pipe_refuses_up_front(
     assert "-i needs a TTY" in capsys.readouterr().err
     assert cli.main(["resume", "some-run-AAAAAA", "-i"]) == 2
     assert "-i needs a TTY" in capsys.readouterr().err
+    assert cli.main(["ask", "-i", "why?"]) == 2
+    assert "-i needs a TTY" in capsys.readouterr().err
+
+
+def _other_group(_fd: int) -> int:
+    return 1717
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["run", "-i", "do the thing"],
+        ["resume", "some-run-AAAAAA", "-i"],
+        ["ask", "-i", "why?"],
+    ],
+)
+def test_i_from_a_background_process_group_refuses_before_start(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+) -> None:
+    """A background job can keep a TTY on stdin but cannot read it; starting
+    an interactive leg there suspends it with SIGTTIN at the first prompt."""
+    from agent6.ui import cli
+    from agent6.ui.cli import _session_prompt as prompt_mod
+
+    monkeypatch.setattr(prompt_mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(prompt_mod.sys.stdin, "fileno", lambda: 0)
+    monkeypatch.setattr(prompt_mod.os, "getpgrp", lambda: 4242)
+    monkeypatch.setattr(prompt_mod.os, "tcgetpgrp", _other_group)
+
+    def _must_not_run(*_args: object, **_kwargs: object) -> int:
+        pytest.fail("the interactive leg must not start")
+
+    monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _must_not_run)
+    monkeypatch.setattr("agent6.ui.cli.resume._cmd_resume", _must_not_run)
+    assert cli.main(argv) == 2
+    assert "-i needs a TTY" in capsys.readouterr().err
+
+
+def test_bare_ask_from_a_background_process_group_refuses(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Bare ask defaults to its REPL only when the TTY belongs to this job;
+    a background job must not suspend while trying to read from it."""
+    from agent6.ui import cli
+    from agent6.ui.cli import _session_prompt as prompt_mod
+
+    monkeypatch.setattr(prompt_mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(prompt_mod.sys.stdin, "fileno", lambda: 0)
+    monkeypatch.setattr(prompt_mod.os, "getpgrp", lambda: 4242)
+    monkeypatch.setattr(prompt_mod.os, "tcgetpgrp", _other_group)
+
+    def _must_not_run(*_args: object, **_kwargs: object) -> int:
+        pytest.fail("the ask REPL must not start")
+
+    monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _must_not_run)
+    assert cli.main(["ask"]) == 2
+    assert "needs a question" in capsys.readouterr().err
 
 
 def test_init_wizard_ctrl_c_aborts_init_not_the_run(

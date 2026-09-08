@@ -181,6 +181,7 @@ def nothing_yet(what: str = "sessions") -> str:
 # The stderr conventions belong to app.reporter (REFUSING:, ERROR:, [agent6]
 # WARNING:); every CLI message goes through these, so the wording has one owner.
 error = STDIO_REPORTER.error
+note = STDIO_REPORTER.note
 refuse = STDIO_REPORTER.refuse
 warn = STDIO_REPORTER.warn
 
