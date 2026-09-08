@@ -371,11 +371,18 @@ def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: machine `*.asm.toml` files under cwd and the machines dir."""
-    out: set[str] = set()
+    """argcomplete: machine `*.asm.toml` files under cwd, spelled the way
+    the prefix is (relative, `./`-relative, or absolute after a leading `/`),
+    and under the machines dir, absolute."""
     from agent6.sessions.layout import machines_root  # noqa: PLC0415
 
-    for base in (Path.cwd(), machines_root(state_dir(Path.cwd()))):
-        if base.is_dir():
-            out.update(str(p) for p in base.rglob("*.asm.toml"))
+    cwd = Path.cwd()
+    absolute = prefix.startswith("/")
+    dotted = "./" if prefix.startswith("./") else ""
+    out = {
+        str(p) if absolute else dotted + str(p.relative_to(cwd)) for p in cwd.rglob("*.asm.toml")
+    }
+    machines = machines_root(state_dir(cwd))
+    if machines.is_dir():
+        out.update(str(p) for p in machines.rglob("*.asm.toml"))
     return sorted(p for p in out if p.startswith(prefix))

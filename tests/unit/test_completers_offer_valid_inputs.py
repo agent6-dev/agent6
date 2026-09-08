@@ -282,3 +282,28 @@ def test_state_restricted_machine_verbs_offer_only_machines_they_accept(
     assert offered("replay") == ["ended-machine-FFFFF", "live-machine"]
     assert offered("poke") == ["live-machine"]
     assert offered("stop") == []
+
+
+def test_machine_files_complete_relative_to_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--machine-file` takes a path as typed, so a file under cwd is offered
+    relative to it: an absolute suggestion never matches the relative prefix
+    the operator is typing, and TAB offered nothing."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "demo.asm.toml").write_text("", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "inner.asm.toml").write_text("", encoding="utf-8")
+    instance = state_dir(tmp_path) / "machines" / "demo-ok"
+    instance.mkdir(parents=True)
+    (instance / "machine.asm.toml").write_text("", encoding="utf-8")
+
+    assert completers._complete_machine_files("de") == ["demo.asm.toml"]  # pyright: ignore[reportPrivateUsage]
+    assert completers._complete_machine_files("sub/") == ["sub/inner.asm.toml"]  # pyright: ignore[reportPrivateUsage]
+    assert completers._complete_machine_files("./de") == ["./demo.asm.toml"]  # pyright: ignore[reportPrivateUsage]
+    assert completers._complete_machine_files(str(tmp_path / "de")) == [  # pyright: ignore[reportPrivateUsage]
+        str(tmp_path / "demo.asm.toml")
+    ]
+    assert completers._complete_machine_files(str(instance)) == [  # pyright: ignore[reportPrivateUsage]
+        str(instance / "machine.asm.toml")
+    ]
