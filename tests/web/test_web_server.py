@@ -386,7 +386,7 @@ def test_run_conversation_endpoint(server: tuple[WebServer, int], tmp_path: Path
     status, body, _ = _get(port, "/api/session/run-c/conversation")
     assert status == 200
     payload = json.loads(body)
-    assert payload["session_id"] == "run-c"
+    assert set(payload) == {"items", "operator_inputs"}
     kinds = [it["kind"] for it in payload["items"]]
     assert kinds == ["tool", "done"]
     tool = payload["items"][0]
@@ -1642,7 +1642,9 @@ def test_step_diff_serves_one_step_or_the_cumulative_chain(
         encoding="utf-8",
     )
     status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c2}")
-    patch = str(json.loads(raw)["patch"])
+    payload = json.loads(raw)
+    assert set(payload) == {"cumulative", "patch"}
+    patch = str(payload["patch"])
     assert status == 200 and "three" in patch and "two" not in patch
     status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c2}&cumulative=1")
     patch = str(json.loads(raw)["patch"])

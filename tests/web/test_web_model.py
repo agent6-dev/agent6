@@ -92,7 +92,7 @@ def test_conversation_payload_folds_the_event_log(tmp_path: Path) -> None:
         ],
     )
     payload = model.conversation_payload(d)
-    assert payload["session_id"] == "r2"
+    assert set(payload) == {"items", "operator_inputs"}
     (item,) = payload["items"]
     assert item["kind"] == "tool"
     flat = "".join(text for line in item["lines"] for text, _style in line)
@@ -187,11 +187,7 @@ def test_conversation_payload_carries_operator_inputs(tmp_path: Path) -> None:
 def test_conversation_payload_empty_without_log(tmp_path: Path) -> None:
     d = _bucket(tmp_path, "runs") / "r2b"
     d.mkdir(parents=True)
-    assert model.conversation_payload(d) == {
-        "session_id": "r2b",
-        "items": [],
-        "operator_inputs": [],
-    }
+    assert model.conversation_payload(d) == {"items": [], "operator_inputs": []}
 
 
 def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> None:
@@ -201,12 +197,11 @@ def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> N
         json.dumps({"type": "loop.steer.injected", "text": "hello"}) + "\n", encoding="utf-8"
     )
     payload = model.machine_conversation_payload(md)
-    assert payload["state_dir"] == "0001-work"
+    assert set(payload) == {"items"}
     (item,) = payload["items"]
     assert item["kind"] == "operator"
     assert model.machine_conversation_payload(machines_root(state_dir(tmp_path)) / "nope") == {
-        "state_dir": "",
-        "items": [],
+        "items": []
     }
 
 

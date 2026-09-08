@@ -125,7 +125,7 @@ def _diff_payload(
     patch = diff_range(repo, base, sha) if whole else commit_diff(repo, sha)
     if not patch:
         return None, f"no diff for {sha[:12]} ({miss})"
-    return {"sha": sha, "cumulative": whole, "patch": patch}, ""
+    return {"cumulative": whole, "patch": patch}, ""
 
 
 def draft_dir_paths(cwd: Path) -> list[Path]:
@@ -236,7 +236,6 @@ def conversation_payload(session_dir: Path) -> dict[str, Any]:
     history search. One read serves both keys."""
     events = list(tail_events(session_dir / LOGS_NAME, follow=False))
     return {
-        "session_id": session_dir.name,
         "items": conversation_items(events, worker_dead=not worker_is_alive(session_dir)),
         "operator_inputs": operator_inputs(events),
     }
@@ -250,16 +249,15 @@ def restate_payload(session_dir: Path) -> dict[str, Any]:
 
 
 def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
-    """The conversation of the machine's most recent agent-state execution
-    (empty when no agent state has produced a log yet), plus the per-state dir
-    it came from so a client can tell when the machine advanced."""
+    """The conversation of the machine's most recent agent-state execution,
+    empty when no agent state has produced a log yet."""
     log = newest_state_log(machine_dir)
     if log is None:
-        return {"state_dir": "", "items": []}
+        return {"items": []}
     events = list(tail_events(log, follow=False))
     # The machine's worker (one pid for every state) is the one to probe.
     items = conversation_items(events, worker_dead=not worker_is_alive(machine_dir))
-    return {"state_dir": log.parent.name, "items": items}
+    return {"items": items}
 
 
 # --- machine snapshot (structure + watch + reasoning) -----------------------
