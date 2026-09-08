@@ -67,6 +67,8 @@ from agent6.machine.model import (
     MachineSpec,
     StateSpec,
     ToolState,
+    protected_overlay_error,
+    protected_overlay_key_error,
 )
 
 __all__ = [
@@ -110,6 +112,8 @@ __all__ = [
     "fixture_problems",
     "load_machine",
     "machine_lock",
+    "protected_overlay_error",
+    "protected_overlay_key_error",
     "read_source",
     "render_dot",
     "render_mermaid",

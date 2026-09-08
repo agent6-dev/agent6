@@ -44,10 +44,10 @@ from agent6.config.write import (
 )
 from agent6.errors import OperatorError, read_operator_file
 from agent6.machine import (
-    PROTECTED_OVERLAY_LEAVES,
-    PROTECTED_OVERLAY_TABLES,
     MachineError,
     load_machine,
+    protected_overlay_error,
+    protected_overlay_key_error,
 )
 from agent6.paths import (
     cache_dir,
@@ -66,20 +66,32 @@ from agent6.ui.cli._common import error, warn
 from agent6.viewmodel.config_view import format_value, render_key_detail, render_show
 
 
+def _require_machine_file(machine: Path | None) -> None:
+    """Refuse a missing machine-file target instead of treating it as empty."""
+    if machine is not None and not machine.is_file():
+        raise OperatorError(f"no such machine file: {machine}")
+
+
+def _read_machine_overlay(machine: Path | None) -> dict[str, object] | None:
+    """Read a named machine overlay and enforce its operator-only boundary."""
+    if machine is None:
+        return None
+    _require_machine_file(machine)
+    overlay = read_toml_file(machine).get("config", {})
+    if not isinstance(overlay, dict):
+        return {}
+    if problem := protected_overlay_error(overlay):
+        raise OperatorError(problem)
+    return overlay
+
+
 def _effective_with_overlay(config_path: Path | None, machine: Path | None) -> EffectiveConfig:
     """The effective config, with a machine file's `[config]` overlay on top
     when one is named."""
-    if machine is None:
+    overlay = _read_machine_overlay(machine)
+    if overlay is None:
         return load_effective(Path.cwd(), config_path)
-    if not machine.is_file():
-        # read_toml_file answers {} for a missing path, so a typo'd machine file
-        # would read as "an empty overlay" and answer confidently from the
-        # stack below it.
-        raise OperatorError(f"no such machine file: {machine}")
-    overlay = read_toml_file(machine).get("config", {})
-    return load_effective_with_overlay(
-        Path.cwd(), overlay if isinstance(overlay, dict) else {}, explicit_path=config_path
-    )
+    return load_effective_with_overlay(Path.cwd(), overlay, explicit_path=config_path)
 
 
 def _cmd_config_show(
@@ -212,7 +224,9 @@ def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str
     if machine is not None:
         if repo:
             raise OperatorError("use either --repo or --machine-file, not both")
-        return machine, "config."
+        if machine.is_file():
+            _read_machine_overlay(machine)  # the boundary get, show and fix enforce
+        return resolved_write_path(machine), "config."
     if repo:
         return resolved_write_path(repo_config_path(Path.cwd())), ""
     return resolved_write_path(global_config_path()), ""
@@ -227,17 +241,7 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
     """
     if machine is None:
         return None
-    for table in PROTECTED_OVERLAY_TABLES:
-        if key == table or key.startswith(f"{table}."):
-            return (
-                f"machine [config] overlays must not set {table}.*:"
-                " connections/secrets, sandbox policy, and strategy presets are"
-                " operator-only (global/repo config)"
-            )
-    for dotted, why in PROTECTED_OVERLAY_LEAVES.items():
-        if key == dotted or key.startswith(f"{dotted}."):
-            return f"machine [config] overlays must not set {dotted}: {why} (operator-only)"
-    return None
+    return protected_overlay_key_error(key)
 
 
 def _machine_is_valid(text: str | None) -> bool:
@@ -542,6 +546,7 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
     (a dotted top-level key has no [table] header).
     """
     repo_root = Path.cwd()
+    _read_machine_overlay(machine)
     removed: list[InvalidEntry] = []
     stuck: list[InvalidEntry] = []
     touched: set[Path] = set()

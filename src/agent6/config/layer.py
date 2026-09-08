@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from agent6.config.io import (
     format_toml_value,
@@ -357,6 +357,32 @@ def flatten_leaves(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     return out
 
 
+def config_leaves(config: Config) -> dict[str, Any]:
+    """Flatten a validated config to dotted leaves. A name-keyed section of
+    models (`providers`) is traversed; a dict-typed value (a provider's
+    `extra_body`) is one leaf, whatever it holds."""
+    out: dict[str, Any] = {}
+
+    def walk(model: BaseModel, prefix: str) -> None:
+        for name in type(model).model_fields:
+            value = getattr(model, name)
+            path = f"{prefix}{name}"
+            if isinstance(value, BaseModel):
+                walk(value, f"{path}.")
+            elif (
+                isinstance(value, dict)
+                and value
+                and all(isinstance(entry, BaseModel) for entry in value.values())
+            ):
+                for key, entry in value.items():
+                    walk(entry, f"{path}.{key}.")
+            else:
+                out[path] = value
+
+    walk(config, "")
+    return out
+
+
 def _leaf_fix_hint(
     layers: list[Layer], source_of_leaf: dict[str, str]
 ) -> Callable[[str, str], str | None]:
@@ -395,8 +421,18 @@ def _effective_from_layers(
     config = validate_config(merged, source=source, locate=_leaf_fix_hint(layers, source_of_leaf))
     # Source map over the *effective* config: every leaf the model
     # produced, attributed to the layer that set it or "default".
-    effective_leaves = flatten_leaves(config.model_dump(mode="python"))
-    sources = {leaf: source_of_leaf.get(leaf, "default") for leaf in effective_leaves}
+    effective_leaves = config_leaves(config)
+    layer_order = [layer.name for layer in layers]
+
+    def source_for(leaf: str) -> str:
+        contributors = {
+            source
+            for path, source in source_of_leaf.items()
+            if path == leaf or path.startswith(f"{leaf}.")
+        }
+        return next((name for name in reversed(layer_order) if name in contributors), "default")
+
+    sources = {leaf: source_for(leaf) for leaf in effective_leaves}
     return EffectiveConfig(
         config=config, sources=sources, layers=tuple(layers), presets=tuple(presets)
     )
@@ -656,6 +692,54 @@ def _diagnose_errors(
     return ConfigDiagnosis(tuple(removable), "\n".join(blocked) if blocked else None)
 
 
+def _diagnose_layers(layers: list[Layer], *, only_layer: str | None) -> ConfigDiagnosis:
+    """Validate one effective layer prefix and locate its invalid entries."""
+    merged, origin = _merge_with_origin(layers)
+    try:
+        Config.model_validate(merged)
+    except ConfigError as exc:
+        return ConfigDiagnosis((), str(exc))
+    except ValidationError as exc:
+        return _diagnose_errors(exc, origin, only_layer=only_layer)
+    return ConfigDiagnosis((), None)
+
+
+def _diagnose_presets(repo_root: Path) -> ConfigDiagnosis:
+    """Diagnose every user preset, including those not currently selected."""
+    by_name: dict[str, list[Layer]] = {}
+    for layer in discover_layers(repo_root, None):
+        presets = layer.data.get("presets")
+        if not isinstance(presets, dict):
+            continue
+        for name, body in presets.items():
+            if isinstance(body, dict):
+                by_name.setdefault(name, []).append(Layer(layer.name, layer.path, body))
+    for name, layers in by_name.items():
+        diagnosis = _diagnose_layers(layers, only_layer=None)
+        leaves = [entry for entry in diagnosis.removable if not entry.is_table]
+        if not leaves:
+            # A preset may be a partial table completed by the selecting
+            # config layer, just as one ordinary layer can complete another.
+            continue
+        return ConfigDiagnosis(
+            tuple(
+                InvalidEntry(
+                    leaf=f"presets.{name}.{entry.leaf}",
+                    value=read_toml_leaf(
+                        read_toml_file(entry.path), f"presets.{name}.{entry.file_key}"
+                    ),
+                    layer=entry.layer,
+                    path=entry.path,
+                    file_key=f"presets.{name}.{entry.file_key}",
+                    is_table=entry.is_table,
+                )
+                for entry in leaves
+            ),
+            diagnosis.blocked,
+        )
+    return ConfigDiagnosis((), None)
+
+
 def find_invalid_entries(repo_root: Path, *, machine: Path | None = None) -> ConfigDiagnosis:
     """Diagnose the on-disk config for `agent6 config fix`.
 
@@ -669,22 +753,27 @@ def find_invalid_entries(repo_root: Path, *, machine: Path | None = None) -> Con
     """
     only = "machine" if machine is not None else None
     try:
+        if machine is None and (preset_diagnosis := _diagnose_presets(repo_root)).removable:
+            return preset_diagnosis
         layers = _fix_scope_layers(repo_root, machine)
-        merged, origin = _merge_with_origin(layers)
     except ConfigError as exc:
         return ConfigDiagnosis((), str(exc))
-    try:
-        Config.model_validate(merged)
-    except ConfigError as exc:  # a model-level validator raised a standalone ConfigError
-        return ConfigDiagnosis((), str(exc))
-    except ValidationError as exc:
-        return _diagnose_errors(exc, origin, only_layer=only)
-    return ConfigDiagnosis((), None)
+    if machine is None:
+        repo_index = next((i for i, layer in enumerate(layers) if layer.name == "repo"), None)
+        if repo_index is not None:
+            lower = _diagnose_layers(layers[:repo_index], only_layer=None)
+            # A blocked prefix, or a whole table failing its validator, can be
+            # a partial table the repo layer completes. A located bad leaf
+            # cannot be made valid by masking it, so fix it first.
+            leaves = tuple(entry for entry in lower.removable if not entry.is_table)
+            if leaves:
+                return ConfigDiagnosis(leaves, None)
+    return _diagnose_layers(layers, only_layer=only)
 
 
 def leaf_keys(eff: EffectiveConfig) -> list[str]:
     """Every dotted leaf path in the effective config, sorted (for completion)."""
-    return sorted(flatten_leaves(eff.config.model_dump(mode="python")))
+    return sorted(config_leaves(eff.config))
 
 
 def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | None:
@@ -693,7 +782,7 @@ def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | N
     Mirrors `config show`: the value comes from the merged+validated config and
     the source is the layer that set it (`default` when no layer did).
     """
-    leaves = flatten_leaves(eff.config.model_dump(mode="python"))
+    leaves = config_leaves(eff.config)
     parts = dotted_key.split(".")
     if parts[0] == "presets" and len(parts) > 2 and ".".join(parts[2:]) in leaves:
         # A preset's leaf: the value the most specific layer's [presets.<name>]
@@ -702,8 +791,8 @@ def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | N
         name, leaf = parts[1], ".".join(parts[2:])
         for layer in reversed(eff.layers):
             table = _file_presets(layer.path).get(name)
-            if isinstance(table, dict) and leaf in flatten_leaves(table):
-                return flatten_leaves(table)[leaf], f"preset {name} ({layer.name})"
+            if isinstance(table, dict) and (value := read_toml_leaf(table, leaf)) is not None:
+                return value, f"preset {name} ({layer.name})"
         return None, "unset"
     if dotted_key not in leaves:
         return None

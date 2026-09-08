@@ -24,7 +24,7 @@ from agent6.config.layer import (
     SECTION_ORDER,
     EffectiveConfig,
     Layer,
-    flatten_leaves,
+    config_leaves,
     preset_names,
 )
 
@@ -189,7 +189,7 @@ def build_config_view(
     `is_adaptive` so a UI can show the real number.
     """
     resolved = resolved or {}
-    leaves = flatten_leaves(eff.config.model_dump(mode="python"))
+    leaves = config_leaves(eff.config)
     by_section: dict[str, list[str]] = {}
     for leaf in leaves:
         by_section.setdefault(leaf.split(".", 1)[0], []).append(leaf)

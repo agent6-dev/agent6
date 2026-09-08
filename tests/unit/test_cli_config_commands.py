@@ -72,13 +72,10 @@ def test_machine_get_on_malformed_toml_is_clean_error(
     assert "report this" not in err
 
 
-def test_unset_refuses_a_key_that_is_not_a_leaf(
-    iso: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """`config unset nope.nope` refuses like get and set do; "nothing to unset"
-    with exit 0 read as a no-op on a key that never existed."""
+def test_unset_refuses_an_unknown_key(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """An unknown key is an error, not a successful no-op."""
     assert _run(["config", "unset", "nope.nope"]) == 2
-    assert "no config key matches" in capsys.readouterr().err
+    assert "no config key matches 'nope.nope'" in capsys.readouterr().err
 
 
 def test_unset_reverts_to_default(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -281,6 +278,29 @@ def test_machine_overlay_rejects_providers(iso: Path) -> None:
     assert _run(["config", "set", "providers.x.kind", "anthropic", "--machine-file", str(mf)]) == 2
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["config", "show"],
+        ["config", "get", "sandbox.network"],
+        ["config", "fix"],
+    ],
+    ids=["show", "get", "fix"],
+)
+def test_machine_config_readers_refuse_a_hand_edited_protected_overlay(
+    iso: Path,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+) -> None:
+    machine = iso / "protected.asm.toml"
+    machine.write_text('[config.sandbox]\nnetwork = "host"\n', encoding="utf-8")
+
+    assert _refuse([*command, "--machine-file", str(machine)]) == 2
+    err = capsys.readouterr().err
+    assert "machine [config] overlays must not set sandbox.*" in err
+    assert "operator-only" in err
+
+
 # --- egress endpoint wiring -------------------------------------------------
 
 
@@ -418,6 +438,30 @@ def test_get_refuses_a_machine_file_that_does_not_exist(
         == 2
     )
     assert "no such machine file" in capsys.readouterr().err
+
+
+def test_fix_refuses_a_machine_file_that_does_not_exist(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = iso / "nope.asm.toml"
+
+    assert _refuse(["config", "fix", "--machine-file", str(missing)]) == 2
+    assert capsys.readouterr().err == f"ERROR: no such machine file: {missing}\n"
+
+
+def test_set_refuses_a_machine_file_holding_a_protected_table(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The write verbs read the file too: one that get, show and fix refuse
+    must not take a leaf from set."""
+    machine = iso / "protected.asm.toml"
+    text = '[config.sandbox]\nnetwork = "host"\n'
+    machine.write_text(text, encoding="utf-8")
+
+    argv = ["config", "set", "workflow.max_iterations", "3", "--machine-file", str(machine)]
+    assert _refuse(argv) == 2
+    assert "operator-only" in capsys.readouterr().err
+    assert machine.read_text(encoding="utf-8") == text
 
 
 def test_a_provider_leaf_error_names_every_valid_value(
@@ -683,3 +727,36 @@ def test_config_fix_reports_an_entry_it_cannot_auto_remove(
     assert main(["config", "fix"]) == 2
     err = capsys.readouterr().err
     assert "not an auto-removable entry" in err and "nope" in err
+
+
+def test_nonempty_table_leaf_stays_gettable_and_unsettable(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A dict-typed field is one config leaf even when its value is nonempty."""
+    assert _run(["config", "set", "providers.demo.api_format", "openai"]) == 0
+    assert (
+        _run(
+            [
+                "config",
+                "set",
+                "providers.demo.extra_body",
+                '{ route = { order = ["fast", "cheap"] } }',
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert _run(["config", "get", "providers.demo.extra_body"]) == 0
+    assert "providers.demo.extra_body = {...}  [global]" in capsys.readouterr().out
+    assert _run(["config", "show", "providers.demo.extra_body"]) == 0
+    shown = capsys.readouterr().out
+    assert "providers.demo.extra_body\n" in shown
+    assert "providers.demo.extra_body.route" not in shown
+
+    assert _run(["config", "unset", "providers.demo.extra_body"]) == 0
+    providers = _global_toml(iso)["providers"]
+    assert isinstance(providers, dict)
+    demo = providers["demo"]
+    assert isinstance(demo, dict)
+    assert "extra_body" not in demo

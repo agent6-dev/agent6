@@ -542,6 +542,113 @@ def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
     assert main(["config", "show"]) == 0  # config is valid now
 
 
+def test_config_fix_drops_a_masked_invalid_global_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repo override must not hide a stale global value from config fix."""
+    from agent6.config.layer import load_effective
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    global_path = global_config_path()
+    global_path.parent.mkdir(parents=True)
+    global_path.write_text('[sandbox]\nrun_commands = "bogus"\n', encoding="utf-8")
+    repo_path = repo_config_path(repo)
+    repo_path.parent.mkdir(parents=True)
+    repo_path.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
+
+    assert main(["config", "fix"]) == 0
+    assert "sandbox.run_commands" in capsys.readouterr().out
+    assert "run_commands" not in global_path.read_text(encoding="utf-8")
+    assert 'run_commands = "yes"' in repo_path.read_text(encoding="utf-8")
+    other_repo = tmp_path / "other"
+    other_repo.mkdir()
+    assert load_effective(other_repo).config.sandbox.run_commands == "ask"
+
+
+def test_config_fix_keeps_a_table_whose_validator_the_repo_layer_satisfies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A section validator satisfied only by the repo layer fails in the lower
+    layers alone at the section's loc; dropping that whole table from the
+    global file destroyed valid settings."""
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    global_path = global_config_path()
+    global_path.parent.mkdir(parents=True)
+    global_text = '[web]\nhost = "0.0.0.0"\nport = 9123\n'
+    global_path.write_text(global_text, encoding="utf-8")
+    repo_path = repo_config_path(repo)
+    repo_path.parent.mkdir(parents=True)
+    repo_path.write_text("[web]\nallow_non_loopback = true\n", encoding="utf-8")
+
+    assert main(["config", "fix"]) == 0
+    assert "nothing to fix" in capsys.readouterr().out.lower()
+    assert global_path.read_text(encoding="utf-8") == global_text
+
+
+def test_config_fix_accepts_a_table_completed_by_the_repo_layer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    global_path = global_config_path()
+    global_path.parent.mkdir(parents=True)
+    global_path.write_text('[models.worker]\nmodel = "m"\n', encoding="utf-8")
+    repo_path = repo_config_path(repo)
+    repo_path.parent.mkdir(parents=True)
+    repo_path.write_text(
+        '[providers.p]\napi_format = "openai"\nbase_url = "https://p.example/v1"\n'
+        '[models.worker]\nprovider = "p"\n',
+        encoding="utf-8",
+    )
+
+    assert main(["config", "fix"]) == 0
+    assert "nothing to fix" in capsys.readouterr().out.lower()
+    assert 'model = "m"' in global_path.read_text(encoding="utf-8")
+
+
+def test_config_fix_drops_an_invalid_unselected_preset_leaf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.chdir(tmp_path)
+    path = global_config_path()
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        '[presets.good.review]\ntrigger = "before_finish"\n'
+        '[presets.bad.sandbox]\nnetwork = "banana"\n',
+        encoding="utf-8",
+    )
+
+    assert main(["config", "fix"]) == 0
+    out = capsys.readouterr().out
+    assert "presets.bad.sandbox.network" in out
+    text = path.read_text(encoding="utf-8")
+    assert "banana" not in text
+    assert '[presets.good.review]\ntrigger = "before_finish"' in text
+
+
 def test_config_fix_drops_an_unknown_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

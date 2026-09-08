@@ -426,6 +426,33 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
 }
 
 
+def protected_overlay_key_error(key: str) -> str | None:
+    """Explain why a dotted machine-overlay key is operator-only."""
+    for table in PROTECTED_OVERLAY_TABLES:
+        if key == table or key.startswith(f"{table}."):
+            return (
+                f"machine [config] overlays must not set {table}.*:"
+                " connections/secrets, sandbox policy, strategy presets, and MCP"
+                " servers are operator-only (global/repo config)"
+            )
+    for dotted, why in PROTECTED_OVERLAY_LEAVES.items():
+        if key == dotted or key.startswith(f"{dotted}."):
+            return f"machine [config] overlays must not set {dotted}: {why} (operator-only)"
+    return None
+
+
+def protected_overlay_error(config: dict[str, Any]) -> str | None:
+    """The refusal for the first operator-only key in a parsed machine overlay."""
+    for head, value in config.items():
+        if problem := protected_overlay_key_error(head):
+            return problem
+        if isinstance(value, dict):
+            for leaf in value:
+                if problem := protected_overlay_key_error(f"{head}.{leaf}"):
+                    return problem
+    return None
+
+
 class MachineSpec(BaseModel):
     """A validated `.asm.toml` machine definition: budget, typed `schemas`, the
     named `states` graph, and an optional agent6 `[config]` overlay whose
@@ -448,30 +475,8 @@ class MachineSpec(BaseModel):
 
     @model_validator(mode="after")
     def _forbid_protected_overlay_tables(self) -> MachineSpec:
-        # An overlay is the highest config layer at run time but may be untrusted
-        # (LLM-drafted, shared), so it must not carry operator-only security
-        # policy: the jail, connections/secrets, MCP servers, host-argv hooks, or
-        # the strategy presets that define them (a `[presets.<selected>]` splices
-        # straight into the effective config). Refused off PROTECTED_OVERLAY_*.
-        for table in PROTECTED_OVERLAY_TABLES:
-            if table in self.config:
-                raise ValueError(
-                    f"machine `[config]` overlay must not declare `[{table}.*]`:"
-                    " connections/secrets, sandbox policy, strategy presets, and MCP"
-                    " servers are operator decisions set in the global/repo config,"
-                    " never in a .asm.toml file"
-                )
-        # Individual operator-only leaves (the rest of their table stays a
-        # legitimate overlay knob, e.g. [config.git.commit] identity).
-        for dotted, why in PROTECTED_OVERLAY_LEAVES.items():
-            head, _, leaf = dotted.partition(".")
-            sub = self.config.get(head)
-            if isinstance(sub, dict) and leaf in sub:
-                raise ValueError(
-                    f"machine `[config]` overlay must not set `{dotted}`: {why};"
-                    " it is an operator decision in the global/repo config, never"
-                    " in a .asm.toml file"
-                )
+        if problem := protected_overlay_error(self.config):
+            raise ValueError(problem)
         return self
 
 

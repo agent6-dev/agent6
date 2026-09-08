@@ -34,7 +34,7 @@ It can be empty or absent when the global config supplies a provider and model; 
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
 - `agent6 config fill`: materialize defaults + global config into the global file.
   The repo layer and any selected preset are left as-is.
-- `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values), naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
+- `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from every layer and preset, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without starting an agent run.
   `config show` prints what an `auto` knob resolved to on this host, tagged `(adaptive)`; `check` adds why a level fell short, live jail probes, and each MCP server's network and `approve`.
 

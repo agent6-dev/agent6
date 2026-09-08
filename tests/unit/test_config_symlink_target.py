@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -120,3 +121,36 @@ def test_a_symlink_whose_target_does_not_exist_yet_is_created(
 
     assert link.is_symlink(), "the dangling link was replaced instead of filled"
     assert "protect_git" in real.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        (("set", "review.period", "8"), {"period": 8, "seats": ["tests"]}),
+        (("unset", "review.period"), {"seats": ["tests"]}),
+        (("add", "review.seats", "security"), {"period": 7, "seats": ["tests", "security"]}),
+        (("remove", "review.seats", "tests"), {"period": 7, "seats": []}),
+    ],
+)
+def test_machine_overlay_writers_keep_a_symlinked_machine_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: tuple[str, ...],
+    expected: dict[str, object],
+) -> None:
+    """Machine overlay edits follow an owned machine-file symlink."""
+    from agent6.ui.cli import main
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "machines" / "real.asm.toml"
+    target.parent.mkdir()
+    target.write_text('[config.review]\nperiod = 7\nseats = ["tests"]\n', encoding="utf-8")
+    link = tmp_path / "linked.asm.toml"
+    link.symlink_to(target)
+
+    assert main(["config", *command, "--machine-file", str(link)]) == 0
+
+    assert link.is_symlink(), f"`config {command[0]} --machine-file` replaced the symlink"
+    assert tomllib.loads(target.read_text(encoding="utf-8"))["config"]["review"] == expected
