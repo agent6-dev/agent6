@@ -3237,11 +3237,15 @@ class _FakeGraph:
     def cursor(self) -> str | None:
         return None
 
+    def update_status(self, intent: Any) -> None:
+        self._nodes[intent.id]["status"] = intent.new_status
+
 
 def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
-    """The finish-gate nudges while a SUBTASK is open, naming it, and stops after
-    _TASK_FINISH_PATIENCE so a stuck worker can't bounce the loop forever."""
-    from agent6.workflows.loop import TASK_FINISH_PATIENCE  # pyright: ignore[reportPrivateUsage]
+    """The gate refuses while a subtask is open, naming only the tasks that
+    block it, and lets the end through after TASK_FINISH_PATIENCE refusals
+    (the receipt then names the open tasks)."""
+    from agent6.workflows._nudges import TASK_FINISH_PATIENCE
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
@@ -3252,11 +3256,56 @@ def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
     st = _state()
     for i in range(1, TASK_FINISH_PATIENCE + 1):
         nudge = wf._task_finish_gate_nudge(st)  # pyright: ignore[reportPrivateUsage]
-        assert nudge is not None and "audit providers" in nudge
+        assert nudge is not None and "sub1: audit providers" in nudge
         assert "audit sandbox" not in nudge  # passed subtask not listed
         assert st.task_finish_nudges_used == i
-    # Cap reached -> finish is honoured (no further nudges).
     assert wf._task_finish_gate_nudge(st) is None  # pyright: ignore[reportPrivateUsage]
+    assert "1 open task(s): audit providers" in wf._with_open_tasks("done")  # pyright: ignore[reportPrivateUsage]
+
+
+def test_a_plans_tasks_neither_gate_nor_decorate_its_finish() -> None:
+    """A plan's task DAG is its deliverable, open by design: plan mode has no
+    open-task gate and its finish receipt is not decorated with them."""
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "plan"},
+        "sub1": {"parent_id": "root", "status": "pending", "title": "step one"},
+    }
+    wf = _wf(curator=_FakeGraph(nodes))
+    wf.mode = "plan"
+    assert wf._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf._with_open_tasks("planned") == "planned"  # pyright: ignore[reportPrivateUsage]
+    turn = _turn()
+    assert wf._end_gates(_state(), turn, ending="silent_finish") is None  # pyright: ignore[reportPrivateUsage]
+    assert turn.end_returned is False and turn.tool_results == []
+
+
+def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> None:
+    """With the gate's cap spent, the settled stop goes through: a green tree
+    settles as verify_settled (the status word carries the verify truth and
+    nothing else) and the receipt names the open subtasks. An uncapped gate
+    bounced a worker for its whole budget."""
+    from agent6.workflows._nudges import TASK_FINISH_PATIENCE, VERIFY_SETTLED_STOP_AFTER
+
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
+        "sub1": {"parent_id": "root", "status": "pending", "title": "audit providers"},
+    }
+    wf = _wf(curator=_FakeGraph(nodes))
+    state = _state(
+        verify=VerifyVerdict(ever_passed=True, last_ok=True),
+        settled_tree="tree",
+        verify_settled_idle=VERIFY_SETTLED_STOP_AFTER - 1,
+        task_finish_nudges_used=TASK_FINISH_PATIENCE,
+    )
+    turn = _turn()
+    with patch.object(wf, "_worktree_tree_sha", return_value="tree"):
+        assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
+        assert turn.verify_settled_stop is True and turn.end_returned is False
+        result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
+
+    assert result is not None and result.reason == "verify_settled"
+    assert result.summary.startswith("verify passed and the worker stopped making changes")
+    assert "1 open task(s): audit providers" in result.summary
 
 
 def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
@@ -3265,6 +3314,61 @@ def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
     root_only = _FakeGraph({"root": {"parent_id": None, "status": "pending", "title": "t"}})
     assert _wf(curator=root_only)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
     assert _wf(curator=None)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
+
+
+def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
+    """The automatic settled ending passes the same task gate as finish_session,
+    so a green gate cannot make the run read passed while work remains open."""
+    from agent6.workflows._nudges import VERIFY_SETTLED_STOP_AFTER
+
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
+        "sub1": {"parent_id": "root", "status": "pending", "title": "audit providers"},
+    }
+    wf = _wf(curator=_FakeGraph(nodes))
+    state = _state(
+        verify=VerifyVerdict(ever_passed=True, last_ok=True),
+        settled_tree="tree",
+        verify_settled_idle=VERIFY_SETTLED_STOP_AFTER - 1,
+    )
+    turn = _turn()
+    with patch.object(wf, "_worktree_tree_sha", return_value="tree"):
+        result = wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
+
+    assert result is None
+    assert turn.verify_settled_stop is False
+    assert turn.end_returned is True
+    assert any(
+        isinstance(item, Notice) and "sub1: audit providers" in item.text
+        for item in turn.tool_results
+    )
+
+
+def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
+    """A metric ceiling cannot end passed while a task remains open; the task
+    refusal reaches the next model turn instead."""
+    from agent6.workflows._metric import MetricSample
+
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "optimize"},
+        "sub1": {"parent_id": "root", "status": "pending", "title": "measure variant"},
+    }
+    wf = _wf(curator=_FakeGraph(nodes))
+    state = _state(
+        verify=VerifyVerdict(ever_passed=True, last_ok=True),
+        metric_history=[MetricSample(label="ceiling", score=10, returncode=0, at_ceiling=True)],
+    )
+    turn = _turn(metric_plateau_finish="score reached its ceiling")
+
+    result = wf._turn_metric_plateau(state, turn)  # pyright: ignore[reportPrivateUsage]
+
+    assert result is None
+    assert turn.plateau_should_stop is False
+    assert turn.end_returned is True
+    assert any(
+        isinstance(item, Notice) and "sub1: measure variant" in item.text
+        for item in turn.tool_results
+    )
 
 
 # --- surface-current-task -------------------------------------------------
@@ -7748,3 +7852,126 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: Path) -> None:
     assert "mark it passed with update_task" not in banner
     assert "only the operator retires it" in banner
     assert not any(t.startswith("[harness] You have spent") for t in texts)
+
+
+def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
+    """A metric run whose worker finishes on the turn the plateau detector
+    fires: the panel sat for the finish, the early-finish gate revoked it, and
+    the panel sat again for the plateau stop over the same tree. One turn's
+    end is reviewed once; a finish that survives its gates ends the turn
+    without the plateau's end gates running too."""
+    from unittest.mock import patch
+
+    from agent6.tools.results import FinishSessionResult
+    from agent6.workflows._review import CritiqueResult
+
+    def _tool_use(name: str, call_id: str, args: dict[str, Any]) -> ProviderResponse:
+        block = {"type": "tool_use", "id": call_id, "name": name, "input": args}
+        return ProviderResponse(
+            text="",
+            tool_uses=({"id": call_id, "name": name, "input": args},),
+            stop_reason="tool_use",
+            input_tokens=1,
+            output_tokens=1,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            raw={"content": [block]},
+        )
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            if self.calls == 8:
+                blocks = [
+                    {"type": "tool_use", "id": "v8", "name": "run_verify_command", "input": {}},
+                    {
+                        "type": "tool_use",
+                        "id": "f8",
+                        "name": "finish_session",
+                        "input": {"summary": "done"},
+                    },
+                ]
+                return ProviderResponse(
+                    text="",
+                    tool_uses=tuple(
+                        {"id": b["id"], "name": b["name"], "input": b["input"]} for b in blocks
+                    ),
+                    stop_reason="tool_use",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cache_read_tokens=0,
+                    cache_creation_tokens=0,
+                    raw={"content": blocks},
+                )
+            return _tool_use("run_verify_command", f"v{self.calls}", {})
+
+    class DispatcherStub(_StubDispatcher):
+        def __init__(self) -> None:
+            self.scores = iter([100.0, 80.0, 60.0, 50.0, 50.0, 50.0, 50.0, 50.0])
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            if name == "run_verify_command":
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
+            if name == "run_metric_command":
+                score = next(self.scores)
+                return MetricResult(
+                    returncode=0,
+                    stdout=f"CYCLES: {score:g}\n",
+                    stderr="",
+                    duration_s=0.1,
+                    exec_failed=False,
+                    score=score,
+                )
+            if name == "finish_session":
+                return FinishSessionResult(
+                    summary_text=str(raw_input.get("summary", "")), result=None
+                )
+            raise AssertionError(f"unexpected tool: {name}")
+
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            verify_when="never",
+            verify_retries=2,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal="minimize"),
+        ),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+    )
+    wf.review_trigger = "before_finish"
+    wf.review_seats = [object()]  # type: ignore[assignment]
+    panels: list[str] = []
+
+    def fake_panel(self: Workflow, state: Any, *, trigger: str, iteration: int) -> CritiqueResult:
+        del self, state, iteration
+        panels.append(trigger)
+        return CritiqueResult(text="No blocking findings.", satisfied=True)
+
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
+    with (
+        patch("agent6.workflows.loop.chain_commit", side_effect=[f"sha{i}" for i in range(1, 20)]),
+        patch.object(Workflow, "_run_review_panel", fake_panel),
+    ):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            conversation=Conversation.from_wire(messages),
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert result.reason == "metric_plateau"
+    assert panels == ["before_finish"]

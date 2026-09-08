@@ -250,6 +250,9 @@ class TurnState:
     metric_feedback: str | None = None
     metric_plateau_finish: str | None = None
     review_text: str | None = None
+    # The before-finish panel's verdict on this turn's end (True: rejected),
+    # sat once however many ends the turn declares.
+    end_reviewed: bool | None = None
     plateau_should_stop: bool = False
     verify_settled_stop: bool = False
     no_progress_stop: bool = False

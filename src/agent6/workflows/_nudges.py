@@ -182,9 +182,9 @@ PLAN_NUDGE_AFTER_ITERS = 12
 # it finish (or silently stop) while subtasks are still open -- re-prompt with
 # the open list instead. A weak model on a long task tends to quit early with
 # work pending.
-# Capped so a worker that genuinely can't close a task (and won't mark it
-# obsolete/skipped) can't bounce the loop forever; after the cap the finish is
-# honoured. Only SUBTASKS gate -- the always-pending auto-root would deadlock.
+# Capped, as the review gate is: after the cap the end goes through, and the
+# end word carries the open tasks rather than a pass. Only SUBTASKS gate -- the
+# always-pending auto-root would deadlock.
 TASK_FINISH_PATIENCE = 3
 
 # verify-settled completion (run mode). A non-metric run has no positive "done"

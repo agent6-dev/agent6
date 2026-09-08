@@ -966,7 +966,9 @@ class Workflow:
             self._turn_review_triggers(state, turn, conversation)
             self._turn_finish_gates(state, turn)
             self._turn_notices(state, turn)
-            self._turn_metric_plateau(state, turn)
+            result = self._turn_metric_plateau(state, turn)
+            if result is not None:
+                return result
             result = self._turn_verify_settled(state, turn)
             if result is not None:
                 return result
@@ -1939,7 +1941,14 @@ class Workflow:
         and the run carries on with the findings injected. After
         `max_consecutive_review_rejections` back-to-back rejections the end
         goes through (findings still injected) so the worker can't bounce
-        indefinitely. False when there is no panel or it approved."""
+        indefinitely. False when there is no panel or it approved. One turn
+        can declare two ends (a finish a gate revokes, then the plateau or
+        settled stop): the panel sits once and its verdict covers both."""
+        if turn.end_reviewed is None:
+            turn.end_reviewed = self._review_end(state, turn, ending=ending)
+        return turn.end_reviewed
+
+    def _review_end(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
         if not (self.review_trigger == "before_finish" and self._has_reviewer()):
             return False
         critique = self._run_review_panel(state, trigger="before_finish", iteration=turn.iteration)
@@ -2042,7 +2051,7 @@ class Workflow:
 
     def _gate_task_finish(self, state: LoopState, turn: TurnState) -> None:
         """Task finish-gate: don't let finish_session through while the worker's
-        own subtasks are still open (capped; see _task_finish_gate_nudge)."""
+        own subtasks are still open (see _task_finish_gate_nudge)."""
         if not (
             turn.finish_signal is not None
             and turn.finish_kind == "finish_session"
@@ -2253,7 +2262,7 @@ class Workflow:
             self._emit("loop.stagnation.nudged", iteration=turn.iteration, elapsed_s=int(elapsed))
             self._log(f"  stagnation: {minutes}m with no attempt - injecting notice")
 
-    def _turn_metric_plateau(self, state: LoopState, turn: TurnState) -> None:
+    def _turn_metric_plateau(self, state: LoopState, turn: TurnState) -> SessionResult | None:
         """Metric-plateau handling. When a verified metric merely ties the
         prior best, the plateau detector fires. Rather than quit at the first
         stall (often with most of the budget unspent), nudge the worker to
@@ -2264,7 +2273,7 @@ class Workflow:
         `turn.plateau_should_stop`; the stop itself happens in the stop
         checks, after the post-tools snapshot."""
         if turn.metric_plateau_finish is None:
-            return
+            return None
         budget_remaining = self._budget_fraction_remaining()
         in_final_slice = (
             budget_remaining is None or budget_remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET
@@ -2304,6 +2313,31 @@ class Workflow:
                 nudges_used=state.plateau_nudges_used,
                 budget_remaining=budget_remaining,
             )
+        # A finish signal on the same turn already ran the end gates.
+        if turn.plateau_should_stop and turn.finish_signal is None:
+            aborted = self._end_gates(state, turn, ending="metric_plateau")
+            if aborted is not None:
+                return aborted
+            if turn.end_returned:
+                turn.plateau_should_stop = False
+        return None
+
+    def _settled_summary(self, state: LoopState) -> str:
+        """Why a settled end is not a pass, with the open subtasks named."""
+        return self._with_open_tasks(self._settled_reason(state))
+
+    def _settled_reason(self, state: LoopState) -> str:
+        if state.verify.last_ok is False:
+            return "the worker settled, but the verify gate is still red"
+        if state.verify.ever_passed:
+            return (
+                "the worker settled, but edits after the last green verify were never re-verified"
+            )
+        # A command can exist here only via mid-run adoption (an operator-set
+        # one is never gateless).
+        if self.config.workflow.verify_command:
+            return "the worker settled after committing work; the adopted verify never passed"
+        return "the worker settled after committing work; no verify command existed to gate it"
 
     def _red_gate_returns(self, state: LoopState) -> bool:
         """Whether a red gate is the model's to fix, so an end over it goes
@@ -2325,13 +2359,12 @@ class Workflow:
     def _end_gates(self, state: LoopState, turn: TurnState, *, ending: str) -> SessionResult | None:
         """An end declared without finish_session (`settled`: the harness's
         idle stop; `silent_finish`: a prose turn with no tool call) passes the
-        gates a finish_session would: the verify certification (`verify_when`)
-        and the before-finish review panel. A red gate with returns left, or a
-        rejected panel, hands the end back (`turn.end_returned`) with the
-        output; the unexecutable-command abort ends the run as it does on the
-        tool path. The STANDING verdict decides the red: the harness gate is
-        skipped over a tree a red already covers, so no verify fails on the
-        ending turn itself."""
+        gates a finish_session would: the verify certification (`verify_when`),
+        the before-finish review panel, and the open-task gate. A rejected gate
+        hands the end back (`turn.end_returned`) with the reason; the
+        unexecutable-command abort ends the run as it does on the tool path. The
+        STANDING verdict decides the red: the harness gate is skipped over a
+        tree a red already covers, so no verify fails on the ending turn itself."""
         aborted = self._turn_harness_verify(state, turn, ending=True)
         if aborted is not None:
             return aborted
@@ -2352,6 +2385,19 @@ class Workflow:
                 nudges_used=state.verify_finish_retries_used,
             )
         turn.end_returned = red_returned or self._end_is_reviewed(state, turn, ending=ending)
+        if not turn.end_returned and (task_nudge := self._task_finish_gate_nudge(state)):
+            turn.tool_results.append(Notice(task_nudge))
+            turn.end_returned = True
+            self._log(
+                f"  {ending} gated: open subtasks remain (nudge"
+                f" #{state.task_finish_nudges_used}) at iter {turn.iteration}"
+            )
+            self._emit(
+                "loop.task_finish.gated",
+                iteration=turn.iteration,
+                nudges_used=state.task_finish_nudges_used,
+                trigger=ending,
+            )
         return None
 
     def _turn_verify_settled(self, state: LoopState, turn: TurnState) -> SessionResult | None:
@@ -2686,7 +2732,9 @@ class Workflow:
                     completed=True,
                     verified=self._verification(state),
                     reason="verify_settled",
-                    summary="verify passed and the worker stopped making changes",
+                    summary=self._with_open_tasks(
+                        "verify passed and the worker stopped making changes"
+                    ),
                     iterations=turn.iteration,
                     tool_calls=state.tool_calls,
                 )
@@ -2694,29 +2742,11 @@ class Workflow:
             # verified the FINAL tree, so this end never claims "passed".
             self._pass_pending_root_tasks()
             self._emit("session.end", reason="settled", iterations=turn.iteration, all_passed=False)
-            if state.verify.last_ok is False:
-                summary = "the worker settled, but the verify gate is still red"
-            elif state.verify.ever_passed:
-                summary = (
-                    "the worker settled, but edits after the last green verify were"
-                    " never re-verified"
-                )
-            else:
-                # A command can exist here only via mid-run adoption (an
-                # operator-set one is never gateless).
-                summary = (
-                    "the worker settled after committing work; the adopted verify never passed"
-                    if self.config.workflow.verify_command
-                    else (
-                        "the worker settled after committing work; no verify command"
-                        " existed to gate it"
-                    )
-                )
             return SessionResult(
                 completed=True,
                 verified=self._verification(state),
                 reason="settled",
-                summary=summary,
+                summary=self._settled_summary(state),
                 iterations=turn.iteration,
                 tool_calls=state.tool_calls,
             )
@@ -2734,7 +2764,7 @@ class Workflow:
                 completed=True,
                 verified=self._verification(state),
                 reason="metric_plateau",
-                summary=turn.metric_plateau_finish,
+                summary=self._with_open_tasks(turn.metric_plateau_finish),
                 iterations=turn.iteration,
                 tool_calls=state.tool_calls,
             )
@@ -2794,7 +2824,7 @@ class Workflow:
                 completed=True,
                 verified=self._verification(state),
                 reason=reason,
-                summary=turn.finish_signal,
+                summary=self._with_open_tasks(turn.finish_signal),
                 iterations=turn.iteration,
                 tool_calls=state.tool_calls,
                 finish_payload=turn.finish_payload,
@@ -3041,7 +3071,7 @@ class Workflow:
             conversation.notice(review_notice(turn.review_text))
         return aborted
 
-    def _handle_silent_finish(  # noqa: PLR0911 - a gate chain of early bounces
+    def _handle_silent_finish(
         self, text: str, conversation: Conversation, state: LoopState, turn: TurnState
     ) -> SessionResult | None:
         """A no-tool_use turn WITH text: treat it as an implicit finish and run
@@ -3082,24 +3112,6 @@ class Workflow:
         # tool_use skips the plateau/early-finish policy entirely.
         if self._metric_early_finish_rejects(state, iteration=iteration, trigger="silent_finish"):
             conversation.notice(METRIC_FINISH_NUDGE)
-            return None
-        # Task finish-gate (silent path): a worker that stops emitting tool
-        # calls with its own subtasks still open is steered back to the list
-        # rather than silently finished (shares the cap with the finish_session
-        # path).
-        task_nudge = self._task_finish_gate_nudge(state)
-        if task_nudge is not None:
-            self._log(
-                f"  silent_finish gated: open subtasks remain (nudge"
-                f" #{state.task_finish_nudges_used}) at iter {iteration}"
-            )
-            self._emit(
-                "loop.task_finish.gated",
-                iteration=iteration,
-                nudges_used=state.task_finish_nudges_used,
-                trigger="silent_finish",
-            )
-            conversation.notice(task_nudge)
             return None
         # Question-nudge (run mode, once): the model ended by asking the
         # operator something in prose without calling ask_user, so the run
@@ -3147,7 +3159,7 @@ class Workflow:
             # In ask mode the final prose IS the answer the caller
             # prints, so keep it whole; run/plan only need a short
             # summary line.
-            summary=text if self.mode == "ask" else text[:1000],
+            summary=text if self.mode == "ask" else self._with_open_tasks(text[:1000]),
             iterations=iteration,
             tool_calls=state.tool_calls,
         )
@@ -3481,7 +3493,8 @@ class Workflow:
 
         `scoped` carries whether the gate ran scoped to the tests nearest the
         diff (the full command overran verify_timeout_s), so a scoped green
-        reads "passed · scoped gate" on every surface, never a bare pass."""
+        reads "passed · scoped gate" on every surface, never a bare pass. Open
+        subtasks are the receipt's fact (`_with_open_tasks`), never this one."""
         self._pass_pending_root_tasks()
         self._emit(
             "session.end",
@@ -4173,30 +4186,46 @@ class Workflow:
                 return nid
         return None
 
-    def _task_finish_gate_nudge(self, state: LoopState) -> str | None:
-        """If the worker created subtasks and any are still open, return a nudge
-        message to re-prompt with instead of finishing; else None (finish OK).
-
-        Only SUBTASKS (parent_id is not None) gate -- the auto-root is pending
-        until the run ends, so gating on it would deadlock. Capped by
-        `TASK_FINISH_PATIENCE`: after that many blocked finishes the finish is
-        honoured (a task the worker can't close, and won't mark obsolete/skipped,
-        must not bounce the loop forever). Best-effort: no curator -> no gate."""
-        if self.curator is None:
-            return None
-        open_subtasks = [
+    def _open_subtasks(self) -> list[tuple[str, str]]:
+        """The worker's own subtasks still open: `(id, title)` pairs. Only
+        SUBTASKS (parent_id is not None) count -- the auto-root is pending until
+        the run ends, so counting it would deadlock every gate. Run mode only:
+        a plan's tasks are its deliverable, open by design. Best-effort: no
+        curator -> nothing open."""
+        if self.curator is None or self.mode != "run":
+            return []
+        return [
             (nid, node.title[:120])
             for nid, node in self.curator.nodes().items()
             if node.parent_id is not None
             and node.status in OPEN_STATUSES
             # A standing task is not unfinished work: it gates the finish via
-            # its own re-entry, never via this capped nudge.
+            # its own re-entry, never via the capped nudge.
             and not node.standing
         ]
+
+    def _with_open_tasks(self, summary: str) -> str:
+        """*summary* with the open subtasks named, when an end went through
+        over them (the gate's cap): the receipt says what was left."""
+        open_subtasks = self._open_subtasks()
+        if not open_subtasks:
+            return summary
+        titles = ", ".join(title for _tid, title in open_subtasks)
+        return f"{summary} ({len(open_subtasks)} open task(s): {titles})"
+
+    def _task_finish_gate_nudge(self, state: LoopState) -> str | None:
+        """If the worker created subtasks and any are still open, return a nudge
+        message to re-prompt with instead of finishing; else None (finish OK).
+
+        Capped by `TASK_FINISH_PATIENCE`, as the review gate is: after that many
+        refusals the end goes through and its receipt names the open tasks
+        (`_with_open_tasks`), so a worker that neither closes nor retires a
+        task cannot bounce the loop for the whole budget."""
+        open_subtasks = self._open_subtasks()
         if not open_subtasks:
             return None
         if state.task_finish_nudges_used >= TASK_FINISH_PATIENCE:
-            return None  # cap reached: stop bouncing, honour the finish
+            return None  # cap reached: the end goes through, the receipt names them
         state.task_finish_nudges_used += 1
         listing = "\n".join(f"- {tid}: {title}" for tid, title in open_subtasks)
         return (
