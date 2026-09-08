@@ -165,6 +165,43 @@ def test_translate_loop_guard_notice_lands_after_tool_results() -> None:
     assert "[loop-guard]" in out[4]["content"]
 
 
+def test_translate_multiple_user_notices_stay_separated() -> None:
+    """A turn can carry more than one harness notice (e.g. a broken-verify
+    notice AND a no-progress escalation land in the same turn); each is a
+    separate Anthropic text block and must not be glued into one run-on
+    string with no boundary between them."""
+    msgs = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "[harness verify] the gate is red"},
+                {"type": "text", "text": "[no-progress] you have made no progress"},
+            ],
+        }
+    ]
+    out = anthropic_to_openai_messages("sys", msgs)
+    assert out[1]["content"] == (
+        "[harness verify] the gate is red\n\n[no-progress] you have made no progress"
+    )
+
+
+def test_translate_two_assistant_text_blocks_stay_separated() -> None:
+    """The ChatGPT wire mints one text block per output item and Anthropic
+    emits several around thinking; replayed as one Chat Completions string
+    they ran together with no boundary."""
+    msgs = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "First message."},
+                {"type": "text", "text": "Second message."},
+            ],
+        }
+    ]
+    out = anthropic_to_openai_messages("sys", msgs)
+    assert out[1]["content"] == "First message.\n\nSecond message."
+
+
 def test_translate_tool_result_list_content_flattened() -> None:
     """Anthropic tool_result content can be a list of blocks - flatten to string."""
     msgs = [

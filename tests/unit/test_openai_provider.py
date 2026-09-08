@@ -225,7 +225,8 @@ def test_call_flattens_anthropic_block_content() -> None:
     with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": msg_content}])
 
-    assert captured["body"]["messages"][1] == {"role": "user", "content": "hello world"}
+    # Two text blocks in one turn stay apart by a blank line.
+    assert captured["body"]["messages"][1] == {"role": "user", "content": "hello \n\nworld"}
 
 
 def test_call_raises_provider_error_on_http_status() -> None:

@@ -97,7 +97,9 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
 
     def flush() -> None:
         if text_run:
-            items.append(_message_item(role, "".join(text_run)))
+            # Each entry is its own text block (two harness notices can share
+            # a turn); a blank line keeps them apart.
+            items.append(_message_item(role, "\n\n".join(text_run)))
             text_run.clear()
 
     for block in blocks:

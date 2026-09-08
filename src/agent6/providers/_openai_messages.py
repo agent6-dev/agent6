@@ -110,7 +110,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
         if role == "assistant":
             assistant_msg: dict[str, Any] = {"role": "assistant"}
             if text_chunks:
-                assistant_msg["content"] = "".join(text_chunks)
+                assistant_msg["content"] = "\n\n".join(text_chunks)
             elif tool_calls:
                 assistant_msg["content"] = None
             else:
@@ -136,7 +136,9 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             for tr in tool_results:
                 out.append(tr)
             if text_chunks:
-                out.append({"role": role, "content": "".join(text_chunks)})
+                # Each chunk is its own text block (two harness notices can
+                # share a turn); a blank line keeps them apart.
+                out.append({"role": role, "content": "\n\n".join(text_chunks)})
     return out
 
 

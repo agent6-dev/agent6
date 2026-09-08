@@ -541,6 +541,38 @@ def test_responses_input_flattens_odd_content() -> None:
     assert tools_to_responses([])[0:0] == []
 
 
+def test_responses_input_keeps_multiple_notices_separated() -> None:
+    """A turn can carry more than one harness notice (a broken-verify notice
+    and a no-progress escalation can both land in the same turn); each is its
+    own Anthropic text block and must not be glued into one run-on string."""
+    items = responses_input(
+        [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "[harness verify] the gate is red"},
+                    {"type": "text", "text": "[no-progress] you have made no progress"},
+                ],
+            }
+        ]
+    )
+    assert items == [
+        {
+            "type": "message",
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_text",
+                    "text": (
+                        "[harness verify] the gate is red\n\n"
+                        "[no-progress] you have made no progress"
+                    ),
+                }
+            ],
+        }
+    ]
+
+
 def test_responses_input_drops_blank_name_calls_and_their_results() -> None:
     """A blank-name tool_use (another provider's malformed call, carried in a
     resumed history) is skipped together with its paired tool_result, so the
