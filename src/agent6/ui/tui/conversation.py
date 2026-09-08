@@ -210,7 +210,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
     """
 
     _VIEW_ITEMS: ClassVar = (
-        MenuItem("Detail: none / collapsed / expanded", "cycle_detail"),
+        MenuItem("Detail: hidden / collapsed / expanded", "cycle_detail"),
         MenuItem("Scroll ↑ a page", "page_up"),
         MenuItem("Scroll ↓ a page", "page_down"),
         MenuItem("Scroll → top", "scroll_top"),
@@ -246,7 +246,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
     BINDINGS: ClassVar = [
         Binding("ctrl+d", "toggle_dashboard", "Dashboard", priority=True),
         Binding("ctrl+c", "copy", "Copy", priority=True),
-        # The thinking/tool-detail cycle: none -> collapsed -> expanded.
+        # The thinking/tool-detail cycle: hidden -> collapsed -> expanded.
         Binding("ctrl+t", "cycle_detail", "Detail", priority=True),
         Binding("ctrl+r", "history_search", "History", priority=True),
         Binding("escape", "close", "Back", key_display="Esc", priority=True),
@@ -282,7 +282,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._prompts = prompts
         self._title = title
         self._presets = presets if presets is not None else []
-        self._detail: DetailLevel = "collapsed"  # one shortcut cycles none/collapsed/expanded
+        self._detail: DetailLevel = "collapsed"  # one shortcut cycles hidden/collapsed/expanded
         self._tail = LogTail(logs_path)
         self._fold = TranscriptFold()
         self._content = Text()  # the whole transcript (copy + anchor bookkeeping)

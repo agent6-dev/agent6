@@ -22,7 +22,7 @@ Every image is from a recorded run; click to enlarge.
 
 ## Conversation
 
-Opening a run lands on its conversation (also `agent6 sessions transcript`): the task, the model's reasoning, and every tool call with its input and output (clipped to the salient lines by default; Detail cycles none, collapsed, expanded), following live.
+Opening a run lands on its conversation (also `agent6 sessions transcript`): the task, the model's reasoning, and every tool call with its input and output (clipped to the salient lines by default; Detail cycles hidden, collapsed, expanded), following live.
 A live run keeps a steer bar at the bottom; above it, a live pane streams the turn in progress and lists the tool calls in flight (`→ run_command  sleep 60  · running`) until their results land in the transcript.
 An approval shows inline at the conversation's tail (the command, fixed-width) with a key row docked above the bar: `a` allow, `s` allow all this session, `d` deny, `x` deny all; answered, it collapses to one dim line.
 The composer keeps focus and owns the keys: they answer only while it is empty and focused (a typed message never answers); a click on a label answers from anywhere.
