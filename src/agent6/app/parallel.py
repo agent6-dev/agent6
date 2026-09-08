@@ -614,12 +614,13 @@ def build_lane_spawner(
         hard_stop = threading.Event()
 
         def should_stop() -> bool:
-            # The coordinator's immediate-stop channel: a front-end Stop (or
-            # Ctrl-C steer -> abort) writes the "abort" steer answer, which the
-            # loop consumes at the boundary AFTER this dispatch returns.
-            # Without this poll, a stop during a /parallel group would sit
-            # blocked until every lane finishes on its own.
-            return hard_stop.is_set() or steer_answer_is_abort(coord_dir)
+            # Both stop channels must interrupt this synchronous wait. The loop
+            # consumes their markers at the boundary after dispatch returns.
+            return (
+                hard_stop.is_set()
+                or steer_answer_is_abort(coord_dir)
+                or stop_request_pending(coord_dir)
+            )
 
         def one(pair: tuple[LaneSpec, LaneTask]) -> LaneResult:
             spec, lane = pair
@@ -841,7 +842,7 @@ def _import_lanes(
     imported: list[LaneSpec] = []
     for res in results:
         if not res.ok:
-            failed.append((res, res.error))
+            failed.append((res, f"failed to start: {res.error}"))
             continue
         if worker_is_alive(res.session_dir):
             failed.append(
@@ -937,7 +938,7 @@ def _print_report(
     )
     print_ranked_candidates(candidates, outcome, reporter=reporter)
     if failed:
-        reporter.out("\nfailed lanes (nothing of theirs was deleted):")
+        reporter.out("\nfailed lanes:")
         for res, err in failed:
             reporter.out(f"  - lane {res.spec.lane} [{res.spec.session_id}]: {err}")
             kept = [p for p in (res.spec.workdir, res.session_dir) if p.exists()]
@@ -1132,6 +1133,13 @@ def _drive_fanout(
         task=task,
         reporter=reporter,
     )
+    if failed:
+        events.emit(
+            "loop.parallel.failed",
+            group=fanout_id,
+            fanout=True,
+            lanes=[{"session_id": res.spec.session_id, "detail": detail} for res, detail in failed],
+        )
     _cleanup(
         imported, workdir_root=lanes[0].workdir.parent, base=workdir_base(cfg, origin), cfg=cfg
     )

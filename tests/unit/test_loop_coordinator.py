@@ -558,8 +558,15 @@ def test_failed_lane_is_reported_truthfully(tmp_path: Path) -> None:
     assert result.reason == "max_iterations"  # did not crash
     joined = events.of("loop.parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["failed", "joined"]
+    assert joined["lanes"][0]["detail"] == "lane boom"
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert sorted(n.status for n in steering) == ["failed", "passed"]
+    failed_note = next(note for _id, status, note in graph.status_calls if status == "failed")
+    assert "lane boom" in failed_note
+    transcript = fold_transcript(
+        [{"type": event_type, **fields} for event_type, fields in events.emitted]
+    )
+    assert any(item.kind == "marker" and "lane boom" in item.body for item in transcript)
     summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
     assert "FAILED -- lane boom" in summary
 

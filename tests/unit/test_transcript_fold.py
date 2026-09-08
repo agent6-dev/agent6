@@ -863,3 +863,26 @@ def test_parallel_dispatched_counts_lanes_when_the_event_carries_them() -> None:
         [{"type": "loop.parallel.dispatched", "group": "p1", "lanes": 3, "tasks": ["a", "b"]}]
     )
     assert "dispatched 3 lanes for 2 tasks (group p1)" in item.body
+
+
+def test_parallel_joined_renders_a_failed_lanes_reason() -> None:
+    """A failed lane's event carried only the generic status, so the persisted
+    transcript could not distinguish a failed start, a crash, or no result."""
+    (item,) = fold_transcript(
+        [
+            {
+                "type": "loop.parallel.joined",
+                "group": "run-p1",
+                "lanes": [
+                    {
+                        "session_id": "run-p1-l1",
+                        "branch": "agent6/run-p1-l1",
+                        "status": "failed",
+                        "sha": "",
+                        "detail": "no result (stale); branch imported",
+                    }
+                ],
+            }
+        ]
+    )
+    assert "failed  run-p1-l1  agent6/run-p1-l1  no result (stale); branch imported" in item.body

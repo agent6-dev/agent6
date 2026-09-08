@@ -4855,7 +4855,13 @@ class Workflow:
         self._emit_graph_snapshot()
 
         payload = [
-            {"session_id": j.session_id, "branch": j.branch, "status": j.status, "sha": j.sha}
+            {
+                "session_id": j.session_id,
+                "branch": j.branch,
+                "status": j.status,
+                "sha": j.sha,
+                "detail": j.detail,
+            }
             for j in lanes
         ]
         self._emit("loop.parallel.joined", group=group, lanes=payload)

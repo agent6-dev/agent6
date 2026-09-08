@@ -411,6 +411,38 @@ def test_coordinator_dispatch_refuses_unknown_model(
         dispatch([LaneTask(task="do it", model="moonshotai/kimi-k2.7")], "p1")
 
 
+def test_coordinator_dispatch_wait_honors_a_stop_request(
+    origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
+) -> None:
+    """`sessions stop` writes stop.request, but the in-run coordinator's lane
+    wait polled only the separate immediate-abort answer and could block until
+    every lane ended on its own."""
+    origin_state = tmp_path / "ostate"
+    coordinator_dir = origin_state / "sessions" / "runs" / "coord"
+    coordinator_dir.mkdir(parents=True)
+    observed: list[bool] = []
+
+    def fake_lane(spec: LaneSpec, task: str, **kwargs: object) -> LaneResult:
+        del task
+        from agent6.sessions.ipc import request_stop
+
+        assert request_stop(coordinator_dir)
+        should_stop = kwargs["should_stop"]
+        assert callable(should_stop)
+        stopped = should_stop()
+        assert isinstance(stopped, bool)
+        observed.append(stopped)
+        return LaneResult(spec, spec.workdir, f"agent6/{spec.session_id}", False, "stopped")
+
+    monkeypatch.setattr(parallel, "run_lane_to_completion", fake_lane)
+    dispatch = parallel.build_lane_spawner(
+        _provider_cfg(), origin, origin_state, coordinator_session_id="coord", runtime=runtime
+    )
+    dispatch([LaneTask(task="a", model=None)], "p1")
+
+    assert observed == [True]
+
+
 def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
@@ -987,6 +1019,18 @@ def test_failed_lane_does_not_stop_others(
     assert not branch_exists(origin, "agent6/fan-l2")
     assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
     assert not (origin_state / "sessions" / "runs" / "fan-l2").exists()
+    from agent6.viewmodel.transcript import fold_transcript
+
+    events = [
+        json.loads(line)
+        for line in (origin_state / "sessions" / "runs" / "fan" / "logs.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    transcript = fold_transcript(events)
+    assert any(
+        "fan-l2" in item.body and "failed to start: boom" in item.body for item in transcript
+    )
 
 
 def test_report_ranks_passing_lane_first(
@@ -1777,6 +1821,20 @@ def test_crashed_lane_is_not_a_rankable_candidate(
     )
     assert survivor["compare"]["winner"] is True
     assert "crsh-l1" in out and "no result (stale)" in out
+    assert not lanes[0].workdir.exists()
+    assert "nothing of theirs was deleted" not in out
+    from agent6.viewmodel.transcript import fold_transcript
+
+    events = [
+        json.loads(line)
+        for line in (origin_state / "sessions" / "runs" / "crsh" / "logs.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert any(
+        "crsh-l1" in item.body and "no result (stale)" in item.body
+        for item in fold_transcript(events)
+    )
 
 
 def test_lane_config_forces_a_run_branch(tmp_path: Path) -> None:
@@ -1843,6 +1901,16 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
         assert (m.get("compare") or {}).get("winner") is not True
         # The work is not lost: the branch is named in the failure report.
         assert lane_id in out
+    from agent6.viewmodel.transcript import fold_transcript
+
+    events = [
+        json.loads(line)
+        for line in (origin_state / "sessions" / "runs" / "allf" / "logs.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    failures = [item.body for item in fold_transcript(events) if "no result" in item.body]
+    assert failures and "provider error" in failures[0]
 
 
 def test_fanout_exit_reflects_the_gate_verdicts() -> None:

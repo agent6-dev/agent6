@@ -283,21 +283,33 @@ def _parallel_joined_body(event: dict[str, Any]) -> str:
         sha = str(ln.get("sha", "")).strip()
         if sha:
             parts.append(sha[:12])
+        detail = str(ln.get("detail", "")).strip()
+        if detail:
+            parts.append(detail)
         rows.append(f"{status}  {'  '.join(parts)}")
     return "\n".join([head, *rows])
 
 
 def _parallel_failed_body(event: dict[str, Any]) -> str | None:
-    """A `/parallel` dispatch failure (nothing was joined): name the group + error.
+    """A `/parallel` dispatch failure, or a fan-out's failed lane details.
 
     Two shapes: a dispatch failure carries `error`; a post-join failure carries
-    only `lanes`, a subset of the joined event, which already showed each
-    lane's status, so it renders nothing rather than a redundant marker.
+    only `lanes`, a subset of the joined event, which already showed each lane's
+    status. A fan-out has no joined event, so its lane details render here.
     """
     error = str(event.get("error", "")).strip()
-    if not error:
+    if error:
+        return f"{_parallel_group_label(event)} dispatch failed: {error}"
+    if event.get("fanout") is not True:
         return None
-    return f"{_parallel_group_label(event)} dispatch failed: {error}"
+    raw = event.get("lanes")
+    lanes = [lane for lane in raw if isinstance(lane, dict)] if isinstance(raw, list) else []
+    lines = [f"failed lanes in {_parallel_group_label(event)}:"]
+    for lane in lanes:
+        session_id = str(lane.get("session_id", "?")).strip() or "?"
+        detail = str(lane.get("detail", "")).strip()
+        lines.append(f"{session_id}: {detail}" if detail else session_id)
+    return "\n".join(lines)
 
 
 def _mcp_unavailable_body(event: dict[str, Any]) -> str:
