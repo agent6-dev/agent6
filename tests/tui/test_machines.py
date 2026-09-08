@@ -1031,7 +1031,8 @@ def test_watch_screen_stop_on_a_parked_machine_says_why(
             await pilot.press("x")
             await pilot.pause()
             toasts = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
-            assert any("not running" in m and s == "warning" for m, s in toasts), toasts
+            # Nothing to stop is the note, not a warning: the CLI's answer.
+            assert any("not running" in m and s == "information" for m, s in toasts), toasts
             assert not (instance / "stop").exists()
 
     asyncio.run(scenario())

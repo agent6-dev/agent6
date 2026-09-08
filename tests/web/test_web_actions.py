@@ -547,7 +547,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     assert spawned == ["do more"]
 
 
-def test_machine_stop_refuses_ended_and_marks_a_live_one(tmp_path: Path) -> None:
+def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: Path) -> None:
     """The stop verb never plants a marker an ended or dead instance would
     trip over later; a live worker gets the durable stop marker."""
     from unittest.mock import patch
@@ -556,15 +556,22 @@ def test_machine_stop_refuses_ended_and_marks_a_live_one(tmp_path: Path) -> None
 
     inst = _ended_machine(tmp_path, "tiny")
     ok, msg = actions.machine_stop(tmp_path, "tiny")
-    assert not ok and "ended" in msg
+    assert ok and "ended" in msg and "nothing to stop" in msg  # done, as the CLI answers
     assert not (inst / "stop").exists()
 
-    (inst / "journal.jsonl").write_text(
-        '{"type":"machine.begin","ts":"2026-07-12T00:00:00+00:00","machine":"tiny","version":1}\n',
-        encoding="utf-8",
+    begin = (
+        '{"type":"machine.begin","ts":"2026-07-12T00:00:00+00:00","machine":"tiny","version":1}\n'
     )
+    (inst / "journal.jsonl").write_text("{not json\n" + begin, encoding="utf-8")
     ok, msg = actions.machine_stop(tmp_path, "tiny")
-    assert not ok and "not running" in msg
+    assert not ok and "journal" in msg  # unreadable: the refusal, not the note
+    assert not (inst / "stop").exists()
+    ok, msg = actions.machine_poke(tmp_path, "tiny")
+    assert not ok and "journal" in msg  # every verb reads the whole journal first
+
+    (inst / "journal.jsonl").write_text(begin, encoding="utf-8")
+    ok, msg = actions.machine_stop(tmp_path, "tiny")
+    assert ok and "not running" in msg
     with patch.object(machine_state_mod, "worker_is_alive", return_value=True):  # the gate's owner
         ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert ok and "stop requested" in msg

@@ -1216,12 +1216,13 @@ def test_check_warns_on_binaries_unreachable_in_the_jail(
     assert "python3" not in out.err  # reachable binaries stay quiet
 
 
-def test_machine_stop_marks_a_running_worker_and_refuses_a_dead_one(
+def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine stop` writes the durable marker only for a live worker; a
-    parked/dead instance gets a refusal, never a marker that would ambush the
-    next `machine run` at its first boundary."""
+    parked/dead instance gets the note and exit 0 (a stop that finds nothing
+    running has done what was asked, the answer `sessions stop` gives), never
+    a marker that would ambush the next `machine run` at its first boundary."""
 
     from agent6.viewmodel import machine_state as machine_state_mod
 
@@ -1231,18 +1232,18 @@ def test_machine_stop_marks_a_running_worker_and_refuses_a_dead_one(
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
     root = state_dir(tmp_path) / "machines" / "tiny"
-    assert main(["machine", "stop", "tiny"]) == 2  # ended: nothing to stop
+    assert main(["machine", "stop", "tiny"]) == 0  # ended: nothing to stop
     err = capsys.readouterr().err
-    assert err.startswith("REFUSING:") and "already ended" in err
+    assert err.startswith("[agent6] ") and "already ended" in err and "nothing to stop" in err
     assert not (root / "stop").exists()
 
     w = _write_machine(tmp_path)  # waiter: parks WAITING, journal not ended
     assert main(["machine", "run", str(w), "--exit-on-wait"]) == 0
     capsys.readouterr()
     wroot = state_dir(tmp_path) / "machines" / "waiter_delayed"
-    assert main(["machine", "stop", "waiter_delayed"]) == 2  # parked, worker dead
+    assert main(["machine", "stop", "waiter_delayed"]) == 0  # parked, worker dead
     err = capsys.readouterr().err
-    assert err.startswith("REFUSING:") and "not running" in err
+    assert err.startswith("[agent6] ") and "not running" in err
     assert not (wroot / "stop").exists()
 
     def _alive(_root: Path) -> bool:
@@ -1431,3 +1432,38 @@ def test_status_and_list_name_a_parked_approval(
     assert main(["machine", "list"]) == 0
     row = next(line for line in capsys.readouterr().out.splitlines() if "waiter_delayed" in line)
     assert "waiting" in row and "0001-attempt" in row
+
+
+def test_machine_stop_refuses_an_instance_whose_journal_it_cannot_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A corrupt journal is not "nothing to stop": the verb refused it before
+    the nothing-to-stop note existed and kept refusing it after, with exit 2
+    and no marker, whether the worker is dead or alive (a live one's full
+    journal read raised out of the command)."""
+    import os
+
+    from agent6.sessions.ipc import write_worker_pid
+
+    monkeypatch.chdir(tmp_path)
+    w = _write_machine(tmp_path)
+    assert main(["machine", "run", str(w), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    journal = root / "journal.jsonl"
+    # Corrupt at the head with a valid tail: a tail-only guard let this one
+    # through to the fold, whose error then printed as the note with exit 0.
+    journal.write_text("{not json\n" + journal.read_text(encoding="utf-8"), encoding="utf-8")
+    for alive in (False, True):
+        if alive:
+            write_worker_pid(root, os.getpid())
+        assert main(["machine", "stop", "waiter_delayed"]) == 2
+        err = capsys.readouterr().err
+        assert err.startswith("REFUSING: machine 'waiter_delayed':") and "journal" in err
+        assert not (root / "stop").exists()
+    # Poke reads the whole journal too: on the tail-only read it wrote a
+    # signal into an instance `machine run` can never resume.
+    assert main(["machine", "poke", "waiter_delayed"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("REFUSING: machine 'waiter_delayed':") and "journal" in err
+    assert not any(p.name.startswith("signal") for p in root.iterdir())

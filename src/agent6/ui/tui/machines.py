@@ -82,6 +82,7 @@ from agent6.viewmodel import (
     machine_word_for_dir,
     newest_state_log,
     tail_events,
+    verb_answer,
 )
 from agent6.viewmodel.events import tool_result_ok
 from agent6.viewmodel.format import (
@@ -252,8 +253,8 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         # An ended machine takes no input: dim Steer/Message so the footer never
         # offers a control that would drop into a dead instance dir (matches the
         # web, which disables both buttons once the machine has ended). Stop
-        # keeps its key: on a machine that cannot stop, the action prints the
-        # refusal the CLI prints (Help lists the key either way).
+        # keeps its key: on a machine with nothing to stop, the action shows
+        # the note the CLI prints (Help lists the key either way).
         del parameters
         if action in ("steer", "poke"):
             return not machine_verb_refusal(self._root, self._root.name, action)
@@ -271,7 +272,8 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
     def action_steer(self) -> None:
         """Steer the current agent state: drop a request marker + open the steer
         box; the state picks it up at its next safe boundary. No-op if none runs."""
-        if refusal := machine_verb_refusal(self._root, self._root.name, "steer"):
+        ok, refusal = verb_answer(self._root, self._root.name, "steer")
+        if not ok or refusal:
             self.app.notify(refusal, severity="warning", timeout=6.0)
             return
         state_dir = self._current_state_dir()
@@ -295,8 +297,12 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
     def action_stop(self) -> None:
         """Ask the running machine to park at its next transition boundary
         (the durable stop marker; the instance stays resumable)."""
-        if refusal := machine_verb_refusal(self._root, self._root.name, "stop"):
-            self.app.notify(refusal, severity="warning", timeout=6.0)
+        ok, answer = verb_answer(self._root, self._root.name, "stop")
+        if not ok:
+            self.app.notify(answer, severity="warning", timeout=6.0)
+            return
+        if answer:
+            self.app.notify(answer, timeout=6.0)
             return
         write_stop_request(self._root)
         self.app.notify("stop requested; the machine parks at its next boundary", timeout=4.0)
@@ -304,7 +310,8 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
     def action_poke(self) -> None:
         """Send a message to a waiting machine (a poke payload the next tool
         reads); an ended machine refuses with the CLI's words."""
-        if refusal := machine_verb_refusal(self._root, self._root.name, "poke"):
+        ok, refusal = verb_answer(self._root, self._root.name, "poke")
+        if not ok or refusal:
             self.app.notify(refusal, severity="warning", timeout=6.0)
             return
         self.app.push_screen(

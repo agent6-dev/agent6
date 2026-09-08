@@ -55,14 +55,13 @@ from agent6.ui.spawn import (
 )
 from agent6.ui.web import model
 from agent6.viewmodel import (
-    machine_verb_refusal,
     newest_state_log,
     open_approval,
     open_question,
     session_is_live,
 )
 from agent6.viewmodel.listing import finished_needs_new_work
-from agent6.viewmodel.machine_state import MachineVerb
+from agent6.viewmodel.machine_state import MachineVerb, verb_answer
 
 
 def spawn_machine_create(
@@ -344,10 +343,12 @@ def _machine_dir_or_missing(cwd: Path, name: str) -> Path:
 
 def machine_stop(cwd: Path, name: str) -> tuple[bool, str]:
     """Write the durable stop marker for a running machine (parks at its next
-    transition boundary; resumable). Not-running is a refusal, not a marker."""
+    transition boundary; resumable). Nothing to stop is the note and success,
+    no marker; a journal that cannot be read is the refusal."""
     machine_dir = _machine_dir_or_missing(cwd, name)
-    if refusal := machine_verb_refusal(machine_dir, name, "stop"):
-        return False, refusal
+    ok, answer = verb_answer(machine_dir, name, "stop")
+    if not ok or answer:
+        return ok, answer
     write_stop_request(machine_dir)
     return True, "stop requested; the machine parks at its next transition boundary"
 
@@ -356,7 +357,8 @@ def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -
     """Poke a waiting machine, optionally carrying a payload the next tool reads.
     `data` (any JSON) wins over `message` (a string); neither is a bare wake."""
     machine_dir = _machine_dir_or_missing(cwd, name)
-    if refusal := machine_verb_refusal(machine_dir, name, "poke"):
+    ok, refusal = verb_answer(machine_dir, name, "poke")
+    if not ok or refusal:
         return False, refusal
     payload: Any = data if data is not None else (message or None)
     try:
@@ -370,7 +372,8 @@ def _state_dir_for_verb(
     cwd: Path, name: str, verb: MachineVerb, state: str
 ) -> Path | tuple[bool, str]:
     """The agent-state dir a prompt answer or a steer lands in, or the refusal."""
-    if refusal := machine_verb_refusal(_machine_dir_or_missing(cwd, name), name, verb):
+    ok, refusal = verb_answer(_machine_dir_or_missing(cwd, name), name, verb)
+    if not ok or refusal:
         return False, refusal
     agent_state = _machine_state_dir(cwd, name, state)
     if agent_state is None:

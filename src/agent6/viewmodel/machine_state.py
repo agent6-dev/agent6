@@ -452,18 +452,19 @@ def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str
     if not machine_dir.is_dir():
         return dict.fromkeys(verbs, f"no machine {name!r}")
     journal = MachineJournal(machine_dir)
+    alive = worker_is_alive(machine_dir)
     try:
         end = journal.end_event()
+        # The tail answers "ended"; only a live, unended instance is worth the
+        # full read that answers "waiting" (every instance dir is asked on a TAB).
+        waiting = end is None and alive and _in_wait_state(machine_dir, journal.read())
     except JournalError as exc:
         return dict.fromkeys(verbs, f"machine {name!r}: {exc}")
-    alive = worker_is_alive(machine_dir)
-    # The tail answers "ended"; only a live, unended instance is worth the
-    # full read that answers "waiting" (every instance dir is asked on a TAB).
     return verb_refusals(
         name,
         ended=MachineResult.from_end(end) if end is not None else None,
         alive=alive,
-        waiting=end is None and alive and _in_wait_state(machine_dir, journal.read()),
+        waiting=waiting,
     )
 
 
@@ -478,6 +479,21 @@ def wait_line(machine_id: str, state: str, wake_at: str) -> str:
     if wake_at:
         return f"waiting in {state!r}: wakes at {wake_at}; a poke wakes it now: {poke}"
     return f"waiting in {state!r} for a poke: {poke}"
+
+
+def verb_answer(machine_dir: Path, name: str, verb: MachineVerb) -> tuple[bool, str]:
+    """A verb's answer before it acts, for every surface: (False, why) when the
+    instance cannot be read (the whole journal, not the tail the paint and
+    the completers read), (True, refusal) when the verb has nothing to act on
+    (for `stop` that is the note and the stop's own outcome, no marker), and
+    (True, "") when the verb acts."""
+    if not machine_dir.is_dir():
+        return False, f"no machine {name!r}"
+    try:
+        MachineJournal(machine_dir).read()
+    except JournalError as exc:
+        return False, f"machine {name!r}: {exc}"
+    return True, machine_verb_refusal(machine_dir, name, verb)
 
 
 def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str:

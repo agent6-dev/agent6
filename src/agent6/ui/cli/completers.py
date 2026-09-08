@@ -341,8 +341,8 @@ def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
 
 
 def _machine_ids_taking(prefix: str, verb: MachineVerb) -> list[str]:
-    """The instances *verb* would not refuse: `machine_verb_refusal` is the
-    verb's own gate, so the offer and the refusal cannot drift."""
+    """The instances *verb* acts on: `machine_verb_refusal` is the paint the
+    verb's own answer reads too, so the offer and the answer cannot drift."""
     return sorted(
         p.name for p in _machine_instance_dirs(prefix) if not machine_verb_refusal(p, p.name, verb)
     )
@@ -357,7 +357,8 @@ def _complete_pokable_machine_ids(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_stoppable_machine_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: the instances `machine stop` accepts, the running ones."""
+    """argcomplete: the instances `machine stop` has something to stop in, the
+    running ones (a stopped one answers with a note)."""
     return _machine_ids_taking(prefix, "stop")
 
 

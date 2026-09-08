@@ -71,6 +71,7 @@ from agent6.viewmodel.machine_state import (
     notification_key,
     read_complete_lines,
     summarize_machine_dir,
+    verb_answer,
 )
 from agent6.viewmodel.policy import session_policy
 from agent6.viewmodel.snapshot import (
@@ -184,5 +185,6 @@ __all__ = [
     "tail_events",
     "task_snippet",
     "task_tree_views",
+    "verb_answer",
     "worker_models",
 ]

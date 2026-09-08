@@ -62,7 +62,6 @@ from agent6.viewmodel import (
     event_epoch,
     fold_machine,
     machine_operator_blocked,
-    machine_verb_refusal,
     machine_word_for_dir,
 )
 from agent6.viewmodel.format import (
@@ -70,7 +69,7 @@ from agent6.viewmodel.format import (
     format_usd,
     format_when,
 )
-from agent6.viewmodel.machine_state import wait_line
+from agent6.viewmodel.machine_state import verb_answer, wait_line
 
 
 def _cmd_machine_list() -> int:
@@ -354,7 +353,8 @@ def _cmd_machine_poke(
         return 2
     # An ended machine consumes no signals: a poke would sit unread, so the
     # "it will wake on its next signal check" reply would be a lie. Refuse.
-    if refusal := machine_verb_refusal(root, machine_id, "poke"):
+    ok, refusal = verb_answer(root, machine_id, "poke")
+    if not ok or refusal:
         refuse(f"{refusal}")
         return 2
     journal = MachineJournal(root)
@@ -383,15 +383,19 @@ def _cmd_machine_stop(machine_id: str) -> int:
 
     The engine parks at its next transition boundary (or wakes out of a sleep)
     without journaling an end, so the instance stays resumable. A machine that
-    is not running gets a refusal, not a marker that would ambush the next
-    `machine run`."""
+    is not running gets the note and exit 0, as `sessions stop` answers, and
+    no marker that would ambush the next `machine run`."""
     cwd = Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
         return 2
-    if refusal := machine_verb_refusal(root, machine_id, "stop"):
-        refuse(f"{refusal}")
+    ok, answer = verb_answer(root, machine_id, "stop")
+    if not ok:
+        refuse(f"{answer}")
         return 2
+    if answer:
+        print(f"[agent6] {answer}", file=sys.stderr)
+        return 0
     write_stop_request(root)
     print(f"stop requested: {machine_id} parks at its next transition boundary")
     return 0
