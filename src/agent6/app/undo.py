@@ -38,7 +38,7 @@ from agent6.graph.storage import (
     list_checkpoint_turns,
 )
 from agent6.paths import state_dir
-from agent6.sessions.ipc import read_worker_pid
+from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import (
     SessionLayout,
     read_untracked_at_start,
@@ -215,6 +215,34 @@ def _rewind_checkout(checkout: Path, *, tip: str, sha: str, exclude: frozenset[s
     return paths
 
 
+def _checkout_writer_lock(
+    state: Path, checkout: Path, undone: SessionLayout
+) -> tuple[int | None, str]:
+    """The checkout's writer lock for /undo's commit and rewind (a held fd,
+    ""), or nothing held and the refusal to print: *undone*'s own live
+    worker (checked directly: a plan or ask worker takes no writer lock,
+    since it makes no chain commits), else another session's live hold. A
+    None fd with "" is this process being *undone*'s worker (the loop's own
+    /undo), whose lock is no obstacle."""
+    if read_worker_pid(undone.session_dir) == os.getpid():
+        return None, ""
+    if worker_is_alive(undone.session_dir):
+        return None, (
+            f"run {undone.session_id!r} is still live; /undo would put the tree back"
+            " under it. Stop it first:\n"
+            f"    agent6 sessions stop {undone.session_id}"
+        )
+    lock_fd = acquire_repo_writer(state, checkout, undone.session_id)
+    if lock_fd is None:
+        holder = repo_writer_holder(state, checkout) or "another run"
+        return None, (
+            f"run {holder!r} is driving this checkout, and /undo would put the tree back"
+            " under it. Stop it first:\n"
+            f"    agent6 sessions stop {holder}"
+        )
+    return lock_fd, ""
+
+
 def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     config_path: Path | None,
     session_id: str,
@@ -269,17 +297,10 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     except ConfigError as exc:
         reporter.error(str(exc))
         return None
-    lock_fd: int | None = None
-    if read_worker_pid(undone.session_dir) != os.getpid():
-        lock_fd = acquire_repo_writer(state, checkout, undone.session_id)
-        if lock_fd is None:
-            holder = repo_writer_holder(state, checkout) or "another run"
-            reporter.refuse(
-                f"run {holder!r} is driving this checkout, and /undo would put the tree back"
-                " under it. Stop it first:\n"
-                f"    agent6 sessions stop {holder}"
-            )
-            return None
+    lock_fd, refusal = _checkout_writer_lock(state, checkout, undone)
+    if refusal:
+        reporter.refuse(refusal)
+        return None
     ref = chain_ref_for(undone.session_id)
     where = manifest.run_branch or ref
     exclude = read_untracked_at_start(undone.session_dir)

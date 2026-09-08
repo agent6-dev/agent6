@@ -235,6 +235,63 @@ def test_undo_refuses_while_another_live_run_drives_the_checkout(
         assert not (state / "lineage.jsonl").exists()
 
 
+def test_undo_of_a_live_plan_session_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan/ask worker never takes the checkout writer lock (it makes no
+    chain commits of its own), so the repo-writer check that catches a live
+    run session leaves a live PLAN session unguarded: /undo would commit the
+    checkout's current tree onto its chain ref and rewind the checkout out
+    from under the live worker. Refused, naming the session, before anything
+    is committed."""
+    import subprocess as sp2
+
+    from agent6.sessions.ipc import write_worker_pid
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("one\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "c1")
+    c1 = _git(repo, "rev-parse", "HEAD")
+    monkeypatch.chdir(repo)
+    state = state_dir(repo)
+    layout = SessionLayout(state_dir=state, session_id="plan-AAAA11", subdir="plans")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "plan-AAAA11",
+                "mode": "plan",
+                "user_task": "do the thing",
+                "base_sha": c1,
+                "base_branch": "main",
+                "run_branch": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    _checkpoint(layout, 1, head_sha=c1, ops=1)
+    _checkpoint(layout, 2, head_sha=c1, ops=2)
+    proc = sp2.Popen(["sleep", "30"])
+    try:
+        write_worker_pid(layout.session_dir, proc.pid)
+        said: list[str] = []
+
+        result = undo_fork(
+            None, "plan-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append)
+        )
+
+        assert result is None
+        assert any("plan-AAAA11" in line for line in said)
+        assert chain_tip(repo, chain_ref_for("plan-AAAA11")) is None
+    finally:
+        proc.terminate()
+        proc.wait()
+
+
 def test_undo_from_the_live_session_itself_is_allowed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
