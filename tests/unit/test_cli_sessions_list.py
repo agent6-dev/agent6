@@ -266,6 +266,117 @@ def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
     assert "mode" not in out.splitlines()[0]  # the column folded into status
 
 
+def test_runs_list_marks_a_branchless_chain_unmerged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A branch_per_run-off run's hidden chain is still work to merge, so its
+    listing carries the same unmerged mark as a visible run branch."""
+    import subprocess
+
+    from agent6.git_ops import chain_commit, chain_ref_for
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    base = git("rev-parse", "HEAD")
+    session_id = "branchless-run-AAAAAA"
+    (repo / "b.txt").write_text("b\n", encoding="utf-8")
+    chain_commit(
+        repo,
+        "agent6 iter 1: work",
+        ref=chain_ref_for(session_id),
+        fallback_parent=base,
+    )
+
+    _run(_runs_dir(repo), session_id)
+    manifest = _runs_dir(repo) / session_id / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "mode": "run",
+                "base_sha": base,
+                "run_branch": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _cmd_list() == 0
+    row = next(line for line in capsys.readouterr().out.splitlines() if session_id in line)
+    assert "passed · unmerged" in row
+
+
+def test_a_merge_stamped_on_a_diverged_branch_drops_the_mark(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The operator's own commit on the run branch moves the branch and not the
+    chain, and a merge then stamps the branch tip; a listing reading the chain
+    tip alone marked the run unmerged forever on every surface."""
+    import subprocess
+
+    from agent6.git_ops import chain_commit, chain_ref_for, run_ref_tips
+    from agent6.viewmodel import summarize_session_dir
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    base = git("rev-parse", "HEAD")
+    session_id = "diverged-run-AAAAAA"
+    branch = f"agent6/{session_id}"
+    (repo / "b.txt").write_text("b\n", encoding="utf-8")
+    chain = chain_commit(
+        repo,
+        "agent6 iter 1: work",
+        ref=chain_ref_for(session_id),
+        fallback_parent=base,
+        also_branch=branch,
+    )
+    assert chain is not None
+    own = git("commit-tree", f"{chain}^{{tree}}", "-p", chain, "-m", "operator")
+    git("update-ref", f"refs/heads/{branch}", own)
+
+    _run(_runs_dir(repo), session_id)
+    session_dir = _runs_dir(repo) / session_id
+    manifest: dict[str, object] = {
+        "session_id": session_id,
+        "mode": "run",
+        "base_sha": base,
+        "run_branch": branch,
+    }
+    (session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    assert summarize_session_dir(session_dir, branch_tips=run_ref_tips(repo)).unmerged is True
+    manifest["merged"] = {"into": "main", "sha": own, "tip": own}
+    (session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    assert summarize_session_dir(session_dir, branch_tips=run_ref_tips(repo)).unmerged is False
+
+
 def test_model_controlled_run_refuses_the_git_surfaces() -> None:
     """A git_control = "model" manifest turns sessions diff/merge/commits and
     fork away with one message: the record is the model's own commits."""

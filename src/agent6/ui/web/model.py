@@ -20,7 +20,7 @@ from agent6.app.confine import resolved_config_values
 from agent6.app.parallel import subordinate_workdir_root
 from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective
-from agent6.git_ops import EMPTY_TREE, commit_diff, diff_range, run_branch_tips
+from agent6.git_ops import EMPTY_TREE, commit_diff, diff_range, run_ref_tips
 from agent6.models.choices import config_value_choices
 from agent6.paths import state_dir
 from agent6.sessions.ipc import worker_is_alive
@@ -140,7 +140,7 @@ def draft_dir_paths(cwd: Path) -> list[Path]:
 def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
     """Every session a hub lists, summarized, newest first (`session_dirs`),
     a fan-out's lanes nested under its row (`nested_rows`)."""
-    tips = run_branch_tips(cwd)
+    tips = run_ref_tips(cwd)
     dirs = session_dirs(state_dir(cwd))
     winners = {p.name for p in dirs if is_winner(p)}
     rows = nested_rows(summarize_session_dir(p, branch_tips=tips) for p in dirs)

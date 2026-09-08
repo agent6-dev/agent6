@@ -16,6 +16,7 @@ from collections.abc import Container, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.git_ops import chain_ref_for
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import (
     HUB_BUCKETS,
@@ -770,10 +771,10 @@ def summarize_session_dir(
     task (the event clips it to 200 chars); an "ask" run's task is replaced by
     its transcript, which shows what was asked.
 
-    *branch_tips* is the caller's one-call `git_ops.run_branch_tips` snapshot;
-    with it the row says whether the run branch still holds unmerged commits
-    (the tip is not the base and not the merge stamp's tip). Without it
-    `unmerged` stays False: no mark, never a wrong one."""
+    *branch_tips* is the caller's one-call `git_ops.run_ref_tips` snapshot;
+    with it the row says whether the run's chain or branch still holds commits
+    no merge stamped. Without it `unmerged` stays False: no mark, never a
+    wrong one."""
     logs = session_dir / LOGS_NAME
     scan = scan_session_log(logs) if logs.is_file() else LogScan()
     manifest: SessionManifest | None = None
@@ -812,11 +813,18 @@ def summarize_session_dir(
     lineage = manifest.parallel if manifest is not None else None
     unmerged = False
     if branch_tips is not None and manifest is not None and word != "undone":
-        tip = branch_tips.get(manifest.run_branch or "")
-        unmerged = (
-            tip is not None
-            and tip != manifest.base_sha
-            and (manifest.merged is None or manifest.merged.tip != tip)
+        tips = {
+            tip
+            for tip in (
+                branch_tips.get(chain_ref_for(manifest.session_id)),
+                branch_tips.get(manifest.run_branch or ""),
+            )
+            if tip
+        }
+        # The chain is the run's record; the branch may carry the operator's
+        # own commits on top of it, and a merge stamps whichever tip it merged.
+        unmerged = bool(tips - {manifest.base_sha}) and (
+            manifest.merged is None or manifest.merged.tip not in tips
         )
     return SessionSummary(
         session_id=session_dir.name,

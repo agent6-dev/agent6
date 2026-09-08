@@ -615,7 +615,7 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
     own tip would have named an operator's by-hand commit as the run's) and
     the branch tip it covers; a later merge leaves that record alone, and
     the readers say the content is already on the target."""
-    from agent6.git_ops import run_branch_tips
+    from agent6.git_ops import run_ref_tips
     from agent6.sessions.manifest import NO_MERGE_COMMIT
     from agent6.viewmodel import summarize_session_dir
 
@@ -634,7 +634,7 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
     layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-SAME11")
     stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
     assert (stamp["into"], stamp["sha"], stamp["tip"]) == ("main", NO_MERGE_COMMIT, branch_tip)
-    row = summarize_session_dir(layout.session_dir, branch_tips=run_branch_tips(tmp_path))
+    row = summarize_session_dir(layout.session_dir, branch_tips=run_ref_tips(tmp_path))
     assert row.unmerged is False
 
     assert main(["sessions", "merge", "run-SAME11"]) == 0
@@ -658,7 +658,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     good and prune kept a fork's worktree. A noop whose branch tip differs
     from the stamp's re-stamps: no merge commit, and the tip it now covers.
     A noop over the tip already recorded leaves the record alone."""
-    from agent6.git_ops import run_branch_tips
+    from agent6.git_ops import run_ref_tips
     from agent6.sessions.manifest import NO_MERGE_COMMIT
     from agent6.viewmodel import summarize_session_dir
 
@@ -684,7 +684,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
     assert (stamp["into"], stamp["sha"], stamp["tip"]) == ("main", NO_MERGE_COMMIT, tip2)
     assert stamp["tip"] != first["tip"] and main_tip[:12] not in stamp["sha"]
-    row = summarize_session_dir(layout.session_dir, branch_tips=run_branch_tips(tmp_path))
+    row = summarize_session_dir(layout.session_dir, branch_tips=run_ref_tips(tmp_path))
     assert row.unmerged is False
 
     assert main(["sessions", "merge", "run-RSTP11", "--strategy", "squash"]) == 0

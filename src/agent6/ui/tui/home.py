@@ -31,7 +31,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 # needs textual) is only reached when textual is present.
 from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective
-from agent6.git_ops import run_branch_tips
+from agent6.git_ops import run_ref_tips
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.spawn import agent6_argv, run_cli_capture
 from agent6.ui.tui.config_page import ConfigScreen
@@ -198,7 +198,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # run for cursor positions past the gap.
         survivors: list[Path] = []
         rows: dict[str, SessionSummary] = {}
-        tips = run_branch_tips(self.repo_cwd)
+        tips = run_ref_tips(self.repo_cwd)
         # A dir that vanished since the listing snapshot is skipped.
         dirs = {rd.name: rd for rd in session_dirs(self.agent6_dir) if rd.is_dir()}
         listing = nested_rows(summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values())

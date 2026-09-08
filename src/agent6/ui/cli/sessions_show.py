@@ -17,7 +17,7 @@ from agent6.git_ops import (
     branch_exists,
     chain_ref_for,
     chain_tip,
-    run_branch_tips,
+    run_ref_tips,
 )
 from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
@@ -221,7 +221,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     model = (driver.model if driver else "") or "?"
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
-    tips = run_branch_tips(Path.cwd())
+    tips = run_ref_tips(Path.cwd())
     lanes = _fanout_lanes(layout, manifest, tips)
     stamps = _lane_stamps(layout.state_dir, lanes)
     status, status_cell, status_detail = _status_state(

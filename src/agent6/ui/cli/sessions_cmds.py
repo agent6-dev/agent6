@@ -29,7 +29,7 @@ from agent6.git_ops import (
     git_hardening_flags,
     list_run_commits,
     run_branch_for,
-    run_branch_tips,
+    run_ref_tips,
 )
 from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
@@ -94,7 +94,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
         print("[]" if as_json else nothing_yet())  # the empty listing is output, not an error
         return 0
     winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
-    tips = run_branch_tips(cwd)
+    tips = run_ref_tips(cwd)
     listing = nested_rows(summarize_session_dir(d, branch_tips=tips) for d in dirs)
     if as_json:
         print(json.dumps([row_json(r, winners=winners) for r in listing], indent=2))

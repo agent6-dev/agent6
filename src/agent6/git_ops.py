@@ -594,22 +594,27 @@ def list_run_branches(path: Path) -> tuple[str, ...]:
     return tuple(b for b in res.stdout.splitlines() if b.strip())
 
 
-def run_branch_tips(path: Path) -> dict[str, str]:
-    """{run branch: tip sha} for every `agent6/` branch, one git call: the
-    listings' merged/unmerged mark needs every tip, and a per-row rev-parse
-    would put ~50 subprocesses on the hub's poll."""
+def run_ref_tips(path: Path) -> dict[str, str]:
+    """{run branch or chain ref: tip sha}, in one git call.
+
+    Listings need the chain when a run has no visible branch or its branch
+    diverged. A per-row rev-parse would put ~50 subprocesses on the hub's poll.
+    """
     res = _run(
         path,
         "for-each-ref",
-        "--format=%(refname:short) %(objectname)",
+        "--format=%(refname) %(objectname)",
         "refs/heads/agent6/",
+        "refs/agent6/*/head",
         check=False,
     )
     out: dict[str, str] = {}
     for line in res.stdout.splitlines():
-        branch, _, sha = line.partition(" ")
-        if branch and sha:
-            out[branch] = sha
+        ref, _, sha = line.partition(" ")
+        if ref.startswith("refs/heads/"):
+            ref = ref.removeprefix("refs/heads/")
+        if ref and sha:
+            out[ref] = sha
     return out
 
 
