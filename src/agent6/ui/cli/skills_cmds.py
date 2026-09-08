@@ -87,8 +87,8 @@ def _search_dirs(repo_root: Path, config_path: Path | None = None) -> tuple[Path
 
 def _toml_str(value: str) -> str:
     """A TOML basic string with backslashes and quotes escaped: a quote in a
-    source path made the hand-built origin unparseable, so update lost its
-    origin."""
+    source path would otherwise make the hand-built origin unparseable, and
+    `skills update` would lose its source."""
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
@@ -184,7 +184,7 @@ def _install_skill_dir(src: Path, *, url: str, kind: str, source_sha: str, force
     """Copy one skill directory (SKILL.md + supplementary files) into place.
 
     `symlinks=True`: the skill comes from an untrusted source, and copying a
-    link's CONTENT turns `reference.md -> secrets.toml` into a real file
+    link's content turns `reference.md -> secrets.toml` into a real file
     `use_skill` will serve. Preserved, the link stays subject to `use_skill`'s
     containment check."""
     name = _skill_name_from_text(read_operator_file(src / "SKILL.md"), str(src))
@@ -274,7 +274,7 @@ def _repo_skill_dirs(root: Path) -> list[Path]:
 
 def _refuse_any_existing(dirs: list[Path], *, force: bool) -> None:
     """Pre-check every skill name in a multi-skill install so a conflict
-    refuses the WHOLE install up front (never a partial install)."""
+    refuses the whole install up front (never a partial install)."""
     if force:
         return
     conflicts = [
@@ -386,9 +386,9 @@ def _refetch_skill(name: str, origin: dict[str, str]) -> tuple[str, str]:
     local file or dir that was moved or deleted is a clean skip, not a failed
     HTTP fetch of the path.
 
-    A skillmd origin whose frontmatter now declares a different name is a
-    RENAME: the skill installs under the new name and the old directory goes,
-    or the update would leave two live copies while reporting one.
+    A skillmd origin whose frontmatter declares a different name is a rename:
+    the skill installs under the new name and the old directory goes, or the
+    update would leave two live copies while reporting one.
     """
     url, kind = origin["url"], origin.get("kind", "skillmd")
     if kind == "git":
@@ -531,11 +531,11 @@ def _cmd_skills_list(config_path: Path | None = None) -> int:
 
 
 def _known_skill_names(repo_root: Path, config_path: Path | None = None) -> tuple[str, ...]:
-    """Installed skill names. REFUSES when discovery itself fails.
+    """Installed skill names; refuses when discovery itself fails.
 
-    Swallowing that to an empty tuple made `skills enable/disable` answer
-    "unknown skill 'x'; installed: (none)" -- sending the operator after a
-    skill that is missing when one is unreadable.
+    An empty tuple would make `skills enable/disable` answer "unknown skill
+    'x'; installed: (none)", sending the operator after a skill that is only
+    unreadable.
     """
     try:
         skills, _ = discover_skills(_search_dirs(repo_root, config_path))
@@ -627,8 +627,8 @@ def resolved_skill_names_for_completion(repo_root: Path) -> list[str]:
     """Names for argcomplete: cheap discovery, never raises.
 
     A shell completion has nowhere to show an error and must not raise into the
-    shell, so a discovery failure is nothing at all -- unlike the enable/disable
-    commands, which a human is reading.
+    shell, so a discovery failure is nothing at all, unlike in the
+    enable/disable commands, which a human is reading.
     """
     try:
         return list(_known_skill_names(repo_root))

@@ -51,7 +51,7 @@ _ANSI = {
 
 # Semantic style name -> ANSI escape. The TUI has the sibling Rich map; both skins
 # render item_lines() (viewmodel.transcript_style), so the structure and which
-# element is coloured live in ONE place and can't drift.
+# element is coloured live in one place and can't drift.
 _STYLE_ANSI: dict[StyleName, str] = {
     "thinking": _ANSI["dim"],
     "think-marker": _ANSI["blue"],
@@ -97,10 +97,9 @@ class ConsoleView:
     ) -> None:
         # The run's policy line (viewmodel.session_policy), printed under the
         # task so an operator sees the model, the command setting, the sandbox
-        # and the gate without interrupting. Read WHEN the task prints, not when
-        # the view is built: the gate is inferred and pinned between the two,
-        # and an early read said "no verify gate" over a run that had one. None
-        # when the caller has no run dir.
+        # and the gate without interrupting. Read when the task prints, not when
+        # the view is built: the gate is inferred and pinned between the two.
+        # None when the caller has no run dir.
         self._policy = policy
         # Finished /btw answers waiting for a clean break. A btw completes while
         # the run is streaming; printing it then would cut the transcript in
@@ -123,8 +122,7 @@ class ConsoleView:
         # The epoch ts of the event currently being fed (None between feeds or
         # for a ts-less event): _bump_idle anchors the idle timer to it, so
         # `agent6 attach` replaying history measures from when the run last
-        # spoke -- an arrival anchor made a run wedged 40 minutes read
-        # "working… 3s".
+        # spoke, not from when the event arrived.
         self._event_ep: float | None = None
         self._active = False  # run is between session.start and session.end (a turn or a tool)
         self._status_active = False  # a transient spinner line is on screen now
@@ -161,22 +159,22 @@ class ConsoleView:
     def feed(self, event: dict[str, Any]) -> None:  # noqa: PLR0911 - one per event kind
         etype = event.get("type", "")
         with self._lock:
-            # Anchor per EVENT, not only per rendered line: a replay can end on
+            # Anchor per event, not only per rendered line: a replay can end on
             # an event that renders nothing yet (a tool.call whose result never
-            # came -- the wedged case), and events between renders are activity.
+            # came, the wedged case), and events between renders are activity.
             self._event_ep = event_epoch(event.get("ts"))
             self._bump_idle()
             # The heartbeat spins whenever the run is active and output has gone
-            # silent -- covering BOTH a thinking provider call AND a long tool /
-            # verify command running in the jail (which happens between role.result
-            # and the next role.call, so a role-only flag would miss it and the
-            # CLI would look frozen through a whole test suite).
+            # silent: a thinking provider call, and a long tool or verify command
+            # running in the jail (which happens between role.result and the next
+            # role.call, so a role-only flag would miss it and the CLI would look
+            # frozen through a whole test suite).
             if etype in ("session.start", "role.call", "tool.call"):
                 self._active = True
             elif etype in ("session.end", "session.steer_requested"):
                 self._active = False
                 # A btw that lands after the last turn would otherwise sit in
-                # the queue forever: the run ending IS a clean break.
+                # the queue forever: the run ending is a clean break.
                 self._end_block()
                 self._drain_btw()
             if etype in ("role.thinking_delta", "role.text_delta"):
@@ -193,7 +191,7 @@ class ConsoleView:
                 return
             if etype == "session.start":
                 # The first user-authored line, clipped: a `--from` task
-                # carries the whole plan and flattened it into one endless line.
+                # carries the whole plan.
                 task = task_snippet(str(event.get("user_task", "")), max_chars=200)
                 self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")
                 policy = self._policy() if self._policy is not None else ""
@@ -229,11 +227,10 @@ class ConsoleView:
 
     # -- inline prose streaming --------------------------------------------
     def _stream(self, piece: str, *, thinking: bool) -> None:
-        # The piece is MODEL text headed for a real terminal: scrub controls
-        # (OSC 52 writes the clipboard; the fold's previews are scrubbed, but
-        # this live path printed the delta raw). A sequence split across deltas
-        # cannot reassemble: any piece containing its opener loses the tail
-        # from the ESC on, and the continuation prints as inert text.
+        # The piece is model text headed for a real terminal: scrub controls
+        # (OSC 52 writes the clipboard). A sequence split across deltas cannot
+        # reassemble: any piece containing its opener loses the tail from the
+        # ESC on, and the continuation prints as inert text.
         piece = scrub_terminal_controls(piece)
         want = "thinking" if thinking else "text"
         if self._phase != want:
@@ -310,9 +307,9 @@ class ConsoleView:
 
     def _raw(self, text: str) -> None:
         # Low-level writer, used by streaming deltas AND internal block-closing;
-        # it clears the spinner but does NOT bump _last_output_at (that tracks
-        # real model output -- set by _stream / _line -- so closing a block from
-        # the heartbeat can't reset the idle timer and suppress the spinner).
+        # it clears the spinner but does not bump _last_output_at (that tracks
+        # real model output, set by _stream / _line, so closing a block from the
+        # heartbeat can't reset the idle timer and suppress the spinner).
         # Streaming path: flush at most every _FLUSH_EVERY_S. A per-token flush on
         # a slow terminal (SSH, a busy emulator) backpressures the SSE read in the
         # same thread and can stall the stream; ~30ms is imperceptible and cuts
@@ -363,7 +360,7 @@ class ConsoleView:
                 self._status_active = True
 
     def notice(self, msg: str) -> None:
-        """Print a workflow notice (auto-commit, review, tool_error) on the SAME
+        """Print a workflow notice (auto-commit, review, tool_error) on the same
         stream as the stream/spinner, clearing the spinner first under the lock so
         the notice can't collide with a spinner write on a shared terminal."""
         with self._lock:

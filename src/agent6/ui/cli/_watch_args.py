@@ -36,8 +36,8 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help=f"{SESSION_ID} or machine id; omit for the newest.",
     )
     watch_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
-    # One presentation at a time: JSON silently won over --raw/--tui when
-    # combined, which read as the other flag being broken.
+    # One presentation at a time: argparse refuses the combination rather than
+    # silently picking one, which reads as the other flag being broken.
     watch_mode = watch_p.add_mutually_exclusive_group()
     watch_mode.add_argument(
         "--tui",
@@ -169,8 +169,8 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """`exec` and `forward`: reach into a live run's session network.
 
-    Top-level verbs, like `attach`, because they are things you do TO a running
-    session -- and `exec` is the word every container tool already uses for it.
+    Top-level verbs, like `attach`, because they act on a running session;
+    `exec` is the word every container tool already uses for it.
     """
     exec_p = _sub(
         sub,

@@ -49,7 +49,7 @@ def _candidate_diff(cwd: Path, manifest: SessionManifest) -> tuple[str, bool]:
     in one call, and only one can be the current checkout). A pruned branch
     reads from the recorded merge: its merged tip while the objects exist, else
     the commit it landed as. Returns (diff, from_merge); "" when nothing records
-    the change -- never blocks the comparison."""
+    the change, which never blocks the comparison."""
     base_sha, run_branch = manifest.base_sha, manifest.run_branch or ""
     if not base_sha:
         return "", False
@@ -71,11 +71,11 @@ def _screen_candidates(
     cwd: Path, resolved: list[tuple[SessionLayout, SessionManifest]]
 ) -> tuple[list[CandidateBrief], list[str]]:
     """Briefs for the comparable runs, plus printed notes naming each excluded
-    one. A run without a session.end -- died, or simply not there YET -- has no
-    verdict to compare and a truncated (lowest) spend, so ranking floated it to
-    first place and offered a merge (for a live run, of a branch still moving).
-    The fan-out excludes such lanes; say which run was dropped rather than
-    silently shrinking the table."""
+    one. A run without a session.end (died, or simply not there yet) has no
+    verdict to compare and a truncated (lowest) spend, so ranking it would float
+    it to first place and offer a merge, for a live run of a branch still
+    moving. The fan-out excludes such lanes; say which run was dropped rather
+    than silently shrinking the table."""
     candidates: list[CandidateBrief] = []
     notes: list[str] = []
     for layout, manifest in resolved:
@@ -156,9 +156,9 @@ def _cmd_compare(
 ) -> int:
     """Advisory ranked comparison across >=2 already-run candidates: the same
     ranked report `--parallel`'s auto-compare prints (judge via the reviewer
-    model when configured, else the mechanical verify+cost ranking) -- for
-    runs picked by hand, not necessarily from the same fan-out or even the
-    same task (each candidate's own manifest `user_task` is its task).
+    model when configured, else the mechanical verify+cost ranking), for runs
+    picked by hand, not necessarily from the same fan-out or even the same task
+    (each candidate's own manifest `user_task` is its task).
     Read-only: no merges, no writes.
 
     A fan-out id prints the verdict that fan-out recorded, so asking twice

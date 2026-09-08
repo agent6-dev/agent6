@@ -181,7 +181,7 @@ def _cmd_tui(config_path: Path | None = None) -> int:
         print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)
         return 3
     cwd = Path.cwd()
-    # The STATE dir: every bucket lookup below it goes through `bucket_dir`,
+    # The state dir: every bucket lookup below it goes through `bucket_dir`,
     # which appends `sessions/` itself.
     agent6_dir = state_dir(cwd)
     while True:
@@ -238,17 +238,18 @@ def _standing(event: dict[str, object]) -> bool:
 
 
 class _CliFrontEnd:
-    """Makes an interactive `agent6 attach` a real run FRONT-END, not just a
-    reader. When the streamed log surfaces an unanswered `run_command` approval
-    or `ask_user` question, it prompts on the controlling terminal with the SAME
-    CLI prompts a foreground run uses and writes the answer back over the file
-    bridge -- so watching a detached run is "as if you never detached". The
-    caller registers a `frontends/` claim so the worker's approver bridges to it (a
-    live front-end always wins over the detach away-mode).
+    """Makes an interactive `agent6 attach` a real run front-end. When the
+    streamed log surfaces an unanswered `run_command` approval or `ask_user`
+    question, it prompts on the controlling terminal with the same CLI prompts a
+    foreground run uses and writes the answer back over the file bridge, so a
+    detached run is driven from here. The caller registers a `frontends/` claim
+    so the worker's approver bridges to it (a live front-end always wins over
+    the detach away-mode).
 
     Prompt ids are deterministic counters, and the log replays from the start on
-    attach, so `_answered` (ids with an answer seen) and `_handled` (ids WE
-    prompted for) gate re-prompting a historical or already-answered prompt."""
+    attach, so `_answered` (ids with an answer seen) and `_handled` (ids this
+    front-end prompted for) gate re-prompting a historical or already-answered
+    prompt."""
 
     def __init__(self, session_dir: Path, view: ConsoleView) -> None:
         self._session_dir = session_dir
@@ -256,10 +257,10 @@ class _CliFrontEnd:
         self._answered: set[str] = set()
         self._handled: set[str] = set()
         # Events the attach pre-scan already decided. The follow loop re-reads
-        # logs.jsonl FROM THE START, so it hands those same events back to
+        # logs.jsonl from the start, so it hands those same events back to
         # `react`; replaying them must never prompt (see `react`). A count is
         # enough because logs.jsonl is append-only: the follow can only deliver
-        # MORE events than the scan saw, never fewer, and the scanned ones
+        # more events than the scan saw, never fewer, and the scanned ones
         # always arrive first.
         self._replayed: int = 0
 
@@ -318,22 +319,21 @@ class _CliFrontEnd:
     def _new_session(self) -> None:
         """A session boundary (a fresh run, or a resumed leg) restarts the prompt
         id counters at approval-1/question-1, so the prior leg's ids say nothing
-        about the new leg's. Keeping them made the attached front-end swallow the
-        resumed leg's first prompt while the worker waited on it forever."""
+        about the new leg's."""
         self._answered.clear()
         self._handled.clear()
 
     def react(self, event: dict[str, object]) -> None:
-        """Live follow: answer a NEW unanswered prompt; a historical/answered one
+        """Live follow: answer a new unanswered prompt; a historical/answered one
         (id in `_answered`/`_handled`) is skipped on the replay."""
         etype = str(event.get("type", ""))
         pid = str(event.get("id", ""))
         if self._replayed > 0:
             # Still inside the pre-scan's window: the follow loop is handing
             # back events `open_prompts_at_attach` already ruled on, so keep the
-            # bookkeeping in step but NEVER prompt. Deciding these live re-asked
-            # every prompt the run had already answered, because the leg-boundary
-            # clear below discarded what the pre-scan knew.
+            # bookkeeping in step but never prompt: deciding them live would
+            # re-ask every prompt the run has already answered, since the
+            # leg-boundary clear below discards what the pre-scan knew.
             self._replayed -= 1
             if etype in SESSION_START_EVENTS:
                 self._new_session()
@@ -366,8 +366,8 @@ def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> 
     prompts), then say how it ended.
 
     *finished* separates the two ways that happens: a run that ended cleanly
-    already said its outcome, and calling that "crashed or killed" contradicted
-    the `passed` the other surfaces were showing for the same run.
+    already said its outcome, and must not read as "crashed or killed" while the
+    other surfaces show it passed.
     """
     view = ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
     try:
@@ -397,7 +397,7 @@ def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
 
 
 def _watch_transcript(target: Path) -> int:
-    """Follow a run's conversation live and, on an interactive terminal, ATTACH
+    """Follow a run's conversation live and, on an interactive terminal, attach
     to it as a front-end: fold `logs.jsonl` through the same `ConsoleView` as
     `agent6 run` and, when the run asks for a `run_command` approval or an
     `ask_user` answer, prompt on the terminal exactly as the foreground run
@@ -413,7 +413,7 @@ def _watch_transcript(target: Path) -> int:
         word, reason = status_for_session_dir(target, StatusFacts())
         print(f"{target.name}: {word}" + (f" ({reason})" if reason else ""))
         if word == "starting":
-            # A live worker is mid-preflight: it IS running, not resumable.
+            # A live worker is mid-preflight: it is running, not resumable.
             # Telling the operator to `resume` would refuse (or fork a second
             # worker); it just has no log to follow yet.
             print("it is starting; run this again in a moment to follow it.")
@@ -421,17 +421,16 @@ def _watch_transcript(target: Path) -> int:
             print(f"start it with: agent6 resume {target.name}")
         return 0
 
-    # THE liveness question, answered where every other surface answers it: a
-    # second rule here read "no pid" as not-dead, so attach followed a log
-    # nothing would append to while `sessions list` called it stale. Whether it
-    # ENDED is a separate fact: both stop the follow, only one is a crash.
+    # The liveness question, answered where every other surface answers it, so
+    # attach never follows a log nothing will append to. Whether it ended is a
+    # separate fact: both stop the follow, only one is a crash.
     if not session_is_live(target):
         scan = scan_session_log(events_path)
         return _render_over_session(target, events_path, finished=scan.finished)
 
     def worker_dead() -> bool:
         # Per poll, so it stays O(1): once we are following, the session has
-        # started and the worker IS the liveness evidence (session_is_live above
+        # started and the worker is the liveness evidence (session_is_live above
         # folds the log once, for the parked/created distinction it needs).
         return not worker_is_alive(target)
 

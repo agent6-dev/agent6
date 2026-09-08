@@ -131,10 +131,10 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
             view.close()
 
     return SessionFrontend(
-        # The CLI is the surface with a terminal: it can do everything. What it
-        # cannot do -- ask a human with no tty and no away-mode -- is the
-        # lifecycle's own preflight refusal, not a missing capability.
-        # The CLI asks on the terminal, so a pipe for stdin means it cannot.
+        # The CLI is the surface with a terminal: it can do everything. Asking a
+        # human with no tty and no away-mode is the lifecycle's own preflight
+        # refusal, not a missing capability. The CLI asks on the terminal, so a
+        # pipe for stdin means it cannot.
         capabilities=FrontendCapabilities(can_ask=sys.stdin.isatty()),
         should_spawn_tui=lambda tui, interactive, mode: should_spawn_tui(
             tui=tui, interactive=interactive, mode=mode
@@ -221,9 +221,9 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
 
 def _configured_model_ok(cfg: Config, role: RoleName) -> bool:
     """The configured-model wall: validate models.<role>.model against its
-    provider's listing so a typo refuses cleanly here -- with a did-you-mean,
-    like the `/parallel` path -- instead of dying at the first provider call
-    and echoing the raw upstream 400. A miss re-checks the live listing before
+    provider's listing so a typo refuses cleanly here (with a did-you-mean, like
+    the `/parallel` path) instead of dying at the first provider call and
+    echoing the raw upstream 400. A miss re-checks the live listing before
     refusing (models.validate); a failed re-check warns and proceeds. False =
     refused (the caller exits 2)."""
     verdict = validate_configured_model(cfg, role)
@@ -236,8 +236,8 @@ def _configured_model_ok(cfg: Config, role: RoleName) -> bool:
         return False
     if verdict.warned:
         # The cached listing lacks the model and the live re-check failed
-        # (offline, provider down): proceed -- the first provider call is the
-        # final arbiter -- but say why a bad id would die there.
+        # (offline, provider down): proceed (the first provider call is the
+        # final arbiter) but say why a bad id would die there.
         warn(f"{warning_message(verdict)}")
     return True
 
@@ -248,9 +248,9 @@ def _compose_task(
     """The prompt the session actually starts from. Returns (task, error).
 
     One place assembles it: the skills prefix, then another session's context
-    when `--from` seeds this one. `--from` starts a NEW session and leaves the
-    source untouched -- keeping a session's mode is `fork`; this picks the mode
-    by being the command the operator typed.
+    when `--from` seeds this one. `--from` starts a new session and leaves the
+    source untouched; `fork` is the verb that keeps a session's mode, while this
+    takes the mode from the command the operator typed.
     """
     if skills:
         prefix, skills_err = _skills_task_prefix(cfg, skills)
@@ -315,7 +315,7 @@ def _cmd_run(  # noqa: PLR0911
     task = expand_task_file_refs(task, Path.cwd())
 
     # Provider key + models-cache preflight, shared by the single run and the
-    # --parallel fan-out: resolves each referenced provider's key AND refreshes
+    # --parallel fan-out: resolves each referenced provider's key and refreshes
     # its models cache, which carries the pricing explicit_usd_flag_error reads.
     # Runs before the --parallel route so dispatch_parallel's own --max-usd check
     # sees the same refreshed cache a plain --max-usd run does.
@@ -328,7 +328,7 @@ def _cmd_run(  # noqa: PLR0911
         return 2
 
     # `--parallel`: fan out isolated lanes instead of a single run. Routed here,
-    # after config/skills/require_runnable and the key preflight, but BEFORE the
+    # after config/skills/require_runnable and the key preflight, but before the
     # single-run sandbox preflight (no branch cut, no run dir on the origin); the
     # orchestrator clones each lane and runs its own `agent6 run`. run mode only.
     if parallel_spec and mode == "run":

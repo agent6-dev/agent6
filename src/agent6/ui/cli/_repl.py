@@ -78,7 +78,7 @@ def build_repl_hook(
 
     def hook(iteration: int, sha: str) -> AutoCommitDirective:
         # The whole prompt session sits inside the console-view pause: the run
-        # is waiting on the OPERATOR, and the heartbeat's per-tick line-erase
+        # is waiting on the operator, and the heartbeat's per-tick line-erase
         # would otherwise wipe the "agent6> " prompt and the typed characters,
         # replacing them with a lying "working…" spinner (same wiring as the
         # approval/question prompts). The whole session is an idle prompt,
@@ -153,15 +153,14 @@ def repl_run_diff(session_id: str) -> None:
 def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
     """REPL /watch: snapshot the last n events from this run's logs.jsonl.
 
-    Intentionally NOT a live tail - the REPL is between turns of the
-    agent loop; a tail would block the next iteration. Operators who
-    want continuous tail use `agent6 attach` in another shell.
+    Not a live tail: the REPL sits between turns of the agent loop, and a tail
+    would block the next iteration. `agent6 attach` in another shell tails
+    continuously.
     """
     if not session_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)
         return
-    # Across buckets: the REPL runs inside an ask, whose dir is asks/ -- a
-    # runs/-only path never found the session's own log.
+    # Across buckets: the REPL also runs inside an ask, whose dir is asks/.
     try:
         layout = resolve_session(state_dir(root), session_id)
     except SessionIdError as exc:
@@ -226,7 +225,7 @@ def repl_list_mcp(mcp_manager: MCPManager | None) -> None:
 def repl_run_init(root: Path) -> None:
     """REPL /init: run the setup wizard. Prompts on a TTY (the REPL is
     interactive) and never overwrites existing files; the ecosystem is
-    auto-detected (no hard-coded isolation)."""
+    auto-detected."""
     try:
         rc = init_workspace(
             root,

@@ -5,10 +5,10 @@
 The argcomplete docs' `eval "$(register-python-argcomplete agent6)"` needs
 that register script on PATH, which a uv-tool install does not guarantee. This
 command is self-contained: `argcomplete.shellcode()` emits the equivalent
-registration, and the default action INSTALLS it. For bash/zsh the script is
+registration, and the default action installs it. For bash/zsh the script is
 written under the agent6 config dir and one marker-guarded `source` line is
 appended to the shell's rc file (idempotent: rerunning refreshes the script and
-never duplicates the block). Fish gets a file in its native completions dir --
+never duplicates the block). Fish gets a file in its native completions dir:
 no rc edit, and fish picks it up automatically.
 
 Xonsh is not an argcomplete target, so it gets a small generated completer
@@ -22,10 +22,9 @@ shell (a fish started from bash leaves `$SHELL=bash`), falling back to
 `$SHELL`; pass `bash`, `zsh`, `fish`, or `xonsh` explicitly when
 both are wrong.
 
-A child process cannot restart the shell that launched it, so instead of
-pretending to, the bash/zsh install ends by printing exactly what to run
-(`source <rc>` or `exec $SHELL`) to activate the completions in the
-current session.
+A child process cannot restart the shell that launched it, so the bash/zsh
+install ends by printing what to run (`source <rc>` or `exec $SHELL`) to
+activate the completions in the current session.
 """
 
 from __future__ import annotations
@@ -106,9 +105,9 @@ def _agent6_completer(context):
         os.unlink(handle.name)
     # argcomplete already filtered by the prefix (COMP_POINT is the true
     # cursor); an empty set falls through to xonsh's own completers (e.g.
-    # paths). Values the shell would split are quoted -- on the bare value,
-    # so a trailing-sep directory is still detected and keeps no-space
-    # completing into itself.
+    # paths). Values the shell would split are quoted, on the bare value, so
+    # a trailing-sep directory is still detected and keeps no-space completing
+    # into itself.
     candidates = set()
     for entry in output.splitlines():
         if not entry.strip():
@@ -147,7 +146,7 @@ def detect_shell() -> str:
         if comm in SHELLS:
             return comm
         # stat: "pid (comm) state ppid ..."; comm may contain spaces/parens,
-        # so split at the LAST ")". ppid is the second field after it.
+        # so split at the last ")". ppid is the second field after it.
         try:
             pid = int(stat.rsplit(")", 1)[1].split()[1])
         except (IndexError, ValueError):
@@ -210,7 +209,7 @@ def _install_bash_zsh(shell: str, code: str) -> int:
             print(f"[agent6] refreshed {script} (already sourced from {rc})")
         else:
             # A moved config home leaves the block pointing at the old script
-            # path; reporting "already sourced" then was a lie.
+            # path, which "already sourced" would misreport.
             rc.write_text(existing[:start] + wanted + existing[end:], encoding="utf-8")
             print(f"[agent6] updated the source path in {rc}")
     else:

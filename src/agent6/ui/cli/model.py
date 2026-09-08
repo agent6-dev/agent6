@@ -105,10 +105,10 @@ def _show_assignments(config_path: Path | None) -> int:
 
 
 def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
-    """Piped, no model named: the interactive picker cannot run, and dumping the
-    numbered catalog into an EOF error helped nobody. This invocation IS the
-    listing (the one non-interactive way to discover model ids, e.g. for a
-    --parallel spec): one id per line on stdout, the set-hint on stderr."""
+    """Piped, no model named: the interactive picker cannot run, so this
+    invocation is the listing (the one non-interactive way to discover model
+    ids, e.g. for a --parallel spec): one id per line on stdout, the set-hint
+    on stderr."""
     options = _models_for(config_path, provider)
     if not options:
         error(f"no known models for {provider} (couldn't reach its API or none configured).")
@@ -175,7 +175,7 @@ def _cmd_model(
     # pseudo-role "all" (no config field of that name, it expands to all three).
     # Positional provider/model are optional: prompt interactively when blank,
     # prefilling the provider list from connected providers and the model list
-    # from that provider's live/configured catalog. Interactive means BOTH
+    # from that provider's live/configured catalog. Interactive means both
     # channels are a tty: `agent6 model worker openrouter | grep kimi` keeps
     # stdin a tty but must get the listing, not a prompt buried in the pipe.
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
@@ -203,8 +203,8 @@ def _cmd_model(
         ("planner", "worker", "reviewer") if role == "all" else (cast("RoleName", role),)
     )
     # Write through the shared edit path: each [models.<role>] table is persisted,
-    # the merged config re-validated, and the file ROLLED BACK if the combination
-    # is invalid -- so a bad provider/model never leaves config.toml broken (which
+    # the merged config re-validated, and the file rolled back if the combination
+    # is invalid, so a bad provider/model never leaves config.toml broken (which
     # would fail every later command). The roles get identical fields, so the first
     # rejection rolls back with nothing partially applied.
     for r in roles:

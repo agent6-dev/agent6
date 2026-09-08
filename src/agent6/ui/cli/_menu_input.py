@@ -13,10 +13,10 @@ an empty line continues it.
 
 Hand-rolled on termios because neither readline flavor can render this: GNU
 readline's menu-complete cycles blind (no list until a second Tab, never with
-descriptions) and libedit -- what uv-managed CPython 3.12 links -- supports
-only plain rl_complete. A dependency would be out of proportion for one
-prompt. Unix-only by design: callers gate on :func:`menu_capable` and fall
-back to a plain prompt elsewhere.
+descriptions), and libedit (what uv-managed CPython 3.12 links) supports only
+plain rl_complete. A dependency would be out of proportion for one prompt.
+Unix-only: callers gate on :func:`menu_capable` and fall back to a plain prompt
+elsewhere.
 
 Rendering uses CR, erase-below, cursor-up/right, reverse and dim only, safe
 under tmux/byobu. The input row (prompt clamped, line windowed into the
@@ -183,10 +183,9 @@ class _Reader:
 
     def render(self, write: Callable[[str], None]) -> None:
         width = _width()
-        # Budget the WHOLE input row to width-1 like the menu rows: clamp the
-        # prompt first, then window the line into the remainder. An overflow
-        # floor here wrapped the row on narrow terminals, and the wrapped row
-        # broke the cursor-up arithmetic (garbling the menu every keystroke).
+        # Budget the whole input row to width-1 like the menu rows: clamp the
+        # prompt first, then window the line into the remainder. A wrapped row
+        # breaks the cursor-up arithmetic and garbles the menu every keystroke.
         prompt = (_SEARCH_PROMPT if self.searching else self.prompt)[: width - 1]
         avail = max(0, width - 1 - len(prompt))
         start = 0 if self.cur < avail else self.cur - avail + 1
@@ -201,7 +200,7 @@ class _Reader:
         if rows:
             pad = max(len(label) for label, _dim in rows)
             for i, (label, dim) in enumerate(rows):
-                # Clamp the VISIBLE text to one row (a wrapped row would break
+                # Clamp the visible text to one row (a wrapped row would break
                 # the cursor-up arithmetic); the SGR codes take no columns and
                 # must never be sliced through.
                 cell = "  " if not label else f"  {label:<{pad}}  "[: width - 1]

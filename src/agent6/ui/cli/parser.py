@@ -90,10 +90,9 @@ _GLOBAL_FLAG_OPTS = frozenset({"--allow-root"})
 
 
 def _shell_default_help() -> str:
-    """The completions `shell` help, naming what detection resolves to RIGHT
-    NOW so the default reads as a fact, not a mechanism. Detection walks the
-    process tree (a fish inside bash detects fish); unknown keeps generic
-    wording."""
+    """The completions `shell` help, naming what detection resolves to, so the
+    default reads as a resolved fact. Detection walks the process tree (a fish
+    inside bash detects fish); unknown keeps generic wording."""
     from agent6.ui.cli.completions_cmd import detect_shell  # noqa: PLC0415
 
     detected = detect_shell()
@@ -128,12 +127,12 @@ def _command_index(argv: list[str]) -> int | None:
 
 
 def _inject_default_verb(argv: list[str]) -> list[str]:
-    """Insert the implicit verb for `plan`/`ask` when the next token isn't one.
+    """Insert a group's implicit verb when the next token isn't one.
 
     `["plan", "fix the bug"]` -> `["plan", "run", "fix the bug"]`;
     `["ask", "why?"]` -> `["ask", "query", "why?"]`. Leading global options
-    (`--config FILE`, `--allow-root`) are skipped to find the command. A bare
-    `plan`/`ask`, an explicit verb, or `-h`/`--help` is left untouched.
+    (`--config FILE`, `--allow-root`) are skipped to find the command. An
+    explicit verb or `-h`/`--help` is left untouched.
     """
     ci = _command_index(argv)
     if ci is None or argv[ci] not in _DEFAULT_VERBS:
@@ -153,10 +152,9 @@ def _inject_default_verb(argv: list[str]) -> list[str]:
 def _directories_epilog() -> str:
     """Where agent6 keeps things, resolved, for the bottom of `--help`.
 
-    Four XDG bases each holding a different kind of thing is correct and
-    unguessable; naming them here is the difference between "where did my run
-    history go" and reading the docs. Paths only (no file contents), and each
-    is a plain env/home lookup, so building the parser stays cheap.
+    Four XDG bases each hold a different kind of thing. Paths only (no file
+    contents), and each is a plain env/home lookup, so building the parser stays
+    cheap.
     """
     user = effective_user()
     rows = (
@@ -403,7 +401,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         sub,
         "mcp",
         help=(
-            "MCP (Model Context Protocol): add a server, list them, or serve; a bare"
+            "MCP (Model Context Protocol): add or remove a server, list them, or serve; a bare"
             " `agent6 mcp` lists them."
         ),
     )

@@ -39,8 +39,7 @@ def _scaffold_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...
     anything the just-written .gitignore covers so we never `git add -f`.
 
     A path with nothing pending is dropped too, so the commit line names what
-    the commit holds: init leaves an existing AGENTS.md alone, and listing it
-    told the operator it had been committed."""
+    the commit holds (init leaves an existing AGENTS.md alone)."""
     candidates = unignored(root, _workspace_rel_paths(root, created))
     return tuple(rel for rel in candidates if paths_dirty(root, (rel,)))
 
@@ -147,7 +146,7 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
         return 2
     interactive = not assume_yes
     # A scaffold path init leaves untouched is the operator's file, whether or
-    # not this is a repo yet: committing it by path would put THEIR work in
+    # not this is a repo yet: committing it by path would put their work in
     # agent6's scaffold commit, so it is excluded and reported instead.
     scaffold_all = (cwd / "AGENTS.md", cwd / ".gitignore")
     missing_before = tuple(p for p in scaffold_all if not p.exists())

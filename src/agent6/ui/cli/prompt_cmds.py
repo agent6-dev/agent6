@@ -21,7 +21,7 @@ def _cmd_prompt_show(
     as_json: bool = False,
 ) -> int:
     """Print everything the model receives on a run's first call here, for
-    THIS repo and the effective (layered) config, in the given mode: the system
+    this repo and the effective (layered) config, in the given mode: the system
     prompt (its static blocks and the per-repo `<repo-priors>` block), the tool
     definitions the API's `tools` field carries (name, description, input
     schema, exactly the list this config exposes), and the first user message

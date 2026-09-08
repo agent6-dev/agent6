@@ -65,8 +65,8 @@ def _parallel_approval_refusal(cfg: Config) -> str | None:
     """Refuse `--parallel` under `ask`, naming the two coherent choices.
 
     Lanes run detached and at the same time, so "wait for someone to approve"
-    would mean attaching a front-end to each lane in turn -- most of what
-    running them in parallel was for. The decision is made once, at launch.
+    would mean attaching a front-end to each lane in turn, most of what running
+    them in parallel was for. The decision is made once, at launch.
     """
     if cfg.sandbox.run_commands != "ask":
         return None

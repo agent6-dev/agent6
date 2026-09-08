@@ -191,13 +191,13 @@ def tty_prompt(
     typed line is discarded (the answer arrived by another route)."""
     try:
         # The getpass recipe: O_RDWR on the device + an unbuffered FileIO.
-        # A plain open("/dev/tty", "r+") NEVER works -- buffered update mode
-        # requires a seekable stream and a tty is not -- so every /dev/tty
-        # prompt silently used the stdin fallback (or, without the fallback,
-        # returned no answer at all).
+        # A plain open("/dev/tty", "r+") never works (buffered update mode
+        # requires a seekable stream, and a tty is not), leaving every
+        # /dev/tty prompt on the stdin fallback, or with no answer at all
+        # where there is no fallback.
         fd = os.open(TTY_PATH, os.O_RDWR | os.O_NOCTTY)
         # Discard type-ahead before prompting (the sudo/ssh rule): text typed
-        # before this prompt existed was aimed at something else -- e.g. a
+        # before this prompt existed was aimed at something else: a
         # pause-menu command typed during the "pausing after this step" window
         # must not ride into a run_command [y/N/a] approval as its answer.
         with contextlib.suppress(Exception):
@@ -235,7 +235,7 @@ def tty_prompt(
 def format_session_facts(facts: SessionFacts) -> str:
     """The one-line status the pause banner and Ctrl-Z print: the few things a
     CLI operator cannot otherwise see (a TUI/web viewer has widgets for them).
-    Spend first -- it is the fact that decides whether to interrupt now."""
+    Spend first: it decides whether to interrupt now."""
     return (
         f"{format_usd(facts.spend_usd, partial=facts.spend_partial)}"
         f" · {facts.model} · commands {facts.run_commands} · {facts.isolation}"
@@ -259,10 +259,10 @@ def _install_status_signal(
     state: dict[str, Any], session_facts: Callable[[], SessionFacts] | None
 ) -> Any:
     """Ctrl-Z: print the run's state, and stand a pause that has not opened its
-    menu back down, so checking on a run never costs it a step. Replaces SIGTSTP's default on
-    purpose -- a suspended agent freezes its live provider stream, which the
-    server then kills mid-response: a real suspend would not pause the run,
-    it would corrupt it. The printed hint names the alternative."""
+    menu back down, so checking on a run never costs it a step. Replaces
+    SIGTSTP's default: a suspended agent freezes its live provider stream, which
+    the server then kills mid-response, corrupting the run rather than pausing
+    it. The printed hint names the alternative."""
     if not hasattr(signal, "SIGTSTP"):
         return None
 
@@ -302,13 +302,12 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
     * 2nd Ctrl-C: interrupt the in-flight model call and prompt now.
     * 3rd Ctrl-C (or Ctrl-C at the pause prompt itself): KeyboardInterrupt,
       stopping the run (resumable with `agent6 resume`).
-    * Ctrl-Z prints the same one-line status WITHOUT arming anything, and
-      cancels a pause that has not opened its menu, so checking on a run
-      costs it nothing. It also
-      replaces SIGTSTP's default: a suspended agent freezes its live provider
-      stream, which the server then kills mid-response, so a real suspend
-      would corrupt the run rather than pause it. The hint it prints names
-      /detach as the way to step away.
+    * Ctrl-Z prints the same one-line status without arming anything, and
+      cancels a pause that has not opened its menu, so checking on a run costs
+      it nothing. It also replaces SIGTSTP's default: a suspended agent freezes
+      its live provider stream, which the server then kills mid-response, so a
+      real suspend would corrupt the run rather than pause it. The hint it
+      prints names /detach as the way to step away.
 
     `console_view`, when given, has its heartbeat spinner suspended for the
     prompt's duration: the spinner's per-tick line-erase otherwise wipes the
@@ -331,7 +330,7 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
                 tty_message("\n[agent6] interrupting this step. Ctrl-C again to stop the run.\n")
             return
         state["stage"] = 1
-        # Drop a STALE answer file (one without a request marker) so it is not
+        # Drop a stale answer file (one without a request marker) so it is not
         # instantly consumed as this new prompt's answer. An answer with a
         # pending request is a live front-end steer the loop has not consumed
         # yet; deleting it would silently discard the operator's instruction.
@@ -351,7 +350,7 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
     previous_tstp = _install_status_signal(state, session_facts)
 
     def requested() -> bool:
-        # Either a Ctrl-C (any stage) OR a front-end steer request marker.
+        # Either a Ctrl-C (any stage) or a front-end steer request marker.
         return state["stage"] >= 1 or steer_request_pending(session_dir)
 
     def interrupt() -> bool:
@@ -368,9 +367,8 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
 
     def prompt() -> str | None:
         # An answer already on disk (a `resume --steer` seed, the end-of-session
-        # follow-up, a front-end's answer that landed first) IS the steer: the
-        # terminal menu is for an unanswered request only. Without this the
-        # follow-up typed at "next:" opened the pause menu asking for it again.
+        # follow-up, a front-end's answer that landed first) is the steer: the
+        # terminal menu is for an unanswered request only.
         seeded = take_steer_answer(session_dir)
         if seeded is not None:
             return seeded
@@ -378,7 +376,7 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
         if frontend_is_live(session_dir):
             answer = read_steer_answer(session_dir)
             # A dismissed/abandoned modal yields None (read_steer_answer timed out
-            # or the TUI died). Clear the request marker on THIS no-answer path so a
+            # or the TUI died). Clear the request marker on this no-answer path so a
             # persisting `steer.request` cannot re-trigger another 600s blocking
             # read at the very next boundary, looping the run. A genuinely-answered
             # steer leaves clearing to the caller's clear() (with the answer already

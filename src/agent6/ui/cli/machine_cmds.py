@@ -131,7 +131,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     cwd: Path,
     overlay: dict[str, Any],
 ) -> int | tuple[Config, IsolationLevel]:
-    """A hard network refusal becomes a choice, not a dead end: explain it, then
+    """Turn a hard network refusal into a choice: explain it, then
     (interactively) offer to apply the minimal config fix and continue, simulate
     the machine offline, or stop. Headless prints the exact fix + simulate
     command and exits non-zero, it never relaxes a sandbox setting unattended.
@@ -183,8 +183,8 @@ def _resolve_network_refusal(  # noqa: PLR0911
 def _no_instance_hint(machine_id: str, cwd: Path) -> str:
     """A ' Did you mean ...' suffix for a missing-instance error.
 
-    `machine run` takes a FILE (`greet.asm.toml`); status/replay/poke/stop and
-    `agent6 attach` take a machine ID (`greet-ok`). Passing the file where an
+    `machine run` takes a file (`greet.asm.toml`); status/replay/poke/stop and
+    `agent6 attach` take a machine id (`greet-ok`). Passing the file where an
     id is expected otherwise dead-ends at "no machine instance at
     .../greet.asm.toml". When the argument is an `.asm.toml` file, read its
     `machine` name and suggest that instance id (a file that does not parse
@@ -262,8 +262,8 @@ def _cmd_machine_replay(machine_id: str) -> int:
 
 def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | None, str]:
     """(pending wait, note): a corrupt wait.json yields `(None, reason)` so the
-    caller keeps its readout going -- mirroring `machine_is_parked` tolerating
-    it -- instead of the JournalError aborting the whole command."""
+    caller keeps its readout going (mirroring `machine_is_parked` tolerating it)
+    rather than the JournalError aborting the whole command."""
     try:
         return journal.read_pending_wait(), ""
     except JournalError as exc:
@@ -290,18 +290,18 @@ def _cmd_machine_status(machine_id: str) -> int:
         return 1
     # A corrupt wait.json must not hide the whole readout: the shared dir word
     # (machine_word_for_dir -> machine_is_parked) tolerates it as "parked, keep
-    # streaming", so status mirrors that -- drop the wait DETAIL, note it, and
+    # streaming", so status mirrors that: drop the wait detail, note it, and
     # still print the state / transitions / spend / steps below.
     pending, pending_note = _read_pending_wait_tolerant(journal)
 
     alive = worker_is_alive(root)
     spend, inflight_state = machine_spend(events, root, alive=alive)
-    # machine_word_for_dir is the ONE owner of running/waiting/stopped, shared
+    # machine_word_for_dir is the one owner of running/waiting/stopped, shared
     # with the watch screen, the TUI header, and the web pill: it checks `parked`
-    # BEFORE `alive`, so an alive-but-parked instance (a persisted wait written
-    # while the worker is still live -- a teardown race) reads "waiting" here too,
+    # before `alive`, so an alive-but-parked instance (a persisted wait written
+    # while the worker is still live, a teardown race) reads "waiting" here too,
     # not a bare "running". A terminal end shows its ok/failed, a crashed instance
-    # "stopped" -- never the engine's raw "incomplete".
+    # "stopped", never the engine's raw "incomplete".
     word = machine_word_for_dir(fold_machine(spec, events), root)
 
     print(f"machine: {spec.machine} (v{spec.version})")
@@ -387,7 +387,7 @@ def _cmd_machine_poke(
 
 
 def _cmd_machine_stop(machine_id: str) -> int:
-    """Write the durable stop marker for a RUNNING machine.
+    """Write the durable stop marker for a running machine.
 
     The engine parks at its next transition boundary (or wakes out of a sleep)
     without journaling an end, so the instance stays resumable. A machine that

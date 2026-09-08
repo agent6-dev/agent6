@@ -50,12 +50,12 @@ def _collect_review_diff(
     With `base`: a plain `git diff base..head` (read-only). Without it:
     working tree vs HEAD *including untracked files*. To make untracked files
     show up, git needs intent-to-add (`git add -N`) entries, but review is
-    documented read-only, so we register ONLY the currently-untracked paths and
-    `git reset` them afterward (in a `finally`), restoring the index exactly
-    as we found it. Staged/tracked changes are never touched.
+    documented read-only, so only the currently-untracked paths are registered
+    and `git reset` afterward (in a `finally`), restoring the index exactly as
+    it was. Staged/tracked changes are never touched.
 
-    Every invocation carries git_ops' hardening flags plus ``--no-ext-diff
-    --no-textconv`: without them, a checkout with a poisoned `.git/config``
+    Every invocation carries git_ops' hardening flags plus `--no-ext-diff
+    --no-textconv`: without them, a checkout with a poisoned `.git/config`
     (`diff.external`/`diff.*.textconv`/`core.fsmonitor`) would run its
     payload on the host the moment the operator reviews it.
     """
@@ -91,7 +91,7 @@ def _collect_review_diff(
 
 
 def _is_checked_out(git: str, root: Path, rev: str) -> bool:
-    """True when the checkout at *root* IS *rev*: that commit, with nothing
+    """True when the checkout at *root* is *rev*: that commit, with nothing
     uncommitted on top. An explore-tier seat's read-only tools read the
     checkout, so anything else answers `read_file` from a tree the diff does
     not describe."""
@@ -218,7 +218,7 @@ def _cmd_review(  # noqa: PLR0911
     personas: str = "",
 ) -> int:
     """Print a code review of a diff to stdout. Read-only; no jail. With
-    `reviewers >= 1`, runs the grounded adversarial review PANEL instead of the
+    `reviewers >= 1`, runs the grounded adversarial review panel instead of the
     single freeform review."""
     if personas.strip() and reviewers < 1:
         print(

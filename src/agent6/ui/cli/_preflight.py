@@ -36,9 +36,9 @@ def confirm_run_on_run_branch(base_branch: str) -> bool:
 def confirm_replay_after_crash(iteration: int, tools: tuple[str, ...]) -> bool:
     """Resume found a mid-turn-crash marker for the turn about to re-run: its
     tools may have partially applied, and replaying can repeat a
-    non-idempotent effect. Interactive: ask, default NO (abort and inspect).
-    Headless: warn loudly and proceed -- the at-least-once recovery a detached
-    resume always had, now with the risk named."""
+    non-idempotent effect. Interactive: ask, default no (abort and inspect).
+    Headless: warn loudly and proceed, at-least-once recovery with the risk
+    named."""
     named = ", ".join(tools) if tools else "unknown tools"
     warning = (
         f"[agent6] The previous run died mid-turn (iteration {iteration}; {named}).\n"
@@ -57,12 +57,12 @@ def confirm_replay_after_crash(iteration: int, tools: tuple[str, ...]) -> bool:
 
 
 def confirm_unconfined_autorun(isolation: IsolationLevel, cfg: Config) -> bool:
-    """The one genuinely dangerous combination: the sandbox is OFF and
+    """The one genuinely dangerous combination: the sandbox is off and
     run_command is auto-approved, so the agent can run any command on the host
     with no confinement and no prompt. Get one explicit consent at startup when
     interactive; proceed with a loud warning when not (the explicit opt-outs
     are already the consent, and machines/CI must not block). Not a per-command
-    guard -- once unconfined, guarding individual commands would be theatre.
+    guard: once unconfined, guarding individual commands would be theatre.
 
     Returns True to proceed, False to abort.
     """

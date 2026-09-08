@@ -5,9 +5,9 @@
 The rank/report core is headless in `app.compare`; this module supplies the two
 presentation pieces it cannot: the console `judging...` spinner shown while the
 judge call is in flight, and the reviewer-provider builder wired from the
-configured `reviewer` role. `rank` binds those into `app.compare.rank` so
-`sessions compare` (`sessions_cmds.py`) and the fan-out's auto-compare share one
-implementation.
+configured `reviewer` role. `rank` binds those into `app.compare.rank` for
+`sessions compare` (`sessions_compare.py`); the fan-out binds the same two into
+`app.compare.rank` through its `LaneRuntime`.
 """
 
 from __future__ import annotations
@@ -35,11 +35,10 @@ __all__ = ["rank"]
 @contextlib.contextmanager
 def _judging_status() -> Generator[None]:
     """Show progress around the (~50-60s, otherwise silent) judge call: a real
-    terminal gets the SAME spinner glyphs/cadence as the run stream's
-    provider-call heartbeat (`_console_view`'s `_HEARTBEAT_TICK_S` + the shared
-    spinner);
-    a non-tty (piped, detached orchestrator) gets one plain line so logs stay
-    truthful -- no animation frames written to a file."""
+    terminal gets the same spinner glyphs and cadence as the run stream's
+    provider-call heartbeat (`_console_view`'s `_HEARTBEAT_TICK_S` plus the
+    shared spinner), and a non-tty (piped, detached orchestrator) gets one plain
+    line, so no animation frames reach a log file."""
     if not sys.stdout.isatty():
         print("judging...")
         yield
@@ -74,8 +73,7 @@ def _reviewer_provider(cfg: Config, sink: TranscriptSink, budget: BudgetTracker)
 
 def rank(cfg: Config, candidates: list[CandidateBrief], *, transcript_dir: Path) -> RankOutcome:
     """Rank candidates best-first via the shared core, injecting the CLI's
-    console judging-status and reviewer-provider builder. The single rank
-    implementation `sessions compare` and `--parallel`'s auto-compare both use."""
+    console judging-status and reviewer-provider builder."""
     return core_rank(
         cfg,
         candidates,

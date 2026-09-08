@@ -232,9 +232,9 @@ def all_session_dirs(repo_root: Path) -> list[Path]:
 def resolve_session_layout(
     repo_root: Path, query: str, *, allow_husk: bool = False
 ) -> SessionLayout:
-    """Resolve a run id (or unique prefix) across every run-style bucket --
-    one per mode under `sessions/` -- returning a `SessionLayout`
-    with the matching subdir.
+    """Resolve a run id (or unique prefix) across every run-style bucket (one
+    per mode under `sessions/`), returning a `SessionLayout` with the matching
+    subdir.
 
     `agent6 run` lives under `runs/`, `plan` under `plans/`, `agent6 ask`
     under `asks/`, and `machine create` authoring logs under
@@ -243,9 +243,8 @@ def resolve_session_layout(
     a listing shows is also inspectable by id. Raises `SessionIdError` if no run
     matches in any bucket.
 
-    A HUSK (no manifest, no log: it crashed before it ever started) refuses
-    with the remedy, so every surface says the same thing instead of showing
-    an empty session and advising a resume that fails. `allow_husk` is for
+    A husk (no manifest, no log: it crashed before it ever started) refuses
+    with the remedy, so every surface says the same thing. `allow_husk` is for
     `sessions rm`, whose whole job is deleting one.
     """
     layout = resolve_session(state_dir(repo_root), query)
@@ -276,10 +275,8 @@ def resolve_target(target: str) -> SessionLayout | None:
 def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
     """The newest session across every bucket whose dir holds *child*.
 
-    `history graph` / `history transcript` each scanned runs/ and then built a
-    runs/ layout from the name, so a session in any other bucket was both
-    invisible and, if named explicitly, resolved to a directory that does not
-    exist.
+    `history graph` and `history transcript` resolve their session this way, so
+    one in any bucket is both listed and reachable by name.
     """
     candidates = [d for d in all_session_dirs(repo_root) if (d / child).is_dir()]
     if not candidates:
@@ -299,8 +296,7 @@ def resolve_or_newest_layout(
     "no sessions exist" case, so the caller phrases its own 'none yet' message. Raises
     `SessionIdError` (`.no_match` set only when nothing matched) when an explicit id has
     no or many matches. The one 'a run by id, or the latest' resolution behind
-    `attach` / `sessions stop` / `sessions show`: a new such command resolves the
-    same way instead of re-deriving the id-or-newest glue.
+    `attach` / `sessions stop` / `sessions show`.
     """
     if session_id:
         return resolve_session_layout(repo_root, session_id, allow_husk=allow_husk)
@@ -342,9 +338,8 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
     return None
 
 
-# The ANSI SGR for each `viewmodel.format.status_level`, tty only: a listing
-# where a provider_error death reads as plain text is how dead runs went
-# unnoticed. The TUI's Rich map and the web's pill classes are the siblings.
+# The ANSI SGR for each `viewmodel.format.status_level`, tty only. The TUI's
+# Rich map and the web's pill classes are the siblings.
 _LEVEL_SGR: dict[str, str] = {
     "ok": "32",
     "info": "35",  # magenta (mauve on the TUI/web)
@@ -358,7 +353,7 @@ _LEVEL_SGR: dict[str, str] = {
 def styled_status(
     status: str, reason: str, *, color: bool, label: str | None = None
 ) -> tuple[str, str]:
-    """(possibly-colored label, plain label) for a listing row -- the plain form
+    """(possibly-colored label, plain label) for a listing row; the plain form
     drives width math. *label* overrides the text (the sessions listing's
     mode-folded cell); the colour always follows the status word."""
     from agent6.viewmodel.format import status_label, status_level  # noqa: PLC0415

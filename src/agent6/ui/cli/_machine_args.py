@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Parser builder for `machine` and its subcommands: author-time tooling for
-agent6 state machines (.asm.toml) -- list/check/test/graph/run/status/poke/
-replay/create."""
+agent6 state machines (.asm.toml)."""
 
 from __future__ import annotations
 

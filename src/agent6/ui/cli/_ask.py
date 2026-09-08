@@ -81,9 +81,8 @@ def fmt_run_event(e: dict[str, Any]) -> str:
 
 
 def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
-    """Hardened `git diff <range>`, bytes-captured and lossy-decoded: the old
-    `text=True` strict decode raised UnicodeDecodeError out of communicate()
-    on a valid non-UTF-8 diff (a latin-1 file), crashing `ask --from`."""
+    """Hardened `git diff <range>`, bytes-captured and lossy-decoded: a valid
+    diff can be non-UTF-8 (a latin-1 file), which a strict decode rejects."""
     # operator-controlled argv, no LLM input (same as `agent6 sessions diff`).
     # Hardening flags: a poisoned .git/config diff.external or diff.*.textconv
     # would otherwise run on the host when the operator asks about a prior run.
@@ -104,8 +103,8 @@ def _diff_via_merge_stamp(
     cwd: Path, manifest: SessionManifest, base_sha: str, run_branch: str | None
 ) -> tuple[str, int, str, str] | None:
     """(label, rc, diff, err) via the manifest's merge stamp, for a primary
-    range that is unreachable -- usually a run branch pruned after its merge,
-    but a gc'd base_sha does it with the branch still there. None without a
+    range that is unreachable (usually a run branch pruned after its merge,
+    though a gc'd base_sha does it with the branch still there). None without a
     stamp. The label names which it was, since the model may go read the
     branch."""
     merged = manifest.merged
@@ -124,7 +123,7 @@ def _diff_via_merge_stamp(
     merged_sha = merged.sha
     is_ff = merged_sha == merged.tip
     if is_ff:
-        # Fast-forwarded: the stamped commit IS the run's tip, so its ^.. diff
+        # Fast-forwarded: the stamped commit is the run's tip, so its ^.. diff
         # is the last commit only. The full run is base..merged, both in the
         # base branch's history.
         label = f"{base_sha[:12]}..{merged_sha[:12]} ({why}; fast-forward merge)"
@@ -137,18 +136,17 @@ def _diff_via_merge_stamp(
 
 
 def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str | None:
-    """Markdown digest of a prior SESSION to seed a new one, or None (after
+    """Markdown digest of a prior session to seed a new one, or None (after
     printing an error) when it can't be resolved.
 
     Any session kind seeds any other: a run, a plan and an ask all record the
     same shape, and the useful direction is whichever way the operator is
-    working -- an ask that worked something out, then a run to do it.
+    working (an ask that worked something out, then a run to do it).
     """
     state = state_dir(cwd)
     if latest:
         # runs/ and asks/ only: a machine draft is an authoring log, not a
-        # session with a task and an outcome, and picking the newest one made
-        # `--from-latest` fail on a project that had just written a machine.
+        # session with a task and an outcome.
         newest = newest_session_dir([bucket_dir(state, "runs"), bucket_dir(state, "asks")])
         if newest is None:
             error(f"--from-latest: no run or ask under {state}")
@@ -173,9 +171,8 @@ def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str
     diff_label = f"{base_sha}..{run_branch}"
     diff_body = "(no diff: the run recorded no base_sha)"
     if not run_branch:
-        # A plan and an ask cut no branch and commit nothing. Diffing HEAD
-        # instead handed the model whatever the operator happened to have
-        # uncommitted, labelled as the session's work.
+        # A plan and an ask cut no branch and commit nothing; diffing HEAD
+        # would label the operator's uncommitted work as the session's.
         diff_label = "(none)"
         diff_body = "(no diff: this session wrote no code)"
     elif base_sha:
@@ -227,8 +224,8 @@ def save_ask_transcript(layout: SessionLayout, *, question: str, answer: str) ->
 
     A resumed ask appends its own Q&A: the file exists only because an earlier
     leg wrote it, and overwriting would drop the answer the operator already
-    has. Both halves are appended -- a bare second answer under the FIRST
-    question read as a continuation of an answer to something else.
+    has. Both halves are appended, since an answer alone under the first
+    question reads as a continuation of that answer.
     """
     out = layout.session_dir / "transcript.md"
     if out.is_file():

@@ -84,9 +84,8 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     its row: folded into a count, listed indented with *lanes*; the JSON row
     nests them always.
 
-    EVERY bucket, unlike the TUI/web hubs: they give `machine create` drafts
-    their own card, and the CLI has none -- so leaving drafts out here made a
-    session `attach` opens happily appear in no listing at all.
+    Every bucket, unlike the TUI/web hubs: they give `machine create` drafts
+    their own card and the CLI has none, so a draft lists here with the rest.
     """
 
     cwd = Path.cwd()
@@ -155,7 +154,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
     the same host-RCE hardening (`git_hardening_flags`: a poisoned
     `.git/config` `diff.external` / `diff.*.textconv` / `core.fsmonitor`
     / repo hook must not execute on the host) plus `DIFF_SHOW_SAFETY_FLAGS`,
-    which force the builtin diff renderer (git >= 2.53 executes even an EMPTY
+    which force the builtin diff renderer (git >= 2.53 executes even an empty
     `diff.external` override, so the `-c` flags alone would kill the printed
     patch) and disable the per-file textconv driver the `-c` flags do not reach.
     """
@@ -208,7 +207,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         ["git", *git_hardening_flags(cwd), *probe_args], cwd=cwd, check=False, capture_output=True
     )
     if probe.returncode == 0:
-        # No COMMITTED changes yet. A run commits only after a verify pass, so a
+        # No committed changes yet. A run commits only after a verify pass, so a
         # live run mid-work has its edits uncommitted on the worktree and this
         # reads as "the agent did nothing". If the run branch is the current
         # checkout and its worktree is dirty, say so instead of a bare silence.
@@ -223,7 +222,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
 def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
     """A note when the diffed run's branch is the current checkout and its
     worktree has uncommitted work (a run commits at each editing step),
-    else "". Only speaks when the dirty files are unambiguously THIS run's:
+    else "". Only speaks when the dirty files are unambiguously this run's:
     the current branch must equal run_branch. Best-effort; git errors -> "" ."""
     if not run_branch:
         return ""
@@ -272,7 +271,7 @@ class _CommitsRef:
 
 def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
     """`commits_ref` (an existing run branch while it covers the chain, else
-    the chain ref), else the manifest's branch NAME while no chain exists (the
+    the chain ref), else the manifest's branch name while no chain exists (the
     verbs read its absence themselves: pruned, never cut, or a lane's branch
     still in its clone), else the reason the run has no commits."""
     if ref := commits_ref(manifest, cwd):
@@ -281,7 +280,7 @@ def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
         return _CommitsRef(head_ref=manifest.run_branch, reason="")
     if manifest.parked_task:
         # A parked run never started, so `base..HEAD` is whatever the run that
-        # HELD the checkout committed -- the one it was parked behind.
+        # held the checkout committed, the one it was parked behind.
         return _CommitsRef(
             head_ref="", reason="this run was parked before it started, so it made no commits"
         )
@@ -307,7 +306,7 @@ def _resolve_session_manifest(
     per caller."""
     runs_dir = _runs_dir(cwd)
     if not session_id:
-        # No id: the most recent RUN. These verbs are about a run's branch, and
+        # No id: the most recent run. These verbs are about a run's branch, and
         # a plan or an ask has none, so widening the default would answer a
         # question the operator did not ask.
         latest = newest_session_dir([runs_dir]) if runs_dir.is_dir() else None
@@ -319,7 +318,7 @@ def _resolve_session_manifest(
         layout = layout_of(latest)
         print(f"[agent6] {recent_note}: {layout.session_id}", file=sys.stderr)
     else:
-        # An EXPLICIT id resolves across every bucket. A plan the operator named
+        # An explicit id resolves across every bucket. A plan the operator named
         # exists; "no session matches" would deny that, when the real answer is that
         # it has no branch to show.
         try:
@@ -442,7 +441,7 @@ def _cmd_commits(*, session_id: str) -> int:
         error("manifest has no base_sha; nothing to list commits from")
         return 2
     run_branch = ref.head_ref
-    # Only a RECORDED branch can be pruned; the HEAD fallback is not a ref
+    # Only a recorded branch can be pruned; the HEAD fallback is not a ref
     # whose absence means anything (same guard as diff's).
     pruned = _pruned_branch_note(cwd, manifest, run_branch) if manifest.run_branch else None
     if pruned is not None:
@@ -500,9 +499,8 @@ def _rm_refusal(layout: SessionLayout, worktree: Path | None, tips: tuple[str, .
     """Why this record cannot be deleted, or "". *worktree* is the fork's own
     (None when another session shares it, and keeps it).
 
-    The record is the only thing that names a fork's worktree, so a delete that
-    left one holding work no commit has left it with nothing to find it by,
-    let alone remove it."""
+    The record is the only thing that names a fork's worktree, so deleting one
+    that still holds work no commit has would leave nothing to find it by."""
     if session_is_live(layout.session_dir):
         return (
             f"{layout.session_id} is still live; stop it first"
@@ -519,14 +517,14 @@ def _rm_refusal(layout: SessionLayout, worktree: Path | None, tips: tuple[str, .
 
 def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     """Delete run history from the state dir, plus the run's hidden chain ref
-    (`refs/agent6/<id>/head`, the gc anchor -- meaningless once the record is gone,
+    (`refs/agent6/<id>/head`, the gc anchor: meaningless once the record is gone,
     and left behind it would pin the run's objects forever) and, for a fork,
     the worktree its manifest records, unless another session (an `/undo`
     fork of it) still names that worktree.
 
     The run's visible branch and its commits are git's, and are left alone
     (`sessions prune` is the branch verb). `--asks` clears the asks made in
-    THIS directory -- an ask is keyed by the directory it ran in, so asks made
+    this directory: an ask is keyed by the directory it ran in, so asks made
     elsewhere are untouched."""
     cwd = Path.cwd()
     if asks:

@@ -62,7 +62,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "keys",
         nargs="*",
         metavar="KEY",
-        help="Show just these leaves (or section prefixes, e.g. 'sandbox') UNTRUNCATED.",
+        help="Show just these leaves (or section prefixes, e.g. 'sandbox') untruncated.",
     )
     show_keys.completer = partial(  # type: ignore[attr-defined]
         _complete_config_keys, settable=False

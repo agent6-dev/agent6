@@ -71,7 +71,7 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
 
 
 # A search hit rendered readably: which run, when, the event type, and a snippet
-# windowed around the match -- never the whole (possibly 400KB) JSON event line.
+# windowed around the match, never the whole (possibly 400KB) JSON event line.
 @dataclass(frozen=True, slots=True)
 class _SearchHit:
     session_id: str
@@ -81,7 +81,7 @@ class _SearchHit:
     # Content identity for collapsing the same text across storage encodings:
     # the matched text + following context (normalized), or the snippet when
     # the context adds nothing (a match at end-of-string would otherwise merge
-    # DIFFERENT sentences that merely end with the query word).
+    # different sentences that merely end with the query word).
     key: str
 
 
@@ -97,14 +97,14 @@ def _normalize(text: str) -> str:
 
 
 def _match_core(text: str, start: int, end: int) -> str:
-    """A hit's content identity: the matched text plus a little FOLLOWING
+    """A hit's content identity: the matched text plus a little following
     context, decoded and reduced to lowercase alphanumerics. One task string is
     stored in many encodings (the session.start event, manifest.json, per-call
-    transcripts); they differ in the syntax BEFORE the match ('"user_task": "'
+    transcripts); they differ in the syntax before the match ('"user_task": "'
     vs '"text": "TASK: '), while the text after it is the same content
-    everywhere, so a suffix-only key sees through the encodings.
-    Empty when the following context adds nothing beyond the match itself --
-    the caller must then key on the snippet instead of merging."""
+    everywhere, so a suffix-only key sees through the encodings. Empty when the
+    following context adds nothing beyond the match itself; the caller must then
+    key on the snippet instead of merging."""
     hi = min(len(text), end + _CORE_TAIL)
     core = _normalize(text[start:hi])
     return core if len(core) > len(_normalize(text[start:end])) else ""
@@ -129,7 +129,7 @@ def _strings_in(obj: object) -> Iterator[str]:
 
 def _field_snippet(raw: str, start: int, end: int) -> str | None:
     """When the matched line is a JSON object (a logs.jsonl event, a per-call
-    transcript line), window inside the STRING FIELD holding the match: the
+    transcript line), window inside the string field holding the match: the
     snippet then reads as prose instead of a raw
     `"type": "role.thinking_delta", "text": " ...` fragment. None when the
     line is not a JSON object or the match sits on syntax/keys (the caller
@@ -220,7 +220,7 @@ def _char_span(line: bytes, b_start: int, b_end: int) -> tuple[int, int]:
 
 
 def _session_id_from_path(path: Path) -> str:
-    """The session id owning a match file: the child of the DEEPEST bucket
+    """The session id owning a match file: the child of the deepest bucket
     segment (a state-base ancestor may reuse a bucket name, e.g.
     XDG_STATE_HOME=/mnt/runs/state)."""
     parts = path.parts
@@ -252,10 +252,7 @@ def _collapse_escapes(s: str) -> str:
     """Render a JSON-encoded fragment readably, scanning left-to-right so a real
     escaped backslash (`\\\\`) is never mistaken for the start of a `\\n`.
 
-    The old naive `str.replace("\\n", " ")` matched the `n` of a
-    double-encoded newline (`\\\\n` in a transcript that embeds a JSON body),
-    splitting the `\\\\` and leaving the ugly `\\ ` the operator saw. Here
-    the whitespace escapes (`\\n` `\\t` `\\r`) become spaces,
+    The whitespace escapes (`\\n` `\\t` `\\r`) become spaces,
     `\\\\` / `\\"` / `\\/` decode to their literal char, and `\\uXXXX`
     decodes to its character (surrogate pairs combined): transcripts are
     written ascii-escaped while logs.jsonl is raw UTF-8, and the identity key
@@ -299,7 +296,7 @@ def _hex4(s: str, i: int) -> int | None:
 
 
 def _decode_u_escape(s: str, i: int) -> tuple[str, int] | None:
-    """Decode the `\\uXXXX` escape at `s[i]`, combining a surrogate PAIR
+    """Decode the `\\uXXXX` escape at `s[i]`, combining a surrogate pair
     into its real character; None keeps the literal text (malformed hex,
     truncated, or a lone surrogate)."""
     cp = _hex4(s, i + 2)
@@ -341,7 +338,7 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
         # Dedup by content identity, not by file kind: one task string lives in
         # many storage encodings (session.start event, manifest, graph labels,
         # per-call transcripts) and cumulative transcript snapshots repeat the
-        # same text; each collapses to ONE line, the most readable encoding
+        # same text; each collapses to one line, the most readable encoding
         # (see _kind_rank), with an (xN) count.
         counts: dict[str, int] = {}
         best: dict[str, _SearchHit] = {}
@@ -434,9 +431,9 @@ def _cmd_history_transcript(
     """Render a run's full LLM conversation from its lossless per-call transcripts.
 
     The transcripts (`<run>/transcripts/*.json`) are the complete, self-
-    contained record -- no join with logs.jsonl is needed. This is the CONVERSATION
+    contained record, needing no join with logs.jsonl. This is the conversation
     view (assistant text/thinking + every tool call with full I/O); for the terse
-    EVENT timeline use `agent6 attach` / `agent6 history search`.
+    event timeline use `agent6 attach` / `agent6 history search`.
     """
     layout = _transcript_layout(Path.cwd(), session_id)
     if isinstance(layout, int):
@@ -470,7 +467,7 @@ def _cmd_history_transcript(
         )
         return 2
 
-    # Fold the FULL set (the per-seq walk needs every call), then window the turns.
+    # Fold the full set (the per-seq walk needs every call), then window the turns.
     turns = fold_conversation(transcripts)
     if window is not None:
         lo, hi = window

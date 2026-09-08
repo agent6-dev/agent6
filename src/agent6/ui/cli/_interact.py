@@ -73,7 +73,7 @@ def default_stdin_approver(
     for the rest of the run) or "session-deny" (withhold that scope for it);
     None when nothing was typed (no terminal, or `until` held first).
 
-    A plain y/n answers ONE call, either way; only the two session choices
+    A plain y/n answers one call, either way; only the two session choices
     persist, and they mirror each other. `standing=False` is a gate that has no
     session answer to give (`fetch`), so it does not offer one. Routed via
     /dev/tty so the prompt stays visible when a TUI has redirected the std
@@ -83,8 +83,8 @@ def default_stdin_approver(
     its own indented lines with a blank line before the answer line, so the
     input point stands clear of a long or wrapped command. The console's
     vocabulary marks it: a bold yellow `?` and bold header (the question),
-    the command plain (the thing under judgment), the answer line dim --
-    the sibling of the `->` call line that follows an allow."""
+    the command plain (the thing under judgment), the answer line dim, the
+    sibling of the `->` call line that follows an allow."""
     suffix = "[y/N/a/d]  (a = allow all, d = deny all, this session): " if standing else "[y/N]: "
     bold, dim, yellow, reset = "\033[1m", "\033[2m", "\033[33m", "\033[0m"
     # The text under judgment carries no sequence at all, styling included:
@@ -119,10 +119,10 @@ def prompt_detach_away_mode(session_dir: Path, scopes: tuple[str, ...]) -> None:
     each configured MCP server. Granting only one would leave the run blocked
     on the first prompt from another, with nobody there to answer.
 
-    The default is WAIT: a deny throws away the run's work (the model's commands
+    The default is wait: a deny throws away the run's work (the model's commands
     are refused and it flails, burning tokens for nothing), while wait pauses
-    cleanly at the approval and is resumable -- re-attach with `agent6 attach`
-    and answer. With no controlling terminal it defaults to wait."""
+    cleanly at the approval and is resumable (re-attach with `agent6 attach` and
+    answer). With no controlling terminal it defaults to wait."""
     if not has_controlling_tty():
         set_away_mode(session_dir, "wait")
         return
@@ -158,11 +158,10 @@ def build_approver(
     The gate has journaled the prompt (`approval.prompt`) before this is
     asked; if a front-end is live (it wrote a `frontends/` claim) the answer
     comes from its Allow/Deny modal via the file bridge
-    (`approvals/<id>.answer`), otherwise -- or if the front-end dies / times
-    out -- it falls back to the stdin `[y/N]` prompt. That prompt reads the
-    same file while it waits, so `agent6 answer`, the web, or a front-end
-    attached after the question was put to the terminal answers it too: one
-    bridge, whichever seat the operator is in.
+    (`approvals/<id>.answer`); otherwise, or if the front-end dies or times
+    out, it falls back to the stdin `[y/N]` prompt. That prompt reads the same
+    file while it waits, so `agent6 answer`, the web, or a front-end attached
+    after the question was put to the terminal answers it too.
 
     `console_cell` and `steer_cell` are the CLI leg's late-bound console view
     and SteerState, read at prompt time: the view pauses its heartbeat around
@@ -172,7 +171,7 @@ def build_approver(
     boundary consumes)."""
 
     def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
-        # A live front-end ALWAYS gets asked, in its own UI, regardless of the
+        # A live front-end always gets asked, in its own UI, regardless of the
         # detach away-mode: away-mode governs only the window when nothing is
         # attached. (A foreground run writes no front-end claim, so it falls through
         # to the stdin prompt below.)
@@ -221,7 +220,7 @@ def build_approver(
                 tty_message("[agent6] answered elsewhere.\n")
                 answer_s, source = filed, "frontend"
         # A session choice persists (across this run's resumes); session-deny
-        # WITHDRAWS the scope's tools from the next turn rather than refusing
+        # withdraws the scope's tools from the next turn rather than refusing
         # every later call, so the model stops spending turns on a door that
         # will not open.
         approved = record_answer(session_dir, answer_s, request.scope)
@@ -314,8 +313,8 @@ def default_stdin_questioner(
     """Ask each question on /dev/tty (visible under a TUI's stream redirect). For a
     series, print a summary afterwards and let the operator revise any answer (type
     its number) before submitting (blank). Returns None without a controlling
-    terminal (headless) so the caller can answer empty -- never hanging or eating
-    piped stdin -- and say so, or once `until` holds (the whole prompt was
+    terminal (headless), so the caller can answer empty (never hanging or eating
+    piped stdin) and say so, or once `until` holds (the whole prompt was
     answered by another route)."""
     answers: list[str] = []
     multi = len(questions) > 1

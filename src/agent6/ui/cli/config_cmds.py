@@ -121,8 +121,8 @@ def _cmd_config_path() -> int:
     """Every file and directory agent6 reads or writes, resolved.
 
     The four XDG bases each hold a different kind of thing and each has its
-    own override, so "where did agent6 put that" was four lookups across the
-    docs. One command answers it; `agent6 --help` carries the short form."""
+    own override. One command answers "where did agent6 put that";
+    `agent6 --help` carries the short form."""
     user = effective_user()
     rows: list[tuple[str, Path, bool]] = [
         ("global config", global_config_path(user), True),
@@ -173,8 +173,8 @@ def _cmd_config_presets(config_path: Path | None = None) -> int:
 def _open_target(target: Path) -> None:
     """Create the config dir and hand it straight back to the real operator.
 
-    Under sudo the dir is created as root; handing it back only after a
-    successful write left a root-owned dir behind on every refusal.
+    Under sudo the dir is created as root, so it is handed back before the
+    write: a refusal must leave no root-owned dir behind.
     """
     mkdir_for_real_user(target.parent)
 
@@ -185,10 +185,9 @@ def _cmd_config_fill(*, force: bool) -> int:
     target = resolved_write_path(global_config_path())
     _open_target(target)
     # Load the effective config, existence-check, and publish all under the
-    # target's lock and via atomic_write: reading the merged config BEFORE the
-    # lock let a concurrent `config set` land in between, and the plain
-    # write_text then overwrote it with the stale snapshot (lost update) and
-    # could tear on a crash.
+    # target's lock and via atomic_write: a read before the lock lets a
+    # concurrent `config set` land in between, to be overwritten by the stale
+    # snapshot (lost update), and a plain write_text can tear on a crash.
     with writing_config(target):
         eff = load_global_only()
         if target.is_file() and not force:
@@ -223,9 +222,8 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
     """Error string if *key* is operator-only in a machine overlay, else None.
 
     Reads the same PROTECTED_OVERLAY_* sets the MachineSpec validator enforces,
-    so this refuses exactly what the loader would: keeping a second, shorter
-    copy here meant `config set --machine-file` wrote presets.*,
-    machine.notify.*, and git.run_repo_hooks into overlays that can never load.
+    so this refuses exactly what the loader would, with no second copy to drift
+    from it.
     """
     if machine is None:
         return None
@@ -245,8 +243,8 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
 def _machine_is_valid(text: str | None) -> bool:
     """True iff *text* parses as a complete, valid machine spec.
 
-    Used to decide whether a `config set --machine-file` edit BROKE a working machine
-    (block + roll back) versus merely touched an already-incomplete one (allow).
+    Decides whether a `config set --machine-file` edit broke a working machine
+    (block and roll back) or merely touched an already-incomplete one (allow).
     """
     if text is None:
         return False
@@ -275,12 +273,12 @@ def _revalidate_machine(target: Path, prior_text: str | None, *, held: bool = Tr
     """Re-validate a machine file after a `[config]`-overlay write; restore
     *prior_text* on failure (kept, saying so, when the lock failed open).
 
-    Validates the overlay against the config stack, and the WHOLE machine spec
-    when the file has `[states]` -- `config set --machine-file` must not BREAK
-    a runnable machine. Blocks only when the edit made a previously-VALID
-    machine invalid; one already invalid (or a brand-new stub) is left for the
-    author to finish. The layered (global/repo) writers revalidate through
-    `config.write` instead.
+    Validates the overlay against the config stack, and the whole machine spec
+    when the file has `[states]`: `config set --machine-file` must not break a
+    runnable machine. Blocks only when the edit made a previously valid machine
+    invalid; one already invalid (or a brand-new stub) is left for the author to
+    finish. The layered (global/repo) writers revalidate through `config.write`
+    instead.
     """
     err: str | None = None
     try:
@@ -497,19 +495,19 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
 def _entry_is_stale(entry: InvalidEntry) -> bool:
     """Whether *entry*'s key no longer holds the value diagnosis read.
 
-    `find_invalid_entries` reads unlocked and removal deletes by key NAME, so a
+    `find_invalid_entries` reads unlocked and removal deletes by key name, so a
     concurrent `config set` that replaced this key with a valid value in between
-    would have it deleted -- after that writer was told it had been saved.
+    would have it deleted after that writer was told it had been saved.
     """
     try:
         data = read_toml_file(entry.path)
     except ConfigError:
         return True  # unreadable now: leave it to the loud paths
-    # nan != nan by identity, so a still-present nan (scalar OR nested in a
+    # nan != nan by identity, so a still-present nan (scalar or nested in a
     # table/list) otherwise reads "replaced by a concurrent writer" on every
-    # pass and can never be removed -- `config fix` then loops to "changed under
-    # the lock" and the entry is unfixable forever. Compare NaN-tolerantly at
-    # every nesting depth.
+    # pass and can never be removed: `config fix` loops to "changed under the
+    # lock" and the entry stays unfixable. Compare NaN-tolerantly at every
+    # nesting depth.
     return not _equal_tolerating_nan(read_toml_leaf(data, entry.file_key), entry.value)
 
 
@@ -532,10 +530,10 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
     lived (global / repo, or a machine's [config] overlay with --machine-file).
 
     Removing one entry can reveal another it shadowed, so it re-diagnoses until the
-    config is clean or nothing droppable remains. An entry it cannot drop -- not a
-    plain leaf (non-absolute state_dir, bad built-in default), or a TOML shape the
-    line surgery cannot match (a dotted top-level key has no [table] header) -- is
-    reported, never counted as removed.
+    config is clean or nothing droppable remains. An entry it cannot drop is
+    reported, never counted as removed: one that is not a plain leaf (non-absolute
+    state_dir, bad built-in default), or a TOML shape the line surgery cannot match
+    (a dotted top-level key has no [table] header).
     """
     repo_root = Path.cwd()
     removed: list[InvalidEntry] = []
@@ -546,7 +544,7 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
         progressed = False
         for entry in diag.removable:
             # The surgery publishes by rename, so it edits the file the layer
-            # RESOLVES to; writing the link's own name would replace it.
+            # resolves to; writing the link's own name would replace it.
             target = resolved_write_path(entry.path)
             # Re-check under the file's lock: diagnosis ran unlocked, so a
             # concurrent writer may have fixed this key since.
@@ -599,7 +597,7 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
         )
         return 2
     # Measure before claiming: a no-progress break lands here with entries in
-    # NO bucket (each read stale under the lock), and "valid"/"fixed" printed
+    # no bucket (each read stale under the lock), and "valid"/"fixed" printed
     # unmeasured over a config every next command still refuses.
     final = find_invalid_entries(repo_root, machine=machine)
     if final.removable or final.blocked:

@@ -44,8 +44,8 @@ def _fail(path: Path, problems: list[str], label: str = "") -> int:
 
 def _load_validated(path: Path) -> tuple[MachineSpec | None, list[str], str]:
     """Shared `check`/`test` front half: load, structural bundle validation,
-    and the effective-config overlay merge `machine run` performs -- so a bad
-    `[config]` key fails here, not first at run.
+    and the effective-config overlay merge `machine run` performs, so a bad
+    `[config]` key fails here rather than first at run.
 
     Returns (spec, problems, label). spec is None when validation failed;
     label names the failing stage for the FAIL header.
@@ -70,7 +70,7 @@ _SUBPROCESS_CALLS = frozenset({"run", "Popen", "call", "check_call", "check_outp
 def _script_binaries(scripts_dir: Path) -> dict[str, str]:
     """Best effort: the literal first-argv string of each subprocess call in the
     bundle's scripts, mapped to one script that makes it. Dynamic argv is
-    invisible to this scan, so absence proves nothing; only a HIT feeds the
+    invisible to this scan, so absence proves nothing; only a hit feeds the
     reachability warning."""
     out: dict[str, str] = {}
     for py in sorted(scripts_dir.glob("*.py")) if scripts_dir.is_dir() else []:

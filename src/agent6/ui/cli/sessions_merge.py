@@ -88,7 +88,7 @@ def _plan_merge(  # noqa: PLR0911
     layout, manifest = res
     # A live run's chain keeps growing and its edits sit in the worktree; a
     # merge now would land a prefix of its work and bring the operator's index
-    # forward under the worker. The gate is the raw pid, NOT session_is_live:
+    # forward under the worker. The gate is the raw pid, not session_is_live:
     # after session.end the worker's finalizer may still be at work. The run's
     # own end-of-run finalize_auto_merge is unaffected (it calls execute_merge
     # directly, not this planner).
@@ -361,7 +361,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
     rm` removes a fork's with its record).
 
     With `--delete-squashed` also force-delete branches and chain refs the
-    manifest confirms were squash-merged into an existing base -- their content
+    manifest confirms were squash-merged into an existing base: their content
     is safe in that base commit, and each deletion prints the exact command to
     undelete it (a branch's commit survives in its reflog until GC; a chain ref
     has none, so its line carries the sha). Unmerged runs are never
@@ -407,7 +407,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
             squashed_deleted += 1
         else:
             merged_kept += 1
-    # Chain refs are pruned whether or not any run BRANCH survives: with
+    # Chain refs are pruned whether or not any run branch survives: with
     # `branch_per_run` off there is never one, and once prune has deleted the
     # last branch the refs it kept for a later pass would be unreachable by
     # this command forever.
@@ -467,10 +467,10 @@ def _prune_chain_refs(
     """Drop `refs/agent6/<id>/head` chain refs whose manifest confirms the run
     merged, under the same safety rules as branches: reachable-from-base
     deletes outright; a squash-merge (content in the base commit, ref
-    unreachable) deletes only with --delete-squashed AND only while the ref
+    unreachable) deletes only with --delete-squashed and only while the ref
     still points at the recorded merged tip. Live runs, unmerged runs, and
     refs with no run manifest (machine chains) are kept, counted by reason
-    and never named: an unmerged ref is the run's anchor, not clutter.
+    and never named: an unmerged ref is the run's anchor.
     Returns (deleted, kept by reason), every ref counted once."""
     refs_deleted = 0
     kept: Counter[str] = Counter()

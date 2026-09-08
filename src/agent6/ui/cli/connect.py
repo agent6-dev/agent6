@@ -60,19 +60,17 @@ from agent6.ui.cli._common import error, warn
 def _prompt_api_key(name: str) -> str:
     """Prompt for an API key without leaking it.
 
-    On Python 3.14+ `getpass` accepts `echo_char` so we mask each
-    keystroke with `*`, live feedback that the paste landed, without ever
-    revealing the key. On 3.12/3.13 input stays fully hidden and we print a
-    post-entry summary (length + last four chars) so the operator can still
-    tell a partial/garbled paste from a clean one. The key itself is never
-    logged.
+    On Python 3.14+ `getpass` accepts `echo_char`, so each keystroke is masked
+    with `*`: live feedback that the paste landed, without revealing the key.
+    On 3.12/3.13 input stays fully hidden and a post-entry summary prints the
+    key's length, which still tells a partial or garbled paste from a clean
+    one. The key itself is never logged.
     """
     prompt = f"API key for {name} (input hidden, blank for none): "
     if not sys.stdin.isatty():
         # No controlling terminal (piped/scripted connect): getpass would fall
-        # back to an unmasked read AND print a GetPassWarning about echo. Read a
-        # plain line instead -- echo is moot without a terminal, and the scary
-        # warning is suppressed.
+        # back to an unmasked read and print a GetPassWarning about echo. Read a
+        # plain line instead: echo is moot without a terminal.
         try:
             return input(prompt).strip()
         except EOFError:
@@ -113,8 +111,8 @@ def _resolve_provider_name(provider: str) -> str | None:
 
     The name becomes a TOML table key `[providers.<name>]`; a non-bare-key
     name (space, dot, bracket, …) would be written verbatim and corrupt the
-    whole config file, which `connect` -- unlike `model`/`config set` --
-    does not re-validate after writing. So reject it before any write.
+    whole config file, which `connect`, unlike `model` and `config set`, does
+    not re-validate after writing. So reject it before any write.
     """
     name = provider.strip()
     if not name:
@@ -277,7 +275,7 @@ def _grant_via_device_code(issuer: str, client_id: str, provider: str) -> TokenG
     """The no-display path: show a short code, poll while the person enters
     it at the issuer's device page from any browser (nothing to forward over
     SSH). None when the issuer has the flow disabled, on refusal, or on
-    Ctrl-C -- the caller falls back to pasting the callback URL."""
+    Ctrl-C; the caller falls back to pasting the callback URL."""
     try:
         device = start_device_auth(issuer, client_id)
     except ProviderError as exc:
@@ -433,7 +431,7 @@ def _cmd_logout(name: str, api_format: str) -> int:
 def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: bool = False) -> int:  # noqa: PLR0911, PLR0912
     """Interactively add a provider + API key.
 
-    Security: this command NEVER executes anything supplied by a remote. It
+    Security: this command never executes anything supplied by a remote. It
     only prompts locally (key via getpass, hidden, or masked with `*` on
     Python 3.14+), stores the key in the 0600 secrets file, writes a minimal
     `[providers.<name>]` block, and (unless `verify` is False) makes one
@@ -483,8 +481,8 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
             _verify_key(api_format=api_format, base_url=base_url, api_key=api_key)
     elif api_format == "anthropic":
         # The Anthropic api_format always sends a key; a keyless block is
-        # unusable and `agent6 run` would later fail with "no API key". Say so
-        # now rather than contradicting ourselves one command later.
+        # unusable and `agent6 run` would later fail with "no API key", so say
+        # so now.
         warn(
             f"no key entered, but the Anthropic API format requires one.\n"
             f"  [providers.{name}] is written but not usable yet; rerun"
@@ -498,7 +496,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
     if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
         fields["base_url"] = base_url
     # Leaf surgery, not a whole-block replace: connect is the documented
-    # add/UPDATE path, and a re-run (key rotation, base_url fix) must preserve
+    # add/update path, and a re-run (key rotation, base_url fix) must preserve
     # hand-added sibling keys and comments. Revalidates the merged config and
     # rolls the file back on failure so a bad endpoint never leaves config.toml
     # broken (the key, saved above, is a harmless orphan until a valid retry).

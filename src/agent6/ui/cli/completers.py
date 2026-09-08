@@ -40,12 +40,11 @@ def _explicit_config(kw: dict[str, object]) -> Path | None:
 
 
 def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
-    """Suggestions or nothing -- never an exception.
+    """Suggestions or nothing, never an exception.
 
     argcomplete calls these on Tab, inside the operator's shell, where an
     exception is a traceback dumped over the command line. Every completer that
-    touches the config or the filesystem wears this, instead of each growing
-    its own try/except and several never growing one.
+    touches the config or the filesystem wears this.
     """
 
     @functools.wraps(fn)
@@ -105,7 +104,7 @@ def _complete_models(prefix: str, **kw: object) -> list[str]:
 
 
 def _all_parallel_model_names(config_path: Path | None = None) -> list[str]:
-    """Model ids a `/parallel` lane can actually run: the WORKER provider's
+    """Model ids a `/parallel` lane can actually run: the worker provider's
     catalog (lanes inherit the worker provider; only the model is overridden per
     lane), from the same live + configured source `agent6 model` completes from."""
     try:
@@ -173,10 +172,10 @@ def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str
 
 
 def _user_preset_names() -> list[str]:
-    """USER-defined [presets.*] names only, for key completion. Built-in names
-    are deliberately absent: writing presets.ultra.* creates a user table that
-    REPLACES the built-in wholesale, a footgun TAB should not put one keystroke
-    away (the same rule keeps `none` out of sandbox.isolation completion)."""
+    """User-defined [presets.*] names only, for key completion. Built-in names
+    are absent: writing presets.ultra.* creates a user table that replaces the
+    built-in wholesale, a footgun TAB should not put one keystroke away (the
+    same rule keeps `none` out of sandbox.isolation completion)."""
     try:
         return [p.name for p in preset_catalog(Path.cwd()).presets if p.origin != "built-in"]
     except ConfigError:
@@ -189,7 +188,7 @@ def _complete_config_keys(prefix: str, *, settable: bool = True, **kw: object) -
     From `preset` onward, also the user's presets.<name>.<leaf> paths (kept
     out of the bare-TAB listing, which is crowded enough already).
 
-    `settable=False` for `config get`, which reads EFFECTIVE leaves only:
+    `settable=False` for `config get`, which reads effective leaves only:
     both the enum keys (offered so `config set` can reach a leaf no layer has
     set yet) and `[presets.*]` paths (stripped before validation) are inputs
     `get` rejects, and a completer must offer what its command accepts.
@@ -208,8 +207,8 @@ def _complete_config_keys(prefix: str, *, settable: bool = True, **kw: object) -
 
 
 # Presets offered for any `providers.<name>.extra_body` value (the provider name
-# varies, so this is matched by suffix, not a schema enum). The first
-# is the recommended OpenRouter routing, a fast, prefix-caching backend.
+# varies, so this is matched by suffix, not a schema enum). Each is an
+# OpenRouter backend routing preference.
 _EXTRA_BODY_RECIPES: tuple[str, ...] = (
     '{ provider = { sort = "throughput" } }',
     '{ provider = { sort = "latency" } }',
@@ -265,7 +264,7 @@ def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: object) -> list[str]:
-    """argcomplete: the ports that session is ACTUALLY listening on.
+    """argcomplete: the ports that session is actually listening on.
 
     Offering every valid input rather than nothing: the whole difficulty of
     reaching a run's dev server is not knowing its port, and only something
@@ -285,9 +284,8 @@ def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: obje
 def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: ids `resume`/`fork` can actually pick up.
 
-    Every bucket whose mode is resumable, so a plan and an ask are offered --
-    but not a `machine create` draft, which resume refuses. Offering what a
-    verb accepts, no less and no more.
+    Every bucket whose mode is resumable, so a plan and an ask are offered,
+    though not a `machine create` draft, which resume refuses.
     """
     out: list[str] = []
     from agent6.app.resume import resumable_bucket_dirs  # noqa: PLC0415
@@ -365,9 +363,9 @@ def _complete_stoppable_machine_ids(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: every session id plus every machine id -- what `attach`
-    accepts. It resolves a session across all buckets, so offering only the
-    runs bucket hid the plans and asks it opens happily."""
+    """argcomplete: every session id plus every machine id, what `attach`
+    accepts: it resolves a session across all buckets, so the plans and asks it
+    opens are offered with the runs."""
     return sorted(set(_complete_session_ids(prefix) + _complete_machine_ids(prefix)))
 
 

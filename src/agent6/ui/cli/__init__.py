@@ -42,9 +42,9 @@ def _plan_title(plan_md: str) -> str:
 
 
 def _from_plan_task(plan_md: str, session_id: str) -> str:
-    """The execution prompt for `run --from <plan>`, LEADING with the plan title so
-    a listing (the runs table, the DAG root, attach --json) shows the plan, not
-    the 'The following plan was prepared...' boilerplate as the run's task."""
+    """The execution prompt for `run --from <plan>`: the plan title first, so a
+    listing (the runs table, the DAG root, attach --json) shows the plan as the
+    run's task."""
     title = _plan_title(plan_md)
     return f"Execute the prepared plan: {title}\n\n(from planning pass {session_id})\n\n{plan_md}"
 
@@ -56,10 +56,9 @@ def cli_main(argv: list[str] | None = None) -> int:
     invalid config) prints as an `ERROR:` refusal at exit 2, no traceback.
     Anything else is a bug in agent6: a one-line `ERROR: unexpected ...` plus
     a pointer to a saved traceback, exit 1. Set `AGENT6_DEBUG=1` to re-raise
-    the full traceback inline (for bug reports). `main` itself is left
-    unguarded so tests and `python -m` see real tracebacks. argparse's
-    `SystemExit` (bad args / --help) is not an `Exception` and passes
-    through untouched.
+    the full traceback inline (for bug reports). `main` itself is left unguarded
+    so tests see real tracebacks. argparse's `SystemExit` (bad args / --help) is
+    not an `Exception` and passes through untouched.
     """
     with guarded_terminal():
         try:
@@ -207,15 +206,12 @@ def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: st
 
     `run` and `plan` sessions end this way; `ask` does not (a one-shot question
     that becomes a conversation is a different feature). Without a terminal the
-    session ends as it always did, with the resume line already printed.
+    session ends with the resume line already printed.
 
-    Only ever THIS invocation's session, and only once it exists on disk: the
-    refusal paths above return before any session is created, and resolving the
-    repo's newest one instead offered to continue -- then continued -- a
-    session this run had nothing to do with. Every follow-up leg runs under
-    this invocation's flags (`--max-usd`, `--auto-approve`, ...): the operator
-    set them for the run, and a leg that dropped them ran under the config's
-    defaults instead.
+    Only this invocation's session, and only once it exists on disk: the
+    refusal paths above return before any session is created. Every follow-up
+    leg runs under this invocation's flags (`--max-usd`, `--auto-approve`, ...),
+    the ones the operator set for the run.
     """
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
     from agent6.sessions.id import SessionIdError  # noqa: PLC0415
@@ -849,7 +845,7 @@ def main(argv: list[str] | None = None) -> int:
     argcomplete.autocomplete(parser)
     raw = sys.argv[1:] if argv is None else argv
     # Bare `agent6` (no command, no -h/--version): print help rather than the
-    # terse argparse "required: <command>" error. The boring, expected thing.
+    # terse argparse "required: <command>" error.
     if _command_index(raw) is None and not any(a in ("-h", "--help", "--version") for a in raw):
         parser.print_help()
         return 0

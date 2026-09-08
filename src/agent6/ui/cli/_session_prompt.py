@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The end-of-session prompt: a CLI session does not end, it asks."""
+"""The end-of-session prompt: a CLI session asks for the next input before
+ending."""
 
 from __future__ import annotations
 
@@ -23,15 +24,14 @@ EXIT_COMMAND = "/exit"
 
 def prompting_is_possible() -> bool:
     """Whether the operator is here to answer: an attended terminal this
-    process is in the FOREGROUND of.
+    process is in the foreground of.
 
-    The same question every model prompt asks, answered in one place. Without a
-    terminal there is nobody to type, so the session prints the resume line
-    instead.
+    Without a terminal there is nobody to type, so the session prints the resume
+    line instead.
 
     A tty is not enough. `agent6 run ... &` keeps one on stdin, and reading it
-    from a background process group raises SIGTTIN, which stops the job: the
-    run suspended at the end instead of finishing. The foreground check also
+    from a background process group raises SIGTTIN, which suspends the job at
+    the end instead of finishing it. The foreground check also
     covers a tty allocated with nobody at it (`docker run -t`, some CI
     runners), where the read would block forever.
     """
@@ -47,7 +47,7 @@ def follow_up_on_offer(session_dir: Path) -> bool:
     """Whether the run in *session_dir* can take a follow-up leg from here: its
     last leg ended (a detached run went on in the background; its reattach line
     was printed) and not by /undo (the fork it named is the continuation; its
-    resume line was printed) or /exit (the operator asked to stop AND leave;
+    resume line was printed) or /exit (the operator asked to stop and leave;
     asking "next:" would re-open exactly what they closed)."""
     scan = scan_session_log(session_dir / LOGS_NAME)
     return scan.finished and scan.end_reason not in ("undone", "steer_exit")

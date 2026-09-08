@@ -74,7 +74,7 @@ def _isolation_means(isolation: IsolationLevel) -> str:
     """
     if isolation == "strict":
         # The network clause is hedged because this section runs before any
-        # config is loaded (`agent6 check sandbox` needs none): strict CAN give
+        # config is loaded (`agent6 check sandbox` needs none): strict can give
         # the run its own network, and `sandbox.network = "host"` declines it.
         # The config section prints what this project resolved to.
         return (
@@ -105,7 +105,7 @@ def _unprobeable(requested: str) -> str:
 def _cmd_check_sandbox(cfg: Config | None = None) -> int:
     """Run the sandbox boundary self-tests on the host's kernel.
 
-    The probes run under the isolation THIS config resolves to
+    The probes run under the isolation this config resolves to
     (`resolve_isolation(sandbox.isolation, ...)`), so they exercise the sandbox
     `agent6 run` would use here. On a host that blocks unprivileged user
     namespaces (default-seccomp Docker, or Ubuntu with
@@ -145,7 +145,7 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
         # A degraded level never appears without its why (same line the run
         # warning and check config print; one owner in detect.degrade_reason).
         print(f"  not strict: {reason}")
-    # What that level GIVES, in general terms rather than a catalogue of cases:
+    # What that level gives, in general terms rather than a catalogue of cases:
     # someone whose tool misbehaves needs to know which boundaries exist here
     # before they can guess why, and these words are what to search the docs for.
     print(f"  {_isolation_means(isolation)}")
@@ -192,7 +192,7 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
     # `strict`, the one level with network namespaces: there a child that did
     # not ask for `host` lands in one with no route out. `hardened` has none to
     # give, so a jailed command shares this process's network and there is
-    # nothing to probe -- report n/a rather than a misleading pass/fail.
+    # nothing to probe: report n/a rather than a misleading pass/fail.
     if isolation == "strict":
         try:
             res = _jail("/usr/bin/getent", "hosts", "example.com")
@@ -360,7 +360,7 @@ def _check_config_section(
     try:
         selected = resolve_isolation(cfg.sandbox.isolation, env)
         # The resolved values, not the configured ones: `auto` is the default on
-        # both knobs, and what it resolved to on THIS host is the answer someone
+        # both knobs, and what it resolved to on this host is the answer someone
         # runs `check` for.
         print(
             f"  -> selected isolation: {selected}"
@@ -369,7 +369,7 @@ def _check_config_section(
         reason = degrade_reason(env)
         if cfg.sandbox.isolation == "auto" and reason is not None:
             print(f"  -> not strict: {reason}")
-        # The tools' file boundary is NOT the selected isolation's: it follows
+        # The tools' file boundary is not the selected isolation's: it follows
         # the config values at every level, so print it beside them rather than
         # leaving the operator to infer it from the level.
         ws = workspace_for(cfg, Path.cwd())
@@ -451,7 +451,7 @@ def _fork_git_grant(cfg: Config, ws: Workspace, selected: IsolationLevel) -> Pat
 def _boundaries_commands(
     cfg: Config, ws: Workspace, selected: IsolationLevel, git_grant: Path | None
 ) -> None:
-    # The resolved fact, not the knob's value: "no" WITHHOLDS the command tools
+    # The resolved fact, not the knob's value: "no" withholds the command tools
     # from the model rather than prompting for them, and the paths below are
     # then what an operator-driven jailed command (a machine tool state, an
     # MCP server) reaches.
@@ -543,8 +543,8 @@ def _boundaries_mcp(cfg: Config, root: Path, selected: IsolationLevel) -> None:
 
 
 def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
-    """Every boundary in one place, grouped by ACTOR: who is confined, what
-    files it reaches, which network it gets. Resolved values only (what THIS
+    """Every boundary in one place, grouped by actor: who is confined, what
+    files it reaches, which network it gets. Resolved values only (what this
     host and config give), one line per fact; informational, no probes."""
     try:
         env = detect_env()
@@ -660,7 +660,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
         return out or [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
     with contextlib.ExitStack() as stack:
         # A server set to `session` joins the run's network, so `check` has to
-        # make one the same way a run does -- otherwise checking such a server
+        # make one the same way a run does; otherwise checking such a server
         # reports a failure that only `check` would ever see.
         session_net = None
         if wants_session_network(cfg, isolation):
@@ -704,14 +704,14 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
 def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     """Verify command sanity: argv non-empty and the head executable resolves.
 
-    Does NOT execute the verify command, that would run an arbitrary
-    test suite on every doctor call. Operators can do
-    `./$(verify_command)` themselves when they want a live run.
+    Does not execute the verify command: that would run an arbitrary test suite
+    on every doctor call. Operators can do `./$(verify_command)` themselves when
+    they want a live run.
     """
     argv = list(cfg.workflow.verify_command)
     if not argv:
         # Optional: `agent6 run`/`plan` infer one (AGENTS.md -> repo signals ->
-        # LLM), else run gateless. Say what THIS repo infers, from the
+        # LLM), else run gateless. Say what this repo infers, from the
         # deterministic tiers (the LLM tier is a run's own call). Advisory.
         cwd = Path.cwd()
         inferred = infer_verify_command(cwd, read_agents_md(cwd), llm_call=None)

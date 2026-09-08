@@ -11,7 +11,7 @@ from agent6.ui.cli.completers import _complete_mcp_servers
 
 
 def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """`connect` and `list`, added to the existing `mcp` group beside `serve`."""
+    """`connect`, `remove` and `list`, added to the `mcp` group beside `serve`."""
     connect = _sub(
         mcp_sub,
         "connect",

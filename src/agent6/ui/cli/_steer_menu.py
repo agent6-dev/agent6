@@ -11,7 +11,7 @@ so it keeps the plain one-line prompt (`_steer` gates on
 run's event log and re-prompt, so the operator can inspect the run before
 steering it.
 
-Parsing rule: a command fires only when it is the WHOLE line (one `/token`;
+Parsing rule: a command fires only when it is the whole line (one `/token`;
 a unique prefix like `/sta` works, an ambiguous one re-asks). A line with a
 space is answered here when its word is `/compact`, `/btw` or a skill; the
 loop's `/pin` and `/parallel` travel with their word lowercased; any other
@@ -149,8 +149,8 @@ def _read_preset(session_dir: Path) -> str:
 
 def _print_status(session_dir: Path) -> None:
     s = _fold(session_dir)
-    # THE dir decision, not the fold alone: an attached run's worker can be
-    # gone ("stale"), and the fold-only label called that "running".
+    # The dir decision, not the fold alone: an attached run's worker can be
+    # gone ("stale"), which the fold-only label reads as "running".
     label = status_label(*status_for_session_dir(session_dir, status_facts(s)))
     done = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
@@ -290,12 +290,11 @@ def pause_menu(
     config_path: Path | None = None,
 ) -> str | None:
     """The interactive pause menu. Returns the canonical steer action: None/''
-    continue, 'abort' stop now, 'exit' stop-and-leave, 'detach' background,
-    else the instruction sent
-    verbatim. A command must be the whole line (unique prefixes fire, ambiguous
-    ones re-ask); info commands print and re-prompt. EOF (Ctrl-D) continues.
-    A steer a front-end writes while the menu is open (the file bridge every
-    composer uses) ends the menu and IS the answer."""
+    continue, 'abort' stop now, 'exit' stop-and-leave, 'detach' background, else
+    the instruction sent verbatim. A command must be the whole line (unique
+    prefixes fire, ambiguous ones re-ask); info commands print and re-prompt.
+    EOF (Ctrl-D) continues. A steer a front-end writes while the menu is open
+    (the file bridge every composer uses) ends the menu and is the answer."""
     skills = skill_menu_table(config_path)
     # A surface that cannot spawn a sibling session never offers `/btw`: an
     # offered command that answers "needs a live run" is not offered.
@@ -360,7 +359,7 @@ def _answer_line(  # noqa: PLR0911, PLR0912
                 print("[agent6] could not write the compaction request; nothing was requested")
             return AGAIN
         if builtin == ["/btw"] and not smatches:
-            # A btw is a question asked BESIDE the run; letting it fall
+            # A btw is a question asked beside the run; letting it fall
             # through would send it to the loop as steer text instead.
             print(_start_btw(stripped, session_dir, btw_runner))
             return AGAIN

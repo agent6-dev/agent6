@@ -112,7 +112,6 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help='Question (in quotes), e.g. "why does the retry loop double the timeout?".',
     )
     _add_config_flag(ask_query)
-    # One seed, named one way: the two spellings are mutually exclusive.
     seed = ask_query.add_mutually_exclusive_group()
     ask_session = seed.add_argument(
         "--from",

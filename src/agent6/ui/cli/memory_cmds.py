@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 memory add/list/show/rm` commands.
+"""`agent6 memory add/list/show/rm/decisions` commands.
 
 Store refusals (a bad name, an unreadable store) raise MemoryStoreError, an
 OperatorError the cli_main boundary presents; no per-command arms.

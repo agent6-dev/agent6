@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Subprocess entry: run ONE machine `agent` state.
+"""Subprocess entry: run one machine `agent` state.
 
 Invoked as `python -m agent6.ui.cli.machine_agent <request.json> <result.json>`.
 Validates the request (`MachineAgentRequest`, the file-shape owner), runs the
@@ -34,9 +34,9 @@ def main() -> int:
     try:
         out = run_one(req, attach_console=_attach_console)
     except EventWriteError as exc:
-        # This subprocess never reaches the CLI dispatch backstop, so without
-        # this an unwritable per-state journal dumped a raw traceback at the
-        # operator and the engine reduced the state to a bare "error".
+        # This subprocess never reaches the CLI dispatch backstop, so an
+        # unwritable per-state journal would otherwise dump a raw traceback at
+        # the operator and leave the engine with a bare "error" state.
         error(f"{exc}")
         return 1
     Path(sys.argv[2]).write_text(out.model_dump_json(), encoding="utf-8")

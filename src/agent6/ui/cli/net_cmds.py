@@ -4,7 +4,7 @@
 
 A run's commands share one network with no route off the box, which is what
 lets the agent start a dev server and curl it. The same property means nothing
-outside the run can reach that server -- including the operator. These two
+outside the run can reach that server, the operator included. These two
 commands are the way in, and they are the operator's, never the model's:
 `exec` runs a command the way the agent would, `forward` bridges one of the
 run's ports to a port on this machine so a browser can open it.
@@ -47,7 +47,7 @@ class SessionNetworkUnavailable(Exception):
 
 
 def join_session_network(session_dir: Path) -> None:
-    """Put THIS process in the run's session network. Irreversible: seccomp
+    """Put this process in the run's session network. Irreversible: seccomp
     is not involved, but nothing here ever leaves a namespace it entered."""
     pid = read_session_netns_pid(session_dir)
     if pid is None:
@@ -114,7 +114,7 @@ def forward(
     One forked child per connection: it joins the run's network and connects
     there, then shuttles bytes over the socket it inherited. A child cannot
     come back out of a namespace, and the parent must stay outside to keep
-    accepting, so the fork is the bridge rather than a design flourish.
+    accepting, so the fork is the bridge.
     """
     # Refuse before binding, not per connection: the join happens in the
     # per-connection child, so a bind-first flow prints "forwarding" and then
@@ -124,9 +124,7 @@ def forward(
         return 2
     # Same number on both sides unless told otherwise: that is what `kubectl
     # port-forward 3000`, `docker -p 3000:3000` and `ssh -L` all mean, and it is
-    # the number you are about to type into a browser. A random local port would
-    # be the same syntax with a different meaning, which is the surprising kind
-    # of different.
+    # the number you are about to type into a browser.
     local_port = local_port or remote_port
     with socket.socket() as listener:
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -186,7 +184,7 @@ def forward(
                     finally:
                         conn.close()
                     os._exit(code)
-                conn.close()  # the child owns it now
+                conn.close()
         except KeyboardInterrupt:
             return 0
 
@@ -212,8 +210,8 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     """Run *argv* the way the run's own commands run: same jail, same network.
 
     The operator's command, not the model's, so it is not approved or logged as
-    a tool call -- but it is confined identically, which is the point: what you
-    see is what the agent sees.
+    a tool call; it is confined identically, so what you see is what the agent
+    sees.
 
     Unbounded (`timeout_s=0.0`): a foreground command in the operator's
     terminal, so Ctrl-C is the bound. The policy's default timeout would kill
@@ -227,7 +225,7 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
         refuse(f"{no_session_network_reason(layout)}")
         return 2
     pid = read_session_netns_pid(layout.session_dir)
-    # The RUN'S recorded isolation and network, not today's config: an
+    # The run's recorded isolation and network, not today's config: an
     # operator who changed [sandbox] since the run started still gets the
     # jail the run's own commands got (mounts stay config-derived; the help
     # says so). A manifest without the stamp falls back to the current

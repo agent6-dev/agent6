@@ -50,7 +50,7 @@ def _cmd_fork(
         # The child would continue a conversation that already ended: a paid
         # call, a nudge, a silent finish, a new branch and a listing row
         # offering a merge of the parent's own tree. `resume` refuses this and
-        # cannot see it here -- the check reads the SOURCE, and the child's log
+        # cannot see it here: the check reads the source, and the child's log
         # is empty by construction.
         try:
             source = resolve_or_newest_layout(Path.cwd(), source_session_id)

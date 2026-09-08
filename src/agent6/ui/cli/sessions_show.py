@@ -138,7 +138,7 @@ def _status_state(
 ) -> tuple[str, str, str]:
     """This run's state as `(status, label, detail)`.
 
-    `status` is the LISTING's own word and the label its own rendering of it
+    `status` is the listing's own word and the label its own rendering of it
     (*row* is the listing's fold of this run), so no second rule can disagree
     with the listing about the mode fold or the unmerged mark. `detail` is
     this surface's diagnostic: what to do, or why the word applies. The text
@@ -155,8 +155,8 @@ def _status_state(
         "waiting": "needs answer; attach to respond",
         "stale": "no worker, no session.end: likely crashed or killed",
         "parked": f"{reason}; resume to start" if reason else "resume to start",
-        # "no events yet" was claimed unconditionally, over logs that HAD
-        # events (a worker that died launching writes preflight events).
+        # A log that holds events (a worker that died launching writes
+        # preflight ones) is "never started", not "no events yet".
         "created": "no events yet" if scan.last_type is None else "never started",
     }.get(word, "")
     if word == "running" and last_age is not None and last_age > 120:
@@ -171,8 +171,8 @@ def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
     if pid is None or finished:
         return ""
     # Liveness matches the recorded start time, so a pid the OS has since
-    # handed to something else reads dead -- correctly. Saying "not running"
-    # about a number the operator can look up is still false.
+    # handed to something else reads dead; "not running" about a number the
+    # operator can look up would be false.
     return (
         f"  (worker pid {pid} was recycled)"
         if pid_alive(pid)
@@ -348,9 +348,9 @@ def _print_listening_ports(session_dir: Path) -> None:
     """What the run is serving, and how to reach it.
 
     A run's commands share a network with no way in from outside, so a dev
-    server the agent started is invisible here -- including the port it is on.
-    This is where someone asks "what is it doing", so it is where the answer
-    belongs, with the command that opens it.
+    server the agent started is invisible here, the port it is on included.
+    This is where someone asks "what is it doing", so the answer belongs here,
+    with the command that opens it.
     """
     ports = listening_ports(session_dir)
     if not ports:
@@ -361,9 +361,9 @@ def _print_listening_ports(session_dir: Path) -> None:
 
 
 def _print_task_tree(session_dir: Path) -> None:
-    """Show the run's task DAG when it decomposed into subtasks. Makes the plan
-    visible for a headless run (no TUI #plan pane), the decompose case the user
-    could not see. A single root (no decomposition) is not worth the block."""
+    """Show the run's task DAG when it decomposed into subtasks, so the plan is
+    visible for a headless run (no TUI #plan pane). A single root (no
+    decomposition) is not worth the block."""
     from agent6.graph.storage import load_graph  # noqa: PLC0415
     from agent6.sessions.layout import layout_of  # noqa: PLC0415
     from agent6.ui.cli._task_tree import task_tree_lines  # noqa: PLC0415

@@ -5,7 +5,7 @@
 The order is the whole point: handshake, list the tools, show them, and only
 then write config. A server named in config that turns out not to answer is a
 run that starts, logs "failed to start", and quietly has fewer tools than the
-operator thinks -- discovered mid-task, if at all.
+operator thinks, discovered mid-task if at all.
 
 Nothing the server returns is ever executed. Its tool names and descriptions
 are printed as text and stored nowhere.
@@ -71,7 +71,7 @@ def _refuse_bad_flags(
         return "--pass-env is for spawned servers; a --url one uses --token-env"
     name_refusal = mcp_server_name_refusal(name)
     if name_refusal:
-        # BEFORE the write: the name becomes a TOML table header.
+        # Before the write: the name becomes a TOML table header.
         return name_refusal
     keys = {str(getattr(e, "api_key_env", "")) for e in cfg.providers.values()} - {""}
     leaked = sorted(keys.intersection(pass_env))
@@ -172,7 +172,7 @@ def cmd_mcp_connect(
         )
     except ValidationError as exc:
         # These are operator flag values, and the entry's own rules (the URL
-        # shape above all -- a dropped scheme is the likeliest typo here) live
+        # shape above all: a dropped scheme is the likeliest typo here) live
         # in the model, and reach the operator as one line each rather than a
         # pydantic dump with a saved traceback.
         detail = "; ".join(
@@ -194,8 +194,8 @@ def cmd_mcp_connect(
             return rc
 
     # Values, not TOML text: `format_toml_value` serializes each one, so a
-    # list stays a list. Handing it a pre-quoted string wrote an argv as one
-    # long string, which then validated as a tuple of characters.
+    # list stays a list. A pre-quoted string would write an argv as one long
+    # string, which validates as a tuple of characters.
     fields: dict[str, ConfigLeafValue] = {"enabled": True}
     if command:
         fields["command"] = command

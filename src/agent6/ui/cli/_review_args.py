@@ -102,7 +102,7 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Run an adversarial review panel of N grounded reviewers instead of one"
             " freeform review. Findings are grounded against the diff (only real,"
-            " block-eligible problems gate). 0 (default) = the classic single review."
+            " block-eligible problems gate). 0 (default) = the single freeform review."
             " With [review].seats configured, N only turns the panel on: the seats"
             " decide the reviewers. Exits 0 PASS, 1 INCONCLUSIVE (every seat"
             " abstained), 2 refused before any seat ran, 3 budget, 4 BLOCK: the"

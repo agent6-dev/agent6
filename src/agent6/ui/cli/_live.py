@@ -20,9 +20,9 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
     """The workflow's text logger.
 
     When the live ConsoleView is rendering the product stream (foreground run),
-    notices go THROUGH it (`console_view.notice`) so each clears the spinner
-    line first and writes to the same stream under the same lock -- otherwise a
-    notice printed to stdout while the stderr spinner is up garbles the line. The
+    notices go through it (`console_view.notice`) so each clears the spinner
+    line first and writes to the same stream under the same lock; a notice
+    printed to stdout while the stderr spinner is up garbles the line. The
     loop's internal state narration (`LOOP: LOAD_CONTEXT`, `compaction: …`,
     `compaction thresholds: …`) is pure noise on the glyph stream (`config
     show` prints the resolved thresholds), and these lines repeat what the
@@ -36,9 +36,8 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
     if console_view is None:
         # No live console: a headless run's stdout (or ask's stderr) is
         # block-buffered when redirected to a file/pipe, so without an explicit
-        # flush the whole LOOP trace only appears when the process EXITS -- a
+        # flush the whole LOOP trace appears only when the process exits, and a
         # `nohup agent6 run > log` reads as a dead run for its entire duration.
-        # Flush each line so the log is followable as it happens.
         return _eprint if mode == "ask" else _print_flush
     debug = os.environ.get("AGENT6_DEBUG") == "1"
 
@@ -111,16 +110,16 @@ def stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
     `stream_text` makes the provider stream and emit `role.text_delta` /
     `role.thinking_delta` events, which every live view renders as the model's
     reasoning + answer. `console_stream` additionally subscribes a
-    `ConsoleView` to the EventSink, rendering the live conversation -- reasoning,
-    text, and every tool call with its result -- to stderr.
+    `ConsoleView` to the EventSink, rendering the live conversation (reasoning,
+    text, and every tool call with its result) to stderr.
 
     Streaming is on for an interactive stderr TTY (so a plain `agent6 ask`/`plan`
     shows live output) or when forced:
-    - `AGENT6_FORCE_STREAM=1`: bench/CI -- emit AND echo (the Kimi/OpenRouter
+    - `AGENT6_FORCE_STREAM=1`: bench/CI, emit and echo (the Kimi/OpenRouter
       gateway corrupts the non-streaming body with SSE heartbeats).
     - `AGENT6_STREAM_TO_LOG=1`: set by the `agent6 tui` hub when it spawns a run
-      detached and then watches it on the dashboard. Emit the delta EVENTS only,
-      with NO console echo -- otherwise a long headless run pours its whole
+      detached and then watches it on the dashboard. Emit the delta events only,
+      with no console echo: a long headless run would otherwise pour its whole
       reasoning into the hub's discarded stderr temp file.
     """
     stream_to_log = os.environ.get("AGENT6_STREAM_TO_LOG") == "1"
@@ -181,9 +180,8 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
         yield
     finally:
         # The TUI holds the finished dashboard until the user leaves (Ctrl+Q),
-        # so wait for THEM, not a deadline: killing the view at +8s is exactly
-        # the payoff-vanishes defect the hold exists to fix. A wedged TUI is
-        # visibly wedged under the hold hint; Ctrl-C (SIGINT to the group)
+        # so wait for them, not a deadline. A wedged TUI is visibly wedged
+        # under the hold hint; Ctrl-C (SIGINT to the group)
         # still tears everything down, textual restoring the terminal. Keep
         # our own output redirected until it's gone so nothing scribbles its
         # screen.
