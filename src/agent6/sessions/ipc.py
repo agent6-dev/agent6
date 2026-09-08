@@ -154,7 +154,8 @@ def pid_alive(pid: int) -> bool:
     if _HAS_PROC:
         fields = _proc_stat_fields(pid)
         return bool(fields) and fields[0] not in {"Z", "X", "x"}
-    return True
+    state = _ps_state(pid)
+    return not state.startswith("Z")
 
 
 # /proc exists on Linux; on macOS `ps` answers the same question instead.
@@ -168,6 +169,24 @@ def _proc_stat_fields(pid: int) -> list[str]:
     except OSError:
         return []
     return stat.rpartition(")")[2].split()
+
+
+def _ps_state(pid: int) -> str:
+    """Process state via `ps -o stat=` ("" for a dead pid or a host without
+    ps): a leading "Z" is a zombie, exited but unreaped, which still answers
+    kill-0. The zombie check for a host with no /proc (macOS)."""
+    try:
+        proc = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "stat="],
+            capture_output=True,
+            check=False,
+            timeout=5.0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.decode(errors="replace").strip()
 
 
 def _ps_start_time(pid: int) -> str:

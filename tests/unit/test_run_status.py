@@ -583,6 +583,33 @@ def test_a_zombie_worker_is_not_alive(tmp_path: Path) -> None:
         proc.wait()
 
 
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
+def test_a_zombie_is_not_alive_without_proc_either(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On a host with no `/proc` (macOS), liveness falls back to `ps`, which
+    must catch a zombie the same way the `/proc`-based check does: a zombie
+    still answers kill-0, so a `_HAS_PROC=False` host that skips the state
+    check read it alive forever, the same stale-`running` symptom the
+    `/proc` branch exists to kill."""
+    from agent6.sessions import ipc
+
+    monkeypatch.setattr(ipc, "_HAS_PROC", False)
+    proc = subprocess.Popen(["/bin/true"])
+    try:
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            stat = Path(f"/proc/{proc.pid}/stat").read_text(encoding="ascii")
+            if stat.rpartition(")")[2].split()[0] == "Z":
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail("child did not become a zombie")
+        assert ipc.pid_alive(proc.pid) is False
+    finally:
+        proc.wait()
+
+
 def test_worker_pid_is_published_atomically(tmp_path: Path) -> None:
     """The last polled state file written with plain write_text: it truncates,
     then writes, so a reader in that window sees a PREFIX of the pid with the
