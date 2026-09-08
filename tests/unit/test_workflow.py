@@ -3376,6 +3376,27 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
     assert "1 open task(s): audit providers" in result.summary
 
 
+def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
+    """A verify_settled end carries `scoped` like the grounded ends do, so a
+    green from the scoped gate reads "passed · scoped gate", never a bare pass."""
+    from agent6.workflows._nudges import VERIFY_SETTLED_STOP_AFTER
+
+    ev = _EventCapture()
+    wf = _wf(events=ev)
+    state = _state(
+        verify=VerifyVerdict(ever_passed=True, last_ok=True, scoped=True),
+        settled_tree="tree",
+        verify_settled_idle=VERIFY_SETTLED_STOP_AFTER - 1,
+    )
+    turn = _turn()
+    with patch.object(wf, "_worktree_tree_sha", return_value="tree"):
+        assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
+        result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
+    assert result is not None and result.reason == "verify_settled"
+    ends = [e for e in ev.events if e["type"] == "session.end"]
+    assert ends[-1]["all_passed"] is True and ends[-1]["scoped"] is True
+
+
 def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
     """Only SUBTASKS gate. The always-pending auto-root alone must NOT block a
     finish (else every run deadlocks); no curator -> no gate either."""

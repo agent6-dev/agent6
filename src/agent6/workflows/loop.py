@@ -2741,7 +2741,9 @@ class Workflow:
             # (finish_session grounds on the same probe, so the two clean ends
             # cannot disagree).
             if state.verify.ever_passed and self._tree_is_verify_green(state) is not False:
-                self._emit_run_end_passed(reason="verify_settled", iterations=turn.iteration)
+                self._emit_run_end_passed(
+                    reason="verify_settled", iterations=turn.iteration, scoped=state.verify.scoped
+                )
                 return SessionResult(
                     completed=True,
                     verified=self._verification(state),
@@ -3453,12 +3455,16 @@ class Workflow:
             return "passed"
         return "failed" if state.verify.last_ok is False else "unverified"
 
-    def _emit_run_end_passed(self, *, reason: str, iterations: int) -> None:
+    def _emit_run_end_passed(self, *, reason: str, iterations: int, scoped: bool = False) -> None:
         """Emit a successful `session.end`, first auto-passing any still-pending
         root task so the DAG (and every viewer + resume) agrees the run
-        completed -- otherwise a finish_session-only ask/run reads `tasks 0/1`."""
+        completed -- otherwise a finish_session-only ask/run reads `tasks 0/1`.
+        `scoped` as in `_emit_run_end_grounded`: a green from the scoped gate
+        reads "passed · scoped gate"."""
         self._pass_pending_root_tasks()
-        self._emit("session.end", reason=reason, iterations=iterations, all_passed=True)
+        self._emit(
+            "session.end", reason=reason, iterations=iterations, all_passed=True, scoped=scoped
+        )
 
     def _tree_is_verify_green(self, state: LoopState) -> bool | None:
         """Is the current tree in a verified-green state? None when no verify
