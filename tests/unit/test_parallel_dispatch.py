@@ -176,3 +176,12 @@ def test_a_dirty_origin_fans_out_under_stash_and_include(
         cfg = Config.model_validate({"git": {"dirty_tree": choice}})
         assert cli_parallel.dispatch_parallel(cfg, "t", "2", cwd=tmp_path) == 0, choice
     assert fanned == ["t", "t"]
+
+
+def test_summary_hands_a_conflicted_lane_to_the_operator() -> None:
+    """The summary told the model to run `git merge` itself; git is agent6's in
+    a run and `.git` is read-only in the jail, so the line names the operator
+    and tells the model to continue."""
+    text = summary_text("g", [_join("conflict")])
+    assert "for the operator (`git merge " in text and "continue without it" in text
+    assert "resolve" not in text

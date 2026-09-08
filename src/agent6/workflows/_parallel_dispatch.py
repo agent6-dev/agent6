@@ -123,10 +123,12 @@ def summary_text(group: str, lanes: list[LaneJoin]) -> str:
         if j.status == "joined":
             lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}")
         elif j.status == "conflict":
+            # Git is agent6's in this run (and `.git` is read-only in the jail),
+            # so the merge is the operator's to finish, not the model's.
             lines.append(
                 f"  - {j.session_id} ({j.branch}): CONFLICT -- branch imported but the merge"
-                f" conflicted. It exists locally; run `git merge {j.branch}` and resolve,"
-                " or discard it."
+                f" conflicted. It exists locally for the operator (`git merge {j.branch}`);"
+                " continue without it."
             )
         else:
             lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
