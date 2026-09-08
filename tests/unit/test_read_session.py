@@ -84,6 +84,24 @@ def test_a_query_finds_a_session_by_its_content(tmp_path: Path) -> None:
     assert roster(tmp_path, "nothing here").briefs == ()
 
 
+def test_a_review_panels_critique_is_not_read_as_the_assistants_own_words(
+    tmp_path: Path,
+) -> None:
+    """A before_finish review panel emits its own `role.result` events (role=
+    `review:<persona>`) onto the same session log the worker writes to.
+    Folding every `role.result` in as \"assistant\" misattributed a reviewer's
+    critique as the session's own reply."""
+    d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
+    lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+    lines.append(json.dumps({"type": "role.result", "role": "worker", "text": "use ffmpeg"}))
+    lines.append(json.dumps({"type": "role.result", "role": "review:security", "text": "REJECTED"}))
+    (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    layout = session_layout(tmp_path, "brave-elk-BBBBBB")
+    assert layout is not None
+    text = conversation(layout, max_chars=10_000)
+    assert "use ffmpeg" in text and "REJECTED" not in text
+
+
 def test_a_torn_journal_line_does_not_break_the_read(tmp_path: Path) -> None:
     """A live session's last line can be half-written."""
     d = _session(tmp_path, "runs", "live-BBBBBB", "run", "t", ["first"])
