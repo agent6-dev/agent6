@@ -722,6 +722,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         last_verify_rc = None  # leg-scoped, like the token counters
                         legs += 1
                     saw_start = True  # a leg has begun; a fork's log has only this
+                    mode = str(ev.get("mode", mode))  # stamped like session.start
                     finished = False  # a resume un-finishes the run
                     pending_prompts.clear()  # see session.start
                 elif etype == "verify.end":

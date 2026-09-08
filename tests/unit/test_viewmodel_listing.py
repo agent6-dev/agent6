@@ -893,6 +893,35 @@ def test_a_forks_single_leg_is_one_leg(tmp_path: Path) -> None:
     assert scan2.cost_usd == pytest.approx(0.06)
 
 
+def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: Path) -> None:
+    """A fork's log opens with loop.resume.start, which stamps `mode` like
+    session.start does, but only the session.start arm read it: the scan kept
+    mode "?", verify_verdict() refused to answer, and a passed fork listed
+    `verify_ok: null` (ranked below any `true` by `sessions compare`)."""
+    import json
+
+    from agent6.viewmodel.listing import scan_session_log, summary_row
+
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "fork-3",
+        [
+            {"type": "loop.resume.start", "mode": "run", "iteration": 1},
+            {"type": "verify.end", "cmd": ["pytest"], "exit_code": 0, "duration_s": 1.0},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        ],
+    )
+    (rd / "manifest.json").write_text(
+        json.dumps({"session_id": "fork-3", "mode": "run", "user_task": "t", "base_sha": ""}),
+        encoding="utf-8",
+    )
+    scan = scan_session_log(rd / "logs.jsonl")
+    assert scan.mode == "run"
+    assert scan.verify_verdict() is True
+    assert summary_row(summarize_session_dir(rd))["verify_ok"] is True
+
+
 def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
     # Each resume leg starts a fresh budget (usd_total resets to 0). The listing
     # total must be the cumulative spend across legs, not just the latest leg's.
