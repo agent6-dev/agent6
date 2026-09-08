@@ -25,7 +25,7 @@ import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -37,9 +37,7 @@ from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
-from agent6.directive import parse_now
-from agent6.sessions.ipc import submit_steer, write_answer
-from agent6.tools.background import shells_text
+from agent6.sessions.ipc import write_answer
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     RUN_MENU,
@@ -57,21 +55,22 @@ from agent6.ui.tui.menubar import (
     MenuItem,
     menu_bindings,
 )
-from agent6.ui.tui.modals import TextModal
 from agent6.ui.tui.prompts import PromptDispatcher
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
-from agent6.viewmodel import approval_parts, restate
+from agent6.viewmodel import approval_parts
 from agent6.viewmodel.events import SESSION_START_EVENTS
 from agent6.viewmodel.format import dead_run_note, spinner_frame, status_label
 from agent6.viewmodel.policy import session_policy
-from agent6.viewmodel.state import SessionState
-from agent6.viewmodel.tail import LogTail, tail_events
+from agent6.viewmodel.tail import LogTail
 from agent6.viewmodel.transcript import (
     TranscriptFold,
     TranscriptItem,
 )
 from agent6.viewmodel.transcript_style import DetailLevel, Line, StyleName, item_lines
+
+if TYPE_CHECKING:
+    from agent6.ui.tui.app import Agent6TUI
 
 _LIVE_TAIL = 1600  # chars of the in-progress turn kept in the live pane
 # Sealed-chunk size for the transcript body. The body is a sequence of Static
@@ -301,11 +300,14 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._row_id = ""
         self._live_think: list[str] = []
         self._live_text: list[str] = []
-        # A session-start event (session.start OR loop.resume.start) seen and no
-        # session.end since -> the steer bar shows.
-        self._live = False
         self._spin = 0  # live-pane spinner tick, advanced by _poll
         self._timer: Timer | None = None  # the 0.3s poll; paused while covered
+
+    @property
+    def _host(self) -> Agent6TUI:
+        """The Agent6TUI that mounts this screen: its fold, dir status and
+        prompt dispatcher are the one record every run view reads."""
+        return cast("Agent6TUI", self.app)
 
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)  # top row: menus + "agent6 — <run>", like every screen
@@ -398,20 +400,17 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             self._tail_lines = 0
             tail.update(self._tail_text)
 
-    def _track_live(self, event: dict[str, object]) -> None:
+    def _track_event(self, event: dict[str, object]) -> None:
+        """What this screen keeps of an event beyond the fold: the open
+        approval as last rendered here, so an answer given here is not
+        re-offered on a reload before the worker journals it, and the
+        streaming buffers of the turn in flight."""
         etype = event.get("type")
         if etype in SESSION_START_EVENTS:
-            # session.start OR loop.resume.start: a resumed leg is live too (the
-            # dashboard's fold un-finishes on ResumeStart; this screen must
-            # agree, or its composer mislabels the live leg "resume" and a
-            # submit spawns a second resume that dies on the run lock while
-            # the toast claims success). An unanswered approval belongs to the
-            # leg that ended; the new leg re-asks it if needed.
-            self._live = True
+            # An unanswered approval belongs to the leg that ended; the new
+            # leg re-asks it if needed.
             self._approval = None
             self._approval_done = None
-        elif etype == "session.end":
-            self._live = False
         if etype == "approval.prompt":
             self._approval = (
                 str(event.get("id", "")),
@@ -432,30 +431,22 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             self._live_text.append(str(event.get("text", "")))
 
     def _open_approval(self) -> tuple[str, str, bool] | None:
-        """The approval awaiting an answer: the host's folded state when this
-        screen runs under the Agent6TUI host (one fold, whatever fed it), else
-        what this screen's own tail saw."""
-        state = getattr(self.app, "state", None)
-        if isinstance(state, SessionState):
-            if self._approval is not None:
-                aid = self._approval[0]
-                answered = next((a for a in state.pending_approvals if a.id == aid), None)
-                if answered is not None and answered.answered:
-                    self._note_answered(bool(answered.approved))
-            open_ones = [
-                ap for ap in state.pending_approvals if not ap.answered and not self._taken(ap.id)
-            ]
-            if open_ones:
-                ap = open_ones[-1]  # the newest: a resumed leg reuses prompt ids
-                return ap.id, ap.prompt, ap.standing
-            # The host's fold decides: `_approval` mirrors what this screen last
-            # rendered, and a leg boundary the host folded withdraws it.
-            return None
-        if self._approval is not None and self._taken(self._approval[0]):
-            # Answered from this screen; a reload replays the prompt before the
-            # worker journals the answer, and must not reopen the row.
-            return None
-        return self._approval
+        """The approval awaiting an answer, from the host's fold (one fold,
+        whatever fed it): a leg boundary the host folded withdraws what this
+        screen last rendered."""
+        state = self._host.state
+        if self._approval is not None:
+            aid = self._approval[0]
+            answered = next((a for a in state.pending_approvals if a.id == aid), None)
+            if answered is not None and answered.answered:
+                self._note_answered(bool(answered.approved))
+        open_ones = [
+            ap for ap in state.pending_approvals if not ap.answered and not self._taken(ap.id)
+        ]
+        if open_ones:
+            ap = open_ones[-1]  # the newest: a resumed leg reuses prompt ids
+            return ap.id, ap.prompt, ap.standing
+        return None
 
     def _taken(self, aid: str) -> bool:
         if self._prompts is None:
@@ -557,7 +548,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             live.display = True
             live.update(
                 Text(
-                    status_label(*getattr(self.app, "dir_status", ("waiting", ""))),
+                    status_label(*self._host.dir_status),
                     style="bold yellow",
                 )
             )
@@ -566,9 +557,6 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         text = "".join(self._live_text).strip()
         frame = spinner_frame(self._spin)
         if not think and not text:
-            if not self._live:
-                live.display = False
-                return
             # Mid-run with nothing streaming: the calls in flight, one line
             # each, else "working…" (the model is being called); a vanished
             # pane reads as frozen for the whole stretch, so keep it moving.
@@ -603,8 +591,8 @@ class ConversationScreen(ScreenChrome, Screen[None]):
     def _settle_dead(self) -> None:
         """The calls a dead worker left in flight never return: settle them
         into the scrollback (the fold's rule, applied here because the host's
-        worker probe is what knows; a viewer with no host cannot)."""
-        if not self._pending or getattr(self.app, "session_controllable", None) is None:
+        worker probe is what knows)."""
+        if not self._pending:
             return
         wrote = False
         for item in self._fold.settle_open_calls("the run died"):
@@ -625,11 +613,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self.query(".conv-sealed").remove()  # rebuilt below by _flush_tail
         self._live_think.clear()
         self._live_text.clear()
-        self._live = False
         wrote = False
         items = 0
         for event in self._tail.read():
-            self._track_live(event)
+            self._track_event(event)
             for item in self._fold.feed(event):
                 items += 1
                 wrote = self._append(item) or wrote
@@ -647,9 +634,8 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             # `_host_live`'s event-derived fallback is False before the first
             # event, so using it here would promise nothing to a run that has
             # not started streaming yet: the same lie, inverted.
-            live_fn = getattr(self.app, "session_controllable", None)
-            ended = callable(live_fn) and not live_fn()
-            word, detail = getattr(self.app, "dir_status", ("", ""))
+            ended = not self._host.session_controllable()
+            word, detail = self._host.dir_status
             empty = empty_conversation_note(word, detail, ended=ended)
             self._tail_widget().update(Text(empty, style="dim italic"))
         self._render_live()
@@ -674,7 +660,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             # spinner is the only sign of life between events. Same follow
             # discipline as the data path: a pane repaint can resize the
             # viewport and drop bottom-follow on a quiet tick.
-            if self._live and self._host_live():
+            if self._host_live():
                 scroll = self._scroll()
                 following = self._at_bottom(scroll)
                 self._render_live()
@@ -685,7 +671,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         following = self._at_bottom(scroll)  # before this frame's layout changes
         wrote = False
         for event in new_events:
-            self._track_live(event)
+            self._track_event(event)
             for item in self._fold.feed(event):
                 wrote = self._append(item) or wrote
         if wrote:
@@ -700,26 +686,21 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._sync_jump()
 
     def _host_waiting(self) -> bool:
-        """Whether the run is blocked on the operator, per the Agent6TUI host's
-        dir status ("waiting"); False on a host that does not keep one."""
-        status = getattr(self.app, "dir_status", None)
-        return isinstance(status, tuple) and status[0] == "waiting"
+        """Whether the run is blocked on the operator, per the host's dir
+        status ("waiting")."""
+        return self._host.dir_status[0] == "waiting"
 
     def _host_live(self) -> bool:
-        """Whether the run is still live, per the Agent6TUI host's dir status
-        (which knows a dead worker and a parked run) and falling back to this
-        screen's event-derived tracking on a host without one."""
-        live_fn = getattr(self.app, "session_controllable", None)
-        return bool(live_fn()) if callable(live_fn) else self._live
+        """Whether the run is still live, per the host's dir status, which
+        knows a dead worker and a parked run where the event stream alone
+        would not."""
+        return self._host.session_controllable()
 
     def _sync_input(self) -> None:
         """Show the composer bar (steer when live, continue when finished) and
-        keep its labels matching the run's state. The liveness and context
-        readout come from the Agent6TUI host when there is one -- its dir
-        status knows a dead worker and a parked run, which the event stream
-        alone cannot (this screen's own _live stays True over a corpse, so a
-        typed steer would go to a run that never reads it); a host without it
-        keeps the event-derived tracking."""
+        keep its labels matching the run's state: the host's dir status and
+        context readout, so a typed steer never goes to a run that no longer
+        reads it."""
         with contextlib.suppress(NoMatches):
             bar = self.query_one("#conv-input", SteerInput)
             if not bar.display:  # a same-value write still costs a relayout
@@ -728,13 +709,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             self.query_one("#conv-preset", ResumePreset).show(mode == "resume")
             if not bar.policy:  # folded once: the manifest does not change mid-run
                 bar.policy = session_policy(self._logs_path.parent).short()
-            pct_fn = getattr(self.app, "context_pct", None)
-            pct = pct_fn() if callable(pct_fn) else None
-            fork = getattr(self.app, "continue_as", "")
             bar.set_mode(
                 mode=mode,
-                ctx_pct=pct if isinstance(pct, int) else None,
-                continue_as=fork if isinstance(fork, str) else "",
+                ctx_pct=self._host.context_pct(),
+                continue_as=self._host.continue_as,
             )
 
     def refresh_liveness(self) -> None:
@@ -762,34 +740,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._scroll().focus()
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
-        """A line typed into the composer bar. With an Agent6TUI host, the host
-        owns the routing (submit_instruction): live steer vs resume by its dir
-        status, plus the `/compact [focus]` parse: routed by this screen's own
-        live path, '/compact …' would reach the model as a literal steer while
-        the bar's title advertises it. A host without it keeps the direct
-        live-steer bridge."""
-        submit = getattr(self.app, "submit_instruction", None)  # the Agent6TUI host
-        if callable(submit):
-            submit(message.text)
-            return
-        if message.text.strip() == "/restate":
-            text = restate(list(tail_events(self._logs_path, follow=False)))
-            self.app.push_screen(TextModal("since your last message", text))
-            return
-        if message.text.strip() == "/shells":
-            self.app.push_screen(
-                TextModal("background commands", shells_text(self._logs_path.parent))
-            )
-            return
-        if self._live:
-            urgent = parse_now(message.text)
-            if urgent == "":
-                self.notify("/now needs the instruction: /now <text>", severity="warning")
-                return
-            if submit_steer(self._logs_path.parent, urgent or message.text, now=urgent is not None):
-                self.notify("steering this session now…" if urgent else "steering this session…")
-            else:
-                self.notify("could not write the steer request", severity="warning")
+        """A line typed into the composer bar: the host routes it (a live
+        steer or a resume by its dir status, the slash commands by their
+        parse)."""
+        self._host.submit_instruction(message.text)
 
     def action_history_search(self) -> None:
         open_history_search(self, self.query_one("#conv-input", SteerInput), self._logs_path)
@@ -941,21 +895,12 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         if bar.opened:  # Esc with a menu open closes the menu, not the view
             bar.close_menu()
             return
-        # Back means leave the run view entirely: the Agent6TUI host's to_hub
-        # exits with the back-to-hub code. A host without one gets the screen
-        # dismissed.
-        handler = getattr(self.app, "action_to_hub", None)
-        if callable(handler):
-            handler()
-        else:
-            self.dismiss()
+        # Back means leave the run view entirely: the host's to_hub exits
+        # with the back-to-hub code.
+        self._host.action_to_hub()
 
     def action_quit_hub(self) -> None:
-        handler = getattr(self.app, "action_quit_hub", None)  # the Agent6TUI host
-        if callable(handler):
-            handler()
+        self._host.action_quit_hub()
 
     def action_toggle_dashboard(self) -> None:
-        handler = getattr(self.app, "action_toggle_dashboard", None)  # the Agent6TUI host
-        if callable(handler):
-            handler()
+        self._host.action_toggle_dashboard()

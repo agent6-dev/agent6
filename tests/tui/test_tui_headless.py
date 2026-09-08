@@ -1535,8 +1535,6 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: Path) -> None:
     what is hidden and the key that shows it."""
     import json
 
-    from agent6.ui.tui.conversation import ConversationScreen
-
     events = [
         {"type": "session.start", "mode": "run", "user_task": "look"},
         {"type": "role.thinking_delta", "text": "let me look"},
@@ -1547,16 +1545,11 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: Path) -> None:
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
 
-    class _Host(App[None]):
-        def on_mount(self) -> None:
-            self.push_screen(ConversationScreen(tmp_path / "logs.jsonl", title=lambda ctx: ctx))
-
     async def scenario() -> None:
-        app = _Host()
+        app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
-            screen = app.screen
-            assert isinstance(screen, ConversationScreen)
+            screen = app._conv  # pyright: ignore[reportPrivateUsage]
             screen._detail = "hidden"
             screen._reload()
             await pilot.pause()
