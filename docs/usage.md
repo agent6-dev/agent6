@@ -159,7 +159,7 @@ agent6 ask "how does the task-graph curator work?"
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
   - new work outranks it; it never passes, and only the operator retires it; budget, stop, and the iteration cap still end the run
-- `--pin "<text>"`: an instruction restated every turn, so it survives compaction (`/pin` does the same mid-run)
+- `--pin "<text>"`: an instruction re-shown verbatim after every compaction restart, so it survives compaction (`/pin` does the same mid-run)
 - `--from <id>`: seed the run from another session (its task, outcome, diff and, for a plan, its text); a plan id with no task runs that plan
 - `--decompose`: break the task into a task graph up front (`prompt.decompose`); `--skill NAME` puts a skill in the prompt (`[skills]`)
   - an installed skill whose text gates on a person ("get your partner's approval before ...") drives an unattended run into `ask_user` on every task: `agent6 skills disable NAME` keeps it out of the index
