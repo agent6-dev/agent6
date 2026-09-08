@@ -298,7 +298,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         # attached), so a mode='run' state that shells out burns its budget
         # against denials.
         reporter.note(
-            "NOTE: this machine has mode='run' agent state(s) and"
+            "this machine has mode='run' agent state(s) and"
             " sandbox.run_commands='ask'; an unattended machine auto-denies"
             " run_command. Approve for this invocation with --auto-approve, or"
             " set `agent6 config set --repo sandbox.run_commands yes` to always"
