@@ -223,6 +223,7 @@ def test_a_reader_sees_what_the_assistant_SAID_in_a_real_journal(tmp_path: Path)
     inner.call.return_value = SimpleNamespace(
         text="use ffmpeg -c:v libx265",
         tool_uses=(),
+        refused={},
         stop_reason="end_turn",
         input_tokens=10,
         output_tokens=5,

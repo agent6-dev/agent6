@@ -642,11 +642,25 @@ class ClaudeCodeProvider:
         if not tail.results:
             _write(s, user_line("\n\n".join(tail.texts)))
             return
-        last = s.pending[-1]
+        # The turn's notices ride the last answered call. With every call
+        # refused the CLI's next round already runs, so they go in as the
+        # user line after it, the way a result-less turn's do.
+        answered = [i for i in s.pending if i not in s.refused]
+        if not answered:
+            s.refused.clear()
+            s.pending = ()
+            if tail.texts:
+                _write(s, user_line("\n\n".join(tail.texts)))
+            return
         for tool_use_id in s.pending:
+            if tool_use_id in s.refused:
+                # The CLI answered this call with its own error, and the loop
+                # recorded the same error: nothing is owed here.
+                del s.refused[tool_use_id]
+                continue
             call = self._await_call(s, tool_use_id, watch)
             content = [{"type": "text", "text": tail.results[tool_use_id]}]
-            if tool_use_id == last:
+            if tool_use_id == answered[-1]:
                 content.extend({"type": "text", "text": text} for text in tail.texts)
             size = sum(len(str(item["text"]).encode()) for item in content)
             if size > CLAUDE_CODE_PERSIST_BYTES:
@@ -823,10 +837,9 @@ class ClaudeCodeProvider:
         ids = tuple(str(b.get("id", "")) for b in r.blocks if b.get("type") == "tool_use")
         if not ids:
             self._read_to_result(s, watch)
-        if s.plan is plan_before:
-            self._await_plan_reading(s)
+        self._drain_after_round(s, ids, plan_before)
         s.pending = ids
-        return self._finish_round(s, r)
+        return self._finish_round(s, r, ids)
 
     def _stream_event(
         self,
@@ -885,7 +898,7 @@ class ClaudeCodeProvider:
             with contextlib.suppress(Exception):
                 cb(out)
 
-    def _finish_round(self, s: _Session, r: _Round) -> ProviderResponse:
+    def _finish_round(self, s: _Session, r: _Round, ids: tuple[str, ...]) -> ProviderResponse:
         input_tokens = _int(r.usage.get("input_tokens"))
         cache_read = _int(r.usage.get("cache_read_input_tokens"))
         cache_creation = _int(r.usage.get("cache_creation_input_tokens"))
@@ -913,6 +926,7 @@ class ClaudeCodeProvider:
                 "id": r.message_id,
                 "usage": r.usage,
             },
+            refused={i: s.refused[i] for i in ids if i in s.refused},
         )
 
     def _read_to_result(self, s: _Session, watch: _Watch) -> None:
@@ -930,15 +944,23 @@ class ClaudeCodeProvider:
                 )
             self._absorb(s, line)
 
-    def _await_plan_reading(self, s: _Session) -> None:
-        """Wait one drain window for the round's reading (the first-reading
-        grace when the process has none yet); a line of the next round is
+    def _drain_after_round(
+        self, s: _Session, ids: tuple[str, ...], plan_before: PlanUsage | None
+    ) -> None:
+        """Wait one drain window (the first-reading grace while the process
+        has no reading yet) for the round's plan reading and for the CLI's
+        verdict on the round's tool calls: the `tools/call` of the first one
+        it accepts, or the refusal echoes of the ones its own input check
+        turned down. The calls behind an accepted one wait on its answer, so
+        the wait ends at the first `tools/call`. A line of the next round is
         pushed back for the next read."""
-        before = s.plan
         deadline = time.monotonic() + (
-            _PLAN_READING_GRACE_S if before is None else _PLAN_READING_DRAIN_S
+            _PLAN_READING_GRACE_S if s.plan is None else _PLAN_READING_DRAIN_S
         )
-        while s.plan is before:
+        while True:
+            judged = not ids or any(i in s.calls for i in ids) or all(i in s.refused for i in ids)
+            if s.plan is not plan_before and judged:
+                return
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return

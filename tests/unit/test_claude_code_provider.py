@@ -609,10 +609,14 @@ def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
         _provider(binary).call(system="s", messages=USER0, tools=TOOLS)
 
 
-def test_a_call_the_cli_refused_itself_names_its_reason(tmp_path: Path) -> None:
+def test_a_call_the_cli_refused_before_any_answer_is_the_loops_to_record(
+    tmp_path: Path,
+) -> None:
     """The CLI checks a tool call's input itself and, on a failure, feeds the
-    model its own error and starts the next round without a `tools/call`; the
-    provider saw only that round's stream and reported "claude moved on"."""
+    model its own error and starts the next round without a `tools/call`;
+    the provider reported "claude moved on" and the loop respawned the CLI
+    and replayed the whole history. The refusal reaches the loop as the
+    call's result instead, and the continuation owes the CLI nothing."""
     refusal = (
         "<tool_use_error>InputValidationError: mcp__agent6__run_command was called with"
         " input that could not be parsed as JSON.\nYou sent (first 27 of 27 bytes): x"
@@ -639,7 +643,65 @@ def test_a_call_the_cli_refused_itself_names_its_reason(tmp_path: Path) -> None:
     )
     provider = _provider(binary)
     first = provider.call(system="s", messages=USER0, tools=TOOLS)
-    with pytest.raises(ProviderError, match="refused tool call toolu_1 itself") as exc:
+    assert first.refused == {
+        "toolu_1": (
+            "InputValidationError: mcp__agent6__run_command was called with input that"
+            " could not be parsed as JSON."
+        )
+    }
+    second = provider.call(
+        system="s",
+        messages=[
+            *USER0,
+            {"role": "assistant", "content": first.raw["content"]},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_1",
+                        "content": '{"error": "InputValidationError"}',
+                    }
+                ],
+            },
+        ],
+        tools=TOOLS,
+    )
+    assert second.text == "again"
+
+
+def test_a_call_the_cli_refuses_after_an_answer_ends_the_call_with_its_reason(
+    tmp_path: Path,
+) -> None:
+    """The calls behind an accepted one wait on its answer, so a refusal of
+    a later call arrives after agent6 has run it: the call ends with the
+    CLI's reason and the loop's retry replays the turn."""
+    refusal = "<tool_use_error>InputValidationError: bad input"
+    binary, _ = _install(
+        tmp_path,
+        {
+            "turns": [
+                [
+                    _round(
+                        tool_uses=[
+                            {"id": "toolu_1", "name": "read_file", "input": {}},
+                            {
+                                "id": "toolu_2",
+                                "name": "run_command",
+                                "input": {},
+                                "refused_late": refusal,
+                            },
+                        ]
+                    ),
+                    _round(text="again"),
+                ]
+            ]
+        },
+    )
+    provider = _provider(binary)
+    first = provider.call(system="s", messages=USER0, tools=TOOLS)
+    assert first.refused == {}
+    with pytest.raises(ProviderError, match="refused tool call toolu_2 itself") as exc:
         provider.call(
             system="s",
             messages=[
@@ -647,13 +709,15 @@ def test_a_call_the_cli_refused_itself_names_its_reason(tmp_path: Path) -> None:
                 {"role": "assistant", "content": first.raw["content"]},
                 {
                     "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "R"}],
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "toolu_1", "content": "R1"},
+                        {"type": "tool_result", "tool_use_id": "toolu_2", "content": "R2"},
+                    ],
                 },
             ],
             tools=TOOLS,
         )
     assert "InputValidationError" in str(exc.value)
-    assert "You sent" not in str(exc.value)
     assert not exc.value.fatal
 
 
@@ -1328,3 +1392,48 @@ def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
     )
     assert tool_result_cap_bytes(cfg, "planner") == CLAUDE_CODE_RESULT_CAP_BYTES
     assert tool_result_cap_bytes(cfg, "worker") == TOOL_RESULT_CAP_BYTES
+
+
+def test_the_turns_notices_survive_a_turn_the_cli_refused_whole(tmp_path: Path) -> None:
+    """The turn's notices ride the last answered call. With every call refused
+    the CLI's next round already runs, and the notices (the operator's steer
+    among them) were dropped with the refused ids: they go in as the user
+    line after that round instead."""
+    refusal = "<tool_use_error>InputValidationError: bad json"
+    binary, cap = _install(
+        tmp_path,
+        {
+            "turns": [
+                [
+                    _round(
+                        tool_uses=[
+                            {"id": "toolu_1", "name": "read_file", "input": {}, "refused": refusal}
+                        ]
+                    ),
+                    _round(text="again"),
+                ]
+            ]
+        },
+    )
+    provider = _provider(binary)
+    first = provider.call(system="s", messages=USER0, tools=TOOLS)
+    assert first.refused
+    steer = "OPERATOR STEERING: stop and write the failing test first"
+    messages: list[dict[str, Any]] = [
+        *USER0,
+        {"role": "assistant", "content": first.raw["content"]},
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_1",
+                    "content": '{"error": "InputValidationError"}',
+                },
+                {"type": "text", "text": steer},
+            ],
+        },
+    ]
+    second = provider.call(system="s", messages=messages, tools=TOOLS)
+    assert second.text == "again"
+    assert steer in _user_texts(cap)

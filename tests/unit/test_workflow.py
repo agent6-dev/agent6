@@ -1166,6 +1166,56 @@ def test_exhausted_provider_retries_keep_the_attempt_count_and_reason(tmp_path: 
     assert reason in result.summary
 
 
+def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatch(
+    tmp_path: Path,
+) -> None:
+    """The claude_code CLI checks a call's input before forwarding it and
+    answers the model with its own error; the loop ran the call anyway,
+    the provider then erred on the undeliverable result, and the retry
+    replayed the whole history. The refusal is the call's error result."""
+    from dataclasses import replace as _replace
+
+    from agent6.workflows._conversation import ToolResultItem
+
+    provider = MagicMock()
+    refused = _replace(
+        _tool_resp("read_file", {"path": "a"}, tool_id="t1"),
+        refused={"t1": "InputValidationError: bad input"},
+    )
+    provider.call.side_effect = [refused, _resp("done")]
+    dispatcher = MagicMock()
+    logs: list[str] = []
+    wf = _wf(
+        root=tmp_path,
+        provider=provider,
+        dispatcher=dispatcher,
+        logger=logs.append,
+        max_iterations=2,
+    )
+    conversation = Conversation.from_wire(
+        [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
+    )
+
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="system",
+        conversation=conversation,
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+
+    dispatcher.dispatch.assert_not_called()
+    results = [
+        it
+        for turn in conversation.turns
+        for it in getattr(turn, "items", ())
+        if isinstance(it, ToolResultItem)
+    ]
+    assert results and "InputValidationError: bad input" in results[0].content
+    assert any("tool_error" in line and "InputValidationError" in line for line in logs)
+
+
 class _OneShotSteer:
     """A file-bridge steer stand-in that fires once, returning *text*."""
 
@@ -6292,7 +6342,7 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     wf = _wf(mode="run", dispatcher=dispatcher)
     turn = TurnState(
         iteration=1,
-        resp=MagicMock(),
+        resp=_resp(""),
         assistant=AssistantTurn(
             raw_content=(),
             tool_uses=(
@@ -6324,7 +6374,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     state = _state()
     turn = TurnState(
         iteration=1,
-        resp=MagicMock(),
+        resp=_resp(""),
         assistant=AssistantTurn(
             raw_content=(),
             tool_uses=(ToolUse(id="tu1", name="finish_session", input={"summary": "done"}),),
@@ -6335,7 +6385,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
 
     worked = TurnState(
         iteration=2,
-        resp=MagicMock(),
+        resp=_resp(""),
         assistant=AssistantTurn(
             raw_content=(),
             tool_uses=(ToolUse(id="tu2", name="read_file", input={"path": "x"}),),
@@ -6415,7 +6465,7 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=Path("/tmp"))
     turn = TurnState(
         iteration=7,
-        resp=MagicMock(),
+        resp=_resp(""),
         assistant=AssistantTurn(
             raw_content=(),
             tool_uses=(ToolUse(id="tu1", name="apply_edit", input={}),),
@@ -6444,7 +6494,7 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=Path("/tmp"))
     turn = TurnState(
         iteration=7,
-        resp=MagicMock(),
+        resp=_resp(""),
         assistant=AssistantTurn(
             raw_content=(),
             tool_uses=(ToolUse(id="tu1", name="run_verify_command", input={}),),

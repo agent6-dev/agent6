@@ -312,6 +312,10 @@ class ProviderResponse:
     # `BudgetTracker.estimate_usd`.
     cost_usd: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
+    # tool_use ids the provider's own front-end answered with an error before
+    # agent6 could run them (the claude_code CLI's input check), with its
+    # text: the loop records the error as the call's result and runs nothing.
+    refused: dict[str, str] = field(default_factory=dict)
 
 
 # The stop-reason spellings a provider uses when the OUTPUT CAP truncated a turn

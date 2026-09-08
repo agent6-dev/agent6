@@ -358,6 +358,7 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
     provider.call.return_value = SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
+        refused={},
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
@@ -439,6 +440,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     provider.call.return_value = SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
+        refused={},
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
@@ -519,6 +521,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
     provider.call.return_value = SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
+        refused={},
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
@@ -572,6 +575,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     provider.call.return_value = SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
+        refused={},
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
@@ -644,6 +648,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         SimpleNamespace(
             text="",
             tool_uses=({"id": "a1", "name": "run_command", "input": {"command": "echo hi"}},),
+            refused={},
             stop_reason="tool_use",
             input_tokens=1,
             output_tokens=1,
@@ -661,6 +666,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         SimpleNamespace(
             text="",
             tool_uses=({"id": "f1", "name": "finish_session", "input": {"summary": "done"}},),
+            refused={},
             stop_reason="tool_use",
             input_tokens=1,
             output_tokens=1,
@@ -886,6 +892,7 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
     provider.call.return_value = SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
+        refused={},
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
@@ -1120,6 +1127,7 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     provider.call.return_value = SimpleNamespace(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
+        refused={},
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,

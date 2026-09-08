@@ -34,7 +34,9 @@ Scenario keys (all optional):
 - `ping`: send an MCP `ping` request after `tools/list`.
 - a tool use's `refused`: the CLI's own error text; the fake echoes it as an
   `is_error` tool_result and never sends the `tools/call`, as the CLI does
-  for input it cannot parse or validate.
+  for input it cannot parse or validate; `refused_late` sends the same echo
+  when the call's turn comes in the serial answer loop, after the previous
+  call's answer.
 - `hang_s`: sleep this long before each round's `message_start`.
 - `while_hanging`: `ping` emits stream `ping` events during that sleep,
   `rate_limit` emits `rate_limit_event` lines.
@@ -402,27 +404,10 @@ class _Fake:
             self.stream({"type": "content_block_stop", "index": index})
             index += 1
             if tool_use.get("refused"):
-                _emit(
-                    {
-                        "type": "user",
-                        "message": {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "content": tool_use["refused"],
-                                    "is_error": True,
-                                    "tool_use_id": tool_use_id,
-                                }
-                            ],
-                        },
-                        "session_id": SESSION_ID,
-                        "tool_use_result": tool_use["refused"],
-                    }
-                )
+                self.refuse(tool_use_id, tool_use["refused"])
                 continue
             pending.append((tool_use_id, tool_use))
-            if len(pending) == 1:
+            if len(pending) == 1 and not tool_use.get("refused_late"):
                 first_rid = self.tools_call(tool_use_id, tool_use)  # before message_delta
         if rnd.get("text"):
             self.stream(
@@ -454,6 +439,9 @@ class _Fake:
             self.rate_limit(rnd["rate_limit"])
         # Serve the calls one at a time: the next arrives only after the previous answer.
         for i, (tool_use_id, tool_use) in enumerate(pending):
+            if tool_use.get("refused_late"):
+                self.refuse(tool_use_id, tool_use["refused_late"])
+                continue
             rid = first_rid if i == 0 else self.tools_call(tool_use_id, tool_use)
             assert rid is not None
             answer = self.wait_response(rid, hold_on_eof=True)
@@ -472,6 +460,27 @@ class _Fake:
                 }
             )
         return pending
+
+    def refuse(self, tool_use_id: str, text: str) -> None:
+        """The CLI's own error result for a call it did not forward."""
+        _emit(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "content": text,
+                            "is_error": True,
+                            "tool_use_id": tool_use_id,
+                        }
+                    ],
+                },
+                "session_id": SESSION_ID,
+                "tool_use_result": text,
+            }
+        )
 
     def result_line(self, text: str, stop_reason: str) -> None:
         res = self.scenario.get("result", {})

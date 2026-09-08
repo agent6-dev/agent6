@@ -1203,6 +1203,11 @@ class Workflow:
             self._emit("loop.tool.call", name=name, iteration=turn.iteration)
             served = None
             try:
+                refusal = turn.resp.refused.get(tu.id)
+                if refusal is not None:
+                    # The provider's front-end checked the input and answered
+                    # the model itself; the same error is the result here.
+                    raise ToolError(refusal)
                 result = self.dispatcher.dispatch(name, tool_input)
                 content = json.dumps(result.to_wire(), ensure_ascii=False)
                 self._note_tool_effects(state, turn, name, result, tool_input)

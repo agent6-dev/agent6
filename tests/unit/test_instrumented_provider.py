@@ -105,6 +105,7 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: Path) -> None:
     inner.call.return_value = SimpleNamespace(
         text="the answer",
         tool_uses=(),
+        refused={},
         stop_reason="end_turn",
         input_tokens=1,
         output_tokens=1,
