@@ -280,6 +280,44 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
     assert steer_problem("focus on the parser") is None
 
 
+# --- spec_fragment: the /parallel autocomplete key --------------------------
+
+
+def test_spec_fragment_first_segment() -> None:
+    from agent6.directive import spec_fragment
+
+    assert spec_fragment("/parallel gp") == "gp"
+    assert spec_fragment("/parallel ") == ""
+    assert spec_fragment("/parallel 2") is None  # a bare lane count, not a model fragment
+
+
+def test_spec_fragment_later_segment_under_construction() -> None:
+    """A second (or later) `/parallel` segment's spec is still under
+    construction the same way the first one is: `_SPEC_TAIL.match` anchored
+    at the string's start, so only the FIRST segment ever offered a
+    suggestion; typing a second `/parallel gpt-5,op` never did."""
+    from agent6.directive import spec_fragment
+
+    assert spec_fragment("/parallel 2 task A /parallel gp") == "gp"
+    assert spec_fragment("/parallel 2 task A /parallel gpt-5,op") == "op"
+
+
+def test_spec_fragment_none_once_the_task_has_started() -> None:
+    from agent6.directive import spec_fragment
+
+    assert spec_fragment("/parallel 2 fix the bug") is None
+    assert spec_fragment("/parallel 2 task A /parallel 3 fix it") is None
+
+
+def test_spec_fragment_none_without_a_leading_directive() -> None:
+    from agent6.directive import spec_fragment
+
+    # a message not starting with /parallel is not a directive at all
+    assert spec_fragment("do this /parallel 2") is None
+    # /parallel embedded in a path is not whitespace-delimited: not a directive
+    assert spec_fragment("edit src/parallel foo") is None
+
+
 def test_parse_now_carries_the_steer_and_the_urgency() -> None:
     """`steer --now` was a CLI-only word; the composers say `/now <text>`."""
     from agent6.directive import STEER_COMMANDS, parse_now

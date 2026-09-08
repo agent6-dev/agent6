@@ -162,17 +162,22 @@ def parse_now(text: str) -> str | None:
     return text[m.end() :].strip()
 
 
-# The spec token of a `/parallel` directive still being typed: the message
-# is `/parallel <token>` with nothing after it yet (a following space = task
-# text has begun, so stop suggesting).
-_SPEC_TAIL = re.compile(r"/parallel[^\S\n]+(\S*)\Z")
+# The spec token of the LAST `/parallel` segment still being typed: that
+# segment is `/parallel <token>` with nothing after it yet (a following space
+# = task text has begun, so stop suggesting).
+_SPEC_TAIL = re.compile(r"[^\S\n]+(\S*)\Z")
 
 
 def spec_fragment(text: str) -> str | None:
     """The comma-separated model fragment under construction at the end of a
-    `/parallel` spec (a composer's autocomplete key), or None when the caret
-    has left the spec or the token is a bare lane count."""
-    m = _SPEC_TAIL.match(text)
+    `/parallel` spec (a composer's autocomplete key), or None when *text* is
+    not a directive, the caret has left the spec, or the token is a bare lane
+    count. A later segment's spec (after a repeated `/parallel`) is under
+    construction the same way the first one is."""
+    matches = list(_SEPARATOR.finditer(text))
+    if not matches or matches[0].start() != 0:
+        return None
+    m = _SPEC_TAIL.match(text, matches[-1].end())
     if m is None:
         return None
     token = m.group(1)
