@@ -457,6 +457,20 @@ def test_v4a_hunk_heals_a_uniform_indent_shift() -> None:
     assert healed == ("a.py ~indent",)
 
 
+def test_v4a_one_blank_new_line_replaces_rather_than_deletes_on_every_path() -> None:
+    """A hunk whose new side is one empty line replaces the old line with a
+    blank one. Joined to a string, one empty line and no line are both "",
+    so the exact and indent paths deleted the line while the rstrip heal kept
+    it: a heal moves an edit, it never changes what the edit does."""
+    patch = "*** Begin Patch\n*** Update File: f.py\n@@\n-foo\n+\n*** End Patch"
+    for original, healed_as in (("foo\nbar\n", ()), ("foo \nbar\n", ("f.py ~rstrip",))):
+        _, new, healed = apply_v4a_text(patch, original)
+        assert (new, healed) == ("\nbar\n", healed_as), original
+    indented = "*** Begin Patch\n*** Update File: f.py\n@@\n-    foo\n+\n*** End Patch"
+    _, new, healed = apply_v4a_text(indented, "        foo\nbar\n")
+    assert (new, healed) == ("\nbar\n", ("f.py ~indent",))
+
+
 def test_v4a_rstrip_heal_preserves_context_whitespace() -> None:
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n keep\n-old\n+new\n*** End Patch"
     _, new, healed = apply_v4a_text(patch, "keep  \nold\n")

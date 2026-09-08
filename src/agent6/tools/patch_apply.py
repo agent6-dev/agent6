@@ -745,7 +745,7 @@ def _v4a_apply_update(
         raise PatchError(f"V4A `*** Update File: {path}` has no hunks")
     content = original
     healed: list[str] = []
-    for hints, old_block, new_block, body in hunks:
+    for hints, old_block, new_lines, body in hunks:
         if old_block == "":
             raise PatchError(
                 f"V4A hunk for {path!r} has no context/removed lines to anchor on; "
@@ -754,7 +754,7 @@ def _v4a_apply_update(
         matches = _line_anchored_indices(content, old_block)
         count = len(matches)
         if count == 0:
-            heal = _v4a_heal(content, old_block, new_block, body)
+            heal = _v4a_heal(content, old_block, new_lines, body)
             if heal is None:
                 expected = old_block.split("\n")
                 raise PatchError(
@@ -766,7 +766,7 @@ def _v4a_apply_update(
             healed.append(f"{path} ~{kind}")
             continue
         if count == 1:
-            content = _v4a_splice(content, matches[0], old_block, new_block)
+            content = _v4a_splice(content, matches[0], old_block, new_lines)
             continue
         # The block itself repeats; the `@@ <section>` hints disambiguate it. We
         # only apply when the hints pin a SINGLE occurrence -- otherwise the hunk
@@ -779,14 +779,14 @@ def _v4a_apply_update(
                 "so the location is unique.\n"
                 f"{_match_failure_detail(content.splitlines(), old_block.split(chr(10)))}"
             )
-        content = _v4a_splice(content, idx, old_block, new_block)
+        content = _v4a_splice(content, idx, old_block, new_lines)
     return path, content, tuple(healed)
 
 
 def _v4a_heal(
     content: str,
     old_block: str,
-    new_block: str,
+    new_lines: tuple[str, ...],
     body: tuple[tuple[str, str], ...],
 ) -> tuple[str, str] | None:
     """The V4A context-miss ladder, strictest first, uniqueness required:
@@ -816,28 +816,28 @@ def _v4a_heal(
         return _splice_lines(i, replacement), "rstrip"
     if not rstrip_hits and len(indent_hits) == 1:
         i, (strip, add) = indent_hits[0]
-        new_lines = _reindent(new_block.split("\n"), strip, add) if new_block else []
-        return _splice_lines(i, new_lines), "indent"
+        return _splice_lines(i, _reindent(list(new_lines), strip, add)), "indent"
     return None
 
 
-def _v4a_splice(content: str, idx: int, old_block: str, new_block: str) -> str:
-    """Replace the block at *idx* with *new_block*.
+def _v4a_splice(content: str, idx: int, old_block: str, new_lines: tuple[str, ...]) -> str:
+    """Replace the block at *idx* with *new_lines*.
 
-    The blocks are line TEXT with no trailing newline, so a pure deletion (an
-    empty new block) must take the newline that terminated the last removed
-    line with it: leaving it behind puts a stray blank line where the deletion
-    happened, and deleting every line leaves the file as a lone newline."""
+    The block is line TEXT with no trailing newline, so a pure deletion (no new
+    lines; one empty new line is a blank line, not a deletion) must take the
+    newline that terminated the last removed line with it: leaving it behind
+    puts a stray blank line where the deletion happened, and deleting every
+    line leaves the file as a lone newline."""
     rest = content[idx + len(old_block) :]
-    if not new_block and rest.startswith("\n"):
+    if not new_lines and rest.startswith("\n"):
         rest = rest[1:]
-    return content[:idx] + new_block + rest
+    return content[:idx] + "\n".join(new_lines) + rest
 
 
 def _v4a_split_hunks(
     section: list[str],
-) -> list[tuple[tuple[str, ...], str, str, tuple[tuple[str, str], ...]]]:
-    """Split a V4A Update body into `(hints, old_block, new_block, body)` tuples;
+) -> list[tuple[tuple[str, ...], str, tuple[str, ...], tuple[tuple[str, str], ...]]]:
+    """Split a V4A Update body into `(hints, old_block, new_lines, body)` tuples;
     `body` keeps the hunk's own lines as `(prefix, text)` pairs for `_v4a_heal`.
 
     A `@@ <text>` line is a section LOCATOR HINT for the hunk that follows: its
@@ -886,7 +886,7 @@ def _v4a_split_hunks(
         else:
             raise PatchError(f"Unexpected V4A hunk line (expected ` `, `-`, `+`, `@@`): {ln!r}")
     flush()
-    return [(tuple(h), "\n".join(o), "\n".join(n), tuple(body)) for h, o, n, body in hunks]
+    return [(tuple(h), "\n".join(o), tuple(n), tuple(body)) for h, o, n, body in hunks]
 
 
 def _v4a_locate_with_hints(content: str, hints: tuple[str, ...], old_block: str) -> int | None:
