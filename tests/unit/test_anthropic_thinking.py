@@ -269,6 +269,48 @@ def test_request_drops_unsigned_thinking_but_keeps_anthropic_signature(
     ]
 
 
+def test_required_prompt_cache_beta_is_merged_with_extra_betas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers: list[dict[str, str]] = []
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        headers.append(kwargs["headers"])
+        return _FakeResponse(status_code=200, payload=_ok_payload())
+
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    provider = AnthropicProvider(
+        api_key="sk-test",
+        model="claude-test",
+        prompt_caching=True,
+        extra_headers=(("Anthropic-Beta", "interleaved-thinking-2025-05-14"),),
+    )
+    provider.call(system="sys", messages=[{"role": "user", "content": "go"}])
+    assert set(headers[0]["anthropic-beta"].split(",")) == {
+        "prompt-caching-2024-07-31",
+        "interleaved-thinking-2025-05-14",
+    }
+
+
+class _FakeStreamResponse:
+    def __init__(self, *, status_code: int, lines: list[str]) -> None:
+        self.status_code = status_code
+        self.headers: dict[str, str] = {}
+        self._lines = lines
+
+    def __enter__(self) -> _FakeStreamResponse:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def iter_lines(self) -> list[str]:
+        return self._lines
+
+    def read(self) -> bytes:
+        return b""
+
+
 def _sse(events: list[tuple[str, dict[str, Any]]]) -> list[str]:
     out: list[str] = []
     for et, data in events:

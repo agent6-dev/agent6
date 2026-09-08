@@ -301,7 +301,12 @@ class AnthropicProvider:
         if self.prompt_caching:
             headers["anthropic-beta"] = "prompt-caching-2024-07-31"
         for k, v in self.extra_headers:
-            headers[k.lower()] = v
+            key = k.lower()
+            if key == "anthropic-beta" and key in headers:
+                betas = [part.strip() for part in f"{headers[key]},{v}".split(",")]
+                headers[key] = ",".join(dict.fromkeys(part for part in betas if part))
+            else:
+                headers[key] = v
         return headers
 
     def call(  # noqa: PLR0912
