@@ -115,6 +115,7 @@ def _run_review_panel(
     root: Path,
     base: str,
     head: str,
+    label: str,
     diff: str,
     agents_md: str,
     reviewers: int,
@@ -145,7 +146,6 @@ def _run_review_panel(
     except ProviderError as exc:
         error(f"provider init failed: {exc}")
         return 2
-    label = f"{base}..{head}" if base else "working tree vs HEAD"
     ctx = ReviewContext(task=f"code review: {label}", agents_md=agents_md, diff=diff)
     # explore-tier seats need a read-only tool surface over the repo.
     tools = None
@@ -284,6 +284,9 @@ def _cmd_review(  # noqa: PLR0911, PLR0912
     budget = budget_tracker(cfg)
     layout_root = state_dir(root) / "reviews"
     transcript_sink = TranscriptSink(layout_root)
+    label = ("working tree vs HEAD" if not base else f"{base}..{head}") + (
+        f" -- {' '.join(paths)}" if paths else ""
+    )
 
     if reviewers >= 1:
         return _run_review_panel(
@@ -292,6 +295,7 @@ def _cmd_review(  # noqa: PLR0911, PLR0912
             root=root,
             base=base,
             head=head,
+            label=label,
             diff=diff,
             agents_md=agents_md,
             reviewers=reviewers,
@@ -313,11 +317,6 @@ def _cmd_review(  # noqa: PLR0911, PLR0912
         error(f"provider init failed: {exc}")
         return 2
 
-    label = (
-        "working tree vs HEAD"
-        if not base
-        else f"{base}..{head}" + (f" -- {' '.join(paths)}" if paths else "")
-    )
     print(f"[agent6] reviewing: {label}", file=sys.stderr)
     try:
         text = code_review(

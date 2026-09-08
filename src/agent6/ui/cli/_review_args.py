@@ -79,7 +79,7 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "--head",
         default="HEAD",
         help=(
-            "Head ref (default: HEAD). Only used when --base is set. With"
+            "Head ref (default: HEAD). Requires --base. With"
             " [review].tier = 'explore' it must be the checked-out commit, clean,"
             " which the seats read."
         ),

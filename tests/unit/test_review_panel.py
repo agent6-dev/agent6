@@ -407,6 +407,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         root=Path.cwd(),
         base="main",
         head="topic",
+        label="main..topic",
         diff="d",
         agents_md="",
         reviewers=3,
@@ -468,6 +469,7 @@ def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys
             root=Path.cwd(),
             base="",
             head="HEAD",
+            label="working tree vs HEAD",
             diff="d",
             agents_md="",
             reviewers=1,
@@ -591,6 +593,53 @@ def test_review_degrades_on_an_unreadable_agents_md(
         agents.chmod(0o600)
     assert rc == 0
     assert seen["agents_md"] == ""  # reviewed without the unreadable context
+
+
+def test_the_panel_reviews_under_the_freeform_reviews_label(
+    monkeypatch: Any, tmp_path: Any
+) -> None:
+    """One label for both reviews: the panel's header and transcript named the
+    range alone, dropping the `-- paths` the freeform review's label carries."""
+    from types import SimpleNamespace
+
+    from agent6.config import Config
+    from agent6.ui.cli import review_cmds
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    seen: dict[str, str] = {}
+
+    def _fake_panel(_cfg: Config, **kwargs: Any) -> int:
+        seen["label"] = kwargs["label"]
+        return 0
+
+    def _fake_effective(*_a: object, **_k: object) -> SimpleNamespace:
+        return SimpleNamespace(config=Config())
+
+    def _runnable(_self: Config, _role: str) -> None:
+        return None
+
+    def _no_key_error(_cfg: Config) -> None:
+        return None
+
+    def _fake_diff(*_a: object, **_k: object) -> SimpleNamespace:
+        return SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
+
+    monkeypatch.setattr(review_cmds, "load_effective", _fake_effective)
+    monkeypatch.setattr(Config, "require_runnable", _runnable)
+    monkeypatch.setattr(review_cmds, "check_provider_keys", _no_key_error)
+    monkeypatch.setattr(review_cmds, "_collect_review_diff", _fake_diff)
+    monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
+    rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
+        None, base="main", head="HEAD", paths=("src/x.py",), reviewers=1
+    )
+    assert rc == 0
+    assert seen["label"] == "main..HEAD -- src/x.py"
+    rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
+        None, base="", head="HEAD", paths=("src/x.py",), reviewers=1
+    )
+    assert rc == 0
+    assert seen["label"] == "working tree vs HEAD -- src/x.py"
 
 
 def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
