@@ -28,10 +28,10 @@ else:
 
 
 def lock_shared_nonblocking(fd: int) -> None:
-    """Take a SHARED lock on an open file descriptor, or raise OSError when an
+    """Take a shared lock on an open file descriptor, or raise OSError when an
     exclusive holder has it. A probe that only asks "is someone writing?" takes
     this one: an exclusive probe excludes the very writer it is asking about,
-    so a run acquiring in that window parked as if the checkout were busy.
+    so a run acquiring in that window would park as if the checkout were busy.
 
     Windows has no shared range lock, so the probe there takes the exclusive
     one."""
@@ -76,7 +76,7 @@ def _same_file(fd: int, path: Path) -> bool:
     return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
 
 
-# Lock paths the CURRENT THREAD holds via locked_file, for reentrancy.
+# Lock paths the current thread holds via locked_file, for reentrancy.
 _HELD_LOCKS = threading.local()
 
 
@@ -85,7 +85,7 @@ def _acquire_lock(lock_path: Path) -> int | None:
     cannot be taken (see :func:`locked_file`'s fail-open contract).
 
     `O_NOFOLLOW` refuses a planted symlink at the predictable lock path
-    outright -- never open, chown, or write the thing it points at. Any other
+    outright, never opening, chowning, or writing the thing it points at. Any other
     open/lock failure (a stale root-owned lock a non-root process can't
     reopen) also returns None: the lock is an optimization, never a
     correctness barrier, so a broken one is skipped, not followed or waited
@@ -102,8 +102,8 @@ def _acquire_lock(lock_path: Path) -> int | None:
             lock_exclusive(fd, blocking=True)
             if sys.platform == "win32" or _same_file(fd, lock_path):
                 return fd
-            # The previous holder unlinked this inode after this open; a
-            # fresh lock file may already be held by someone else -- retry.
+            # The previous holder unlinked this inode after this open; a fresh
+            # lock file may already be held by someone else, so retry.
             unlock(fd)
         except OSError:
             os.close(fd)
@@ -118,23 +118,23 @@ def _acquire_lock(lock_path: Path) -> int | None:
 def locked_file(target: Path) -> Generator[bool]:
     """Serialize read-modify-write cycles on *target* across processes.
 
-    Yields whether the lock is actually HELD, for the one caller class that
-    must NOT act on a fiction of serialization -- a transaction that would restore a
+    Yields whether the lock is actually held, for the one caller class that
+    must not act on a fiction of serialization: a transaction that would restore a
     whole-file snapshot on failure can erase a concurrent writer's
     just-validated update when the cycle never was serialized, so it degrades
     to keep-and-warn instead (see `config.write.keep_or_rollback`).
 
-    Blocks on a sibling `<name>.lock` file, NOT the target: atomic_write
+    Blocks on a sibling `<name>.lock` file, never the target: atomic_write
     replaces the target's inode on publish, so a lock taken on the target
     itself would let a waiter queued on the orphaned old inode run
-    concurrently with a fresh locker -- exactly the lost update this guards
+    concurrently with a fresh locker, exactly the lost update this guards
     against.
 
     The lock is a concurrency optimization, never a correctness barrier
-    (atomic_write already makes each publish all-or-nothing), so it FAILS
-    OPEN. If the lock cannot be opened or locked -- a planted symlink
-    (refused by `O_NOFOLLOW`), or a stale root-owned lock a killed `sudo`
-    writer left that a later non-root process can't reopen -- the body runs
+    (atomic_write already makes each publish all-or-nothing), so it fails
+    open. If the lock cannot be opened or locked (a planted symlink
+    refused by `O_NOFOLLOW`, or a stale root-owned lock a killed `sudo`
+    writer left that a later non-root process can't reopen) the body runs
     unserialized rather than wedging or following the symlink. Worst case is
     an unserialized write, which atomic_write already keeps all-or-nothing; a
     lock failure is never a way to redirect or block a write.
@@ -147,9 +147,9 @@ def locked_file(target: Path) -> Generator[bool]:
 
     Same-thread reentrant: a transaction (write + revalidate + rollback)
     holds the lock across its whole cycle while the per-write helpers it
-    calls skip re-acquiring -- flock on a second fd of the same file would
+    calls skip re-acquiring: flock on a second fd of the same file would
     self-deadlock the process. Other threads still block. The reentrancy key
-    is the lock path with its PARENT resolved: the parent dir survives an
+    is the lock path with its parent resolved: the parent dir survives an
     atomic_write of the target, but the target's own inode does not, so a
     symlinked config that a write replaces with a regular file does not shift
     the key mid-transaction.
@@ -169,10 +169,10 @@ def locked_file(target: Path) -> Generator[bool]:
     finally:
         held.pop(key, None)
         if fd is not None:
-            # Unlink BEFORE unlock, while still the holder: waiters queued on
+            # Unlink before unlock, while still the holder: waiters queued on
             # this inode then fail the identity check and requeue on the fresh
             # file. Unlock-first would let one win the orphaned inode while a
-            # newcomer locks a recreated file -- two concurrent "holders".
+            # newcomer locks a recreated file, two concurrent "holders".
             if sys.platform != "win32":
                 with contextlib.suppress(OSError):
                     lock_path.unlink()
@@ -209,7 +209,7 @@ def atomic_write(path: Path, data: str | bytes) -> None:
     tmp_name = ""
     try:
         fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-        # Preserve an existing target's mode across a re-publish; a NEW file
+        # Preserve an existing target's mode across a re-publish; a new file
         # keeps mkstemp's owner-only 0o600 (a hardcoded wider mode would bypass
         # the umask). These are per-user run/machine state files; owner-only is
         # the secure default.

@@ -20,13 +20,11 @@ AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 def validate_base_url(url: str, field: str = "base_url") -> None:
     """Reject a `[providers.*].base_url` that is not an http(s) URL with a host.
 
-    A provider's
-    `base_url` is the host+path prefix the HTTP client posts to (the
-    deployment profile appends `/chat/completions`, `/messages`, etc.), so
-    it must carry an explicit
-    `http://` / `https://` scheme and a host. The common paste error this
-    catches is dropping an API key (or a bare host) into the field, which would
-    otherwise be accepted and only fail much later as an opaque HTTP error.
+    A provider's `base_url` is the host+path prefix the HTTP client posts to
+    (the deployment profile appends `/chat/completions`, `/messages`, etc.), so
+    it must carry an explicit `http://` / `https://` scheme and a host. The
+    common paste error it catches is an API key (or a bare host) dropped into
+    the field, which would otherwise fail much later as an opaque HTTP error.
     """
     try:
         parts = urlsplit(url)
@@ -49,9 +47,8 @@ _CHATGPT_DEFAULT_BASE_URL = "https://chatgpt.com/backend-api/codex"
 def _default_base_url(api_format: str, deployment: str) -> str | None:
     """Default `base_url` for a (format, deployment), or None if required.
 
-    Only the `direct` deployment has a sensible fixed endpoint; vertex/azure
-    (and future bedrock) carry project/resource/region in the URL, so the
-    operator must supply `base_url`.
+    Only the `direct` deployment has a fixed endpoint; vertex and azure carry
+    project/resource/region in the URL, so the operator must supply `base_url`.
     """
     if deployment != "direct":
         return None
@@ -99,20 +96,19 @@ class _ProviderBase(BaseModel):
     """Transport + auth fields shared by every provider, independent of format.
 
     Three orthogonal concerns: `api_format` (the discriminator) selects the
-    wire dialect; `deployment` selects the URL /
-    model-placement profile; and the auth fields (`auth_style` + a static
-    `api_key_env` or a refreshable `token_command`) select the credential.
-    They compose freely -- e.g. Claude-on-Vertex and Gemini-on-Vertex differ
-    only in `api_format` (both `deployment = "vertex"`). `base_url` and
-    `auth_style` default from (api_format, deployment) in `_fill_defaults` so
-    a minimal entry (just `api_format`) is fully usable. Each block is
-    one endpoint; configure as many as you like under any names and reference
-    them from `[models.*]`.
+    wire dialect; `deployment` selects the URL / model-placement profile; and
+    the auth fields (`auth_style` plus a static `api_key_env` or a refreshable
+    `token_command`) select the credential. They compose freely: Claude-on-Vertex
+    and Gemini-on-Vertex differ only in `api_format` (both
+    `deployment = "vertex"`). `base_url` and `auth_style` default from
+    (api_format, deployment) in `_fill_defaults`, so a minimal entry (just
+    `api_format`) is usable. Each block is one endpoint; configure as many as
+    you like under any names and reference them from `[models.*]`.
     """
 
     model_config = MODEL_CONFIG
 
-    # Declared on the base only to fix the FIELD ORDER: a redeclared field
+    # Declared on the base only to fix the field order: a redeclared field
     # keeps its base position, so api_format leads every subclass's
     # model_fields (the docs table and `config show` print that order). Each
     # subclass narrows it to its own literal, which is what discriminates.
@@ -252,7 +248,7 @@ class _ProviderBase(BaseModel):
 
 
 class AnthropicProviderEntry(_ProviderBase):
-    """`api_format = "anthropic"` -- the Anthropic Messages wire format.
+    """`api_format = "anthropic"`: the Anthropic Messages wire format.
 
     `deployment = "direct"` (default) hits api.anthropic.com; `"vertex"`
     is Claude-on-Vertex (model id in the URL, `anthropic_version` in the body,
@@ -274,7 +270,7 @@ class AnthropicProviderEntry(_ProviderBase):
 
 
 class OpenAIProviderEntry(_ProviderBase):
-    """`api_format = "openai"` -- any OpenAI Chat Completions wire format.
+    """`api_format = "openai"`: any OpenAI Chat Completions wire format.
 
     `deployment = "direct"` works against OpenAI, OpenRouter, Ollama, vLLM,
     LM Studio, llama.cpp, Gemini's OpenAI-compatible endpoint, GitHub Copilot,
@@ -289,7 +285,7 @@ class OpenAIProviderEntry(_ProviderBase):
 
 
 class ChatGPTProviderEntry(_ProviderBase):
-    """`api_format = "chatgpt"` -- the ChatGPT-subscription Codex backend.
+    """`api_format = "chatgpt"`: the ChatGPT-subscription Codex backend.
 
     The Responses wire format at `chatgpt.com/backend-api/codex`, authorized
     by the OAuth tokens `agent6 connect <name>` stores in `secrets.toml`
@@ -350,7 +346,7 @@ class ChatGPTProviderEntry(_ProviderBase):
 
 
 class ClaudeCodeProviderEntry(BaseModel):
-    """`api_format = "claude_code"` -- the operator's installed Claude Code binary.
+    """`api_format = "claude_code"`: the operator's installed Claude Code binary.
 
     Not a `_ProviderBase`: it dials no endpoint and holds no credential, so the
     transport and auth fields do not exist on it (`extra="forbid"` refuses each

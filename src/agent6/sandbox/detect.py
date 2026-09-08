@@ -62,11 +62,11 @@ class Environment:
         on hosts where userns is blocked (default-seccomp Docker,
         AppArmor-restricted Ubuntu, locked-down kiosks) we fall back to
         `hardened`, which keeps Landlock + seccomp + NO_NEW_PRIVS but skips
-        namespaces. `hardened`'s ONLY filesystem boundary is Landlock, so it
+        namespaces. `hardened`'s only filesystem boundary is Landlock, so it
         additionally requires the Landlock probe to succeed; a host offering
         neither userns nor Landlock has no confinement mechanism at all and
-        resolves to `none` -- truthfully unsandboxed and loudly warned, never
-        a hardened label that would silently confine nothing.
+        resolves to `none`, truthfully unsandboxed and loudly warned, never a
+        hardened label that would silently confine nothing.
         """
         if not self.sandbox_available or not self.seccomp_arch_supported:
             return "none"
@@ -119,7 +119,7 @@ def detect_container_signals() -> tuple[str, ...]:
 def sandbox_disabled_by_env() -> bool:
     """True when `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` is set.
 
-    The env form of `--dangerously-disable-sandbox`: a per-invocation SETTER
+    The env form of `--dangerously-disable-sandbox`: a per-invocation setter
     that forces the unsandboxed isolation regardless of config, read in
     :func:`resolve_isolation`. For a `machine run` the supervisor calls
     `resolve_isolation` and passes the resolved `none` to each agent
@@ -175,8 +175,8 @@ def apparmor_userns_restricted() -> bool:
 
     Ubuntu 23.10+/24.04+ ship `kernel.apparmor_restrict_unprivileged_userns=1`:
     an unprivileged process can then create a user namespace only with an
-    AppArmor isolation granting `userns`. This is why `strict` can be
-    unavailable even when `kernel.unprivileged_userns_clone = 1` -- the fix is
+    AppArmor profile granting `userns`. This is why `strict` can be
+    unavailable even when `kernel.unprivileged_userns_clone = 1`; the fix is
     `agent6 system apparmor install` (or set the sysctl to 0). Reads the proc
     file directly; absent on non-AppArmor kernels.
     """
@@ -231,7 +231,7 @@ def _userns_block_cause(env: Environment) -> str:
 def degrade_reason(env: Environment) -> str | None:
     """Why `auto` resolves below `strict` here, or None at full strength.
 
-    ONE owner for the why: every surface that reports an auto-selected level
+    One owner for the why: every surface that reports an auto-selected level
     below strict (check sandbox, check config, the run-entry warning) prints
     this, so a degraded level never appears without its cause.
     """
@@ -270,8 +270,8 @@ def detect() -> Environment:
 class IsolationUnavailableError(Exception):
     """The host cannot provide the requested `[sandbox] isolation`.
 
-    A distinct type so the refusal sites catch exactly this; catching bare
-    RuntimeError there also swallowed unrelated faults as security refusals.
+    A distinct type so the refusal sites catch exactly this; a bare
+    RuntimeError there would swallow unrelated faults as security refusals.
     """
 
 
@@ -305,7 +305,7 @@ def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
         # additionally hits the unconfined confirm gate.
         return env.detected_isolation
     if requested == "none":
-        # Explicit opt-out of agent6's kernel sandbox: commands run with NO
+        # Explicit opt-out of agent6's kernel sandbox: commands run with no
         # Landlock/seccomp/namespace confinement, relying entirely on whatever
         # isolates the surrounding environment (a container, a disposable VM).
         # Self-authorizing: `sandbox.isolation`, the flag, and the env var are all

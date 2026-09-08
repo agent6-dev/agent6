@@ -93,7 +93,7 @@ agent6 model worker chatgpt gpt-5.6-sol
 
 - `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`, a constant, not config) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
 - Usage draws on the plan's own limits; cost meters show an authoritative $0 and the tokens meter nothing, so `[budget].max_percent` is the ledger that bounds these calls.
-- Past the included window, calls draw on PURCHASED credits (real money; auto top-up can buy more).
+- Past the included window, calls draw on purchased credits (real money; auto top-up can buy more).
   `[budget].allow_paid_credits = false` (the default) is a circuit breaker: a usage preflight before the first call and every response's headers report both windows and the credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes, so a boundary-crossing call can spend before the stop.
 - Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.

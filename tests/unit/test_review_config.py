@@ -31,7 +31,7 @@ def test_review_seats_valid_forms_accepted() -> None:
 
 def test_quorum_gt1_needs_distinct_models() -> None:
     # Same-model panel can reach at most one block -> quorum=2 is unreachable.
-    with pytest.raises(ValidationError, match="DISTINCT"):
+    with pytest.raises(ValidationError, match="distinct"):
         ReviewConfig(decision="quorum", quorum=2)
     # Two distinct models satisfy it.
     ok = ReviewConfig(

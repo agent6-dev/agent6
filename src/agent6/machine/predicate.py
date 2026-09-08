@@ -253,9 +253,9 @@ def _compare(op: ast.cmpop, left: object, right: object) -> bool:
 
 def _order(op: ast.cmpop, left: object, right: object) -> bool:
     # No numeric coercion: Python orders int/int, int/float, float/float
-    # natively and EXACTLY. A float() coercion would collapse distinct ints
-    # above 2^53 (nanosecond epochs) to one value -- `a > b` reading False for
-    # a = b + 100 -- making `>` lossy while `==` stays exact.
+    # natively and exactly. A float() coercion would collapse distinct ints
+    # above 2^53 (nanosecond epochs) to one value (`a > b` reading False for
+    # a = b + 100), making `>` lossy while `==` stays exact.
     # Non-comparable operands still raise TypeError -> PredicateError.
     try:
         if isinstance(op, ast.Lt):
@@ -280,15 +280,15 @@ def _contains(container: object, item: object) -> bool:
         return item in container
     except TypeError as exc:
         # A dict container hashes the left operand, so an unhashable one (a
-        # list/record-typed var) raised a bare TypeError -- which is not what the
-        # engine catches, so it escaped as a traceback with no journaled end.
+        # list/record-typed var) raises a bare TypeError, which the engine does
+        # not catch: it would escape as a traceback with no journaled end.
         raise PredicateError(f"cannot use `in` with {item!r} and {container!r}") from exc
 
 
 def _has(reference: Reference, blackboard: Mapping[str, object]) -> bool:
     """Presence of *reference*: False when any segment is absent (the guard an
     optional field needs before a read), True when the full path resolves.
-    Navigating INTO a non-record value stays an error, exactly as `_resolve`
+    Navigating into a non-record value stays an error, exactly as `_resolve`
     treats it: that is a type mismatch, not absence."""
     if reference.root not in blackboard:
         return False

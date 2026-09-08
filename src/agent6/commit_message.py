@@ -18,7 +18,7 @@ def render_commit_trailer(fmt: str, *, models: Sequence[str]) -> str | None:
     """The `[git.commit].trailer` format string as a concrete trailer line, or
     None when unset. {model} names the model(s) that wrote the code, first-seen
     order (the primary worker first), ", "-joined and deduplicated; the model
-    that wrote a commit MESSAGE never appears. The config validator pins the
+    that wrote a commit message never appears. The config validator pins the
     placeholder set and the "Key: value" shape."""
     if not fmt:
         return None

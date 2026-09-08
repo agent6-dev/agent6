@@ -12,7 +12,7 @@ Design notes:
 - Each call opens, writes one line, flushes, closes. Durable events fsync too;
   the high-frequency streaming deltas (see `_EPHEMERAL_EVENTS`) only flush, so
   a reasoning model's tens of thousands of deltas don't fsync-throttle the run.
-- Durable events fail LOUD (`EventWriteError`): the journal is the read model
+- Durable events fail loudly (`EventWriteError`): the journal is the read model
   every surface trusts, so a run stops rather than continue unrecordable.
   Streaming deltas stay best-effort; the lossless transcripts keep their copy.
 """
@@ -32,9 +32,9 @@ from typing import Any
 from agent6.paths import mkdir_for_real_user
 
 # High-frequency streaming deltas: written + flushed (so tailers see them live)
-# but NOT fsynced. They are ephemeral UI, reconstructable from the lossless
-# transcripts, and a reasoning model can emit tens of thousands per run -- an
-# fsync each throttles the SSE reader on a slow disk and stalls the stream.
+# but not fsynced. They are ephemeral UI, reconstructable from the lossless
+# transcripts, and a reasoning model can emit tens of thousands per run, where
+# an fsync each throttles the SSE reader on a slow disk and stalls the stream.
 _EPHEMERAL_EVENTS = frozenset({"role.text_delta", "role.thinking_delta"})
 
 
@@ -89,7 +89,7 @@ class EventSink:
             if ephemeral:
                 return  # a garbled delta is droppable UI
             raise EventWriteError(f"cannot serialize event {event_type!r}: {exc}") from exc
-        # Encode HERE, lossily: json.dumps(ensure_ascii=False) passes a lone
+        # Encode here, lossily: json.dumps(ensure_ascii=False) passes a lone
         # surrogate (a split emoji escape in model-emitted tool args, a
         # surrogateescape-decoded argv) through as a str, and a text-mode write
         # would then raise UnicodeEncodeError. Replacing keeps the event

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 TernaryMode = Literal["no", "ask", "yes"]
-# `none` is the UNSANDBOXED isolation: child commands run as plain subprocesses
+# `none` is the unsandboxed isolation: child commands run as plain subprocesses
 # with no kernel-enforced confinement. Reached when the host has no confinement
 # mechanism at all (non-Linux, or a Linux kernel offering neither userns nor
 # Landlock), or as a deliberate operator opt-out on any host via
@@ -30,20 +30,19 @@ RoleName = Literal["worker", "reviewer", "planner"]
 # known mode", which is what `session_kind` answers.
 ResumableMode = Literal["run", "plan", "ask"]
 # What the after-auto-commit hook (`run -i`'s REPL) tells the loop to do next;
-# `exit` is /exit: stop AND leave (no follow-up prompt).
+# `exit` is /exit: stop and leave (no follow-up prompt).
 AutoCommitDirective = Literal["continue", "stop", "undo", "exit"]
 
 
 @dataclass(frozen=True, slots=True)
 class SessionKind:
-    """What a mode MEANS, in one record.
+    """What a mode means, in one record.
 
     One owner for "is this session allowed to X", so no surface re-derives it
-    from a bare string and disagrees with another. The string stays the key
-    and stays what is PERSISTED; this is derived from it at read time, never
-    written. A future agent6 that
-    changes what "plan" may do must reinterpret old sessions correctly, which
-    storing the capabilities would prevent.
+    from a bare string and disagrees with another. The string stays the key and
+    stays what is persisted; this is derived from it at read time, never
+    written, so an agent6 that changes what "plan" may do reinterprets old
+    sessions correctly, which storing the capabilities would prevent.
     """
 
     name: str
@@ -140,7 +139,7 @@ def session_bucket(name: str) -> str:
 
     Derived, never stored, so a record cannot disagree with where its sessions
     actually go. The buckets sit under one `sessions/` root, which
-    is what leaves the state dir's own `machines/` to live machine INSTANCES.
+    is what leaves the state dir's own `machines/` to live machine instances.
     An `agent` leg lives inside its machine instance's directory and has no
     bucket.
     """
@@ -188,7 +187,7 @@ class BackgroundHandoff:
     Its own type rather than a CommandResult with a hole in it: a completed
     command and a running one answer different questions, and a returncode
     invented for the second would be a lie every caller has to remember to
-    ignore. The tool result the model sees is still ONE shape (see
+    ignore. The tool result the model sees is still one shape (see
     `ExecResult`).
     """
 
@@ -235,9 +234,9 @@ class JailPolicy:
     # these keep their real paths. Read+execute only, never writable.
     tool_paths: tuple[Path, ...] = ()
     # Operator additions to the hidden set ([sandbox].hide_paths): masked from
-    # the jail even under a broader grant. The launcher masks LAST, after every
+    # the jail even under a broader grant. The launcher masks last, after every
     # bind, and agent6's own private dirs are always unioned in at
-    # serialization -- no constructor can forget them.
+    # serialization, so no constructor can forget them.
     hide_paths: tuple[Path, ...] = ()
     timeout_s: float = 600.0
     # Per-process memory cap in MiB (RLIMIT_DATA, set by the launcher in the
@@ -281,8 +280,8 @@ class RepoSummary:
     recent_log: str
     # Top co-change pairs mined from `git log --name-only`. Tuple
     # of (file_a, file_b, count) sorted by count desc. Empty when the
-    # repo has insufficient history (e.g. fresh --depth=1 clone in the
-    # realworld bench) or when no pair co-changed at least 2 commits.
+    # repo has insufficient history (a fresh `--depth=1` clone, say) or when no
+    # pair co-changed at least 2 commits.
     co_change_pairs: tuple[CoChangePair, ...] = ()
     # Top "hot" symbols mined from the tree-sitter index. Tuple
     # of (name, kind, def_path, def_line, files_referenced) sorted by

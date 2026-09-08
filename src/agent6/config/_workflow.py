@@ -21,7 +21,7 @@ def parse_seat_spec(spec: str) -> tuple[str, str, str]:
     contain `/`; only the first `/` after `@` splits provider from model),
     `"security"` -> `("security", "", "")` (routed via the reviewer role),
     `"@anthropic/claude-opus-4-8"` -> `("", "anthropic", "claude-opus-4-8")`.
-    An `@` form must name BOTH a provider and a model, so a typo cannot
+    An `@` form must name both a provider and a model, so a typo cannot
     degrade to the reviewer route in silence; it raises ValueError."""
     persona, sep, route = spec.partition("@")
     if not sep:
@@ -47,7 +47,7 @@ class MetricConfig(BaseModel):
     in the jail (same env as `verify_command`) and parses `pattern`'s
     first capture group as a number. `goal = "minimize"` for things like
     cycles/time; `"maximize"` for bench scores. `pattern` is a Python
-    regex; the FIRST capture group must be a base-10 integer or float. If
+    regex; the first capture group must be a base-10 integer or float. If
     the pattern does not match in the command's combined stdout+stderr the
     metric is treated as missing.
     """
@@ -107,13 +107,12 @@ class WorkflowConfig(BaseModel):
             "stays gateless, no inference and no adoption; a set `verify_command` is unaffected."
         ),
     )
-    # per-call timeout for verify_command (and metric_command) in
-    # seconds. Defaults to the jail's general 600s but should be cranked
-    # MUCH lower for benches where the verify is a fast correctness test
-    # (perf-takehome's CorrectnessTests run in ~2s; a 30s cap detects
-    # infinite-loop / quadratic edits 20x faster than the 600s default).
-    # Setting too low for slow legitimate tests will cause false-positive
-    # failures, so leave at 600 unless the verify is reliably fast.
+    # Per-call timeout for verify_command (and metric_command) in seconds.
+    # Defaults to the jail's general 600s; lower it far for benches whose
+    # verify is a fast correctness test (where the tests run in ~2s, a 30s cap
+    # detects infinite-loop or quadratic edits 20x faster than the 600s
+    # default). Too low for slow legitimate tests causes false-positive
+    # failures, so leave it at 600 unless the verify is reliably fast.
     verify_timeout_s: float = Field(
         gt=0.0,
         default=600.0,
@@ -126,7 +125,7 @@ class WorkflowConfig(BaseModel):
             "model-chosen `run_command` is not bounded (see `command_checkin_s`)."
         ),
     )
-    # Bounds one LEG: a resume gets a fresh allowance (numbering continues),
+    # Bounds one leg: a resume gets a fresh allowance (numbering continues),
     # so a standing run is not capped by the sum of its legs.
     max_iterations: int = Field(
         default=200,
@@ -144,13 +143,11 @@ class WorkflowConfig(BaseModel):
         return v
 
     # How long a run_command may run before the model is handed it back as a
-    # background job. NOT a timeout: nothing is killed, the command keeps
-    # running and the model decides whether to wait, poll or stop it -- a
-    # judgement a number cannot make. 0 disables the hand-back (wait while it
-    # lives), which is right when a human is watching and can interrupt.
-    # 900 because the hand-back is non-destructive, so it can afford to be
-    # patient: the cost of being early is a poll cycle of tokens, and the cost
-    # of being late is nothing at all.
+    # background job. Not a timeout: nothing is killed, the command keeps
+    # running and the model decides whether to wait, poll or stop it. 0 disables
+    # the hand-back (wait while it lives), which is right when a human is
+    # watching and can interrupt. 900 because the hand-back is non-destructive:
+    # handing back early costs one poll cycle of tokens.
     command_checkin_s: float = Field(
         ge=0.0,
         default=900.0,
@@ -216,18 +213,18 @@ class ContextConfig(BaseModel):
     # `drop_at_chars` the oldest tool_results are replaced by a
     # short placeholder (the worker can re-call the tool to refetch). When the
     # *whole* context (text + tool_use inputs + surviving tool_results) grows
-    # past `summarise_at_chars` -- which must be > drop, so tier-2
-    # escalates above tier-1 -- the conversation is summarized and restarted
+    # past `summarise_at_chars` (which must be > drop, so tier-2 escalates
+    # above tier-1) the conversation is summarized and restarted
     # (the durable task DAG survives; the restart notice points the worker at
     # `list_tasks` to recover task-level state).
     # `summary_max_tokens` caps the summarizer's output.
     #
-    # Default `None` == ADAPTIVE: agent6 sizes both thresholds from the worker
+    # Default `None` is adaptive: agent6 sizes both thresholds from the worker
     # model's context window (tier-1 at ~45% of it, tier-2 at the window
     # minus a 16k-token reserve), resolving
     # the window from a bundled table of tested models + the live model cache
-    # (see `models.registry.compaction_thresholds`). Pin them by setting BOTH
-    # explicitly (e.g. a self-hosted model agent6 can't size); leave BOTH unset
+    # (see `models.registry.compaction_thresholds`). Pin them by setting both
+    # explicitly (e.g. a self-hosted model agent6 can't size); leave both unset
     # to stay adaptive. When the window is unknown, fixed 256k/768k
     # defaults apply.
     drop_at_chars: int | None = Field(
@@ -344,7 +341,7 @@ class PromptConfig(BaseModel):
     # symbols (cross-file reference ranking), git co-change pairs, and the
     # tree-sitter symbol outline. Default on. Set false for a leaner/cheaper
     # prompt that relies purely on on-demand exploration (outline/find_definition)
-    # -- the base repo map + AGENTS.md still ship.
+    # (the base repo map and AGENTS.md still ship).
     structural_priors: bool = Field(
         default=True,
         description=(
@@ -372,7 +369,7 @@ class PromptConfig(BaseModel):
     # one focused subtask at a time (the existing surface-current-task and
     # finish-gate machinery walks the frontier). Helps small/open models that
     # lose track of multi-part tasks; a capable model decomposes implicitly and
-    # only pays the 2-4x turn overhead. "auto" (default) enables it ONLY for
+    # only pays the 2-4x turn overhead. "auto" (default) enables it only for
     # worker models with a measured win in the capability registry
     # (models.registry.decompose_default); the CLI pins auto to on/off at run
     # start via `with_decompose`, and the engine treats any value other than
@@ -430,19 +427,19 @@ class ReviewConfig(BaseModel):
         default=10,
         description='Iterations between panels when `trigger = "periodic"`.',
     )
-    # `seats` is THE roster: flat
-    # "persona[@provider/model]" strings (e.g. "security" routes via
-    # [models.reviewer]; "security@openrouter/moonshotai/kimi-k2" pins a
-    # model). The `agent6 review --reviewers N`/`--personas` flags synthesize
-    # an in-memory equivalent. `decision` is only a GATE in-loop; "advisory"
-    # (default) just injects findings as guidance and never blocks.
+    # `seats` is the roster: flat "persona[@provider/model]" strings (e.g.
+    # "security" routes via [models.reviewer];
+    # "security@openrouter/moonshotai/kimi-k2" pins a model). The `agent6 review
+    # --reviewers N`/`--personas` flags synthesize an in-memory equivalent.
+    # `decision` gates in-loop only; "advisory" (default) injects findings as
+    # guidance and never blocks.
     decision: Literal["advisory", "veto", "quorum", "all"] = Field(
         default="advisory",
         description=(
-            "What a panel's BLOCK verdicts do: `advisory` (the findings are injected as guidance, "
-            "nothing is blocked), `veto` (one blocking seat rejects the finish), `quorum` "
-            "(`quorum` distinct models must block), or `all` (every seat must block). A gate "
-            "applies to `before_finish` only; the other triggers always advise."
+            "What a panel's `block` verdicts do: `advisory` (the findings are injected as "
+            "guidance, nothing is blocked), `veto` (one blocking seat rejects the finish), "
+            "`quorum` (`quorum` distinct models must block), or `all` (every seat must block). A "
+            "gate applies to `before_finish` only; the other triggers always advise."
         ),
     )
     quorum: int = Field(
@@ -463,10 +460,9 @@ class ReviewConfig(BaseModel):
             "for the rest of the run, so a panel can never stall a run forever."
         ),
     )
-    # Budget floor: the in-loop review panel is SKIPPED (approve-and-proceed) once
-    # the run's remaining token budget falls below this fraction -- reviewing costs
-    # most exactly when budget is scarcest. Default 0.25 = skip the panel in the
-    # last quarter of the budget.
+    # Budget floor: the in-loop review panel is skipped (approve-and-proceed)
+    # once the run's remaining token budget falls below this fraction. Default
+    # 0.25 = skip the panel in the last quarter of the budget.
     budget_fraction: float = Field(
         gt=0.0,
         le=1.0,
@@ -514,7 +510,7 @@ class ReviewConfig(BaseModel):
     @model_validator(mode="after")
     def _check_review_seats(self) -> ReviewConfig:
         # Each seats entry is "persona", "persona@provider/model", or
-        # "@provider/model"; an "@" form must name BOTH a provider and a model so
+        # "@provider/model"; an "@" form must name both a provider and a model so
         # a typo doesn't silently degrade to the reviewer route.
         for spec in self.seats:
             if not spec.strip():
@@ -532,7 +528,7 @@ class ReviewConfig(BaseModel):
             if len(models) < self.quorum:
                 raise ValueError(
                     f"review.decision='quorum' with quorum={self.quorum}"
-                    f" needs >= {self.quorum} DISTINCT models (the gate counts one block per"
+                    f" needs >= {self.quorum} distinct models (the gate counts one block per"
                     " distinct model). Provide them via seats"
                     " ('persona@provider/model'), or use decision='veto'."
                 )
@@ -540,7 +536,7 @@ class ReviewConfig(BaseModel):
 
 
 class BudgetConfig(BaseModel):
-    """`[budget]`: every provider call is bounded in exactly ONE currency.
+    """`[budget]`: every provider call is bounded in exactly one currency.
 
     A call the runtime can meter (provider-reported cost, else price x tokens
     at the model's fetched rates, cache-aware) counts against `max_usd`; a
@@ -593,7 +589,7 @@ class BudgetConfig(BaseModel):
     allow_paid_credits: bool = Field(
         default=False,
         description=(
-            "Allow plan-metered calls (`chatgpt`, `claude_code`) to spend PURCHASED credits or "
+            "Allow plan-metered calls (`chatgpt`, `claude_code`) to spend purchased credits or "
             "extra usage once the included plan window is exhausted (auto top-up can buy more "
             "with the saved payment method). `false` is a circuit breaker, not a guarantee: "
             "the backend's usage readings (a chatgpt preflight and every response's headers, "

@@ -26,7 +26,7 @@ of `machine_lock`): a second `agent6 run`/`resume` on the same run dir
 refuses rather than constructing a second curator (`fork` copies under the
 graph flock and never constructs one).
 
-Fail-safe: a mutation updates `self._nodes` in memory BEFORE writing to disk,
+Fail-safe: a mutation updates `self._nodes` in memory before writing to disk,
 so a write-path fault (ENOSPC, a serialization error, a cycle surfacing from
 `write_node`) can leave in-memory state ahead of disk. `_mutating` reloads
 from disk (the source of truth) before surfacing such a fault, so a later read
@@ -147,7 +147,7 @@ class GraphCurator:
         self._graph_version = self._compute_graph_version()
         # A node stamped newer than the journal's max version is a death
         # between the node write and its journal append: the entry is gone.
-        # Resync the counter so the lost number is never REUSED (two ops
+        # Resync the counter so the lost number is never reused (two ops
         # sharing a version corrupts fork-at-version undo) and say so; the
         # change stays current but is invisible to historical replay.
         node_max = max((n.graph_version for n in self._nodes.values()), default=0)
@@ -198,7 +198,7 @@ class GraphCurator:
         """Flock the run dir for one mutation, with the disk-fault fail-safe.
 
         A `CuratorError` is a pre-mutation validation reject (nothing was
-        applied), so it propagates untouched. Any other fault escapes AFTER the
+        applied), so it propagates untouched. Any other fault escapes after the
         in-memory graph was already updated, so reload from disk (the source of
         truth) before re-raising: a later read then never sees a node the write
         path failed to persist. The reload runs under the same flock so a
@@ -253,7 +253,7 @@ class GraphCurator:
                 updated_at=now,
                 created_by=intent.draft.created_by,
             )
-            # Write the child node BEFORE the parent->child link so a crash in
+            # Write the child node before the parent->child link so a crash in
             # between can at worst leave an orphan node (parent_id set, not yet
             # listed in parent.children) rather than a dangling reference to a
             # child whose .md never made it to disk.
@@ -302,10 +302,8 @@ class GraphCurator:
                 # A parent with open children is a container: the frontier
                 # surfaces its children instead, and passing it would satisfy
                 # every dependency on it while the work they name goes undone.
-                # The root is the whole
-                # job, not a unit of work: nothing depends on it, and a run
-                # that ends with a standing goal or a subtask left open still
-                # completed it.
+                # The root is exempt: nothing depends on it, and a run that ends
+                # with a standing goal or a subtask left open still completed it.
                 raise CuratorError(
                     f"{intent.id} has open children, so it is not finished; mark them"
                     " passed, skipped or obsolete first"
@@ -381,8 +379,8 @@ class GraphCurator:
                 # A crash mid-append can leave a torn final line. The node .md
                 # files are the source of truth (read atomically by load_graph)
                 # and graph_version is a self-healing monotonic counter, so skip
-                # the corrupt line rather than crashing curator startup -- which
-                # would otherwise make the whole run unresumable.
+                # the corrupt line rather than crashing curator startup, which
+                # would make the whole run unresumable.
                 sys.stderr.write(f"agent6: skipping malformed journal line: {stripped[:80]!r}\n")
         return entries
 

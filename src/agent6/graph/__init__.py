@@ -3,7 +3,7 @@
 """Task-graph package.
 
 The graph is the persistent representation of a single `agent6 run`. It lives in
-the run dir (under the per-repo state dir). The curator owns the task GRAPH files
+the run dir (under the per-repo state dir). The curator owns the task graph files
 (graph.jsonl, graph/*.md, cursor.json); the worker, the planner and the
 operator's own steering all mutate through the single in-process
 `GraphCurator`. The main agent process writes the resume snapshot

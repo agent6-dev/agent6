@@ -110,8 +110,8 @@ def _load_skill(skill_dir: Path) -> tuple[Skill | None, list[str]]:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         # Discovery runs at startup, so one unreadable or non-UTF-8 SKILL.md
-        # took down EVERY run with a bare decode error naming no file. Degrade
-        # to the warning every other malformed skill gets.
+        # would take down every run with a bare decode error naming no file.
+        # Degrade to the warning every other malformed skill gets.
         return None, [f"{path}: unreadable ({exc})"]
     fields, warnings = parse_frontmatter(text)
     name = fields.get("name", "")
@@ -185,7 +185,7 @@ def operator_skills(
     """The skills a run has, from `[skills]`: discovery over `extra_dirs` then
     the installed dir, with the operator's per-skill states applied.
 
-    THE one owner of the master switch, asked by `--skill` and the pause menu
+    The one owner of the master switch, asked by `--skill` and the pause menu
     alike: off means no skills anywhere, not "off for the model only"."""
     if not enabled:
         return ResolvedSkills(enabled=(), always=(), warnings=())

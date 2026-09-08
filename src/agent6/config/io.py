@@ -22,7 +22,7 @@ from agent6.portable import atomic_write, locked_file, toml_basic_string
 def _header_name(line: str) -> str | None:
     """The table name of a `[table]` header line, or None if it is not one.
 
-    THE single owner of header matching; tolerates a trailing comment and
+    The single owner of header matching; tolerates a trailing comment and
     interior whitespace (`[sandbox]  # the jail`, `[ sandbox ]`), both ordinary
     TOML. An array-of-tables (`[[x]]`) is deliberately not a match.
     """
@@ -39,10 +39,10 @@ def _header_name(line: str) -> str | None:
 
 
 def _section_name(line: str) -> str | None:
-    """The dotted name of a `[table]` OR `[[array.of.tables]]` header line,
+    """The dotted name of a `[table]` or `[[array.of.tables]]` header line,
     or None if *line* is not one.
 
-    For DROPPING a whole section: both forms are subtables that must go with
+    For dropping a whole section: both forms are subtables that must go with
     their parent, so a `[[table.sub]]` under a dropped `[table]` is included.
     `_header_name` is the stricter single-table matcher for a lookup, which
     deliberately rejects `[[x]]`.
@@ -122,7 +122,7 @@ def format_toml_value(value: object) -> str:  # noqa: PLR0911
     if isinstance(value, dict):
         # Inline table, e.g. an OpenRouter routing value:
         #   extra_body = { provider = { sort = "throughput" } }
-        # Written on one line so the existing leaf-line surgery can replace it
+        # Written on one line so the leaf-line surgery can replace it
         # wholesale (a nested `[table]` would collide with the inline parent).
         if not value:
             return "{}"
@@ -158,7 +158,7 @@ def parse_cli_value(value: str) -> object:
 def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
     """Split `sandbox.network` into `("sandbox", "network")`.
 
-    A single-segment key (the top-level `profile`) splits to table `""`:
+    A single-segment key (the top-level `preset`) splits to table `""`:
     the surgery below targets the file's bare top region, before any
     `[table]` header.
     """
@@ -178,7 +178,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     Creates the `[table]` block if it is absent.
 
     TOML forbids a bare top-level key and a same-named `[table]` coexisting
-    (`profile` vs `[profile]`), so a write REPLACES the conflicting other
+    (`preset` vs `[preset]`), so a write replaces the conflicting other
     shape. Revalidation still arbitrates whether the new value is semantically
     valid.
     """
@@ -219,7 +219,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
         end = _region_end(lines, region)
         j = _find_leaf_line(lines, region, end, leaf)
         if j is not None:
-            # Replace the WHOLE value: a multi-line array or triple-quoted
+            # Replace the whole value: a multi-line array or triple-quoted
             # string spans several lines, and rewriting only the opening one
             # orphans the rest into unparseable TOML. Keep a single-line value's
             # trailing comment.
@@ -344,7 +344,7 @@ def _drop_top_region_key(lines: list[str], key: str) -> list[str]:
         if key_re.match(lines[j]):
             return lines[:j] + lines[j + _value_line_span(lines, j) :]
         # Skip a multi-line value's interior so a `key = ...`-looking line inside
-        # an EARLIER key's triple-quoted value is not matched and mis-dropped.
+        # an earlier key's triple-quoted value is not matched and mis-dropped.
         j += _value_line_span(lines, j) if _ASSIGN_RE.match(lines[j]) else 1
     return lines
 
@@ -376,7 +376,7 @@ def _scan_toml_line(text: str, depth: int, triple: str | None) -> tuple[int, str
 
 
 def _line_comment(line: str) -> str:
-    """The trailing `# comment` (text only) on a single TOML line, or "" -- a
+    """The trailing `# comment` (text only) on a single TOML line, or "". A
     `#` inside a string is not a comment."""
     i, n, triple = 0, len(line), None
     while i < n:
@@ -431,8 +431,7 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
         # The removal twin of upsert_toml_leaf's refusal: without it a leaf
         # inside an inline table or dotted key reads "not found" here, and
         # callers translate False into "nothing to unset" while `config get`
-        # shows
-        # the leaf set.
+        # shows the leaf set.
         if table and (owner := undeclared_table_ancestor(path, dotted_key)):
             raise ConfigError(
                 f"{dotted_key} lives inside {owner}, which is not a plain [table]"
@@ -467,9 +466,9 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
 def remove_toml_table(path: Path, table: str) -> bool:
     """Delete a whole `[table]` section (its header, body, and any `[table.sub]`
     subtables) from *path*. Returns True if the table was present. Used by
-    `config fix` to drop an unknown/extra top-level table (e.g. a leftover
-    `[cli]` from a removed feature), where deleting a single leaf would leave an
-    empty-but-still-invalid table behind."""
+    `config fix` to drop an unknown/extra top-level table (a stray `[cli]`,
+    say), where deleting a single leaf would leave an empty-but-still-invalid
+    table behind."""
     with locked_file(path):
         if not path.is_file():
             return False
@@ -487,8 +486,8 @@ def read_toml_file(path: Path) -> dict[str, Any]:
 
     Wrap a parse error in `ConfigError` (matching `config.layer._read_toml`)
     so the `config ... --machine-file FILE` commands surface a clean message
-    instead of letting a raw `TOMLDecodeError` traceback escape -- and, for
-    `set`/`add`, so the malformed file is reported before it is rewritten.
+    instead of letting a raw `TOMLDecodeError` traceback escape, and so
+    `set`/`add` report the malformed file before rewriting it.
     """
     if not path.is_file():
         return {}
@@ -502,8 +501,8 @@ def read_toml_file(path: Path) -> dict[str, Any]:
 
 def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
     """The outermost ancestor of *dotted_key* the leaf surgery can't write under
-    -- a plain value, an inline table, a dotted key, or an array-of-tables
-    (`[[x]]`) -- else None. The surgery only knows `[table]` headers, so writing
+    (a plain value, an inline table, a dotted key, or an array-of-tables
+    `[[x]]`), else None. The surgery only knows `[table]` headers, so writing
     under one emits a header that collides with it ("Cannot declare ... twice");
     the caller names the owning value instead of leaking the parser's complaint
     about a file it discarded.

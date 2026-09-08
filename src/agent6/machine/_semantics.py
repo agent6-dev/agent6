@@ -260,9 +260,9 @@ def _resolve_vars(
 
 def fixture_problems(spec: MachineSpec, fixture: dict[str, Any]) -> list[str]:
     """Problems in a `--blackboard` fixture: every key must name a declared
-    var and every value must satisfy its type -- the same checks the declared
-    defaults get. Unchecked, a typo'd key was silently ignored and a string
-    `"false"` replaced a bool and routed branches as truthy."""
+    var and every value must satisfy its type, the same checks the declared
+    defaults get. Unchecked, a typo'd key is silently ignored and a string
+    `"false"` replaces a bool and routes branches as truthy."""
     env, _ = _resolve_env(spec)
     problems: list[str] = []
     for name, value in fixture.items():
@@ -349,7 +349,7 @@ def validate_record_payload(
     """Strictly validate a captured *payload* against a record schema.
 
     The one runtime capture gate for an agent `finish_session` payload (engine
-    side AND the leg's in-run contract check, which receives the same schemas
+    side and the leg's in-run contract check, which receives the same schemas
     over the AgentRequest wire) and a `tool` state's parsed stdout (*where*
     names which, for the error text). Stricter than the load-time placeholder
     check on variable defaults: every non-optional field must be present,

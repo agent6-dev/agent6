@@ -6,8 +6,8 @@ Secrets live in `<global-config-dir>/secrets.toml`, separate from the
 config so the config can be shared/committed while keys never are. The
 file is treated like an SSH private key:
 
-- it MUST be a regular file owned by the operator,
-- it MUST be `0600` (no group/other bits) or agent6 refuses to read it,
+- it must be a regular file owned by the operator,
+- it must be `0600` (no group/other bits) or agent6 refuses to read it,
 - it is written atomically with `0600` and `chown`-ed back to the real
   user when agent6 is running through sudo.
 
@@ -68,7 +68,7 @@ def _require_safe_perms(path: Path, user: RealUser) -> None:
 def _read_secrets_toml(path: Path) -> dict[str, Any]:
     """Parse `secrets.toml`, as a SecretsError for anything that stops it.
 
-    THE one reader: an unreadable file (root-owned after a `sudo connect`, a
+    The one reader: an unreadable file (root-owned after a `sudo connect`, a
     chmod 000) is the operator's environment and not a bug in agent6, so it
     raises SecretsError naming the path, never an unhandled PermissionError."""
     try:
@@ -155,8 +155,9 @@ def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUs
         text = _render_secrets_toml(data)
         # atomic_write uses tempfile.mkstemp: an unpredictable name opened O_EXCL
         # at 0600, so a pre-planted `secrets.toml.tmp` symlink cannot redirect this
-        # write. (A fixed `.tmp` opened O_CREAT|O_TRUNC would follow such a symlink
-        # -- an unprivileged user retargeting a root write under `sudo connect`.)
+        # write. (A fixed `.tmp` opened O_CREAT|O_TRUNC would follow such a
+        # symlink: an unprivileged user retargeting a root write under
+        # `sudo connect`.)
         # A new file inherits mkstemp's 0600; an existing one keeps its mode. Force
         # 0600 anyway so a pre-existing wider-mode file is tightened.
         atomic_write(path, text)

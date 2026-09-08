@@ -5,18 +5,16 @@
 This is a trust boundary (untrusted text -> structured types), so we use
 pydantic and surface field-pointing errors.
 
-Field policy: **secure by default, fully auditable**. Every field has a
-default, and security-sensitive fields default to the *safe* value
-(`sandbox.network = "auto"`,
-`sandbox.run_commands = "ask"`, `sandbox.protect_git = true`; git push,
-`--force`, and history rewrites are refused unconditionally by `git_ops`,
-with no config override at all). Configs layer: global `$XDG_CONFIG_HOME`
-defaults, then the per-repo config (out of the workspace, under the state
-dir), so a repo is zero-config when the global config supplies providers +
-models. Use
-`agent6 config show` to audit the *effective* value of every field and
-exactly where it came from (default / global / repo / flag). The one thing a
-run genuinely cannot guess, a provider+key, is checked by
+Field policy: secure by default, auditable. Every field has a default, and
+security-sensitive fields default to the *safe* value (`sandbox.network =
+"auto"`, `sandbox.run_commands = "ask"`, `sandbox.protect_git = true`; git
+push, `--force`, and history rewrites are refused unconditionally by
+`git_ops`, with no config override at all). Configs layer: global
+`$XDG_CONFIG_HOME` defaults, then the per-repo config (out of the workspace,
+under the state dir), so a repo is zero-config when the global config supplies
+providers + models. `agent6 config show` audits the *effective* value of every
+field and exactly where it came from (default / global / repo / flag). A
+provider+key, which a run cannot guess, is checked by
 :meth:`Config.require_runnable` with a pointer to `agent6 connect` rather
 than a load-time failure, so `config show` always works. The repo's
 `verify_command` is optional: `agent6 run`/`plan` infer one per run when it
@@ -205,7 +203,7 @@ class Agent6Section(BaseModel):
 class Config(BaseModel):
     """The validated effective config: one immutable object per load.
 
-    Frozen at the attribute level; container VALUES (dicts, the tuples'
+    Frozen at the attribute level; container values (dicts, the tuples'
     contents) are not deep-frozen. The contract is read-only after
     validation: every derived config goes through the `with_*` copiers,
     never in-place mutation."""
@@ -234,7 +232,7 @@ class Config(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     parallel: ParallelConfig = Field(default_factory=ParallelConfig)
-    # Named strategy PRESET: fills in many settings at once (BUILTIN_PRESETS +
+    # Named strategy preset: fills in many settings at once (BUILTIN_PRESETS +
     # user `[presets.<name>]`). "" / "standard" = plain defaults; injection
     # order and stacking rules: `config.layer._apply_preset`.
     preset: str = Field(
@@ -397,7 +395,7 @@ class Config(BaseModel):
 
         How `agent6 run`/`plan` inject a verify command inferred at run start,
         and how a run whose policy withholds command tools drops the gate it
-        could never execute. IN-MEMORY only -- runs never write config; the
+        could never execute. In memory only: runs never write config, and the
         operator is shown what was picked and can pin it explicitly.
         """
         data = self.model_dump(mode="python")
@@ -429,8 +427,8 @@ class Config(BaseModel):
 
         Ask and plan run with the operator sitting there, often in a directory
         that is not even a repo, so they must never execute anything unwatched:
-        `"yes"` becomes `"ask"`. Only ever tightens -- `"no"` stays refused,
-        because a run can never loosen a boundary the operator set. IN-MEMORY
+        `"yes"` becomes `"ask"`. Only ever tightens (`"no"` stays refused),
+        because a run can never loosen a boundary the operator set. In memory
         only, like `with_verify_command`: `config show` keeps reporting what the
         operator actually configured.
         """
@@ -445,7 +443,7 @@ class Config(BaseModel):
 
         Used by the CLI to resolve `"auto"` (from the model-capability
         registry) before the workflow starts, so the engine only ever sees
-        on/off. IN-MEMORY only, like `with_verify_command`.
+        on/off. In memory only, like `with_verify_command`.
         """
         data = self.model_dump(mode="python")
         data.setdefault("prompt", {})["decompose"] = value
@@ -456,9 +454,9 @@ class Config(BaseModel):
 
         Checks (in order) that a provider is configured and the role resolves
         to a model whose provider exists. Messages point at the command that
-        fixes the gap so a fresh user is never stuck. `verify_command` is NOT
+        fixes the gap so a fresh user is never stuck. `verify_command` is not
         required: `agent6 run`/`plan` infer one when unset (and fall back to a
-        gateless run if even that fails) -- see `agent6.verify_infer`.
+        gateless run if even that fails; see `agent6.verify_infer`).
         """
         if not self.providers:
             raise ConfigError(
@@ -482,7 +480,7 @@ class Config(BaseModel):
 
 # pydantic reports a provider block with no `api_format` as
 # "Unable to extract tag using discriminator", which names neither the key to
-# add nor its two values. A hand-written block is a documented way in.
+# add nor its values. A hand-written block is a documented way in.
 _MISSING_API_FORMAT = (
     'set api_format = "anthropic", "openai", "chatgpt", or "claude_code" (see docs/config.md)'
 )

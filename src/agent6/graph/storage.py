@@ -92,11 +92,11 @@ def flock(path: Path) -> Generator[None]:
 def _yaml_quote(s: str) -> str:
     """Quote a scalar so it round-trips through `_yaml_unquote`."""
     # Always double-quote to keep round-trip simple; escape backslash, quotes,
-    # and BOTH newline chars. `\r` must be escaped too: the parser splits on
+    # and both newline chars. `\r` must be escaped too: the parser splits on
     # "\n" only, but an un-escaped `\r` would otherwise be emitted literally and
     # an adversarial title/notes value could smuggle one in. Other Unicode line
-    # separators (U+2028/2029, \v, \f, NEL, …) survive because the parser no
-    # longer treats them as line breaks (it uses str.split("\n"), not
+    # separators (U+2028/2029, \v, \f, NEL, …) survive because the parser does
+    # not treat them as line breaks (it uses str.split("\n"), not
     # str.splitlines()).
     escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
     return f'"{escaped}"'
@@ -294,15 +294,15 @@ def write_node(layout: SessionLayout, nodes: dict[str, TaskNode], node: TaskNode
         child_dir = path.with_suffix("")
         mkdir_for_real_user(child_dir)
     atomic_write(path, _dump_frontmatter(node))
-    # Remove any STALE .md for this same id at a different path. The canonical
-    # path can move -- e.g. load_graph re-roots an orphan (parent_id -> None when
-    # its parent file was malformed/skipped), shifting the node from a nested
+    # Remove any stale .md for this same id at a different path. The canonical
+    # path can move: load_graph re-roots an orphan (parent_id -> None when its
+    # parent file was malformed/skipped), shifting the node from a nested
     # <parent>/<id>.md to a root <id>.md. The new file is written above; the old
-    # nested one would otherwise linger and make load_graph's rglob find TWO .md
+    # nested one would otherwise linger and make load_graph's rglob find two .md
     # for one id (nondeterministic which wins). Crash-safety ordering: the new
-    # canonical file is durable BEFORE _prune_stale_node_files unlinks the stale
-    # one, so a crash here
-    # leaves at worst the recoverable pre-fix duplicate, never a missing node.
+    # canonical file is durable before _prune_stale_node_files unlinks the stale
+    # one, so a crash between them leaves at worst the recoverable duplicate,
+    # never a missing node.
     _prune_stale_node_files(layout, node.id, keep=path)
 
 
@@ -334,7 +334,7 @@ def load_graph(layout: SessionLayout) -> dict[str, TaskNode]:
             sys.stderr.write(f"agent6: skipping malformed node file {md}: {exc}\n")
             continue
         nodes[node.id] = node
-    # Reconcile integrity: skipping a malformed PARENT node above would leave its
+    # Reconcile integrity: skipping a malformed parent node above would leave its
     # children with a dangling parent_id. Re-root such orphans (parent_id -> None)
     # so every parent_id resolves and reads of parent_id can't observe a missing
     # node. (node_md_path is independently defended in _ancestor_chain.)
@@ -383,9 +383,8 @@ def read_cursor(layout: SessionLayout) -> str | None:
 def list_checkpoint_turns(layout: SessionLayout) -> list[int]:
     """Return the recorded checkpoint turn indices, ascending.
 
-    Empty when the run predates the checkpoint store (no `checkpoints/` dir),
-    which is how `agent6 fork` detects an old run and falls back to forking
-    from `loop_state.json` only.
+    Empty when the run has no `checkpoints/` dir, which is how `agent6 fork`
+    detects such a run and falls back to forking from `loop_state.json` only.
     """
     cp_dir = layout.checkpoints_dir
     if not cp_dir.is_dir():

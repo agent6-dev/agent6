@@ -144,7 +144,7 @@ class AgentRequest(BaseModel):
     # means "fall back to the effective config" in the world implementation.
     # `model` is optional too: a `machine run` agent state always sets it
     # (AgentState.model is min_length=1), but `machine create`'s authoring
-    # agent has no state and must INHERIT the operator's worker model: an
+    # agent has no state and must inherit the operator's worker model: an
     # empty-string override there would overwrite the worker model with "" and
     # fail min_length validation.
     model: str | None = None
@@ -196,7 +196,7 @@ class AgentExecResult(BaseModel):
     usd: float = 0.0
     # True when `usd` is a known under-estimate (an unpriced model in the
     # loop's per-model breakdown); threaded into the AgentFact so the booked
-    # ledger keeps the '~' truth. Defaults False for old result.json files.
+    # ledger keeps the '~' truth. Defaults False when the field is absent.
     usd_partial: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
@@ -207,8 +207,8 @@ class AgentExecResult(BaseModel):
         """The payload is the model's `finish_session` arguments, parsed by
         `json.loads`, which accepts a lone surrogate that `model_dump_json`
         then refuses. The subprocess writes `result.json` with exactly that
-        call, so an unscrubbed payload killed it before the write and the host
-        read the dead subprocess as an error -- routing a state whose agent
+        call, so an unscrubbed payload kills it before the write and the host
+        reads the dead subprocess as an error, routing a state whose agent
         finished successfully to its `on.failed` edge. Scrub here, on the type
         that owns the file shape, so every construction path is safe."""
         return value if value is None else scrub_lone_surrogates(value)
@@ -265,7 +265,7 @@ ToolPolicyFactory = Callable[[tuple[str, ...], float, NetworkMode, tuple[str, ..
 
 def _state_log_seq(p: Path) -> int:
     """The numeric transition seq from a `<seq>-<state>` per-state log dir name
-    (so the sort is by seq, not lexical -- correct past 9999)."""
+    (so the sort is by seq, not lexical, which is correct past 9999)."""
     prefix = p.name.split("-", 1)[0]
     return int(prefix) if prefix.isdigit() else -1
 
@@ -308,9 +308,9 @@ class LiveWorld:
     # (None for the rare runner that wants no log). The World derives the path.
     agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
-    # Builds each tool jail's policy. The CLI wires the ONE shared builder
-    # (tools.policy.jail_policy) with the machine deltas baked in -- bundle
-    # protect paths, the data-dir RW grant + $AGENT6_MACHINE_DATA_DIR -- so a
+    # Builds each tool jail's policy. The CLI wires the one shared builder
+    # (tools.policy.jail_policy) with the machine deltas baked in (bundle
+    # protect paths, the data-dir RW grant + $AGENT6_MACHINE_DATA_DIR), so a
     # machine tool is confined exactly like a run command: same operator
     # grants, same protect_git, same hidden paths, same env. Injected so this
     # module needs no config import, like agent_runner.
@@ -331,7 +331,7 @@ class LiveWorld:
     # $AGENT6_MACHINE_DATA_DIR (the tool_policy factory bakes in the RW grant
     # and the env var). It lives out of the workspace (under the per-repo
     # state dir) and persists across iterations, so it is where a `tool` keeps
-    # DURABLE state (a built venv, caches). cwd is writable too, but it is the
+    # durable state (a built venv, caches). cwd is writable too, but it is the
     # repo, not durable machine state. Set by the CLI to <instance>/data.
     data_dir: Path | None = None
     # Executes one tool policy. The CLI overrides it for a machine with
@@ -363,7 +363,7 @@ class LiveWorld:
             result = (self.jail_runner or run_in_jail)(policy)
         except JailUnavailableError as exc:
             raise EngineError(f"jail unavailable: {exc}") from exc
-        # run_in_jail's contract is to RETURN a rc=124 result on timeout, never
+        # run_in_jail's contract is to return a rc=124 result on timeout, never
         # raise TimeoutExpired (the Rust launcher and jail.py both collapse a
         # timeout to rc 124). Deriving timed_out from that is what makes a tool
         # state's on.timeout transition reachable; an `except TimeoutExpired`
@@ -479,7 +479,7 @@ def _apply_capture(
     except json.JSONDecodeError as exc:
         raise StateRuntimeError(f"tool stdout is not valid JSON for capture: {exc}") from exc
     # Validate the parsed stdout against the tool's declared output_schema
-    # before it touches the blackboard -- the capture gate docs/state-machines.md
+    # before it touches the blackboard: the capture gate docs/state-machines.md
     # §5.4 promises ("a malformed output halts the machine loudly"). Without it a
     # nonconforming value (a str where the schema says int) silently corrupts the
     # blackboard and misroutes downstream branches. Raised as a StateRuntimeError
@@ -610,8 +610,8 @@ def _block_on_wait(
     state_name: str,
 ) -> tuple[str, str, Fact] | None:
     """Foreground wait: block until the durable wake instant or a poke, or
-    None when a stop request interrupted the sleep -- the pending wait stays
-    armed, nothing is journaled, and the caller parks.
+    None when a stop request interrupted the sleep, leaving the pending wait
+    armed, nothing journaled, and the caller parked.
 
     A supervisor death mid-sleep resumes the armed instant instead of re-running
     the full interval from a fresh `now()`. The driver clears the record once the
@@ -852,8 +852,8 @@ class _EngineState:
     """Mutable bookkeeping threaded through the engine's two phases.
 
     `drive` builds one, `_rebuild_from_journal` folds the recorded facts
-    into it (crash recovery when live, offline backtest when not), then -- live
-    only -- `_run_live_loop` continues from where the journal ends. Carrying
+    into it (crash recovery when live, offline backtest when not), then, live
+    only, `_run_live_loop` continues from where the journal ends. Carrying
     the four cross-phase values in one object (rather than a six-arg call
     returning a four-tuple) lets each phase be a function taking `state`, per
     the AGENTS.md decompose rule.
@@ -898,7 +898,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     state must match the replayed position, seqs must be contiguous, the fact
     kind must fit the state, and the goto must be an edge the state declares.
     A journal that fails any of these (corruption, hand-editing, a torn write)
-    surfaces as a clean EngineError -- silently folding it would rebuild a
+    surfaces as a clean EngineError: silently folding it would rebuild a
     position and blackboard the machine never reached."""
     spec = eng.spec
     blackboard = eng.blackboard
@@ -945,9 +945,9 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
         try:
             blackboard = reduce(spec, state_spec, event.fact, blackboard)
         except _STATE_RUNTIME_ERRORS as exc:
-            # An older journal (written before captures were validated pre-journal)
-            # can hold a fact that no longer reduces. Surface it as a clean error,
-            # not a traceback, so status/replay/resume stay inspectable.
+            # An old journal can hold a fact that does not reduce. Surface it as
+            # a clean error, not a traceback, so status/replay/resume stay
+            # inspectable.
             raise EngineError(f"cannot replay journaled step at state {state!r}: {exc}") from exc
         if isinstance(event.fact, AgentFact):
             spent_usd += event.fact.usd
@@ -1069,13 +1069,13 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
         except _STATE_RUNTIME_ERRORS as exc:
             # A data-driven state failure (e.g. an absent optional field, a tool
             # command rendering a non-scalar, a dynamic wait interval of zero):
-            # halt cleanly with a journaled MachineEnd in BOTH the blocking and
+            # halt cleanly with a journaled MachineEnd in both the blocking and
             # the --exit-on-wait paths. Broader EngineError faults still propagate.
             return _end_failed(journal, world, state, transitions, exc)
         # Deliver a signal poke's payload to the next tool (both wait paths).
         if isinstance(fact, WaitFact) and fact.woke_by == "signal":
             world.materialize_poke(fact.payload)
-        # Apply the capture BEFORE journaling the StepEvent. If a malformed output
+        # Apply the capture before journaling the StepEvent. If a malformed output
         # (non-JSON / missing field / mistyped) can't be reduced, the machine halts
         # cleanly here instead of writing a poison fact that would re-crash every
         # later reduce (resume/status/replay), bricking the instance. The side
@@ -1083,7 +1083,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
         try:
             next_blackboard = reduce(spec, current, fact, blackboard)
         except _STATE_RUNTIME_ERRORS as exc:
-            # The agent already ran and billed; the step is deliberately NOT
+            # The agent already ran and billed; the step is deliberately not
             # journaled (a fact whose capture fails would re-crash every later
             # replay), so hand its spend to the end event instead of dropping it.
             return _end_failed(
@@ -1106,7 +1106,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
         )
         # The wake record and the poke's claim are dropped only now that the
         # transition they produced is durable; a death anywhere earlier
-        # re-delivers the poke and re-reads the SAME wake instant, rather than
+        # re-delivers the poke and re-reads the same wake instant, rather than
         # arming a fresh interval from a new now().
         if isinstance(fact, WaitFact):
             journal.clear_pending_wait()

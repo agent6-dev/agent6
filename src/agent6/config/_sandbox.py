@@ -20,13 +20,13 @@ from agent6.paths import private_dirs
 class SandboxConfig(BaseModel):
     model_config = MODEL_CONFIG
 
-    # "none" is the explicit UNSANDBOXED opt-out (no Landlock/seccomp/namespaces),
+    # "none" is the explicit unsandboxed opt-out (no Landlock/seccomp/namespaces),
     # self-authorizing: an operator-only, LLM-unreachable config value, so writing
     # it is the consent (the loud run-startup warning is the safety net). The
     # per-invocation forms are `--dangerously-disable-sandbox` /
     # AGENT6_DANGEROUSLY_DISABLE_SANDBOX. `auto` resolves to none only when the
     # host offers no confinement mechanism at all (non-Linux, or a Linux kernel
-    # with neither userns nor Landlock) -- see detect.resolve_isolation.
+    # with neither userns nor Landlock; see detect.resolve_isolation).
     isolation: Literal["auto", "strict", "hardened", "none"] = Field(
         default="auto",
         description=(
@@ -38,26 +38,26 @@ class SandboxConfig(BaseModel):
             "`AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`."
         ),
     )
-    # Which network JAILED commands (`run_command`, `verify`, `metric`, and
+    # Which network jailed commands (`run_command`, `verify`, `metric`, and
     # machine `tool` states) join. A jailed child can never out-reach the
     # process that launches it, so:
-    #  - `auto` (default): the run's PRIVATE network where the environment can
-    #    give one, DEGRADED WITH A WARNING where it cannot. On `strict` that is
+    #  - `auto` (default): the run's private network where the environment can
+    #    give one, degraded with a warning where it cannot. On `strict` that is
     #    a real network namespace with no route out; on `hardened`/`none` there
     #    is no netns, so the child shares the host network and a once-per-run
     #    warning says so. The secure-by-default option that still runs
     #    everywhere (see AGENTS.md "Secure by default, degrade or refuse").
-    #  - `session`: ENFORCE the run's own network -- the commands see each
-    #    other (a dev server one starts answers the next) and nothing off the
-    #    box. Refuses to run where there is no netns, naming what is
-    #    unsupported and how to change it, never silently ineffective.
-    #  - `only_explicit_states`: private, EXCEPT machine `tool` states that opt
+    #  - `session`: enforce the run's own network. The commands see each other
+    #    (a dev server one starts answers the next) and nothing off the box.
+    #    Refuses to run where there is no netns, naming what is unsupported and
+    #    how to change it, never silently ineffective.
+    #  - `only_explicit_states`: private, except machine `tool` states that opt
     #    in with `network = "host"` (audited, deterministic commands);
     #    `run_command` stays private. `strict`-only, refused elsewhere.
     #  - `host`: the machine's own network (a package install, a real service).
-    # There is no per-command `none`: the run's commands share one launcher,
-    # and isolating them from each other costs the dev server for no security
-    # -- the model can chain them into a single script anyway.
+    # There is no per-command `none`: the run's commands share one launcher, so
+    # isolating them from each other costs the dev server for no security, and
+    # the model can chain them into a single script anyway.
     network: Literal["auto", "session", "only_explicit_states", "host"] = Field(
         default="auto",
         description=(
@@ -81,7 +81,7 @@ class SandboxConfig(BaseModel):
             "set to `ask` with nobody to answer refuses to start."
         ),
     )
-    # Hosts the `fetch` tool may read WITHOUT asking. Empty (the default) means
+    # Hosts the `fetch` tool may read without asking. Empty (the default) means
     # none: every fetch is a prompt. `"*"` allows any host, written down so the
     # opt-out reads as a choice in `config show` rather than as an absent
     # setting. A leading dot allows subdomains (`.readthedocs.io`). Hosts, not
@@ -90,8 +90,8 @@ class SandboxConfig(BaseModel):
     # `fetch` exists because a jailed command has no network; it is hidden
     # wherever the worker can already run curl: `network = "host"`, or any
     # isolation but strict (those resolve to the host network). It is
-    # still an egress channel a model drives -- a GET can encode data in its
-    # path -- so a host not listed here is asked about, and an absent operator
+    # still an egress channel a model drives (a GET can encode data in its
+    # path), so a host not listed here is asked about, and an absent operator
     # is a no.
     fetch_hosts: StrTuple = Field(
         default=(),
@@ -109,7 +109,7 @@ class SandboxConfig(BaseModel):
     # `rm -rf .git`, rewrite history, or otherwise corrupt the repository
     # from inside a child process. The workflow's own commits go through
     # `git_ops.py` from the agent process (outside the jail) and are
-    # unaffected. STRICT-ONLY: it is a read-only bind-remount, which needs a
+    # unaffected. Strict only: it is a read-only bind-remount, which needs a
     # mount namespace. On hardened the cwd is blanket read-write (no namespace
     # to carve with, and carving .git read-only would also deny new top-level
     # entries and break toolchains), so .git is writable there: recoverable,
@@ -124,7 +124,7 @@ class SandboxConfig(BaseModel):
             "regardless."
         ),
     )
-    # Where a jailed command's HOME lives. Only `strict` has a private /tmp
+    # Where a jailed command's `HOME` lives. Only `strict` has a private /tmp
     # to put a throwaway one in; `hardened` and `none` always use the
     # persistent cache dir (`paths.jail_cache_home`), which strict opts into
     # with `cache`. Persistent means model-writable across runs: a poisoned
@@ -142,18 +142,18 @@ class SandboxConfig(BaseModel):
             "the next jailed run, never your own tools."
         ),
     )
-    # Per-process memory cap in MiB for every JAILED child (`run_command`,
+    # Per-process memory cap in MiB for every jailed child (`run_command`,
     # verify, metric, machine `tool` states, offline script tests), applied as
     # RLIMIT_DATA by the launcher and inherited by the child's descendants.
     # RLIMIT_DATA (heap + private writable anonymous mappings) rather than
     # RLIMIT_AS so runtimes that reserve large address space without
-    # committing it (V8, JVM, ASAN) keep working. Per PROCESS, not per tree.
-    # An operational guardrail, never a security control: a memory bomb is a
-    # denial of service against your own machine, and the kernel already
-    # handles that. DEFAULT 0 (off) because a cap costs real builds (a large
-    # link, a test matrix) more than it buys; set one when a specific task
-    # needs bounding. Applies at every isolation level: the launcher sets the
-    # rlimit on the child before exec, confined or not.
+    # committing it (V8, JVM, ASAN) keep working. The cap is per process, not
+    # per process tree. An operational guardrail, never a security control: a
+    # memory bomb is a denial of service against your own machine, and the
+    # kernel already handles that. Default 0 (off) because a cap costs real
+    # builds (a large link, a test matrix) more than it buys; set one when a
+    # specific task needs bounding. Applies at every isolation level: the
+    # launcher sets the rlimit on the child before exec, confined or not.
     memory_limit_mb: int = Field(
         default=0,
         ge=0,
@@ -163,12 +163,12 @@ class SandboxConfig(BaseModel):
             "error."
         ),
     )
-    # Extra filesystem paths a JAILED command may READ and EXECUTE, on top of
+    # Extra filesystem paths a jailed command may read and execute, on top of
     # the system defaults (/usr /bin /lib /lib64 /etc /dev) and the workspace.
-    # For projects whose toolchain or interpreter lives outside the repo — a
+    # For projects whose toolchain or interpreter lives outside the repo: a
     # system conda/virtualenv, a language toolchain (Go/Rust/Node), a shared
     # data dir. Each entry is an absolute path; it is granted read+execute
-    # (not write) under `hardened`/`strict`. This LOOSENS confinement (the child
+    # (not write) under `hardened`/`strict`. This loosens confinement (the child
     # can read more of the host), so list only what the build/test actually
     # needs. Empty by default. No effect under `isolation = "none"`.
     extra_read_paths: StrTuple = Field(
@@ -194,7 +194,7 @@ class SandboxConfig(BaseModel):
                 raise ValueError(f"sandbox.extra_read_paths must not contain '..': {p!r}")
         return v
 
-    # Extra absolute paths a jailed command may READ AND WRITE, mounted at
+    # Extra absolute paths a jailed command may read and write, mounted at
     # their real locations: a build cache, an output dir, a sibling checkout
     # the task legitimately edits. Write implies read (a writable bind mount
     # is readable). This loosens confinement further than extra_read_paths,
@@ -240,9 +240,9 @@ class SandboxConfig(BaseModel):
 
     # Absolute paths hidden from jailed commands even when a broader grant
     # covers them (a dir masks as an empty tmpfs, a file reads empty). agent6's
-    # own private dirs (config + state) are ALWAYS hidden -- secrets never
-    # enter the jail, even through an explicit extra_read_paths grant of $HOME --
-    # and this list adds to that set. Needs the mount namespace: on `hardened`
+    # own private dirs (config + state) are always hidden (secrets never enter
+    # the jail, even through an explicit extra_read_paths grant of $HOME) and
+    # this list adds to that set. Needs the mount namespace: on `hardened`
     # a hide inside a granted region refuses to run (see docs/security.md).
     hide_paths: StrTuple = Field(
         default=(),
@@ -270,9 +270,9 @@ class SandboxConfig(BaseModel):
 
     @model_validator(mode="after")
     def _extra_paths_never_target_private_dirs(self) -> SandboxConfig:
-        # An extra grant AT or INSIDE an agent6-private dir would mount secrets,
+        # An extra grant at or inside an agent6-private dir would mount secrets,
         # transcripts, or installed skills into the jail by name; there is no
-        # legitimate case. A grant CONTAINING one (e.g. $HOME) is allowed on
+        # legitimate case. A grant containing one (e.g. $HOME) is allowed on
         # strict, where the private dirs are masked out of it.
         for p in (*self.extra_read_paths, *self.extra_write_paths):
             for d in private_dirs():
@@ -286,14 +286,13 @@ class SandboxConfig(BaseModel):
 
 
 class MCPSandbox(BaseModel):
-    """What ONE spawned MCP server gets, on top of the sandbox a jailed
+    """What one spawned MCP server gets, on top of the sandbox a jailed
     command gets.
 
     A server is spawned by agent6 and fed model input, so it is confined the
     same way and by the same launcher: the workspace, the system dirs, the
-    operator's tool dirs, a writable HOME. This block names only what
-    is EXTRA -- which is why there is nothing to name for most servers, and
-    why nobody has to know where their interpreter lives.
+    operator's tool dirs, a writable `HOME`. This block names only what is
+    extra, so most servers need no block at all.
 
     Absent block: exactly those defaults. `unconfined = true` is the escape
     hatch for a server that genuinely needs the host (a shell, a docker
@@ -303,7 +302,7 @@ class MCPSandbox(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    # Readable+executable, and writable, BEYOND the command sandbox. `~` expands.
+    # Readable+executable, and writable, beyond the command sandbox. `~` expands.
     read_paths: StrTuple = Field(
         default=(),
         description=(
@@ -316,7 +315,7 @@ class MCPSandbox(BaseModel):
         default=(),
         description="Paths it may write, likewise additive.",
     )
-    # Which network this server joins -- per-server because servers differ from
+    # Which network this server joins. Per-server because servers differ from
     # commands and from each other: a browser server exists to reach something,
     # a memory server does not.
     #   auto    (default) a network of its own where the host can give one,
@@ -391,8 +390,8 @@ class MCPServerEntry(BaseModel):
     over stdio. Its `command` (argv) is operator-controlled and never
     contains LLM output. The server runs as a jailed child by default (its
     `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out)
-    with the curated environment a `[notify]` hook gets -- never the agent6
-    process's full `os.environ`, which carries the provider API keys -- plus
+    with the curated environment a `[notify]` hook gets (never the agent6
+    process's full `os.environ`, which carries the provider API keys) plus
     whatever `pass_env` names.
 
     The LLM sees each MCP-server tool as
@@ -408,9 +407,9 @@ class MCPServerEntry(BaseModel):
     model_config = MODEL_CONFIG
 
     # Exactly one of these. `command` spawns the server (agent6 owns its env,
-    # lifetime and confinement); `url` connects to one the OPERATOR runs, in
-    # whatever container or sandbox they chose -- which is how anyone actually
-    # runs a server that wants a browser or a device.
+    # lifetime and confinement); `url` connects to one the operator runs, in
+    # whatever container or sandbox they chose, which is how a server that
+    # wants a browser or a device is run.
     command: Argv = Field(
         default=(),
         description=(
@@ -441,10 +440,10 @@ class MCPServerEntry(BaseModel):
             "`false` withholds this server's tools from the model without deleting the entry."
         ),
     )
-    # Environment variables this server needs, BY NAME (e.g. ["GITHUB_TOKEN"]).
+    # Environment variables this server needs, by name (e.g. ["GITHUB_TOKEN"]).
     # Everything else comes from the curated base agent6 gives any child it
-    # spawns outside the jail. Naming each one is the point: a provider key is
-    # never among them, because nobody would write it down.
+    # spawns outside the jail, so a provider key reaches a server only when the
+    # operator names it here.
     pass_env: StrTuple = Field(
         default=(),
         description=(
@@ -460,10 +459,8 @@ class MCPServerEntry(BaseModel):
             "start it."
         ),
     )
-    # Ask before each of this server's tool calls ("ask"), or never ("yes").
     # A server's tools do arbitrary things agent6 cannot classify, so the
-    # default is the same as a command's: ask. There is no "no" -- withholding
-    # a server's tools is what `enabled = false` already says.
+    # default is the same as a command's: ask.
     approve: Literal["ask", "yes"] = Field(
         default="ask",
         description=(
@@ -513,7 +510,7 @@ class MCPServerEntry(BaseModel):
             raise ValueError("token_env is for `url` servers; a spawned one uses pass_env")
         if self.sandbox is not None and self.url:
             raise ValueError(
-                "a [sandbox] block confines a server agent6 SPAWNS; a `url` one"
+                "a [sandbox] block confines a server agent6 spawns; a `url` one"
                 " is your own process, so confine it where you start it"
             )
         if self.pass_env and self.url:
@@ -529,21 +526,21 @@ class MCPServerEntry(BaseModel):
     @property
     def effective_network(self) -> Literal["auto", "none", "session", "host"]:
         """The network this server joins, resolving an absent `[sandbox]` table
-        to the same `auto` default a present table's field carries. One value
-        for the spawn policy, the degrade warning, and the refusal, so they
-        cannot disagree on the table-less case."""
+        to the same `auto` default a present table's field carries. The spawn
+        policy, the degrade warning, and the refusal read this one value, so
+        they cannot disagree on the table-less case."""
         return self.sandbox.network if self.sandbox else "auto"
 
 
 def is_cleartext_url(url: str) -> bool:
-    """Whether *url* dials plain http: the PARSED scheme (urlsplit lowercases
+    """Whether *url* dials plain http: the parsed scheme (urlsplit lowercases
     it), never a prefix match, which `HTTP://` would evade while the client
     still dialled cleartext."""
     return urlsplit(url).scheme == "http"
 
 
 def is_loopback_url(url: str) -> bool:
-    """Whether *url*'s host is this machine: `is_loopback_host` over the PARSED
+    """Whether *url*'s host is this machine: `is_loopback_host` over the parsed
     hostname, never a prefix match (`127.evil.com` resolves wherever its owner
     points it). The operator dialling their own server is the normal case for
     `url`, and the only one where plain http with a credential is not readable
@@ -556,13 +553,12 @@ def mcp_server_name_refusal(name: str) -> str:
     """Why *name* cannot be an MCP server key, or "".
 
     The LLM-visible tool name is `mcp__<name>__<tool>` and routing recovers
-    the server by splitting on the FIRST `__` after the prefix, so the key
+    the server by splitting on the first `__` after the prefix, so the key
     must be identifier-shaped and `__`-free.
 
-    Shared with `agent6 mcp connect`, which must refuse BEFORE it writes: the
-    name becomes a TOML table header, and validating only at load meant a
-    name carrying `]` and a newline could close the table and open one of its
-    own choosing.
+    Shared with `agent6 mcp connect`, which refuses before it writes: the name
+    becomes a TOML table header, so a name carrying `]` and a newline could
+    close the table and open one of its own choosing.
     """
     if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
         # ASCII fullmatch: no Unicode look-alikes, no trailing newline.

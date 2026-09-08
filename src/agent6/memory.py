@@ -274,10 +274,10 @@ def index_text(state_dir: Path) -> str:
     """The index body for prompt injection; "" when absent or unreadable
     (memory is context, one stray byte must not kill every run).
 
-    A byte that is not UTF-8 is REPLACED rather than fatal: read strictly, one
+    A byte that is not UTF-8 is replaced rather than fatal: read strictly, one
     of them would empty the whole index for every run, and the next `memory
-    add` would rebuild the file from that empty read.
-    An unreadable FILE (a permission, a directory) is still ""."""
+    add` would rebuild the file from that empty read. An unreadable file (a
+    permission, a directory) is still ""."""
     try:
         return index_path(state_dir).read_text(encoding="utf-8", errors="replace").strip()
     except OSError:

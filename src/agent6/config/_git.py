@@ -19,9 +19,6 @@ class GitCommitCheckpointConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    # agent6: the `agent6 iter N:` subject. conventional: a `type(scope): subject`
-    # derived from the diff without a model call. model: the model writes the
-    # message from git facts, degrading to agent6 with a warning on any failure.
     message: Literal["agent6", "conventional", "model"] = Field(
         default="agent6",
         description=(
@@ -38,8 +35,6 @@ class GitCommitSquashConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    # As checkpoint's styles, plus combine: git's own squash message (the
-    # concatenated per-step log).
     message: Literal["agent6", "conventional", "combine", "model"] = Field(
         default="agent6",
         description=(
@@ -76,9 +71,6 @@ class GitCommitConfig(BaseModel):
             "`git config`. A run with no resolvable identity refuses to start."
         ),
     )
-    # Appended to every commit agent6 makes when non-empty, e.g.
-    # "Assisted-by: agent6:{model}". {model} = the model(s) that wrote the
-    # code, first worker first, ", "-joined when several contributed.
     trailer: str = Field(
         default="",
         description=(
@@ -180,11 +172,6 @@ class GitConfig(BaseModel):
             "`/parallel` dispatch from a changed tree degrade."
         ),
     )
-    # Default strategy for `agent6 sessions merge`: how the run branch lands on
-    # your branch. `squash` (one combined commit), `merge` (a
-    # --no-ff merge keeping the per-step history), or `ff` (fast-forward only).
-    # The per-step commits always happen on the run branch during the run; this
-    # only governs how they are consolidated when you merge.
     merge_strategy: Literal["squash", "merge", "ff"] = Field(
         default="squash",
         description=(
@@ -193,12 +180,8 @@ class GitConfig(BaseModel):
             "Consolidation only; per-step commits always land on the run's chain."
         ),
     )
-    # After a successful run, automatically run `merge_strategy` to land the
-    # run's work on its base (what `agent6 sessions merge` does, run for you).
-    # Default off: the run's refs are kept until you choose to merge. Works
-    # with branch_per_run off too (the hidden chain ref is merged). With
-    # auto_stash_pop the merge lands first, then your stashed pre-run changes
-    # go back on top.
+    # With auto_stash_pop the merge lands first, then the stashed pre-run
+    # changes go back on top.
     auto_merge: bool = Field(
         default=False,
         description=(
@@ -207,14 +190,8 @@ class GitConfig(BaseModel):
             "the hidden chain ref. On a conflict nothing moves and the instructions are printed."
         ),
     )
-    # After auto_merge, delete the run branch when it is safely deletable
-    # (`git branch -d`: reachable-merged, so merge/ff strategies). A squash-merged
-    # branch is unreachable and is reported with the `git branch -D` to remove it by
-    # hand, never force-deleted. Requires auto_merge; no-op when branch_per_run
-    # is off (there is no branch, and the hidden chain ref stays as the run's
-    # record until `sessions rm`). With both on, run branches stop
-    # accumulating, so agent6 looks like a direct-to-branch agent while keeping
-    # the per-step commits during the run. Default off.
+    # With branch_per_run off there is no branch to delete, and the hidden chain
+    # ref stays as the run's record until `sessions rm`.
     auto_prune: bool = Field(
         default=False,
         description=(
@@ -223,15 +200,14 @@ class GitConfig(BaseModel):
             "force-deleted. Requires `auto_merge`; nothing to do without a run branch."
         ),
     )
-    # Whether the repo's own git hooks (`.git/hooks/*`) run during agent6's
-    # OWN git operations (notably the per-step auto-commit). Default false:
-    # secure-by-default (a hook is repo-controlled code that would execute on
-    # the HOST, outside the jail, when agent6 commits -- a host-RCE vector for
-    # an adversarial repo) and also avoids re-running a slow pre-commit hook on
-    # every micro-commit. The verify_command is agent6's real success gate, not
-    # git hooks. Set true to honor the repo's hooks (trust the repo). Either
-    # way `core.fsmonitor`/`diff.external` stay neutralized (those fire on
-    # status/diff and have no legitimate use here).
+    # Governs the repo's own git hooks (`.git/hooks/*`) during agent6's own git
+    # operations, the per-step auto-commit above all. Default false: a hook is
+    # repo-controlled code that would execute on the host, outside the jail,
+    # when agent6 commits (a host-RCE vector for an adversarial repo), and a
+    # slow pre-commit hook would re-run on every micro-commit. The
+    # verify_command is agent6's success gate. Either way `core.fsmonitor` and
+    # `diff.external` stay neutralized: they fire on status/diff and have no
+    # legitimate use here.
     run_repo_hooks: bool = Field(
         default=False,
         description=(
@@ -240,14 +216,13 @@ class GitConfig(BaseModel):
             "`core.fsmonitor` and `diff.external` are always neutralized."
         ),
     )
-    # Whether the repo's own content drivers -- `filter.<n>.clean/smudge/process`
-    # and `merge.<n>.driver` -- run during agent6's OWN git operations. Default
-    # false: like a hook, a driver defined in `.git/config` is repo-controlled
-    # code that executes on the HOST, outside the jail, when agent6 stages or
-    # merges (a host-RCE vector for a repo cloned with a poisoned `.git/config`).
-    # agent6 neutralizes each repo-defined driver by name. Set true to honor
-    # them -- the setting a Git-LFS repo needs, since LFS's clean/smudge filters
-    # are exactly these drivers.
+    # Governs the repo's own content drivers (`filter.<name>.clean/smudge/process`,
+    # `merge.<name>.driver`) during agent6's own git operations. Default false:
+    # like a hook, a driver defined in `.git/config` is repo-controlled code that
+    # executes on the host, outside the jail, when agent6 stages or merges (a
+    # host-RCE vector for a repo cloned with a poisoned `.git/config`). agent6
+    # neutralizes each repo-defined driver by name. True is what a Git-LFS repo
+    # needs: LFS's clean/smudge filters are these drivers.
     run_repo_filters: bool = Field(
         default=False,
         description=(

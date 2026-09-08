@@ -1,17 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 init` -- a granular, idempotent setup wizard.
+"""`agent6 init`: a granular, idempotent setup wizard.
 
-init is OPTIONAL: agent6 runs with a global config + secure defaults, and
+init is optional: agent6 runs with a global config + secure defaults, and
 `agent6 run` infers a verify command on its own. This wizard just makes the
-per-repo niceties easy and explicit. It is safe to run on a FRESH repo or one
+per-repo niceties easy and explicit. It is safe to run on a fresh repo or one
 already using agent6: each step says what it will do, warns before overriding
-anything you already set, and you can skip any of them. It NEVER writes a
+anything you already set, and you can skip any of them. It never writes a
 blanket `.suggested` file or clobbers an existing AGENTS.md / config.
 
 Steps, in order:
   1. create the per-repo config file if it's missing (else leave it);
-  2. set `workflow.verify_command` if unset -- inferred from the repo
+  2. set `workflow.verify_command` if unset, inferred from the repo
      (AGENTS.md / package.json / Makefile / pyproject / Cargo / go.mod);
   3. add secret + build-artifact entries to `.gitignore` (idempotent);
   4. create AGENTS.md, or append a `## Verify command` section if missing.
@@ -34,11 +34,11 @@ from agent6.paths import mkdir_for_real_user, repo_config_path
 from agent6.verify_infer import infer_verify_command
 
 _EMPTY_CONFIG = """\
-# agent6 per-repo config (per-machine, stored under your state dir, NOT in the
-# repo). Layered on top of: built-in secure defaults < your global config
+# agent6 per-repo config (per-machine, stored under your state dir, never in
+# the repo). Layered on top of: built-in secure defaults < your global config
 # (~/.config/agent6/config.toml) < this file. Run `agent6 config show` to see
 # every effective value and where it comes from. agent6 is secure by default,
-# so this file only needs the few things specific to THIS repo. `agent6 init`
+# so this file only needs the few things specific to this repo. `agent6 init`
 # and `agent6 config set <key> <value>` write here for you.
 """
 
@@ -219,7 +219,7 @@ def _setup_agents_md(root: Path, *, ecosystem: str, ask: _Ask) -> None:
             print("  skipped AGENTS.md")
         return
     try:
-        # NOT errors="replace": this text is written back, so a lossy decode
+        # Not errors="replace": this text is written back, so a lossy decode
         # rewrites every non-ASCII byte as U+FFFD. The inference read above may
         # be lossy because it only scans.
         text = agents.read_text(encoding="utf-8")

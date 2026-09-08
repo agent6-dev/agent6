@@ -9,7 +9,7 @@ workspace commit come from turn N, and a graph from the run's future would show
 the forked session tasks it never created and statuses for work its tree does
 not contain.
 
-The journal records OPERATIONS, not node content, and the content the
+The journal records operations, not node content, and the content the
 operations never touch (title, rationale, acceptance, relevant_paths,
 created_at, created_by) is immutable after creation. So the rebuild starts from
 the current nodes and undoes every mutation stamped after the target version.
@@ -72,11 +72,11 @@ def graph_at_version(
     *,
     current_cursor: str | None = None,
 ) -> ReplayedGraph:
-    """The graph as of *version*, from the CURRENT *nodes* plus the *journal*.
+    """The graph as of *version*, from the current *nodes* plus the *journal*.
 
     A node whose `add_subtask` is stamped after *version* did not exist yet
-    and is dropped. A node the journal never mentions (a truncated or
-    pre-journal graph) is kept as-is: unknown creation time is not evidence of
+    and is dropped. A node the journal never mentions (a truncated journal, or
+    one that never recorded it) is kept as-is: unknown creation time is not evidence of
     a later one, and dropping it would silently empty the fork's DAG.
     """
     past = _usable(journal)
@@ -95,7 +95,7 @@ def graph_at_version(
         nid = _str_field(e, "id")
         if nid is None:
             continue
-        if e["op"] == "obsolete":  # a journal written before `update_status` owned retirement
+        if e["op"] == "obsolete":  # the op name an older journal used for retirement
             status[nid] = "obsolete"
         elif e["op"] == "update_status" and (new := _str_field(e, "new_status")) is not None:
             status[nid] = new
@@ -114,11 +114,10 @@ def graph_at_version(
         if nid is not None and dep is not None:
             deps_after.setdefault(nid, set()).add(dep)
     # The cursor as of *version*: the last one the prefix set. With none in the
-    # prefix but some later in the journal, the run held NO cursor here, and
-    # the CURRENT one would give a fork at turn 1 the focus of the last turn.
-    # *current_cursor* is
-    # for a graph whose journal records no cursor at all (a pre-journal graph,
-    # where the cursor file is the only record).
+    # prefix but some later in the journal, the run held no cursor here, and
+    # the current one would give a fork at turn 1 the focus of the last turn.
+    # *current_cursor* is for a graph whose journal records no cursor at all
+    # (the cursor file is then the only record).
     cursors = [e for e in at if e["op"] == "set_cursor"]
     if cursors:
         cursor = _str_field(cursors[-1], "id")

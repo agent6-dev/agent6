@@ -85,10 +85,10 @@ class DryRunReport:
 def synthesize_record(spec: MachineSpec, schema_name: str, _seen: tuple[str, ...] = ()) -> Any:
     """A minimal, schema-valid example object for *schema_name*.
 
-    Produces exactly the REQUIRED fields (so it passes the strict payload
+    Produces exactly the required fields (so it passes the strict payload
     check): scalars get a zero value, lists an empty list, enums their first
-    member, nested records recurse. Optional fields are OMITTED -- the weakest
-    state the capture gate permits -- so a dry-run reading one unguarded fails
+    member, nested records recurse. Optional fields are omitted (the weakest
+    state the capture gate permits), so a dry-run reading one unguarded fails
     offline exactly as the live run would, instead of routing on invented
     data. Schema cycles (already rejected by `validate_semantics`) are guarded
     with `_seen`.
@@ -225,7 +225,7 @@ def dry_run(spec: MachineSpec, blackboard_fixture: dict[str, Any] | None = None)
     # Record vars default to {} (4.2), but a branch that reads
     # `verdict.field` cannot evaluate against an empty record, so the realistic
     # agent-verdict -> branch machine would always fail here without a fixture.
-    # Synthesize the schema-zero record of its REQUIRED fields instead (the
+    # Synthesize the schema-zero record of its required fields instead (the
     # weakest state the capture gate permits; an optional field stays absent,
     # `has()` is its guard); the fixture below still overrides it.
     for name, var in (*spec.vars.code.items(), *spec.vars.agent.items()):

@@ -26,8 +26,6 @@ class SkillsConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    # Master switch for the whole subsystem. Off = no index block, no
-    # use_skill tool, slash commands don't register.
     enabled: bool = Field(
         default=True,
         description=(
@@ -65,7 +63,7 @@ class MachineNotifyConfig(BaseModel):
 
     When `on_event` is set, `agent6 machine run` runs the argv tuple on each
     `machine.notify` (a state's `notify` message) and on the terminal
-    `machine.end`, on the host OUTSIDE the jail (mirror of
+    `machine.end`, on the host outside the jail (mirror of
     `[notify].on_complete`). The argv is operator-controlled and never
     includes LLM output. Env vars passed:
 
@@ -139,7 +137,7 @@ class MachineConfig(BaseModel):
 
 def is_loopback_host(host: str) -> bool:
     """True iff *host* is a loopback bind (the one source of truth for the web
-    UI's secure-by-default gate; a wildcard like 0.0.0.0/:: is NOT loopback)."""
+    UI's secure-by-default gate; a wildcard like 0.0.0.0/:: is not loopback)."""
     normalized = host.strip()
     if normalized.startswith("[") and normalized.endswith("]"):
         normalized = normalized[1:-1]
@@ -176,8 +174,6 @@ class WebConfig(BaseModel):
         default=7658,
         description="Port `agent6 web` listens on.",
     )
-    # Opt-in required to bind a non-loopback host. Off by default so a typo or a
-    # copied config can never silently expose the agent to the local network.
     allow_non_loopback: bool = Field(
         default=False,
         description=(
@@ -203,7 +199,7 @@ class NotifyConfig(BaseModel):
 
     When `on_complete` is set, agent6 runs the argv tuple after the
     workflow returns (`agent6 run` or `agent6 resume`). The argv is
-    operator-controlled, it never includes LLM output, and runs OUTSIDE the
+    operator-controlled, it never includes LLM output, and runs outside the
     jail under a curated env (PATH/HOME/locale + desktop vars, never provider
     keys; see `child_env.curated_env`) with these vars added:
 

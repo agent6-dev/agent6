@@ -36,7 +36,7 @@ def test_a_relative_sandbox_path_is_refused(path: str) -> None:
 def test_a_connected_server_cannot_carry_a_sandbox_block() -> None:
     """It is the operator's own process; agent6 never starts it, so there is
     nothing here to confine."""
-    with pytest.raises(ValueError, match="SPAWNS"):
+    with pytest.raises(ValueError, match="spawns"):
         Config.model_validate(
             {
                 "mcp": {

@@ -57,21 +57,20 @@ from agent6.portable import atomic_write, locked_file
 def resolved_write_path(target: Path) -> Path:
     """*target* with a symlink resolved: the file a config write must open.
 
-    `atomic_write` publishes by rename, which replaces the NAME, so a
+    `atomic_write` publishes by rename, which replaces the name, so a
     dotfiles-managed `config.toml` symlinked into place would stop being what
     agent6 reads after one write. The link is followed only to a target the
-    REAL operator owns, so `sudo agent6 config set` cannot be redirected
+    real operator owns, so `sudo agent6 config set` cannot be redirected
     through it into a root-owned file.
 
-    THE one owner: every writer resolves here, or the ones that do not each
-    replace the link while reporting success against a path that is no longer
-    the operator's.
+    The one owner: every writer resolves here, so none replaces the link while
+    reporting success against a path that is no longer the operator's.
     """
     if not target.is_symlink():
         return target
     resolved = target.resolve()
     owner = effective_user().uid
-    # A dotfiles link is usually made BEFORE the file it points at exists
+    # A dotfiles link is usually made before the file it points at exists
     # (`ln -s ~/dotfiles/agent6.toml ...`, then configure), so a missing target
     # is a file to create, not a refusal. The ownership question moves to the
     # nearest directory that does exist, which is where it would be created.
@@ -111,8 +110,8 @@ def writing_config(target: Path) -> Generator[bool]:
     """Hold the config write lock, handing *target* back to the real operator on
     every exit path. Yields whether the lock is actually held (see
     :func:`agent6.portable.locked_file`), for :func:`keep_or_rollback`.
-    Under `sudo` every publish -- including the rollback's `atomic_write` onto
-    a new inode -- creates the file as root, so the handover is unconditional."""
+    Under `sudo` every publish (including the rollback's `atomic_write` onto
+    a new inode) creates the file as root, so the handover is unconditional."""
     with locked_file(target) as held:
         try:
             yield held
@@ -131,7 +130,7 @@ def target_unparseable(target: Path) -> bool:
 
 def merged_config_error(repo_root: Path) -> str | None:
     """The merged config's load error as it sits on disk, or None when it
-    loads. Measured BEFORE a write so :func:`revalidate_write` can tell "this
+    loads. Measured before a write so :func:`revalidate_write` can tell "this
     edit broke it" from "it was already broken elsewhere"."""
     try:
         load_effective(repo_root, None)
@@ -140,7 +139,7 @@ def merged_config_error(repo_root: Path) -> str | None:
     return None
 
 
-# Appended to a validation error when the config lock FAILED OPEN (a stale
+# Appended to a validation error when the config lock failed open (a stale
 # root-owned .lock): a snapshot restore without the lock could erase a
 # concurrent writer's update, so the write is kept and the operator undoes it.
 _KEPT_NO_LOCK = (
@@ -151,7 +150,7 @@ _KEPT_NO_LOCK = (
 
 def keep_or_rollback(target: Path, prior: str | None, err: str, *, held: bool) -> str:
     """Roll *target* back to *prior* (delete it when *prior* is None) and hand
-    *err* back. When the lock FAILED OPEN (*held* False) the restore could
+    *err* back. When the lock failed open (*held* False) the restore could
     erase a concurrent writer's update, so the write is kept and *err* carries
     the note instead."""
     if not held:
@@ -163,8 +162,8 @@ def keep_or_rollback(target: Path, prior: str | None, err: str, *, held: bool) -
     return err
 
 
-# Every member of the ProviderEntry union, derived: a hand-listed copy meant
-# a new entry type was validated by nothing.
+# Every member of the ProviderEntry union, derived: a hand-listed copy would
+# leave a new entry type validated by nothing.
 PROVIDER_MEMBERS: tuple[type[BaseModel], ...] = get_args(get_args(ProviderEntry)[0])
 
 
@@ -187,12 +186,12 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
         try:
             # Validate the leaf against the whole member so its @field_validators
             # run; seed the api_format discriminator the member requires. Only a
-            # rejection AT this leaf counts -- a complaint about another unset
+            # rejection at this leaf counts: a complaint about another unset
             # field means the leaf itself is acceptable to this member.
             member.model_validate({"api_format": fmt, leaf: value})
             return None
         except ValidationError as exc:
-            # An error at the leaf OR anywhere inside its value (a bad list
+            # An error at the leaf or anywhere inside its value (a bad list
             # element reports at ("token_command", 0), a child loc) counts.
             leaf_errs = [e["msg"] for e in exc.errors() if e["loc"] and e["loc"][0] == leaf]
             if not leaf_errs:
@@ -200,9 +199,9 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
             errors.append(leaf_errs[0])
     if not errors:
         return None
-    # Every member's complaint, de-duplicated: reporting only the first told an
-    # operator writing an OpenAI-compatible provider that 'anthropic' was the
-    # one legal api_format.
+    # Every member's complaint, de-duplicated: reporting only the first would
+    # tell an operator writing an OpenAI-compatible provider that 'anthropic'
+    # is the one legal api_format.
     seen = list(dict.fromkeys(errors))
     return f"{key}: {' / '.join(seen)}"
 
@@ -210,7 +209,7 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
 def unknown_key_error(key: str, repo_root: Path) -> str:
     """A human message for a key the schema forbids, with a did-you-mean.
 
-    The pool is usually the SCHEMA defaults: this runs after the unknown key
+    The pool is usually the schema defaults: this runs after the unknown key
     was already written, so the merged config no longer loads and the live
     branch (which would add real provider tables) only survives when a higher
     layer masks the write."""
@@ -244,22 +243,22 @@ def written_value_error(
 ) -> str | None:
     """Validate the just-written `key = value` against the Config model on its
     own (a minimal dict, defaults for the rest), independent of the layer merge.
-    A write of an invalid value into a layer that a HIGHER layer masks (e.g. a
+    A write of an invalid value into a layer that a higher layer masks (e.g. a
     global set the repo overlay shadows) would otherwise validate the merged
-    config -- where the value is hidden -- and land the bad value in the file,
-    only to explode later where the mask is absent. THE one owner every writer
+    config (where the value is hidden) and land the bad value in the file,
+    only to explode later where the mask is absent. The one owner every writer
     uses (`config set/add/remove` and the engine-level set_config_* the TUI,
     web, init and connect drive), so all of them validate the written value
-    identically. Rejects an error at *key*, under it, or at a PARENT of it: the
+    identically. Rejects an error at *key*, under it, or at a parent of it: the
     standalone dict holds only this key, so a complaint about the section it
-    sits in is about this write -- a rule spanning two keys is a
-    `model_validator` and pydantic reports those at the section. A missing
+    sits in is about this write, and a rule spanning two keys is a
+    `model_validator` pydantic reports at the section. A missing
     child is the exception: it only means the written container is partial (a
     provider filled in over several sets), and the merged re-validation still
     catches one that is genuinely absent."""
     parts = key.split(".")
     if parts[0] == "presets":
-        # [presets.<name>] is meta-config the loader strips BEFORE validation
+        # [presets.<name>] is meta-config the loader strips before validation
         # (_apply_preset), so the Config schema forbids the table itself; a
         # leaf under a preset is a Config leaf and validates as one, since
         # the merged re-validation sees it only once that preset is selected.
@@ -292,13 +291,13 @@ def _error_about(err: ErrorDetails, key: str, value: object, repo_root: Path) ->
     something else in the config."""
     loc = ".".join(str(x) for x in err["loc"])
     if err["type"] == "extra_forbidden" and (loc == key or key.startswith(loc + ".")):
-        # An unknown top-level section errors at the SECTION (a parent loc),
+        # An unknown top-level section errors at the section (a parent loc),
         # not the leaf; both deserve the same friendly message, not
         # pydantic-speak or the merged-layer dump.
         return unknown_key_error(key, repo_root)
     if err["type"] == "value_error" and "." not in loc and key.startswith(loc + "."):
         # A rule spanning two keys of one section is a model_validator, and
-        # pydantic reports those at the SECTION. Only a TOP-LEVEL one: the
+        # pydantic reports those at the section. Only a top-level one: the
         # name-keyed entries (providers.x, mcp.servers.x) are legitimately
         # written a leaf at a time, and their whole-entry rules would reject
         # every partial write.
@@ -306,7 +305,7 @@ def _error_about(err: ErrorDetails, key: str, value: object, repo_root: Path) ->
     if loc != key and not loc.startswith(key + "."):
         return None
     if err["type"] == "missing":
-        # A missing child means the written container is PARTIAL; another layer
+        # A missing child means the written container is partial; another layer
         # may complete it, and the merged re-validation still catches a
         # genuinely absent field.
         return None
@@ -329,13 +328,13 @@ def revalidate_write(
     written: Sequence[tuple[str, object]] = (),
 ) -> str | None:
     """Re-load the merged config after an edit; restore *prior* (or delete a
-    freshly-created file) and return the error string if THIS edit broke it.
+    freshly-created file) and return the error string if this edit broke it.
     The caller holds :func:`writing_config` across the whole
     write+revalidate+rollback cycle, so the atomic rollback cannot restore a
-    snapshot over a concurrent writer's update; when the lock FAILED OPEN
+    snapshot over a concurrent writer's update; when the lock failed open
     (*held* False) :func:`keep_or_rollback` keeps the edit and says so.
 
-    A config that was ALREADY invalid keeps the edit: rolling back on any error
+    A config that was already invalid keeps the edit: rolling back on any error
     would let a stale value in an unedited layer refuse every write. The
     pre-existing error still surfaces on the next run, and `agent6 config fix`
     removes it.
@@ -343,7 +342,7 @@ def revalidate_write(
     *written* is the `(key, value)` pairs this edit wrote, each validated
     against the section as this file now holds it (:func:`written_value_error`)
     so a value a higher layer masks in the merge is caught here, not left to
-    explode once the mask is gone -- while a rule spanning two leaves of one
+    explode once the mask is gone, while a rule spanning two leaves of one
     section can still see its sibling, whether it was already in the file or
     written by this same edit."""
     try:
@@ -360,7 +359,7 @@ def revalidate_write(
         if value_err is None:
             continue
         # The section context is the file as it now stands, so a rule spanning
-        # two leaves fires over a sibling that was ALREADY wrong -- and pydantic
+        # two leaves fires over a sibling that was already wrong, and pydantic
         # reports a section rule at the section, which reads as this leaf's
         # fault. The value on its own settles whose fault it is: bad alone, it
         # is this edit's; fine alone, the merged check below decides, and its
@@ -370,7 +369,7 @@ def revalidate_write(
     err = merged_config_error(repo_root)
     if err is None:
         return None
-    # A target that no longer PARSES is always this write's doing, never a
+    # A target that no longer parses is always this write's doing, never a
     # stale value in another layer: keeping it leaves a config no command
     # can read.
     if not was_valid and not target_unparseable(target):
@@ -381,7 +380,7 @@ def revalidate_write(
 def _models_at(model: type[BaseModel], part: str) -> tuple[type[BaseModel], ...] | None:
     """The model(s) *part* resolves to under *model*, or None when it is a leaf
     (a scalar, a list, or a dict-typed value) or unknown. A name-keyed table
-    (`providers`, `mcp.servers`) resolves through its VALUE type, which may be a
+    (`providers`, `mcp.servers`) resolves through its value type, which may be a
     union of entry models."""
     field = model.model_fields.get(part)
     if field is None:
@@ -448,12 +447,12 @@ def set_config_value(
         was_valid = merged_config_error(repo_root) is None
         parsed = parse_cli_value(raw_value)
         if isinstance(parsed, dict) and names_a_section(dotted_key):
-            # A SECTION's own value: `config set context '{ a = 1, b = 2 }'`,
+            # A section's own value: `config set context '{ a = 1, b = 2 }'`,
             # the form a sibling-rule refusal recommends. Written as one key it
             # replaces the whole `[table]`, taking every other leaf and comment
             # in it with no warning; written per leaf the siblings survive, and
             # both halves of a pair land under one revalidation. A dict-typed
-            # LEAF (`providers.x.extra_body`) is a value, not a table: it keeps
+            # leaf (`providers.x.extra_body`) is a value, not a table: it keeps
             # the single write, so setting it replaces it rather than merging.
             if not parsed:
                 raise ConfigError(f"{dotted_key} = {{}} sets nothing; name the leaves to set")
@@ -496,7 +495,7 @@ def set_config_table(
             prior,
             was_valid=was_valid,
             held=held,
-            # PER-LEAF: written_value_error reports an error only at loc == key,
+            # Per leaf: written_value_error reports an error only at loc == key,
             # so a whole-table (key, dict) would hide every leaf-level error;
             # per-leaf also routes providers.<name>.<leaf> through
             # provider_field_error.
@@ -514,13 +513,13 @@ def provider_choices() -> dict[str, list[str]]:
     return {"api_format": formats, "deployment": list(get_args(Deployment))}
 
 
-# Known provider presets, keyed by the conventional provider NAME used as the
+# Known provider presets, keyed by the conventional provider name used as the
 # [providers.<name>] table key. Maps a name to its api_format and, for
 # OpenAI-compatible hosts, the default base_url. Both `agent6 connect` and the
 # TUI add-provider form consult this so well-known names (openrouter, ollama)
 # land on the right host instead of the bare (api_format, deployment) fallback
-# in `config._providers._default_base_url` -- which only knows api.openai.com for the
-# `openai` format and would otherwise point an "openrouter" provider at OpenAI.
+# in `config._providers._default_base_url`, which only knows api.openai.com for
+# the `openai` format and would otherwise point an "openrouter" provider at OpenAI.
 # Advanced deployments (vertex/azure/token_command) are hand-edited per docs/config.md.
 PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "anthropic": {"api_format": "anthropic"},
@@ -540,7 +539,7 @@ def set_config_leaves(
     to_repo: bool = False,
 ) -> str | None:
     """Upsert individual `[table]` leaves, preserving sibling keys and comments
-    verbatim -- the UPDATE counterpart to :func:`set_config_table`'s whole-block
+    verbatim: the update counterpart to :func:`set_config_table`'s whole-block
     replace. One revalidate+rollback wraps all the leaf writes, so a bad merged
     config restores the prior file whole. `None` field values are omitted."""
     target = _prepare_write_target(repo_root, to_repo=to_repo)

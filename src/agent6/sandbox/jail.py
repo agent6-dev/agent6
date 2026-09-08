@@ -42,8 +42,8 @@ _LIBC: ctypes.CDLL | None = ctypes.CDLL(None, use_errno=True) if sys.platform ==
 def die_with_parent(parent_pid: int, sig: int = signal.SIGTERM) -> Callable[[], None]:
     """A `preexec_fn` tying the child's life to *parent_pid* (Linux PDEATHSIG).
 
-    The kernel delivers *sig* to the child when its parent dies -- any death,
-    SIGKILL included. The re-check closes the fork window: a parent that died
+    The kernel delivers *sig* to the child when its parent dies (any death,
+    SIGKILL included). The re-check closes the fork window: a parent that died
     before the prctl landed leaves the child re-parented, so the signal would
     never come. Elsewhere (macOS best-effort) this is a no-op; the platform has
     no equivalent tie. Launcher spawns tie with SIGKILL (a dead agent cannot
@@ -65,9 +65,9 @@ def die_with_parent(parent_pid: int, sig: int = signal.SIGTERM) -> Callable[[], 
 # command runs for minutes.
 _ANSWER_POLL_S = 0.2
 
-# The launcher's OWN environment. It becomes PID 1 of the jail's PID namespace
+# The launcher's own environment. It becomes PID 1 of the jail's PID namespace
 # and strict mounts a fresh /proc, so /proc/1/environ is readable by the jailed
-# command -- inheriting the agent's env would put the operator's provider key
+# command: inheriting the agent's env would put the operator's provider key
 # there. The launcher reads nothing from the environment (its policy arrives on
 # stdin and the child's env is passed explicitly in it), so it gets none.
 _LAUNCHER_ENV: dict[str, str] = {}
@@ -86,7 +86,7 @@ class JailBinaryError(JailUnavailableError):
 def _lossy_text(v: object) -> str:
     """Decode child/launcher output for surfaces: one decode policy for this
     module. Command output is not guaranteed UTF-8 (grep over a binary, a
-    latin-1 file), so bytes decode with errors="replace" -- a lossy result
+    latin-1 file), so bytes decode with errors="replace": a lossy result
     beats a crash or a dropped stream. str passes through; anything else
     (None from a drained pipe) is ""."""
     if isinstance(v, bytes):
@@ -131,7 +131,7 @@ def _read_available(pipe: IO[bytes] | None, budget_s: float = 0.5) -> bytes:
     """Whatever is already in *pipe*, never waiting for EOF.
 
     Reading a killed launcher's stderr to EOF hangs whenever it left a child
-    holding the write end -- which is exactly the wedged case this is for.
+    holding the write end, the wedged case this is for.
     """
     if pipe is None:
         return b""
@@ -168,7 +168,7 @@ class SessionNetwork:
     userns_fd: int
     netns_fd: int
     # The holder stays alive for the run, because /proc/<pid>/ns/* is the only
-    # way a SEPARATE process can name these namespaces: `agent6 exec` and
+    # way a separate process can name these namespaces: `agent6 exec` and
     # `agent6 forward` join through this pid. The descriptors keep the
     # namespaces alive; the pid keeps them nameable.
     holder_pid: int
@@ -211,7 +211,7 @@ class SessionNetwork:
                         " (a stale AGENT6_JAIL_BIN cannot hold one)"
                     )
                 )
-            # BEFORE the holder exits: /proc/<pid> is gone the moment it does.
+            # Before the holder exits: /proc/<pid> is gone the moment it does.
             for kind in ("user", "net"):
                 fds.append(os.open(f"/proc/{proc.pid}/ns/{kind}", os.O_RDONLY))
         except OSError as exc:
@@ -225,8 +225,8 @@ class SessionNetwork:
             raise
         # Done with its output: the holder says "ready" once and then only waits
         # on stdin. Holding these would be two descriptors per run that nothing
-        # closes until garbage collection -- which a long-lived web or hub
-        # process accumulates.
+        # closes until garbage collection, which a long-lived web or hub process
+        # accumulates.
         for pipe in (proc.stdout, proc.stderr):
             if pipe is not None:
                 with contextlib.suppress(OSError):
@@ -292,10 +292,10 @@ def _policy_spec(policy: JailPolicy) -> dict[str, Any]:
         "extra_device_paths": [str(p) for p in policy.extra_device_paths],
         "extra_protect_paths": [str(p) for p in policy.extra_protect_paths],
         "tool_paths": [str(p) for p in policy.tool_paths],
-        # The builtin private set is unioned HERE, the one serialization
+        # The builtin private set is unioned here, the one serialization
         # choke point, so no policy constructor can omit it: secrets and
         # state never enter the jail even under a $HOME-wide grant. A
-        # policy grant BENEATH a hidden root is re-bound through the mask
+        # policy grant beneath a hidden root is re-bound through the mask
         # by the launcher (the machine data contract).
         "hide_paths": sorted({str(p) for p in hidden_paths(policy.hide_paths)}),
         "timeout_s": policy.timeout_s,
@@ -309,9 +309,9 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
     Used for the `none` isolation: the explicit opt-out, the
     dangerously-disable escape hatch, or `auto` on a host with no confinement
     mechanism. Inherits the parent environment (so `PATH` etc. resolve
-    normally) overlaid with `policy.env`, minus agent6's own provider keys --
-    a jailed command never sees one, and a key that lives only in the
-    operator's shell is not on the disk this command can already read. Runs in
+    normally) overlaid with `policy.env`, minus agent6's own provider keys: a
+    jailed command never sees one, and a key that lives only in the operator's
+    shell is not on the disk this command can already read. Runs in
     `policy.cwd`. The sandbox-only knobs (network, ro/rw/protect paths,
     memory_limit_mb) have no effect here, there is no kernel mechanism to
     enforce them.
@@ -464,19 +464,19 @@ def _spawn_launcher(
 # denies /proc, and granting it there would hand every jailed child the agent's
 # environ.
 #
-# A process is the command's only if it appeared during the call AND sits
+# A process is the command's only if it appeared during the call and sits
 # outside the agent's session. The launcher runs in its own session, so every
 # jailed descendant is outside ours (setsid creates sessions, setpgid cannot
-# cross one), while a deliberate same-session child -- git, notify-send -- can
+# cross one), while a deliberate same-session child (git, notify-send) can
 # never be swept, whatever thread spawns it.
 _PR_SET_CHILD_SUBREAPER = 36
 _SWEEP_DEADLINE_S = 5.0
 _sweep_lock = threading.Lock()
 _live_launchers: set[int] = set()
-# Children agent6 started ON PURPOSE in their own session: a `/btw` ask, a
-# `/parallel` lane. They look exactly like an escapee -- a child of this process, different
-# session -- so without this the first background command's teardown SIGKILLs
-# them, destroying model work the operator has already paid for. Every detached
+# Children agent6 started on purpose in their own session: a `/btw` ask, a
+# `/parallel` lane. They look exactly like an escapee (a child of this process,
+# different session), so without this the first background command's teardown
+# SIGKILLs them, destroying model work the operator has already paid for. Every
 # spawn from this process registers here: `agent6.ui.spawn` and the claude_code
 # provider's child.
 _own_detached: set[int] = set()
@@ -512,8 +512,8 @@ def _own_children() -> dict[int, int]:
 
     Empty where there is no /proc: the sweep is a Linux mechanism, and macOS
     resolves to `isolation = "none"`, which agent6 supports. Letting the error
-    out told the model a background command had failed to start AFTER it was
-    already running, and left it untracked, so nothing could stop it.
+    out would tell the model a background command failed to start after it was
+    already running, and leave it untracked, so nothing could stop it.
     """
     me = str(os.getpid()).encode()
     found: dict[int, int] = {}
@@ -548,7 +548,7 @@ def _kill_group_of(pid: int) -> None:
     A pgid is a leader's pid, and it is only reusable once that leader is
     reaped. We hold every one of these as an unreaped child, so a pgid equal to
     the pid we looked up cannot have been recycled underneath us. A pgid that
-    is NOT the pid belongs to a leader we do not hold, and under sudo signalling
+    is not the pid belongs to a leader we do not hold, and under sudo signalling
     a recycled one would kill an unrelated group as root.
     """
     with contextlib.suppress(OSError):
@@ -569,8 +569,7 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
             # is by definition our child, so one that is no longer a child is
             # not ours to spare, and leaving it behind means the next process
             # to get that pid is skipped by the sweep. Derived rather than
-            # discarded per call site: every caller remembering to clean up is
-            # the bug, not the instance.
+            # discarded per call site, so no caller has to remember it.
             _live_launchers.intersection_update(children)
             _own_detached.intersection_update(children)
             escapees = {
@@ -595,8 +594,8 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
 
 
 class JailedProcess:
-    """A jailed child agent6 talks to for a whole session -- an MCP server on a
-    JSON-RPC pipe -- not one it collects (`run_in_jail`) or serves many through
+    """A jailed child agent6 talks to for a whole session (an MCP server on a
+    JSON-RPC pipe), not one it collects (`run_in_jail`) or serves many through
     (`JailSession`).
 
     `close` bounds the child's whole lifetime. Outside a PID namespace the
@@ -654,9 +653,9 @@ def spawn_in_jail(
     """Start `policy.argv` inside the sandbox and hand back a `JailedProcess`.
 
     The third transport, beside `run_in_jail` (collect a command) and
-    `JailSession` (serve many): for a child agent6 TALKS to for the whole
-    session rather than collects -- an MCP server and its JSON-RPC pipe. The
-    same policy, the same launcher, the same layers. The handle's `close` bounds
+    `JailSession` (serve many): for a child agent6 talks to for the whole
+    session rather than collects, an MCP server and its JSON-RPC pipe. It uses
+    the same policy, launcher and layers. The handle's `close` bounds
     the child's lifetime: it takes the launcher's whole process group down and
     sweeps the escapees a server's setsid child leaves behind, which signalling
     the launcher pid alone would miss.
@@ -687,7 +686,7 @@ def spawn_in_jail(
                 preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
             )
             # Registered like the jailed branch's launcher: the server sits in
-            # its own session, so without this a SIBLING handle's close would
+            # its own session, so without this a sibling handle's close would
             # escapee-sweep it (it is in no later spawn's before-snapshot).
             # `JailedProcess.close` discards it on either branch.
             _live_launchers.add(proc.pid)
@@ -696,7 +695,7 @@ def spawn_in_jail(
     spec = _policy_spec(policy)
     spec["mode"] = "exec"
     _become_subreaper()
-    # pass_fds keeps the descriptor's NUMBER in the child, so the launcher is
+    # pass_fds keeps the descriptor's number in the child, so the launcher is
     # told the fd number os.pipe actually returned rather than a hardcoded 3.
     join_args, join_fds = _join_args(policy, session_net)
     policy_r, policy_w = os.pipe()
@@ -717,7 +716,7 @@ def spawn_in_jail(
         # read end here would leave the launcher waiting on an EOF that the
         # write below cannot deliver.
         os.close(policy_r)
-    # AFTER the spawn, so the reader exists: a policy larger than the pipe
+    # After the spawn, so the reader exists: a policy larger than the pipe
     # buffer (a long path list) would otherwise block forever on the write.
     with os.fdopen(policy_w, "wb") as handle:
         handle.write((json.dumps(spec) + "\n").encode())
@@ -831,7 +830,7 @@ def _launcher_result(
     duration = time.monotonic() - start
     # The launcher prints a single JSON line on stdout describing the child's result,
     # then exits 0 itself. Anything else means setup failed, with one exception:
-    # a child that could not be EXECUTED at all (bad path, missing interpreter)
+    # a child that could not be executed at all (bad path, missing interpreter)
     # also surfaces as a launcher error, but the jail itself worked fine. Report
     # that as an ordinary failed command (shell-style 127) so the model fixes
     # its argv instead of concluding the sandbox is broken.
@@ -863,7 +862,7 @@ def _with_launcher_warnings(result: CommandResult, launcher_stderr: str) -> Comm
 
     The child's stderr arrives in the result JSON, so anything on the
     launcher's stderr is agent6 reporting on the jail it just built: a mount it
-    could not make, a grant or protect_path it had to skip. Read on SUCCESS
+    could not make, a grant or protect_path it had to skip. Read on success
     too: a degraded-but-working jail is the case they exist for, and on
     failure an empty /proc surfaces as "cannot open shared object file" with
     nothing else naming the jail.
@@ -899,7 +898,7 @@ def _result_from_json(
 
 # --- detached commands -------------------------------------------------------
 # A background command keeps running after the call that started it, so it is
-# the one jailed child the escapee sweep must NOT kill: its launcher stays
+# the one jailed child the escapee sweep must not kill: its launcher stays
 # registered live until `stop`. Its own output is not captured here (the caller
 # redirects it in argv); only the launcher's result JSON is, so the exit code
 # survives the turn that started the command.
@@ -932,7 +931,7 @@ class Stopped:
 
 
 def _write_outcome(outcome_dir: Path, returncode: int) -> None:
-    """Record a command's exit code where a surface in ANOTHER process reads
+    """Record a command's exit code where a surface in another process reads
     it: this run answers only its own."""
     with contextlib.suppress(OSError):
         (outcome_dir / _RESULT_NAME).write_text(
@@ -941,13 +940,13 @@ def _write_outcome(outcome_dir: Path, returncode: int) -> None:
 
 
 def _write_stopped(outcome_dir: Path) -> None:
-    """Record that the command was STOPPED, for a launcher that was killed
+    """Record that the command was stopped, for a launcher that was killed
     before it could report an exit code.
 
     No number is invented: nobody observed one, and a made-up 137 would be a
     surface stating the one thing an operator acts on, wrongly. Written only
-    over a result READ as empty -- a command that exited moments before the kill
-    keeps the code its launcher wrote, and a read that FAILED says nothing about
+    over a result read as empty: a command that exited moments before the kill
+    keeps the code its launcher wrote, and a read that failed says nothing about
     what is on disk, so it is not grounds to overwrite it either.
     """
     result = outcome_dir / _RESULT_NAME
@@ -969,8 +968,8 @@ def _stop_detached(proc: subprocess.Popen[bytes], descendants: frozenset[int], w
     contract every job's `stop` shares): *what* names the process.
 
     killpg only reaches the process's own group, so a child that called setsid()
-    is missed exactly as it is for a foreground command -- and `run_in_jail`'s
-    sweep can never catch it either, because by then it is not NEW.
+    is missed exactly as it is for a foreground command, and `run_in_jail`'s
+    sweep can never catch it either, because by then it is not new.
     Unregistering first, then sweeping, makes this the moment its escapees stop
     being spared.
     """
@@ -990,7 +989,7 @@ class LocalJob:
     """A detached command running with no confinement (`none` isolation).
 
     There is no launcher to write the exit code down, so this does it: the
-    Popen IS the command, and its code is persisted on the first observed exit
+    Popen is the command, and its code is persisted on the first observed exit
     and on stop. Without that, `/shells` from another process read every such
     command as maybe-still-running for the run's life and after it.
     """
@@ -1074,7 +1073,7 @@ class BackgroundJob:
         answer contract as :meth:`LocalJob.stop`.
 
         The kill takes the launcher down before it can write the exit code, so
-        the ending is recorded here -- otherwise a surface in another process
+        the ending is recorded here; otherwise a surface in another process
         goes on reading a stopped command as maybe-still-running.
         """
         answer = _stop_detached(self._proc, self._descendants, "the sandbox launcher")
@@ -1148,7 +1147,7 @@ class SessionJob:
 
 
 def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | LocalJob:
-    """Spawn `policy.argv` in the sandbox and return WITHOUT waiting for it.
+    """Spawn `policy.argv` in the sandbox and return without waiting for it.
 
     The caller owns the command's own output: nothing is captured here, so
     `policy.argv` must redirect it somewhere both sides can read. Only the
@@ -1158,7 +1157,7 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | L
     from the exit it observes.
 
     Security review note: same policy, same launcher, same confinement as
-    `run_in_jail` -- the only difference is that this call does not wait. The
+    `run_in_jail`; the only difference is that this call does not wait. The
     escapee sweep spares it while it lives (it is a deliberate child, not
     something a command left behind) and `stop` takes its whole group down.
     """
@@ -1176,10 +1175,10 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | L
                 start_new_session=True,
             )
             # Registered like the jailed launcher: the sweep spares what agent6
-            # deliberately started. Unregistered, stopping ONE background
-            # command swept every sibling as an escapee, and the sibling's next
-            # status polled a reaped pid -- which reads as returncode 0, so
-            # agent6 killed a command and then called it a clean exit.
+            # deliberately started. Unregistered, stopping one background
+            # command sweeps every sibling as an escapee, and a sibling's next
+            # status polls a reaped pid, which reads as returncode 0: a command
+            # killed by agent6 and then called a clean exit.
             _live_launchers.add(proc.pid)
         return LocalJob(proc, outcome_dir)
     binary = _require_jail_binary()
@@ -1246,9 +1245,9 @@ class JailSession:
     # so each command's own sweep has to run here instead.
     _pid_namespaced: bool
     # Write end of the launcher's interrupt pipe: one byte asks it to hand the
-    # RUNNING command back now instead of at the check-in. A second channel is
-    # what the request pipe cannot be -- that one is in lockstep, and this side
-    # is blocked reading the answer to the very request being interrupted.
+    # running command back now instead of at the check-in. The request pipe
+    # cannot carry it: that one is in lockstep, and this side is blocked
+    # reading the answer to the very request being interrupted.
     _interrupt_w: int
     # The run's cap, carried on every request: the launcher's own default
     # applies to what a request omits, which would ignore the operator's.
@@ -1296,12 +1295,11 @@ class JailSession:
             proc.stdin.write((json.dumps(spec) + "\n").encode())
             proc.stdin.flush()
             # The launcher prints one ready line once setup is done; consuming
-            # it before the first request keeps the request/answer lockstep AND
+            # it before the first request keeps the request/answer lockstep and
             # marks the point where any setup warning (a refused /proc mount, a
-            # skipped grant) is on stderr. Read it there, once -- a degraded
-            # jail that still runs otherwise says so instead of only surfacing
-            # as a puzzling command failure later. A launcher that died in
-            # setup gives EOF here.
+            # skipped grant) is on stderr. Read it there, once: a degraded jail
+            # that still runs says so, instead of surfacing later as a puzzling
+            # command failure. A launcher that died in setup gives EOF here.
             ready = proc.stdout.readline()
         except OSError as exc:
             # The launcher died before consuming the spec (EPIPE at the
@@ -1343,11 +1341,11 @@ class JailSession:
         command's process lifetime.
 
         *interrupted* is polled while waiting for the answer. Once it says yes,
-        the launcher is asked to hand the command back NOW rather than at
+        the launcher is asked to hand the command back at once rather than at
         `checkin_s`: the operator pressed Stop, and a 15-minute wait for a
         command that is already going to be abandoned reads as a hung agent.
-        The command is not killed -- it becomes `bg<N>` exactly as the
-        check-in would have made it, and teardown stops it.
+        The command is not killed: it becomes `bg<N>` exactly as the check-in
+        would have made it, and teardown stops it.
         """
         start = time.monotonic()
         before = self.child_snapshot()
@@ -1439,7 +1437,7 @@ class JailSession:
 
         A dead launcher reaches the caller as JailUnavailableError, never as
         the raw pipe error: every handler in the run is written against this
-        one, and an OSError escapes all of them -- including out of the
+        one, and an OSError escapes all of them, including out of the
         dispatcher's close(), before teardown has stopped the shells.
         """
         assert self._proc.stdin is not None and self._proc.stdout is not None
@@ -1489,7 +1487,7 @@ class JailSession:
         strict its PID namespace takes any survivors with it.
 
         `communicate()` closes stdin itself (signalling the serve loop's EOF)
-        and drains stdout/stderr. It is NOT preceded by a manual
+        and drains stdout/stderr. It is not preceded by a manual
         `stdin.close()`: on Python 3.12/3.13 `communicate()` then flushes
         the already-closed pipe and raises `ValueError: flush of closed file`
         (3.14 tolerates it), which would be an unhandled crash in

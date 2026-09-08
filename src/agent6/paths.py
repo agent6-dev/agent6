@@ -19,7 +19,7 @@ Security model (see docs/security.md):
   `AGENT6_ALLOW_ROOT=1`, and prints a loud banner either way.
 - When `euid == 0` and the process was launched through `sudo` we
   resolve the invoking user from `SUDO_UID` / `SUDO_GID` / `SUDO_USER`
-  and `chown` anything we create back to them. We do NOT drop privileges
+  and `chown` anything we create back to them. We do not drop privileges
   in-process: the whole point of `sudo agent6` is that verify/run
   commands need root, and those run inside the jail as root regardless, so
   juggling euid in the bookkeeping code would be theatre. The jail remains
@@ -154,11 +154,11 @@ def data_dir(user: RealUser | None = None) -> Path:
     return _user_dir(user, "XDG_DATA_HOME", ".local", "share")
 
 
-# Per-repo agent6 state lives OUT of the workspace, under an XDG state base,
+# Per-repo agent6 state lives out of the workspace, under an XDG state base,
 # namespaced by a per-repo id. Nothing the agent runs (a jailed command on its
 # own cwd) can reach it, and a checkout never carries an `.agent6/` dir.
 def state_base(user: RealUser | None = None) -> Path:
-    """The agent6 state BASE directory (per-repo config + run state):
+    """The agent6 state base directory (per-repo config + run state):
     `$XDG_STATE_HOME/agent6` > `~/.local/state/agent6`. Each repo gets
     `<base>/<repo-id>/`; the jail masks this base, and it is the one every
     run writes to."""
@@ -168,13 +168,13 @@ def state_base(user: RealUser | None = None) -> Path:
 def private_dirs() -> tuple[Path, ...]:
     """agent6 directories a jailed command must never see: the config dir
     (provider keys) and the state base (transcripts, memory, run history).
-    ONE owner, because the jail masks them, the tool-mount scan refuses
+    One owner, because the jail masks them, the tool-mount scan refuses
     them, and the config validator rejects grants inside them.
 
-    Not the data dir or the cache: data holds operator-INSTALLED skills, which
+    Not the data dir or the cache: data holds operator-installed skills, which
     the model is meant to use (a skill's bundled script has to be runnable),
     and the cache holds regenerable provider model lists. Neither is private,
-    and hiding them only cost the skills case a way to work.
+    and hiding them would only cost the skills case a way to work.
 
     Read per call: the XDG vars are per-process.
     """
@@ -185,17 +185,17 @@ def hidden_paths(extra: Iterable[Path]) -> tuple[Path, ...]:
     """Every tree hidden from a run: the operator's `[sandbox].hide_paths`
     plus :func:`private_dirs`.
 
-    ONE owner, because two enforcers read it -- the jail masks these from a
-    jailed command, and the in-process `Workspace` refuses them to the tools
-    -- and a boundary they disagree about is a hole.
+    One owner, because two enforcers read it (the jail masks these from a
+    jailed command, and the in-process `Workspace` refuses them to the tools),
+    and a boundary they disagree about is a hole.
     """
     return (*extra, *private_dirs())
 
 
 # A state dir names its workspace so `ls` sorts by location and a stale one is
-# recognisable. The filesystem limit is 255 BYTES per component, and a path of
-# CJK or emoji runs 3-4 bytes per character -- capping characters produced
-# 271-byte names that failed to create with ENAMETOOLONG.
+# recognisable. The filesystem limit is 255 bytes per component, and a path of
+# CJK or emoji runs 3-4 bytes per character, so capping characters produces
+# 271-byte names that fail to create with ENAMETOOLONG.
 _ID_BYTES_MAX = 100
 # Only the elided form needs a hash, and there it is the only thing separating
 # two paths that elide alike; 12 hex chars = 48 bits, past casual brute force.
@@ -208,13 +208,13 @@ def repo_id(repo_root: Path) -> str:
     `/` becomes `-`, and a trailing tag records which dashes were slashes:
     one bit per dash, most significant first, in hex. `/a/b/c` -> `a-b-c-3`,
     `/a/b-c` -> `a-b-c-2`, `/a-b-c` -> `a-b-c-0`. The mapping is
-    reversible, so two different paths cannot produce the same id -- there is no
+    reversible, so two different paths cannot produce the same id: there is no
     hash in the common case and nothing to collide.
 
     Leading zeros need no sentinel: the name fixes how many dashes there are,
-    so the tag's bit LENGTH is known and `01` cannot be read as `1`.
+    so the tag's bit length is known and `01` cannot be read as `1`.
 
-    Keyed on the RESOLVED path, so two checkouts never share state. Moving or
+    Keyed on the resolved path, so two checkouts never share state. Moving or
     renaming a checkout changes its id: its prior runs are simply not found
     from the new path.
 
@@ -289,10 +289,10 @@ def project_root(start: Path) -> Path:
     directory a project of its own.
 
     No stop at `$HOME`: with `git init $HOME` every directory under it
-    really IS one repo, and one repo has to be one project. Breaking the walk
-    there gave each subdirectory its own state dir -- and its own
-    `repo.lock`, while `git -C` still resolved every one of them to the
-    same working tree, so two runs committed into it at once. That is exactly
+    really is one repo, and one repo has to be one project. Breaking the walk
+    there would give each subdirectory its own state dir and its own
+    `repo.lock`, while `git -C` still resolves every one of them to the
+    same working tree, so two runs could commit into it at once. That is exactly
     the interleaving the lock exists to prevent. Sharing state across a
     dotfiles repo is the operator's own choice; losing the lock is not.
     """

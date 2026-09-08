@@ -3,7 +3,7 @@
 """Git operations with hard safety invariants.
 
 The destructive operations (push, force, history rewrite) are not exposed as a
-code path here AT ALL -- there is nothing to refuse at runtime because nothing
+code path here at all: there is nothing to refuse at runtime because nothing
 spells them (pinned by test_git_ops_never_spells_a_destructive_verb). The one
 sanctioned exception is force_delete_squash_merged_branch. The config can
 *loosen* benign options (auto-stash, branch-per-run) and never these.
@@ -115,7 +115,7 @@ def _git() -> str:
 
 
 # Always-on hardening: neutralize repo-config keys that would otherwise run a
-# repo-controlled command on the HOST (outside the jail) during agent6's own git
+# repo-controlled command on the host (outside the jail) during agent6's own git
 # operations. `-c` has the highest precedence, overriding `.git/config`.
 # `core.fsmonitor` fires a command on every index refresh (status/add/commit);
 # `diff.external` fires one on `git diff` (review/diff); `commit.gpgsign` fires
@@ -126,9 +126,9 @@ def _git() -> str:
 # end). The edit tools already refuse writes into `.git` under protect_git, but a
 # repo cloned with a pre-poisoned `.git/config` would otherwise execute its
 # payload the first time agent6 ran git here.
-# Content-semantic drivers a commit/merge legitimately runs -- clean/smudge
-# `filter.*` and `merge.*.driver` -- are the same RCE class but have no blanket
-# `-c` off switch, so `_repo_driver_overrides` neutralizes each by NAME, gated
+# Content-semantic drivers a commit/merge legitimately runs (clean/smudge
+# `filter.*` and `merge.*.driver`) are the same RCE class but have no blanket
+# `-c` off switch, so `_repo_driver_overrides` neutralizes each by name, gated
 # by `run_repo_filters` (the Git-LFS opt-in, since LFS uses exactly these).
 # The diff prefix family pins `a/` and `b/` headers: `diff_hunks` and every
 # path a reviewer cites read them, and an operator's `diff.noprefix` or
@@ -151,7 +151,7 @@ _GIT_HARDENING: tuple[str, ...] = (
 )
 
 # Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the
-# per-step auto-commit). Default false -- a repo hook is repo-controlled HOST
+# per-step auto-commit). Default false: a repo hook is repo-controlled host
 # code, so honoring it on agent6's commit is a host-RCE vector for an adversarial
 # repo. Set once from `git.run_repo_hooks` at run/review startup. A module-level
 # dict (mutated, not rebound) keeps the process-wide policy without a `global`
@@ -164,18 +164,18 @@ def set_repo_hook_policy(honor: bool) -> None:
     _hook_policy["honor_repo_hooks"] = honor
 
 
-# git never needs a provider key, and a git subprocess -- a credential helper,
-# a content driver we could not neutralize -- should not be handed one. The
+# git never needs a provider key, and a git subprocess (a credential helper, a
+# content driver we could not neutralize) should not be handed one. The
 # names live in `child_env`, which every child agent6 spawns strips them from.
 
 
-# Whether the repo's own content drivers -- `filter.<n>.clean/smudge/process`
-# and `merge.<n>.driver` -- run during agent6's git ops (the auto-commit's
+# Whether the repo's own content drivers (`filter.<n>.clean/smudge/process`
+# and `merge.<n>.driver`) run during agent6's git ops (the auto-commit's
 # `git add`, the chain merge's `merge-tree`). Default false: a driver defined
 # in `.git/config` is a host command, an RCE vector for a cloned poisoned repo.
 # Git-LFS is why they exist, so honoring them is the LFS opt-in. There is no
 # blanket `-c` off switch, so `_run` neutralizes each repo-defined driver by
-# NAME.
+# name.
 _filter_policy: dict[str, bool] = {"honor_repo_filters": False}
 
 
@@ -186,7 +186,7 @@ def set_repo_filter_policy(honor: bool) -> None:
 
 
 # The config keys that name a driver command. Scoped to the repo's own config
-# and the files IT includes (see `--local --includes` below): a Git-LFS filter
+# and the files it includes (see `--local --includes` below): a Git-LFS filter
 # the operator installed in ~/.gitconfig is theirs and trusted; the untrusted
 # surface is the repo's `.git/config` (which a jailed command can write under
 # hardened, and which a cloned repo brings pre-poisoned) and anything it pulls
@@ -198,10 +198,10 @@ def _repo_driver_overrides(cwd: Path) -> tuple[str, ...]:
     """`-c` flags that blank every repo-defined content driver, or () when the
     policy honors them or the repo defines none.
 
-    Read the driver NAMES from the repo's own config (reading names runs
+    Read the driver names from the repo's own config (reading names runs
     nothing) and emit an empty override per name: an empty `filter.<n>.clean`
     is a pass-through, and an empty `merge.<n>.driver` makes the merge report a
-    conflict rather than run the command -- both stop the host command without
+    conflict rather than run the command, both stopping the host command without
     a blanket switch git does not provide. Re-read per call so a driver written
     mid-run (hardened, where a jailed command can write `.git/config`) is caught
     too."""
@@ -216,7 +216,7 @@ def _repo_driver_overrides(cwd: Path) -> tuple[str, ...]:
                 "config",
                 "--local",
                 # Follow the repo's OWN includes: `--local` alone stops at
-                # `.git/config`, but a git OP follows an `[include]` there to a
+                # `.git/config`, but a git op follows an `[include]` there to a
                 # repo-controlled file, so a driver hidden behind one would run
                 # while this enumeration missed it. `--includes` matches what
                 # the op sees; `--local` still keeps the operator's trusted
@@ -261,7 +261,7 @@ def _repo_driver_overrides(cwd: Path) -> tuple[str, ...]:
 # cannot run a host command: `--no-ext-diff` disables the `diff.external` driver,
 # `--no-textconv` the per-file `diff.<d>.textconv` driver (neither is covered by
 # the `-c` overrides above). Single source of truth so no diff/show call site
-# drifts. Place AFTER the subcommand, alongside `git_hardening_flags()` before it.
+# drifts. Place after the subcommand, alongside `git_hardening_flags()` before it.
 DIFF_SHOW_SAFETY_FLAGS: tuple[str, ...] = ("--no-ext-diff", "--no-textconv")
 
 
@@ -303,7 +303,7 @@ def _run(
     argv = list(args)
     if argv and argv[0] in ("diff", "show"):
         argv[1:1] = DIFF_SHOW_SAFETY_FLAGS
-    # Blank the repo's own content drivers on EVERY op, not a guessed list of
+    # Blank the repo's own content drivers on every op, not a guessed list of
     # driver-running subcommands: enumerating which git verbs run a clean/smudge
     # /merge driver is enumerating badness, and missing one reopens the RCE.
     full_argv = (_git(), *hardening, *argv)
@@ -335,7 +335,7 @@ def _run(
             proc.communicate(timeout=_GIT_TERM_GRACE_S)
         except subprocess.TimeoutExpired:
             # TERM ignored (wedged uninterruptible): SIGKILL skips git's
-            # cleanup, so clear the lock -- ONLY when it appeared under this
+            # cleanup, so clear the lock, only when it appeared under this
             # child. One that predates the spawn belongs to a concurrent git
             # process (operator shell, another lane), and deleting it would
             # break git's index mutual exclusion.
@@ -358,7 +358,7 @@ def _run(
     if check and not result.ok:
         # Surface stdout too. `git commit` writes its informational
         # output (including "nothing to commit, working tree clean", pre-
-        # commit hook output, and most user-facing messages) to STDOUT,
+        # commit hook output, and most user-facing messages) to stdout,
         # not stderr; stderr alone is empty for most commit failures.
         stderr_msg = result.stderr.strip()
         stdout_msg = result.stdout.strip()
@@ -472,7 +472,7 @@ def stash_tracked_changes(path: Path, message: str) -> None:
 
 def auto_stash_message(session_id: str) -> str:
     """The auto-stash identity: the run pushes with this message and the
-    finalizer finds the stash BY it -- never by position, since stash@{0} may
+    finalizer finds the stash by it, never by position, since stash@{0} may
     be a stash someone else pushed while the run was running."""
     return f"agent6 auto-stash before run {session_id}"
 
@@ -492,7 +492,7 @@ def find_stash(path: Path, message: str) -> StashEntry | None:
     """The newest stash pushed with exactly *message*, or None.
     `git stash push -m MSG` records `On <branch>: MSG` and ':' cannot
     appear in a ref name, so anchoring `": MSG"` at the end matches the
-    whole message -- lane run ids are ordinal (`…-l1`, `…-l10`), so one
+    whole message: lane run ids are ordinal (`…-l1`, `…-l10`), so one
     message can be a prefix of another."""
     res = _run(path, "stash", "list", "--format=%gd%x09%H%x09%gs", check=False)
     for line in res.stdout.splitlines():
@@ -508,8 +508,8 @@ _DROPPED_SHA_RE = re.compile(r"^Dropped .*\(([0-9a-f]{7,64})\)", re.MULTILINE)
 
 
 def restore_stash(path: Path, stash: StashEntry) -> bool:
-    """Apply *stash* back onto the working tree BY SHA -- a stash@{N} recorded
-    earlier applies whatever sits at that position NOW, which is the wrong
+    """Apply *stash* back onto the working tree by sha: a stash@{N} recorded
+    earlier applies whatever sits at that position now, which is the wrong
     stash the moment another one was pushed. On a clean apply, drop the entry.
     On conflict (or any non-zero apply), leave everything in place so the
     user's work is never lost, and return False. We never `reset --hard` to
@@ -527,9 +527,9 @@ def _drop_by_sha(path: Path, sha: str) -> None:
     """Drop the stash entry whose commit is *sha*, putting back a bystander we
     take by mistake.
 
-    `git stash drop` addresses an entry by POSITION and refuses a sha outright
+    `git stash drop` addresses an entry by position and refuses a sha outright
     ("is not a stash reference"), so the position has to be re-resolved from the
-    list -- and a stash pushed in between shifts every position, aiming the drop
+    list, and a stash pushed in between shifts every position, aiming the drop
     at someone else's entry. git names the commit it dropped, so check it: one
     that is not ours is stored straight back under its own subject (position is
     not identity, so it returns at the top of the stack). Ours then stays
@@ -621,10 +621,10 @@ def is_ancestor(path: Path, maybe_ancestor: str, ref: str) -> bool:
 
 
 def delete_branch_if_merged(path: Path, branch: str) -> bool:
-    """Delete *branch* with `git branch -d`, the SAFE delete: git refuses unless the
+    """Delete *branch* with `git branch -d`, the safe delete: git refuses unless the
     branch is reachable-merged into the current HEAD (or its upstream). Returns True
-    if deleted, False if git refused -- a squash-merged or genuinely unmerged branch,
-    since neither is reachable. Never `branch -D` here; see
+    if deleted, False if git refused (a squash-merged or genuinely unmerged branch,
+    since neither is reachable). Never `branch -D` here; see
     `force_delete_squash_merged_branch` for the one operator-gated exception."""
     return _run(path, "branch", "-d", branch, check=False).ok
 
@@ -639,13 +639,13 @@ def branch_tip_sha(path: Path, branch: str) -> str | None:
 def merge_stamp_holds(path: Path, session_id: str, run_branch: str, merged_tip: str) -> bool:
     """Does a run's merged stamp still describe everything it committed?
 
-    A resumed run keeps committing under a PRIOR leg's stamp: "merged" holds
+    A resumed run keeps committing under a prior leg's stamp: "merged" holds
     only while the run's tip is the one that merge landed (the comparison
-    `sessions prune` trusts). The tip is the run's CHAIN -- its record -- and
-    the branch only for a run with no chain, since a branchless run
+    `sessions prune` trusts). The tip is the run's chain, its record, and the
+    branch only for a run with no chain, since a branchless run
     (`branch_per_run` off) has no branch to compare against the stamp. A gone
-    chain and branch (auto_prune), unreadable
-    git, or a pre-`tip` stamp keeps the claim."""
+    chain and branch (auto_prune), unreadable git, or a stamp carrying no `tip`
+    keeps the claim."""
     if not merged_tip:
         return True
     tip = None
@@ -657,7 +657,7 @@ def merge_stamp_holds(path: Path, session_id: str, run_branch: str, merged_tip: 
 
 
 def force_delete_squash_merged_branch(path: Path, branch: str) -> bool:
-    """`git branch -D` a run branch, the ONE sanctioned force-delete in agent6.
+    """`git branch -D` a run branch, the one sanctioned force-delete in agent6.
 
     `git branch -d` refuses a squash-merged branch because its commits are not
     reachable from the base (the squash collapsed them into one commit ON the
@@ -755,7 +755,7 @@ def list_chain_refs(path: Path) -> tuple[tuple[str, str], ...]:
 
 
 def checkout_detached(path: Path, rev: str) -> None:
-    """Detached checkout of *rev*: for agent6-OWNED clones (a lane workspace
+    """Detached checkout of *rev*: for agent6-owned clones (a lane workspace
     cut at the coordinator's chain tip), never the operator's checkout."""
     _run(path, "checkout", "-q", "--detach", rev)
 
@@ -816,13 +816,13 @@ def _worktree_of_branch(path: Path, branch: str) -> Path | None:
 
 
 def create_branch_at(path: Path, name: str, sha: str) -> None:
-    """Create branch *name* pointing at *sha* WITHOUT checking it out.
+    """Create branch *name* pointing at *sha* without checking it out.
 
     Additive only (`git branch <name> <sha>`): it never touches HEAD or the
     working tree, so `agent6 fork` can cut the new run's branch at a historical
     sha while the operator's checkout stays put. No-op if *name* already points
     at *sha*; raises `GitError` if it exists pointing elsewhere (we never move
-    a branch -- that would be a force/rewrite, which is refused)."""
+    a branch: that would be a force/rewrite, which is refused)."""
     existing = _run(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", check=False)
     if existing.ok and existing.stdout.strip():
         if existing.stdout.strip() == sha:
@@ -894,11 +894,11 @@ def commit_paths(
     trailers: dict[str, str] | None = None,
     identity: CommitIdentity | None = None,
 ) -> str:
-    """Stage only `paths` (repo-relative) and commit JUST those paths. Returns
+    """Stage only `paths` (repo-relative) and commit just those paths. Returns
     the new HEAD sha.
 
     The commit is path-limited (`git commit -- <paths>`), so unrelated
-    changes the user already STAGED stay staged and uncommitted, and unrelated
+    changes the user already staged stay staged and uncommitted, and unrelated
     WIP in the worktree is never swept in. Used by `agent6 init`'s scaffold
     commit, which must not fold the user's in-progress work into it.
     """
@@ -956,14 +956,14 @@ def commit_is_reachable(path: Path, sha: str) -> bool:
 
 
 def worktree_tree(path: Path, seed: str | None, exclude: Collection[str]) -> str:
-    """Tree sha of the worktree's CURRENT content, staged into a temp index;
+    """Tree sha of the worktree's current content, staged into a temp index;
     the shared index is never read or written.
 
     *seed* (the commit the tree will be diffed or parented against; None in an
     unborn repo) pre-populates the index with that commit's tree before
-    `add -A`: ignore rules apply only to UNTRACKED files, so an empty index
-    made `add -A` skip tracked-but-ignored files and every chain commit
-    silently dropped them, which a later merge turned into deletions. New
+    `add -A`: ignore rules apply only to untracked files, so an empty index
+    would make `add -A` skip tracked-but-ignored files and every chain commit
+    would silently drop them, which a later merge turns into deletions. New
     ignored files stay out, and a file deleted from the worktree still leaves
     the tree, exactly as `add -A` behaves on the real index.
 
@@ -1072,13 +1072,13 @@ def chain_commit(
     `untracked_at_start`) on the agent's own commit chain, touching neither
     HEAD, the operator's index, nor any checkout.
 
-    Stages everything into a TEMP index, writes the tree, and `commit-tree`s
-    it parented on *ref*'s current value -- the ref itself is the chain state,
+    Stages everything into a temp index, writes the tree, and `commit-tree`s
+    it parented on *ref*'s current value: the ref itself is the chain state,
     so resume and concurrent runs compose without bookkeeping. When the ref
     does not exist yet the parent is *fallback_parent* (HEAD at run start;
     None = a root commit in an unborn repo). Advances *ref*
     (:func:`chain_ref_for`, the gc anchor) and, when *also_branch* is set,
-    `refs/heads/<also_branch>` -- a plain ref move, never a checkout. Returns
+    `refs/heads/<also_branch>`, a plain ref move, never a checkout. Returns
     the new sha, or None when the tree is identical to the parent's (nothing
     to record).
     """
@@ -1178,7 +1178,7 @@ def sync_worktree(path: Path, from_rev: str, to_rev: str) -> None:
     """Update worktree files from *from_rev*'s tree to *to_rev*'s (both
     tree-ish) via a temp index (two-tree `read-tree -m -u`); HEAD and the
     shared index stay untouched. The worktree must currently match
-    *from_rev*'s tree -- the chain invariant after a chain commit.
+    *from_rev*'s tree, the chain invariant after a chain commit.
 
     The temp index is refreshed before the merge: `read-tree` records no stat
     data, and the two-tree merge touches only entries it can prove up to
@@ -1325,7 +1325,7 @@ def plumb_merge(
 
 
 def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) -> tuple[str, ...]:
-    """After moving a CHECKED-OUT branch's ref from *old_tip* to *new_tip*
+    """After moving a checked-out branch's ref from *old_tip* to *new_tip*
     without a checkout, bring that checkout's index and worktree forward for
     the paths the move changed, each only where it still matches *old_tip*,
     so anything the operator staged or edited themselves is left exactly as
@@ -1374,9 +1374,9 @@ def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) ->
 def _bring_worktree_file_forward(
     path: Path, rel: str, old_mode: str, old_sha: str, new_mode: str, new_sha: str
 ) -> bool:
-    """Move ONE worktree file from the old tip's content to the new tip's,
+    """Move one worktree file from the old tip's content to the new tip's,
     only when it still matches the old tip (absent counts as matching a
-    deletion or a not-yet-added path); regular files only -- symlinks and
+    deletion or a not-yet-added path); regular files only, since symlinks and
     submodule pointers are left to the operator.
 
     False when the checkout keeps a third version (neither tip): the caller
@@ -1541,16 +1541,16 @@ def diff_since(path: Path, base_sha: str, *, exclude: Collection[str] = ()) -> s
     # so they show up as additions in the diff. -N doesn't add content to the
     # index; commit_all's later `git add -A` overwrites the intent entries.
     #
-    # *exclude* (the run's `untracked_at_start`) stays OUT of both the
+    # *exclude* (the run's `untracked_at_start`) stays out of both the
     # intent-add and the diff: the chain already excludes those files, and a
-    # review diff that showed them as the run's own additions had a panel
-    # order their removal -- the model deleted an operator's untracked file.
+    # review diff showing them as the run's own additions would have a panel
+    # order their removal, deleting an operator's untracked file.
     #
-    # The intent-add runs against a TEMP COPY of the index (the chain's own
+    # The intent-add runs against a temp copy of the index (the chain's own
     # temp-index pattern): `-N` entries left in the real index survive the
-    # run (chain commits never consume them) and turned a later ref-plumbing
-    # merge into a staged-deletion artifact (`DA` in status) that read as
-    # dirt and blocked the next run.
+    # run (chain commits never consume them) and turn a later ref-plumbing
+    # merge into a staged-deletion artifact (`DA` in status) that reads as
+    # dirt and blocks the next run.
     specs = [f":(top,exclude,literal){rel}" for rel in sorted(exclude)]
     tmp = Path(tempfile.mkdtemp(prefix="agent6-review-diff-"))
     try:
@@ -1568,7 +1568,7 @@ def diff_since(path: Path, base_sha: str, *, exclude: Collection[str] = ()) -> s
 
 def diff_range(path: Path, base_sha: str, ref: str) -> str:
     """The committed diff `base_sha..ref` introduces, captured. "" when the
-    range is unresolvable (a pruned branch, a bad sha) -- read-only, never blocks
+    range is unresolvable (a pruned branch, a bad sha): read-only, never blocks
     a caller comparing several candidates. Goes through `_run` so it carries the
     same host-RCE hardening + builtin-renderer flags every git diff here does."""
     res = _run(path, "diff", f"{base_sha}..{ref}", check=False)

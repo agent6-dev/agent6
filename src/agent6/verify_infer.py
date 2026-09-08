@@ -7,21 +7,21 @@ one. Rather than block the run, `agent6 run`/`plan`
 infers one, cheapest source first:
 
   1. the `## Verify command` (or `## Test`) section of AGENTS.md, or an
-     inline `Verify:`/`Test:` line -- explicit, human-authored intent;
+     inline `Verify:`/`Test:` line, the explicit human-authored intent;
   2. deterministic repo signals (a root `verify.sh`, package.json
      `scripts.test`, a Makefile `test`/`check` target, pyproject/pytest,
      Cargo, go.mod, loose `test_*.py` files);
   3. an LLM call (injected, so this module stays provider-agnostic) given the
      repo's manifest files + AGENTS.md.
 
-The result is used IN-MEMORY for one run and never written to config (runs do
+The result is used in memory for one run and never written to config (runs do
 not mutate config). The operator is shown what was picked + how to pin it.
 
-`verify_command` is an argv tuple run with NO shell, so a simple command
+`verify_command` is an argv tuple run with no shell, so a simple command
 tokenises directly; a shell pipeline (`a && b`, `a | b`) is wrapped as
-`("sh", "-c", "<pipeline>")` -- `sh` resolves on the jail PATH
+`("sh", "-c", "<pipeline>")`, where `sh` resolves on the jail PATH
 (`/usr/bin:/bin` plus the standard bin dirs that exist). Operator tools like
-`uv` resolve now, so `uv run pytest` is a fine inferred command (it uses the
+`uv` resolve on it, so `uv run pytest` is a fine inferred command (it uses the
 already-synced venv; the sandbox cannot sync).
 """
 

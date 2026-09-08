@@ -15,9 +15,9 @@ OPEN_STATUSES = frozenset({"pending", "in_progress"})
 
 def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     """True if any of `node`'s children is still open. A subtask with open
-    children is a container -- its children are the unit of work, not it -- so
-    the frontier surfaces the children's leaves instead, and `passed` on it
-    would claim work no one did."""
+    children is a container whose children are the unit of work, so the
+    frontier surfaces the children's leaves instead, and `passed` on it would
+    claim work no one did."""
     return any(
         (c := nodes.get(cid)) is not None and c.status in OPEN_STATUSES for cid in node.children
     )
@@ -27,7 +27,7 @@ def tree_order(nodes: dict[str, TaskNode]) -> list[str]:
     """Every node id, depth-first through `children`, roots in id order.
 
     The children list is the order the frontier executes, so this is the order
-    every surface shows -- the renderers, and the `list_tasks` the model reads
+    every surface shows: the renderers, and the `list_tasks` the model reads
     its own plan back from. Iterating the node map instead would give insertion
     order live and filesystem order after a resume (a task placed second
     showing up last).

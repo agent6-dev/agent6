@@ -282,8 +282,8 @@ class AgentState(BaseModel):
     notify: _NotifySpecT | None = None
     # "inherit" (the default) uses the operator's effective worker model, so a
     # machine need not hardcode a model the operator may not have configured,
-    # the #1 way an LLM-authored machine passed `machine check` but died at run
-    # time. Set an explicit provider/model only to pin a specific one.
+    # which passes `machine check` and then dies at run time. Set an explicit
+    # provider/model only to pin a specific one.
     model: str = Field(default="inherit", min_length=1)
     # "agent" (default): a read-only structured-output judge, classify/score/
     # decide and return a finish_session result; cannot edit the repo. Set "run" for
@@ -331,8 +331,8 @@ class ToolState(BaseModel):
     #    otherwise the run is refused naming this state. Enforceable because the
     #    machine engine is a host-netns supervisor: this tool's jail can reach
     #    the network while everything else stays off it.
-    #  - `none`: one of its own, REQUIRED -- refuse on `hardened` rather than
-    #    run connected, unlike `auto` which tolerates it.
+    #  - `none`: one of its own, required: refuse on `hardened` rather than
+    #    run connected, which `auto` tolerates.
     # There is no `session` here: a machine state's processes die with the
     # state (no background commands, no MCP servers, escapees swept), so a
     # shared network would never have a second member. Add it if machines ever
@@ -363,7 +363,7 @@ _ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 def _seconds_as_str(value: object) -> object:
     # The field is a string because it may be a template ("{{ config.poll }}"),
     # but a bare TOML integer is the natural spelling; refusing `every_secs =
-    # 30` with "Input should be a valid string" tripped machine authors (model
+    # 30` with "Input should be a valid string" trips machine authors (model
     # and human alike). Floats stay refused: sub-second waits are not a thing
     # here, and silently truncating one would lie.
     if isinstance(value, int) and not isinstance(value, bool):

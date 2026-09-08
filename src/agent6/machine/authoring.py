@@ -21,9 +21,6 @@ from agent6.prompts.machine import MACHINE_AUTHOR_GUIDE
 __all__ = ["MACHINE_AUTHOR_GUIDE", "build_authoring_prompt"]
 
 
-# The keys the authoring agent uses to return its draft: the `.asm.toml` source
-# and the helper scripts its `tool` states reference (a map of bundle-relative
-# path -> file content). Both are written by `machine create`.
 def build_authoring_prompt(
     task: str,
     *,

@@ -8,16 +8,16 @@ the coordinator steer parser (`workflows/loop.py`) and the web + TUI composers.
     /compact [focus text for the summary]
 
 - `spec` is a positive int (lane count) or a comma-separated model list, and
-  is OPTIONAL: omitted means one lane on the configured worker model. A
-  segment's first token counts as a spec when it contains a comma OR a slash
+  is optional: omitted means one lane on the configured worker model. A
+  segment's first token counts as a spec when it contains a comma or a slash
   (model ids are provider/model shaped, e.g. `moonshotai/kimi-k2.6`); a bare
-  comma-less slash-less model name (`opus`) intentionally stays task text --
-  it is indistinguishable from a task word. The flip side: a task whose FIRST
+  comma-less slash-less model name (`opus`) intentionally stays task text,
+  being indistinguishable from a task word. Conversely, a task whose first
   word is a path (`src/foo.py`) parses as a bogus model spec, refused
   pre-spawn with a did-you-mean (`models.validate`) when a model cache exists
   to check against, else it runs and fails at the provider call; start with a verb.
 - The exact token `/parallel`, whitespace-delimited, separates tasks. A
-  message is a directive only when it STARTS with the exact `/parallel` token;
+  message is a directive only when it starts with the exact `/parallel` token;
   `/parallelfoo ...` stays ordinary text, byte-for-byte. A mid-task
   `/parallel` inside a word or path (not whitespace-delimited) is ordinary text
   too.
@@ -25,7 +25,7 @@ the coordinator steer parser (`workflows/loop.py`) and the web + TUI composers.
 
 One parser per directive, imported by `workflows` (the coordinator) and
 `ui` (the composers, and the CLI `--parallel` value via
-:func:`parse_spec`). Pure stdlib string parsing, no agent6 imports -- a leaf
+:func:`parse_spec`). Pure stdlib string parsing, no agent6 imports: a leaf
 both layers sit above."""
 
 from __future__ import annotations
@@ -34,9 +34,9 @@ import re
 from dataclasses import dataclass
 
 # A `/parallel` token that is whitespace-delimited: preceded by string start or
-# whitespace, followed by whitespace or string end. NOT re.MULTILINE -- a newline
+# whitespace, followed by whitespace or string end. Not re.MULTILINE: a newline
 # is task text; `\s` already covers it, so a bare whitespace-delimited /parallel
-# IS a separator while `foo/parallel/bar` (in a path) is not. `\A`/`\Z` anchor to
+# is a separator while `foo/parallel/bar` (in a path) is not. `\A`/`\Z` anchor to
 # the whole string, never to line boundaries.
 _SEPARATOR = re.compile(r"(?:\A|(?<=\s))/parallel(?=\s|\Z)")
 
@@ -63,15 +63,15 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
     A positive integer `N` is N default lanes; a comma-separated list is one
     lane per named model (a single model id, e.g. `provider/model`, is a
     one-lane list). *limit* is the caller's `[parallel].max_lanes`; an
-    over-limit count refuses BEFORE the lane list is built, so a mistyped huge
+    over-limit count refuses before the lane list is built, so a mistyped huge
     count cannot allocate it. Raises DirectiveError on a non-positive or
     over-limit count or a list that names no models. Single source for the
-    directive spec AND the CLI `run --parallel <spec>` value grammar."""
+    directive spec and the CLI `run --parallel <spec>` value grammar."""
     s = spec.strip()
     if not s:
         return [None]
     # isdecimal, not isdigit: isdigit() is True for superscripts/circled
-    # digits ('\u00b2') that int() rejects, so the guard raised a bare
+    # digits ('\u00b2') that int() rejects, so the guard would raise a bare
     # ValueError past every DirectiveError-catching caller (the coordinator's
     # never-end-the-run contract included). isdecimal() is exactly the set
     # int() parses for a stripped, sign-less string.
@@ -118,7 +118,7 @@ def parse_pin(text: str) -> str | None:
 
 
 # A leading `/compact` token, same discipline as _PIN_TOKEN. Parsed by the
-# composers (web/TUI) and the CLI pause menu, NOT by the loop: a compact
+# composers (web/TUI) and the CLI pause menu, never by the loop: a compact
 # request is an out-of-band marker, not steer text.
 _COMPACT_TOKEN = re.compile(r"\A\s*/compact(?=\s|\Z)")
 
@@ -133,14 +133,14 @@ def parse_compact(text: str) -> str | None:
 
 
 # A leading `/btw` token, same discipline as the two above. A btw is a
-# QUESTION asked beside the run, never steer text: it must not reach the loop.
+# question asked beside the run, never steer text: it must not reach the loop.
 _BTW_TOKEN = re.compile(r"\A\s*/btw(?=\s|\Z)")
 
 
 def parse_btw(text: str) -> str | None:
     """The question a `/btw` composer message carries, or `None` when *text*
-    is not a btw directive. A bare `/btw` carries "" -- there is nothing to
-    ask, and the caller says so rather than opening an empty session."""
+    is not a btw directive. A bare `/btw` carries "": there is nothing to ask,
+    and the caller says so rather than opening an empty session."""
     m = _BTW_TOKEN.match(text)
     if m is None:
         return None
@@ -194,7 +194,7 @@ _FRONT_END_TOKEN = re.compile(
 
 
 def steer_problem(text: str) -> str | None:
-    """Why *text* cannot START a leg as its steer: a malformed directive (a
+    """Why *text* cannot start a leg as its steer: a malformed directive (a
     bare `/pin`, a `/parallel` with no task) or one of `_FRONT_END_COMMANDS`.
     None for ordinary text and a well-formed directive. A leg spent on a
     directive the loop can only decline reads as a silent finish and flips a
@@ -217,8 +217,8 @@ def parse_directive(text: str) -> list[Segment] | None:
     segment, the first whitespace-delimited token is the spec when it is a
     positive int or contains a comma or slash (a model list / model id), else
     the whole segment is the task. Raises DirectiveError on a segment with no
-    task (a bare `/parallel`, or a spec with nothing after it) --
-    all-or-nothing, so a later empty segment fails the whole parse."""
+    task (a bare `/parallel`, or a spec with nothing after it): the parse is
+    all-or-nothing, so a later empty segment fails the whole of it."""
     body = text.lstrip()
     matches = list(_SEPARATOR.finditer(body))
     if not matches or matches[0].start() != 0:
@@ -233,7 +233,7 @@ def parse_directive(text: str) -> list[Segment] | None:
 def _is_spec_token(token: str) -> bool:
     """A leading token is a spec iff it is a positive integer, a comma list, or
     contains a slash (a provider/model id; no natural task starts with a
-    slash-containing word -- see the module docstring for the path caveat). A
+    slash-containing word, see the module docstring for the path caveat). A
     bare word (`fix`, a single model name with no comma or slash) is task
     text."""
     return token.isdecimal() or "," in token or "/" in token

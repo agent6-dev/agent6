@@ -20,10 +20,9 @@ from agent6.paths import private_dirs
 # dirs that exist to PATH, and for those outside the system roots (or whose
 # symlinks resolve out to one, a pipx `uv` at /usr/local/bin -> /opt/pipx/...)
 # pass the real dirs as tool_paths for a real-location RO+exec mount. Read+exec
-# only; the jail still confines writes and network, so containment is
-# unchanged. Owned here so run_command and verify (tools.dispatch), machine
-# tool states (machine.engine), and the host-side probe (`machine check`)
-# resolve tools identically.
+# only; the jail still confines writes and network. Owned here so run_command
+# and verify (tools.dispatch), machine tool states (machine.engine), and the
+# host-side probe (`machine check`) resolve tools identically.
 _JAIL_BASE_PATH_DIRS = ("/usr/bin", "/bin")
 _SYSTEM_ROOTS = (
     Path("/usr"),
@@ -45,17 +44,17 @@ def _never_mounted(p: Path) -> bool:
     resolves.
 
     `operator_tool_paths` mounts `real.parent` for every symlink in a bin
-    dir, so one resolving into the config dir mounted `secrets.toml` -- the
-    provider API keys -- read-only into the jail, and one into the state dir
-    mounted memory and transcripts. Containment cuts both ways: a
-    mount CONTAINING a private dir grants the same reads from above, and a
-    plain `~/.local/bin/x -> ~/x.sh` makes `real.parent` the whole home
-    dir. So agent6's private dirs (:func:`agent6.paths.private_dirs`) are
-    refused in either direction, and $HOME and its ancestors outright:
-    mounting home or a dir above it would hand the jail `~/.ssh` and every
-    credential the operator owns. A mount BELOW home (a tool target's own
-    subdir) stays allowed; that is what keeps `~/.local/bin` tools working.
-    Denied by identity rather than by inspecting contents.
+    dir, so one resolving into the config dir would mount `secrets.toml` (the
+    provider API keys) read-only into the jail, and one into the state dir
+    would mount memory and transcripts. A mount containing a private dir
+    grants the same reads from above, and a plain `~/.local/bin/x -> ~/x.sh`
+    makes `real.parent` the whole home dir. So agent6's private dirs
+    (:func:`agent6.paths.private_dirs`) are refused in either direction, and
+    $HOME and its ancestors outright: mounting home or a dir above it would
+    hand the jail `~/.ssh` and every credential the operator owns. A mount
+    below home (a tool target's own subdir) stays allowed; that is what keeps
+    `~/.local/bin` tools working. Denied by identity rather than by inspecting
+    contents.
     """
     if Path.home().is_relative_to(p):
         return True
@@ -119,12 +118,12 @@ def _tool_bin_dirs() -> tuple[Path, ...]:
 class ToolMountNotes:
     """What the operator should know about how their bin dirs resolve into the
     jail, for the once-per-run preflight. Both lists are `"<link> -> <target>"`
-    strings; the mount decisions themselves are unchanged and silent."""
+    strings; the notes change no mount decision."""
 
     # A symlink whose target's dir is never mounted, so the tool is absent
     # inside the jail (it would die 127 with nothing naming the reason).
     unreachable: tuple[str, ...] = ()
-    # A symlink resolving OUT of its bin dir into another dir under $HOME,
+    # A symlink resolving out of its bin dir into another dir under $HOME,
     # which is therefore mounted read-only into the jail. Allowed on purpose
     # (it is what keeps ~/.local/bin tools working), but the operator placed
     # one symlink and got a whole directory exposed, so say which.

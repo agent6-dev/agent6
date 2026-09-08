@@ -97,9 +97,9 @@ class ToolFact(BaseModel):
     timed_out: bool
     # The tool's captured stderr, so a failing machine tool is debuggable from
     # the journal (routing keys off exit_code/stdout only, so this never affects
-    # the reducer). Additive with a default: journal lines written before this
-    # field still parse (extra="forbid" only rejects UNKNOWN keys, not a missing
-    # defaulted one), keeping old instances replayable.
+    # the reducer). Additive with a default: a journal line without it still
+    # parses (extra="forbid" rejects unknown keys, not a missing defaulted one),
+    # so old instances stay replayable.
     stderr: str = ""
 
 
@@ -193,10 +193,10 @@ class MachineEnd(BaseModel):
     reason: str
     state: str
     transitions: int = Field(ge=0)
-    # Spend of a slice that ended WITHOUT a StepEvent to book it. A capture that
+    # Spend of a slice that ended without a StepEvent to book it. A capture that
     # cannot be reduced halts before journaling the step (a poison fact would
-    # re-crash every later replay), which also discarded the agent's real usd and
-    # tokens: `machine run` then reported $0.0000 for a state that burned money.
+    # re-crash every later replay), which also discards the agent's real usd and
+    # tokens, so `machine run` would report $0.0000 for a state that burned money.
     usd: float = 0.0
     usd_partial: bool = False
     input_tokens: int = 0
@@ -283,10 +283,10 @@ class PendingWait(BaseModel):
 def scrub_lone_surrogates(value: Any) -> Any:
     """A parsed-JSON value with any lone surrogate replaced.
 
-    Applied at the two trust boundaries that produce them -- a tool's captured
-    stdout and a `machine poke` payload -- so the blackboard never holds one.
-    Sanitizing only the journal writers moved the crash one step downstream
-    instead of removing it: the next agent state serializes the blackboard into
+    Applied at the two trust boundaries that produce them (a tool's captured
+    stdout and a `machine poke` payload), so the blackboard never holds one.
+    Sanitizing only the journal writers would move the crash one step
+    downstream: the next agent state serializes the blackboard into
     its request payload, and `model_dump_json` raises a
     `PydanticSerializationError` that no handler on that path catches.
     """
@@ -375,8 +375,8 @@ class MachineJournal:
             if fh.read(1) == b"\n":
                 return
         # Truncate in place: reading the whole journal and writing it back
-        # opens a window where a kill (or a concurrent reader) sees an EMPTY
-        # journal -- the file every machine's correctness rests on. `truncate`
+        # opens a window where a kill (or a concurrent reader) sees an empty
+        # journal, the file every machine's correctness rests on. `truncate`
         # leaves it at either the old length or the new one.
         with self.journal_path.open("rb") as fh:
             size = fh.seek(0, os.SEEK_END)
@@ -425,7 +425,8 @@ class MachineJournal:
     def end_event(self) -> MachineEnd | None:
         """The terminal event, or None while the instance can still take a
         verb. Reads the journal's tail, not all of it: a verb's gate asks only
-        whether the machine ended, and every instance dir is asked on a TAB."""
+        whether the machine ended, and every instance dir is asked on one
+        tab-completion."""
         if not self.journal_path.is_file():
             return None
         with self.journal_path.open("rb") as fh:
@@ -478,7 +479,7 @@ class MachineJournal:
         Snapshots are an inspection optimization (the journal is authoritative),
         and `write_snapshot` keeps a short tail expressly "against a corrupt
         latest". So a torn newest snapshot falls back to the next-older one, and
-        only when none are readable do we return None instead of raising -- a
+        only when none are readable do we return None instead of raising: a
         single bad snapshot must not make `machine status` fail.
         """
         if not self.snapshots_dir.is_dir():
@@ -504,17 +505,17 @@ class MachineJournal:
 
         Returns `(present, payload)`: `present` is True when a signal file was
         consumed; `payload` is the JSON the poke carried (`None` for a bare
-        poke, an empty file, or an unparseable one -- a hand-touched signal is a
+        poke, an empty file, or an unparseable one: a hand-touched signal is a
         valid bare wake).
 
         Claims the signal by renaming it to a private consume path first: `poke`
         renames a fresh signal into place from another process, so a
         read-then-unlink would destroy a poke that landed in between.
 
-        The claim file OUTLIVES this call: it is deleted by `ack_signal` once
+        The claim file outlives this call: it is deleted by `ack_signal` once
         the wake's StepEvent is durable, never here. A consume path already
         present is therefore an unacked claim (machine_lock guarantees no live
-        second consumer): read IT rather than renaming over it, so a death
+        second consumer): read it rather than renaming over it, so a death
         anywhere before the ack re-delivers the same poke on restart.
         Delivery is at-least-once across the whole claim-to-step window, which
         a wake tolerates (a bare poke is a valid wake).
@@ -539,9 +540,9 @@ class MachineJournal:
     def ack_signal(self) -> None:
         """Discard the claimed poke once its wake's StepEvent is durable.
 
-        Deleting on take made the poke's only remaining trace an un-fsynced
-        return value, so a death between the take and the step append lost it
-        with nothing to re-deliver."""
+        Deleting on take would make the poke's only remaining trace an
+        un-fsynced return value, so a death between the take and the step
+        append would lose it with nothing to re-deliver."""
         self.signal_path.with_suffix(".consuming").unlink(missing_ok=True)
 
     def read_pending_poke(self) -> tuple[bool, Any]:
@@ -584,8 +585,8 @@ class MachineJournal:
         except ValidationError as exc:
             # The engine cannot guess a wake instant from this: firing early or
             # skipping the wait are both worse than refusing. Name the remedy,
-            # like every other refusal -- deleting the file re-arms the wait
-            # from the state itself on the next run.
+            # like every other refusal: deleting the file re-arms the wait from
+            # the state itself on the next run.
             raise JournalError(
                 f"corrupt pending wait {self.wait_path}: {exc}\n"
                 f"  delete it to re-arm the wait from the machine's own state:"
@@ -638,7 +639,7 @@ def write_stop_request(root: Path) -> None:
 
     A marker, not a kill (the `sessions stop` semantics): the state in flight
     finishes and journals its fact, then the engine returns a "stopped" result
-    without a MachineEnd -- the instance stays resumable."""
+    without a MachineEnd, so the instance stays resumable."""
     mkdir_for_real_user(root)
     (root / "stop").touch()
 
@@ -670,7 +671,7 @@ def bundle_drift(root: Path, machine_path: Path) -> str | None:
 
     A live instance runs the logic it recorded; an edit takes effect on a new
     instance. Byte comparison against the recorded copy keeps that copy the
-    single source of truth -- no digest to go stale, no mtime heuristics."""
+    single source of truth: no digest to go stale, no mtime heuristics."""
     recorded_asm = root / "machine.asm.toml"
     if not recorded_asm.is_file():
         return f"no recorded machine source at {recorded_asm}"
