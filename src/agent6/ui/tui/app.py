@@ -301,7 +301,6 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         for event in tail_events(
             self.logs_path,
             follow=True,
-            stop_when_finished=self.exit_on_end,
             # Without this, closing the dashboard on a run that never ends
             # (finished + exit_on_end=False, or crashed) leaks this thread in
             # the idle poll forever: one per run the hub session opens.
@@ -337,10 +336,14 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             # would swallow the new session's first prompts and the run would
             # block forever on a modal that never opens.
             self._prompts.reset()
-            # The task is known once the boundary folds: retitle the menu bar
-            # (the conversation screen stamps its own title while on top).
-            if self._screen_or_none() is self._dash:
+            self._end_hold = False
+            # The task is known once the boundary folds, and a resumed leg
+            # releases the end hold: retitle whichever run view is visible.
+            screen = self._screen_or_none()
+            if screen is self._dash:
                 self.sub_title = self.run_title()
+            elif screen is self._conv:
+                self.sub_title = self.screen_title("conversation")
         if event.get("type") in _STATUS_NOW_EVENTS:
             # A terminal / leg-boundary / operator-blocking event changes the
             # status now: refresh synchronously so the chip, the label, and the

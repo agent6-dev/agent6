@@ -758,6 +758,50 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
     asyncio.run(scenario())
 
 
+def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> None:
+    """Continuing from the foreground run's end hold keeps the same view live."""
+    from agent6.ui.tui import app as app_mod
+    from agent6.ui.tui.composer import SteerInput
+
+    events = (
+        _ev(type="session.start", user_task="finish the parser", mode="run"),
+        _ev(type="session.end", reason="finish_session", all_passed=True),
+    )
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(json.dumps(event) + "\n" for event in events), encoding="utf-8"
+    )
+    spawned: list[tuple[str, str]] = []
+
+    def _fake_resume(
+        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+    ) -> str:
+        spawned.append((rid, steer))
+        (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+        with (tmp_path / "logs.jsonl").open("a", encoding="utf-8") as log:
+            log.write(json.dumps(_ev(type="loop.resume.start", iteration=2)) + "\n")
+            log.write(json.dumps(_ev(type="role.call", role="worker", model="m")) + "\n")
+        return ""
+
+    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path, exit_on_end=True)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _wait_for(pilot, lambda: app._end_hold, "the end hold")
+            app._conv.query_one("#conv-input", SteerInput).post_message(
+                SteerInput.Submitted("also add tests")
+            )
+            await app.workers.wait_for_complete()
+            await _wait_for(pilot, lambda: not app.state.finished, "the resumed leg")
+            assert spawned == [(tmp_path.name, "also add tests")]
+            assert app.dir_status[0] == "running"
+            assert not app._end_hold
+            assert app._conv.query_one("#conv-input", SteerInput).mode == "steer"
+            assert "Ctrl+Q to leave" not in str(app.sub_title)
+
+    asyncio.run(scenario())
+
+
 def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
     """Run > Stop now on a LIVE run confirms, then writes an abort over the
     file bridge -- the stream watchdog interrupts the in-flight turn."""
@@ -881,6 +925,10 @@ def test_context_pct_readout_in_top_line_and_bar(tmp_path: Path, monkeypatch: An
             assert "ctx: 41%" in top
             bar = app._dash.query_one("#dash-input", SteerInput)
             assert "ctx 41%" in (bar.border_subtitle or "")
+            await pilot.press("ctrl+d")
+            await pilot.pause()
+            conv_bar = app._conv.query_one("#conv-input", SteerInput)
+            assert "ctx 41%" in (conv_bar.border_subtitle or "")
 
     asyncio.run(scenario())
 

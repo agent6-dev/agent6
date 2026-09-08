@@ -656,6 +656,11 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._render_approval()
         new_events = self._tail.read()
         if not new_events:
+            # The host's fold may have advanced after this screen's independent
+            # tail read, so refresh shared context and liveness even without a
+            # local event. The composer must agree with the dashboard within
+            # one poll.
+            self._sync_input()
             # No data this tick, but a live run's pane must keep moving: the
             # spinner is the only sign of life between events. Same follow
             # discipline as the data path: a pane repaint can resize the
