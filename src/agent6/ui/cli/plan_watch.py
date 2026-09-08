@@ -16,6 +16,7 @@ from agent6.errors import read_operator_file
 from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.ipc import (
+    ANSWERED_ELSEWHERE,
     register_frontend,
     unregister_frontend,
     worker_is_alive,
@@ -298,7 +299,8 @@ class _CliFrontEnd:
                 answer = default_stdin_approver(
                     str(event.get("prompt", "")), standing=_standing(event)
                 )
-            write_answer(self._session_dir, prompt_id, answer or "no")
+            if not write_answer(self._session_dir, prompt_id, answer or "no"):
+                self._view.notice(f"[agent6] {ANSWERED_ELSEWHERE}")
         else:
             raw_questions = event.get("questions", [])
             questions = tuple(
@@ -310,11 +312,13 @@ class _CliFrontEnd:
             )
             with self._view.pause():
                 answers = default_stdin_questioner(questions)
-            write_question_answers(
+            written = write_question_answers(
                 self._session_dir,
                 prompt_id,
                 answers if answers is not None else tuple("" for _ in questions),
             )
+            if not written:
+                self._view.notice(f"[agent6] {ANSWERED_ELSEWHERE}")
         self._handled.add(prompt_id)
 
     def _new_session(self) -> None:

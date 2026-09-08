@@ -21,9 +21,10 @@ We use the filesystem rather than a socket because:
 - the front-end may crash without taking the workflow down with it,
 - every front-end mirrors the same files (the TUI, the web server, the ACP agent).
 
-Answers are written with `atomic_write` (a unique temp file, fsync, rename):
-the reader polls on existence and would consume a torn file as deny or "",
-and two live front-ends answering one prompt must not share a temp name.
+An answer is written whole to a staging file of its own, fsync'd and hard
+linked into place (`_publish_answer`): the reader polls on existence and would
+consume a torn file as deny or "", and the link refuses a second answer to
+the prompt, so the first stands whichever surface wrote it.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ import contextlib
 import json
 import os
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -39,7 +41,7 @@ from typing import Any, Literal
 
 from agent6.events import EventSink
 from agent6.paths import mkdir_for_real_user
-from agent6.portable import atomic_write
+from agent6.portable import atomic_write, fsync_dir
 
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
@@ -464,11 +466,41 @@ def await_frontend_reply[T](session_dir: Path, read_once: Callable[[], T | None]
             time.sleep(1.0)
 
 
-def write_answer(session_dir: Path, prompt_id: str, answer: str) -> None:
-    """Called by a front-end (TUI or web) with the operator's literal choice:
-    "yes", "no", "session" or "session-deny"."""
-    target = _answer_path(approvals_dir(session_dir), prompt_id)
-    atomic_write(target, answer)
+def write_answer(session_dir: Path, prompt_id: str, answer: str) -> bool:
+    """Called by a front-end with the operator's literal choice: "yes", "no",
+    "session" or "session-deny". False when another surface answered first;
+    that answer stands."""
+    return _publish_answer(_answer_path(approvals_dir(session_dir), prompt_id), answer)
+
+
+ANSWERED_ELSEWHERE = "already answered from another surface"
+
+
+def _publish_answer(target: Path, content: str) -> bool:
+    """*content* at *target* unless an answer is there already (False: the
+    first answer stands, nothing rewritten). Written whole to a staging file
+    of its own, fsync'd, then hard linked into place and the directory
+    fsync'd, so a reader never sees a partial file, concurrent writers never
+    share a name, and the entry survives a crash. The staging file goes
+    whatever happens. The state directory's filesystem must support hard
+    links."""
+    fd, staged_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".staged", dir=target.parent
+    )
+    staged = Path(staged_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        try:
+            os.link(staged, target)
+        except FileExistsError:
+            return False
+        fsync_dir(target.parent)
+        return True
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def answer_written(session_dir: Path, prompt_id: str) -> bool:
@@ -684,10 +716,13 @@ def questions_dir(session_dir: Path) -> Path:
     return p
 
 
-def write_question_answers(session_dir: Path, question_id: str, answers: Sequence[str]) -> None:
+def write_question_answers(session_dir: Path, question_id: str, answers: Sequence[str]) -> bool:
     """Called by a front-end when the user answers the question(s). Answers align to
-    the prompt's `questions` by index and are stored as a JSON list."""
-    atomic_write(_answer_path(questions_dir(session_dir), question_id), json.dumps(list(answers)))
+    the prompt's `questions` by index and are stored as a JSON list. False when
+    another surface answered first; that answer stands."""
+    return _publish_answer(
+        _answer_path(questions_dir(session_dir), question_id), json.dumps(list(answers))
+    )
 
 
 def question_answers_written(session_dir: Path, question_id: str) -> bool:

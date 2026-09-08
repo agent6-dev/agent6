@@ -33,6 +33,7 @@ from agent6.machine import (
 )
 from agent6.paths import mkdir_for_real_user, state_dir
 from agent6.sessions.ipc import (
+    ANSWERED_ELSEWHERE,
     read_worker_pid,
     request_compact,
     request_stop,
@@ -56,6 +57,7 @@ from agent6.ui.web import model
 from agent6.viewmodel import (
     machine_verb_refusal,
     newest_state_log,
+    open_approval,
     open_question,
     session_is_live,
 )
@@ -135,7 +137,11 @@ def approve(cwd: Path, session_id: str, prompt_id: str, answer: str) -> tuple[bo
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
-    write_answer(session_dir, prompt_id, answer)
+    prompt = open_approval(session_dir)
+    if prompt is None or prompt.id != prompt_id:
+        return False, "that approval is no longer open"
+    if not write_answer(session_dir, prompt_id, answer):
+        return False, ANSWERED_ELSEWHERE
     return True, "answered"
 
 
@@ -154,7 +160,8 @@ def answer_question(
         # raises on a mismatch after consuming the file: the operator's text
         # would be gone and the model would get an error instead.
         return False, f"that prompt has {len(prompt.questions)} question(s)"
-    write_question_answers(session_dir, question_id, answers)
+    if not write_question_answers(session_dir, question_id, answers):
+        return False, ANSWERED_ELSEWHERE
     return True, "answered"
 
 
@@ -379,7 +386,11 @@ def machine_approve(
     target = _state_dir_for_verb(cwd, name, "answer", state)
     if not isinstance(target, Path):
         return target
-    write_answer(target, prompt_id, answer)
+    prompt = open_approval(target)
+    if prompt is None or prompt.id != prompt_id:
+        return False, "that approval is no longer open"
+    if not write_answer(target, prompt_id, answer):
+        return False, ANSWERED_ELSEWHERE
     return True, "answered"
 
 
@@ -391,7 +402,13 @@ def machine_answer(
     target = _state_dir_for_verb(cwd, name, "answer", state)
     if not isinstance(target, Path):
         return target
-    write_question_answers(target, question_id, answers)
+    prompt = open_question(target)
+    if prompt is None or prompt.id != question_id:
+        return False, "that question is no longer open"
+    if len(answers) != len(prompt.questions):
+        return False, f"that prompt has {len(prompt.questions)} question(s)"
+    if not write_question_answers(target, question_id, answers):
+        return False, ANSWERED_ELSEWHERE
     return True, "answered"
 
 

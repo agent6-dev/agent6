@@ -11,16 +11,22 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agent6.sessions.ipc import approvals_dir, questions_dir
+from agent6.sessions.ipc import ANSWERED_ELSEWHERE, approvals_dir, questions_dir, write_answer
 from agent6.ui.cli import plan_watch
 
 
 def _view() -> Any:
     class _V:
+        def __init__(self) -> None:
+            self.notices: list[str] = []
+
         def pause(self) -> Any:
             import contextlib
 
             return contextlib.nullcontext()
+
+        def notice(self, msg: str) -> None:
+            self.notices.append(msg)
 
     return _V()
 
@@ -174,6 +180,24 @@ def test_resumed_leg_reuses_prompt_ids_and_is_still_answered(
     assert asked == ["leg 2 ok?", "question"]  # both prompted, neither swallowed
     assert (approvals_dir(tmp_path) / "approval-1.answer").read_text(encoding="utf-8") == "yes"
     assert (questions_dir(tmp_path) / "question-1.answer").exists()
+
+
+def test_an_answer_that_lost_to_another_surface_is_reported(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The prompt was answered elsewhere while this terminal asked: the typed
+    answer reaches nothing, the first answer stands, and the terminal says so."""
+
+    def _yes(_prompt: str, *, standing: bool = True) -> str:
+        return "yes"
+
+    monkeypatch.setattr(plan_watch, "default_stdin_approver", _yes)
+    event: dict[str, Any] = {"type": "approval.prompt", "id": "approval-1", "prompt": "run `ls`?"}
+    assert write_answer(tmp_path, "approval-1", "no")
+    view = _view()
+    plan_watch._CliFrontEnd(tmp_path, view).handle(event)  # pyright: ignore[reportPrivateUsage]
+    assert view.notices == [f"[agent6] {ANSWERED_ELSEWHERE}"]
+    assert (approvals_dir(tmp_path) / "approval-1.answer").read_text() == "no"
 
 
 def test_an_unscoped_approval_offers_no_session_choice(tmp_path: Path, monkeypatch: Any) -> None:

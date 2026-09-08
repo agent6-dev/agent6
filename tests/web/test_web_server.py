@@ -409,7 +409,9 @@ def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Pat
     _srv, port = server
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "appr-run"
     session_dir.mkdir(parents=True)
-    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (session_dir / "logs.jsonl").write_text(
+        '{"type":"approval.prompt","id":"p1","prompt":"Allow it?"}\n', encoding="utf-8"
+    )
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
     # The watching browser's own claim, which its SSE registers: without one the
     # run is waiting at its terminal and the answer would reach nobody.
@@ -495,7 +497,9 @@ def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_pa
     _srv, port = server
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "trav-run"
     session_dir.mkdir(parents=True)
-    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (session_dir / "logs.jsonl").write_text(
+        '{"type":"approval.prompt","id":"p1","prompt":"Allow it?"}\n', encoding="utf-8"
+    )
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
     # The watching browser's own claim, which its SSE registers: without one the
     # run is waiting at its terminal and the answer would reach nobody.
@@ -523,7 +527,13 @@ def _make_machine_with_state(
     (inst / "journal.jsonl").write_text("", encoding="utf-8")
     state = inst / "states" / seq_state
     state.mkdir(parents=True)
-    (state / "logs.jsonl").write_text("", encoding="utf-8")
+    (state / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
+        '{"type":"approval.prompt","id":"approval-1","prompt":"Allow it?"}\n'
+        '{"type":"question.prompt","id":"question-1",'
+        '"questions":[{"question":"Continue?"}]}\n',
+        encoding="utf-8",
+    )
     if running:
         write_worker_pid(inst, os.getpid())
     return inst, state
@@ -1443,7 +1453,10 @@ def test_machine_answer_defaults_to_newest_state_without_hint(
     inst, _old = _make_machine_with_state(tmp_path, "adv2", "0001-work", running=True)
     new_state = inst / "states" / "0002-review"
     new_state.mkdir(parents=True)
-    (new_state / "logs.jsonl").write_text("", encoding="utf-8")
+    (new_state / "logs.jsonl").write_text(
+        '{"type":"question.prompt","id":"question-1","questions":[{"question":"Continue?"}]}\n',
+        encoding="utf-8",
+    )
     status, body = _post(port, "/api/machine/adv2/answer", {"id": "question-1", "answers": ["hi"]})
     assert status == 200 and body["ok"] is True
     assert (new_state / "questions" / "question-1.answer").read_text(

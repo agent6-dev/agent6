@@ -12,7 +12,7 @@ from typing import Any
 
 from textual.app import App
 
-from agent6.sessions.ipc import write_answer, write_question_answers
+from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_answer, write_question_answers
 from agent6.ui.tui.modals import ApprovalModal, QuestionModal
 from agent6.viewmodel.state import SessionState
 
@@ -77,7 +77,8 @@ class PromptDispatcher:
             if not self._answerable():
                 self._app.notify(self._lost, severity="warning", timeout=6.0)
                 return
-            write_answer(session_dir, prompt_id, answer or "no")
+            if not write_answer(session_dir, prompt_id, answer or "no"):
+                self._app.notify(ANSWERED_ELSEWHERE, severity="warning", timeout=6.0)
 
         return cb
 
@@ -88,6 +89,7 @@ class PromptDispatcher:
             if not self._answerable():
                 self._app.notify(self._lost, severity="warning", timeout=6.0)
                 return
-            write_question_answers(session_dir, prompt_id, answers or ())
+            if not write_question_answers(session_dir, prompt_id, answers or ()):
+                self._app.notify(ANSWERED_ELSEWHERE, severity="warning", timeout=6.0)
 
         return cb

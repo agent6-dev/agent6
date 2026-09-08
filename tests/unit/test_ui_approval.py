@@ -65,8 +65,38 @@ def test_read_answer_picks_up_written_answer(tmp_path: Path) -> None:
 
 def test_write_answer_no_round_trips(tmp_path: Path) -> None:
     register_frontend(tmp_path, os.getpid())
-    write_answer(tmp_path, "x", "no")
+    assert write_answer(tmp_path, "x", "no") is True
     assert read_answer(tmp_path, "x", timeout_s=1.0) == "no"
+
+
+def test_the_first_answer_stands(tmp_path: Path) -> None:
+    """Two surfaces answering one prompt: the second write is refused and the
+    first answer is what the worker reads, on approvals and questions alike."""
+    register_frontend(tmp_path, os.getpid())
+    assert write_answer(tmp_path, "approval-1", "yes") is True
+    assert write_answer(tmp_path, "approval-1", "no") is False
+    assert read_answer(tmp_path, "approval-1", timeout_s=1.0) == "yes"
+    assert write_question_answers(tmp_path, "question-1", ["8080"]) is True
+    assert write_question_answers(tmp_path, "question-1", ["9090"]) is False
+    assert read_question_answers(tmp_path, "question-1", timeout_s=1.0) == ("8080",)
+    assert not [p for p in (tmp_path / "approvals").iterdir() if p.name.startswith(".")]
+
+
+def test_a_failed_answer_write_leaves_no_staging_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write that fails before the link (a full disk) raises, and the
+    staging file goes with it: nothing sweeps a stray dotfile from the
+    approvals directory."""
+    import os
+
+    def full(fd: int) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "fsync", full)
+    with pytest.raises(OSError):
+        write_answer(tmp_path, "approval-1", "yes")
+    assert list((tmp_path / "approvals").iterdir()) == []
 
 
 # --- liveness grace: a transient front-end drop must not deny the prompt ------

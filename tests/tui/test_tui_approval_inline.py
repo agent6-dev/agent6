@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from textual.widgets import Static
 
@@ -211,6 +212,36 @@ def test_a_click_on_a_row_label_answers(tmp_path: Path) -> None:
             else:  # a click under a loaded pilot can land before the layout settles
                 await pilot.click(label)
             assert await _answer_written(run, pilot) == "yes"
+
+    asyncio.run(scenario())
+
+
+def test_a_click_after_another_surface_answered_is_refused(tmp_path: Path) -> None:
+    """The web answered while the row was still up here: the click writes
+    nothing, the first answer stands, and the screen says so."""
+    run = tmp_path / "live-run-EEEEEE"
+    _live_run(run)
+
+    async def scenario() -> None:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_approval(app, pilot, run)
+            (run / "approvals").mkdir(exist_ok=True)
+            (run / "approvals" / "ap1.answer").write_text("no", encoding="utf-8")
+            with patch.object(app._conv, "notify") as notify:  # pyright: ignore[reportPrivateUsage]
+                app._conv.on_approval_row_answered(  # pyright: ignore[reportPrivateUsage]
+                    ApprovalRow.Answered("yes")
+                )
+            assert (run / "approvals" / "ap1.answer").read_text(encoding="utf-8") == "no"
+            assert "already answered" in str(notify.call_args)
+            # The row settles as an answer does: nothing left to click.
+            assert app._conv._approval is None  # pyright: ignore[reportPrivateUsage]
+            assert str(app._conv._approval_done).startswith("answered elsewhere")  # pyright: ignore[reportPrivateUsage]
+            for _ in range(40):  # the row unmounts on a later tick
+                if not app._conv.query(ApprovalRow):  # pyright: ignore[reportPrivateUsage]
+                    break
+                await pilot.pause(0.05)
+            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
 

@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.ipc import worker_is_alive, write_question_answers
+from agent6.sessions.ipc import ANSWERED_ELSEWHERE, worker_is_alive, write_question_answers
 from agent6.ui.cli._common import error, refuse, resolve_session_layout
 from agent6.viewmodel import QuestionPrompt, open_question
 
@@ -61,6 +61,9 @@ def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
             file=sys.stderr,
         )
         return 2
-    write_question_answers(layout.session_dir, prompt.id, answers)
-    print(f"answered {layout.session_id}: {', '.join(answers)}")
-    return 0
+    written = write_question_answers(layout.session_dir, prompt.id, answers)
+    if written:
+        print(f"answered {layout.session_id}: {', '.join(answers)}")
+    else:
+        refuse(f"{layout.session_id}: {ANSWERED_ELSEWHERE}.")
+    return 0 if written else 2

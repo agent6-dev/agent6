@@ -22,6 +22,7 @@ from rich.text import Text
 from textual.app import App, ScreenStackError
 from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
+from agent6.sessions.ipc import clear_answer
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow
 from agent6.ui.tui.modals import (
@@ -656,6 +657,8 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> N
             # bug where the seen-set was cleared only on session.start and every
             # resumed leg's modals were swallowed forever.
             app._handle_event(_ev(type="loop.resume.start", iteration=2, messages=4))
+            # The worker drops a stale answer as it emits the prompt.
+            clear_answer(tmp_path, "approval-1")
             app._handle_event(_ev(type="approval.prompt", id="approval-1", prompt="again?"))
             app._tick()
             app._conv._poll()

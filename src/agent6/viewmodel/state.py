@@ -662,6 +662,14 @@ def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
     return state
 
 
+def open_approval(session_dir: Path) -> ApprovalPrompt | None:
+    """The run's oldest unanswered approval, or None when none is open."""
+    from agent6.viewmodel.tail import tail_events  # noqa: PLC0415 -- cycle at import time
+
+    state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
+    return next((approval for approval in state.pending_approvals if not approval.answered), None)
+
+
 def open_question(session_dir: Path) -> QuestionPrompt | None:
     """The run's unanswered `ask_user` prompt, oldest first; None when none is
     open. Every surface that writes an answer file checks it against this, so

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent6.paths import state_dir
+from agent6.sessions.ipc import ANSWERED_ELSEWHERE
 from agent6.sessions.layout import machines_root
 from agent6.ui.cli.parser import (
     _inject_default_verb,  # pyright: ignore[reportPrivateUsage]
@@ -287,6 +288,171 @@ def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: Pa
 
     assert read_answer(session_dir, "approval-1", timeout_s=1.0) == "yes"
     assert read_question_answers(session_dir, "question-1", timeout_s=1.0) == ("9090",)
+
+
+def test_an_approval_the_run_already_journaled_is_refused(tmp_path: Path) -> None:
+    """Once the worker consumes and journals an approval, a stale prompt box
+    must not recreate its answer file while another prompt may be opening."""
+    import os
+
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "approved-A1"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        '{"version":2,"session_id":"approved-A1","mode":"run","user_task":"t"}',
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
+        '{"type":"approval.prompt","id":"approval-1","prompt":"Allow it?"}\n'
+        '{"type":"approval.answer","id":"approval-1","answer":"yes"}\n',
+        encoding="utf-8",
+    )
+    (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    ok, reason = actions.approve(tmp_path, "approved-A1", "approval-1", "no")
+
+    assert not ok
+    assert reason == "that approval is no longer open"
+    assert not (session_dir / "approvals" / "approval-1.answer").exists()
+
+
+def test_an_approval_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
+    """A repeated POST can arrive before the worker consumes and journals the
+    first approval; it must not replace the choice the operator already sent."""
+    import os
+
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "approving-A1"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        '{"version":2,"session_id":"approving-A1","mode":"run","user_task":"t"}',
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
+        '{"type":"approval.prompt","id":"approval-1","prompt":"Allow it?"}\n',
+        encoding="utf-8",
+    )
+    (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    assert actions.approve(tmp_path, "approving-A1", "approval-1", "yes") == (
+        True,
+        "answered",
+    )
+    ok, reason = actions.approve(tmp_path, "approving-A1", "approval-1", "no")
+
+    assert not ok
+    assert reason == ANSWERED_ELSEWHERE
+    assert (session_dir / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "yes"
+
+
+def test_a_question_answer_already_on_disk_is_refused(tmp_path: Path) -> None:
+    """A repeated POST can arrive before the worker consumes and journals the
+    first answer; it must not replace the answer the operator already sent."""
+    import json
+    import os
+
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "asking-A1"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        '{"version":2,"session_id":"asking-A1","mode":"run","user_task":"t"}',
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
+        '{"type":"question.prompt","id":"question-1",'
+        '"questions":[{"question":"port?"}]}\n',
+        encoding="utf-8",
+    )
+    (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    assert actions.answer_question(tmp_path, "asking-A1", "question-1", ["8080"]) == (
+        True,
+        "answered",
+    )
+    ok, reason = actions.answer_question(tmp_path, "asking-A1", "question-1", ["9090"])
+
+    assert not ok
+    assert reason == ANSWERED_ELSEWHERE
+    assert json.loads(
+        (session_dir / "questions" / "question-1.answer").read_text(encoding="utf-8")
+    ) == ["8080"]
+
+
+def test_machine_prompt_answers_already_on_disk_are_refused(tmp_path: Path) -> None:
+    """Repeated machine prompt POSTs must preserve the first answers while the
+    current state worker has not consumed and journaled them yet."""
+    import json
+    import os
+
+    inst = state_dir(tmp_path) / "machines" / "asking-machine"
+    state = inst / "states" / "0001-work"
+    state.mkdir(parents=True)
+    (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (inst / "journal.jsonl").write_text("", encoding="utf-8")
+    (inst / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    (state / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
+        '{"type":"approval.prompt","id":"approval-1","prompt":"Allow it?"}\n'
+        '{"type":"question.prompt","id":"question-1",'
+        '"questions":[{"question":"port?"}]}\n',
+        encoding="utf-8",
+    )
+
+    assert actions.machine_approve(tmp_path, "asking-machine", "approval-1", "yes") == (
+        True,
+        "answered",
+    )
+    assert actions.machine_approve(tmp_path, "asking-machine", "approval-1", "no") == (
+        False,
+        ANSWERED_ELSEWHERE,
+    )
+    assert (state / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "yes"
+
+    assert actions.machine_answer(tmp_path, "asking-machine", "question-1", ["8080"]) == (
+        True,
+        "answered",
+    )
+    assert actions.machine_answer(tmp_path, "asking-machine", "question-1", ["9090"]) == (
+        False,
+        ANSWERED_ELSEWHERE,
+    )
+    assert json.loads((state / "questions" / "question-1.answer").read_text(encoding="utf-8")) == [
+        "8080"
+    ]
+
+
+def test_machine_prompt_answers_must_match_the_open_prompt(tmp_path: Path) -> None:
+    """Machine prompt ids reset in each state, so stale ids and a mis-sized
+    answer list must be refused before they create files the worker cannot use."""
+    import os
+
+    inst = state_dir(tmp_path) / "machines" / "open-prompts"
+    state = inst / "states" / "0001-work"
+    state.mkdir(parents=True)
+    (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (inst / "journal.jsonl").write_text("", encoding="utf-8")
+    (inst / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    (state / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
+        '{"type":"approval.prompt","id":"approval-2","prompt":"Allow it?"}\n'
+        '{"type":"question.prompt","id":"question-2",'
+        '"questions":[{"question":"host?"},{"question":"port?"}]}\n',
+        encoding="utf-8",
+    )
+
+    assert actions.machine_approve(tmp_path, "open-prompts", "approval-1", "yes") == (
+        False,
+        "that approval is no longer open",
+    )
+    assert actions.machine_answer(tmp_path, "open-prompts", "question-1", ["localhost"]) == (
+        False,
+        "that question is no longer open",
+    )
+    assert actions.machine_answer(tmp_path, "open-prompts", "question-2", ["localhost"]) == (
+        False,
+        "that prompt has 2 question(s)",
+    )
+    assert not list(state.glob("**/*.answer"))
 
 
 def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: Path) -> None:

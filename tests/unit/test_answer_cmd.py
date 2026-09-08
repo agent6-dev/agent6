@@ -16,7 +16,12 @@ from pathlib import Path
 import pytest
 
 from agent6.paths import state_dir
-from agent6.sessions.ipc import read_question_answers, set_away_mode, write_worker_pid
+from agent6.sessions.ipc import (
+    read_question_answers,
+    set_away_mode,
+    write_question_answers,
+    write_worker_pid,
+)
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli.answer_cmd import _cmd_answer  # pyright: ignore[reportPrivateUsage]
 
@@ -129,6 +134,19 @@ def test_answer_refuses_a_dead_run(
     assert _cmd_answer("curious-fox", ("9090",)) == 2
 
     assert "not running" in capsys.readouterr().err
+
+
+def test_answer_refuses_a_question_another_surface_answered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The first answer stands: a second, from this verb, is refused and named."""
+    layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
+    assert write_question_answers(layout.session_dir, "question-1", ["8080"])
+
+    assert _cmd_answer("curious-fox", ("9090",)) == 2
+
+    assert "already answered from another surface" in capsys.readouterr().err
+    assert read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("8080",)
 
 
 def test_answer_reaches_a_run_waiting_at_its_own_terminal(

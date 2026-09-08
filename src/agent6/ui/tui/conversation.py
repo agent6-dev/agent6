@@ -37,7 +37,7 @@ from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
-from agent6.sessions.ipc import write_answer
+from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_answer
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     RUN_MENU,
@@ -420,7 +420,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             self._approval_done = None
         elif etype == "approval.answer":
             if self._approval is not None and self._approval[0] == str(event.get("id", "")):
-                self._note_answered(bool(event.get("approved")))
+                self._note_answered("allowed" if event.get("approved") else "denied")
         if etype in ("role.call", "role.result"):
             self._live_think.clear()
             self._live_text.clear()
@@ -439,7 +439,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             aid = self._approval[0]
             answered = next((a for a in state.pending_approvals if a.id == aid), None)
             if answered is not None and answered.answered:
-                self._note_answered(bool(answered.approved))
+                self._note_answered("allowed" if answered.approved else "denied")
         open_ones = [
             ap for ap in state.pending_approvals if not ap.answered and not self._taken(ap.id)
         ]
@@ -453,11 +453,12 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             return False
         return self._prompts.seen(self._logs_path.parent, aid)
 
-    def _note_answered(self, approved: bool) -> None:
+    def _note_answered(self, verdict: str) -> None:
+        """Collapse the open approval to one dim line: *verdict* and the
+        command it judged."""
         if self._approval is None:
             return
         head, payload = approval_parts(self._approval[1])
-        verdict = "allowed" if approved else "denied"
         self._approval_done = f"{verdict} · {(payload or head).splitlines()[0][:60]}"
         self._approval = None
 
@@ -521,12 +522,15 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         if not self._host_live():
             self.notify("the run is gone: the answer reached nothing", severity="warning")
             return
-        write_answer(self._logs_path.parent, aid, answer)
         if self._prompts is not None:
             self._prompts.claim(self._logs_path.parent, aid)
-        self._note_answered(answer in ("yes", "session"))
+        if write_answer(self._logs_path.parent, aid, answer):
+            self._note_answered("allowed" if answer in ("yes", "session") else "denied")
+            self.notify(f"answered: {answer}")
+        else:
+            self._note_answered("answered elsewhere")
+            self.notify(ANSWERED_ELSEWHERE, severity="warning")
         self._render_approval()
-        self.notify(f"answered: {answer}")
         with contextlib.suppress(NoMatches):
             self.query_one("#conv-input", SteerInput).focus()
 
