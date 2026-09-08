@@ -128,6 +128,52 @@ def test_stop_all_closes_every_log_descriptor(
     assert shells.stop_all() == []
 
 
+def test_read_names_the_size_when_the_byte_cap_cuts_the_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A capped result says how large the complete background output was."""
+    job = _Job()
+
+    def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
+        return job
+
+    monkeypatch.setattr(background, "start_in_jail", start_in_jail)
+    shells = BackgroundShells(tmp_path / "shells")
+    view = shells.start(("sleep", "60"), lambda _a, _rw: cast(JailPolicy, object()))
+    log = tmp_path / "shells" / "logs" / view.id / "out.log"
+    log.write_bytes(b"x" * (background._TAIL_BYTES + 1000))  # pyright: ignore[reportPrivateUsage]
+
+    _view, output = shells.read(view.id, tail_lines=200)
+
+    total = background._TAIL_BYTES + 1000  # pyright: ignore[reportPrivateUsage]
+    assert f"{total} bytes total" in output
+
+
+def test_read_drops_the_line_the_byte_cap_cut_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cap cuts bytes, not lines: the remainder of the line it landed in
+    read as an ordinary first line. A cut on a line boundary keeps the line."""
+    job = _Job()
+
+    def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
+        return job
+
+    monkeypatch.setattr(background, "start_in_jail", start_in_jail)
+    shells = BackgroundShells(tmp_path / "shells")
+    view = shells.start(("sleep", "60"), lambda _a, _rw: cast(JailPolicy, object()))
+    log = tmp_path / "shells" / "logs" / view.id / "out.log"
+    cap = background._TAIL_BYTES  # pyright: ignore[reportPrivateUsage]
+
+    log.write_bytes(b"a" * (cap + 100) + b"\nlast\n")
+    _view, output = shells.read(view.id, tail_lines=200)
+    assert output.splitlines()[1:] == ["last"]
+
+    log.write_bytes(b"a" * 99 + b"\n" + b"b" * (cap - 1) + b"\n")
+    _view, output = shells.read(view.id, tail_lines=200)
+    assert output.splitlines()[1:] == ["b" * (cap - 1)]
+
+
 def test_the_disk_roster_skips_metadata_that_is_not_an_object(tmp_path: Path) -> None:
     """One malformed shell record must not break every roster surface."""
     shell = tmp_path / "shells" / "bg1"

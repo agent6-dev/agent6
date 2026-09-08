@@ -340,11 +340,22 @@ class BackgroundShells:
             size = os.lseek(shell.log_fd, 0, os.SEEK_END)
             start = max(size - _TAIL_BYTES, 0)
             text = os.pread(shell.log_fd, size - start, start).decode(errors="replace")
+            cut_mid_line = start > 0 and os.pread(shell.log_fd, 1, start - 1) != b"\n"
         except OSError as exc:
             return self._view(shell), f"(output unreadable: {exc})"
         lines = text.splitlines()
+        if cut_mid_line:
+            lines = lines[1:]  # the cap cut a line: its remainder is not a line
+        notes: list[str] = []
+        if start > 0:
+            notes.append(
+                f"earlier output cut at the {_TAIL_BYTES} byte tail cap ({size} bytes total)"
+            )
         if len(lines) > tail_lines:
-            lines = [f"... {len(lines) - tail_lines} earlier lines ...", *lines[-tail_lines:]]
+            notes.append(f"{len(lines) - tail_lines} earlier lines")
+            lines = lines[-tail_lines:]
+        if notes:
+            lines = [f"... {'; '.join(notes)} ...", *lines]
         return self._view(shell), "\n".join(lines)
 
     def stop(self, shell_id: str) -> ShellView:
