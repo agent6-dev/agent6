@@ -324,7 +324,7 @@ class SseCall:
                 resp_holder["resp"] = resp
                 if self.response_headers is not None:
                     self.response_headers(resp.headers)
-                if resp.status_code >= 400:
+                if not 200 <= resp.status_code < 300:
                     error_body = _error_body_prefix(resp)
                     self.record(status=resp.status_code, response=error_body)
                     raise ProviderError(

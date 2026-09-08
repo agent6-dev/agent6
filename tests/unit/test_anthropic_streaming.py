@@ -416,6 +416,22 @@ def test_streaming_propagates_http_error(monkeypatch: pytest.MonkeyPatch, tmp_pa
         )
 
 
+def test_streaming_redirect_status_is_preserved(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=307, lines=[], error_body="moved")
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    with pytest.raises(ProviderError) as exc_info:
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+    assert exc_info.value.status_code == 307
+
+
 def test_streaming_429_captures_retry_after(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -577,7 +593,9 @@ def test_streaming_with_budget_requires_usage_tokens(
             messages=[{"role": "user", "content": "x"}],
             text_delta_callback=lambda _p: None,
         )
-    assert exc_info.value.status_code == 422
+    # Missing response accounting is a transient stream-integrity failure, not
+    # an HTTP 422 saying the unchanged request body itself is malformed.
+    assert exc_info.value.status_code is None
     assert budget.snapshot().per_model == {}
 
 
@@ -606,3 +624,115 @@ def test_foreign_opaque_blocks_never_reach_the_wire() -> None:
     original = messages[0]["content"]
     assert isinstance(original, list)
     assert "chatgpt_reasoning" in original[0]  # caller list untouched
+
+
+def _complete_stream(
+    *,
+    input_tokens: object = 1,
+    output_tokens: object = 1,
+    block: dict[str, Any] | None = None,
+    stop_reason: object = "end_turn",
+) -> list[str]:
+    block = block or {"type": "text", "text": ""}
+    return _sse(
+        [
+            ("message_start", {"message": {"usage": {"input_tokens": input_tokens}}}),
+            ("content_block_start", {"index": 0, "content_block": block}),
+            ("content_block_stop", {"index": 0}),
+            (
+                "message_delta",
+                {"delta": {"stop_reason": stop_reason}, "usage": {"output_tokens": output_tokens}},
+            ),
+            ("message_stop", {}),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("input_tokens", -1),
+        ("input_tokens", 1.5),
+        ("input_tokens", True),
+        ("output_tokens", -1),
+        ("output_tokens", 1.5),
+        ("output_tokens", True),
+    ],
+)
+def test_streaming_usage_counts_are_non_negative_integers(
+    monkeypatch: pytest.MonkeyPatch, field: str, value: object
+) -> None:
+    lines = (
+        _complete_stream(input_tokens=value)
+        if field == "input_tokens"
+        else _complete_stream(output_tokens=value)
+    )
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match=rf"usage\.{field}"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"type": "text", "text": True},
+        {"type": "thinking", "thinking": True},
+        {"type": "redacted_thinking", "data": True},
+        {"type": "tool_use", "id": 1, "name": "list_dir", "input": {}},
+    ],
+)
+def test_streaming_content_fields_are_not_coerced(
+    monkeypatch: pytest.MonkeyPatch, block: dict[str, Any]
+) -> None:
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=_complete_stream(block=block))
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="content"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+
+
+def test_streaming_terminal_event_requires_a_stop_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=_complete_stream(stop_reason=None))
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="stop_reason"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+
+
+def test_streaming_scalar_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    lines = _sse([("error", {"type": "error", "error": "upstream disconnected"})])
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError, match="upstream disconnected"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )

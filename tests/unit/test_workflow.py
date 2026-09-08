@@ -587,7 +587,10 @@ def test_call_with_retry_never_retries_a_fatal_error() -> None:
     assert provider.call.call_count == 1
 
 
-@pytest.mark.parametrize("status", [400, 401, 402, 403, 404, 422])
+@pytest.mark.parametrize(
+    "status",
+    [307, 400, 401, 402, 403, 404, 405, 413, 415, 422, 426, 431, 451],
+)
 def test_call_with_retry_skips_retry_on_all_permanent_statuses(status: int) -> None:
     """Every status in _NON_RETRYABLE_HTTP_STATUSES re-raises on the first
     failure without consuming a retry (not just the 402 observed live)."""
@@ -600,6 +603,20 @@ def test_call_with_retry_skips_retry_on_all_permanent_statuses(status: int) -> N
     with pytest.raises(ProviderError, match=str(status)):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
+
+
+@pytest.mark.parametrize("status", [408, 409, 425, 429])
+def test_call_with_retry_keeps_anthropic_transient_client_statuses(status: int) -> None:
+    """A timeout, a conflict, too-early and a rate limit are the 4xx a blind
+    retry can outlive."""
+    provider = MagicMock()
+    provider.call.side_effect = [
+        ProviderError(f"provider error {status}", status_code=status),
+        _resp("recovered"),
+    ]
+    wf = _wf(provider=provider, provider_retry_count=1)
+    assert wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384).text == "recovered"
+    assert provider.call.call_count == 2
 
 
 def test_call_with_retry_still_retries_transient_5xx() -> None:

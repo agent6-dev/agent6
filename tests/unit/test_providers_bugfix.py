@@ -75,6 +75,18 @@ def test_anthropic_non_json_200_is_provider_error() -> None:
     assert "non-JSON" in str(ei.value)
 
 
+def test_anthropic_redirect_status_is_preserved() -> None:
+    """A redirect is not a successful Messages response and retrying it cannot help."""
+    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
+    resp = _FakeJSONResponse(status_code=307, text="moved")
+    with (
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
+        pytest.raises(ProviderError) as exc_info,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert exc_info.value.status_code == 307
+
+
 def test_openai_2xx_envelope_permanent_status_is_not_retried() -> None:
     """A 402 (insufficient credits) / 400 / 401 / 404 in a 2xx error envelope
     carries a PERMANENT upstream status in error.code. My first envelope fix
@@ -876,3 +888,119 @@ def test_a_gzip_encoded_provider_response_is_not_decoded_twice(
     assert resp.json() == {"ok": True}
     assert "content-encoding" not in resp.headers
     assert resp.headers.get("retry-after") == "7"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "input_tokens",
+        "output_tokens",
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+    ],
+)
+@pytest.mark.parametrize("value", [-1, 1.5, True, "", {}, []])
+def test_anthropic_usage_counts_are_non_negative_integers(field: str, value: object) -> None:
+    """Malformed usage must not be truncated, coerced from bool, or recorded negative."""
+    from agent6.providers.anthropic import (
+        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    usage: dict[str, object] = {"input_tokens": 1, "output_tokens": 1, field: value}
+    with pytest.raises(ProviderError, match=rf"usage\.{field}"):
+        parse_anthropic_response(
+            {"content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn", "usage": usage}
+        )
+
+
+def test_anthropic_usage_counts_accept_integer_strings_and_integral_floats() -> None:
+    from agent6.providers.anthropic import (
+        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    response = parse_anthropic_response(
+        {
+            "content": [],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": "10",
+                "output_tokens": 2.0,
+                "cache_read_input_tokens": "3",
+                "cache_creation_input_tokens": 4.0,
+            },
+        }
+    )
+    assert (
+        response.input_tokens,
+        response.output_tokens,
+        response.cache_read_tokens,
+        response.cache_creation_tokens,
+    ) == (10, 2, 3, 4)
+
+
+@pytest.mark.parametrize("value", [None, "", True, {}, []])
+def test_anthropic_final_stop_reason_must_be_a_nonempty_string(value: object) -> None:
+    from agent6.providers.anthropic import (
+        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    with pytest.raises(ProviderError, match="stop_reason"):
+        parse_anthropic_response(
+            {
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": value,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"type": "text", "text": True},
+        {"type": "tool_use", "id": "", "name": "list_dir", "input": {}},
+        {"type": "tool_use", "id": "tu_1", "name": "", "input": {}},
+        {"type": "tool_use", "id": "tu_1", "name": "list_dir", "input": []},
+        {"type": "tool_use", "id": " ", "name": "list_dir", "input": {}},
+        {"type": "tool_use", "id": "tu_1", "name": " ", "input": {}},
+        {"type": "thinking", "thinking": True, "signature": "sig"},
+        {"type": "thinking", "thinking": "plan", "signature": True},
+        {"type": "redacted_thinking", "data": ""},
+        {"type": "redacted_thinking", "data": True},
+    ],
+)
+def test_anthropic_content_block_fields_keep_the_replay_wire_valid(
+    block: dict[str, object],
+) -> None:
+    """A malformed response block must not be stored verbatim for the next request."""
+    from agent6.providers.anthropic import (
+        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    with pytest.raises(ProviderError, match="content"):
+        parse_anthropic_response(
+            {
+                "content": [block],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        )
+
+
+def test_anthropic_tool_use_ids_are_unique() -> None:
+    """Duplicate IDs cannot be paired to distinct tool results on the next request."""
+    from agent6.providers.anthropic import (
+        _parse_response as parse_anthropic_response,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    with pytest.raises(ProviderError, match=r"duplicate.*tool_use.id"):
+        parse_anthropic_response(
+            {
+                "content": [
+                    {"type": "tool_use", "id": "tu_1", "name": "list_dir", "input": {}},
+                    {"type": "tool_use", "id": "tu_1", "name": "read_file", "input": {}},
+                ],
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        )

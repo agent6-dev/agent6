@@ -106,6 +106,42 @@ def _summarise_thinking_display(model: str) -> bool:
     return any(m in model for m in _SUMMARISE_DISPLAY_MARKERS)
 
 
+def _non_negative_integer(value: Any, field_name: str) -> int:
+    try:
+        if isinstance(value, bool):
+            raise TypeError
+        count = int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ProviderError(
+            f"Anthropic response {field_name} was not a non-negative integer"
+        ) from exc
+    if count < 0 or (isinstance(value, float) and not value.is_integer()):
+        raise ProviderError(f"Anthropic response {field_name} was not a non-negative integer")
+    return count
+
+
+def _usage_count(usage: Mapping[str, Any], key: str) -> int:
+    value = usage.get(key)
+    if value is None:
+        return 0
+    return _non_negative_integer(value, f"usage.{key}")
+
+
+def _usage_mapping(value: Any) -> Mapping[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ProviderError("Anthropic response usage was not an object")
+    return value
+
+
+def _response_string(value: Any, field_name: str, *, empty: bool = True) -> str:
+    if not isinstance(value, str) or (not empty and not value.strip()):
+        qualifier = "a nonempty string" if not empty else "a string"
+        raise ProviderError(f"Anthropic response {field_name} was not {qualifier}")
+    return value
+
+
 def _require_metered_usage(usage: object, *, source: str) -> None:
     """Fail closed when a budgeted Anthropic call cannot be metered.
 
@@ -115,19 +151,10 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
     turn legitimately reports `input_tokens: 0` with `cache_read_input_tokens`
     > 0, so a plain `input_tokens > 0` check would false-reject it."""
     if isinstance(usage, Mapping):
-        # Coerce numerically (the streaming path already does): a proxy typing
-        # counts as floats/strings is meterable. Absent/zero/non-numeric still
-        # fails closed below.
-        def _count(key: str) -> int:
-            try:
-                return int(usage.get(key) or 0)
-            except (TypeError, ValueError):
-                return 0
-
         total_input = (
-            _count("input_tokens")
-            + _count("cache_read_input_tokens")
-            + _count("cache_creation_input_tokens")
+            _usage_count(usage, "input_tokens")
+            + _usage_count(usage, "cache_read_input_tokens")
+            + _usage_count(usage, "cache_creation_input_tokens")
         )
         if total_input > 0:
             return
@@ -516,21 +543,25 @@ class AnthropicProvider:
                 if et in ("content_block_start", "content_block_delta"):
                     clock.mark_output()
                 if et == "message_start":
-                    msg = evt.get("message", {})
-                    u = msg.get("usage", {}) or {}
+                    msg = evt.get("message")
+                    if not isinstance(msg, Mapping):
+                        raise ProviderError(
+                            "Anthropic response message_start.message was not an object"
+                        )
+                    u = _usage_mapping(msg.get("usage"))
                     if "input_tokens" in u and u.get("input_tokens") is not None:
                         saw_input_usage = True
-                    usage_input = int(u.get("input_tokens") or usage_input)
-                    usage_cache_read = int(u.get("cache_read_input_tokens") or usage_cache_read)
-                    usage_cache_creation = int(
-                        u.get("cache_creation_input_tokens") or usage_cache_creation
-                    )
+                    usage_input = _usage_count(u, "input_tokens")
+                    usage_cache_read = _usage_count(u, "cache_read_input_tokens")
+                    usage_cache_creation = _usage_count(u, "cache_creation_input_tokens")
                 elif et == "content_block_start":
-                    idx = int(evt.get("index", 0))
-                    cb = evt.get("content_block", {}) or {}
-                    btype = cb.get("type")
+                    idx = _non_negative_integer(evt.get("index", 0), "content block index")
+                    cb = evt.get("content_block")
+                    if not isinstance(cb, Mapping):
+                        raise ProviderError("Anthropic response content block was not an object")
+                    btype = _response_string(cb.get("type"), "content block type", empty=False)
                     if btype == "text":
-                        text_acc[idx] = [str(cb.get("text", ""))]
+                        text_acc[idx] = [_response_string(cb.get("text", ""), "content text")]
                     elif btype == "thinking":
                         # A thinking block streams only ping heartbeats under
                         # display:omitted; tell the watchdog to wait out the
@@ -538,27 +569,49 @@ class AnthropicProvider:
                         # mid-stream budget false-kills a long reason (see
                         # providers/_stream.py idle phases).
                         clock.enter_thinking()
-                        thinking_acc[idx] = [str(cb.get("thinking", ""))]
-                        signature_acc[idx] = [str(cb.get("signature", ""))]
+                        thinking_acc[idx] = [
+                            _response_string(cb.get("thinking", ""), "content thinking")
+                        ]
+                        signature_acc[idx] = [
+                            _response_string(cb.get("signature", ""), "content signature")
+                        ]
                     elif btype == "redacted_thinking":
                         # Opaque encrypted block, pass straight through.
                         content_blocks.append(
-                            {"type": "redacted_thinking", "data": cb.get("data", "")}
+                            {
+                                "type": "redacted_thinking",
+                                "data": _response_string(
+                                    cb.get("data", ""),
+                                    "content redacted_thinking data",
+                                    empty=False,
+                                ),
+                            }
                         )
                     elif btype == "tool_use":
+                        tool_input = cb.get("input", {})
+                        if not isinstance(tool_input, dict):
+                            raise ProviderError(
+                                "Anthropic response content tool_use.input was not an object"
+                            )
                         tool_acc[idx] = {
                             "type": "tool_use",
-                            "id": cb.get("id", ""),
-                            "name": cb.get("name", ""),
-                            "input": cb.get("input", {}) or {},
+                            "id": _response_string(
+                                cb.get("id"), "content tool_use.id", empty=False
+                            ),
+                            "name": _response_string(
+                                cb.get("name"), "content tool_use.name", empty=False
+                            ),
+                            "input": tool_input,
                         }
                         json_partial[idx] = []
                 elif et == "content_block_delta":
-                    idx = int(evt.get("index", 0))
-                    d = evt.get("delta", {}) or {}
-                    dt = d.get("type")
+                    idx = _non_negative_integer(evt.get("index", 0), "content block index")
+                    d = evt.get("delta")
+                    if not isinstance(d, Mapping):
+                        raise ProviderError("Anthropic response content delta was not an object")
+                    dt = _response_string(d.get("type"), "content delta type", empty=False)
                     if dt == "text_delta":
-                        piece = str(d.get("text", ""))
+                        piece = _response_string(d.get("text", ""), "content text delta")
                         text_acc.setdefault(idx, []).append(piece)
                         if piece and text_delta_callback is not None:
                             # Callback failure must never break the
@@ -566,17 +619,21 @@ class AnthropicProvider:
                             with contextlib.suppress(Exception):
                                 text_delta_callback(piece)
                     elif dt == "thinking_delta":
-                        piece = str(d.get("thinking", ""))
+                        piece = _response_string(d.get("thinking", ""), "content thinking delta")
                         thinking_acc.setdefault(idx, []).append(piece)
                         if piece and thinking_delta_callback is not None:
                             with contextlib.suppress(Exception):
                                 thinking_delta_callback(piece)
                     elif dt == "signature_delta":
-                        signature_acc.setdefault(idx, []).append(str(d.get("signature", "")))
+                        signature_acc.setdefault(idx, []).append(
+                            _response_string(d.get("signature", ""), "content signature delta")
+                        )
                     elif dt == "input_json_delta":
-                        json_partial.setdefault(idx, []).append(str(d.get("partial_json", "")))
+                        json_partial.setdefault(idx, []).append(
+                            _response_string(d.get("partial_json", ""), "content input JSON delta")
+                        )
                 elif et == "content_block_stop":
-                    idx = int(evt.get("index", 0))
+                    idx = _non_negative_integer(evt.get("index", 0), "content block index")
                     if idx in text_acc:
                         content_blocks.append(
                             {
@@ -609,19 +666,32 @@ class AnthropicProvider:
                                 tu["input"] = {"_partial_json": partial}
                         content_blocks.append(tu)
                 elif et == "message_delta":
-                    d = evt.get("delta", {}) or {}
+                    d = evt.get("delta")
+                    if not isinstance(d, Mapping):
+                        raise ProviderError(
+                            "Anthropic response message_delta.delta was not an object"
+                        )
                     if "stop_reason" in d:
-                        stop_reason = str(d.get("stop_reason", "") or "")
-                    u = evt.get("usage", {}) or {}
-                    if "output_tokens" in u:
-                        if u.get("output_tokens") is not None:
-                            saw_output_usage = True
-                        usage_output = int(u.get("output_tokens") or usage_output)
+                        stop_reason = _response_string(
+                            d.get("stop_reason"), "stop_reason", empty=False
+                        )
+                    u = _usage_mapping(evt.get("usage"))
+                    if u.get("output_tokens") is not None:
+                        saw_output_usage = True
+                        usage_output = _usage_count(u, "output_tokens")
                 elif et == "message_stop":
                     saw_message_stop = True
                     return
                 elif et == "error":
-                    err = evt.get("error", {}) or {}
+                    err = evt.get("error")
+                    if isinstance(err, Mapping):
+                        label = err.get("type") or err.get("code") or "error"
+                        detail = err.get("message") or err
+                        status = envelope_status(err)
+                    else:
+                        label = "error"
+                        detail = err or evt.get("message") or "unknown stream error"
+                        status = None
                     # Record the frame before raising so the upstream failure
                     # is auditable in the transcript (parity with the OpenAI
                     # provider's mid-stream error handling). Carry the upstream
@@ -630,8 +700,8 @@ class AnthropicProvider:
                     # retrying every turn (streaming is the default path).
                     call.record(status=0, response=data_str[:8192])
                     raise ProviderError(
-                        f"Anthropic stream error: {err.get('type')}: {err.get('message')}",
-                        status_code=envelope_status(err),
+                        f"Anthropic stream error: {label}: {detail}",
+                        status_code=status,
                     )
 
         def _record_billed() -> None:
@@ -690,8 +760,7 @@ class AnthropicProvider:
                 if not (saw_input_usage and saw_output_usage):
                     raise ProviderError(
                         "Anthropic stream omitted usage.input_tokens/output_tokens; "
-                        "budgeted runs require provider usage accounting",
-                        status_code=422,
+                        "budgeted runs require provider usage accounting"
                     )
                 _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
             except ProviderError:
@@ -699,7 +768,11 @@ class AnthropicProvider:
                 # a completion the guards accept is metered by meter_completion.
                 _record_billed()
                 raise
-        parsed = _parse_response(synthesised)
+        try:
+            parsed = _parse_response(synthesised)
+        except ProviderError:
+            _record_billed()
+            raise
         meter_completion(self.budget, self.model, parsed, "Anthropic")
         return parsed
 
@@ -717,34 +790,48 @@ def _parse_response(data: dict[str, Any]) -> ProviderResponse:
         )
     text_parts: list[str] = []
     tool_uses: list[dict[str, Any]] = []
+    tool_use_ids: set[str] = set()
     for block in content:
         if not isinstance(block, dict):
             raise ProviderError(
                 "Anthropic response content block was not an object"
                 " (malformed 2xx from upstream gateway)"
             )
-        block_type = block.get("type")
+        block_type = _response_string(block.get("type"), "content block type", empty=False)
         if block_type == "text":
-            text_parts.append(str(block.get("text", "")))
+            text_parts.append(_response_string(block.get("text", ""), "content text"))
         elif block_type == "tool_use":
+            tool_input = block.get("input", {})
+            if not isinstance(tool_input, dict):
+                raise ProviderError("Anthropic response content tool_use.input was not an object")
+            tool_use_id = _response_string(block.get("id"), "content tool_use.id", empty=False)
+            if tool_use_id in tool_use_ids:
+                raise ProviderError(
+                    f"Anthropic response had duplicate content tool_use.id {tool_use_id!r}"
+                )
+            tool_use_ids.add(tool_use_id)
             tool_uses.append(
                 {
-                    "id": block.get("id", ""),
-                    "name": block.get("name", ""),
-                    "input": block.get("input", {}),
+                    "id": tool_use_id,
+                    "name": _response_string(
+                        block.get("name"), "content tool_use.name", empty=False
+                    ),
+                    "input": tool_input,
                 }
             )
-    usage = data.get("usage") or {}
-    # `or 0` throughout: a gateway returning null token fields on a 2xx would
-    # make bare int(None) raise TypeError, which escapes the loop's
-    # ProviderError-only retry wrapper and kills the run.
+        elif block_type == "thinking":
+            _response_string(block.get("thinking", ""), "content thinking")
+            _response_string(block.get("signature", ""), "content signature")
+        elif block_type == "redacted_thinking":
+            _response_string(block.get("data", ""), "content redacted_thinking data", empty=False)
+    usage = _usage_mapping(data.get("usage"))
     return ProviderResponse(
         text="".join(text_parts),
         tool_uses=tuple(tool_uses),
-        stop_reason=str(data.get("stop_reason", "")),
-        input_tokens=int(usage.get("input_tokens") or 0),
-        output_tokens=int(usage.get("output_tokens") or 0),
-        cache_read_tokens=int(usage.get("cache_read_input_tokens") or 0),
-        cache_creation_tokens=int(usage.get("cache_creation_input_tokens") or 0),
+        stop_reason=_response_string(data.get("stop_reason"), "stop_reason", empty=False),
+        input_tokens=_usage_count(usage, "input_tokens"),
+        output_tokens=_usage_count(usage, "output_tokens"),
+        cache_read_tokens=_usage_count(usage, "cache_read_input_tokens"),
+        cache_creation_tokens=_usage_count(usage, "cache_creation_input_tokens"),
         raw=data,
     )

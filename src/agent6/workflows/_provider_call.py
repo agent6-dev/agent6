@@ -27,11 +27,10 @@ from agent6.providers import (
     output_cap_truncated,
 )
 
-# HTTP statuses that will never succeed on a blind retry of the same request:
-# 400 bad request, 401/403 auth, 402 insufficient credits, 404 bad
-# model/endpoint, 422 malformed body. 408/409/429 and all 5xx stay retryable
-# and fall through to the normal backoff.
-NON_RETRYABLE_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
+# Statuses a blind retry of the same request can outlive: a timeout (408), a
+# conflict (409), too early (425), a rate limit (429) and every 5xx fall through
+# to the normal backoff; every other 3xx and 4xx fails fast.
+NON_RETRYABLE_HTTP_STATUSES = frozenset(set(range(300, 500)) - {408, 409, 425, 429})
 
 # Upper bound on how long we honor an upstream Retry-After hint. A 429/503 often
 # carries Retry-After: <seconds>; we wait at least that long (the provider's own

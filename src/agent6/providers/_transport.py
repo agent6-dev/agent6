@@ -277,7 +277,7 @@ class ProviderCall:
                 recorded = True
                 if cred.invalidate(resp.status_code):
                     continue
-            if resp.status_code >= 400:
+            if not 200 <= resp.status_code < 300:
                 if not recorded:
                     self.record(headers, resp.status_code, resp.text[:8192])
                 if attempt + 1 < max_attempts and self.adapt_400(

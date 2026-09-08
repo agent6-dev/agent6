@@ -20,7 +20,7 @@ import httpx2
 import pytest
 
 from agent6.budget import BudgetTracker
-from agent6.providers import AnthropicProvider, OpenAIProvider
+from agent6.providers import AnthropicProvider, OpenAIProvider, ProviderError
 from tests.unit.test_anthropic_streaming import FakeStreamResponse
 
 
@@ -294,6 +294,40 @@ def test_anthropic_meters_a_completed_stream_once(
     with mock.patch(
         "agent6.providers._stream.http_stream",
         return_value=FakeStreamResponse(status_code=200, lines=lines),
+    ):
+        provider.call(
+            system="s",
+            messages=[{"role": "user", "content": "hi"}],
+            text_delta_callback=lambda _s: None,
+        )
+    snap = budget.snapshot()
+    assert (snap.input_total, snap.output_total) == (1_000, 20)
+
+
+def test_anthropic_records_a_completed_malformed_stream() -> None:
+    """A malformed final content block does not erase the usage already billed."""
+    lines = _sse("message_start", {"message": {"usage": {"input_tokens": 1_000}}})
+    for index, name in enumerate(("list_dir", "read_file")):
+        lines += _sse(
+            "content_block_start",
+            {
+                "index": index,
+                "content_block": {"type": "tool_use", "id": "duplicate", "name": name},
+            },
+        )
+        lines += _sse("content_block_stop", {"index": index})
+    lines += _sse(
+        "message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 20}}
+    )
+    lines += _sse("message_stop", {})
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    with (
+        mock.patch(
+            "agent6.providers._stream.http_stream",
+            return_value=FakeStreamResponse(status_code=200, lines=lines),
+        ),
+        pytest.raises(ProviderError, match="duplicate"),
     ):
         provider.call(
             system="s",
