@@ -808,13 +808,78 @@ def test_a_session_that_ends_holding_work_names_the_next_step(
         json.dumps({"version": 3, "mode": mode}), encoding="utf-8"
     )
     (layout.session_dir / "plan.md").write_text("# The plan\n\n1. do it\n", encoding="utf-8")
-    _print_next_session(layout, reporter=STDIO_REPORTER)
+    _print_next_session(layout, completed=True, reporter=STDIO_REPORTER)
     out = capsys.readouterr().out
     for line in expected:
         assert line in out
     assert ("agent6" in out) is bool(expected)
     # A plan is the deliverable: printed whole, before the next-step lines.
     assert ("# The plan\n\n1. do it" in out) is (mode == "plan")
+
+
+def test_a_plan_that_crashed_before_finishing_gets_no_execute_hint(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """finish_planning is the only plan.md writer, so a plan that ends via
+    provider_error before ever calling it holds no deliverable. The footer
+    used to print `edit`/`revise`/`execute` regardless of result.completed,
+    telling the operator to `agent6 run --from <id>` a plan that was never
+    drafted."""
+    layout = _layout(
+        tmp_path,
+        "plan-crash",
+        [
+            {"type": "session.start", "session_id": "plan-crash", "user_task": "t"},
+            {"type": "session.end", "reason": "provider_error", "all_passed": None},
+        ],
+    )
+    layout.manifest_path.write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
+    result = SessionResult(
+        completed=False,
+        reason="provider_error",
+        summary="provider error at iter 1",
+        iterations=1,
+        tool_calls=0,
+    )
+    print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert "execute:" not in out and "agent6 plan edit" not in out
+
+
+def test_a_plan_that_completed_without_finish_planning_gets_no_execute_hint(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`silent_finish` completes a plan run too; with no plan.md on disk the
+    hints named a plan never drafted."""
+    layout = _layout(
+        tmp_path,
+        "plan-prose",
+        [
+            {"type": "session.start", "session_id": "plan-prose", "user_task": "t"},
+            {"type": "session.end", "reason": "silent_finish", "all_passed": None},
+        ],
+    )
+    layout.manifest_path.write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
+    result = SessionResult(
+        completed=True, reason="silent_finish", summary="done", iterations=1, tool_calls=0
+    )
+    print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert "execute:" not in out and "agent6 plan edit" not in out
 
 
 def test_the_end_of_run_block_goes_through_the_reporter(

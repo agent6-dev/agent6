@@ -142,13 +142,18 @@ def _sandbox_unreachable_tools(layout: SessionLayout) -> list[str]:
     return out
 
 
-def _print_next_session(layout: SessionLayout, *, reporter: Reporter) -> None:
+def _print_next_session(layout: SessionLayout, *, completed: bool, reporter: Reporter) -> None:
     """After a session that produced something to act on, name the next step.
 
     An ask ends holding work someone else does. A plan ends holding OPEN
     QUESTIONS, and the loop that answers them is: edit plan.md, then resume the
     planner over it (which re-reads the file). That loop is why there is no
     `plan revise` verb.
+
+    A plan's hints follow its plan.md: finish_planning is the file's only
+    writer, so a run that ended without it (a crash, a budget end, a prose
+    answer) holds no deliverable for `execute` to act on. An ask's hint
+    follows a completed run.
     """
     with contextlib.suppress(ManifestError):
         mode = read_manifest(layout.session_dir).mode
@@ -160,10 +165,10 @@ def _print_next_session(layout: SessionLayout, *, reporter: Reporter) -> None:
                 plan = (layout.session_dir / "plan.md").read_text(encoding="utf-8").rstrip()
                 if plan:
                     reporter.out(f"\n{plan}")
-            reporter.out(f"\nedit:     agent6 plan edit {session_id}")
-            reporter.out(f'revise:   agent6 resume {session_id} --steer "<what to change>"')
-            reporter.out(f"execute:  agent6 run --from {session_id}")
-        elif mode == "ask":
+                    reporter.out(f"\nedit:     agent6 plan edit {session_id}")
+                    reporter.out(f'revise:   agent6 resume {session_id} --steer "<what to change>"')
+                    reporter.out(f"execute:  agent6 run --from {session_id}")
+        elif mode == "ask" and completed:
             reporter.out(f'\nnext:  agent6 run --from {session_id} "<what to do with it>"')
 
 
@@ -289,7 +294,7 @@ def print_session_end(
         reporter.out("    - install them into a standard bin dir (~/.local/bin, /usr/local/bin)")
         reporter.out("    - grant their real directories via [sandbox].extra_read_paths")
         reporter.out("    - run with --dangerously-disable-sandbox")
-    _print_next_session(layout, reporter=reporter)
+    _print_next_session(layout, completed=result.completed, reporter=reporter)
     _print_unknown_baseline(result, layout=layout, reporter=reporter)
     _print_unverified(result, layout=layout, reporter=reporter)
     _print_stale_gate(result, reporter=reporter)
