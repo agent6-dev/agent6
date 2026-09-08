@@ -72,7 +72,27 @@ def test_runs_stop_on_a_finished_run_with_lingering_pid_is_a_noop(
     write_worker_pid(rd, os.getpid())  # teardown not finished yet
     assert main(["sessions", "stop", "done-run-CCC333"]) == 0
     assert not stop_request_pending(rd)
-    assert "not running" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "already passed" in err
+    assert "not running" not in err
+
+
+def test_runs_stop_on_a_parked_run_says_it_has_not_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    rd = _session_dir(tmp_path, "parked-run-DDD444")
+    (rd / "manifest.json").write_text(
+        '{"version": 3, "session_id": "parked-run-DDD444", "mode": "run",'
+        ' "parked_task": "wait for the checkout"}',
+        encoding="utf-8",
+    )
+
+    assert main(["sessions", "stop", "parked-run-DDD444"]) == 0
+    assert not stop_request_pending(rd)
+    err = capsys.readouterr().err
+    assert "is parked" in err and "has not started" in err
+    assert "not running" not in err
 
 
 def test_runs_stop_on_a_dead_run_is_a_noop(

@@ -60,6 +60,7 @@ from agent6.ui.cli._common import (
 from agent6.viewmodel import (
     is_winner,
     newest_session_dir,
+    produced_result,
     session_dirs,
     session_is_live,
     summarize_session_dir,
@@ -371,7 +372,14 @@ def _cmd_stop(*, session_id: str) -> int:
         # The liveness owner, not the pid: a finished run's worker.pid lingers
         # through teardown, and "it ends after the current step" would promise
         # a stop the exited loop will never read.
-        print(f"[agent6] {rid} is not running; nothing to stop.", file=sys.stderr)
+        summary = summarize_session_dir(session_dir)
+        if summary.status == "parked":
+            state = "is parked and has not started"
+        elif produced_result(summary.status):
+            state = f"is already {summary.status}"
+        else:
+            state = f"is not running ({summary.status})"
+        print(f"[agent6] {rid} {state}; nothing to stop.", file=sys.stderr)
         return 0
     if not request_stop(session_dir):
         print(f"[agent6] could not write the stop request for {rid}", file=sys.stderr)
