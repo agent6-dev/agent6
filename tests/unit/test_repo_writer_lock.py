@@ -453,6 +453,70 @@ def test_teardown_raise_still_releases_both_writer_locks(
     release_single_writer(fd2)
 
 
+def test_resume_teardown_raise_still_releases_both_writer_locks(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A front-end teardown failure must not strand either resume flock in an
+    in-process editor server; later runs must not wait for a process restart."""
+    from agent6.app import resume as resume_mod
+    from agent6.app._leg import LegEnd
+    from agent6.workflows._session_state import SessionSnapshot
+
+    state = state_dir(repo)
+    layout = SessionLayout(state_dir=state, session_id="run-RTD")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "run-RTD",
+                "mode": "run",
+                "base_sha": "",
+                "base_branch": "main",
+                "run_branch": "agent6/run-RTD",
+                "user_task": "t",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (layout.session_dir / "loop_state.json").write_text(
+        SessionSnapshot(
+            system="s",
+            messages=[],
+            tool_calls=0,
+            next_iteration=1,
+            root_task_id=None,
+            original_task="t",
+            verify_command=(),
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+
+    def _none(*_a: object, **_k: object) -> None:
+        return None
+
+    def _strict(*_a: object, **_k: object) -> str:
+        return "strict"
+
+    def _leg(*_a: object, **_k: object) -> LegEnd:
+        return LegEnd(0)
+
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
+    monkeypatch.setattr(resume_mod, "select_isolation", _strict)
+    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    frontend = MagicMock()
+    frontend.close_console_view.side_effect = OSError("resume teardown raise")
+    with pytest.raises(OSError, match="resume teardown raise"):
+        resume_mod.resume_task(None, "run-RTD", frontend=frontend, force=False)
+
+    repo_fd = acquire_repo_writer(state, repo, "run-NEXT")
+    assert repo_fd is not None
+    release_single_writer(repo_fd)
+    session_fd = acquire_single_writer(layout.session_dir)
+    assert session_fd is not None
+    release_single_writer(session_fd)
+
+
 def test_resume_keeps_a_stop_request_pending_after_the_previous_leg_ended(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -172,10 +172,9 @@ def turn_replay_allowed(
     partially applied, so the front-end decides (interactive default no;
     headless warns and proceeds).
 
-    Approval does NOT clear the marker: the caller clears it once the leg
-    actually starts, so a resume the operator approved that then hits a
-    preflight refusal (a diverged chain, a missing key, a config typo) asks
-    again next time instead of replaying the turn."""
+    Approval does NOT clear the marker: the replayed turn's own marker write or
+    its snapshot supersedes it, so an approved resume that then fails before
+    either asks again next time instead of replaying the turn silently."""
     marker_path = session_dir / TURN_IN_FLIGHT_NAME
     marker = read_turn_marker(marker_path)
     if marker is None:
@@ -601,18 +600,25 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.note(parking)
 
         def _gate(cfg: Config, _budget: BudgetTracker) -> Config:
-            # Resume reuses the verify command the ORIGINAL run resolved
-            # (stored in the snapshot), so the tool list, prompt, and commit
-            # branch stay consistent with the frozen system prompt, never
-            # re-inferring, which could flip and diverge. Config the operator
-            # has pinned since outranks it (announced below, and to the worker,
-            # since the prompt still names the old one). `()` means the
-            # original run was gateless: stay gateless.
+            # Resume reuses the verify command the run resolved rather than
+            # re-inferring. Usually the snapshot owns it, keeping the tool list
+            # consistent with the frozen system prompt. Adoption is stamped in
+            # the manifest before the after-tools snapshot advances, so after a
+            # crash that newer adopted/unadopted pin wins in either direction.
+            # Config the operator has since set still outranks both.
+            pinned_origin, pinned_gate = "", ()
+            with contextlib.suppress(ManifestError, OSError):
+                pinned = read_manifest(layout.session_dir).workflow
+                pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
+            replay_gate = (
+                pinned_gate
+                if pinned_origin in ("adopted", "unadopted")
+                else snapshot.verify_command
+            )
             leg_configured = bool(cfg.workflow.verify_command)
-            if not leg_configured and snapshot.verify_command:
-                cfg = cfg.with_verify_command(snapshot.verify_command)
-                gate = " ".join(snapshot.verify_command)
-                reporter.note(f"reusing this run's verify command: {gate}")
+            if not leg_configured and replay_gate:
+                cfg = cfg.with_verify_command(replay_gate)
+                reporter.note(f"reusing this run's verify command: {' '.join(replay_gate)}")
             # The same leg-start decision a fresh run makes, LAST so nothing
             # hands the gate back: a leg that cannot run a command cannot run
             # its gate, so it is gateless rather than unwinnable. Frozen here,
@@ -620,10 +626,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
             # Re-pin for this leg: config outranks the pin, the pin outranks a
             # re-inference, and the manifest has to say which one this leg used.
-            pinned_origin, pinned_gate = "", ()
-            with contextlib.suppress(ManifestError, OSError):
-                pinned = read_manifest(layout.session_dir).workflow
-                pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
             if tuple(pinned_gate) != cfg.workflow.verify_command:
                 # Both directions, including none -> gate: the frozen system
                 # prompt names the OLD gate either way, so the operator has to
@@ -687,9 +689,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # the child owning the run (`spawn_and_confirm`). `sessions show`
         # probes liveness by it while the worker sits in a long provider call.
         write_worker_pid(layout.session_dir, os.getpid())
-        # The crash marker's answer is spent only now, at the point of no
-        # return: every refusal above leaves it for the next attempt to ask.
-        clear_turn_marker(layout.session_dir / TURN_IN_FLIGHT_NAME)
         # This leg's models and policy, so `agent6 exec` joins the jail the
         # agent is in and every policy surface describes the leg that is live.
         stamp_leg(layout.session_dir, cfg, mode, isolation)
@@ -755,14 +754,17 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Single owner of worker.pid for every resume exit path, refusals and
         # Ctrl-C during verify inference included. A detach is the exception:
         # this process owns the run until the background `resume` claims it, and
-        # `detach_to_background` clears the pid if that spawn fails.
-        frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
-        if not detach_requested and not handed_to_run_task:
-            # run_task's own teardown keeps the pid through a detach there, and
-            # the spawned child then holds the file: nothing here to clear.
-            clear_worker_pid(layout.session_dir)
-        release_single_writer(repo_lock_fd)
-        release_single_writer(worker_lock_fd)
+        # `detach_to_background` clears the pid if that spawn fails. Nested so
+        # an in-process front-end teardown failure cannot strand either flock.
+        try:
+            frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
+            if not detach_requested and not handed_to_run_task:
+                # run_task's own teardown keeps the pid through a detach there,
+                # and the spawned child then holds the file: nothing here to clear.
+                clear_worker_pid(layout.session_dir)
+        finally:
+            release_single_writer(repo_lock_fd)
+            release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
             detach_to_background(
                 frontend=frontend,

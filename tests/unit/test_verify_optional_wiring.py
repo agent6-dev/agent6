@@ -263,6 +263,90 @@ def _capture_pin(pinned: list[tuple[tuple[str, ...], str]]) -> Callable[..., Non
     return _pin
 
 
+@pytest.mark.parametrize(
+    ("snapshot_gate", "manifest_gate", "origin"),
+    [
+        ((), ("true",), "adopted"),
+        (("true",), (), "unadopted"),
+    ],
+)
+def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    snapshot_gate: tuple[str, ...],
+    manifest_gate: tuple[str, ...],
+    origin: str,
+) -> None:
+    """Adoption re-pins the manifest before the after-tools snapshot advances.
+    A crash in that window leaves the snapshot's gate stale in either direction;
+    resume must keep the newer pin rather than undoing adoption or un-adoption."""
+    import agent6.app._setup as setup_mod
+    import agent6.app.resume as resume_mod
+    from agent6.app._leg import LegEnd, LegInputs
+    from agent6.config.layer import EffectiveConfig
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    session_dir = state_dir(repo) / "sessions" / "runs" / "crashed-AAAA11"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "crashed-AAAA11",
+                "mode": "run",
+                "user_task": "t",
+                "workflow": {"verify_command": manifest_gate, "verify_origin": origin},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": SNAPSHOT_VERSION,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 2,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": snapshot_gate,
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = _role_cfg({"sandbox": {"run_commands": "yes"}})
+    effective = EffectiveConfig(config=cfg, sources={}, layers=())
+
+    def _effective(*_a: object, **_k: object) -> EffectiveConfig:
+        return effective
+
+    def _strict(*_a: object, **_k: object) -> str:
+        return "strict"
+
+    def _none(*_a: object, **_k: object) -> None:
+        return None
+
+    monkeypatch.setattr(setup_mod, "load_effective", _effective)
+    monkeypatch.setattr(resume_mod, "select_isolation", _strict)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
+    monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
+    used: list[tuple[str, ...]] = []
+
+    def _leg(_cfg: Config, _layout: object, inputs: LegInputs, **_kw: object) -> LegEnd:
+        used.append(inputs.gate(_cfg, MagicMock()).workflow.verify_command)
+        return LegEnd(0)
+
+    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    assert resume_mod.resume_task(None, "crashed-AAAA11", frontend=MagicMock(), force=False) == 0
+    assert used == [manifest_gate]
+    persisted = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert tuple(persisted["workflow"]["verify_command"]) == manifest_gate
+
+
 def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

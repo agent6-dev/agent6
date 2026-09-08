@@ -6859,10 +6859,53 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
     assert not marker.exists()  # a clean end leaves nothing
 
 
+def test_the_old_crash_marker_survives_the_replayed_provider_call(tmp_path: Path) -> None:
+    """The replayed turn's own marker write or its snapshot supersedes the old
+    marker; nothing clears it earlier. Cleared before the provider call, a crash
+    inside that call made the next resume replay the turn silently, and the
+    original turn's tool effects may already stand."""
+    from agent6.workflows._session_state import (
+        TURN_IN_FLIGHT_NAME,
+        SessionSnapshot,
+        read_turn_marker,
+        write_turn_marker,
+    )
+
+    class ReplayStarted(Exception):
+        pass
+
+    marker = tmp_path / TURN_IN_FLIGHT_NAME
+    snapshot_path = tmp_path / "loop_state.json"
+    snapshot_path.write_text(
+        SessionSnapshot(
+            system="system",
+            messages=[],
+            tool_calls=0,
+            next_iteration=1,
+            root_task_id=None,
+            original_task="t",
+            verify_command=(),
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    write_turn_marker(marker, 1, ("run_command",))
+    seen: list[tuple[int, tuple[str, ...]] | None] = []
+
+    class ProviderStub:
+        def call(self, **_kwargs: Any) -> ProviderResponse:
+            seen.append(read_turn_marker(marker))
+            raise ReplayStarted
+
+    wf = _wf(root=tmp_path, provider=ProviderStub(), resume_state_path=snapshot_path)
+    with pytest.raises(ReplayStarted):
+        wf.resume()
+    assert seen == [(1, ("run_command",))]
+
+
 def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
     """No marker proceeds; a stale one proceeds and clears silently; a matching
-    one asks, and the marker survives EITHER answer -- the resume clears it
-    only once the leg starts. Cleared on approval, a resume that then hit any
+    one asks, and the marker survives EITHER answer: the replayed turn's own
+    marker write or snapshot supersedes it. Cleared on approval, a resume that then hit any
     preflight refusal replayed the turn on the next attempt with no warning,
     and its tools' side effects happened twice."""
     from agent6.app.resume import turn_replay_allowed

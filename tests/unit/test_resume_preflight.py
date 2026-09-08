@@ -371,6 +371,45 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     assert order == ["isolation", "pid", "leg"]
 
 
+def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Approving a replay spends the marker only when the provider replay begins.
+    Clearing it before run_leg setup meant a provider-construction or MCP startup
+    failure made the next attempt replay the crashed turn's tools without warning."""
+    from unittest.mock import MagicMock
+
+    from agent6.workflows._session_state import (
+        TURN_IN_FLIGHT_NAME,
+        read_turn_marker,
+        write_turn_marker,
+    )
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _plan_session_dir(repo, "plan-CRASHMARK")
+    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    marker = state_dir(repo) / "sessions" / "runs" / "plan-CRASHMARK" / TURN_IN_FLIGHT_NAME
+    write_turn_marker(marker, 1, ("run_command",))
+    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(resume_mod, "verify_git_identity", _nothing)
+
+    def _fail_startup(*_a: object, **_k: object) -> object:
+        raise _Stop()
+
+    monkeypatch.setattr(resume_mod, "run_leg", _fail_startup)
+    frontend = MagicMock()
+    frontend.confirm_replay_after_crash.return_value = True
+
+    with pytest.raises(_Stop):
+        resume_mod.resume_task(None, "plan-CRASHMARK", frontend=frontend, force=False)
+
+    assert read_turn_marker(marker) == (1, ("run_command",))
+
+
 def _unconfined(*_a: object, **_k: object) -> str:
     return "none"
 
