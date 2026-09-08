@@ -70,6 +70,14 @@ def test_the_budget_line_is_rendered_once() -> None:
     )
 
 
+def test_a_partial_total_marks_the_leg_figure_too() -> None:
+    """A resumed leg's dollar figure is sliced from the same under-estimate as
+    the cumulative total: the `~` belongs on both, not just the total."""
+    assert budget_usd_text(0.42, partial=True, usd_cap=1.0, usd_prior_legs=0.1) == (
+        "~$0.42 · leg ~$0.32 / $1.00"
+    )
+
+
 def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: Path) -> None:
     spent = _run(
         tmp_path,

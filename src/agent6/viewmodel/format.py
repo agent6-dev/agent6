@@ -113,7 +113,7 @@ def budget_usd_text(
     if usd_cap > 0:
         cap = format_usd(usd_cap)
         if usd_prior_legs > 0:
-            leg = format_usd(max(0.0, usd_total - usd_prior_legs))
+            leg = format_usd(max(0.0, usd_total - usd_prior_legs), partial=partial)
             return f"{text} · leg {leg} / {cap}"
         return f"{text} / {cap}"
     return f"{text} (unlimited)" if usd_cap == -1 else text
