@@ -14,6 +14,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import re
 import shlex
 import shutil
 import threading
@@ -125,6 +126,10 @@ from agent6.types import (
     session_kind,
 )
 
+# A backslash before a character JSON defines no escape for: a regex the
+# model typed inside a JSON string, meant literally.
+_LONE_BACKSLASH = re.compile(r'\\(?!["\\/bfnrtu])')
+
 
 def _coerce_stringified_args(
     raw_input: dict[str, Any], exc: ValidationError
@@ -136,7 +141,8 @@ def _coerce_stringified_args(
     round-trip on a validation error the model must repair. For each top-level field named in the
     validation error whose provided value is a str, parse the string's head
     as JSON (`raw_decode` tolerates trailing junk like a leaked closing
-    tag) and substitute the parsed value when it is a container. Fields the
+    tag; a backslash JSON does not escape reads literally) and substitute the
+    parsed value when it is a container. Fields the
     schema really declares as strings are unaffected: a wrong substitution
     fails re-validation and the caller re-raises the original error. Returns
     the coerced copy of `raw_input`, or None when nothing was coercible.
@@ -154,7 +160,10 @@ def _coerce_stringified_args(
         try:
             parsed, _ = decoder.raw_decode(val.strip())
         except ValueError:
-            continue
+            try:
+                parsed, _ = decoder.raw_decode(_LONE_BACKSLASH.sub(r"\\\\", val.strip()))
+            except ValueError:
+                continue
         if not isinstance(parsed, dict | list):
             continue
         if coerced is None:

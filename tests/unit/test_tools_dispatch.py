@@ -1726,6 +1726,20 @@ def test_stringified_edits_array_is_coerced(tmp_path: Path) -> None:
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "new text\n"
 
 
+def test_a_stringified_argument_with_a_regex_backslash_is_coerced(tmp_path: Path) -> None:
+    """A model writing a grep alternation inside a JSON-string argument types
+    `\\|`, an escape JSON does not define; the parse failed and the call was
+    refused ten times running in one session."""
+    cfg = _config(tmp_path)
+    (tmp_path / "a.txt").write_text("a\\|b\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch(
+        "apply_edit",
+        {"path": "a.txt", "edits": '[{"old_string": "a\\|b", "new_string": "c"}]'},
+    )
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "c\n"
+
+
 def test_stringified_coercion_surfaces_original_error_when_wrong(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
