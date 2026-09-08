@@ -132,11 +132,10 @@ def test_openai_2xx_envelope_transient_status_stays_retryable() -> None:
     assert ei.value.status_code not in NON_RETRYABLE_HTTP_STATUSES  # retryable
 
 
-def test_envelope_status_classifies_permanent_string_codes() -> None:
+def test_envelope_status_classifies_string_codes() -> None:
     """String error codes/types (OpenAI `code`, Anthropic `type`) that are
     permanent map to their terminal HTTP status so a budgeted run fails fast;
-    transient strings and numerics behave as before. The numeric-only map left
-    every string code None (retryable), retrying a quota/auth error every turn."""
+    transient statuses remain retryable while retaining the provider's fact."""
     from agent6.providers._transport import envelope_status
     from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
 
@@ -152,13 +151,14 @@ def test_envelope_status_classifies_permanent_string_codes() -> None:
     for err, status in permanent:
         assert envelope_status(err) == status, err
         assert status in NON_RETRYABLE_HTTP_STATUSES
-    # Transient string codes/types stay retryable (None), never guessed permanent.
-    for err in (
-        {"code": "rate_limit_exceeded"},
-        {"type": "overloaded_error"},
-        {"type": "api_error"},
+    for err, status in (
+        ({"type": "rate_limit_error"}, 429),
+        ({"type": "api_error"}, 500),
+        ({"type": "overloaded_error"}, 529),
     ):
-        assert envelope_status(err) is None, err
+        assert envelope_status(err) == status
+        assert status not in NON_RETRYABLE_HTTP_STATUSES
+    assert envelope_status({"code": "rate_limit_exceeded"}) is None
     # Numeric codes and the empty/non-dict cases are unchanged.
     assert envelope_status({"code": 402}) == 402
     assert envelope_status({"code": 502}) == 502
@@ -249,8 +249,29 @@ def test_anthropic_2xx_error_envelope_is_the_upstreams_failure() -> None:
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
-    assert ei.value.status_code is None
+    assert ei.value.status_code == 529
     assert "overloaded_error" in str(ei.value) and "Overloaded" in str(ei.value)
+
+
+def test_anthropic_2xx_error_envelope_keeps_retry_after() -> None:
+    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps(
+            {
+                "type": "error",
+                "error": {"type": "rate_limit_error", "message": "Slow down"},
+            }
+        ),
+    )
+    resp.headers = {"retry-after": "13"}
+    with (
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
+        pytest.raises(ProviderError) as exc_info,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.retry_after_s == 13.0
 
 
 def test_openai_budgeted_response_requires_usage_tokens() -> None:

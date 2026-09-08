@@ -27,6 +27,7 @@ from agent6.providers.types import (
     ProviderResponse,
     ToolDefinition,
     TranscriptRecorder,
+    scrub_secret_values,
 )
 from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
 
@@ -749,8 +750,9 @@ class AnthropicProvider:
                     # permanent error delivered mid-stream fails fast instead of
                     # retrying every turn (streaming is the default path).
                     call.record(status=0, response=data_str[:8192])
+                    detail_text = scrub_secret_values(str(detail), headers)
                     raise ProviderError(
-                        f"Anthropic stream error: {label}: {detail}",
+                        f"Anthropic stream error: {label}: {detail_text}",
                         status_code=status,
                     )
 

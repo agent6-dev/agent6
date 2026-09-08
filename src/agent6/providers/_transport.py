@@ -101,13 +101,11 @@ def _has_assistant_output(data: dict[str, Any]) -> bool:
     return isinstance(data.get("content"), list) and bool(data.get("content"))
 
 
-# STRING error codes/types that are PERMANENT: retrying one wastes the whole
-# budget (a quota/auth/not-found failure never clears mid-run). Map each to the
-# terminal HTTP status NON_RETRYABLE_HTTP_STATUSES already treats as permanent.
-# Transient strings (rate_limit_exceeded/_error, server_error, api_error,
-# overloaded_error) are deliberately absent -> None -> retryable, the safe
-# default. Covers both wire families: OpenAI's `code` and Anthropic's `type`.
-_PERMANENT_ERROR_CODE_STATUS: dict[str, int] = {
+# String error codes/types mapped to the HTTP statuses their provider
+# documents, so an error arriving in a 2xx body or a stream event keeps its
+# status; the retry decision is the status's (`NON_RETRYABLE_HTTP_STATUSES`):
+# 429, 500 and 529 retry, the rest are permanent.
+_ERROR_CODE_STATUS: dict[str, int] = {
     # OpenAI-family `code`
     "insufficient_quota": 402,
     "invalid_api_key": 401,
@@ -115,8 +113,13 @@ _PERMANENT_ERROR_CODE_STATUS: dict[str, int] = {
     # Anthropic `type`
     "invalid_request_error": 400,
     "authentication_error": 401,
+    "billing_error": 402,
     "permission_error": 403,
     "not_found_error": 404,
+    "request_too_large": 413,
+    "rate_limit_error": 429,
+    "api_error": 500,
+    "overloaded_error": 529,
 }
 
 
@@ -126,12 +129,8 @@ def envelope_status(err: object) -> int | None:
     lets `NON_RETRYABLE_HTTP_STATUSES` classify a 402 as permanent while a
     429/5xx stays retryable.
 
-    Reads a numeric `code` (int or all-digit string) directly, and maps a
-    known-permanent STRING `code`/`type` (`insufficient_quota`, ...) to its
-    terminal status -- a gateway that reports a quota/auth failure as a 200 body
-    with a string code would otherwise be retried every turn; this path must
-    classify the same failure set `require_metered` treats as permanent on
-    real HTTP statuses."""
+    Reads a numeric `code` (int or all-digit string) directly, and maps the
+    documented string `code`/`type` values to their statuses."""
     if not isinstance(err, dict):
         return None
     code = err.get("code")
@@ -142,8 +141,8 @@ def envelope_status(err: object) -> int | None:
     if isinstance(code, str) and code.isdigit() and 400 <= int(code) <= 599:
         return int(code)
     for label in (code, err.get("type")):
-        if isinstance(label, str) and label in _PERMANENT_ERROR_CODE_STATUS:
-            return _PERMANENT_ERROR_CODE_STATUS[label]
+        if isinstance(label, str) and label in _ERROR_CODE_STATUS:
+            return _ERROR_CODE_STATUS[label]
     return None
 
 
@@ -337,6 +336,7 @@ class ProviderCall:
                 f"{self.api_label} error in 2xx body: "
                 f"{scrub_secret_values(_envelope_detail(err), headers)}",
                 status_code=envelope_status(err),
+                retry_after_s=parse_retry_after(resp.headers),
             )
         if self.budget is not None:
             self.require_metered(data)

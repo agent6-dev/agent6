@@ -738,6 +738,64 @@ def test_streaming_scalar_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch
         )
 
 
+@pytest.mark.parametrize(
+    ("error_type", "status"),
+    [
+        ("billing_error", 402),
+        ("request_too_large", 413),
+        ("rate_limit_error", 429),
+        ("api_error", 500),
+        ("overloaded_error", 529),
+    ],
+)
+def test_streaming_error_keeps_the_anthropic_status(
+    monkeypatch: pytest.MonkeyPatch, error_type: str, status: int
+) -> None:
+    lines = _sse([("error", {"type": "error", "error": {"type": error_type, "message": "failed"}})])
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(ProviderError) as exc_info:
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+    assert exc_info.value.status_code == status
+
+
+def test_streaming_error_message_scrubs_the_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    api_key = "sk-ant-stream-error-secret"
+    lines = _sse(
+        [
+            (
+                "error",
+                {
+                    "type": "error",
+                    "error": {"type": "authentication_error", "message": f"bad key {api_key}"},
+                },
+            )
+        ]
+    )
+
+    def fake_stream(method: str, url: str, **request: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key=api_key, model="claude-test")
+    with pytest.raises(ProviderError) as exc_info:
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _piece: None,
+        )
+    assert api_key not in str(exc_info.value)
+    assert "<REDACTED>" in str(exc_info.value)
+
+
 def test_streaming_preserves_unknown_content_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
     block = {"type": "future_block", "opaque": {"value": 7}}
 
