@@ -159,7 +159,8 @@ def test_a_deleted_branch_names_the_chain_ref_that_still_holds_the_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Deleting the run branch by hand leaves the commits on the chain ref, so
-    the message that reports the missing branch says where they are."""
+    the verb lists them from there and names the ref (it once reported the
+    missing branch instead, holding the answer)."""
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
@@ -175,8 +176,9 @@ def test_a_deleted_branch_names_the_chain_ref_that_still_holds_the_work(
     _manifest(tmp_path, "gonebr1", base, merged=False)
 
     assert main(["sessions", "commits", "gonebr1"]) == 0
-    out = capsys.readouterr().out
-    assert chain_ref_for("gonebr1") in out
+    out, err = capsys.readouterr()
+    assert tip[:12] in out and "work gonebr1" in out
+    assert chain_ref_for("gonebr1") in err
     assert "committed nothing" not in out
 
 
@@ -184,9 +186,9 @@ def test_a_deleted_branch_with_a_stale_stamp_names_the_chain_ref(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A run merged, then resumed (its chain advanced past the stamp's tip),
-    then its branch deleted: `sessions commits` names the chain ref that
-    holds the later commit, never the merge, which covers only the earlier
-    tip (the stamp was trusted unchecked)."""
+    then its branch deleted: `sessions commits` lists both commits from the
+    chain ref, never the merge stamp, which covers only the earlier tip (the
+    stamp was trusted unchecked)."""
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
@@ -207,8 +209,9 @@ def test_a_deleted_branch_with_a_stale_stamp_names_the_chain_ref(
     _manifest(tmp_path, "stale11", base, merged=True, merged_tip=merged_tip)
 
     assert main(["sessions", "commits", "stale11"]) == 0
-    out = capsys.readouterr().out
-    assert chain_ref_for("stale11") in out and "past the merge into main" in out
+    out, err = capsys.readouterr()
+    assert "work stale11" in out and "a later leg" in out
+    assert chain_ref_for("stale11") in err
     assert "was pruned" not in out
 
 

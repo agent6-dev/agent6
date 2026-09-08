@@ -174,9 +174,11 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
     if not ref.head_ref:
         print(f"[agent6] {ref.reason}.")
         return 0
-    if manifest.run_branch:
+    if manifest.run_branch and ref.head_ref == manifest.run_branch:
+        # The branch is the source, or stands in for a pruned one: say where
+        # the work went. A chain ref that is the source diffs as itself.
         pruned = _pruned_branch_note(cwd, manifest, manifest.run_branch)
-        if pruned is not None:  # branch gone (pruned): say where the work went
+        if pruned is not None:
             print(pruned)
             return 0
     base_sha = manifest.base_sha
@@ -450,10 +452,12 @@ def _cmd_commits(*, session_id: str) -> int:
         error("manifest has no base_sha; nothing to list commits from")
         return 2
     head_ref = ref.head_ref
-    # Only the recorded branch can be pruned; the chain ref may be the commit
-    # source precisely because that still-existing branch diverged from it.
+    # The branch is the source, or stands in for a pruned one: say where the
+    # work went. A chain ref that is the source lists its own commits.
     pruned = (
-        _pruned_branch_note(cwd, manifest, manifest.run_branch) if manifest.run_branch else None
+        _pruned_branch_note(cwd, manifest, manifest.run_branch)
+        if manifest.run_branch and head_ref == manifest.run_branch
+        else None
     )
     if pruned is not None:
         print(pruned)

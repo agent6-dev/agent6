@@ -1187,3 +1187,23 @@ def test_the_branch_verbs_refuse_a_fan_out_coordinator_by_name(
         assert _resolve_session_manifest(tmp_path, bare) == 2
         err = capsys.readouterr().err
         assert "fan is a fan-out" in err and "sessions show fan" in err
+
+
+def test_diff_reads_the_chain_ref_when_the_branch_is_gone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """The verb resolved the chain ref as the commit source, then refused on
+    the branch's absence anyway: a run whose branch was deleted by hand
+    printed "is gone with no merge recorded" and exited 0 with no diff, while
+    `sessions merge` on the same run proceeded from the ref."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-GONE01", commits=[("a.py", "x = 1\n", "step 1")])
+    tip = _git(tmp_path, "rev-parse", "agent6/run-GONE01")
+    _git(tmp_path, "update-ref", chain_ref_for("run-GONE01"), tip)
+    _git(tmp_path, "branch", "-D", "agent6/run-GONE01")
+
+    assert main(["sessions", "diff", "run-GONE01"]) == 0
+    out = capfd.readouterr().out
+    assert "+x = 1" in out
+    assert "is gone" not in out
