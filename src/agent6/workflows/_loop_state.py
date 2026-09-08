@@ -173,12 +173,11 @@ def restore_completion_state(state: LoopState, snap: SessionSnapshot) -> None:
     state.pins = list(snap.pins)
     if snap.metric_at_ceiling or snap.metric_best_score is not None:
         # Seed one synthetic sample so `_metric_at_ceiling` and the plateau guard
-        # see the prior best (we persist a compact summary, not the full history,
-        # by design). `label` marks it resume-reconstructed. Consequence:
+        # see the prior best (the snapshot carries a compact summary, not the
+        # full history). `label` marks it resume-reconstructed. Consequence:
         # `metric_plateau_summary` needs several parsed samples to fire, so a
         # resumed already-plateaued run takes a few measurements to re-arm the
-        # plateau-stop (it never stops early; the ceiling-stop is immediate) -- the
-        # predictable trade for not carrying the whole sample history across resume.
+        # plateau-stop (it never stops early; the ceiling-stop is immediate).
         state.metric_history.append(
             MetricSample(
                 label="resumed",

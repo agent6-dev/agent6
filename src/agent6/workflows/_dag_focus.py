@@ -47,7 +47,7 @@ def ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     for dep in node.depends_on:
         d = nodes.get(dep)
         if d is None or d.status not in DEPS_SATISFIED_STATUSES:
-            return False  # a missing or not-yet-done dependency blocks the subtask
+            return False
     return not has_open_child(nodes, node)
 
 

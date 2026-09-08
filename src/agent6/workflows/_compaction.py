@@ -63,9 +63,9 @@ _ELISION_HINT_MAX_CHARS = 120
 
 # The argument that identifies a call, tried in order. Named tools are not
 # enumerated here: anything carrying one of these gets a label, so a tool added
-# later is never silently anonymous in a compacted transcript. `run_command` is
-# why this matters most -- searching moved there, so a placeholder reading just
-# "run_command" leaves the model unable to tell whether it already ran the suite.
+# later is never silently anonymous in a compacted transcript. It matters most
+# for `run_command`: a placeholder reading just "run_command" leaves the model
+# unable to tell whether it already ran the suite.
 _IDENTIFYING_KEYS: Final = ("path", "argv", "symbol", "name", "id", "url")
 
 
@@ -102,10 +102,9 @@ def elision_placeholder(tool_name: str, tool_input: Any) -> str:
     """Identity-bearing tier-1 placeholder.
 
     Names the elided call (tool + its key argument) so the model can re-issue
-    or skip it without scanning up for the paired tool_use block; a bare
-    marker made weak models lose track of WHAT was elided and re-read the
-    wrong files. Unknown tool (orphan result) falls back to the generic
-    marker.
+    or skip it without scanning up for the paired tool_use block; under a bare
+    marker weak models lose track of what was elided and re-read the wrong
+    files. Unknown tool (orphan result) falls back to the generic marker.
     """
     if not tool_name or not isinstance(tool_input, dict):
         return ELISION_PLACEHOLDER
@@ -365,9 +364,9 @@ def context_chars(conversation: Conversation) -> int:
     window.
 
     Whole blocks rather than a list of known keys: counting only text/content/
-    tool_use-input scored a reasoning model's `{"type": "thinking", ...}` as
-    ZERO, so tier-2 waited on a number that omitted the largest thing in the
-    context. A block type nobody has met yet must not be free either.
+    tool_use-input scores a reasoning model's `{"type": "thinking", ...}` as
+    zero, leaving tier-2 to wait on a number that omits the largest thing in
+    the context. A block type nobody has met yet must not be free either.
     """
     return sum(turn_chars(turn) for turn in conversation.turns)
 
@@ -575,10 +574,10 @@ def compact_old_tool_results(
     plan, so when the applied total still exceeds the budget, existing gist
     placeholders are demoted oldest-first to the bare marker: content decays
     content -> gist -> bare marker, and the spec facts survive the longest
-    while the byte bound still holds (in the limit everything is bare, exactly
-    the pre-gist behavior). Demotion runs after even the protected reads are
-    elided: losing a gist costs correctness (the file is gone from context),
-    losing a hot read costs one paid re-read.
+    while the byte bound still holds (in the limit everything is bare).
+    Demotion runs after even the protected reads are elided: losing a gist
+    costs correctness (the file is gone from context), losing a hot read costs
+    one paid re-read.
 
     Idempotent on already-elided entries.
     """

@@ -4,9 +4,9 @@
 tree moved since.
 
 Every consumer of "is the run green" (the finish gates, the review panel's
-grounding, the resume snapshot, the turn notices) reads this one object
-instead of poking parallel booleans on the loop state. Transitions live here
-so the streak/reset rules cannot drift apart across call sites.
+grounding, the resume snapshot, the turn notices) reads this one object.
+Transitions live here so the streak/reset rules cannot drift apart across
+call sites.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ class VerifyVerdict:
     def note_fail(self, signature: str) -> None:
         """A red verify: extend the streak when the failure looks the same,
         restart it when the signature changed (a NEW stuck point). Like a
-        green, it judges the tree AS OF NOW -- the harness must not re-run the
+        green, it judges the tree as it stands: the harness must not re-run the
         gate on a red tree nothing has touched, nor count that red twice."""
         self.last_ok = False
         self.ever_failed = True

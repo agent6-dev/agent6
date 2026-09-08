@@ -265,8 +265,8 @@ def build_system_prompt(
     """Assemble the system prompt from static blocks + run-specific context.
 
     The whole system prompt is sent on every turn but gets cached by the
-    Anthropic prompt-caching machinery (lineage). Per-turn cost
-    after the first call is ~10% of full input rate for the cached prefix.
+    Anthropic prompt-caching machinery. Per-turn cost after the first call is
+    ~10% of full input rate for the cached prefix.
 
     `mode="plan"` swaps the base block for the planning-mode
     prompt; the verify/repo/co-change/hot-symbols blocks below are

@@ -329,9 +329,9 @@ class Conversation:
         exactly the shapes the loop writes and raises ValueError loudly on
         every other shape (a snapshot this loop cannot have written). A turn
         in canonical order round-trips byte-for-byte through `to_wire`; a
-        snapshot from before the results-first canonicalization is HEALED on
-        load (its notice moves after the results, marks following their
-        blocks), which is what makes such a snapshot resumable at all."""
+        non-canonical one (a notice ahead of its results) is healed on load,
+        its notice moved after the results and each mark kept on its own
+        block, so that snapshot is resumable."""
         conv = cls()
         marks: list[tuple[int, int]] = []
         for t_idx, msg in enumerate(messages):

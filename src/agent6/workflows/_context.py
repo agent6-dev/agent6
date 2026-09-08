@@ -133,7 +133,7 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
     )
     # Count git-tracked files: an unfiltered rglob would count .git/.venv/build
     # junk (a misleading number to the model) and traverse the whole tree every
-    # startup. tracked is reused by _build_repo_map below.
+    # startup.
     tracked = tracked_files(root) if in_git else ()
     file_count = len(tracked)
     agents_md = agents_md_text(root)

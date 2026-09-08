@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """The agent loop: one system prompt, one model driving tool calls, and a
 deterministic harness around it (jail, budget, verify timeout, DAG curator
-for persistence and resume). One driver, no subagent cascade: the
-review panel gates checkpoints, it never steers. Green verifies
-auto-commit, so the chain records each tree a verify certified.
+for persistence and resume). One driver: the review panel gates checkpoints
+and never steers. Green verifies auto-commit, so the chain records each tree
+a verify certified.
 """
 
 from __future__ import annotations
@@ -430,8 +430,8 @@ class Workflow:
     # keeps none). Sized to pi's keepRecentTokens default.
     keep_recent_chars: int = KEEP_RECENT_CHARS
     # Thinking blocks are dropped from assistant turns older than this many
-    # assistant turns, at tier-1 moments. 0 (default) keeps all thinking,
-    # today's and pi's behavior; Claude Code clears old thinking.
+    # assistant turns, at tier-1 moments. 0 (default) keeps all thinking, like
+    # pi; Claude Code clears old thinking.
     keep_thinking_turns: int = 0
     # Retry the provider call on transient ProviderError before aborting the
     # run. Common cases: Anthropic 529 overload, Anthropic "Server disconnected
@@ -530,7 +530,7 @@ class Workflow:
     context_summary_max_tokens: int = 2048
     # Tier-1 gist elision (`context.elision_gists`): large read_file results
     # decay to a distilled-gist placeholder (summariser model, one batched call
-    # per drop event) before the bare marker. Off = pre-gist behavior.
+    # per drop event) before the bare marker. Off = the bare marker only.
     compact_elision_gists: bool = True
     # Cap on consecutive `before_finish` rejections.
     # When the worker repeatedly calls finish_session and the panel keeps
@@ -553,7 +553,7 @@ class Workflow:
     review_budget_fraction: float = 0.25
     review_concurrency: int = 1
     base_sha: str = ""
-    # When set, : Workflow writes a JSON snapshot of (system, messages,
+    # When set, Workflow writes a JSON snapshot of (system, messages,
     # tool_calls, next_iteration, root_task_id) before every LLM call. The
     # snapshot is provider-agnostic (it holds the anthropic-shaped message
     # list the loop maintains internally, not the on-the-wire OpenAI-shaped body
@@ -795,9 +795,8 @@ class Workflow:
             elided, gists = count_elisions(conversation)
             self._emit("loop.compact.restored", elided=elided, gists=gists)
         elif self.initial_pins:
-            # Seed via the pin owner so --pin honors the cap + non-empty check
-            # (writing state.pins directly skipped both); a --pin that doesn't
-            # fit is refused loudly, not silently dropped or wedged in.
+            # Seed via the pin owner so --pin honors the cap + non-empty check;
+            # a --pin that doesn't fit is refused loudly.
             for pin in self.initial_pins:
                 if not self._try_pin(state, pin):
                     self._log(f"  --pin refused (empty or over the {PINS_MAX_CHARS}-char cap)")
@@ -936,8 +935,7 @@ class Workflow:
                 )
                 # A prose turn is a completed iteration too: without this
                 # boundary a model answering in prose could never be stopped
-                # or steered (the stop marker sat pending while the run kept
-                # calling the provider).
+                # or steered.
                 outcome = self._operator_boundary(conversation, iteration, state)
                 if outcome is not None:
                     return outcome
@@ -1414,8 +1412,8 @@ class Workflow:
         elif name == "run_metric_command" and isinstance(result, MetricResult):
             turn.metric_sampled = True
             # The tree this reading covers: without the stamp the auto path
-            # sampled it again on the next turn that read the tree as changed
-            # (every turn, with nothing committing between steps).
+            # samples it again on every turn that reads the tree as changed
+            # (all of them, with nothing committing between steps).
             state.metric_tree = self._worktree_tree_sha()
             turn.metric_feedback = self._record_metric_result(
                 state.metric_history,
@@ -2999,11 +2997,11 @@ class Workflow:
         if text:
             # A prose turn is NON-EMPTY: the went_quiet nudge budget refills
             # here exactly as on a tool_use turn (the documented per-streak
-            # contract, "reset on any non-empty turn"). Without this, quiet
+            # contract, "reset on any non-empty turn"). Without it, quiet
             # streaks interleaved with bounced prose turns (silent-finish
-            # gates, question nudges) drained one shared budget and ended the
-            # run as went_quiet although no streak reached the cap -- and the
-            # starvation output-cap backoff stayed stuck reduced.
+            # gates, question nudges) drain one shared budget and end the run
+            # as went_quiet with no streak at the cap, and the starvation
+            # output-cap backoff stays reduced.
             state.went_quiet_nudges_used = 0
             turn = TurnState(iteration=iteration, resp=resp, assistant=assistant)
             return self._handle_silent_finish(text, conversation, state, turn)
@@ -3060,9 +3058,8 @@ class Workflow:
             return aborted
         # metric-run early-finish guard, mirroring the finish_session path: a
         # silent finish on an optimisation run with budget to spare should be
-        # nudged to keep optimising rather than accepted. Without this,
-        # dropping tool_use was a way to skip the plateau/early-finish policy
-        # entirely.
+        # nudged to keep optimising rather than accepted. Without it, dropping
+        # tool_use skips the plateau/early-finish policy entirely.
         if self._metric_early_finish_rejects(state, iteration=iteration, trigger="silent_finish"):
             conversation.notice(METRIC_FINISH_NUDGE)
             return None
@@ -3104,9 +3101,9 @@ class Workflow:
         if cont is not None:
             return None if isinstance(cont, NextTurn) else cont
         # In ask mode a prose answer with no tool call is the NORMAL success (the
-        # answer IS the text), so end as "answered", not "silent_finish" -- the
-        # latter read as a failure diagnostic on a perfectly good answer. run/plan
-        # keep silent_finish: there, stopping without finish_session is mildly anomalous.
+        # answer IS the text), so end as "answered", not "silent_finish": the
+        # latter reads as a failure diagnostic on a good answer. run/plan keep
+        # silent_finish: there, stopping without finish_session is mildly anomalous.
         reason: SessionEndReason = "answered" if self.mode == "ask" else "silent_finish"
         if self.mode == "ask":
             self._log(f"  ask answered at iter {iteration}")
@@ -3401,7 +3398,7 @@ class Workflow:
         Only a run is gated: plan and ask finish clean whatever the tree looks
         like (finish_planning and the ask answer both emit all_passed=True), and
         preflight still INFERS a verify command for a plan that never runs one,
-        so grounding on the tree there reported failure against their own
+        so grounding on the tree there would report failure against their own
         events."""
         if self.mode != "run":
             return "not_applicable"
@@ -3434,10 +3431,7 @@ class Workflow:
 
         `gate_stale` needs a gate that is actually RED. Green means it passed,
         truthfully. And `_tree_is_verify_green` returns None for a GATELESS run,
-        where there is no gate to be stale -- reading that as "not green" made a
-        gateless run declaring one end as passed, exit 0 and auto-merged, while
-        printing a `config set` line for a command nothing had run. The proposal
-        is recorded either way.
+        where there is no gate to be stale. The proposal is recorded either way.
 
         `gate_red_at_base` outranks a plain finish over red: the gate was
         already failing before this run touched anything, so a red end is not
@@ -3463,7 +3457,7 @@ class Workflow:
 
         The roots pass either way, like the settled path: the DAG tracks work
         items and the run-level word carries the verify truth, so grounding it
-        there too left a red-verify finish reading `tasks 0/1` forever.
+        there too would leave a red-verify finish reading `tasks 0/1` forever.
 
         `scoped` carries whether the gate ran scoped to the tests nearest the
         diff (the full command overran verify_timeout_s), so a scoped green
@@ -3834,7 +3828,7 @@ class Workflow:
         back for the real edit (the recovery edit itself is never truncated).
         The 2-quiet threshold spares the model the high ceiling was raised FOR
         (Kimi K2.x finishes its reasoning within 65k and rarely goes quiet, let
-        alone twice in a row), so the backoff targets the spiral, not the model.
+        alone twice in a row).
         """
         metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is not None
         if metric_run and state.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS:
@@ -4064,9 +4058,9 @@ class Workflow:
             keep=turns[tail_start:],
         )
         # The floor is measured the way the trigger is (the whole request, prefix
-        # included): computed on the conversation alone it sat below the total
-        # from the moment the restart finished, so tier 2 re-fired on the next
-        # iteration and paraphrased away the tail it had just kept.
+        # included): computed on the conversation alone it would sit below the
+        # total from the moment the restart finishes, so tier 2 would re-fire on
+        # the next iteration and paraphrase away the tail it just kept.
         state.tier2_floor_chars = int((context_chars(conversation) + prefix_chars) * 1.25)
         self._emit(
             "loop.compact.summarise.done",
@@ -4385,9 +4379,9 @@ class Workflow:
             else:
                 state.review_rejections_total = max(0, state.review_rejections_total - 1)
         # An all-abstain panel reviewed nothing: name that in the critique text
-        # (the model reads it) instead of "No blocking findings.", which the CLI
-        # verdict was fixed for too. The gate still lets the finish through -- a
-        # panel must never deadlock a run -- so `satisfied` is unchanged.
+        # (the model reads it) instead of "No blocking findings.". The gate still
+        # lets the finish through -- a panel must never deadlock a run -- so
+        # `satisfied` is unchanged.
         if panel_is_inconclusive(result):
             text = inconclusive_note(result)
         else:
@@ -4515,7 +4509,7 @@ class Workflow:
             new_id, undone_text = forked
             self._emit("session.undone", new_session_id=new_id, undone_text=undone_text)
             # An undo is the operator's own end, like an abort: without a
-            # session.end the run read "stale" (a dead worker and no end).
+            # session.end the run reads "stale" (a dead worker and no end).
             self._emit("session.end", reason="undone", iterations=iteration, all_passed=False)
             return SessionResult(
                 completed=False,
@@ -4663,9 +4657,7 @@ class Workflow:
         """Append *instruction* to the run's pins IF it is non-empty and fits
         the PINS_MAX_CHARS cap; return whether it was pinned. THE single owner
         of the pin invariants -- both `/pin` and the pre-run --pin seeding go
-        through it, so seeding cannot skip the cap (a huge --pin otherwise rode
-        every restart and permanently wedged /pin) or the empty check
-        (`--pin ""` seeded a blank pin)."""
+        through it, so seeding can skip neither the cap nor the empty check."""
         instruction = instruction.strip()
         if not instruction:
             return False
@@ -4930,8 +4922,8 @@ class Workflow:
         """Author identity plus the provenance trailer for this loop's commits.
 
         `[git.commit].name`/`.email` are the only identity on a machine whose
-        git has none: preflight accepts them, so dropping them here made every
-        chain commit fail with "Author identity unknown".
+        git has none: preflight accepts them, so dropping them here would fail
+        every chain commit with "Author identity unknown".
         """
         commit = self.config.git.commit
         if not (commit.name or commit.email or self.commit_trailer):

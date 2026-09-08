@@ -5,8 +5,8 @@
 A *seat* is one adversarial reviewer: a single grounded LLM call over the diff
 (+ verify result) that returns a structured `ReviewVerdict`. `run_panel` runs
 the seats and folds them with the pure `aggregate_verdicts` (in `_panel`).
-The grounding that actually prevents false-blocks is enforced in the aggregator,
-not here; this module just asks each model for findings in a parseable shape.
+The grounding that prevents false blocks is enforced in the aggregator; this
+module asks each model for findings in a parseable shape.
 
 Network calls live here (each seat takes an injected `Provider`); the pure
 grounding/aggregation stays in `_panel` so it is testable without the network.

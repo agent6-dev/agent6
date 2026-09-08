@@ -38,10 +38,6 @@ PLAN_VERIFY_RULE = """- run_verify_command runs the operator's gate; a baseline 
   failures that predate the execution pass.
 """
 
-# Rendered into run mode's __GIT_PROTECT_RULE__ sentinel under strict
-# isolation with protect_git on, and in a fork's linked worktree under any
-# jail (the repository's `.git` is granted read-only there): elsewhere the
-# constraint does not exist and stating it would misdirect the model.
 # Rendered into run mode's __AUTO_COMMIT_RULE__ sentinel, keyed on
 # [git].control AND gate presence: under agent6 control the harness
 # auto-commits each passing verify (gateless: each editing step); under model
@@ -64,6 +60,10 @@ MODEL_GIT_RULE = """- You own git in this run: agent6 keeps no shadow record and
   as you see fit); uncommitted changes exist only in the worktree.
 """
 
+# Rendered into run mode's __GIT_PROTECT_RULE__ sentinel under strict
+# isolation with protect_git on, and in a fork's linked worktree under any
+# jail (the repository's `.git` is granted read-only there): elsewhere the
+# constraint does not exist and stating it would misdirect the model.
 GIT_PROTECT_RULE = """- `.git/` is read-only inside the jail: history-mutating git commands
   (`git checkout`, `git reset`) fail there. Prior content is readable
   (`git show HEAD:path`) and restorable with the edit tools.
@@ -130,7 +130,7 @@ def dag_rules_block(decompose: bool) -> str:
 
 
 # Alternate base system prompt used by `agent6 plan`. Replaces
-# the edit-/verify-/dag-/style-rules blocks with planning-mode rules.
+# the edit-, verify- and dag-rules blocks with planning-mode rules.
 # The verify block below is still appended unchanged so the planner can
 # call `run_verify_command` to confirm the verify chain is wired. The
 # metric block is not: PLAN_EXTRA_TOOLS does not expose

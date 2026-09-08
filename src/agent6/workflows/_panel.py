@@ -3,15 +3,12 @@
 """Pure core of the adversarial review panel: the verdict types and the
 grounded aggregator.
 
-The aggregator is where the panel earns its keep: a "don't block on
-speculation" rule held as *prose* gets rationalized around, and correct
-green-verify work gets false-blocked. Here the rule is **executable**: a
-reviewer's `block` only gates if a
-machine check passes (the cited line is actually in the diff it was shown, and
-the category is one we allow to block). Everything else is mechanically
-downgraded to `warn` before any veto/quorum counting. `warn`/`nit` never
-gate. This module is network-free and exhaustively unit-tested; `run_panel`
-(the orchestration that actually calls models) lives separately.
+The panel's rule is executable rather than prose a reviewer can rationalize
+around: a `block` only gates if a machine check passes (the cited line is in
+the diff it was shown, and the category is one we allow to block). Everything
+else is mechanically downgraded to `warn` before any veto/quorum counting, and
+`warn`/`nit` never gate. This module is network-free; `run_panel` (the
+orchestration that calls models) lives separately.
 """
 
 from __future__ import annotations
@@ -349,9 +346,7 @@ def _decide(
         # they must not let a lone blocker gate while everyone else failed to
         # respond. Require both: (a) every non-abstaining seat blocked, AND (b) a
         # meaningful quorum actually responded -- a strict majority of all seats
-        # must be non-abstaining. So a panel that mostly failed to respond does
-        # NOT block on one vote, but a fully-responding (or majority-responding)
-        # panel that unanimously blocks still gates.
+        # must be non-abstaining.
         return n_seats_blocking == n_responding and n_responding * 2 > n_total
     return False  # pragma: no cover - exhaustive
 

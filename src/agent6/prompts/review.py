@@ -9,9 +9,8 @@ the seat calls and the grounding/aggregation.
 
 from __future__ import annotations
 
-# Original wording (no third-party prompt text). Grounding is ALSO enforced
-# mechanically downstream (aggregate_verdicts), so this prompt is guidance, not
-# the safety boundary.
+# Original wording (no third-party prompt text). aggregate_verdicts enforces
+# grounding mechanically, so this prompt only guides.
 REVIEW_SYSTEM_PROMPT = """You are one reviewer on an adversarial code-review panel.
 You are shown a DIFF the worker just produced, the task, and (if available) the
 result of the project's verify/test command. Your assigned stance: {persona}.

@@ -51,12 +51,10 @@ SessionEndReason = Literal[
 
 
 # Whether the verify gate was green when the run ended, on its own axis: a
-# deliberate finish and a verified one are different facts, and collapsing them
-# into `completed` made a finish_session over a red verify exit 0 and auto-merge.
+# deliberate finish and a verified one are different facts.
 # `failed` means a red gate was OBSERVED (the last verify ran and failed);
 # `unverified` means a gate exists but no observation covers the final tree
-# (no verify ran this leg, or edits landed after the last green) -- folding that
-# into `failed` printed "the gate is red" over a gate that never ran.
+# (no verify ran this leg, or edits landed after the last green).
 # `not_applicable` covers both a gateless session (no verify_command) and one
 # that stopped before any verdict existed.
 Verification = Literal["passed", "failed", "unverified", "not_applicable"]
@@ -232,8 +230,8 @@ class SessionSnapshot(BaseModel):
 def _load_state_object(path: Path, what: str) -> dict[str, Any]:
     """Read a state JSON file and require the top-level shape to be an object.
 
-    Valid JSON that is null, a list, or a scalar (a truncated/tampered state
-    file) otherwise reached `raw.get(...)` / `raw[...]` and surfaced as an
+    Valid JSON that is null, a list, or a scalar (a truncated or tampered state
+    file) would otherwise reach `raw.get(...)` / `raw[...]` and surface as an
     `AttributeError`/`TypeError` traceback the callers do not catch. Failing
     with a clean `ValueError` routes it to the same loud message as a version
     mismatch or a JSON decode error."""

@@ -261,13 +261,12 @@ PLAN_BUDGET_NUDGE = (
 
 
 # Silent finish before any work (run mode). Observed on SWE-bench with
-# kimi-k2.7: the model answered the problem statement in PROSE at iteration
-# 2 (a chat-tuned habit), no edit or verify had happened, and the loop
-# accepted it as an implicit finish -- the whole run ended patchless with
-# the budget unspent. An EARLY prose turn (first iterations) on an untouched
-# tree is a stall, not a finish; steer back to the tools a bounded number of
-# times. Later prose finishes stay honored: a run that read its fill and
-# answers in prose is the legitimate implicit-finish path.
+# kimi-k2.7: a chat-tuned model answers the problem statement in prose at
+# iteration 2, with no edit and no verify behind it. An EARLY prose turn
+# (first iterations) on an untouched tree is a stall, not a finish; steer back
+# to the tools a bounded number of times. Later prose finishes stay honored: a
+# run that read its fill and answers in prose is the legitimate implicit-finish
+# path.
 SILENT_NO_WORK_PATIENCE = 2
 SILENT_NO_WORK_NUDGE = (
     "[harness] Prose with no tool call on an untouched tree is not a finish"
@@ -338,8 +337,8 @@ def ends_with_question(text: str) -> bool:
 
 
 def standing_fruitless_nudge(reason: str, task_id: str, title: str, streak: int) -> str:
-    """The re-entry notice once a round landed nothing: same continuation,
-    harder push -- repeat-what-you-did is the one wrong answer."""
+    """The re-entry notice once a round landed nothing: the same continuation
+    with a harder push."""
     return (
         f"[harness] The run would have ended here ({reason}), and nothing has"
         f" landed since the last re-entry (fruitless round {streak}). The"
