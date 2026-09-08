@@ -230,7 +230,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # no clearing.
     emit_session_start(events, scratch, "session.start", user_task=task, mode="machine")
     # Authoring can take minutes with nothing on this terminal; say where the
-    # live reasoning streams so the operator can follow instead of wondering.
+    # live reasoning streams so the operator can follow it.
     reporter.err(
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )
@@ -348,7 +348,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     ),
                 ]
         else:
-            # Structurally valid. Now make it production-ready: lint + type-check
+            # Structurally valid, so make it production-ready: lint + type-check
             # the scripts, run their offline `*_test.py` mocks in a jail, and
             # dry-run the routing (synthesized facts through the real reducer;
             # catches e.g. a branch reading a field the schema doesn't declare).
@@ -404,7 +404,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     )
     # session.end reasons below are tokens, like every other emitter's: the listing
     # prints the reason as the detail beside "failed", where a prose sentence
-    # contradicted the word. `iterations` = authoring attempts made.
+    # contradicts the word. `iterations` = authoring attempts made.
     if spec is None or valid_path is None:
         events.emit("session.end", reason="no_valid_machine", iterations=attempt, all_passed=False)
         reporter.err(f"FAILED: no valid machine after {max_attempts} attempt(s).")
@@ -421,11 +421,11 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     payload = draft_text if draft_text.endswith("\n") else draft_text + "\n"
     target = output if output is not None else cwd / f"{spec.machine}.asm.toml"
     if output is None:
-        # The default path is documented as clobbering nothing; that covers the
-        # WHOLE bundle, not just the machine file -- an LLM-chosen script name
-        # colliding with an operator's existing scripts/<name> would otherwise
-        # be silently replaced (unrecoverable if uncommitted). `-o` keeps its
-        # documented overwrite-freely contract.
+        # The default path is documented as clobbering nothing, which covers the
+        # whole bundle: an LLM-chosen script name colliding with an operator's
+        # existing scripts/<name> would otherwise be silently replaced
+        # (unrecoverable if uncommitted). `-o` keeps its documented
+        # overwrite-freely contract.
         clashes = [
             p for p in (target, *(target.parent / rel for rel in valid_scripts)) if p.exists()
         ]
@@ -457,9 +457,9 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         return 1
     # The destination can differ from the validated scratch copy (e.g. a
     # pre-existing symlink under scripts/), so the structural check on what was
-    # PUBLISHED decides the outcome: a success banner over a bundle that won't
-    # run was a lie. Lint/types are not re-run: these bytes ARE the scratch copy
-    # that passed (the workspace copies carry ruff's fixes).
+    # PUBLISHED decides the outcome: a success banner over a bundle that will
+    # not run is a lie. Lint/types are not re-run: these bytes ARE the scratch
+    # copy that passed (the workspace copies carry ruff's fixes).
     out_problems = validate_bundle(spec, target)
     if out_problems:
         events.emit("session.end", reason="bundle_invalid", iterations=attempt, all_passed=False)

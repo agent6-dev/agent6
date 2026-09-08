@@ -45,9 +45,9 @@ def resolve_compaction_thresholds(
     """Effective `(drop_at_chars, summarise_at_chars, keep_recent_chars)` for the
     model *rm* drives the loop with: the explicit config values if set, else
     sized from the model's context window (bundled table + live model cache),
-    else the historical fixed defaults. Logs the choice when adaptive so the
-    operator can see what was picked. `rm is None` (model unresolved) falls
-    through to explicit-or-fixed-default.
+    else the fixed defaults. Logs the choice when adaptive so the operator can
+    see what was picked. `rm is None` (model unresolved) falls through to
+    explicit-or-fixed-default.
 
     An adaptive tier-2 threshold clamps the verbatim tail to half of itself:
     the config validator refuses an explicit pair whose tail is at or above the
@@ -262,7 +262,7 @@ class InstrumentedProvider:
     """Wraps any Provider with role.call / role.result / budget.update emission.
 
     Pure decoration; the inner provider is unchanged. `events` None (a caller
-    with no log to feed) simply emits nothing.
+    with no log to feed) emits nothing.
     """
 
     inner: Provider
@@ -346,11 +346,10 @@ class InstrumentedProvider:
                 role=self.role,
                 ok=True,
                 # The turn's settled prose. The deltas are the same text
-                # arriving in pieces and are emitted only when streaming is on,
-                # so a headless run (CI, a redirected stdout, every spawned
-                # ask) wrote a journal with no assistant text at all -- and
-                # every reader of it, `read_session` and `/btw` included, found
-                # nothing.
+                # arriving in pieces and are emitted only when streaming is
+                # on, so without this a headless run (CI, a redirected stdout,
+                # every spawned ask) journals no assistant text at all, and
+                # every reader of it (`read_session`, `/btw`) finds nothing.
                 text=resp.text,
                 tokens_in=resp.input_tokens,
                 tokens_out=resp.output_tokens,
@@ -371,8 +370,8 @@ class InstrumentedProvider:
         providers record it. These events are the only path that spend takes to
         a surface: the live cost meters fold them, and a machine's spend ledger
         (`app.machine._spend`) reconstructs a state's cost from the last one in
-        its log. Emitting only on success left a failed call's real dollars out
-        of every one of them, and out of the journal for good, since the
+        its log. Emitting only on success would leave a failed call's real
+        dollars out of every one of them, and out of the journal for good: the
         end-of-run summary prints to the terminal and is never journalled.
         """
         if self.events is None:
@@ -463,9 +462,9 @@ def build_review_seats(
     grammar.
 
     With *events*, each seat is instrumented: only InstrumentedProvider emits
-    `budget.update`, so bare seat providers spent real money no surface ever
-    showed (the tracker enforced; the log never heard). `agent6 review` passes
-    None -- it has no session log."""
+    `budget.update`, so a bare seat provider's real spend reaches no surface
+    (the tracker enforces it; the log never hears). `agent6 review` passes
+    None: it has no session log."""
 
     def _instrumented(provider: Provider, persona: str, model: str, provider_name: str) -> Provider:
         if events is None:

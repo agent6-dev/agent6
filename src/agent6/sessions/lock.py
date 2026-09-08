@@ -29,9 +29,8 @@ def acquire_single_writer(session_dir: Path) -> int | None:
 
     Returns the held fd on success (the caller keeps the process alive to hold
     it, and passes it to `release_single_writer` at teardown), or `None`
-    when another live process holds it (the caller refuses). A crashed writer
-    leaves no lock -- flock releases on process death -- so resume-after-crash is
-    never blocked by a stale lock.
+    when another live process holds it (the caller refuses). flock releases on
+    process death, so a crashed writer leaves no lock to block a resume.
     """
     mkdir_for_real_user(session_dir)
     fd = os.open(session_dir / "worker.lock", os.O_CREAT | os.O_RDWR, 0o644)
@@ -104,7 +103,7 @@ def acquire_repo_writer(state_dir: Path, checkout: Path, session_id: str) -> int
 
 def repo_writer_holder(state_dir: Path, checkout: Path) -> str:
     """The session id the current holder of *checkout*'s lock stamped, or ""
-    unknown. Advisory (for refusal messages); the flock is the boundary."""
+    when unknown. Advisory (for refusal messages); the flock is the boundary."""
     try:
         return checkout_lock_path(state_dir, checkout).read_text(encoding="utf-8").strip()
     except OSError:
@@ -118,7 +117,7 @@ def repo_writer_held(state_dir: Path, checkout: Path) -> bool:
     submission up front instead of spawning a doomed run): it takes a SHARED
     lock, which an exclusive holder blocks and a second probe does not, so
     asking the question never excludes the writer it asks about. The lock
-    itself remains the hard boundary -- a race past this probe still parks at
+    itself is the hard boundary: a race past this probe still parks at
     `acquire_repo_writer`.
     """
     lock_path = checkout_lock_path(state_dir, checkout)

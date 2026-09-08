@@ -6,8 +6,8 @@
 `out` is stdout (a piped result the operator captures); `err` is stderr (status,
 warnings, refusals). `ui/cli` is the composition root that owns the real streams
 (`STDIO_REPORTER`); a test or an alternate front-end injects a capturing pair.
-Each channel takes one already-formatted line and writes it exactly as the
-matching `print` would, so threading the reporter is behaviour-preserving."""
+Each channel takes one already-formatted line and writes it as the matching
+`print` would."""
 
 from __future__ import annotations
 
@@ -28,9 +28,8 @@ class Reporter:
     def cost(self, msg: str) -> None:
         (self.receipt or self.out)(msg)
 
-    # The four stderr conventions, owned here so every lifecycle words them
-    # the same: a refusal (the run does not start, exit 2), an error, a loud
-    # warning, and a status note.
+    # The stderr conventions, owned here so every lifecycle words them the
+    # same. A refusal means the run does not start (exit 2).
     def refuse(self, msg: str) -> None:
         self.err(f"REFUSING: {msg}")
 
@@ -52,6 +51,5 @@ def _print_err(msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
-# The real-stream wiring: identical to `print(msg)` / `print(msg, file=sys.stderr)`.
 # The default the app entry points fall back to and `ui/cli` relies on.
 STDIO_REPORTER = Reporter(out=_print_out, err=_print_err)

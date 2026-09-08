@@ -5,9 +5,9 @@
 `cli.sessions_merge` validates + resolves a run, then calls `execute_merge`; the run
 finalizer (`app.finalize.finalize_auto_merge`) calls it directly with the run
 context it already holds. Landing is pure ref plumbing (`git_ops.plumb_merge`):
-no checkout, no clean-tree requirement -- the worktree that necessarily carries
-the run's own work after every run is never an obstacle. One place to mutate
-means both honor the same strategy dispatch and manifest record."""
+no checkout, no clean-tree requirement, so the worktree carrying the run's own
+work is never an obstacle. One place to mutate means both honor the same
+strategy dispatch and manifest record."""
 
 from __future__ import annotations
 
@@ -89,9 +89,9 @@ def record_merge_in_manifest(
     saw, the commit that already held the content. Best-effort: a missing/corrupt
     manifest must not fail a merge that already happened.
 
-    Returns "" when the stamp landed, else why it did not. Silence made `prune`
-    call a branch agent6 had merged minutes earlier "NOT merged", and left
-    `--delete-squashed` unable to clean it up ever."""
+    Returns "" when the stamp landed, else why it did not: silence would make
+    `prune` call a merged branch "NOT merged" and leave `--delete-squashed`
+    unable to clean it up."""
     try:
         m = read_manifest(layout.session_dir)
     except ManifestError as exc:

@@ -126,8 +126,8 @@ def warn_if_prompt_override_incomplete(cfg: Config, *, reporter: Reporter = STDI
     """Warn when a custom `prompt.system_prompt_file` omits the core tool
     contracts the worker needs: `finish_session` is the only clean exit, and an
     edit primitive (`apply_edit`/`apply_patch`) is needed to do work. The
-    override is advanced + operator-owned, so we don't block -- just flag the
-    likely-broken case loudly and point at `agent6 prompt show`."""
+    override is advanced and operator-owned, so this flags the likely-broken
+    case loudly and points at `agent6 prompt show` rather than blocking."""
     path = cfg.prompt.system_prompt_file
     if not path:
         return
@@ -176,12 +176,11 @@ def git_preflight(
     :class:`SessionRefused` on each already-reported refusal.
 
     The auto-commit-on-verify-pass behaviour requires a clean working tree, so
-    the same git assumptions apply; skipping these left first-time runs
-    crashing on dirty-tree or missing-identity errors deep into a paid run.
+    the same git assumptions apply; skipping these leaves a first-time run
+    crashing on a dirty-tree or missing-identity error deep into a paid run.
     The egress policy is applied by the lifecycle's own config, not whichever
-    front-end got here: `ui/cli` set it and `agent6 acp` did not, so a repo
-    that opted into its own hooks silently kept them off under an editor -- a
-    knob `config show` reports and one surface ignored.
+    front-end got here, so a repo that opted into its own hooks gets them on
+    every surface.
     """
     apply_git_ops_policy(cfg)
     identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
@@ -198,7 +197,7 @@ def git_preflight(
         reporter.error(str(exc))
         raise SessionRefused(2) from exc
     # Starting a run while checked out on ANOTHER run's branch (agent6/<id>) is
-    # usually a slip -- the operator forgot to merge or switch back -- so the new
+    # usually a slip (the operator forgot to merge or switch back), so the new
     # run would pile on top of an unmerged one. Confirm; they may instead intend
     # to continue that line with a fresh session, in which case proceed.
     if (
@@ -329,10 +328,10 @@ def git_repo_refusal(cwd: Path) -> str | None:
     Returns the message, or None when *cwd* is usable.
     """
     if not cwd.is_dir():
-        # Asked git first, `subprocess` could not chdir into a missing
-        # directory and the FileNotFoundError surfaced as an opaque
-        # internal error. A stale workspace path is the ordinary editor
-        # mistake, and it deserves the same named refusal as a wrong one.
+        # Asked git first, `subprocess` cannot chdir into a missing directory
+        # and the FileNotFoundError surfaces as an opaque internal error. A
+        # stale workspace path is the ordinary editor mistake, and it deserves
+        # the same named refusal as a wrong one.
         return f"{cwd} is not a directory."
     if is_git_repo(cwd):
         return None
@@ -361,14 +360,14 @@ def headless_approval_refusal(
 
     `run_commands = "ask"` needs someone to answer. With no TUI, no way for the
     front-end to ask, and no away-mode telling us what an absent operator meant,
-    the first command PAUSES indefinitely -- and the verify gate is a command
-    too, so nearly every run hits this, every `/parallel` lane included.
+    the first command PAUSES indefinitely. The verify gate is a command too, so
+    nearly every run hits this, every `/parallel` lane included.
     Refuse with the fix rather than hang: a run that cannot ask should not start.
 
     *can_ask* is the front-end's own declaration. Testing the tty here instead
-    made this the CLI's question rather than the surface's, so `agent6 acp` --
-    whose stdin is the protocol pipe and which asks over
-    `session/request_permission` -- had every run refused before it started.
+    would make this the CLI's question rather than the surface's, refusing every
+    `agent6 acp` run before it starts: its stdin is the protocol pipe, and it
+    asks over `session/request_permission`.
 
     An *away* value outside `AWAY_MODES` is a typo, and a typo names no intent:
     it refuses on every surface rather than reading as one.
@@ -427,14 +426,14 @@ def headless_parking_note(
 def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:
     """Empty the verify command when this LEG cannot run one.
 
-    Every command tool is withheld when the effective policy is `no` -- the
-    operator's configured value, a session deny, or an away-mode of deny -- and
-    the gate is a command. Keeping it made the leg unwinnable: nothing could go
-    green, so nothing committed, and it finished red over work that may be fine.
+    Every command tool is withheld when the effective policy is `no` (the
+    operator's configured value, a session deny, or an away-mode of deny), and
+    the gate is a command. Keeping it makes the leg unwinnable: nothing can go
+    green, so nothing commits, and it finishes red over work that may be fine.
 
     Decided ONCE per leg, by whichever lifecycle starts it, because the system
-    prompt is frozen from the same config. Runs LAST at leg start -- after
-    snapshot reuse and inference -- so nothing hands the gate back. A deny that
+    prompt is frozen from the same config. Runs LAST at leg start (after
+    snapshot reuse and inference) so nothing hands the gate back. A deny that
     lands MID-leg withdraws the tools (the dispatcher's own filter) but must
     not retroactively make a gate that already ran red look like a run that
     never had one.
@@ -460,7 +459,7 @@ def infer_verify_if_unset(
     reporter: Reporter = STDIO_REPORTER,
 ) -> Config:
     """When `workflow.verify_command` is unset for a run/plan, infer one and
-    inject it IN-MEMORY (never persisted -- runs do not mutate config).
+    inject it IN-MEMORY (never persisted: runs do not mutate config).
 
     Layered cheapest-first (AGENTS.md -> repo signals -> a reviewer-role LLM
     call over the manifests, skipped when there are none to read); see

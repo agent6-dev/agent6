@@ -37,8 +37,8 @@ from agent6.types import session_kind
 
 def _policy_stamp(cfg: Config, isolation: str) -> PolicyStamp:
     """The policy a leg runs under. `isolation` is what the run RESOLVED to,
-    not the knob: `auto` degrades, and a surface printing "auto" told the
-    operator nothing about whether the run was actually confined."""
+    not the knob: `auto` degrades, and a surface printing "auto" says nothing
+    about whether the run was confined."""
     return PolicyStamp(
         run_commands=cfg.sandbox.run_commands,
         isolation=isolation or str(cfg.sandbox.isolation),
@@ -140,8 +140,8 @@ def write_session_manifest(
         run_branch=run_branch,
         git_control=cfg.git.control,
         models=ModelsBrief(
-            # The role that actually drives this mode: a plan run recorded the
-            # worker here and `sessions show` then named a model that never ran.
+            # The role that drives this mode: recording the worker for a plan
+            # run makes `sessions show` name a model that never ran.
             driver=_model_brief(cfg.models.resolve(session_kind(mode).role)),
             reviewer=_model_brief(cfg.models.resolve("reviewer")),
         ),
@@ -280,11 +280,11 @@ def pin_gate(
 ) -> None:
     """Pin this leg's gate and KEEP it pinned when the loop adopts one mid-run.
 
-    Every lifecycle that starts a leg calls this. Stamping and re-stamping were
-    two separate concerns wired only in `run`, so a resumed leg that adopted a
-    gate kept a manifest reading gateless. A failure is reported rather than
-    raised (a leg is still worth running) and never swallowed: the manifest is
-    what every viewer, the baseline and the next leg read the gate from.
+    Every lifecycle that starts a leg calls this, so a leg that adopts a gate
+    mid-run never leaves a manifest reading gateless. A failure is reported
+    rather than raised (a leg is still worth running) and never swallowed: the
+    manifest is what every viewer, the baseline and the next leg read the gate
+    from.
     """
 
     def _stamp(gate: Sequence[str], why: str) -> None:

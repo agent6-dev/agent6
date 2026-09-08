@@ -5,7 +5,7 @@ reader and the on-disk shape, with `app.manifest` as the writer.
 
 A leaf beside `layout.py`: pydantic + path arithmetic, no agent6 imports, so
 app, the viewmodel, and the CLI parse a run's manifest through one owner and one
-shape instead of each re-deriving the read + error-catch + stringly `.get`.
+shape.
 
 The model defaults every field and ignores unknown keys, so a partial or
 foreign-keyed manifest renders what it does carry, which is lenience for damage
@@ -265,9 +265,8 @@ class SessionManifest(BaseModel):
         privileged write ("run") tools. Pure-render consumers read `mode`
         directly: showing an unknown value is fine, acting on one is not.
 
-        The vocabulary is `types.SESSION_KINDS`. Keeping a second list here let
-        the two disagree -- this one refused "machine" and "agent" while the
-        tool surface happily built one.
+        The vocabulary is `types.SESSION_KINDS`: a second list here would
+        drift from it.
         """
         try:
             kind = session_kind(self.mode)

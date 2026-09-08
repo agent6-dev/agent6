@@ -164,8 +164,8 @@ def lint_and_typecheck(
     `fix=True` (machine create only, on its OWN generated bundle) applies
     ruff's safe fixes in place and reports only what remains: a whole
     authoring attempt burned on fixable lint otherwise. Operator-facing verbs
-    (`machine check`/`test`) never fix -- a check must not mutate the
-    operator's files."""
+    (`machine check`/`test`) never fix: a check must not mutate the operator's
+    files."""
     if not scripts_dir.is_dir() or not any(scripts_dir.rglob("*.py")):
         return []
     problems: list[str] = []
@@ -201,9 +201,8 @@ def lint_and_typecheck(
 class OfflineTestOutcome:
     """`run_offline_tests`' verdict: failures, plus what could NOT run.
 
-    `skipped`/`skip_reason` ride to the caller's own verdict surface -- a
-    skip buried in stderr while the verdict read OK looked like tests ran
-    green."""
+    `skipped`/`skip_reason` ride to the caller's own verdict surface: a skip
+    buried in stderr while the verdict reads OK reads as tests running green."""
 
     problems: tuple[str, ...] = ()
     skipped: int = 0
@@ -233,8 +232,8 @@ def run_offline_tests(
         return OfflineTestOutcome()
     # Run against a private temp COPY, like lint_and_typecheck: the real
     # bundle lives under the per-repo state dir, which the jail masks as a
-    # private path, so tests run in place saw an empty tree (python3: can't
-    # open file) or the launcher failed rootfs setup outright.
+    # private path, so tests run in place see an empty tree (python3: can't
+    # open file) or the launcher fails rootfs setup outright.
     workdir = Path(tempfile.mkdtemp(prefix="agent6-scripttest-"))
     try:
         bundle_copy = workdir / "bundle"
@@ -256,7 +255,7 @@ def _run_offline_tests_in(
     if isolation != "strict":
         # none: no jail to confine model-authored code in. hardened: a jail, but
         # no network namespace, so network="none" cannot be honored and the
-        # scripts would run with the host network -- exfil or pull-and-exec of
+        # scripts would run with the host network: exfil or pull-and-exec of
         # model-authored code during `machine create`. Only strict can honor
         # the no-network contract; skipping is the only safe option on the rest.
         reason = "no sandbox" if isolation == "none" else "no network isolation (hardened)"
@@ -265,8 +264,8 @@ def _run_offline_tests_in(
     problems: list[str] = []
     try:
         for test in tests:
-            # Fresh per test, as promised: state a record-style script leaves
-            # behind must not leak into the next test's run.
+            # Fresh per test: state a record-style script leaves behind must
+            # not leak into the next test's run.
             shutil.rmtree(data_dir, ignore_errors=True)
             data_dir.mkdir(parents=True)
             rel = test.relative_to(bundle_dir).as_posix()

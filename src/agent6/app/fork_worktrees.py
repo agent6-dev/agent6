@@ -67,7 +67,7 @@ def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
     comparison is against the run's own tips (HEAD when it has none, a run
     whose commits the model makes itself)."""
     if not worktree.is_dir():
-        return ""  # a worktree prune already removed is not dirt to keep
+        return ""
     tips = tips or ("HEAD",)
     try:
         for tip in tips:

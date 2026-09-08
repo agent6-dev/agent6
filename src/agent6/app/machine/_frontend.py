@@ -32,7 +32,7 @@ class MachineFrontend:
     `ui/cli`. Mirrors `app.run.SessionFrontend` but far thinner: machines are
     headless-first, so it is a two-channel `Reporter` for status output plus one
     interactive `resolve_network_fix` callback. `create_machine` uses only
-    `reporter` (as `resume_task` never calls SessionFrontend's run-only fields)."""
+    `reporter`."""
 
     reporter: Reporter
     resolve_network_fix: ResolveNetworkFix

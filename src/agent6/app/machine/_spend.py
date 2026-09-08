@@ -30,8 +30,8 @@ def book_crashed_attempt(journal: MachineJournal, root: Path) -> None:
     twice and the re-run starts a fresh log.
 
     A supervisor death mid-agent-state leaves real provider spend recorded
-    only in the per-state log; without this, resume re-granted the budget and
-    status under-reported. Called by the resuming supervisor before the drive
+    only in the per-state log; without this, resume re-grants the budget and
+    status under-reports. Called by the resuming supervisor before the drive
     re-runs the state. No orphan log, an already-booked seq, or an empty
     total books nothing.
     """

@@ -207,15 +207,15 @@ def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = 
     """The effective config for a session of *mode*.
 
     Both lifecycles call this before anything reads a knob, so a fresh session
-    and a resumed one are governed identically. Today it is the interactive-mode
-    clamp (ask, plan); anything else mode-dependent belongs here rather than at
-    one call site.
+    and a resumed one are governed identically. It is the interactive-mode clamp
+    (ask, plan); anything else mode-dependent belongs here rather than at one
+    call site.
 
     *overrides* are the operator's per-invocation flags, and they land LAST:
     the most specific layer, and the one the LLM cannot reach. The clamp exists
     to catch a STANDING `run_commands = "yes"` that nobody is watching, not an
-    explicit `--auto-approve` on this invocation -- clamping that made the flag
-    inert and every headless `ask --auto-approve` refused. Tightening still wins
+    explicit `--auto-approve` on this invocation: clamping that makes the flag
+    inert and refuses every headless `ask --auto-approve`. Tightening still wins
     outright: `--no-commands` pins "no", and `--auto-approve` never resurrects a
     withheld one.
     """
@@ -356,8 +356,8 @@ def mcp_server_policy(
     out with `unconfined = true`.
 
     The same `jail_policy` a jailed command gets, plus this server's additive
-    grants -- so the block names only what is extra and never has to describe
-    the interpreter, the tool dirs, or a writable HOME. `readonly` binds the
+    grants, so the block names only what is extra and never has to describe the
+    interpreter, the tool dirs, or a writable HOME. `readonly` binds the
     workspace read-only on top (the re-bind `.git` gets, applied to the
     root): a diagnostic's probe, which must not write the repository.
 
@@ -448,10 +448,10 @@ def start_mcp_manager_if_enabled(
     """Spawn all enabled MCP servers from `cfg.mcp`. Returns None when
     MCP is disabled or no servers are configured (so callers can skip
     teardown entirely). One bad server doesn't poison the run: it is skipped,
-    and the run simply does not see its tools.
+    and the run does not see its tools.
 
     A skipped server also becomes an `mcp.server_unavailable` journal event
-    when *events* is given. Stderr is only visible from a terminal -- under an
+    when *events* is given. Stderr is only visible from a terminal: under an
     editor it is a log pane, and the operator sees a run quietly missing the
     tools they configured.
     """
@@ -476,9 +476,9 @@ def _warn_servers_that_keep_the_network(
     cfg: Config, isolation: IsolationLevel, *, reporter: Reporter
 ) -> None:
     """`network = "auto"` is the secure default and cannot be honoured without
-    a network namespace, so where it degrades it says so -- per server, here,
-    where the operator is already being told about their servers. An explicit
-    `none` or `session` refused long before this (check_mcp_network_support)."""
+    a network namespace, so where it degrades it says so, per server, where the
+    operator is already being told about their servers. An explicit `none` or
+    `session` refused long before this (check_mcp_network_support)."""
     if isolation == "strict":
         return
     for name, srv in sorted(cfg.mcp.servers.items()):

@@ -10,9 +10,8 @@ The leading 4 chars of the suffix encode the low 20 bits of the
 current millisecond timestamp and are lexicographically sortable, so
 directory listings under the per-repo run-state dir are mostly chronological
 within the same `<adjective>-<noun>` pair (the timestamp rolls over
-roughly every 17 minutes, which is fine for the typical dev session
-listing). The trailing 2 chars supply 10 bits of entropy to keep IDs
-unique even when several are minted in the same millisecond. The
+roughly every 17 minutes). The trailing 2 chars supply 10 bits of entropy to
+keep IDs unique even when several are minted in the same millisecond. The
 format is otherwise purely cosmetic; nothing parses run IDs except the
 prefix resolver here. Treat them as opaque strings everywhere else.
 """
@@ -79,10 +78,9 @@ def validate_explicit_session_id(session_id: str) -> str:
 def friendly_token() -> str:
     """A fresh `<adj>-<noun>-<suffix>` token.
 
-    A token, not a session id: naming a session DIRECTORY goes through
-    :func:`unused_session_id`, which also checks the bucket. Callers that want
-    a readable unique string for something else (an ACP connection, a fan-out
-    group) use this.
+    Naming a session DIRECTORY goes through :func:`unused_session_id`, which
+    also checks the bucket. Callers that want a readable unique string for
+    something else (an ACP connection, a fan-out group) use this.
     """
 
     rand = os.urandom(6)

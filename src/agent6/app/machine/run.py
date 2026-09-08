@@ -7,7 +7,7 @@ the sandbox isolation, egress viability, provider keys, budget-price and git
 identity preflight, builds the per-`agent`-state runner and the `LiveWorld`, and
 calls `drive`. Output routes through the injected `MachineFrontend.reporter`; a
 hard tool-network refusal is handed to `frontend.resolve_network_fix` (the one
-interactive step, held cli-side). The machine ENGINE is unchanged.
+interactive step, held cli-side).
 """
 
 from __future__ import annotations
@@ -150,10 +150,8 @@ def machine_tool_runner(
     work; each call runs in a fresh clone at the chain tip instead (the same
     tree a run state starts from). Tree writes are scratch, discarded with the
     clone: the durable channels stay the blackboard and
-    `$AGENT6_MACHINE_DATA_DIR`, which is exactly what tool tree-writes were
-    before, since a run state's clone never contained them either. Bundle
-    protect paths under *cwd* are remapped to the clone's own copy, like a run
-    state's."""
+    `$AGENT6_MACHINE_DATA_DIR`. Bundle protect paths under *cwd* are remapped to
+    the clone's own copy, like a run state's."""
 
     def run(policy: JailPolicy) -> CommandResult:
         dest = clone_root / f"tool-{uuid.uuid4().hex[:12]}"
@@ -344,7 +342,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         if has_agent_state:
             # The machine's statically reachable routes include every agent
             # state's provider/model pins; discovering a dead route only when
-            # that state fires wasted the run up to it.
+            # that state fires wastes the run up to it.
             agent_states = [s for s in spec.states.values() if isinstance(s, AgentState)]
             pinned_providers = [s.provider for s in agent_states if s.provider]
             pinned_routes = [
@@ -386,8 +384,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 # agent state works a fresh clone at the machine chain's tip,
                 # and each mode="run" state lands both the chain (next
                 # state's continuation) and the visible agent6/machine-<id>
-                # branch (the operator's handle) back per state -- the lane
-                # mechanism, sequential where lanes are parallel.
+                # branch (the operator's handle) back per state, through the
+                # lane mechanism run sequentially.
                 machine_id=spec.machine if has_run_agent else None,
                 clone_root=clone_root if has_run_agent else None,
             )
@@ -443,8 +441,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # the state (which would start a fresh log over it).
             book_crashed_attempt(journal, root)
             # A hub-spawned machine (web/TUI: AGENT6_DETACHED_AWAY=wait) parks
-            # its approvals/questions for the front-end instead of the
-            # headless deny -- the same detach semantics a spawned run gets.
+            # its approvals/questions for the front-end instead of the headless
+            # deny, the same detach semantics a spawned run gets.
             apply_spawned_away_default(root, approval_scopes(cfg))
             # Liveness marker for watchers (the web SSE stream probes it to
             # tell a crashed machine from a parked one), mirroring cli/run.py.

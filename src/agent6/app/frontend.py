@@ -41,7 +41,7 @@ class SessionFacts:
     whether to interrupt can see what this run is doing without the widgets a
     TUI/web viewer has. Built by the lifecycle (which holds the tracker and the
     resolved config) and rendered by the front-end; read inside a signal
-    handler, so every field is already in memory -- no file read, no fold."""
+    handler, so every field is already in memory (no file read, no fold)."""
 
     spend_usd: float
     spend_partial: bool  # a model with no price data contributed: a lower bound
@@ -66,7 +66,7 @@ class SteerHooks(Protocol):
 
 def approval_scopes(cfg: Config) -> tuple[str, ...]:
     """Every scope this run can be asked about: the command tools, plus one per
-    live MCP server. "Approve everything while I am away" has to name them --
+    live MCP server. "Approve everything while I am away" has to name them all:
     a grant is per scope, so a run left with only the command scope granted
     would still block on the first MCP call with nobody there to answer."""
     servers = (
@@ -96,10 +96,10 @@ def apply_spawned_away_default(session_dir: Path, scopes: tuple[str, ...]) -> No
     'wait' makes approvals and questions block for a front-end. A pure headless
     run (no launcher) sets no env, so this is a no-op and it keeps its default.
 
-    A DEFAULT: an away mode already on the run dir is the operator's own detach
-    answer, and the resume this spawns carries 'wait' regardless -- overwriting
-    silently upgraded a chosen 'deny' to 'wait', so the run blocked on an
-    approval nobody was there to give instead of denying and carrying on."""
+    A default: an away mode already on the run dir is the operator's own detach
+    answer, and the resume this spawns carries 'wait' regardless. Overwriting it
+    would upgrade a chosen 'deny' to 'wait', blocking the run on an approval
+    nobody is there to give instead of denying and carrying on."""
     away = os.environ.get("AGENT6_DETACHED_AWAY", "")
     if not away or away_mode(session_dir):
         return
@@ -114,14 +114,14 @@ def apply_spawned_away_default(session_dir: Path, scopes: tuple[str, ...]) -> No
 
 @dataclass(frozen=True, slots=True)
 class FrontendCapabilities:
-    """What this surface can actually do, declared once at wiring.
-
-    A surface declares what it can do, so a headless run with no away-mode
-    denies rather than fabricating an empty `ask_user` answer.
+    """What this surface can do, declared once at wiring, so a headless run
+    with no away-mode denies rather than fabricating an empty `ask_user`
+    answer.
     """
 
-    # Approvals and ask_user reach a human. False for a headless run with no
-    # away-mode -- which is exactly what `headless_approval_refusal` computes.
+    # Approvals and ask_user reach a human. False for a surface with no way to
+    # ask (`ui/cli` sets it from `sys.stdin.isatty()`); `headless_approval_refusal`
+    # reads it alongside the away-mode.
     can_ask: bool = True
 
 
@@ -132,11 +132,10 @@ class SessionFrontend:
     only signals attach/close), the interactive prompts, and the REPLs. The
     lifecycle owns the run-dir bridge (`sessions.ipc`); only the exe-spawn
     primitives it can't reach stay injected.
-    One value serves both `run_task` and `resume_task`; resume simply never
-    calls the run-only fields."""
+    One value serves both `run_task` and `resume_task`; resume never calls the
+    run-only fields."""
 
-    # What this surface can do at all. Read before offering something, rather
-    # than discovered by trying it.
+    # What this surface can do at all, read before offering something.
     capabilities: FrontendCapabilities
     # live view: the console-view instance lives cli-side; builders that need it
     # (approver/questioner/steer/logger) close over it there.

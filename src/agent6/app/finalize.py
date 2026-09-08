@@ -71,7 +71,7 @@ def session_exit_code(result: SessionResult, *, stranded: bool = False) -> int:
     uncommitted (`stranded_edits`) / 1 else.
 
     4 covers red AND unverified: the tree is not green, and that is what 4
-    means -- exiting 0 on "no verify ran" would let a worker pass by never
+    means; exiting 0 on "no verify ran" would let a worker pass by never
     running the gate. 5 is the same principle for the deliverable: no commit
     landed and the edits sit uncommitted, so 0 would tell a script the work
     landed. A red gate outranks 5 (the gate is
@@ -146,18 +146,17 @@ def _sandbox_unreachable_tools(layout: SessionLayout) -> list[str]:
 def _print_next_session(layout: SessionLayout, *, reporter: Reporter) -> None:
     """After a session that produced something to act on, name the next step.
 
-    Seeding already exists; what was missing was the affordance -- an operator
-    had to know the flag was there. An ask ends holding work someone else does.
-    A plan ends holding OPEN QUESTIONS, and nothing named the loop that answers
-    them: edit plan.md, then resume the planner over it (which re-reads the
-    file). That loop is why there is no `plan revise` verb.
+    An ask ends holding work someone else does. A plan ends holding OPEN
+    QUESTIONS, and the loop that answers them is: edit plan.md, then resume the
+    planner over it (which re-reads the file). That loop is why there is no
+    `plan revise` verb.
     """
     with contextlib.suppress(ManifestError):
         mode = read_manifest(layout.session_dir).mode
         session_id = layout.session_id
         if mode == "plan":
             # The plan is the deliverable, printed like an ask prints its
-            # answer; the path alone sent the operator to `plan show`.
+            # answer; the path alone sends the operator to `plan show`.
             with contextlib.suppress(OSError):
                 plan = (layout.session_dir / "plan.md").read_text(encoding="utf-8").rstrip()
                 if plan:
@@ -195,7 +194,7 @@ def _print_unknown_baseline(
     )
     # A worktree at the base sha, NOT `git stash`: the run's work is COMMITTED
     # on its branch, so a stash saves nothing, exits 0, and runs the gate
-    # against the very commits it was meant to exclude -- reading back as "red
+    # against the very commits it was meant to exclude, reading back as "red
     # without my changes too".
     reporter.out("  to see whether this run caused it, check out the base commit somewhere else:")
     reporter.out(f"    git worktree add /tmp/agent6-base {base[:12]} \\")
@@ -222,7 +221,7 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
 
     Never over a GREEN gate: a proposal alongside a gate that just passed asks
     the operator to replace something nothing found fault with. Red and
-    unverified both surface it -- "cannot run at all" is a stale claim from a
+    unverified both surface it: "cannot run at all" is a stale claim from a
     gate that never produced an observation.
     """
     if not result.stale_gate or result.verified not in ("failed", "unverified"):
@@ -257,7 +256,7 @@ def print_session_end(
     # result.completed: completed means "the agent finished deliberately", which
     # is true for a finish_session even when verify never went green. status_word off
     # result.completed then prints "passed" while runs list reads the session.end
-    # event's real all_passed and prints "finished" -- the exact disagreement
+    # event's real all_passed and prints "finished", the disagreement
     # status_word exists to prevent. summarize_session_dir folds that event, so the
     # console headline and the listing can never diverge.
     summary = summarize_session_dir(layout.session_dir)
@@ -271,8 +270,8 @@ def print_session_end(
     elif result.summary and result.reason not in ("finish_session", "finish_planning"):
         # The stream's done line carries the finish summary only for a clean
         # finish (pairing an earlier finish's text with a failure would read as
-        # success), and session.end carries no message, so a failure's reason --
-        # the URL, the errno, the budget line -- reaches the operator only here.
+        # success), and session.end carries no message, so a failure's reason
+        # (the URL, the errno, the budget line) reaches the operator only here.
         reporter.out(f"  {result.summary}")
     reporter.out("")
     if unreachable := _sandbox_unreachable_tools(layout):
@@ -414,9 +413,10 @@ def print_interrupt_end(
 ) -> None:
     """After a Ctrl-C interrupt: the cost so far, the resume hint, and the
     branch-return hint. The interrupt cuts the run before `print_session_end`, so
-    without this the user saw only "run interrupted" -- no spend, no way to pick
-    the (auto-committed, resumable) work back up, and no note they were left on
-    the run branch. Mirrors the not-completed footer of `print_session_end`."""
+    without this an interrupt shows only "run interrupted": no spend, no way to
+    pick the (auto-committed, resumable) work back up, and no note about being
+    left on the run branch. Mirrors the not-completed footer of
+    `print_session_end`."""
     reporter.out("")
     reporter.cost(budget.format_summary())
     _print_run_total_across_legs(layout, reporter=reporter)
@@ -534,10 +534,9 @@ def _stash_apply_cmd(cwd: Path, sha: str, base_branch: str) -> str:
     """The manual-recovery command for a stash, worded once for every caller.
 
     Always apply-by-SHA: a positional `pop 'stash@{N}'` printed now but run
-    later restores whatever sits at that position by then, which is how a
-    bystander's stash got applied and the pre-run work stayed hidden. The
-    chain never moves the checkout, so a `git checkout <base>` prefix appears
-    only when the operator is on some other branch right now."""
+    later restores whatever sits at that position by then. The chain never moves
+    the checkout, so a `git checkout <base>` prefix appears only when the
+    operator is on some other branch right now."""
     apply = f"git stash apply {sha}"
     current = ""
     with contextlib.suppress(GitError):
@@ -575,11 +574,11 @@ def finalize_auto_stash(
 
     The stash is found by the run-id message the run pushed it with, and
     restored by its immutable sha, never by position: a stash pushed DURING
-    the run sat at stash@{0}, so a positional pop restored the wrong work and
-    left the pre-run work hidden. The printed manual-recovery hint applies by
-    sha too (`git stash apply <sha>`), which stays correct however the
-    stash stack shifts later -- a positional `pop 'stash@{N}'` printed now
-    but run after another stash push would restore the wrong one."""
+    the run sits at stash@{0}, so a positional pop would restore the wrong work
+    and leave the pre-run work hidden. The printed manual-recovery hint applies
+    by sha too (`git stash apply <sha>`), which stays correct however the stash
+    stack shifts later; a positional `pop 'stash@{N}'` printed now but run after
+    another stash push would restore the wrong one."""
     message = auto_stash_message(session_id)
     entry = find_stash(cwd, message)
     if entry is None:
@@ -617,7 +616,7 @@ def finalize_auto_stash(
         restored = restore_stash(cwd, entry)
     except GitError as exc:
         # The apply itself landed; what failed is putting back a concurrent
-        # stash the raced drop displaced. Say both -- finalization continues.
+        # stash the raced drop displaced. Say both; finalization continues.
         reporter.note(f"restored your pre-run changes onto {base_branch}, but {exc}")
         return
     if restored:

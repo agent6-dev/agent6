@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`/btw` -- a question asked beside a run, without interrupting it.
+"""`/btw`: a question asked beside a run, without interrupting it.
 
 A btw is a real ask session seeded with the run's context. It opens at once and
 runs in parallel: the run never waits for it, and its answer is printed into the
 conversation view between a header and a footer, never inserted into the run's
 own transcript. Copying anything useful across is the operator's move.
 
-One-off by construction: a btw has no follow-up thread, which keeps both the
-interface and the implementation simple. It is an ask like any other, so the
-operator can resume it later from another agent6 instance to go deeper.
+One-off by construction: a btw has no follow-up thread. It is an ask like any
+other, so the operator can resume it later from another agent6 instance to go
+deeper.
 
 Not in-process (two loops sharing one dispatcher would race on tools) and not a
 plain subprocess under `strict` (it would inherit the run's empty netns and have
@@ -67,10 +67,9 @@ def start_btw(
     before = {d.name for d in list_asks()}
     # `--no-commands`: a btw answers from what it can read, and never runs
     # anything. It has no terminal of its own and the parent is mid-run, so
-    # there is nobody to approve -- and withholding the tools outright beats
-    # offering them and denying each call, which only burns the model's turns.
-    # A question that needs to run something is a question for a full ask, which
-    # this session already is: resume it and it has the tools.
+    # there is nobody to approve, and denying each call would only burn the
+    # model's turns. A question that needs to run something is a question for a
+    # full ask, which this session already is: resume it and it has the tools.
     err = launch(
         cwd,
         ["ask", "--no-commands", "--from", parent_id, "--", question],
@@ -105,12 +104,11 @@ def btw_answer(session: BtwSession) -> str | None:
     finish_session), so the last assistant message is the answer. A session that
     ended without one says so rather than rendering blank.
     """
-    # "created" is the window between the child making its dir -- which is what
-    # `start_btw` waits for -- and writing its worker pid. Reading it as an
-    # ending declared a btw dead on the watcher's FIRST poll, and the watcher
-    # then stopped looking: the session ran to completion and its answer was
-    # never collected. (A DEAD pid in that window reads "stale - died
-    # launching", a real ending.)
+    # "created" is the window between the child making its dir (what `start_btw`
+    # waits for) and writing its worker pid. Reading it as an ending would
+    # declare a btw dead on the watcher's first poll and stop the watcher
+    # looking, leaving a completed session's answer uncollected. (A DEAD pid in
+    # that window reads "stale - died launching", a real ending.)
     summary = summarize_session_dir(session.dir)
     if summary.status in {"created", "running", "starting", "waiting"}:
         return None

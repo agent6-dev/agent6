@@ -135,9 +135,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     Sole `agent6 run` path; returns the process exit code.
 
     `initial_steer` queues an operator follow-up for the loop's first
-    boundary, seeded AFTER this function's own stale-state clear -- the
-    parked-resume delegation passes `resume --steer` through it (a pre-seeded
-    bridge file would be wiped by that clear and silently lost).
+    boundary, seeded AFTER this function's own stale-state clear: the
+    parked-resume delegation passes `resume --steer` through it, and a
+    pre-seeded bridge file would be wiped by that clear and silently lost.
 
     The caller (`ui/cli/run.py`) has already built *cfg* (config + overrides),
     resolved the task text, checked the git-repo wall / runnable roles /
@@ -163,7 +163,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
     # Before anything reads a knob (see session_config): an interactive session
     # (ask / plan) never runs a command unwatched, whether it is starting here
-    # or resuming -- unless the operator granted this invocation, which lands
+    # or resuming, unless the operator granted this invocation, which lands
     # after the clamp.
     cfg = session_config(cfg, mode, sandbox_overrides)
     # Refuse an unanswerable run BEFORE anything is created: refusing after
@@ -501,10 +501,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Single owner of worker.pid, both writer locks, and auto-stash
         # finalization, for EVERY exit path: preflight refusals, Ctrl-C during
         # verify inference, and setup-window crashes included. worker.pid and
-        # the stash pop happen UNDER the locks, so the releases come after --
-        # nested, because they must survive a teardown raise: the ACP front-end
-        # calls run_task in-process, where a leaked flock refuses every later
-        # run on the session until the server restarts.
+        # the stash pop happen UNDER the locks, so the releases come after, and
+        # nested so they survive a teardown raise: the ACP front-end calls
+        # run_task in-process, where a leaked flock refuses every later run on
+        # the session until the server restarts.
         try:
             frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
             if not detach_requested:
@@ -517,8 +517,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     # The run is NOT over: popping the stash now would feed the
                     # user's pre-run files into the detached continuation's
                     # auto-commits. Leave the stash and say so.
-                    # By sha, never by position: this hint has the LONGEST window of
-                    # any -- the operator reads it now and runs it after a
+                    # By sha, never by position: this hint has the longest window
+                    # of any, since the operator reads it now and runs it after a
                     # background run that may take hours, by which point a
                     # positional pop restores whatever else was stashed meanwhile.
                     hint = stash_recovery_hint(

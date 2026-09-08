@@ -44,10 +44,10 @@ def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
         rel = entry.relative_to(scripts_dir)
         try:
             resolved = entry.resolve()
-            # Python 3.14's resolve() stopped raising on a symlink loop (it
-            # returns the path); stat(), which follows links, still raises
-            # ELOOP, so a circular/broken symlink is reported instead of
-            # silently accepted as an in-bundle path.
+            # Python 3.14's resolve() does not raise on a symlink loop (it
+            # returns the path); stat(), which follows links, raises ELOOP, so
+            # a circular or broken symlink is reported rather than accepted as
+            # an in-bundle path.
             entry.stat()
         except (OSError, RuntimeError) as exc:  # RuntimeError: circular symlink (<3.14)
             problems.append(f"scripts/{rel}: {exc}")

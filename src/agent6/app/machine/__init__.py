@@ -6,9 +6,9 @@ share.
 
 `ui/cli/machine_cmds.py` keeps only argv adaptation + console rendering; the
 composition lives here, behind the `MachineFrontend` seam (mirroring
-`app.run.SessionFrontend`). The machine ENGINE itself (`agent6.machine`) is
-unchanged; this package composes it, resolves the sandbox/egress/budget
-preflight, and spawns the per-`agent`-state runner.
+`app.run.SessionFrontend`). The machine engine itself is `agent6.machine`; this
+package composes it, resolves the sandbox/egress/budget preflight, and spawns
+the per-`agent`-state runner.
 """
 
 from __future__ import annotations

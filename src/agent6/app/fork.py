@@ -5,10 +5,9 @@ NEW run, and the `/undo` rewind built on the same clone.
 
 A fork copies a source run's state, as of checkpoint turn N, into a fresh run
 dir with a new id and the same repo, recording lineage (parent run + the
-turn). The source run is never mutated: sessions as trees, done as
-clone-to-new-session. `ui/cli/fork.py` adapts argv, calls :func:`create_fork`,
-then (unless `--no-run`) continues the new run from turn N over the resume
-path.
+turn). The source run is never mutated. `ui/cli/fork.py` adapts argv, calls
+:func:`create_fork`, then (unless `--no-run`) continues the new run from turn N
+over the resume path.
 
 A fork of a run is the repo at the checkpoint's committed HEAD, in its own
 worktree, plus the conversation up to that turn. `create_fork` adds a linked
@@ -134,7 +133,7 @@ def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> 
 
     `graph_version <= 0` means the checkpoint predates the stamp or the
     curator was unreadable when it was written: with no version to rebuild at,
-    copy the DAG verbatim (what every fork did before replay existed).
+    copy the DAG verbatim.
     """
     with flock(src.lock_path):
         if graph_version <= 0:
@@ -312,8 +311,7 @@ def _plan_fork(
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:
         reporter.error(
-            "the chosen checkpoint records no head_sha, so the fork branch "
-            "cannot be cut. (A checkpoint from before per-turn sha capture.)"
+            "the chosen checkpoint records no head_sha, so the fork branch cannot be cut."
         )
         raise _ForkRefused(1)
 
@@ -530,7 +528,7 @@ def _materialize_fork(
     except GitError as exc:
         reporter.error(f"could not cut fork refs at {plan.forked_from_sha[:12]}: {exc}")
         # A fork exists only with its refs: the run dir written above goes too.
-        # Nothing else is unpicked -- a chain ref under this id is a previous
+        # Nothing else is unpicked: a chain ref under this id is a previous
         # run's anchor (`sessions prune` keeps exactly those), not the fork's.
         shutil.rmtree(dst.session_dir, ignore_errors=True)
         return 1

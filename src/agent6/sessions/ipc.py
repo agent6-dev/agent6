@@ -3,7 +3,7 @@
 """File-based IPC between the workflow process and a front-end.
 
 The workflow process and a front-end (the Textual TUI or the `agent6 web`
-server) run as separate OS processes; the front-end just tails JSONL and
+server) run as separate OS processes; the front-end tails JSONL and
 answers prompts by writing files. When an approval is needed:
 
 1. The workflow process writes an `approval.prompt` event to logs.jsonl
@@ -55,7 +55,7 @@ STEER_ANSWER_FILE = "steer.answer"
 # How long the answer polls keep waiting after the front-end liveness gate goes
 # dark before falling back headless (deny / ""). A transient drop (a phone
 # locking its browser, a page reload, a web server restart) re-registers within
-# seconds; without the grace, one 0.2s poll landing in that gap silently denied
+# seconds; without the grace, one 0.2s poll landing in that gap silently denies
 # a pending approval. 30s outlasts a reload while a truly-gone front-end still
 # fails over well before the answer timeout.
 FRONTEND_DEAD_GRACE_S = 30.0
@@ -175,8 +175,8 @@ def _ps_start_time(pid: int) -> str:
 def _proc_start_time(pid: int) -> str:
     """Start-time identity for *pid*, or "" when it cannot be read (the
     process just exited): field 22 of /proc/<pid>/stat on Linux, `ps` where
-    /proc is absent (macOS -- whose small pid_max recycles pids fast, so the
-    plain kill-0 probe misread reuse as liveness there too). The comm field
+    /proc is absent (macOS, whose small pid_max recycles pids fast, so the
+    plain kill-0 probe misreads reuse as liveness there too). The comm field
     may contain spaces/parens, so split after the LAST ')'."""
     if not _HAS_PROC:
         return _ps_start_time(pid)
@@ -244,14 +244,14 @@ def write_worker_pid(session_dir: Path, pid: int) -> None:
     """Record the session's worker pid so `agent6 sessions show` can probe liveness even
     while the worker is blocked in a long provider call (no events emitted).
     The start-time identity rides along after the pid (/proc ticks on Linux,
-    `ps` lstart text elsewhere) so a recycled pid -- same number, different
-    process, after a SIGKILL'd worker left the file behind -- cannot make a
+    `ps` lstart text elsewhere) so a recycled pid (same number, different
+    process, after a SIGKILL'd worker left the file behind) cannot make a
     dead run read running forever (blocking resume and the /parallel lane
     await)."""
     # Atomic like every sibling publish: a plain write truncates first, so a
-    # reader in that window sees a PREFIX of the pid with the identity stripped
-    # -- and a prefix naming a live process you own reads alive with nothing
-    # left to refute it, the exact recycled-pid lie this record exists to kill.
+    # reader in that window sees a PREFIX of the pid with the identity stripped,
+    # and a prefix naming a live process you own reads alive with nothing left
+    # to refute it.
     atomic_write(session_dir / WORKER_PID_FILE, pid_record(pid))
 
 
@@ -537,7 +537,7 @@ def effective_run_commands(configured: str, session_dir: Path) -> str:
 
     One answer from three inputs, so every consumer agrees: the configured
     knob, the operator's session choice, and the away-mode a detached run was
-    left with. Only "ask" is movable -- a configured "yes" or "no" is the
+    left with. Only "ask" is movable: a configured "yes" or "no" is the
     operator's standing policy and no in-run choice overrides it.
 
     "no" means the tools are WITHDRAWN, not refused per call: that is the same
@@ -555,7 +555,7 @@ def effective_run_commands(configured: str, session_dir: Path) -> str:
 
 # How a DETACHED run (no terminal to prompt) handles run_command approvals and
 # ask_user questions: "deny" auto-denies, "wait" blocks until a front-end
-# reattaches and answers. "approve" is not stored here -- detach approve-all
+# reattaches and answers. "approve" is not stored here: detach approve-all
 # sets the command scope's allow marker. Persists like it (not an *.answer).
 AWAY_MODE_FILE = "away.mode"
 # What an operator may set AGENT6_DETACHED_AWAY to. "approve" is not stored in
@@ -577,7 +577,7 @@ def set_away_mode(session_dir: Path, mode: str) -> None:
 
 
 def away_mode(session_dir: Path) -> str:
-    """ "deny", "wait", or "" (unset -- interactive/foreground default flow)."""
+    """ "deny", "wait", or "" (unset: interactive/foreground default flow)."""
     try:
         return (approvals_path(session_dir) / AWAY_MODE_FILE).read_text(encoding="utf-8").strip()
     except OSError:
@@ -721,7 +721,7 @@ def steer_answer_written(session_dir: Path) -> bool:
 def steer_answer_is_abort(session_dir: Path) -> bool:
     """Non-blocking peek: True if a pending steer answer is a stop. Lets a long
     streaming model turn bail immediately instead of only at the between-step
-    boundary. Does NOT consume the answer -- the boundary still handles it if the
+    boundary. Does NOT consume the answer: the boundary still handles it if the
     stream ends first."""
     try:
         answer = (session_dir / STEER_ANSWER_FILE).read_text(encoding="utf-8").strip().lower()
@@ -729,7 +729,7 @@ def steer_answer_is_abort(session_dir: Path) -> bool:
         return False
     # Exactly the Stop contract: every front-end's Stop writes "abort", and the
     # between-step boundary (_maybe_handle_steer) also stops only on "abort". A
-    # typed steer instruction -- even the word "stop" -- is an instruction, not a
+    # typed steer instruction (even the word "stop") is an instruction, not a
     # stop; interrupting mid-stream on it would diverge from the boundary.
     return answer == "abort"
 
@@ -812,8 +812,8 @@ def request_compact(session_dir: Path, focus: str = "") -> bool:
     next safe boundary and honors by forcing a context compaction (mirrors
     steer). The marker body is the operator's optional summary *focus*
     (`/compact <focus>`); "" is a plain compact. Published atomically: the run
-    polls `read_compact_request` every boundary, so a plain write exposed an
-    empty/partial focus it consumed (and then cleared) as the real one.
+    polls `read_compact_request` every boundary, so a plain write would expose
+    an empty or partial focus for it to consume (and clear) as the real one.
 
     Returns whether the marker landed. A failed write must not raise into a TUI
     action or a web handler, and must not read as success either: on a

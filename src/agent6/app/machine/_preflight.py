@@ -2,12 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """Host-side preflight for `machine run`/`create`.
 
-Before the engine composition drives a machine, these checks refuse a run that
-can't be honored -- a tool-network need the isolation cannot enforce
-(`machine_network_refusal`) -- and they resolve the machine's own read-only
-protect paths (`machine_protect_paths`) and the operator notify hook
-(`build_machine_notify_hook`). Pure computations; the hook itself runs through
-`app/finalize.run_notify_hook`, the one runner both notify hooks share.
+Before the engine composition drives a machine, these checks refuse a run whose
+tool-network need the isolation cannot enforce (`machine_network_refusal`), and
+resolve the machine's own read-only protect paths (`machine_protect_paths`) and
+the operator notify hook (`build_machine_notify_hook`). Pure computations; the
+hook itself runs through `app/finalize.run_notify_hook`, the one runner both
+notify hooks share.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from agent6.types import IsolationLevel
 def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> str | None:
     """A refusal message naming every tool state that asks for an environment
     variable the operator's `[machine].pass_env` does not allow, else None.
-    The state declares, the operator permits: the allowlist lives in the
-    global/repo config, never in the machine's own file."""
+    The allowlist lives in the global or repo config, never in the machine's
+    own file."""
     allowed = set(cfg.machine.pass_env)
     asks = [
         f"[states.{name}] asks for {', '.join(n for n in state.pass_env if n not in allowed)}"
@@ -83,8 +83,8 @@ def machine_network_refusal(
     tn = cfg.sandbox.network
     no_tool_net = tn in ("session", "auto")  # both keep the tool off the host network
     if has_allow and no_tool_net:
-        # Name the ACTUAL value: a hardcoded 'block' misstates an 'auto'
-        # config on a refusal surface.
+        # Name the resolved value: a hardcoded one misstates the config on a
+        # refusal surface.
         if isolation == "hardened":
             return NetworkRefusal(
                 'a tool state sets network = "host" but sandbox.network ='

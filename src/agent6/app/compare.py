@@ -41,10 +41,10 @@ JudgingStatus = Callable[[], AbstractContextManager[None]]
 class RankOutcome:
     """`rank()`'s result: candidates best-first, plus which path produced them.
 
-    `ranked_by` is `"judge"` only when the reviewer model actually produced
-    the order, else `"mechanical"` -- the honest signal the compare stamp
-    records (`CompareStamp.ranked_by`, which stays a lenient `str` for
-    reads of history). `rationale` is empty on the mechanical path.
+    `ranked_by` is `"judge"` only when the reviewer model produced the order,
+    else `"mechanical"`; the compare stamp records it
+    (`CompareStamp.ranked_by`, which stays a lenient `str` for reads of
+    history). `rationale` is empty on the mechanical path.
     `judge_cost_usd` is the judge call's estimated spend, real money even
     when a failed judge fell back to the mechanical ranking; it is 0.0 only
     when no judge call was made. `judge_cost_partial` marks it a lower bound (the

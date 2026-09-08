@@ -3,8 +3,8 @@
 """Fan-out orchestrator for `agent6 run --parallel` and the coordinator's
 `/parallel` dispatch.
 
-Spawn N isolated lanes -- each a disposable clone of the repo running its own
-detached `agent6 run` -- symlink the live lanes into `agent6 sessions` for
+Spawn N isolated lanes (each a disposable clone of the repo running its own
+detached `agent6 run`), symlink the live lanes into `agent6 sessions` for
 visibility, await them, import each finished lane's branch + run dir back into
 the origin, then auto-compare and print a ranked report. Nothing is merged: the
 operator picks a winner and runs `agent6 sessions merge <id>`.
@@ -13,7 +13,7 @@ The origin repo is never mutated (no branch cut, no run dir, no commits) until
 `import_run` lands a lane's branch. Clones + lane state are torn down after
 import. The heavy git plumbing lives in `workflows.subrun`; the ranking in
 `app.compare` over `workflows.judge`; this module orchestrates them over a
-`LaneRuntime` -- the process-spawn + run-dir bridge the front-end injects so this
+`LaneRuntime`, the process-spawn + run-dir bridge the front-end injects so this
 pipeline never imports `agent6.ui`.
 """
 
@@ -447,7 +447,7 @@ def run_lane_to_completion(
     stamp `<group>` lineage. Returns a LaneResult whose `session_dir` is the imported
     dir on success; `ok=False` (nothing imported, *origin* untouched for this
     lane) when the lane failed to start, was still running at teardown, or its
-    import was refused -- and also for an imported lane that produced no result
+    import was refused, and also for an imported lane that produced no result
     (`produced_result`): its branch is safe in the origin but never joins as a
     success. The coordinator runs a group of these on a thread pool, so
     each is self-contained per lane; *import_lock*, when given, serializes the
@@ -634,7 +634,7 @@ def build_lane_spawner(
             try:
                 futures = [pool.submit(one, p) for p in pairs]
                 # FIRST_EXCEPTION: a lane thread that RAISES (a bug, not a lane
-                # failure -- those return ok=False) aborts the group now, not
+                # failure: those return ok=False) aborts the group now, not
                 # after every earlier-submitted lane happens to finish.
                 done, _ = futures_wait(futures, return_when=FIRST_EXCEPTION)
                 for f in done:
@@ -810,7 +810,7 @@ def _import_lanes(
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[list[CandidateBrief], list[tuple[LaneResult, str]], list[LaneSpec]]:
     """Import each finished lane's branch + run dir into the origin, stamp its
-    lineage, and build a candidate brief from it -- for lanes that produced a
+    lineage, and build a candidate brief from it, for lanes that produced a
     result; an imported lane without one (`produced_result`) is recorded as
     failed instead, its work safe in the origin. Returns (candidates, failed,
     imported specs); only imported lanes are safe to clean up. A failed-to-start,
@@ -1066,8 +1066,8 @@ def _drive_fanout(
     reporter.note(f"parallel fan-out {fanout_id}: {len(lanes)} lanes")
     if max_usd is not None:
         # The judge is one more capped call series, so the advertised total
-        # includes it; without that the effective ceiling quietly exceeded
-        # the printed one.
+        # includes it; without that the effective ceiling quietly exceeds the
+        # printed one.
         reporter.note(
             f"budget: ${max_usd:g}/lane x {len(lanes)} + judge"
             f" = ${max_usd * (len(lanes) + 1):g} total"

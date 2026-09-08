@@ -33,9 +33,8 @@ def is_safe_session_id(session_id: str) -> bool:
     )
 
 
-# The event journal's filename. Named once, and used everywhere: a reader that
-# hardcodes the wrong one silently finds nothing, which is indistinguishable
-# from an empty session.
+# The event journal's filename. A reader that hardcodes the wrong one silently
+# finds nothing, which is indistinguishable from an empty session.
 LOGS_NAME = "logs.jsonl"
 # The files that were untracked when the run started (repo-root-relative,
 # NUL-separated). They are the operator's: every chain commit and dirty check
@@ -144,9 +143,8 @@ def write_untracked_at_start(session_dir: Path, paths: Collection[str]) -> None:
 # can still be named for its mode (`sessions/machines/`).
 SESSIONS_ROOT = "sessions"
 # One bucket per session mode, named after it (`types.session_bucket`; a test
-# pins the two together). Defined beside SessionLayout.subdir because it is a
-# fact about the on-disk layout, not about any one front-end: both the CLI's id
-# resolution and the resume lifecycle need it.
+# pins the two together). A fact about the on-disk layout, read by both the
+# CLI's id resolution and the resume lifecycle.
 SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machines")
 # What a hub lists as an ordinary session. Machine authoring is excluded: every
 # hub gives it its own card, keyed by the machine being authored. (An `agent`
@@ -178,8 +176,7 @@ def layout_of(session_dir: Path) -> SessionLayout:
 
     Rebuilding one from the directory's NAME loses the bucket and defaults to
     runs/, which for a plan or an ask silently retargets a path that does not
-    exist -- and the callers that do it sit inside a `suppress`, so it goes
-    unnoticed.
+    exist; the callers that do it sit inside a `suppress`, so it goes unnoticed.
     """
     return SessionLayout(
         state_dir=session_dir.parent.parent.parent,

@@ -168,7 +168,7 @@ def turn_replay_allowed(
 
     No marker (clean stop) or a STALE one (crash after the after-tools
     snapshot advanced but before the delete; iteration < next) proceeds, the
-    stale marker cleared silently -- no false prompt. A marker matching the
+    stale marker cleared silently (no false prompt). A marker matching the
     turn about to re-run is a genuine mid-turn crash: its tools may have
     partially applied, so the front-end decides (interactive default no;
     headless warns and proceeds).
@@ -203,8 +203,8 @@ def snapshot_head_mismatch(
     then a review/metric call runs before the next snapshot), so a kill in that
     window leaves the tip ahead of the recorded head_sha on the SAME line. That
     must resume cleanly. Only refuse when the tip is not a descendant of the
-    snapshot head -- someone rewrote or replaced the chain ref -- i.e. the
-    model would resume against a record that changed under it. Working-tree
+    snapshot head (someone rewrote or replaced the chain ref), where the model
+    would resume against a record that changed under it. Working-tree
     (uncommitted) divergence is not checked; only committed history.
 
     Best-effort: the snapshot records head_sha as "" when git was unreadable at
@@ -217,7 +217,7 @@ def snapshot_head_mismatch(
         loaded = json.loads(snapshot_path.read_text(encoding="utf-8"))
         if isinstance(loaded, dict):
             # Raw single-key peek (must not raise); "head_sha" is
-            # SessionSnapshot.head_sha -- keep in sync on a field rename.
+            # SessionSnapshot.head_sha: keep in sync on a field rename.
             snap_head = str(loaded.get("head_sha") or "")
     if not snap_head:
         return None
@@ -285,7 +285,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.error(f"--steer: {problem}")
         return 2
     if not session_id:
-        # "resume my last session" -- the common recovery case. Every bucket a
+        # "resume my last session", the common recovery case. Every bucket a
         # resumable mode writes to, so splitting plans/ out of runs/ does not
         # hide a plan from the bare form, and so the no-id path finds what the
         # by-id path below already accepts.
@@ -344,12 +344,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.err(SINGLE_WRITER_BUSY.format(rid=session_id))
         return 2
     # A run the agent ENDED has nothing to continue: the resumed leg spends a
-    # call, answers in prose with no tool use, and records a silent_finish --
-    # so a run that passed reads as failed afterwards, for a tree nobody
-    # touched. New work is what --steer is for. Only this one reason: every
-    # other ending (budget_exhausted, provider_error, steer_abort, a red
-    # verify) is exactly what resume exists for. Read through the same fold the
-    # listing uses, so the refusal and the status can never disagree.
+    # call, answers in prose with no tool use, and records a silent_finish, so
+    # a run that passed reads as failed afterwards, for a tree nobody touched.
+    # New work is what --steer is for. Only this one reason: every other ending
+    # (budget_exhausted, provider_error, steer_abort, a red verify) is exactly
+    # what resume exists for. Read through the same fold the listing uses, so
+    # the refusal and the status can never disagree.
     if not steer.strip() and finished_needs_new_work(layout.session_dir):
         reporter.refuse(needs_new_work_refusal(session_id))
         release_single_writer(worker_lock_fd)
@@ -387,8 +387,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # started fresh below instead of hitting the no-snapshot refusal.
         # `mode` is security-relevant: a damaged run dir (unreadable, corrupt, or
         # an unknown mode value) must NOT fall open to the more-privileged "run"
-        # (write) mode. read_manifest / session_mode fail loud on any of those --
-        # the underlying cause carries in the ManifestError detail -- rather than
+        # (write) mode. read_manifest / session_mode fail loud on any of those
+        # (the underlying cause carries in the ManifestError detail) rather than
         # silently escalating a plan run to a write run.
         role = session_kind(mode).role
 
@@ -508,8 +508,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Safety check: refuse when the chain resume would continue on DIVERGED
         # from the run's last snapshot (a rewritten or replaced chain ref would
         # leave the model reasoning about a record that changed under it);
-        # plain forward movement on the same line -- the run's own per-step
-        # commits -- resumes cleanly. The snapshot records head_sha best-effort
+        # plain forward movement on the same line (the run's own per-step
+        # commits) resumes cleanly. The snapshot records head_sha best-effort
         # ("" when git was unreadable at write time); skip the check then, and
         # let the loud snapshot load below handle a corrupt file.
         mismatch = (
@@ -616,7 +616,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         def _gate(cfg: Config, _budget: BudgetTracker) -> Config:
             # Resume reuses the verify command the ORIGINAL run resolved
             # (stored in the snapshot), so the tool list, prompt, and commit
-            # branch stay consistent with the frozen system prompt -- never
+            # branch stay consistent with the frozen system prompt, never
             # re-inferring, which could flip and diverge. Config the operator
             # has pinned since outranks it (announced below, and to the worker,
             # since the prompt still names the old one). `()` means the
@@ -747,7 +747,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 undo_forker=_undo_forker,
                 prompts=prompts,
                 # The follow-up this leg answered, not the run's original task:
-                # a `--steer` question that never appeared made the second
+                # a `--steer` question that never appears makes the second
                 # answer read as more of the answer to the first.
                 ask_transcript_task=steer.strip() or manifest.user_task,
                 budget_overrides=budget_overrides,

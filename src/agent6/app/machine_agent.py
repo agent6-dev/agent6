@@ -362,7 +362,7 @@ def run_one(
     r = req.request
     # Config load + per-state overrides run FIRST, and can raise (a bad overlay,
     # or an override naming a provider that isn't configured). Salvage that into
-    # a clean AgentExecResult the subprocess writes to result.json -- otherwise
+    # a clean AgentExecResult the subprocess writes to result.json: otherwise
     # the exception escapes to a pydantic traceback + a non-zero exit, and the
     # host runner only recovers it via its missing-result fallback.
     try:
@@ -514,11 +514,11 @@ def build_machine_agent_runner(
     chain's tip (the origin's HEAD before the first landing), so a read-only
     judge sees the machine's work too. A run-mode state's commits land back
     per state: the chain ref for the next state's continuation, and the
-    visible `agent6/machine-<id>` branch at the same tip for the operator --
-    the run story ("changes are on a branch; merge them") with the lane
-    clone mechanism; a read-only state commits nothing, so its landing is a
-    no-op cleanup. The operator's checkout is never touched. Without them
-    (`machine create`, a machine with no run states) requests run in *cwd*.
+    visible `agent6/machine-<id>` branch at the same tip for the operator, who
+    merges it as they would a run's. A read-only state commits nothing, so its
+    landing is a no-op cleanup. The operator's checkout is never touched.
+    Without them (`machine create`, a machine with no run states) requests run
+    in *cwd*.
     """
 
     def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
@@ -595,9 +595,10 @@ def build_machine_agent_runner(
             # subprocess AND its jail children with it; PDEATHSIG so the
             # whole tree dies with the supervisor instead of running on,
             # spending and committing, after a SIGTERM/SIGKILL nobody waits
-            # out (the own-session child had no tie to its parent's life).
+            # out (an own-session child otherwise has no tie to its parent's
+            # life).
             # PLW1509 (fork-with-threads hazard): the hook is written for it,
-            # async-signal-minimal -- libc preloaded at import, then only
+            # async-signal-minimal: libc preloaded at import, then only
             # prctl/getppid/_exit, no allocation or locks.
             # AGENT6_SUBRUN: a machine state is subordinate work and must
             # not itself fan out (the same depth-1 flag every lane carries).
@@ -613,8 +614,8 @@ def build_machine_agent_runner(
                 with contextlib.suppress(ProcessLookupError):
                     # By pid: start_new_session made it the group leader, and an
                     # unreaped child's pgid cannot have been recycled. Looking
-                    # it up first left a window where, under sudo, an unrelated
-                    # group could be killed as root.
+                    # it up first would leave a window where, under sudo, an
+                    # unrelated group could be killed as root.
                     os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
                 result = salvaged("timeout")
@@ -641,9 +642,9 @@ def clone_at_machine_chain(origin: Path, dest: Path, chain_ref: str) -> None:
     """Fresh clone checked out at the machine chain's tip.
 
     A clone copies branches, not `refs/agent6/*`, so the chain ref is fetched
-    in and the worktree detached onto its tip -- state N+1 starts from state
-    N's full tree. No chain yet (first run state, or the operator archived
-    it): the clone's own HEAD is the continuation-from-merged-state start."""
+    in and the worktree detached onto its tip: state N+1 starts from state N's
+    full tree. No chain yet (first run state, or the operator archived it): the
+    clone's own HEAD is the continuation-from-merged-state start."""
     if dest.exists():
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -659,11 +660,11 @@ def _land_machine_clone(
 ) -> AgentExecResult:
     """Land the state's work back in the origin and drop the clone.
 
-    Two refs, one tip: the chain ref carries the next state's continuation,
-    and the visible branch is the operator's handle on the same commits. Runs
-    on EVERY outcome -- a timed-out or failed state's real commits still land
-    (the outcome label routes the machine; work is never stranded). Serial
-    states (the instance lock) make both updates fast-forwards. An import
+    The chain ref carries the next state's continuation; the visible branch is
+    the operator's handle on the same commits. Runs on EVERY outcome: a
+    timed-out or failed state's real commits still land (the outcome label
+    routes the machine; work is never stranded). Serial states (the instance
+    lock) make both updates fast-forwards. An import
     failure keeps the clone (the only copy; the prune sweep proves that and
     keeps it) and routes the state as failed with no captured payload."""
     advanced = chain_tip(clone, chain_ref)

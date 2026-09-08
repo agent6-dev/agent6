@@ -27,11 +27,12 @@ from agent6.viewmodel import summarize_session_dir
 from agent6.viewmodel.format import format_usd
 from agent6.workflows.subrun import LaneResult, LaneSpec
 
-# How often the await loop polls lane liveness, and how long Ctrl+C waits for a
-# stop-requested lane to finish its in-flight step before giving up on it.
+# How often the await loop polls lane liveness.
 POLL_INTERVAL_S = 2.0
 
 
+# How long Ctrl+C waits for a stop-requested lane to finish its in-flight step
+# before giving up on it.
 STOP_GRACE_S = 30.0
 
 
@@ -182,9 +183,9 @@ def pending_prompt(session_dir: Path) -> str:
     """ "approval" / "a question" if the lane is blocked on an unanswered prompt,
     else "". The worker emits `approval.prompt`/`question.prompt` then BLOCKS on
     its `*.answer` while its away-mode is `wait`, so the LAST prompt/answer event
-    in logs.jsonl decides it -- a cheap trailing scan, no `*.request` marker
-    exists for approvals/questions. Deliberately not the heavyweight SessionState
-    fold; the fan-out status line needs only this one bit."""
+    in logs.jsonl decides it: a trailing scan, since no `*.request` marker exists
+    for approvals/questions. The fan-out status line needs only this one bit, so
+    it skips the SessionState fold."""
     try:
         lines = (session_dir / LOGS_NAME).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:

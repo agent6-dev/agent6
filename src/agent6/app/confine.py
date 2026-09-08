@@ -52,8 +52,8 @@ def warn_sandbox_gaps(
     `strict` needs only userns; on a kernel without Landlock the jail's
     best-effort ruleset enforces nothing (`restrict_self` returns NotEnforced)
     while namespaces + the pivoted read-only rootfs + seccomp still confine.
-    That is a documented layer going missing, so it is loud too -- here, once
-    per run, not in the launcher: a per-spawn stderr warning would land in
+    That is a documented layer going missing, so it is loud too: once per run
+    rather than in the launcher, since a per-spawn stderr warning would land in
     every tool result and prompt the model to fight the sandbox.
 
     `network = "auto"` DEGRADES on a netns-less isolation: with no network
@@ -74,8 +74,8 @@ def warn_sandbox_gaps(
     has no jail, and the unsandboxed warning covers it.
 
     Running as ROOT is the operator's explicit widening, so it warns rather
-    than refuses -- but on `hardened` it says what the widening costs, since
-    the granted system set stops being narrowed by file permissions there.
+    than refuses. On `hardened` it also says what the widening costs: file
+    permissions stop narrowing the granted system set there.
     """
     if cfg.sandbox.isolation == "auto":
         reason = degrade_reason(env)
@@ -112,8 +112,8 @@ def warn_sandbox_gaps(
         # The root banner names running as root; this names what it COSTS at
         # this level, which is where the operator would otherwise find out
         # afterwards. Not a blocklist of sensitive files: the grant is the
-        # documented read-only system set, and root simply stops file
-        # permissions from narrowing it.
+        # documented read-only system set, and root stops file permissions
+        # from narrowing it.
         reporter.warn(
             "running as root under 'hardened': file permissions "
             "no longer narrow what a jailed command reads, so it can read the "
@@ -184,9 +184,9 @@ def warn_sandbox_gaps(
             )
         # notes.exposes_home_dir is NOT warned per run: on a normal machine
         # every uv-installed tool in ~/.local/bin points into ~/.local/share,
-        # so this fired a dozen times a run and buried the messages that
-        # mattered. It is the ordinary state of a dev box, not a surprise --
-        # `agent6 check` lists it, where someone is asking.
+        # so it would fire a dozen times a run and bury the messages that
+        # matter. It is the ordinary state of a dev box, and `agent6 check`
+        # lists it, where someone is asking.
 
 
 def warn_cleartext_credential_endpoints(
@@ -246,8 +246,8 @@ def check_protect_git_support(
     which has no deny rules: protecting `.git` means NOT granting the workspace
     root itself, and a Landlock grant is recursive, so granting the root its
     own create/remove rights would grant them over `.git` too. Carving it out
-    therefore cost every top-level write -- `touch newfile`, `mkdir build`,
-    `mkfifo` all failed at the workspace root, which is too much to pay.
+    therefore costs every top-level write: `touch newfile`, `mkdir build` and
+    `mkfifo` all fail at the workspace root, which is too much to pay.
 
     The default DEGRADES with a warning (see `warn_sandbox_gaps`); an explicit
     `protect_git = true` refuses, naming what is unsupported and the fix. The
@@ -364,8 +364,8 @@ def check_hide_paths_support(
     ineffective. `hide_paths` is only ever explicit, so an entry hardened
     cannot mask refuses. The always-hidden private dirs are NOT this: the
     operator granting a region that contains them is a choice they may mean
-    (real protection remains -- writes stay confined, seccomp still applies),
-    so that is a loud warning instead (`warn_sandbox_gaps`).
+    (writes stay confined and seccomp still applies), so that is a loud warning
+    instead (`warn_sandbox_gaps`).
     """
     if isolation != "hardened":
         return None  # before reading config: every other level masks
