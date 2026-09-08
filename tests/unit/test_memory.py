@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from agent6.memory import (
     merge_memory,
     record_decision,
     remove,
+    seed_digests,
     seed_path,
     seed_store,
     show,
@@ -39,7 +41,7 @@ def test_add_refuses_duplicate_and_bad_names(tmp_path: Path) -> None:
     add(tmp_path, "one", "fact")
     with pytest.raises(MemoryStoreError, match="exists"):
         add(tmp_path, "one", "other")
-    for bad in ("Has-Caps", "sl/ash", "..", "-lead", "a" * 65):
+    for bad in ("Has-Caps", "sl/ash", "..", "-lead", "a" * 65, "looks-valid\n"):
         with pytest.raises(MemoryStoreError, match="bad memory name"):
             add(tmp_path, bad, "x")
     with pytest.raises(MemoryStoreError, match="non-empty"):
@@ -160,7 +162,7 @@ def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(tmp_p
             tmp_path, question=f"q{i} " + "x" * 40, answer="y" * 40, session="s", when=0
         )
     clipped = decisions_text(tmp_path)
-    assert len(clipped) <= DECISIONS_INJECT_CAP + 80
+    assert len(clipped) <= DECISIONS_INJECT_CAP
     assert clipped.startswith("... (earlier rulings clipped") and clipped.rstrip().endswith(
         "y" * 40
     )
@@ -197,6 +199,28 @@ def test_merge_decisions_skips_a_ruling_the_origin_already_holds(tmp_path: Path)
     assert text.count("A: spaces") == 1 and "[fan-l1]" in text and "A: tabs" in text
 
 
+def test_a_ruling_larger_than_the_cap_shows_its_tail(tmp_path: Path) -> None:
+    """One ruling longer than the injection cap left the block holding the
+    clip marker alone; its tail is the newest words the operator said."""
+    from agent6.memory import DECISIONS_INJECT_CAP, decisions_text
+
+    record_decision(
+        tmp_path, question="Style?", answer="y" * (DECISIONS_INJECT_CAP + 500), session="s", when=0
+    )
+    text = decisions_text(tmp_path)
+    assert len(text) <= DECISIONS_INJECT_CAP
+    assert text.startswith("... (earlier rulings clipped")
+    assert text.rstrip().endswith("y" * 100)
+
+
+def test_record_decision_dedupes_a_ruling_already_recorded(tmp_path: Path) -> None:
+    """Repeated delivery of one question and answer records one ruling."""
+    first = record_decision(tmp_path, question="Tabs?", answer="spaces", session="s1", when=0)
+    second = record_decision(tmp_path, question="Tabs?", answer="spaces", session="s2", when=60)
+    assert second == first
+    assert decisions_path(tmp_path).read_text(encoding="utf-8").count("Q: Tabs?") == 1
+
+
 def test_merge_decisions_skips_a_repeat_within_the_source(tmp_path: Path) -> None:
     """A lane that recorded one ruling twice carries it over once; a ruling
     the origin recorded long ago, under another session, is a skip too."""
@@ -204,7 +228,10 @@ def test_merge_decisions_skips_a_repeat_within_the_source(tmp_path: Path) -> Non
     record_decision(origin, question="Tabs?", answer="spaces", session="old", when=0)
     record_decision(lane, question="Tabs?", answer="spaces", session="lane", when=3600)
     record_decision(lane, question="Lint?", answer="ruff", session="lane", when=3660)
-    record_decision(lane, question="Lint?", answer="ruff", session="lane", when=3720)
+    # Preserve a duplicate written by an older version or hand edit; the
+    # current writer itself dedupes it.
+    with decisions_path(lane).open("a", encoding="utf-8") as fh:
+        fh.write("- 1970-01-01 01:02Z [lane] Q: Lint?\n  A: ruff\n")
     assert merge_decisions(lane, origin) == (1, 2)
     text = decisions_path(origin).read_text(encoding="utf-8")
     assert text.count("Q: Tabs?") == 1 and text.count("Q: Lint?") == 1
@@ -394,3 +421,90 @@ def test_a_seed_manifest_that_is_not_an_object_reads_as_no_seeds(tmp_path: Path)
     assert sorted(json.loads(seed_path(lane).read_text(encoding="utf-8"))) == ["b-fact"]
     seed_path(lane).write_text("[]\n", encoding="utf-8")
     assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge()
+
+
+def test_merge_memory_finishes_a_carried_fact_after_a_crash(tmp_path: Path) -> None:
+    """A crash after publishing a carried fact but before its index line must
+    heal on retry rather than leave the fact invisible forever."""
+    origin = tmp_path / "origin"
+    lane = _seeded_lane(tmp_path, origin)
+    add(lane, "lane-fact", "The parser is generated.")
+    dst = memory_dir(origin)
+    dst.mkdir(parents=True)
+    (dst / "lane-fact.md").write_bytes((memory_dir(lane) / "lane-fact.md").read_bytes())
+
+    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge(
+        carried=("lane-fact",)
+    )
+    assert index_text(origin) == "- lane-fact: The parser is generated."
+
+
+def test_seed_store_recovers_a_copy_published_before_its_digest(tmp_path: Path) -> None:
+    """A crash after copying a seed fact but before publishing the manifest
+    must let a retry record that fact's digest."""
+    origin, lane = tmp_path / "origin", tmp_path / "lane"
+    add(origin, "a-fact", "A first.")
+    dst = memory_dir(lane)
+    dst.mkdir(parents=True)
+    (dst / "a-fact.md").write_bytes((memory_dir(origin) / "a-fact.md").read_bytes())
+
+    seed_store(origin, lane)
+
+    assert set(seed_digests(lane)) == {"a-fact"}
+
+
+def test_add_publishes_a_fact_atomically(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A crash in the durable publish must not expose a partial fact file."""
+    from agent6 import memory as mem
+
+    real_atomic_write = mem.atomic_write
+
+    def crash(path: Path, data: str | bytes) -> None:
+        if path.name == "crash.md":
+            raise OSError("simulated crash")
+        real_atomic_write(path, data)
+
+    monkeypatch.setattr(mem, "atomic_write", crash)
+    with pytest.raises(OSError, match="simulated crash"):
+        add(tmp_path, "crash", "A complete fact.")
+    assert not (memory_dir(tmp_path) / "crash.md").exists()
+
+
+def test_an_index_rewrite_cannot_erase_a_concurrent_add(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every index read-modify-write and append shares one lock."""
+    from agent6 import memory as mem
+
+    add(tmp_path, "keep", "Keep this.")
+    add(tmp_path, "drop", "Drop this.")
+    idx = index_path(tmp_path)
+    rewrite_ready = threading.Event()
+    release_rewrite = threading.Event()
+    added = threading.Event()
+    real_atomic_write = mem.atomic_write
+
+    def pause_rewrite(path: Path, data: str | bytes) -> None:
+        if threading.current_thread().name == "remove" and path == idx:
+            rewrite_ready.set()
+            assert release_rewrite.wait(5)
+        real_atomic_write(path, data)
+
+    monkeypatch.setattr(mem, "atomic_write", pause_rewrite)
+    remover = threading.Thread(target=remove, args=(tmp_path, "drop"), name="remove")
+
+    def add_one() -> None:
+        add(tmp_path, "new", "New fact.")
+        added.set()
+
+    adder = threading.Thread(target=add_one, name="add")
+    remover.start()
+    assert rewrite_ready.wait(5)
+    adder.start()
+    added.wait(0.2)
+    release_rewrite.set()
+    remover.join(5)
+    adder.join(5)
+
+    assert not remover.is_alive() and not adder.is_alive()
+    assert "- new: New fact." in index_text(tmp_path)

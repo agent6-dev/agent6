@@ -15,21 +15,22 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import shutil
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from agent6.errors import OperatorError
 from agent6.paths import mkdir_for_real_user
-from agent6.portable import atomic_write
+from agent6.portable import atomic_write, locked_file
 
 MEMORY_DIR_NAME = "memory"
 INDEX_NAME = "MEMORY.md"
-# Operator rulings, harness-written and append-only: every ask_user answer and
-# every steer that answered a question, verbatim. The model reads it (it is
-# shown first, like the index) and never writes it.
+# Operator rulings, harness-written and append-only: each distinct ask_user
+# answer and each steer that answered a question, verbatim, once. The model
+# reads it (it is shown first, like the index) and never writes it.
 DECISIONS_NAME = "DECISIONS.md"
 DECISIONS_INJECT_CAP = 4_096
 # The index is injected whole; past the cap it is clipped with a pointer so
@@ -39,7 +40,7 @@ INDEX_INJECT_CAP = 4_096
 # name, so the import can tell an untouched copy from a lane's edit.
 SEED_NAME = "memory-seed.json"
 
-_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 
 
 class MemoryStoreError(OperatorError):
@@ -74,20 +75,37 @@ def decisions_path(state_dir: Path) -> Path:
     return memory_dir(state_dir) / DECISIONS_NAME
 
 
+@contextmanager
+def _locked_memory(state_dir: Path) -> Generator[None]:
+    """Serialize the harness's mutations of one repo's store; the model's own
+    edits under its write grant take no lock."""
+    mkdir_for_real_user(memory_dir(state_dir))
+    with locked_file(memory_dir(state_dir)):
+        yield
+
+
 def record_decision(
     state_dir: Path, *, question: str, answer: str, session: str, when: float | None = None
 ) -> str:
-    """Append one operator ruling (question as asked, answer verbatim, the
-    session and UTC time) and return the entry written. Append-only: nothing
-    here rewrites or removes an earlier entry."""
+    """Record one operator ruling and return its persisted entry.
+
+    An identical question and answer already on disk returns that entry. New
+    rulings carry the question as asked, answer verbatim, session and UTC time."""
     stamp = time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(when))
     q = question.strip().replace("\n", "\n  ")
     a = answer.strip().replace("\n", "\n  ")
     entry = f"- {stamp} [{session}] Q: {q}\n  A: {a}\n"
     path = decisions_path(state_dir)
-    mkdir_for_real_user(path.parent)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(entry)
+    with _locked_memory(state_dir):
+        try:
+            existing = path.read_bytes()
+        except FileNotFoundError:
+            existing = b""
+        ruling = _ruling(entry.rstrip("\n"))
+        for known in _entries(existing.decode("utf-8", "replace").strip()):
+            if _ruling(known) == ruling:
+                return known + "\n"
+        atomic_write(path, existing + entry.encode("utf-8"))
     return entry
 
 
@@ -119,23 +137,21 @@ def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]
     except OSError:
         return 0, 0
     path = decisions_path(dst_state_dir)
-    try:
-        existing = path.read_text(encoding="utf-8")
-    except OSError:
-        existing = ""
-    known = {_ruling(e) for e in _entries(existing.strip())}
-    entries = _entries(text.strip())
-    fresh: list[str] = []
-    for entry in entries:
-        if (ruling := _ruling(entry)) not in known:
-            known.add(ruling)
-            fresh.append(entry)
-    if fresh:
-        mkdir_for_real_user(path.parent)
-        with path.open("a", encoding="utf-8") as fh:
-            if existing and not existing.endswith("\n"):
-                fh.write("\n")
-            fh.write("\n".join(fresh) + "\n")
+    with _locked_memory(dst_state_dir):
+        try:
+            existing = path.read_text(encoding="utf-8")
+        except OSError:
+            existing = ""
+        known = {_ruling(e) for e in _entries(existing.strip())}
+        entries = _entries(text.strip())
+        fresh: list[str] = []
+        for entry in entries:
+            if (ruling := _ruling(entry)) not in known:
+                known.add(ruling)
+                fresh.append(entry)
+        if fresh:
+            separator = "\n" if existing and not existing.endswith("\n") else ""
+            atomic_write(path, existing + separator + "\n".join(fresh) + "\n")
     return len(fresh), len(entries) - len(fresh)
 
 
@@ -175,30 +191,32 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
     lane = {p.stem: p for p in src.glob("*.md") if p.name not in (INDEX_NAME, DECISIONS_NAME)}
     landed: dict[str, list[str]] = {"carried": [], "updated": [], "deleted": [], "held": []}
     for name in sorted(seeds.keys() | lane.keys()):
-        if not _NAME_RE.match(name):
+        if _NAME_RE.fullmatch(name) is None:
             continue  # not a memory name (`_check_name`): names no path in either store
         path = lane.get(name)
         origin = dst / f"{name}.md"
         seed = seeds.get(name)
         theirs = _sha256(path) if path is not None else None
-        ours = _sha256(origin) if origin.is_file() else None
         hook = _index_hook(src_index, name)
-        taken = seed is None and (ours is not None or _index_has(dst_state_dir, name))
-        fate = _fate(seed, theirs, ours, hook=hook, taken=taken)
-        if fate == "skip":
-            continue
-        if fate == "deleted":
-            _drop_index_line(dst_state_dir, name)
-            origin.unlink()
-        elif fate == "held":
-            if path is not None:
-                mkdir_for_real_user(held_dir)
-                shutil.copyfile(path, held_dir / path.name)
-        elif path is not None:  # carried or updated: the lane has the file
-            shutil.copyfile(path, origin)
-            if hook is not None:
-                line = _append_index_line if fate == "carried" else _replace_index_line
-                line(dst_state_dir, name, hook)
+        with _locked_memory(dst_state_dir):
+            indexed = _index_has(dst_state_dir, name)
+            ours = _sha256(origin) if origin.is_file() else None
+            fate = _fate(seed, theirs, ours, hook=hook, indexed=indexed)
+            if fate == "skip":
+                continue
+            if fate == "deleted":
+                _drop_index_line(dst_state_dir, name)
+                origin.unlink()
+            elif fate == "held":
+                if path is not None:
+                    mkdir_for_real_user(held_dir)
+                    atomic_write(held_dir / path.name, path.read_bytes())
+            elif path is not None:  # carried or updated: the lane has the file
+                if fate == "updated" and hook is not None:
+                    _replace_index_line(dst_state_dir, name, hook)
+                atomic_write(origin, path.read_bytes())
+                if fate == "carried" and hook is not None:
+                    _append_index_line(dst_state_dir, name, hook)
         landed[fate].append(name)
     return MemoryMerge(
         carried=tuple(landed["carried"]),
@@ -209,17 +227,19 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
 
 
 def _fate(
-    seed: str | None, theirs: str | None, ours: str | None, *, hook: str | None, taken: bool
+    seed: str | None, theirs: str | None, ours: str | None, *, hook: str | None, indexed: bool
 ) -> Literal["skip", "carried", "updated", "deleted", "held"]:
     """One name's fate at import, from the digests of the seeded copy, the
     lane's file and the origin's file (None: absent), whether the lane's index
-    lists it (*hook*) and whether the origin already uses the name (*taken*)."""
+    lists it (*hook*) and whether the origin's index names it."""
+    if seed is None:  # new in the lane
+        if hook is None or theirs is None:
+            return "skip"  # unindexed there: invisible there, and stays so
+        if theirs == ours:
+            return "skip" if indexed else "carried"
+        return "held" if ours is not None or indexed else "carried"
     if theirs in (seed, ours):
         return "skip"  # untouched in the lane, or the same content on both sides
-    if seed is None:  # new in the lane
-        if hook is None:
-            return "skip"  # unindexed there: invisible there, and stays so
-        return "held" if taken else "carried"
     if ours != seed:
         return "held"  # changed on both sides
     return "deleted" if theirs is None else "updated"
@@ -242,17 +262,28 @@ def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
     copied = 0
     digests: dict[str, str] = {}
     dst = memory_dir(dst_state_dir)
-    mkdir_for_real_user(dst)
-    for path in sorted(src.iterdir()):
-        target = dst / path.name
-        if not path.is_file() or target.exists():
-            continue
-        shutil.copyfile(path, target)
-        copied += 1
-        if path.suffix == ".md" and path.name not in (INDEX_NAME, DECISIONS_NAME):
-            digests[path.stem] = _sha256(target)
-    earlier = seed_digests(dst_state_dir)
-    atomic_write(seed_path(dst_state_dir), json.dumps(earlier | digests, indent=1) + "\n")
+    with _locked_memory(dst_state_dir):
+        recover_unrecorded_copy = not seed_path(dst_state_dir).exists()
+        earlier = seed_digests(dst_state_dir)
+        for path in sorted(src.iterdir()):
+            target = dst / path.name
+            if not path.is_file():
+                continue
+            fact = path.suffix == ".md" and path.name not in (INDEX_NAME, DECISIONS_NAME)
+            if target.exists():
+                if (
+                    recover_unrecorded_copy
+                    and fact
+                    and path.stem not in earlier
+                    and _sha256(path) == _sha256(target)
+                ):
+                    digests[path.stem] = _sha256(target)
+                continue
+            atomic_write(target, path.read_bytes())
+            copied += 1
+            if fact:
+                digests[path.stem] = _sha256(target)
+        atomic_write(seed_path(dst_state_dir), json.dumps(earlier | digests, indent=1) + "\n")
     return copied
 
 
@@ -265,9 +296,20 @@ def decisions_text(state_dir: Path) -> str:
         return ""
     if len(text) <= DECISIONS_INJECT_CAP:
         return text
-    tail = text[-DECISIONS_INJECT_CAP:]
-    tail = tail[tail.index("\n- ") + 1 :] if "\n- " in tail else tail
-    return f"... (earlier rulings clipped; {DECISIONS_NAME} holds all)\n{tail}"
+    marker = f"... (earlier rulings clipped; {DECISIONS_NAME} holds all)"
+    room = DECISIONS_INJECT_CAP - len(marker) - 1
+    kept: list[str] = []
+    used = 0
+    entries = _entries(text)
+    for entry in reversed(entries):
+        cost = len(entry) + bool(kept)
+        if used + cost > room:
+            break
+        kept.append(entry)
+        used += cost
+    if not kept and entries:
+        kept.append(entries[-1][-room:])  # the newest ruling alone exceeds the cap
+    return marker + ("\n" + "\n".join(reversed(kept)) if kept else "")
 
 
 def index_text(state_dir: Path) -> str:
@@ -285,7 +327,7 @@ def index_text(state_dir: Path) -> str:
 
 
 def _check_name(name: str) -> str:
-    if not _NAME_RE.match(name):
+    if _NAME_RE.fullmatch(name) is None:
         raise MemoryStoreError(
             f"bad memory name {name!r}: lowercase letters, digits, and dashes only"
         )
@@ -338,17 +380,14 @@ def _replace_index_line(state_dir: Path, name: str, hook: str) -> None:
 
 
 def _append_index_line(state_dir: Path, name: str, hook: str) -> None:
-    """Append one line to the index, never rewriting the lines it holds: a
-    rewrite from an unreadable (so empty) read deletes every one of them."""
+    """Atomically append one line to the index."""
     idx = index_path(state_dir)
     try:
-        tail = idx.read_bytes()[-1:]
-    except OSError:
-        tail = b""
-    with idx.open("a", encoding="utf-8") as fh:
-        if tail not in (b"", b"\n"):
-            fh.write("\n")
-        fh.write(f"- {name}: {hook}\n")
+        existing = idx.read_bytes()
+    except FileNotFoundError:
+        existing = b""
+    separator = b"\n" if existing and not existing.endswith(b"\n") else b""
+    atomic_write(idx, existing + separator + f"- {name}: {hook}\n".encode())
 
 
 def add(state_dir: Path, name: str, body: str) -> Path:
@@ -363,19 +402,19 @@ def add(state_dir: Path, name: str, body: str) -> Path:
     if not body:
         raise MemoryStoreError("memory body must be non-empty")
     d = memory_dir(state_dir)
-    mkdir_for_real_user(d)
     path = d / f"{_check_name(name)}.md"
-    if path.exists():
-        if _index_has(state_dir, name):
-            raise MemoryStoreError(f"memory {name!r} exists; edit {path} or pick another name")
-        first = (path.read_text(encoding="utf-8").strip().splitlines() or [""])[0]
-        _append_index_line(state_dir, name, first[:120])
-        raise MemoryStoreError(
-            f"memory {name!r} existed but was missing from the index; re-indexed it."
-            f" The body passed here was not saved; edit {path} to change it."
-        )
-    path.write_text(body + "\n", encoding="utf-8")
-    _append_index_line(state_dir, name, body.splitlines()[0][:120])
+    with _locked_memory(state_dir):
+        if path.exists():
+            if _index_has(state_dir, name):
+                raise MemoryStoreError(f"memory {name!r} exists; edit {path} or pick another name")
+            first = (path.read_text(encoding="utf-8").strip().splitlines() or [""])[0]
+            _append_index_line(state_dir, name, first[:120])
+            raise MemoryStoreError(
+                f"memory {name!r} existed but was missing from the index; re-indexed it."
+                f" The body passed here was not saved; edit {path} to change it."
+            )
+        atomic_write(path, body + "\n")
+        _append_index_line(state_dir, name, body.splitlines()[0][:120])
     return path
 
 
@@ -389,13 +428,14 @@ def remove(state_dir: Path, name: str) -> None:
     """
     _check_name(name)
     path = memory_dir(state_dir) / f"{name}.md"
-    had_line = _index_has(state_dir, name)
-    if not path.is_file() and not had_line:
-        raise MemoryStoreError(f"no memory named {name!r}")
-    if had_line:
-        _drop_index_line(state_dir, name)
-    if path.is_file():
-        path.unlink()
+    with _locked_memory(state_dir):
+        had_line = _index_has(state_dir, name)
+        if not path.is_file() and not had_line:
+            raise MemoryStoreError(f"no memory named {name!r}")
+        if had_line:
+            _drop_index_line(state_dir, name)
+        if path.is_file():
+            path.unlink()
 
 
 def show(state_dir: Path, name: str) -> str:

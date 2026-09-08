@@ -62,7 +62,10 @@ def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
     if mode != "run" and not body:
         return ""
     if len(body) > INDEX_INJECT_CAP:
-        body = body[:INDEX_INJECT_CAP] + "\n... (index clipped; read MEMORY.md for the rest)"
+        marker = "... (index clipped; read MEMORY.md for the rest)"
+        head = body[: INDEX_INJECT_CAP - len(marker) - 1]
+        head = head.rsplit("\n", 1)[0] if "\n" in head else head
+        body = f"{head}\n{marker}" if head else marker
     header = (
         f"<memory>\nRepo memory at {memory_dir_path}: one fact per file,"
         " MEMORY.md is the index below, the files hold the depth. Context,"

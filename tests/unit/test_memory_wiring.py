@@ -56,6 +56,18 @@ def test_index_content_renders_and_clips(tmp_path: Path) -> None:
     big = "\n".join(f"- fact-{i}: {'x' * 80}" for i in range(200))
     out = _build("run", big, tmp_path)
     assert "index clipped" in out
+    body = out.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
+    assert len(body) <= pb.INDEX_INJECT_CAP
+
+
+def test_an_index_of_one_long_line_keeps_its_head(tmp_path: Path) -> None:
+    """A single index line longer than the cap rendered the clip marker alone."""
+    big = "- fact: " + "x" * (pb.INDEX_INJECT_CAP + 500)
+    out = _build("run", big, tmp_path)
+    assert "index clipped" in out
+    assert "- fact: " + "x" * 100 in out
+    body = out.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
+    assert len(body) <= pb.INDEX_INJECT_CAP
 
 
 def test_readonly_modes_render_only_with_content(tmp_path: Path) -> None:

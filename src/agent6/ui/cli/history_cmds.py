@@ -79,14 +79,12 @@ class _SearchHit:
     kind: str  # event type, or the file's basename for non-event files
     snippet: str
     # Content identity for collapsing the same text across storage encodings:
-    # the matched text + following context (normalized), or the snippet when
-    # the context adds nothing (a match at end-of-string would otherwise merge
-    # different sentences that merely end with the query word).
+    # the whole matched JSON value (a transcript's `TASK:` prefix stripped),
+    # else the snippet window, normalized.
     key: str
 
 
 _SNIPPET_HALF = 70  # chars kept either side of the match in a hit's snippet
-_CORE_TAIL = 25  # chars of following context in a hit's content-identity key
 
 
 def _normalize(text: str) -> str:
@@ -97,17 +95,36 @@ def _normalize(text: str) -> str:
 
 
 def _match_core(text: str, start: int, end: int) -> str:
-    """A hit's content identity: the matched text plus a little following
-    context, decoded and reduced to lowercase alphanumerics. One task string is
-    stored in many encodings (the session.start event, manifest.json, per-call
-    transcripts); they differ in the syntax before the match ('"user_task": "'
-    vs '"text": "TASK: '), while the text after it is the same content
-    everywhere, so a suffix-only key sees through the encodings. Empty when the
-    following context adds nothing beyond the match itself; the caller must then
-    key on the snippet instead of merging."""
-    hi = min(len(text), end + _CORE_TAIL)
-    core = _normalize(text[start:hi])
-    return core if len(core) > len(_normalize(text[start:end])) else ""
+    """A hit's content identity, including the whole matched JSON value.
+
+    The same task is stored both bare and behind a `TASK:` transcript prefix,
+    which is storage syntax rather than content. A non-JSON line uses the same
+    window the operator sees, so distinct prose before a match stays distinct."""
+    matched = _collapse_escapes(text[start:end])
+    if matched.strip() and (event := _json_object(text)) is not None:
+        for value in _strings_in(event):
+            if matched not in value:
+                continue
+            core = value.strip()
+            while core.casefold().startswith("task:"):
+                core = core[5:].lstrip()
+            return _normalize(core)
+    lo = max(0, start - _SNIPPET_HALF)
+    hi = min(len(text), end + _SNIPPET_HALF)
+    return _normalize(text[lo:hi])
+
+
+def _json_object(raw: str) -> dict[object, object] | None:
+    """Decode a JSON object, or one line of a pretty-printed object (its
+    trailing comma dropped) as emitted by rg from a transcript."""
+    for candidate in (raw, "{" + raw.rstrip().rstrip(",") + "}"):
+        try:
+            event = json.loads(candidate)
+        except (ValueError, RecursionError):
+            continue
+        if isinstance(event, dict):
+            return event
+    return None
 
 
 def _strings_in(obj: object) -> Iterator[str]:
@@ -134,11 +151,8 @@ def _field_snippet(raw: str, start: int, end: int) -> str | None:
     `"type": "role.thinking_delta", "text": " ...` fragment. None when the
     line is not a JSON object or the match sits on syntax/keys (the caller
     falls back to the raw-line window)."""
-    try:
-        event = json.loads(raw)
-    except (ValueError, RecursionError):  # deep nesting raises RecursionError
-        return None
-    if not isinstance(event, dict):
+    event = _json_object(raw)
+    if event is None:
         return None
     matched = _collapse_escapes(raw[start:end])
     if not matched.strip():
@@ -220,14 +234,12 @@ def _char_span(line: bytes, b_start: int, b_end: int) -> tuple[int, int]:
 
 
 def _session_id_from_path(path: Path) -> str:
-    """The session id owning a match file: the child of the deepest bucket
-    segment (a state-base ancestor may reuse a bucket name, e.g.
-    XDG_STATE_HOME=/mnt/runs/state)."""
+    """The session id owning a match file: `<sessions>/<bucket>/<id>`."""
     parts = path.parts
     anchors = set(SESSION_BUCKETS)
-    for i in range(len(parts) - 2, -1, -1):
-        if parts[i] in anchors:
-            return parts[i + 1]
+    for i in range(len(parts) - 3, -1, -1):
+        if parts[i] == SESSIONS_ROOT and parts[i + 1] in anchors:
+            return parts[i + 2]
     return path.parent.name
 
 
@@ -240,6 +252,8 @@ def _event_when_kind(path: Path, raw: str) -> tuple[str, str]:
         try:
             event = json.loads(raw)
         except (ValueError, RecursionError):
+            return "", path.name
+        if not isinstance(event, dict):
             return "", path.name
         ts = str(event.get("ts", ""))
         return ts[11:19] if len(ts) >= 19 else "", str(event.get("type", "event"))
@@ -355,7 +369,12 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
             tag = f" {sgr(f'(x{n})', '2')}" if n > 1 else ""
             print(f"  {sgr(meta, '2')}  {hit.snippet}{tag}")
         total += len(run_hits)
-    print(sgr(f"\n{total} match{'es' if total != 1 else ''} in {len(grouped)} run(s)", "2"))
+    print(
+        sgr(
+            f"\n{total} matching line{'s' if total != 1 else ''} in {len(grouped)} run(s)",
+            "2",
+        )
+    )
 
 
 def _cmd_history_graph(session_id: str) -> int:

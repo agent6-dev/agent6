@@ -59,36 +59,61 @@ def test_window_decodes_backslashes_not_bare_backslash_space() -> None:
 
 
 def test_run_id_from_path_finds_the_run_dir_child() -> None:
-    assert _session_id_from_path(Path("/s/runs/deep-poppy-AB/logs.jsonl")) == "deep-poppy-AB"
     assert (
-        _session_id_from_path(Path("/s/asks/quiet-fox-CD/transcripts/0003.json")) == "quiet-fox-CD"
+        _session_id_from_path(Path("/s/sessions/runs/deep-poppy-AB/logs.jsonl")) == "deep-poppy-AB"
+    )
+    assert (
+        _session_id_from_path(Path("/s/sessions/asks/quiet-fox-CD/transcripts/0003.json"))
+        == "quiet-fox-CD"
     )
     # A state-base ANCESTOR sharing a bucket name must not shadow the real
     # bucket (XDG_STATE_HOME=/mnt/runs/state mislabelled every hit as "state").
     assert (
-        _session_id_from_path(Path("/mnt/runs/state/agent6/repo-x/runs/deep-poppy-AB/logs.jsonl"))
+        _session_id_from_path(
+            Path("/mnt/runs/state/agent6/repo-x/sessions/runs/deep-poppy-AB/logs.jsonl")
+        )
         == "deep-poppy-AB"
     )
     assert (
-        _session_id_from_path(Path("/mnt/asks/state/agent6/repo-x/asks/quiet-fox-CD/logs.jsonl"))
+        _session_id_from_path(
+            Path("/mnt/asks/state/agent6/repo-x/sessions/asks/quiet-fox-CD/logs.jsonl")
+        )
         == "quiet-fox-CD"
     )
+    # A valid explicit id may itself equal a bucket name.
+    assert _session_id_from_path(Path("/s/sessions/runs/runs/logs.jsonl")) == "runs"
 
 
 def test_parse_extracts_event_type_and_time_for_logs_jsonl() -> None:
     event = {"ts": "2026-07-12T09:15:30.1Z", "type": "tool.call", "name": "grep"}
-    out = _parse_rg_matches(_rg_match("/s/runs/r1/logs.jsonl", json.dumps(event), 40))
+    out = _parse_rg_matches(_rg_match("/s/sessions/runs/r1/logs.jsonl", json.dumps(event), 40))
     assert len(out) == 1
     assert out[0].session_id == "r1"
     assert out[0].kind == "tool.call"
     assert out[0].when == "09:15:30"
 
 
+def test_a_valid_json_non_event_in_the_journal_degrades_to_a_file_hit() -> None:
+    line = '["NEEDLE", "a partial write"]'
+    out = _parse_rg_matches(_rg_match("/s/sessions/runs/r1/logs.jsonl", line, 2))
+    assert len(out) == 1
+    assert (out[0].when, out[0].kind) == ("", "logs.jsonl")
+
+
+def test_summary_counts_matching_lines_not_submatches(capsys: pytest.CaptureFixture[str]) -> None:
+    line = "NEEDLE then NEEDLE"
+    rec = json.loads(_rg_match("/s/sessions/runs/r1/notes.md", line, 0))
+    rec["data"]["submatches"].append({"start": 12, "end": 18})
+    hits = _parse_rg_matches(json.dumps(rec))
+    _render_history_hits(hits, Path("/s/sessions"))
+    assert "1 matching line in 1 run(s)" in capsys.readouterr().out
+
+
 def test_transcripts_share_one_label(capsys: pytest.CaptureFixture[str]) -> None:
     # The same snippet across cumulative transcript snapshots collapses to one
     # (xN) line, labelled "transcript", not per-file.
     lines = "\n".join(
-        _rg_match(f"/s/runs/r1/transcripts/000{i}.json", '  "text": "hello NEEDLE"', 12)
+        _rg_match(f"/s/sessions/runs/r1/transcripts/000{i}.json", '  "text": "hello NEEDLE",', 12)
         for i in (3, 5, 7)
     )
     hits = _parse_rg_matches(lines)
@@ -111,7 +136,9 @@ def test_event_snippet_windows_inside_the_matched_field(
             "text": "I improved the NEEDLE of one bullet in README.md",
         }
     )
-    hits = _parse_rg_matches(_rg_match("/s/runs/r1/logs.jsonl", event, event.index("NEEDLE")))
+    hits = _parse_rg_matches(
+        _rg_match("/s/sessions/runs/r1/logs.jsonl", event, event.index("NEEDLE"))
+    )
     assert hits[0].snippet == "I improved the NEEDLE of one bullet in README.md"
     _render_history_hits(hits, Path("/s/runs"))
     assert '"type"' not in capsys.readouterr().out
@@ -124,16 +151,21 @@ def test_one_task_in_many_encodings_collapses_to_the_readable_one(
     # a per-call transcript body. A search for a word in
     # it must print ONE line per run (the timestamped event) with a count,
     # not the same content in every storage encoding (raw JSON fragments
-    # included). The syntax BEFORE the match differs per encoding; the
-    # suffix-only content key sees through it.
+    # included). The whole matched value keys the hit, so the syntax around
+    # it, a transcript's `TASK:` prefix and its trailing comma included, does
+    # not matter.
     task = "Improve the wording of the end banner"
     lines: list[str] = []
     event = json.dumps({"ts": "2026-07-12T07:36:51.1Z", "type": "session.start", "user_task": task})
-    lines.append(_rg_match("/s/runs/r1/logs.jsonl", event, event.index("Improve")))
+    lines.append(_rg_match("/s/sessions/runs/r1/logs.jsonl", event, event.index("Improve")))
     manifest = json.dumps({"version": 2, "user_task": task})
-    lines.append(_rg_match("/s/runs/r1/manifest.json", manifest, manifest.index("Improve")))
-    body = f'"content": [{{"type": "text", "text": "TASK: {task}"}}]'
-    lines.append(_rg_match("/s/runs/r1/transcripts/0003.json", body, body.index("Improve")))
+    lines.append(
+        _rg_match("/s/sessions/runs/r1/manifest.json", manifest, manifest.index("Improve"))
+    )
+    body = f'        "text": "TASK:\\n{task}",'
+    lines.append(
+        _rg_match("/s/sessions/runs/r1/transcripts/0003.json", body, body.index("Improve"))
+    )
 
     hits = _parse_rg_matches("\n".join(lines))
     assert len({h.key for h in hits}) == 1  # every encoding shares the content key
@@ -172,7 +204,7 @@ def test_byte_offsets_convert_to_characters_on_non_ascii_lines() -> None:
         },
         ensure_ascii=False,
     )
-    hits = _parse_rg_matches(_rg_match_bytes("/s/runs/r1/logs.jsonl", event, "NEEDLE"))
+    hits = _parse_rg_matches(_rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", event, "NEEDLE"))
     assert "NEEDLE found mid prose" in hits[0].snippet
     assert "needle found mid prose" in hits[0].key
 
@@ -188,9 +220,9 @@ def test_ascii_escaped_and_raw_utf8_encodings_share_one_key() -> None:
     escaped_manifest = json.dumps({"version": 2, "user_task": task})  # ascii-escaped
     assert "\\u00e9" in escaped_manifest  # the divergence under test
     hits = _parse_rg_matches(
-        _rg_match_bytes("/s/runs/r1/logs.jsonl", raw_event, "NEEDLE")
+        _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", raw_event, "NEEDLE")
         + "\n"
-        + _rg_match_bytes("/s/runs/r1/manifest.json", escaped_manifest, "NEEDLE")
+        + _rg_match_bytes("/s/sessions/runs/r1/manifest.json", escaped_manifest, "NEEDLE")
     )
     assert len(hits) == 2
     assert hits[0].key == hits[1].key
@@ -216,9 +248,9 @@ def test_distinct_sentences_ending_with_the_query_stay_distinct(
         }
     )
     hits = _parse_rg_matches(
-        _rg_match_bytes("/s/runs/r1/logs.jsonl", e1, "NEEDLE")
+        _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", e1, "NEEDLE")
         + "\n"
-        + _rg_match_bytes("/s/runs/r1/logs.jsonl", e2, "NEEDLE")
+        + _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", e2, "NEEDLE")
     )
     _render_history_hits(hits, Path("/s/runs"))
     out = capsys.readouterr().out
@@ -227,10 +259,29 @@ def test_distinct_sentences_ending_with_the_query_stay_distinct(
     assert "(x2)" not in out
 
 
+def test_distinct_sentences_with_the_same_match_suffix_stay_distinct(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Content dedupe must include the prose before the match, not only the
+    query and its following suffix."""
+    lines = []
+    for when, text in (
+        ("08:00:00", "I deleted the NEEDLE from the parser"),
+        ("09:30:00", "I restored the NEEDLE from the parser"),
+    ):
+        event = json.dumps({"ts": f"2026-07-12T{when}.1Z", "type": "role.text_delta", "text": text})
+        lines.append(_rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", event, "NEEDLE"))
+    hits = _parse_rg_matches("\n".join(lines))
+    _render_history_hits(hits, Path("/s/sessions"))
+    out = capsys.readouterr().out
+    assert "deleted the NEEDLE" in out and "restored the NEEDLE" in out
+    assert "(x2)" not in out
+
+
 def test_deeply_nested_json_line_degrades_instead_of_crashing() -> None:
     depth = 100_000
     line = '{"a":' * depth + "1" + "}" * depth
-    hits = _parse_rg_matches(_rg_match_bytes("/s/runs/r1/logs.jsonl", line, '"a"'))
+    hits = _parse_rg_matches(_rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", line, '"a"'))
     assert len(hits) == 1  # fell back to the raw window, no RecursionError
 
 
@@ -257,7 +308,7 @@ def test_a_line_that_is_not_utf8_still_parses_from_its_bytes() -> None:
     rec = {
         "type": "match",
         "data": {
-            "path": {"text": "/s/runs/r1/logs.jsonl"},
+            "path": {"text": "/s/sessions/runs/r1/logs.jsonl"},
             "lines": {"bytes": base64.b64encode(event).decode("ascii")},
             "line_number": 1,
             "absolute_offset": 0,
