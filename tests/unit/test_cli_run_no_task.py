@@ -91,6 +91,42 @@ def test_run_no_task_points_at_most_recent_plan(
     assert "--from" in err
 
 
+def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`Execute it now? [Y/n]` defaults to yes: Enter runs the plan, `n` and
+    an EOF abort. An empty answer was read as a decline once."""
+    from agent6.ui import cli
+    from agent6.ui.cli import run as run_mod
+
+    monkeypatch.chdir(tmp_path)
+    session_dir = state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
+    session_dir.mkdir(parents=True)
+    (session_dir / "plan.md").write_text("# Plan: wire up the thing\n", encoding="utf-8")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    ran: list[str] = []
+
+    def fake_run(config: object, task: str, **kwargs: object) -> int:
+        ran.append(task)
+        return 0
+
+    monkeypatch.setattr(run_mod, "_cmd_run", fake_run)
+    for typed, executes in (("", True), ("y", True), ("n", False), (None, False)):
+
+        def answer(prompt: str, typed: str | None = typed) -> str | None:
+            return typed
+
+        monkeypatch.setattr(cli, "safe_input", answer)
+        ran.clear()
+        assert main(["run"]) == 0
+        assert (len(ran) == 1) is executes, typed
+        out = capsys.readouterr().out
+        assert ("Aborted" in out) is not executes, typed
+    assert "wire up the thing" in ran[0] if ran else True
+
+
 def test_run_continue_flag_is_gone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # `run --continue` was a strict subset of `resume`; the one obvious way
     # remains `agent6 resume`. argparse refuses the dropped flag like any

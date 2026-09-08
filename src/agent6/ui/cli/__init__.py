@@ -19,7 +19,7 @@ import argcomplete
 from agent6.errors import OperatorError
 from agent6.events import EventWriteError
 from agent6.paths import state_dir
-from agent6.ui.cli._common import _enforce_root_policy, error, note, refuse
+from agent6.ui.cli._common import _enforce_root_policy, error, note, refuse, safe_input
 from agent6.ui.cli._terminal_guard import guarded_terminal
 from agent6.ui.cli.parser import _inject_default_verb, build_parser
 
@@ -151,11 +151,8 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
             )
             return 2
         print(f"[agent6] No task given. Most recent plan: {last_plan}  ({title})")
-        try:
-            ans = input("Execute it now? [Y/n]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            ans = "n"
-        if ans in ("n", "no"):
+        ans = safe_input("Execute it now? [Y/n]: ")
+        if ans is None or ans.lower() in ("n", "no"):
             print(f"Aborted. Run it later: agent6 run --from {last_plan}")
             return 0
         task = _from_plan_task(plan_md, last_plan)

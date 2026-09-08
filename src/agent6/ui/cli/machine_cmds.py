@@ -52,7 +52,7 @@ from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import machines_root
 from agent6.types import IsolationLevel
-from agent6.ui.cli._common import error, plural, refuse, styled_status
+from agent6.ui.cli._common import error, plural, refuse, safe_input, styled_status
 from agent6.ui.cli.machine_check import _cmd_machine_test, _fail
 from agent6.ui.cli.plan_watch import format_plain_event
 from agent6.ui.notify import desktop_notify
@@ -114,14 +114,6 @@ def _cmd_machine_list() -> int:
     return 0
 
 
-def _safe_input(prompt: str) -> str | None:
-    """`input` that returns None on EOF / non-interactive stdin instead of raising."""
-    try:
-        return input(prompt)
-    except (EOFError, KeyboardInterrupt):
-        return None
-
-
 def _resolve_network_refusal(  # noqa: PLR0911
     path: Path,
     refusal: NetworkRefusal,
@@ -155,7 +147,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     print("  agent6 can apply the minimal fix now (writes the per-repo config):", file=sys.stderr)
     for key, value in fix:
         print(f"    {key} = {value}", file=sys.stderr)
-    choice = (_safe_input("  [a]pply & run, [s]imulate offline, or [Q]uit? ") or "").strip().lower()
+    choice = (safe_input("  [a]pply & run, [s]imulate offline, or [Q]uit? ") or "").lower()
     if choice == "s":
         return _cmd_machine_test(path, blackboard=None)
     if choice != "a":

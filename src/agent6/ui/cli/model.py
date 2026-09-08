@@ -21,15 +21,7 @@ from agent6.models.choices import provider_model_choices
 from agent6.paths import global_config_path, repo_config_path
 from agent6.providers.claude_code import login_status
 from agent6.secrets import load_oauth_tokens, resolve_api_key
-from agent6.ui.cli._common import error, refuse, warn
-
-
-def _safe_input(prompt: str) -> str | None:
-    """`input` that returns None instead of raising on EOF / non-interactive stdin."""
-    try:
-        return input(prompt).strip()
-    except (EOFError, OSError):
-        return None
+from agent6.ui.cli._common import error, refuse, safe_input, warn
 
 
 def _connected_providers(config_path: Path | None) -> list[str]:
@@ -57,12 +49,12 @@ def _prompt_for_provider(config_path: Path | None) -> str:
     if providers:
         print("Connected providers: " + ", ".join(providers))
         default = providers[0]
-        choice = _safe_input(f"Provider [{default}]: ")
+        choice = safe_input(f"Provider [{default}]: ")
         if choice is None:
             return ""
         return choice or default
     print("No providers connected yet; run `agent6 connect` first, or type a name.")
-    return _safe_input("Provider: ") or ""
+    return safe_input("Provider: ") or ""
 
 
 def _prompt_for_model(config_path: Path | None, provider: str) -> str:
@@ -72,7 +64,7 @@ def _prompt_for_model(config_path: Path | None, provider: str) -> str:
         print(f"Models for {provider}:")
         for i, model in enumerate(options, 1):
             print(f"  {i:>2}. {model}")
-        choice = _safe_input("Model (name or number): ")
+        choice = safe_input("Model (name or number): ")
         if choice is None:
             return ""
         if choice.isdigit():
@@ -81,7 +73,7 @@ def _prompt_for_model(config_path: Path | None, provider: str) -> str:
                 return options[idx]
         return choice
     print(f"No known models for {provider} (couldn't reach its API or none configured).")
-    return _safe_input("Model: ") or ""
+    return safe_input("Model: ") or ""
 
 
 def _show_assignments(config_path: Path | None) -> int:

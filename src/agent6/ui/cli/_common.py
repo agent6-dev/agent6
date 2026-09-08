@@ -142,6 +142,15 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def safe_input(prompt: str) -> str | None:
+    """`input`, stripped; None on EOF or a stdin that cannot be read. An
+    interrupt is the entry point's ("agent6: interrupted.", exit 130)."""
+    try:
+        return input(prompt).strip()
+    except (EOFError, OSError):
+        return None
+
+
 def editor_argv() -> list[str] | None:
     """$EDITOR as argv (default: vi), or None after printing the refusal when its
     quoting is unbalanced."""
