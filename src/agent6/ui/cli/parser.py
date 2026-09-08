@@ -169,7 +169,7 @@ def _directories_epilog() -> str:
     lines = [f"  {name:<6} {path!s:<{width}}  {what}" for name, path, what in rows]
     return "\n".join(
         [
-            "directories (XDG; override each with AGENT6_<NAME>_HOME):",
+            "directories (XDG):",
             *lines,
             "",
             "`agent6 config path` adds this repo's own state dir and the config files.",

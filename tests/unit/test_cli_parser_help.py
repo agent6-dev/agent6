@@ -174,3 +174,12 @@ def test_model_header_names_reviewer_fallback(capsys: pytest.CaptureFixture[str]
     assert main(["model"]) == 0
     out = capsys.readouterr().out
     assert "planner/reviewer fall back to worker" in out
+
+
+def test_the_directories_epilog_offers_no_env_override() -> None:
+    """`--help` ends with the four XDG directories; `XDG_*` alone decides them,
+    so no `AGENT6_*_HOME` override is offered."""
+    epilog = build_parser().epilog or ""
+    assert "AGENT6_" not in epilog
+    listed = [line.split()[0] for line in epilog.splitlines() if line.startswith("  ")]
+    assert listed == ["config", "state", "data", "cache"]
