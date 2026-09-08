@@ -211,12 +211,11 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
 
     The operator's command, not the model's, so it is not approved or logged as
     a tool call; it is confined identically, so what you see is what the agent
-    sees.
-
-    Unbounded (`timeout_s=0.0`): a foreground command in the operator's
-    terminal, so Ctrl-C is the bound. The policy's default timeout would kill
-    the long-lived dependency (a dev server, a tail) that `exec` is for, held
-    open inside the run's network.
+    sees. The output prints when the command ends, and a Ctrl-C ends it with
+    none: a one-shot probe (a build, a curl at the agent's server), unbounded
+    (`timeout_s=0.0`) so the policy's default timeout cannot cut a slow one. A
+    server is the agent's to start (`run_command` with `background=true`) and
+    the operator's to reach with `agent6 forward`.
     """
     # A live run only: the help promises the run's own jail, and a finished
     # run's jail is gone with it (a fresh one built from its recorded policy

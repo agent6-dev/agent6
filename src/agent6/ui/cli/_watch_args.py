@@ -182,8 +182,9 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             "Run a command inside a live session's sandbox: the run's recorded"
             " isolation and network (mounts derive from your current config), so"
             " you see what the agent sees. The command is yours, not"
-            " the model's, so it is never approved or recorded as a tool call."
-            " `agent6 exec CMD...` runs in the newest session;"
+            " the model's, so it is never approved or recorded as a tool call;"
+            " its output prints when it ends (reach a server the agent runs"
+            " with `agent6 forward`). `agent6 exec CMD...` runs in the newest session;"
             " `agent6 exec SESSION -- CMD...` names one. Only the first `--`"
             " separates; later ones belong to the command."
         ),
