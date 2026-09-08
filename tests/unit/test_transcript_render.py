@@ -281,6 +281,29 @@ def test_fold_and_render_both_shapes(transcripts: list[dict[str, Any]]) -> None:
     assert "let me think" in md  # thinking shown
 
 
+def test_an_anthropic_notice_does_not_hide_its_tool_result() -> None:
+    """The loop can append a notice after results in one canonical user turn.
+
+    Rendering that mixed message must keep both the tool output and the later
+    notice; treating it as prose discarded the tool I/O promised by the verb.
+    """
+    transcripts = json.loads(json.dumps(_ANTHROPIC))
+    transcripts[1]["request"]["body"]["messages"][2]["content"].append(
+        {"type": "text", "text": "review found one concern"}
+    )
+
+    turns = fold_conversation(transcripts)
+
+    assert [(turn.role, turn.text) for turn in turns[3:]] == [
+        ("tool", "FULL FILE CONTENTS"),
+        ("user", "review found one concern"),
+        ("assistant", "all done"),
+    ]
+    rendered = render_markdown(turns, session_id="r1")
+    assert "FULL FILE CONTENTS" in rendered
+    assert "review found one concern" in rendered
+
+
 def test_render_flags_hide_thinking_and_tools() -> None:
     turns = fold_conversation(_OPENAI)
     md = render_markdown(turns, session_id="r1", show_thinking=False, tools="none")

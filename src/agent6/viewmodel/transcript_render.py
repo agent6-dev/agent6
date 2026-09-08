@@ -272,10 +272,12 @@ def _anthropic_turns(m: dict[str, Any], names: dict[str, str]) -> list[Turn]:
                 tool_calls=calls,
             )
         ]
-    # A user message is either prose or a batch of tool_result blocks.
-    if tool_results and not "".join(text_parts).strip():
-        return tool_results
-    return [Turn(role=role, text="\n".join(text_parts).strip())]
+    # The loop may append a notice after a batch of tool results in the same
+    # canonical user message; both are conversation turns.
+    text = "\n".join(text_parts).strip()
+    if tool_results:
+        return [*tool_results, *([Turn(role=role, text=text)] if text else [])]
+    return [Turn(role=role, text=text)]
 
 
 def _message_turns(m: dict[str, Any], shape: str, names: dict[str, str]) -> list[Turn]:
