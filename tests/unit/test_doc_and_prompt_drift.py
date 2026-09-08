@@ -16,6 +16,7 @@ from pathlib import Path
 
 from agent6.prompts import loop as prompts
 from agent6.tools import schema as tool_schema
+from agent6.tools.patch_apply import split_patch_files
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -78,6 +79,15 @@ def test_apply_edit_prompt_contract_mentions_its_indent_heal() -> None:
     prompt must not claim byte-exact matching is the only accepted shape."""
     assert "indent" in prompts.SYSTEM_PROMPT_BASE
     assert "heal" in prompts.SYSTEM_PROMPT_BASE
+
+
+def test_apply_patch_prompt_contract_mentions_multi_file_patches() -> None:
+    patch = (
+        "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+A\n"
+        "diff --git a/b b/b\n--- a/b\n+++ b/b\n@@ -1 +1 @@\n-b\n+B\n"
+    )
+    assert len(split_patch_files(patch)) == 2
+    assert "multi-file" in prompts.SYSTEM_PROMPT_BASE
 
 
 def test_every_tool_mention_in_the_prompts_is_a_registered_tool() -> None:

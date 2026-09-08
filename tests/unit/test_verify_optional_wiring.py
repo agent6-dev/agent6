@@ -72,16 +72,16 @@ def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
     # gate prose ("run project tests only through...", the stale_gate rule,
     # "after each passing verify") into gateless prompts, which then needed
     # an "Ignore any other instruction" patch-line to disarm it.
-    assert gateless.count("run_verify_command") == 1  # the block's own "not available"
+    assert gateless.count("run_verify_command") == 1  # the block's own initial absence
     assert "stale_gate" not in gateless and "passing verify" not in gateless
-    assert "commits each editing step" in gateless  # the gate-aware commit rule
+    assert "commits each editing turn" in gateless  # the gate-aware commit rule
     assert "run project tests only through" not in gateless.lower()
-    assert "stale_gate" in with_verify and "commits each editing step" in with_verify
+    assert "stale_gate" in with_verify and "commits each editing turn" in with_verify
     # The per-step commit rule belongs to a gate that judges each step.
     never = Config.model_validate(
         {"workflow": {"verify_command": ["true"], "verify_when": "never"}}
     )
-    assert "after each passing verify" in build_system_prompt(
+    assert "pending changes automatically after each passing" in build_system_prompt(
         config=never, repo=repo, mode="run", skills=None
     )
 
@@ -101,7 +101,7 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
         return text[start : text.index("</no-verify-command>", start)]
 
     run_block, plan_block, ask_block = block(run), block(plan), block(ask)
-    assert "finish_session" not in run_block and "finish_session ends the run" in run
+    assert "finish_session" not in run_block and "finish_session requests the run end" in run
     assert "finish_planning" not in plan_block and "`finish_planning` ends the pass" in plan
     assert "finish_session" not in plan_block and "commits" not in plan_block
     assert "finish_session" not in ask_block and "finish_planning" not in ask_block
@@ -109,7 +109,7 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
     # The commit claim is the base sentinel's, one owner (run mode only);
     # the block no longer needs an "Ignore any other instruction" patch-line
     # because no verify prose leaks outside the verify block.
-    assert "commits" not in run_block and "commits each editing step" in run
+    assert "commits" not in run_block and "commits each editing turn" in run
     for b in (run_block, plan_block, ask_block):
         assert "Ignore any" not in b
 
@@ -596,8 +596,8 @@ def test_prompt_git_rules_match_git_control(tmp_path: Path) -> None:
     )
     start = gateless.index("<no-verify-command>")
     block = gateless[start : gateless.index("</no-verify-command>", start)]
-    assert "finish_session" not in block and "finish_session ends the run" in gateless
-    assert "commits each editing step" not in block
+    assert "finish_session" not in block and "finish_session requests the run end" in gateless
+    assert "commits each editing turn" not in block
 
 
 def test_model_git_rule_does_not_offer_a_withheld_run_command(tmp_path: Path) -> None:

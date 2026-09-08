@@ -47,7 +47,9 @@ def test_run_mode_always_carries_the_memory_header(tmp_path: Path) -> None:
     out = _build("run", "", tmp_path)
     assert "<memory>" in out
     assert "(none recorded yet)" in out
-    assert "apply_edit" in out.split("<memory>")[1].split("</memory>")[0]
+    memory = out.split("<memory>")[1].split("</memory>")[0]
+    assert "edit tools" in memory
+    assert "deleted" in memory
 
 
 def test_index_content_renders_and_clips(tmp_path: Path) -> None:

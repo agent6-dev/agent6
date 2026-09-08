@@ -398,9 +398,9 @@ class SymbolIndex:
         Returns a list of (name, kind, def_path, def_line, files_referenced)
         tuples, sorted by `files_referenced` descending. Only symbols whose
         identifier appears in at least `min_files_referenced` distinct
-        files are included - this filters out file-local helpers and
-        surfaces only symbols whose rename/signature change would touch
-        multiple files. Definition site is taken as the first symbol's
+        files are included, which filters out file-local helpers; the
+        occurrences are pooled by name, unresolved, so two unrelated
+        definitions of one name count as one. Definition site is taken as the first symbol's
         path:line; ambiguous names with multiple definitions return the
         alphabetically-first def.
 

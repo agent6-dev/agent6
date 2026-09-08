@@ -3,7 +3,7 @@
 """Format a tree-sitter symbol outline into a compact prompt block.
 
 The repo-priors section of the worker's system prompt can include a per-file
-symbol outline (top-level defs/classes) so the model orients without reading
+symbol outline (definitions, nested included) so the model orients without reading
 every file. This module renders that block from the dispatcher's outlines,
 bounded by file/per-file/char caps. Pure formatting; loop.py decides whether
 to include it.

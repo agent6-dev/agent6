@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config
+from agent6.prompts.loop import V2_VERIFY_WHEN
 from agent6.viewmodel.listing import status_word
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
@@ -64,6 +65,17 @@ def test_green_only_when_last_verify_passed_and_tree_unedited() -> None:
 def test_the_harness_gate_defaults_to_finish_with_two_returns() -> None:
     wf = Config().workflow
     assert (wf.verify_when, wf.verify_retries) == ("finish", 2)
+
+
+def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> None:
+    wf = _wf(verify=True)
+    state = LoopState(
+        original_task="t",
+        tool_calls=0,
+        verify=VerifyVerdict(last_ok=False, baseline_ok=False),
+    )
+    assert wf._red_gate_returns(state) is False  # pyright: ignore[reportPrivateUsage]
+    assert "untouched base" in V2_VERIFY_WHEN["finish"]
 
 
 def _verified(wf: Workflow, **verdict_kw: Any) -> str:
@@ -496,9 +508,9 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
     assert "The harness never runs it; only your run_verify_command calls do." in block("never")
     # plan and ask never run the gate, whatever the knob says
     assert "The harness never runs it" in block("finish", mode="plan")
-    # the commit fact follows: a finish-certified run commits each editing step
-    assert "commits each editing step automatically" in block("finish")
-    assert "commits automatically after each passing verify" in block("never")
+    # the commit fact follows: a finish-certified run commits each editing turn
+    assert "commits each editing turn automatically" in block("finish")
+    assert "commits pending changes automatically after each passing" in block("never")
     assert "a passing run auto-commits the step" not in block("never")
 
 

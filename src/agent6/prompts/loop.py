@@ -26,12 +26,13 @@ user message is the task.
 
 """
     + APPLY_EDIT_RULE
-    + """- apply_patch: standard unified diff; multi-hunk edits to one file.
+    + """- apply_patch: standard unified diff; multi-hunk, and multi-file when each
+  file's section starts with a `diff --git` line.
 """
     "__HARDENED_FS_RULE__"
     "__GIT_PROTECT_RULE__"
     "__AUTO_COMMIT_RULE__"
-    """- finish_session ends the run.
+    """- finish_session requests the run end; the gates below may return it.
 </agent6>
 
 __DAG_RULES_BLOCK__
@@ -60,12 +61,13 @@ READONLY_COMMAND_RULE = (
 # auto-commits each passing verify (gateless: each editing step); under model
 # control nothing commits automatically and saying so would misdirect the
 # model into never committing.
-AUTO_COMMIT_RULE = """- The harness commits automatically after each passing verify; manual
-  git commit is optional.
+AUTO_COMMIT_RULE = """- The harness commits pending changes automatically after each passing
+  verify; manual git commit is optional.
 """
 
-AUTO_COMMIT_RULE_GATELESS = """- The harness commits each editing step automatically; manual
-  git commit is optional.
+AUTO_COMMIT_RULE_GATELESS = """- The harness commits each editing turn automatically; a turn that
+  ran verify commits only on a pass with no edit after it. Manual git
+  commit is optional.
 """
 
 NO_AUTO_COMMIT_RULE = """- Nothing commits automatically in this run (`[git].commit_per_step` is
@@ -268,21 +270,24 @@ for the operator; the gate itself does not move."""
 V2_VERIFY_WHEN = {
     "finish": (
         "The harness runs it when finish_session is called over a tree no"
-        " verify verdict covers; a red result returns to you {retries}"
-        " time(s) with its output, then the run ends red."
+        " verify verdict covers. A red result attributable to this run returns"
+        " to you {retries} time(s) with its output, then the run ends red; a"
+        " gate already red on the untouched base is not returned."
     ),
     "step": (
         "The harness runs it after every turn that edits the tree, and when"
-        " finish_session is called over a tree no verdict covers; a red"
-        " finish returns to you {retries} time(s) with its output, then the run"
-        " ends red."
+        " finish_session is called over a tree no verdict covers. A red finish"
+        " attributable to this run returns to you {retries} time(s) with its"
+        " output, then the run ends red; a gate already red on the untouched"
+        " base is not returned."
     ),
     "never": "The harness never runs it; only your run_verify_command calls do.",
 }
 
 V2_NO_VERIFY_BLOCK = """<no-verify-command>
-This run has no verify command: `run_verify_command` is not available and
-there is no automated pass/fail gate.
+This run starts with no verify command: `run_verify_command` is initially
+unavailable and there is no automated pass/fail gate. If later edits make
+the project recognizable, the harness may adopt one and will announce it.
 </no-verify-command>
 """
 
@@ -303,8 +308,8 @@ ties the best may finish the run automatically.
 
 V2_BUDGET_BLOCK_TEMPLATE = """<budget-awareness>
 Hard budget: {usd_cap} metered; {fallback_cap} tokens for unpriced
-calls.{plan_line} The loop halts when a cap is crossed. Tool results re-enter the
-input on every later turn.
+calls.{plan_line} The loop halts when a cap is crossed. Tool results enter later
+model input, but old results may be compacted.
 </budget-awareness>
 """
 
@@ -315,7 +320,7 @@ PLAN_BUDGET_LINE = " Subscription-plan calls meter in plan percent ({percent_cap
 
 V2_REPO_BLOCK_TEMPLATE = """<repo-priors>
 {repo_line}
-Top-level: {top_level}
+Top-level (dot-prefixed entries omitted): {top_level}
 
 {repo_map_block}{symbol_outline_block}{agents_block}{co_change_block}{hot_symbols_block}{recent}
 </repo-priors>

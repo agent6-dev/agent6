@@ -356,7 +356,7 @@ def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
     assert "<no-verify-command>" in text
     assert "<metric-command>" not in text
     assert "after each passing verify" not in text
-    assert "commits each editing step" in text
+    assert "commits each editing turn" in text
 
     names = {t.name for t in loopmod.tool_definitions(ToolDispatcher(root=tmp_path, config=cfg))}  # pyright: ignore[reportPrivateUsage]
     assert RunMetricInput.TOOL_NAME not in names
@@ -733,6 +733,7 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: Path) -> None:
             decisions_path="/m/DECISIONS.md",
         )
         assert "<decisions>" in text and "A: No." in text and "/m/DECISIONS.md" in text
+        assert "recorded rulings" in text and "each ask_user answer" not in text
     assert "<decisions>" not in build_system_prompt(
         config=Config(), repo=repo, mode="run", skills=None
     )

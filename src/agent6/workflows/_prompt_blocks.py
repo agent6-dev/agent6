@@ -74,8 +74,8 @@ def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
     if mode == "run":
         header += (
             " A durable non-obvious fact is recorded as <name>.md there plus"
-            " its index line (apply_edit); a wrong one is updated or deleted"
-            " the same way."
+            " its index line; a wrong one is updated or deleted with the edit"
+            " tools."
         )
     tail = body if body else "(none recorded yet)"
     return f"{header}\n\n{tail}\n</memory>"
@@ -89,7 +89,7 @@ def decisions_block(text: str, decisions_path: str) -> str:
         return ""
     return (
         f"<decisions>\nOperator rulings at {decisions_path}, recorded by the harness:"
-        " each ask_user answer and each steer that answered a question, verbatim,"
+        " recorded rulings from ask_user and steers that answered a question,"
         " newest last. Read-only; a ruling stands until the operator changes it."
         f"\n\n{body}\n</decisions>"
     )
@@ -119,9 +119,10 @@ def initial_instructions(mode: str, run_commands: str, *, has_gate: bool) -> str
             " (`agent6_docs` covers agent6's own behaviour)."
         )
     if run_commands == "no" or not has_gate:
-        return "The task is above; `finish_session` ends the run."
+        return "The task is above; `finish_session` requests the run end."
     return (
-        "The task is above; `run_verify_command` checks the work and `finish_session` ends the run."
+        "The task is above; `run_verify_command` checks the work and `finish_session`"
+        " requests the run end."
     )
 
 
@@ -183,8 +184,8 @@ def repo_priors_block(repo: RepoSummary) -> str:
             for s in repo.hot_symbols[:15]
         )
         hot_symbols_block = (
-            "Hot symbols (cross-file reference hot spots from static analysis;"
-            " changing one of these forces edits across the listed file count):\n"
+            "Hot symbols (identifier occurrences span the listed file count;"
+            " inspect before changing one):\n"
             f"{lines}\n\n"
         )
 
@@ -195,7 +196,7 @@ def repo_priors_block(repo: RepoSummary) -> str:
     symbol_outline_block = ""
     if repo.symbol_outline:
         symbol_outline_block = (
-            "Symbol outline (top-level defs per file from the tree-sitter index;"
+            "Symbol outline (definitions (nested included) per file from the tree-sitter index;"
             " line numbers are 1-based):\n"
             f"{repo.symbol_outline}\n\n"
         )
@@ -429,8 +430,6 @@ def build_system_prompt(
     # Repo memory, after the repo priors. Empty for machine/agent (returned
     # above) and for plan/ask with nothing recorded.
     if memory_part := memory_block(memory_index, memory_dir_path, mode=mode):
-        if patch_only:
-            memory_part = memory_part.replace(" (apply_edit)", "")
         parts.append(memory_part)
     if decisions_part := decisions_block(decisions, decisions_path):
         parts.append(decisions_part)

@@ -5,14 +5,21 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from agent6.git_ops import tracked_files
+from agent6.tools._path_safety import Workspace
+from agent6.tools.index import Reference, Symbol, SymbolIndex
+from agent6.types import HotSymbol
 from agent6.workflows._context import (
     _build_repo_map,  # pyright: ignore[reportPrivateUsage]
+    load_repo_summary,
 )
+from agent6.workflows._prompt_blocks import repo_priors_block
 
 
 def _repo_map(root: Path) -> str:
@@ -71,3 +78,43 @@ def test_repo_map_caps_total_rows(tmp_path: Path, count: int) -> None:
     # 60-line cap (LINES) + 1 trailing "more directories" summary line.
     assert len(rows) <= 61
     assert "more directories" in rows[-1]
+
+
+def test_repo_prior_labels_the_filtered_top_level_listing(tmp_path: Path) -> None:
+    _init_repo(tmp_path, {"visible.txt": "x", ".hidden": "x"})
+
+    summary = load_repo_summary(tmp_path)
+    prompt = repo_priors_block(summary)
+
+    assert summary.top_level == ("visible.txt",)
+    assert "Top-level (dot-prefixed entries omitted):" in prompt
+
+
+def test_hot_symbol_prior_names_identifier_spread_not_required_edits(tmp_path: Path) -> None:
+    """The index pools same-name occurrences without resolving their identity."""
+    _init_repo(
+        tmp_path,
+        {
+            "a.py": "def collide():\n    return 'a'\n",
+            "b.py": "def collide():\n    return 'b'\n",
+        },
+    )
+    index = SymbolIndex(Workspace(root=tmp_path))
+    a = tmp_path / "a.py"
+    b = tmp_path / "b.py"
+    index._symbols = {  # pyright: ignore[reportPrivateUsage]
+        a: [Symbol("collide", "function", a, 1, 1)],
+        b: [Symbol("collide", "function", b, 1, 1)],
+    }
+    index._refs = {  # pyright: ignore[reportPrivateUsage]
+        a: [Reference("collide", a, 1, 5)],
+        b: [Reference("collide", b, 1, 5)],
+    }
+    with patch.object(SymbolIndex, "_ensure_fresh", return_value=None):
+        entry = next(item for item in index.hot_symbols() if item[0] == "collide")
+
+    summary = load_repo_summary(tmp_path)
+    prompt = repo_priors_block(replace(summary, hot_symbols=(HotSymbol(*entry),)))
+
+    assert "identifier occurrences span the listed file count" in prompt
+    assert "forces edits" not in prompt
