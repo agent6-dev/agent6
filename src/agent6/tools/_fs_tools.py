@@ -90,6 +90,7 @@ def agent6_docs(raw: dict[str, Any]) -> ToolResult:
     return DocsContentResult(
         name=args.name,
         content=content[:cap],
+        size=len(content),
         truncated=len(content) > cap,
     )
 

@@ -9,6 +9,7 @@ what ships, so it is held to the advertised surface here."""
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -55,3 +56,21 @@ def test_the_reader_serves_every_bundled_doc() -> None:
         f"bundle and reader disagree: only bundled {sorted(bundled - set(AGENT6_DOC_FILES))}, "
         f"only in the reader {sorted(set(AGENT6_DOC_FILES) - bundled)}"
     )
+
+
+def test_every_operator_facing_nav_page_is_servable() -> None:
+    """docs/mkdocs.yml's nav is the site's own index. A page it names must be
+    a name the reader serves, or a model asking by the name the site gives it
+    (e.g. TERMINAL for the Terminal UI page) gets "unknown agent6 doc" for a
+    page that plainly exists. index.md (the marketing home page, not a
+    reference doc) and data-contracts.md (a generated internal wire-schema
+    reference, outside the tool's "how to use agent6" scope) are not names
+    the reader is expected to carry."""
+    from agent6.tools._agent6_docs import read_agent6_doc
+
+    mkdocs = (_ROOT / "docs" / "mkdocs.yml").read_text(encoding="utf-8")
+    nav_pages = re.findall(r"^\s*-\s+.+:\s*(\S+\.md)\s*$", mkdocs, re.M)
+    assert nav_pages
+    skip = {"index.md", "data-contracts.md"}
+    for page in {p for p in nav_pages if p not in skip}:
+        assert read_agent6_doc(Path(page).stem.upper()) is not None, f"{page} is not servable"

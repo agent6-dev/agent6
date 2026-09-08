@@ -63,7 +63,11 @@ _LONG_TITLE = "audit the provider transport layer for retry storms and dedupe th
 CASES: list[tuple[str, ToolResult, str]] = [
     # content access
     ("docs_index", DocsIndexResult(available=("architecture", "security")), "ok"),
-    ("docs_content", DocsContentResult(name="security", content="body", truncated=False), "ok"),
+    (
+        "docs_content",
+        DocsContentResult(name="security", content="body", size=4, truncated=False),
+        "ok",
+    ),
     ("read_file", ReadFileResult(content="hi", size=2, lines_total=1), "2 bytes"),
     (
         "read_file_slice",

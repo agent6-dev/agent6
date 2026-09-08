@@ -1446,6 +1446,26 @@ def test_agent6_docs_tool_lists_and_reads(tmp_path: Path) -> None:
         d.dispatch("agent6_docs", {"name": "NOPE"})
 
 
+def test_agent6_docs_over_the_cap_names_the_size_it_was_cut_from(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A doc over the 60k cap comes back truncated with no way to tell how
+    much was cut; the model reading a capped CONFIG or STATE-MACHINES sees a
+    silently amputated page and no signal of its real size."""
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    long_doc = "x" * 70_000
+
+    def _stub_doc(name: str) -> str:
+        return long_doc
+
+    monkeypatch.setattr("agent6.tools._fs_tools.read_agent6_doc", _stub_doc)
+    doc = d.dispatch("agent6_docs", {"name": "CONFIG"}).to_wire()
+    assert doc["truncated"] is True
+    assert len(doc["content"]) == 60_000
+    assert doc["size"] == 70_000
+
+
 # --- small-model edit ergonomics: kind default + closest-match diagnostics ---
 
 

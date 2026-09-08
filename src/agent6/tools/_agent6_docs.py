@@ -22,6 +22,7 @@ AGENT6_DOC_FILES = (
     "STATE-MACHINES.md",
     "ACP.md",
     "WEB.md",
+    "TERMINAL.md",
 )
 
 

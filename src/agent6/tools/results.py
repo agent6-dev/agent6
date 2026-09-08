@@ -58,14 +58,21 @@ class DocsIndexResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class DocsContentResult(ToolResult):
-    """agent6_docs for a named doc."""
+    """agent6_docs for a named doc. `size` is the doc's full length in chars,
+    so a truncated `content` still names the size it was cut from."""
 
     name: str
     content: str
+    size: int
     truncated: bool
 
     def to_wire(self) -> dict[str, Any]:
-        return {"name": self.name, "content": self.content, "truncated": self.truncated}
+        return {
+            "name": self.name,
+            "content": self.content,
+            "size": self.size,
+            "truncated": self.truncated,
+        }
 
 
 @dataclass(frozen=True, slots=True)
