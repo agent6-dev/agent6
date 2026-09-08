@@ -752,16 +752,24 @@ def _stamp_compare_outcomes(
     rationale truncated to bound the manifest and empty for a mechanical ranking.
     `winner` is rank 1 UNLESS every candidate's gate ran and none passed
     (`fanout_exit_code`'s EXIT_VERIFY_FAILED): a compare over lanes that all
-    failed crowns nobody, whatever a ranking still orders them by. A per-lane
-    stamp failure degrades loudly and never blocks the others."""
+    failed crowns nobody, whatever a ranking still orders them by. The judge's
+    ranking is untrusted: when a candidate verified green, rank 1 is crowned
+    only if it is one, never a misranked lane whose gate failed or never
+    ran. A per-lane stamp failure degrades loudly and never blocks the
+    others."""
     of = len(candidates)
     text = outcome.rationale[:2000] if outcome.ranked_by == "judge" else ""
     crown = fanout_exit_code(candidates) != EXIT_VERIFY_FAILED
+    any_verified = any(c.verify_ok is True for c in candidates)
+    by_id = {c.session_id: c for c in candidates}
     for rank_pos, session_id in enumerate(outcome.ranking, start=1):
+        winner = (
+            rank_pos == 1 and crown and (not any_verified or by_id[session_id].verify_ok is True)
+        )
         compare = CompareStamp(
             rank=rank_pos,
             of=of,
-            winner=rank_pos == 1 and crown,
+            winner=winner,
             ranked_by=outcome.ranked_by,
             rationale=text,
             judge_cost_usd=outcome.judge_cost_usd,

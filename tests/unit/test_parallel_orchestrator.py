@@ -1957,6 +1957,54 @@ def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
         assert m["compare"]["winner"] is False
 
 
+def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The judge is untrusted LLM output: its system prompt says a passing
+    candidate outranks a failing one, but nothing enforces that. When it
+    ranks the lane whose OWN gate failed first anyway, `winner` keyed off the
+    whole group's exit code (some lane DID pass, so `crown` read True) and
+    stamped that failed lane compare.winner=true: a crown on a lane that
+    never passed its gate, wearing the star in every listing over the lane
+    that actually did."""
+    from agent6.paths import state_dir
+
+    origin_state = state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "mis", "2")
+    spawner = _FakeSpawner(
+        origin,
+        origin_state,
+        tmp_path / "lane-state",
+        status_by_lane={1: "gated_fail", 2: "passed"},
+    )
+
+    def fake_rank(*_a: object, **_k: object) -> RankOutcome:
+        # The failed lane (mis-l1) ranked ahead of the one that passed.
+        return RankOutcome(("mis-l1", "mis-l2"), "misranked", "judge", judge_cost_usd=0.01)
+
+    monkeypatch.setattr(parallel, "rank", fake_rank)
+    run_parallel(
+        "t",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="mis",
+    )
+
+    m1 = json.loads(
+        (origin_state / "sessions" / "runs" / "mis-l1" / "manifest.json").read_text("utf-8")
+    )
+    m2 = json.loads(
+        (origin_state / "sessions" / "runs" / "mis-l2" / "manifest.json").read_text("utf-8")
+    )
+    assert m1["compare"]["winner"] is False  # its own gate failed; never crowned
+    assert m2["compare"]["winner"] is False  # not ranked first, so also uncrowned
+
+
 def test_fanout_exit_reflects_the_gate_verdicts() -> None:
     """An all-red fan-out exited 0: every lane finished over a red gate, one
     was still crowned rank 1, and the fan-out read as success to every script.
