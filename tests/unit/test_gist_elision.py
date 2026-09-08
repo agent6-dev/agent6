@@ -189,6 +189,29 @@ def test_the_headroom_goes_to_the_newest_read() -> None:
     assert stats.demoted_paths == ()
 
 
+def test_a_short_gist_frees_headroom_for_an_older_gist() -> None:
+    from agent6.workflows._compaction import elision_placeholder
+
+    conv = Conversation()
+    _add_read(conv, "old.py", "o" * 4_000)
+    _add_read(conv, "new.py", "n" * 4_000)
+    _add_read(conv, "tail1.py", "a" * 300)
+    _add_read(conv, "tail2.py", "b" * 300)
+    before = _contents(conv)
+    budget = (
+        len(elision_placeholder("read_file", {"path": "old.py"}))
+        + len(elision_placeholder("read_file", {"path": "new.py"}))
+        + len(before[2])
+        + len(before[3])
+    )
+    gister = _SpyGister({"old.py": "o" * 100, "new.py": "n"})
+
+    stats = compact_old_tool_results(conv, max_total_bytes=budget, keep_recent=2, gister=gister)
+
+    assert stats.gist_paths == ("old.py", "new.py")
+    assert sum(map(len, _contents(conv))) <= budget
+
+
 def test_a_gist_the_budget_cannot_hold_is_never_reported_as_kept() -> None:
     """A gist costing more than the plan's headroom was applied, demoted back
     to the bare marker in the same pass, and still counted: the run line read

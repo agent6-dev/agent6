@@ -3842,6 +3842,35 @@ def test_summarise_and_restart_keeps_history_on_empty_summary() -> None:
     assert messages == before
 
 
+def test_summarise_and_restart_rejects_checkoff_without_a_summary() -> None:
+    summariser = MagicMock()
+    summariser.call.return_value = _resp(
+        '```checkoff\n{"completed_ids": ["01DONE"], "new_tasks": []}\n```'
+    )
+    curator = MagicMock()
+    curator.nodes.return_value = _typed(
+        {
+            "01ROOT": {"parent_id": None, "status": "in_progress", "title": "review repo"},
+            "01DONE": {
+                "parent_id": "01ROOT",
+                "status": "pending",
+                "title": "audit providers",
+            },
+        }
+    )
+    wf = _wf(summariser_provider=summariser, curator=curator)
+    conversation = Conversation.from_wire(_long_history(5))
+    before = conversation.to_wire()
+
+    restarted = wf._summarise_and_restart(  # pyright: ignore[reportPrivateUsage]
+        conversation, _state()
+    )
+
+    assert restarted is False
+    assert conversation.to_wire() == before
+    curator.update_status.assert_not_called()
+
+
 def test_summarise_and_restart_keeps_history_on_provider_error() -> None:
     summariser = MagicMock()
     summariser.call.side_effect = ProviderError("boom")
@@ -5217,7 +5246,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
                 return _tool_resp("read_file", {"path": "big.py"}, tool_id=f"r{self.calls}")
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
 
-    big = "X" * 4000
+    big = "界" * 4000
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
@@ -5267,6 +5296,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
     stubs = [c for c in served if "identical" in c.lower() and big[:200] not in c]
     assert len(full) == 1, f"expected exactly one full payload, got {len(full)}"
     assert len(stubs) >= 1, f"expected the repeats deduped to a stub, got {stubs}"
+    assert f"{len(full[0].encode())} bytes elided" in stubs[0]
 
 
 def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:

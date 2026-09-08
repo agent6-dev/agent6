@@ -66,7 +66,7 @@ _ELISION_HINT_MAX_CHARS = 120
 # later is never silently anonymous in a compacted transcript. It matters most
 # for `run_command`: a placeholder reading just "run_command" leaves the model
 # unable to tell whether it already ran the suite.
-_IDENTIFYING_KEYS: Final = ("path", "argv", "symbol", "name", "id", "url")
+_IDENTIFYING_KEYS: Final = ("path", "argv", "symbol", "name", "id", "url", "query")
 
 
 def call_label(tool_name: str, tool_input: Any) -> str:
@@ -471,9 +471,8 @@ def _starts_with_results(turn: Turn) -> bool:
     )
 
 
-# First target header in a unified diff (`+++ b/PATH`) or a v4a patch
-# (`*** Update|Add File: PATH`). apply_patch is one-file-per-call, so the
-# first match is the file.
+# Target headers in a unified diff (`+++ b/PATH`) or a v4a patch
+# (`*** Update|Add File: PATH`). One apply_patch call may carry several files.
 _PATCH_TARGET_RE = re.compile(
     r"^(?:\+\+\+ b/(?P<u>\S+)|\*\*\* (?:Update|Add) File: (?P<v>.+))$", re.MULTILINE
 )
@@ -501,8 +500,10 @@ def recently_edited_paths(conversation: Conversation, *, last_turns: int = 8) ->
                 continue
             path = str(tu.input.get("path", "") or "")
             if not path and tu.name == "apply_patch":
-                m = _PATCH_TARGET_RE.search(str(tu.input.get("patch", "")))
-                path = ((m.group("u") or m.group("v") or "") if m else "").strip()
+                for match in _PATCH_TARGET_RE.finditer(str(tu.input.get("patch", ""))):
+                    target = (match.group("u") or match.group("v") or "").strip()
+                    if target:
+                        out.add(target)
             if path:
                 out.add(path)
     return frozenset(out)
@@ -554,13 +555,13 @@ def compact_old_tool_results(
     threshold. Walks the conversation oldest-first, replaces each tool_result's
     `content` with a short identity-bearing placeholder, stops once total
     size is back under `max_total_bytes`. The most recent `keep_recent`
-    are always preserved, as is every tool_result in the last
-    tool_result-bearing turn: the loop compacts at top-of-iteration, before
-    the provider call that would deliver that batch, so the model has never
-    seen it and the placeholder's "re-call the tool" guidance would trigger a
+    are always preserved, as is every tool_result in the newest result turn
+    until an assistant turn has consumed it: the loop compacts at
+    top-of-iteration, before the provider call that would deliver a fresh
+    batch, so the placeholder's "re-call the tool" guidance would trigger a
     paid re-call cycle. (Keying on the final turn alone is not enough: a
-    trailing steer or nudge user turn pushes the fresh, still undelivered
-    results off the final index, and one turn can carry several such blocks.)
+    trailing steer or nudge user turn pushes fresh, still undelivered results
+    off the final index, and one turn can carry several such blocks.)
 
     `protect_paths` (the actively-edited set from `recently_edited_paths`)
     deprioritises rather than exempts: read_file results for those paths are
@@ -599,15 +600,10 @@ def compact_old_tool_results(
             return False
         return str(call.input.get("path", "")) in protect_paths
 
-    # The undelivered batch is always in the last tool_result-bearing turn:
-    # at top-of-iteration only text-only steer/nudge user turns can trail the
-    # fresh results, and the delivering provider call runs after this compaction.
-    # Exempt that whole turn.
-    last_turn = max(turn_idx for turn_idx, _, _ in pointers)
+    undelivered_turn = _undelivered_result_turn(conversation, pointers)
+    older = pointers[:-keep_recent] if keep_recent else pointers
     candidates = [
-        c
-        for c in pointers[:-keep_recent]
-        if c[0] != last_turn and not _is_operator_answer(conversation, c)
+        c for c in older if c[0] != undelivered_turn and not _is_operator_answer(conversation, c)
     ]
     if protect_paths:
         # Protected reads go last, each group staying oldest-first.
@@ -653,6 +649,16 @@ def _result_at(conversation: Conversation, turn_idx: int, item_idx: int) -> Tool
     return item
 
 
+def _undelivered_result_turn(
+    conversation: Conversation, pointers: list[tuple[int, int, int]]
+) -> int | None:
+    """The newest result turn when no assistant turn has consumed it yet."""
+    last_result = max(turn_idx for turn_idx, _, _ in pointers)
+    if any(isinstance(turn, AssistantTurn) for turn in conversation.turns[last_result + 1 :]):
+        return None
+    return last_result
+
+
 # Below this a duplicate's pointer placeholder is barely smaller than the
 # content it replaces.
 _DEDUP_MIN_CHARS = 200
@@ -680,8 +686,9 @@ def _dedupe_identical_results(
     """
     if len(pointers) <= keep_recent:
         return ()
-    last_turn = max(turn_idx for turn_idx, _, _ in pointers)
-    exempt = {(t, i) for t, i, _ in pointers[-keep_recent:]}
+    undelivered_turn = _undelivered_result_turn(conversation, pointers)
+    recent = pointers[-keep_recent:] if keep_recent else []
+    exempt = {(t, i) for t, i, _ in recent}
     by_key: dict[tuple[str, str, str], list[tuple[int, int]]] = {}
     for turn_idx, item_idx, _size in pointers:
         item = _result_at(conversation, turn_idx, item_idx)
@@ -696,7 +703,7 @@ def _dedupe_identical_results(
     labels: list[str] = []
     for locs in by_key.values():
         for turn_idx, item_idx in locs[:-1]:  # every copy but the newest
-            if turn_idx == last_turn or (turn_idx, item_idx) in exempt:
+            if turn_idx == undelivered_turn or (turn_idx, item_idx) in exempt:
                 continue
             item = _result_at(conversation, turn_idx, item_idx)
             label = call_label(item.for_call.name, item.for_call.input)
@@ -796,7 +803,7 @@ class _Tier1Pass:
         oldest-first for the same reason. A gist no smaller than the content it
         replaces never lands, nor does one costing more than the plan's headroom
         (`demote` would strip it before this same pass returned). A gist shorter
-        than the bare marker costs nothing, so it always lands."""
+        than the bare marker adds its savings to the remaining headroom."""
         headroom = max(self.gist_headroom, 0)
         landing: dict[tuple[int, int], str] = {}
         for turn_idx, item_idx, size in reversed(self.victims):
@@ -807,7 +814,7 @@ class _Tier1Pass:
             candidate = elision_gist_placeholder(call_label(call.name, call.input), gist)
             extra = len(candidate) - len(elision_placeholder(call.name, call.input))
             if len(candidate) < size and extra <= headroom:
-                headroom -= max(extra, 0)
+                headroom -= extra
                 landing[(turn_idx, item_idx)] = candidate
         return landing
 

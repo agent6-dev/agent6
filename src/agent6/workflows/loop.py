@@ -1212,7 +1212,7 @@ class Workflow:
                         {
                             "repeated": (
                                 f"Identical to your previous {name} call --"
-                                f" result unchanged ({len(content)} bytes elided)."
+                                f" result unchanged ({len(content.encode())} bytes elided)."
                                 " Do not re-issue the same call; if you need"
                                 " different data, change the arguments, otherwise"
                                 " act on what you already have."
@@ -4065,14 +4065,14 @@ class Workflow:
             self._emit("loop.compact.summarise.failed", error=str(exc)[:200])
             return False
         raw = (resp.text or "").strip()
-        if not raw:
+        summary = strip_checkoff(raw) if open_tasks else raw
+        if not summary:
             self._emit("loop.compact.summarise.failed", error="empty summary")
             return False
-        # Apply the check-off to the curator (best-effort) and strip the block
-        # from the summary so the restarted worker sees narrative, not bookkeeping.
+        # Apply the check-off only after the stripped narrative passed the
+        # fail-safe, so bookkeeping alone can neither mutate the DAG nor erase history.
         if open_tasks:
             self._apply_compaction_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
-        summary = strip_checkoff(raw) if open_tasks else raw
         conversation.restart(
             context_restart_notice(self.mode, pins=state.pins, decisions=self._load_decisions())
             + summary,

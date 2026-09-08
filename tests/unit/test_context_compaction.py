@@ -218,6 +218,23 @@ def test_compact_preserves_keep_recent_floor() -> None:
     assert contents[4] == bodies[4]
 
 
+def test_compact_with_no_recent_floor_still_elides_seen_results() -> None:
+    bodies = [ch * 1_000 for ch in "abc"]
+    conv = Conversation()
+    _reads(conv, *bodies)
+
+    stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=0)
+
+    assert len(stats.elided_calls) == 2
+    contents = _result_contents(conv)
+    assert all("elided" in content for content in contents[:2])
+    assert contents[2] == bodies[2]  # the final, undelivered result stays whole
+
+    duplicates = _conv_with_repeated_reads("d" * 1_000)
+    duplicate_stats = compact_old_tool_results(duplicates, max_total_bytes=2_500, keep_recent=0)
+    assert len(duplicate_stats.deduped_calls) == 2
+
+
 def test_compact_idempotent_on_already_elided() -> None:
     """Running compaction twice doesn't double-elide or churn."""
     bodies = [ch * 1000 for ch in "abcd"]  # distinct: dedup must not fire
@@ -277,6 +294,30 @@ def test_compact_never_elides_undelivered_results_behind_a_steer_message() -> No
     assert _result_contents(conv) == [big, big, big]
 
 
+def test_compact_can_elide_the_last_result_batch_after_it_was_consumed() -> None:
+    bodies = [ch * 10_000 for ch in "abc"]
+    conv = Conversation()
+    conv.notice("task")
+    _add_exchange(conv, *[("read_file", {}, body) for body in bodies])
+    conv.assistant([{"type": "text", "text": "I have read those results."}])
+    conv.notice("[harness] Continue working.")
+
+    stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=2)
+
+    assert len(stats.elided_calls) == 1
+    contents = _result_contents(conv)
+    assert "elided" in contents[0]
+    assert contents[1:] == bodies[1:]
+
+    duplicates = Conversation()
+    duplicates.notice("task")
+    _add_exchange(duplicates, *[("read_file", {}, "d" * 10_000)] * 4)
+    duplicates.assistant([{"type": "text", "text": "I consumed the duplicate results."}])
+    duplicates.notice("[harness] Continue working.")
+    duplicate_stats = compact_old_tool_results(duplicates, max_total_bytes=35_000, keep_recent=2)
+    assert len(duplicate_stats.deduped_calls) == 2
+
+
 def test_restart_notice_is_dag_aware() -> None:
     """The tier-2 summarise-and-restart notice must point the worker at its
     durable task DAG so cross-compaction task state is recovered."""
@@ -327,7 +368,12 @@ def test_elision_placeholder_names_the_call() -> None:
 def test_recently_edited_paths_extraction() -> None:
     from agent6.workflows._compaction import recently_edited_paths
 
-    unified = "--- a/pkg/mod.py\n+++ b/pkg/mod.py\n@@ -1,1 +1,1 @@\n-a\n+b\n"
+    unified = (
+        "diff --git a/pkg/mod.py b/pkg/mod.py\n"
+        "--- a/pkg/mod.py\n+++ b/pkg/mod.py\n@@ -1,1 +1,1 @@\n-a\n+b\n"
+        "diff --git a/pkg/other.py b/pkg/other.py\n"
+        "--- a/pkg/other.py\n+++ b/pkg/other.py\n@@ -1,1 +1,1 @@\n-c\n+d\n"
+    )
     v4a = "*** Begin Patch\n*** Update File: pkg/v4a.py\n@@\n-a\n+b\n*** End Patch\n"
     conv = Conversation()
     _add_exchange(conv, ("apply_edit", {"path": "edited.py", "edits": []}, "ok"))
@@ -336,7 +382,9 @@ def test_recently_edited_paths_extraction() -> None:
     _add_exchange(conv, ("apply_patch", {"patch": v4a}, "ok"))
     _add_exchange(conv, ("read_file", {"path": "only-read.py"}, "ok"))
     got = recently_edited_paths(conv)
-    assert got == frozenset({"edited.py", "explicit.py", "pkg/mod.py", "pkg/v4a.py"})
+    assert got == frozenset(
+        {"edited.py", "explicit.py", "pkg/mod.py", "pkg/other.py", "pkg/v4a.py"}
+    )
     # The window is per assistant TURN: an edit older than last_turns drops out.
     conv2 = Conversation()
     _add_exchange(conv2, ("apply_edit", {"path": "old.py", "edits": []}, "ok"))
@@ -404,6 +452,9 @@ def test_call_label_identities() -> None:
     assert call_label("use_skill", {"name": "debugging"}) == "use_skill debugging"
     assert call_label("read_background", {"id": "bg1"}) == "read_background bg1"
     assert call_label("fetch", {"url": "https://x.test/s"}) == "fetch https://x.test/s"
+    assert call_label("read_session", {"query": "parser regression"}) == (
+        "read_session parser regression"
+    )
     # An argv is rendered as a command line, so a quoted pattern stays readable.
     assert call_label("run_command", {"argv": ["rg", "-n", "def f"]}) == (
         "run_command rg -n 'def f'"
