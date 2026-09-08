@@ -281,6 +281,23 @@ def _extract_tool_call_obj(  # noqa: PLR0911
     return {"name": name, "input": raw_args}
 
 
+def _recover_regex_calls(
+    matches: list[re.Match[str]], tool_names: frozenset[str]
+) -> tuple[list[dict[str, Any]], list[tuple[int, int]]]:
+    """Parse each match's captured group 1 as a `{"name", "arguments"}` tool
+    call. Returns the ones that named an offered tool, in match order, with
+    their spans; a match that didn't parse or named no offered tool is
+    skipped (kept visible so the model can see its failed call)."""
+    recovered: list[dict[str, Any]] = []
+    spans: list[tuple[int, int]] = []
+    for match in matches:
+        obj = _extract_tool_call_obj(match.group(1), tool_names)
+        if obj is not None:
+            recovered.append(obj)
+            spans.append(match.span())
+    return recovered, spans
+
+
 def _remove_spans(text: str, spans: list[tuple[int, int]]) -> str:
     """`text` with the given non-overlapping `(start, end)` spans cut out."""
     parts: list[str] = []
@@ -328,24 +345,20 @@ def coerce_text_tool_calls(  # noqa: PLR0911
     # 1) Hermes / Qwen `<tool_call>...</tool_call>` wrappers (≥1).
     tag_matches = list(_TOOL_CALL_TAG_RE.finditer(text))
     if tag_matches:
-        recovered: list[dict[str, Any]] = []
-        drop_spans: list[tuple[int, int]] = []
-        for match in tag_matches:
-            obj = _extract_tool_call_obj(match.group(1), tool_names)
-            if obj is not None:
-                recovered.append(obj)
-                drop_spans.append(match.span())
+        recovered, drop_spans = _recover_regex_calls(tag_matches, tool_names)
         if recovered:
             # Remove ONLY the tags that parsed. A malformed sibling tag stays
             # in the remaining text so the model can see its failed call.
             return recovered, _remove_spans(text, drop_spans)
-    # 2) A single fenced JSON object that is itself a tool call.
-    for fence in _JSON_FENCE_RE.finditer(text):
-        obj = _extract_tool_call_obj(fence.group(1), tool_names)
-        if obj is not None:
-            # Remove only the matched fence; other ```json fences may be
-            # legitimate content (a config sample, a reference block).
-            return [obj], _remove_spans(text, [fence.span()])
+    # 2) One or more fenced JSON objects that are themselves tool calls.
+    fence_matches = list(_JSON_FENCE_RE.finditer(text))
+    if fence_matches:
+        recovered, drop_spans = _recover_regex_calls(fence_matches, tool_names)
+        if recovered:
+            # Remove ONLY the fences that parsed as calls; other ```json
+            # fences may be legitimate content (a config sample, a reference
+            # block) and stay visible.
+            return recovered, _remove_spans(text, drop_spans)
     # 3) The whole content is exactly one bare JSON tool-call object.
     obj = _extract_tool_call_obj(text, tool_names)
     if obj is not None:

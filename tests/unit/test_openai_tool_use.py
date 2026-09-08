@@ -1033,6 +1033,20 @@ def test_fence_recovery_preserves_other_json_fences() -> None:
     assert '"key": "value"' in remaining  # the second fence is content, not a call
 
 
+def test_two_json_fenced_tool_calls_are_both_recovered_in_order() -> None:
+    """Regression: two separate ```json fences each holding a valid tool call
+    must both be recovered, in source order -- not just the first, which
+    silently dropped the second call while the model believed it ran."""
+    text = (
+        '```json\n{"name": "read_file", "arguments": {"path": "a.py"}}\n```\n'
+        "then\n"
+        '```json\n{"name": "read_file", "arguments": {"path": "b.py"}}\n```'
+    )
+    calls, remaining = _coerce_text_tool_calls(text, frozenset({"read_file"}))
+    assert [c["input"]["path"] for c in calls] == ["a.py", "b.py"]
+    assert "read_file" not in remaining
+
+
 def test_fence_recovery_finds_a_call_after_a_content_fence() -> None:
     text = (
         'Reference config:\n```json\n{"key": "value"}\n```\n'
