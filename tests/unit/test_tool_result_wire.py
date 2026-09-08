@@ -322,6 +322,27 @@ def test_wire_run_command_clip_names_dropped_chars(tmp_path: Path) -> None:
     )
 
 
+def test_metric_score_survives_the_display_clip(tmp_path: Path) -> None:
+    """A metric score parsed from the display-clipped stdout (over the 20k
+    exec-output cap) either lost a real score placed before the clip's tail
+    window, or -- with a permissive pattern -- matched the clip marker's own
+    dropped-byte count instead of the metric's printed number. The score must
+    come from the command's real, unclipped output."""
+    toml = _VALID_TOML.replace('isolation = "auto"', 'isolation = "auto"\nnetwork = "host"') + (
+        "\n[workflow.metric]\n"
+        'command = ["/usr/bin/true"]\n'
+        'pattern = "(\\\\d+)"\n'
+        'goal = "minimize"\n'
+    )
+    p = tmp_path / "agent6.toml"
+    p.write_text(toml, encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=load_config(p))
+    stdout = "CYCLES: 42\n" + "y" * 25_000
+    with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout=stdout)):
+        out = d.dispatch("run_metric_command", {})
+    assert _wire(out)["score"] == 42.0
+
+
 # --- error shape (loop wraps a raised ToolError) -----------------------------
 
 

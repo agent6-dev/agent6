@@ -1073,18 +1073,21 @@ class ToolDispatcher:
             raise ToolError("no [workflow.metric] configured")
         argv = metric_cfg.command
         self._emit("metric.start", cmd=list(argv))
-        res = self._run_argv_in_jail(
+        outcome, timeout_s = self._run_argv_raw(
             argv, label="metric_command", timeout_s=self._config.workflow.verify_timeout_s
         )
-        if res.exec_failed:
+        if outcome.exec_failed:
             raise OperatorCommandUnexecutable(
                 f"metric_command {list(argv)} could not be executed in the sandbox: "
-                f"{res.stderr}. See run_verify_command's note: PATH is /usr/bin:/bin "
+                f"{outcome.stderr}. See run_verify_command's note: PATH is /usr/bin:/bin "
                 "plus the standard bin dirs; install the tool into one of those on the "
                 "host, use a path inside the workspace, or grant its real directory "
                 "via sandbox.extra_read_paths."
             )
-        score = parse_metric_score(res.stdout, res.stderr, pattern=metric_cfg.pattern)
+        # Scored from the unclipped outcome: the display clip drops a score
+        # printed early, and its marker's own count matches a loose pattern.
+        score = parse_metric_score(outcome.stdout, outcome.stderr, pattern=metric_cfg.pattern)
+        res = _exec_result(outcome, timeout_s=timeout_s)
         self._emit(
             "metric.end",
             cmd=list(argv),
@@ -1164,13 +1167,17 @@ class ToolDispatcher:
                     self._session_failed = True
             return self._session
 
-    def _run_argv_in_jail(
+    def _run_argv_raw(
         self,
         argv: tuple[str, ...],
         *,
         label: str,
         timeout_s: float | None = None,
-    ) -> ExecResult:
+    ) -> tuple[CommandResult, float]:
+        """Run *argv* in the jail and return the unclipped outcome with the
+        timeout the policy resolved: `_run_argv_in_jail` clips both streams
+        for display, and a caller that parses the output (the metric score)
+        needs the real bytes."""
         try:
             policy = self._jail_policy(argv, timeout_s=timeout_s)
             session = self._run_session()
@@ -1187,4 +1194,14 @@ class ToolDispatcher:
             raise ToolError(f"{label}: jail unavailable: {exc}") from exc
         if isinstance(outcome, BackgroundHandoff):  # pragma: no cover - no check-in was asked for
             raise ToolError(f"{label}: the jail handed back a command that was never detachable")
-        return _exec_result(outcome, timeout_s=policy.timeout_s)
+        return outcome, policy.timeout_s
+
+    def _run_argv_in_jail(
+        self,
+        argv: tuple[str, ...],
+        *,
+        label: str,
+        timeout_s: float | None = None,
+    ) -> ExecResult:
+        outcome, timeout = self._run_argv_raw(argv, label=label, timeout_s=timeout_s)
+        return _exec_result(outcome, timeout_s=timeout)
