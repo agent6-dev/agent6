@@ -68,7 +68,22 @@ def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
     return {**payload, "reasoning": fresh}
 
 
-def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None:
+def _late_merge_header(
+    session_dir: Path, repo: Path, header: dict[str, Any], *, finished: bool
+) -> dict[str, Any] | None:
+    """Refreshed manifest header to push on a finished run's heartbeat, or None
+    when nothing changed. A merge (the run's own auto-merge, or any surface's)
+    lands after session.end while a page is open, so its branch line and Merge
+    button must follow it, as the TUI's `_branch_top` re-reads for a finished
+    run. Only while finished, and only on a real change (a left-open page then
+    settles instead of re-rendering every heartbeat)."""
+    if not finished:
+        return None
+    refreshed = manifest_header(session_dir, repo=repo)
+    return refreshed if refreshed != header else None
+
+
+def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None:  # noqa: PLR0915
     """Stream one run to *chan* until it ends, the worker dies, or the client
     leaves: the tailer thread feeds a queue, the loop folds every queued event
     into one frame, coalesces delta bursts, and heartbeats idle spans."""
@@ -93,8 +108,10 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None:
             events.put(None)  # run ended (or tail cancelled/failed), tailer done
 
     # Manifest-derived header fields (branch facts + the fan-out compare
-    # outcome), read once per connection: they are fixed for the run's life
-    # (merged_into lands after the run ends; a reopen/reconnect re-reads).
+    # outcome). Fixed while the run is live; re-read on the heartbeat once it
+    # finishes (see the queue-empty branch): the auto-merge (the run's own, or
+    # any surface's) lands after session.end while a page is open, so the
+    # branch line and Merge button follow it, as the TUI's `_branch_top` does.
     header = manifest_header(session_dir, repo=repo)
 
     threading.Thread(target=tail, daemon=True).start()
@@ -137,6 +154,11 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None:
                 if word != "parked" and died_without_end(word):
                     chan.send(frame(dead=True))
                     return
+                refreshed = _late_merge_header(session_dir, repo, header, finished=state.finished)
+                if refreshed is not None:
+                    header = refreshed
+                    if not chan.send(frame()):
+                        return
                 continue
             # Fold everything already queued into one frame. On connect the
             # tailer replays the whole history, and a full SessionState frame per

@@ -1754,6 +1754,73 @@ def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: Path) -> None
     ]
 
 
+def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: Path) -> None:
+    """The header was read once per connection, so a merge landing after
+    session.end (the run's own auto-merge, or any surface's) never reached an
+    open page: its branch line and Merge button kept the pre-merge answer. The
+    finished heartbeat now pushes the refreshed header once it changes."""
+    import threading
+
+    from agent6.sessions.layout import SessionLayout
+    from agent6.ui.web import _sse
+    from agent6.ui.web._sse import SseChannel, stream_session
+
+    monkeypatch_heartbeat = 0.05
+    d = state_dir(tmp_path) / "sessions" / "runs" / "mergerun-AAAAAA"
+    d.mkdir(parents=True)
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="mergerun-AAAAAA")
+    manifest = {
+        "version": 3,
+        "session_id": "mergerun-AAAAAA",
+        "mode": "run",
+        "user_task": "t",
+        "base_branch": "master",
+        "run_branch": "agent6/mergerun-AAAAAA",
+    }
+    layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    (d / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    frames: list[dict[str, Any]] = []
+    merged = threading.Event()
+
+    def send(payload: Any) -> bool:
+        d_payload = cast(dict[str, Any], payload)
+        frames.append(d_payload)
+        if not merged.is_set():
+            # The merge lands while the page is open (a surface's merge stamps it).
+            layout.manifest_path.write_text(
+                json.dumps({**manifest, "merged": {"into": "master", "sha": "abc123", "tip": "t"}}),
+                encoding="utf-8",
+            )
+            merged.set()
+        if any(f.get("merged_into") == "master" for f in frames):
+            return False  # the refreshed header arrived
+        return len(frames) < 20  # bounded: without the fix, no such frame ever comes
+
+    pings = {"n": 0}
+
+    def ping() -> bool:
+        pings["n"] += 1
+        return pings["n"] < 40  # bounded: without the fix no frame ever closes the stream
+
+    orig = _sse.HEARTBEAT_S
+    _sse.HEARTBEAT_S = monkeypatch_heartbeat
+    try:
+        stream_session(SseChannel(send=send, ping=ping), d, repo=tmp_path)
+    finally:
+        _sse.HEARTBEAT_S = orig
+
+    assert any(f.get("merged_into") == "master" for f in frames), (
+        "a merge landing after session.end must reach the open stream"
+    )
+
+
 def test_the_step_picker_fetches_through_the_base_it_was_rendered_with() -> None:
     """A machine-create draft renders through `/api/draft/<name>`, and its
     drafting leg commits, so the picker paints; both of its fetches hardcoded
