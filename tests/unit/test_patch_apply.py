@@ -158,6 +158,19 @@ def test_skips_git_diff_preamble() -> None:
     assert new == "A\n"
 
 
+def test_standard_timestamped_headers_name_the_file() -> None:
+    patch = (
+        "--- f.py\t2026-01-01 00:00:00 +0000\n"
+        "+++ f.py\t2026-01-01 00:00:01 +0000\n"
+        "@@ -1 +1 @@\n"
+        "-a\n"
+        "+A\n"
+    )
+    path, new, _healed = apply_patch_text(patch, "a\n")
+    assert path == "f.py"
+    assert new == "A\n"
+
+
 def test_no_newline_at_eof_on_old_side() -> None:
     # Original lacks a trailing newline; replacement adds one.
     original = "a\nb"
@@ -166,11 +179,44 @@ def test_no_newline_at_eof_on_old_side() -> None:
     assert new == "a\nB\n"
 
 
+@pytest.mark.parametrize("original", ["a\n", "a\nb"])
+def test_old_no_newline_marker_must_describe_the_file_tail(original: str) -> None:
+    patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+A\n"
+    with pytest.raises(PatchError, match="old line has no newline"):
+        apply_patch_text(patch, original)
+
+
 def test_no_newline_at_eof_on_new_side() -> None:
     original = "a\nb\n"
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n\\ No newline at end of file\n"
     _, new, _healed = apply_patch_text(patch, original)
     assert new == "a\nB"
+
+
+def test_nonstandard_no_newline_marker_is_rejected() -> None:
+    patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n\\ Not a patch marker\n+A\n"
+    with pytest.raises(PatchError, match="patch marker"):
+        apply_patch_text(patch, "a")
+
+
+@pytest.mark.parametrize(
+    ("patch", "original"),
+    [
+        (
+            "--- a/f.py\n+++ b/f.py\n@@ -1,2 +1,2 @@\n"
+            "-a\n\\ No newline at end of file\n-b\n+A\n+B\n",
+            "a\nb",
+        ),
+        (
+            "--- a/f.py\n+++ b/f.py\n@@ -1,2 +1,2 @@\n"
+            "-a\n+A\n\\ No newline at end of file\n-b\n+B\n",
+            "a\nb\n",
+        ),
+    ],
+)
+def test_no_newline_marker_must_follow_the_sides_final_line(patch: str, original: str) -> None:
+    with pytest.raises(PatchError, match=r"final (old|new) line"):
+        apply_patch_text(patch, original)
 
 
 def test_omitted_count_means_one() -> None:
@@ -213,6 +259,15 @@ def test_v4a_update_context_hunk() -> None:
     path, new, _healed = apply_v4a_text(patch, orig)
     assert path == "m.py"
     assert new == "def f():\n    x = 1\n    return x + 1\n"
+
+
+def test_v4a_move_is_rejected_instead_of_ignored() -> None:
+    patch = (
+        "*** Begin Patch\n*** Update File: old.py\n*** Move to: new.py\n"
+        "@@\n-old\n+new\n*** End Patch"
+    )
+    with pytest.raises(PatchError, match=r"Move to.*not supported"):
+        apply_v4a_text(patch, "old\n")
 
 
 def test_v4a_multi_hunk() -> None:
@@ -371,6 +426,14 @@ def test_unified_hunk_heals_trailing_whitespace() -> None:
     assert healed == ("f.py @@ -1,1 ~rstrip",)
 
 
+def test_unified_rstrip_heal_preserves_context_whitespace() -> None:
+    original = "keep  \nold\n"
+    patch = "--- a/f.py\n+++ b/f.py\n@@ -1,2 +1,2 @@\n keep\n-old\n+new\n"
+    _, new, healed = apply_patch_text(patch, original)
+    assert new == "keep  \nnew\n"
+    assert healed == ("f.py @@ -1,2 ~rstrip",)
+
+
 def test_unified_hunk_heals_stale_line_numbers_when_unique() -> None:
     """Stale anchors with exact content heal only at EXACTLY ONE match."""
     original = "x\ny\nz\ntarget\nw\n"
@@ -392,6 +455,13 @@ def test_v4a_hunk_heals_a_uniform_indent_shift() -> None:
     _, new, healed = apply_v4a_text(patch, "def f():\n    a = 1\n")
     assert new == "def f():\n    a = 10\n"
     assert healed == ("a.py ~indent",)
+
+
+def test_v4a_rstrip_heal_preserves_context_whitespace() -> None:
+    patch = "*** Begin Patch\n*** Update File: a.py\n@@\n keep\n-old\n+new\n*** End Patch"
+    _, new, healed = apply_v4a_text(patch, "keep  \nold\n")
+    assert new == "keep  \nnew\n"
+    assert healed == ("a.py ~rstrip",)
 
 
 def test_v4a_heal_refuses_a_second_indent_candidate() -> None:

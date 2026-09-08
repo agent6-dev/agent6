@@ -284,6 +284,8 @@ def _preview(
     new_content: str,
     *,
     applied: list[str] | None = None,
+    deleting: bool = False,
+    healed: tuple[str, ...] = (),
 ) -> PreviewResult:
     """The dry-run result, its byte counts measured as the write would put
     them on disk (a CRLF file's edit is written as CRLF)."""
@@ -295,6 +297,8 @@ def _preview(
         bytes_before=0 if like is None else len(like),
         bytes_after=len(disk_bytes(new_content, like=like)),
         applied=applied,
+        deleting=deleting,
+        healed=healed,
     )
 
 
@@ -324,8 +328,8 @@ def apply_edit(
         else:
             if new_content is None:
                 raise ToolError(f"replace requested but file does not exist: {args.path}")
-            occurrences = new_content.count(edit.old_string)
-            if occurrences == 0:
+            first = new_content.find(edit.old_string)
+            if first == -1:
                 # Weak models most often miss by indentation depth alone
                 # (right lines, wrong leading whitespace). If old_string
                 # matches EXACTLY ONE region up to a uniform indent shift,
@@ -341,10 +345,16 @@ def apply_edit(
                     applied.append("replace~indent")
                     continue
                 raise ToolError(edit_mismatch_error(args.path, i, new_content, edit.old_string))
-            if occurrences > 1:
+            second = new_content.find(edit.old_string, first + 1)
+            if second != -1:
+                detail = (
+                    "overlapping matches"
+                    if second < first + len(edit.old_string)
+                    else f"{new_content.count(edit.old_string)} matches"
+                )
                 raise ToolError(
                     f"old_string is not unique in {args.path} "
-                    f"(edit #{i}, {occurrences} matches); add more surrounding "
+                    f"(edit #{i}, {detail}); add more surrounding "
                     f"context to make it unique"
                 )
             new_content = new_content.replace(edit.old_string, edit.new_string, 1)
@@ -441,7 +451,16 @@ def apply_patch(
         seen_paths.append(sp.abs_path)
         if args.preview:
             # A deletion previews as the full-removal diff (bytes_after 0).
-            previews.append(_preview(sp, target, existing, new_content or ""))
+            previews.append(
+                _preview(
+                    sp,
+                    target,
+                    existing,
+                    new_content or "",
+                    deleting=new_content is None,
+                    healed=healed,
+                )
+            )
             continue
         staged.append((sp, target, new_content))
     if (dupe := _first_repeated(seen_paths)) is not None:
@@ -466,6 +485,7 @@ def apply_patch(
             bytes_after=sum(pv.bytes_after for pv in previews),
             truncated=any(pv.truncated for pv in previews),
             files=tuple(pv.path for pv in previews),
+            healed=tuple(healed_all),
         )
     # Staging was all-or-nothing; the writes are not, so a write that fails
     # part way names what already changed rather than reporting a failure
@@ -490,7 +510,7 @@ def apply_patch(
     rows = tuple(written.items())
     deleted = tuple(str(sp.rel_path) for sp, _t, new in staged if new is None)
     return PatchResult(
-        path=(rows[0][0] if rows else deleted[0]),
+        path=str(staged[0][0].rel_path),
         bytes_written=sum(b for _p, b in rows),
         files=rows if len(staged) > 1 else (),
         deleted=deleted,

@@ -19,6 +19,8 @@ def preview_result(
     bytes_before: int,
     bytes_after: int,
     applied: list[str] | None = None,
+    deleting: bool = False,
+    healed: tuple[str, ...] = (),
 ) -> PreviewResult:
     """Build the dry-run response for `apply_edit`/`apply_patch` with
     `preview=true`. Returns the unified diff (old vs new) and a hunk
@@ -32,9 +34,11 @@ def preview_result(
     old_lines = (old_text or "").splitlines(keepends=True)
     new_lines = new_text.splitlines(keepends=True)
     label_a = "/dev/null" if old_text is None else f"a/{path}"
-    label_b = f"b/{path}"
+    label_b = "/dev/null" if deleting else f"b/{path}"
     diff_iter = difflib.unified_diff(old_lines, new_lines, fromfile=label_a, tofile=label_b, n=3)
     diff = "".join(diff_iter)
+    if not diff and (old_text is None or deleting):
+        diff = f"--- {label_a}\n+++ {label_b}\n"
     hunks = sum(1 for line in diff.splitlines() if line.startswith("@@ "))
     truncated = False
     _MAX_DIFF_CHARS = 8000
@@ -49,6 +53,7 @@ def preview_result(
         bytes_after=bytes_after,
         truncated=truncated,
         would_apply=None if applied is None else tuple(applied),
+        healed=healed,
     )
 
 
@@ -190,7 +195,8 @@ def edit_mismatch_error(path: str, edit_index: int, file_text: str, old_string: 
     lines = file_text.splitlines()
     head = "\n".join(lines[:5])
     tail = "\n".join(lines[-5:]) if len(lines) > 10 else ""
-    snippet = f"file size: {len(file_text)} bytes, {len(lines)} lines\nfirst 5 lines:\n{head}"
+    size = len(file_text.encode("utf-8"))
+    snippet = f"file size: {size} bytes, {len(lines)} lines\nfirst 5 lines:\n{head}"
     if tail:
         snippet += f"\n...\nlast 5 lines:\n{tail}"
     return (

@@ -243,6 +243,7 @@ class PreviewResult(ToolResult):
     # Multi-file apply_patch preview: every previewed path, in patch order
     # (`path` holds the first). Empty for a single-file preview.
     files: tuple[str, ...] = ()
+    healed: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -258,6 +259,8 @@ class PreviewResult(ToolResult):
             out["would_apply"] = list(self.would_apply)
         if self.files:
             out["files"] = list(self.files)
+        if self.healed:
+            out["healed"] = list(self.healed)
         return out
 
 

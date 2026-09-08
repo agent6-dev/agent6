@@ -47,6 +47,7 @@ _HUNK_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
     r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@"
 )
+_NO_NEWLINE_MARKER = "\\ No newline at end of file"
 
 
 class PatchError(ValueError):
@@ -87,6 +88,11 @@ class ParsedPatch:
 # ---------- parsing ----------
 
 
+def _header_path(value: str) -> str:
+    """The path before a standard unified header's tab-separated timestamp."""
+    return value.strip().partition("\t")[0]
+
+
 def _strip_ab_prefix(header_path: str) -> str:
     """Strip the conventional `a/` or `b/` prefix from a diff header path.
 
@@ -111,11 +117,11 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
         i += 1
     if i >= len(lines):
         raise PatchError("Missing `--- ` header line")
-    minus_header = lines[i][4:].strip()
+    minus_header = _header_path(lines[i][4:])
     i += 1
     if i >= len(lines) or not lines[i].startswith("+++ "):
         raise PatchError("Missing `+++ ` header line after `--- ` header")
-    plus_header = lines[i][4:].strip()
+    plus_header = _header_path(lines[i][4:])
     i += 1
 
     is_create = minus_header == "/dev/null"
@@ -143,6 +149,8 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
         # last `+`/`-` line of the previous hunk and the next hunk header
         # (or end of input). Attribute it to the most recent hunk.
         if line.startswith("\\ "):
+            if line != _NO_NEWLINE_MARKER:
+                raise PatchError(f"Unexpected patch marker: {line!r}")
             if not hunks:
                 raise PatchError("`\\ No newline` marker has no preceding hunk")
             prev = hunks[-1]
@@ -181,11 +189,17 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
         while i < len(lines) and (seen_old < old_count or seen_new < new_count):
             ln = lines[i]
             if ln.startswith("\\ "):
+                if ln != _NO_NEWLINE_MARKER:
+                    raise PatchError(f"Unexpected patch marker: {ln!r}")
                 # "\ No newline at end of file", applies to the immediately
                 # preceding line. Determine which side based on its prefix.
                 if not body:
                     raise PatchError("`\\ No newline` marker has no preceding line")
                 prev_prefix, _ = body[-1]
+                if prev_prefix in ("-", " ") and seen_old != old_count:
+                    raise PatchError("`\\ No newline` marker must follow the final old line")
+                if prev_prefix in ("+", " ") and seen_new != new_count:
+                    raise PatchError("`\\ No newline` marker must follow the final new line")
                 if prev_prefix == "-":
                     old_no_newline = True
                 elif prev_prefix == "+":
@@ -323,7 +337,7 @@ def apply_parsed_patch(  # noqa: PLR0912
         actual_old = buf[buf_start : buf_start + hunk.old_count]
         moved_heal = False
         if actual_old != expected_old:
-            heal = _heal_hunk(buf, buf_start, expected_old, replacement_new)
+            heal = _heal_hunk(buf, buf_start, expected_old, replacement_new, hunk.body)
             if heal is None:
                 raise PatchError(
                     f"Context mismatch in {patch.target_path!r} at "
@@ -346,6 +360,11 @@ def apply_parsed_patch(  # noqa: PLR0912
             if hunk.old_count == 0
             else (buf_start + hunk.old_count) == len(buf)
         )
+        if hunk.old_no_newline and (not touches_tail or result_has_trailing):
+            raise PatchError(
+                f"Hunk @@ -{hunk.old_start},{hunk.old_count} @@ says its old line has no "
+                "newline, but the matched block is not the unterminated file tail"
+            )
         buf[buf_start : buf_start + hunk.old_count] = replacement_new
         offset += hunk.new_count - hunk.old_count
         if touches_tail:
@@ -405,8 +424,28 @@ def _reindent(lines: list[str], strip: str, add: str) -> list[str]:
     return out
 
 
+def _replacement_with_actual_context(
+    body: tuple[tuple[str, str], ...], actual: list[str]
+) -> list[str]:
+    """Build a hunk replacement without rewriting its unchanged context."""
+    out: list[str] = []
+    old_index = 0
+    for prefix, text in body:
+        if prefix == " ":
+            out.append(actual[old_index])
+        elif prefix == "+":
+            out.append(text)
+        if prefix in (" ", "-"):
+            old_index += 1
+    return out
+
+
 def _heal_hunk(
-    buf: list[str], buf_start: int, expected_old: list[str], replacement_new: list[str]
+    buf: list[str],
+    buf_start: int,
+    expected_old: list[str],
+    replacement_new: list[str],
+    body: tuple[tuple[str, str], ...],
 ) -> tuple[int, list[str], str] | None:
     """The context-miss ladder for one anchored hunk, strictest first.
 
@@ -423,7 +462,7 @@ def _heal_hunk(
     count = len(expected_old)
     actual = buf[buf_start : buf_start + count]
     if len(actual) == count and [a.rstrip() for a in actual] == [e.rstrip() for e in expected_old]:
-        return buf_start, replacement_new, "rstrip"
+        return buf_start, _replacement_with_actual_context(body, actual), "rstrip"
     shift = _common_shift(actual, expected_old) if len(actual) == count else None
     if shift is not None:
         strip, add = shift
@@ -525,9 +564,9 @@ def patch_target_path(text: str) -> str:
     minus = ""
     for ln in text.splitlines():
         if ln.startswith("--- ") and not minus:
-            minus = ln[4:].strip()
+            minus = _header_path(ln[4:])
         if ln.startswith("+++ "):
-            header = ln[4:].strip()
+            header = _header_path(ln[4:])
             if header == "/dev/null":  # deletion: the path lives in the `---` header
                 if minus and minus != "/dev/null":
                     return _strip_ab_prefix(minus)
@@ -587,14 +626,11 @@ def apply_v4a_text(
     if not path:
         raise PatchError("V4A file directive is missing a path")
     section = body[start_idx + 1 :]
-    # Drop a `*** Move to:` line (rename; we only honour the content change at the
-    # original path) and the optional `*** End of File` marker GPT emits for a
-    # hunk that reaches EOF (our matching is whole-file, so it needs no anchor).
-    section = [
-        ln
-        for ln in section
-        if not ln.startswith("*** Move to:") and ln.strip() != "*** End of File"
-    ]
+    if any(ln.startswith("*** Move to:") for ln in section):
+        raise PatchError("V4A `*** Move to:` is not supported")
+    # Drop the optional marker GPT emits for a hunk that reaches EOF; matching
+    # is whole-file, so it needs no anchor.
+    section = [ln for ln in section if ln.strip() != "*** End of File"]
 
     if verb == "Delete":
         p, none = _v4a_delete(path, section, original)
@@ -634,7 +670,7 @@ def _v4a_apply_update(
         raise PatchError(f"V4A `*** Update File: {path}` has no hunks")
     content = original
     healed: list[str] = []
-    for hints, old_block, new_block in hunks:
+    for hints, old_block, new_block, body in hunks:
         if old_block == "":
             raise PatchError(
                 f"V4A hunk for {path!r} has no context/removed lines to anchor on; "
@@ -643,7 +679,7 @@ def _v4a_apply_update(
         matches = _line_anchored_indices(content, old_block)
         count = len(matches)
         if count == 0:
-            heal = _v4a_heal(content, old_block, new_block)
+            heal = _v4a_heal(content, old_block, new_block, body)
             if heal is None:
                 raise PatchError(
                     f"V4A hunk context not found in {path!r}. The ` `/`-` lines must match "
@@ -670,7 +706,12 @@ def _v4a_apply_update(
     return path, content, tuple(healed)
 
 
-def _v4a_heal(content: str, old_block: str, new_block: str) -> tuple[str, str] | None:
+def _v4a_heal(
+    content: str,
+    old_block: str,
+    new_block: str,
+    body: tuple[tuple[str, str], ...],
+) -> tuple[str, str] | None:
     """The V4A context-miss ladder, strictest first, uniqueness required:
     `rstrip` (on-disk lines equal modulo trailing whitespace) then `indent`
     (one leading-whitespace transform explains every line; the new block is
@@ -693,7 +734,9 @@ def _v4a_heal(content: str, old_block: str, new_block: str) -> tuple[str, str] |
         return "\n".join(lines[:i] + new_lines + lines[i + count :])
 
     if len(rstrip_hits) == 1:
-        return _splice_lines(rstrip_hits[0], new_block.split("\n") if new_block else []), "rstrip"
+        i = rstrip_hits[0]
+        replacement = _replacement_with_actual_context(body, lines[i : i + count])
+        return _splice_lines(i, replacement), "rstrip"
     if not rstrip_hits and len(indent_hits) == 1:
         i, (strip, add) = indent_hits[0]
         new_lines = _reindent(new_block.split("\n"), strip, add) if new_block else []
@@ -714,8 +757,11 @@ def _v4a_splice(content: str, idx: int, old_block: str, new_block: str) -> str:
     return content[:idx] + new_block + rest
 
 
-def _v4a_split_hunks(section: list[str]) -> list[tuple[tuple[str, ...], str, str]]:
-    """Split a V4A Update body into `(hints, old_block, new_block)` tuples.
+def _v4a_split_hunks(
+    section: list[str],
+) -> list[tuple[tuple[str, ...], str, str, tuple[tuple[str, str], ...]]]:
+    """Split a V4A Update body into `(hints, old_block, new_block, body)` tuples;
+    `body` keeps the hunk's own lines as `(prefix, text)` pairs for `_v4a_heal`.
 
     A `@@ <text>` line is a section LOCATOR HINT for the hunk that follows: its
     text (typically a `def`/`class` line) names the enclosing region, used to
@@ -724,16 +770,17 @@ def _v4a_split_hunks(section: list[str]) -> list[tuple[tuple[str, ...], str, str
     separator with no hint. Within a hunk, ` `/`-` lines build the old block and
     ` `/`+` lines build the new block.
     """
-    hunks: list[tuple[list[str], list[str], list[str]]] = []
+    hunks: list[tuple[list[str], list[str], list[str], list[tuple[str, str]]]] = []
     cur_hints: list[str] = []
     cur_old: list[str] = []
     cur_new: list[str] = []
+    cur_body: list[tuple[str, str]] = []
 
     def flush() -> None:
-        nonlocal cur_hints, cur_old, cur_new
+        nonlocal cur_hints, cur_old, cur_new, cur_body
         if cur_old or cur_new:
-            hunks.append((cur_hints, cur_old, cur_new))
-        cur_hints, cur_old, cur_new = [], [], []
+            hunks.append((cur_hints, cur_old, cur_new, cur_body))
+        cur_hints, cur_old, cur_new, cur_body = [], [], [], []
 
     for ln in section:
         if ln.startswith("@@"):
@@ -750,14 +797,19 @@ def _v4a_split_hunks(section: list[str]) -> list[tuple[tuple[str, ...], str, str
             text = ln[1:] if ln.startswith(" ") else ""
             cur_old.append(text)
             cur_new.append(text)
+            cur_body.append((" ", text))
         elif ln.startswith("-"):
-            cur_old.append(ln[1:])
+            text = ln[1:]
+            cur_old.append(text)
+            cur_body.append(("-", text))
         elif ln.startswith("+"):
-            cur_new.append(ln[1:])
+            text = ln[1:]
+            cur_new.append(text)
+            cur_body.append(("+", text))
         else:
             raise PatchError(f"Unexpected V4A hunk line (expected ` `, `-`, `+`, `@@`): {ln!r}")
     flush()
-    return [(tuple(h), "\n".join(o), "\n".join(n)) for h, o, n in hunks]
+    return [(tuple(h), "\n".join(o), "\n".join(n), tuple(body)) for h, o, n, body in hunks]
 
 
 def _v4a_locate_with_hints(content: str, hints: tuple[str, ...], old_block: str) -> int | None:

@@ -606,6 +606,22 @@ def test_apply_edit_non_unique_rejected(tmp_path: Path) -> None:
         )
 
 
+def test_apply_edit_overlapping_matches_are_not_unique(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    target = tmp_path / "f.txt"
+    target.write_text("aaa", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="overlapping matches"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "f.txt",
+                "edits": [{"kind": "replace", "old_string": "aa", "new_string": "x"}],
+            },
+        )
+    assert target.read_text(encoding="utf-8") == "aaa"
+
+
 def test_apply_edit_missing_old_string(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("hello\n", encoding="utf-8")
@@ -675,6 +691,20 @@ def test_apply_edit_not_found_short_file_omits_tail(tmp_path: Path) -> None:
     assert "first 5 lines:" in msg
     assert "last 5 lines:" not in msg
     assert "3 lines" in msg
+
+
+def test_apply_edit_not_found_file_size_is_utf8_bytes(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    (tmp_path / "f.py").write_text("ééé\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="file size: 7 bytes"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "f.py",
+                "edits": [{"kind": "replace", "old_string": "unrelated", "new_string": "x"}],
+            },
+        )
 
 
 def test_apply_edit_replace_requires_new_string(tmp_path: Path) -> None:
@@ -933,6 +963,43 @@ def test_apply_patch_preview_does_not_write(tmp_path: Path) -> None:
     assert res["preview"] is True
     assert res["hunks"] == 1
     assert "+A" in res["diff"]
+
+
+def test_apply_patch_delete_preview_names_dev_null(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    target = tmp_path / "gone.py"
+    target.write_text("x\n", encoding="utf-8")
+    patch = "--- a/gone.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    res = d.dispatch("apply_patch", {"patch": patch, "preview": True}).to_wire()
+    assert "+++ /dev/null\n" in res["diff"]
+    assert target.exists()
+
+
+def test_empty_file_preview_still_names_the_operation(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    created = d.dispatch(
+        "apply_edit",
+        {
+            "path": "new.txt",
+            "edits": [{"kind": "create", "new_string": ""}],
+            "preview": True,
+        },
+    ).to_wire()
+    assert created["diff"] == "--- /dev/null\n+++ b/new.txt\n"
+
+    (tmp_path / "old.txt").write_text("", encoding="utf-8")
+    deleted = d.dispatch(
+        "apply_patch",
+        {
+            "patch": "*** Begin Patch\n*** Delete File: old.txt\n*** End Patch",
+            "preview": True,
+        },
+    ).to_wire()
+    assert deleted["diff"] == "--- a/old.txt\n+++ /dev/null\n"
+    assert not (tmp_path / "new.txt").exists()
+    assert (tmp_path / "old.txt").exists()
 
 
 def test_apply_edit_preview_truncates_giant_diff(tmp_path: Path) -> None:
@@ -2075,6 +2142,28 @@ def test_apply_patch_v4a_delete_in_multi_file(tmp_path: Path) -> None:
     assert not (tmp_path / "old.py").exists()
 
 
+def test_multi_file_patch_path_is_the_first_target_when_it_is_deleted(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    (tmp_path / "old.py").write_text("junk\n", encoding="utf-8")
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch(
+        "apply_patch",
+        {
+            "patch": (
+                "*** Begin Patch\n*** Delete File: old.py\n"
+                "*** Update File: a.py\n@@\n-x\n+y\n*** End Patch"
+            ),
+        },
+    ).to_wire()
+    assert out == {
+        "path": "old.py",
+        "bytes_written": 2,
+        "files": [{"path": "a.py", "bytes_written": 2}],
+        "deleted": ["old.py"],
+    }
+
+
 def test_apply_patch_delete_missing_file_refused(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -2122,6 +2211,26 @@ def test_apply_patch_multi_file_preview_concatenates(tmp_path: Path) -> None:
     assert out["hunks"] == 2
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "x\n"
     assert (tmp_path / "b.py").read_text(encoding="utf-8") == "p\n"
+
+
+def test_apply_patch_multi_file_preview_reports_every_heal(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("    x\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("p  \n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch(
+        "apply_patch",
+        {
+            "preview": True,
+            "patch": (
+                "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
+                "*** Update File: b.py\n@@\n-p\n+q\n*** End Patch"
+            ),
+        },
+    ).to_wire()
+    assert out["healed"] == ["a.py ~indent", "b.py ~rstrip"]
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "    x\n"
+    assert (tmp_path / "b.py").read_text(encoding="utf-8") == "p  \n"
 
 
 def test_apply_patch_reports_heals_on_the_wire(tmp_path: Path) -> None:
