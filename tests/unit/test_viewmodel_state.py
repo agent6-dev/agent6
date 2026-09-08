@@ -182,6 +182,30 @@ def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
     )
 
 
+def test_graph_update_orders_multiple_roots_like_tree_order() -> None:
+    """Two roots (a repeat ask/run leg, or an orphan re-rooted on resume) must
+    render in id order -- the order `tree_order` gives `list_tasks` and every
+    other surface -- not the node map's iteration order, which is insertion
+    order live and filesystem order after a resume."""
+    nodes = {
+        "01LATER00000000000000000A": {"title": "second", "parent_id": None, "children": []},
+        "01EARLY00000000000000000A": {"title": "first", "parent_id": None, "children": []},
+    }
+    s = apply_event(initial_state(), _graph_event(nodes))
+    assert [t.id for t in s.tasks] == ["01EARLY00000000000000000A", "01LATER00000000000000000A"]
+
+
+def test_graph_update_shows_an_orphan_after_the_roots_like_tree_order() -> None:
+    """A node whose parent is missing is not a root: `tree_order` visits the
+    roots first and appends it, and the tree rendered it among the roots."""
+    nodes = {
+        "01AAAA00000000000000000000": {"title": "orphan", "parent_id": "gone", "children": []},
+        "01BBBB00000000000000000000": {"title": "root", "parent_id": None, "children": []},
+    }
+    s = apply_event(initial_state(), _graph_event(nodes))
+    assert [t.title for t in s.tasks] == ["root", "orphan"]
+
+
 def test_graph_update_latest_snapshot_replaces_prior() -> None:
     s = apply_event(
         initial_state(), _graph_event({"r": {"title": "r", "parent_id": None, "children": []}})

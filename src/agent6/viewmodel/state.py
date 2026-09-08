@@ -628,15 +628,19 @@ def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNode
         for child in children:
             visit(str(child), depth + 1)
 
+    # Sorted, not the map's own iteration order: insertion order live and
+    # filesystem order after a resume would show roots (a repeat ask/run leg)
+    # in a different order than `tree_order` gives list_tasks and every other
+    # surface. A node whose parent is missing follows the roots, as it does
+    # there.
     roots = [
         nid
-        for nid, n in nodes.items()
-        if not isinstance(n, dict) or n.get("parent_id") is None or n.get("parent_id") not in nodes
+        for nid in sorted(nodes)
+        if not isinstance((n := nodes[nid]), dict) or n.get("parent_id") is None
     ]
     for nid in roots:
         visit(nid, 0)
-    # Any node not reachable from a root (shouldn't happen) still gets shown.
-    for nid in nodes:
+    for nid in sorted(nodes):
         visit(nid, 0)
     return tuple(out)
 
