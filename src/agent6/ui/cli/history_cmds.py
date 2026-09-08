@@ -31,6 +31,7 @@ from agent6.viewmodel.transcript_render import (
     load_transcripts,
     render_markdown,
     transcript_seq,
+    window_turns,
 )
 
 
@@ -490,7 +491,7 @@ def _cmd_history_transcript(
     turns = fold_conversation(transcripts)
     if window is not None:
         lo, hi = window
-        turns = [t for t in turns if lo <= t.seq <= hi]
+        turns = window_turns(turns, lo, hi)
     print(
         render_markdown(
             turns, session_id=layout.session_id, show_thinking=not no_thinking, tools=tools

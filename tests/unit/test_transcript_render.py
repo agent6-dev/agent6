@@ -18,6 +18,7 @@ from agent6.viewmodel.transcript_render import (
     fold_conversation,
     load_transcripts,
     render_markdown,
+    window_turns,
 )
 
 _OPENAI = [
@@ -288,6 +289,30 @@ def test_render_flags_hide_thinking_and_tools() -> None:
     # calls-only keeps the call line but drops the result
     md2 = render_markdown(turns, session_id="r1", tools="calls")
     assert "-> read_file(" in md2 and "FULL FILE CONTENTS" not in md2
+
+
+def test_seq_window_never_splits_a_call_from_its_result() -> None:
+    """A tool's result is stamped with the seq of the request that echoes it
+    back (one round after the call that dispatched it), so windowing turns by
+    that seq alone drops the result when the window ends at the call's own
+    round, or drops the call when the window starts at the result's round.
+    `window_turns` extends the bound in each case so a call and its result
+    always show together.
+    """
+    turns = fold_conversation(_OPENAI)
+    assert [(t.role, t.seq) for t in turns] == [
+        ("system", 1),
+        ("user", 1),
+        ("assistant", 1),
+        ("tool", 2),
+        ("assistant", 2),
+    ]
+    # A window ending at the call's own round (1) must still show its result.
+    kept = [t.role for t in window_turns(turns, 1, 1)]
+    assert kept == ["system", "user", "assistant", "tool"]
+    # A window starting at the result's round (2) must still show its call.
+    kept = [t.role for t in window_turns(turns, 2, 2)]
+    assert kept == ["assistant", "tool", "assistant"]
 
 
 def test_provider_retry_does_not_duplicate_history() -> None:

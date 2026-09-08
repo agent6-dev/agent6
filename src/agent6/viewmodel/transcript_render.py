@@ -435,6 +435,35 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     return turns
 
 
+def window_turns(turns: list[Turn], lo: int, hi: int) -> list[Turn]:
+    """The turns whose seq falls in [lo, hi], extended so a call and its
+    result are never shown one without the other.
+
+    A tool result is stamped with the seq of the request that echoes it back:
+    one round after the call that dispatched it (see `fold_conversation`). A
+    plain `lo <= seq <= hi` filter then drops the result when the window ends
+    at the call's own round, or drops the call when the window starts at the
+    result's round. Chase each kept tool turn back to its call, and each kept
+    call forward through its (possibly several, for parallel calls) results.
+    """
+    keep = [lo <= t.seq <= hi for t in turns]
+    for i, k in enumerate(keep):
+        if not k:
+            continue
+        if turns[i].role == "tool":
+            j = i - 1
+            while j >= 0 and turns[j].role == "tool":
+                j -= 1
+            if j >= 0:
+                keep[j] = True
+        elif turns[i].tool_calls:
+            j = i + 1
+            while j < len(turns) and turns[j].role == "tool":
+                keep[j] = True
+                j += 1
+    return [t for t, k in zip(turns, keep, strict=True) if k]
+
+
 def _clip(s: str, n: int) -> str:
     return s if len(s) <= n else s[:n] + f"… (+{len(s) - n} chars)"
 
