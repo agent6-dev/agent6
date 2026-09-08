@@ -39,6 +39,7 @@ from agent6.config.write import (
     resolved_write_path,
     revalidate_write,
     set_config_value,
+    unknown_key_error,
     unset_config_value,
     writing_config,
 )
@@ -114,7 +115,7 @@ def _cmd_config_show(
                 eff, keys, resolved=resolved, color=sys.stdout.isatty(), as_json=as_json
             )
         except KeyError as exc:
-            error(f"no config key matches {exc.args[0]!r} (see `agent6 config show`).")
+            error(_config_key_error(str(exc.args[0]), eff))
             return 2
         print(detail, end="")
         return 0
@@ -367,18 +368,19 @@ def _cmd_config_set(
 
 
 def _config_key_error(key: str, eff: EffectiveConfig) -> str:
-    """Distinguish a known section from a key that does not exist."""
+    """A known section is not a leaf; anything else is the unknown-key message
+    every config verb prints, with its did-you-mean."""
     if any(candidate.startswith(key + ".") for candidate in resolved_config_values(eff.config)):
         return f"{key!r} is not a config leaf (see `agent6 config show`)."
-    return f"no config key matches {key!r} (see `agent6 config show`)."
+    return unknown_key_error(key, Path.cwd(), eff=eff)
 
 
-def _not_a_leaf(key: str, config_path: Path | None) -> str:
+def _not_a_leaf(key: str, config_path: Path | None, machine: Path | None) -> str:
     """Why *key* cannot be unset. A `[mcp.servers.<name>]` entry is a table,
     not a leaf, so the message names the verb that removes it instead of the
     generic pointer."""
     try:
-        eff = load_effective(Path.cwd(), config_path)
+        eff = _effective_with_overlay(config_path, machine)
     except ConfigError:
         return f"{key!r} is not a config leaf (see `agent6 config show`)."
     name = key.removeprefix("mcp.servers.")
@@ -403,7 +405,7 @@ def _cmd_config_unset(
     except ConfigError:
         known_leaf = True
     if not known_leaf:
-        error(f"{_not_a_leaf(key, config_path)}")
+        error(f"{_not_a_leaf(key, config_path, machine)}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     if not target.is_file():

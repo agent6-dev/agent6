@@ -264,10 +264,27 @@ def test_config_show_and_get_share_the_unknown_key_error(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    expected = "ERROR: no config key matches 'nope.nope' (see `agent6 config show`).\n"
+    expected = "ERROR: unknown config key 'nope.nope' (see `agent6 config show`)\n"
     for verb in ("show", "get"):
         assert main(["config", verb, "nope.nope"]) == 2
         assert capsys.readouterr().err == expected
+
+
+def test_config_get_suggests_a_key_from_the_layers_it_was_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The did-you-mean pool was reloaded from the cwd alone, so a key one
+    letter off an entry `--config` adds got no suggestion."""
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    overlay = tmp_path / "overlay.toml"
+    overlay.write_text(
+        '[providers.zz]\napi_format = "openai"\nbase_url = "https://zz.test/v1"\n',
+        encoding="utf-8",
+    )
+    assert main(["--config", str(overlay), "config", "get", "providers.zz.base_ur"]) == 2
+    assert "Did you mean 'providers.zz.base_url'" in capsys.readouterr().err
 
 
 def test_config_get_distinguishes_a_section_from_an_unknown_key(
@@ -279,7 +296,7 @@ def test_config_get_distinguishes_a_section_from_an_unknown_key(
     assert main(["config", "get", "sandbox"]) == 2
     assert "'sandbox' is not a config leaf" in capsys.readouterr().err
     assert main(["config", "get", "sandbox.nope"]) == 2
-    assert "no config key matches 'sandbox.nope'" in capsys.readouterr().err
+    assert "unknown config key 'sandbox.nope'" in capsys.readouterr().err
 
 
 def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
@@ -967,7 +984,8 @@ def test_config_unset_on_an_unknown_key_matches_show_and_get(
 
     assert rc == 2
     assert capsys.readouterr().err == (
-        "ERROR: no config key matches 'mcp.servers.nope' (see `agent6 config show`).\n"
+        "ERROR: unknown config key 'mcp.servers.nope'. Did you mean 'mcp.servers'?"
+        " (see `agent6 config show`)\n"
     )
 
 

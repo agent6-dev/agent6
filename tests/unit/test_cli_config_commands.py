@@ -75,7 +75,7 @@ def test_machine_get_on_malformed_toml_is_clean_error(
 def test_unset_refuses_an_unknown_key(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """An unknown key is an error, not a successful no-op."""
     assert _run(["config", "unset", "nope.nope"]) == 2
-    assert "no config key matches 'nope.nope'" in capsys.readouterr().err
+    assert "unknown config key 'nope.nope'" in capsys.readouterr().err
 
 
 def test_unset_reverts_to_default(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:

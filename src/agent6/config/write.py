@@ -38,6 +38,7 @@ from agent6.config.io import (
     upsert_toml_table,
 )
 from agent6.config.layer import (
+    EffectiveConfig,
     flatten_leaves,
     leaf_keys,
     load_effective,
@@ -206,15 +207,15 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
     return f"{key}: {' / '.join(seen)}"
 
 
-def unknown_key_error(key: str, repo_root: Path) -> str:
+def unknown_key_error(key: str, repo_root: Path, *, eff: EffectiveConfig | None = None) -> str:
     """A human message for a key the schema forbids, with a did-you-mean.
 
-    The pool is usually the schema defaults: this runs after the unknown key
-    was already written, so the merged config no longer loads and the live
-    branch (which would add real provider tables) only survives when a higher
-    layer masks the write."""
+    The pool is the effective config's leaves: *eff* when the caller holds
+    one (`config show` and `get`, whose `--config` and `--machine-file`
+    layers hold keys the cwd's config lacks), else the schema defaults, since
+    after a write of an unknown key the merged config no longer loads."""
     try:
-        pool = leaf_keys(load_effective(repo_root, None))
+        pool = leaf_keys(eff if eff is not None else load_effective(repo_root, None))
     except ConfigError:
         pool = sorted(flatten_leaves(Config().model_dump(mode="python")))
     close = difflib.get_close_matches(key, pool, n=2)
