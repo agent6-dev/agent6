@@ -1580,6 +1580,54 @@ def test_an_internal_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch) -> 
         wire.close()
 
 
+def test_a_second_prompt_after_a_recorded_turn_with_no_snapshot_starts_a_new_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A first turn that wrote its manifest and died before its first
+    checkpoint leaves a run the lifecycle refuses to start again and cannot
+    resume; the session goes on under a new run and the editor is told. A
+    turn that recorded nothing starts under the same id."""
+    minted = iter(("run-AAAA11", "run-BBBB22"))
+    calls: list[str] = []
+    monkeypatch.chdir(tmp_path)
+
+    def _state_dir(_cwd: Path) -> Path:
+        return tmp_path / "state"
+
+    def _minted(*_a: object, **_k: object) -> str:
+        return next(minted)
+
+    def _run_task(*_a: object, **kw: Any) -> int:
+        calls.append(str(kw["session_id"]))
+        return 1
+
+    monkeypatch.setattr(runner, "state_dir", _state_dir)
+    monkeypatch.setattr(runner, "unused_session_id", _minted)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(runner, "run_task", _run_task)
+    sent: list[dict[str, Any]] = []
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    bridge = RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path)
+
+    assert bridge.run(session, "first task") == "refusal"
+    assert bridge.run(session, "try again") == "refusal"  # nothing recorded: the same id
+    assert calls == ["run-AAAA11", "run-AAAA11"]
+
+    layout = SessionLayout(tmp_path / "state", "run-AAAA11")
+    layout.ensure()
+    layout.manifest_path.write_text("{}", encoding="utf-8")  # recorded, no snapshot
+    assert bridge.run(session, "once more") == "refusal"
+    assert calls[-1] == "run-BBBB22" and session.session_id == "run-BBBB22"
+    told = [
+        m["params"]["update"]["content"]["text"]
+        for m in sent
+        if m["params"]["update"].get("sessionUpdate") == "agent_message_chunk"
+    ]
+    assert any("run-AAAA11 left no resume point" in t for t in told)
+
+
 def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: Path) -> None:
     """The tool_call_update for an edit carries each path the result journaled,
     absolute, so the editor follows along."""

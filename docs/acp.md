@@ -55,7 +55,7 @@ One session is one directory, one conversation.
 - `session/new` carries an absolute `cwd`; config is that directory's own layered config (global, repo, preset)
 - the directory must be a git repository (the jail's writable mount; runs branch and commit each step)
 - the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (`resume --steer` semantics)
-- a prompt whose prior turn died before the first snapshot starts fresh
+- a prompt whose prior turn left no resume snapshot starts a new run when that turn recorded one (it died before its first checkpoint; the editor is told), and starts the same id when nothing was recorded
 - a busy session refuses a prompt rather than queueing it; the editor can offer it again
 - one connection runs one prompt at a time across sessions (the commit cwd is process-global): a prompt on another session waits its turn, tells the editor which session it waits for, and a `session/cancel` while it waits answers `cancelled` at once
 - `session/cancel` drops the `agent6 sessions stop` marker: the step in flight finishes and commits first

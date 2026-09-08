@@ -366,12 +366,19 @@ class RunBridge:
 
     def _resumable(self, session: Session) -> bool:
         """A later prompt continues the session's run: the prior turn left a
-        resume snapshot. A first prompt, or one whose run died before its
-        first save, starts fresh under a new id."""
+        resume snapshot."""
         if not session.session_id:
             return False
         layout = session.layout(state_dir(session.cwd))
         return (layout.session_dir / "loop_state.json").is_file()
+
+    def _recorded(self, session: Session) -> bool:
+        """Whether the session's run id names a run the lifecycle recorded
+        (its manifest exists): such an id starts nothing again, a never
+        recorded one starts as new."""
+        if not session.session_id:
+            return False
+        return session.layout(state_dir(session.cwd)).manifest_path.exists()
 
     def had_journal(self, session: Session) -> bool:
         """Whether this turn got far enough to write a journal of its own."""
@@ -391,7 +398,20 @@ class RunBridge:
         # chose.
         try:
             resuming = self._resumable(session)
-            if not resuming:
+            if not resuming and self._recorded(session):
+                # The prior turn recorded a run and left no resume point (it
+                # died before its first checkpoint): the lifecycle refuses
+                # that id as existing and would refuse a resume too, so the
+                # session goes on under a new run, and says so.
+                self.server.notify_raw(
+                    message_update(
+                        session.acp_id,
+                        f"[agent6] run {session.session_id} left no resume point;"
+                        " this prompt starts a new run",
+                    )
+                )
+                session.session_id = ""
+            if not session.session_id:
                 session.session_id = unused_session_id(
                     state_dir(session.cwd), session_bucket(ACP_MODE)
                 )
