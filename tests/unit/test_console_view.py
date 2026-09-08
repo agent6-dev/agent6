@@ -39,6 +39,28 @@ def test_reasoning_tool_call_and_result_all_render() -> None:
     assert "passed" in out
 
 
+def test_non_streamed_role_result_renders_once() -> None:
+    """A redirected run and an old journal carry settled prose only on
+    role.result; the live console must not require delta events to show it or
+    repeat the settled copy after streaming it."""
+    settled: dict[str, object] = {
+        "type": "role.result",
+        "role": "worker",
+        "text": "the settled answer",
+    }
+    out = _render([{"type": "role.call", "role": "worker"}, settled])
+    assert out.count("the settled answer") == 1
+
+    streamed = _render(
+        [
+            {"type": "role.call", "role": "worker"},
+            {"type": "role.text_delta", "role": "worker", "text": "the settled answer"},
+            settled,
+        ]
+    )
+    assert streamed.count("the settled answer") == 1
+
+
 def test_whitespace_only_text_prints_no_empty_block() -> None:
     # The turn streams only whitespace text then calls a tool. The old renderer
     # printed a "── worker: response ──" bar with nothing under it; this must not.

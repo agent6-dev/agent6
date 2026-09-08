@@ -112,6 +112,7 @@ class ConsoleView:
         # the same thread) while a delta write may hold the lock.
         self._lock = RLock()
         self._phase: str | None = None  # None | "thinking" | "text": the open prose block
+        self._text_streamed = False
         self._last_flush = 0.0
         self._plan_count = 0  # tasks shown in the last plan block; reprint when it grows
         # Live heartbeat: a turn can stream text then wedge mid-token (a stalled
@@ -156,7 +157,7 @@ class ConsoleView:
         age = 0.0 if self._event_ep is None else max(0.0, time.time() - self._event_ep)
         self._last_output_at = time.monotonic() - age
 
-    def feed(self, event: dict[str, Any]) -> None:  # noqa: PLR0911 - one per event kind
+    def feed(self, event: dict[str, Any]) -> None:  # noqa: PLR0911, PLR0912 - event dispatch
         etype = event.get("type", "")
         with self._lock:
             # Anchor per event, not only per rendered line: a replay can end on
@@ -179,10 +180,22 @@ class ConsoleView:
                 self._drain_btw()
             if etype in ("role.thinking_delta", "role.text_delta"):
                 self._stream(str(event.get("text", "")), thinking=etype == "role.thinking_delta")
+                if etype == "role.text_delta" and self._phase == "text":
+                    self._text_streamed = True
                 return
-            if etype in ("role.call", "role.result"):
+            if etype == "role.call":
                 self._end_block()  # a provider call boundary closes any open prose
                 self._drain_btw()
+                self._text_streamed = False
+                self._fold.feed(event)
+                return
+            if etype == "role.result":
+                self._end_block()
+                self._drain_btw()
+                items = self._fold.feed(event)
+                if not self._text_streamed:
+                    for item in items:
+                        self._render(item)
                 return
             if etype == "session.steer_requested":
                 # A Ctrl-C pause message is about to print to the same terminal;
