@@ -23,6 +23,7 @@ from agent6.ui.tui.machines import (
 )
 from agent6.ui.tui.modals import ConfirmModal
 from agent6.viewmodel import machine_files
+from agent6.viewmodel.machine_state import machine_verb_refusal
 
 # A no-I/O machine that reaches a terminal immediately (branch -> terminal), so a
 # `machine run` produces a finished instance with no model/jail needed.
@@ -327,7 +328,8 @@ def test_watch_screen_disables_steer_and_message_when_ended(
             screen.action_poke()  # the palette still reaches it
             await pilot.pause()
             toasts = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
-            assert ("machine ended; cannot send a message", "warning") in toasts, toasts
+            # The CLI's refusal, word for word.
+            assert (machine_verb_refusal(instance, "tiny", "poke"), "warning") in toasts, toasts
 
     asyncio.run(scenario())
 

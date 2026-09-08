@@ -302,9 +302,10 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         self.app.notify("stop requested; the machine parks at its next boundary", timeout=4.0)
 
     def action_poke(self) -> None:
-        """Send a message to a waiting machine (a poke payload the next tool reads)."""
-        if self._ended:
-            self.app.notify("machine ended; cannot send a message", severity="warning", timeout=4.0)
+        """Send a message to a waiting machine (a poke payload the next tool
+        reads); an ended machine refuses with the CLI's words."""
+        if refusal := machine_verb_refusal(self._root, self._root.name, "poke"):
+            self.app.notify(refusal, severity="warning", timeout=6.0)
             return
         self.app.push_screen(
             TextInputModal("Send a message to the machine (poke):", "message…"), self._on_poke
@@ -313,7 +314,11 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
     def _on_poke(self, message: str | None) -> None:
         if message is None:
             return
-        self._journal.poke(message or None)
+        try:
+            self._journal.poke(message or None)
+        except OSError as exc:
+            self.app.notify(f"could not write the poke: {exc}", severity="warning", timeout=6.0)
+            return
         self.app.notify("poked", timeout=3.0)
 
     def _flush_pending(self) -> None:
