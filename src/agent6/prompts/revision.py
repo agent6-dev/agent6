@@ -110,7 +110,7 @@ def progress_summary_from_notice(text: str) -> str:
     """
     if not text.startswith(_CONTEXT_RESTART_HEAD[:40]):
         return ""
-    _, sep, tail = text.partition("PROGRESS SUMMARY:\n")
+    _, sep, tail = text.rpartition("PROGRESS SUMMARY:\n")
     return tail.strip() if sep else ""
 
 
@@ -118,14 +118,16 @@ def context_restart_notice(
     mode: Literal["run", "plan", "ask", "agent"],
     pins: Sequence[str] = (),
     decisions: str = "",
+    *,
+    dag_available: bool = True,
 ) -> str:
     """The post-compaction restart preamble. The DAG-recovery paragraph is
-    included only for modes whose tool surface has the DAG tools (run, plan):
-    in ask/machine/agent `list_tasks` does not exist, so instructing the worker
-    to call it burns a turn on an unknown-tool error. Operator pins render
+    included only when the run has a curator and its mode exposes the DAG tools
+    (run, plan). Otherwise `list_tasks` does not exist, so instructing the
+    worker to call it burns a turn on an unknown-tool error. Operator pins render
     between the preamble and the summary label, as standing orders."""
     parts = [_CONTEXT_RESTART_HEAD]
-    if mode in ("run", "plan"):
+    if dag_available and mode in ("run", "plan"):
         parts.append(_CONTEXT_RESTART_DAG)
     if block := pinned_block(pins):
         parts.append(block)

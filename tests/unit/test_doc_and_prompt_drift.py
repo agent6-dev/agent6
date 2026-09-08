@@ -29,6 +29,15 @@ _PROMPT_CONSTANTS = (
     prompts.HARDENED_FS_RULE,
     prompts.DAG_RULES_OPTIONAL,
     prompts.DAG_RULES_DECOMPOSE,
+    prompts.APPLY_EDIT_RULE,
+    prompts.PLAN_VERIFY_RULE,
+    prompts.READONLY_COMMAND_RULE,
+    prompts.AUTO_COMMIT_RULE,
+    prompts.AUTO_COMMIT_RULE_GATELESS,
+    prompts.MODEL_GIT_RULE,
+    prompts.MODEL_GIT_RULE_NO_COMMANDS,
+    prompts.CREATE_HINT,
+    prompts.CREATE_HINT_PATCH_ONLY,
 )
 
 # Backticked identifiers in the prompts that are deliberately NOT tool names:
@@ -62,6 +71,13 @@ def _registered_tool_names() -> set[str]:
         mt = tool_schema.mode_tools(mode)
         names |= {cls.TOOL_NAME for cls in (*mt.base, *mt.extras)}
     return names
+
+
+def test_apply_edit_prompt_contract_mentions_its_indent_heal() -> None:
+    """apply_edit can accept a unique uniform-indent mismatch, so the system
+    prompt must not claim byte-exact matching is the only accepted shape."""
+    assert "indent" in prompts.SYSTEM_PROMPT_BASE
+    assert "heal" in prompts.SYSTEM_PROMPT_BASE
 
 
 def test_every_tool_mention_in_the_prompts_is_a_registered_tool() -> None:

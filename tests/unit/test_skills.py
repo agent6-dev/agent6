@@ -64,6 +64,17 @@ class TestParseFrontmatter:
         fields, _ = skills.parse_frontmatter(text)
         assert fields["description"] == "line one\nline two"
 
+    def test_indented_separator_inside_literal_description_is_content(self) -> None:
+        text = (
+            "---\nname: x\ndescription: |\n"
+            "  Use when prose contains a divider.\n  ---\n  Keep this line too.\n---\nbody\n"
+        )
+        fields, warnings = skills.parse_frontmatter(text)
+        assert fields["description"] == (
+            "Use when prose contains a divider.\n---\nKeep this line too."
+        )
+        assert warnings == []
+
     def test_missing_frontmatter_warns(self) -> None:
         fields, warnings = skills.parse_frontmatter("no frontmatter at all\n")
         assert fields == {}

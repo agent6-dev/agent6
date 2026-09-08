@@ -11,15 +11,22 @@ placeholders; `agent6.workflows._prompt_blocks` owns the typed assembly
 
 from __future__ import annotations
 
+import textwrap
+
+APPLY_EDIT_RULE = """- apply_edit: old_string occurs exactly once in the file, byte for
+  byte; a miss matching exactly one region under a uniform indent shift
+  heals. kind="create" makes a new file, kind="overwrite" replaces one
+  whole (both: empty old_string, full content in new_string).
+"""
+
 SYSTEM_PROMPT_BASE = (
     """<agent6>
 You are agent6, a coding agent, working in this repository. The first
 user message is the task.
 
-- apply_edit: old_string occurs exactly once in the file, byte for
-  byte; kind="create" makes a new file, kind="overwrite" replaces one
-  whole (both: empty old_string, full content in new_string).
-- apply_patch: standard unified diff; multi-hunk edits to one file.
+"""
+    + APPLY_EDIT_RULE
+    + """- apply_patch: standard unified diff; multi-hunk edits to one file.
 """
     "__HARDENED_FS_RULE__"
     "__GIT_PROTECT_RULE__"
@@ -37,6 +44,16 @@ __DAG_RULES_BLOCK__
 PLAN_VERIFY_RULE = """- run_verify_command runs the operator's gate; a baseline run records the
   failures that predate the execution pass.
 """
+
+READONLY_COMMAND_NOTE = (
+    "run_command runs jailed in the workspace under the operator's run_commands"
+    " policy; a probe's writes land in the workspace and nothing carries them"
+    " forward."
+)
+READONLY_COMMAND_RULE = (
+    textwrap.fill(READONLY_COMMAND_NOTE, width=72, initial_indent="- ", subsequent_indent="  ")
+    + "\n"
+)
 
 # Rendered into run mode's __AUTO_COMMIT_RULE__ sentinel, keyed on
 # [git].control AND gate presence: under agent6 control the harness
@@ -60,6 +77,10 @@ MODEL_GIT_RULE = """- You own git in this run: agent6 keeps no shadow record and
   as you see fit); uncommitted changes exist only in the worktree.
 """
 
+MODEL_GIT_RULE_NO_COMMANDS = """- Nothing commits automatically in this run. Command tools are
+  withheld, so your work stays in the worktree, uncommitted, for the operator.
+"""
+
 # Rendered into run mode's __GIT_PROTECT_RULE__ sentinel under strict
 # isolation with protect_git on, and in a fork's linked worktree under any
 # jail (the repository's `.git` is granted read-only there): elsewhere the
@@ -78,9 +99,13 @@ HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE 
   top-level files or directories in the workspace root (existing entries
   are writable as normal). If a build tool needs a new top-level entry
   (e.g. `Cargo.lock`, `target/`, `go.sum`), create it first with
-  `apply_edit` using `kind="create"`: the file itself for a file, or a
+  __CREATE_HINT__: the file itself for a file, or a
   placeholder like `target/.keep` for a directory. Then rerun the command.
 """
+
+# `__CREATE_HINT__` names the edit tool the run offers for that first file.
+CREATE_HINT = '`apply_edit` using `kind="create"`'
+CREATE_HINT_PATCH_ONLY = "`apply_patch` with `--- /dev/null` as the source side"
 
 # The `__DAG_RULES_BLOCK__` sentinel in SYSTEM_PROMPT_BASE is replaced at assembly
 # by one of these two blocks (run mode only), keyed on `[prompt].decompose`.
@@ -146,9 +171,8 @@ for the execution pass.
 </role>
 
 <tool-use-rules>
-__PLAN_VERIFY_RULE__- run_command runs jailed in the workspace and is approval-gated; a probe's
-  writes land in the workspace and nothing carries them forward.
-- The task DAG is a scratchpad here; the execution run builds its own.
+__PLAN_VERIFY_RULE____READONLY_COMMAND_RULE__- The task DAG is a scratchpad here; the execution run
+  builds its own.
 </tool-use-rules>
 
 <plan-output>
@@ -195,10 +219,8 @@ something, a design idea, a bug, or agent6 itself. Your final prose
 message is the answer the user sees.
 
 The tool surface reads and probes: `apply_edit`, `apply_patch` and the
-task-DAG tools are not exposed. run_command runs
-jailed in the workspace under the operator's run_commands policy; a
-probe's writes (a test's `__pycache__`) land in the workspace and nothing
-carries them forward. An answer that needs an edit describes it.
+task-DAG tools are not exposed. __READONLY_COMMAND_NOTE__An answer that needs
+an edit describes it.
 </role>
 
 <answer>

@@ -363,6 +363,52 @@ def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
     assert RunCommandInput.TOOL_NAME not in names
 
 
+def test_no_commands_removes_run_command_from_read_only_mode_prompts(tmp_path: Path) -> None:
+    """Plan and ask must not advertise probes when run_command is withheld from
+    the same call's tool definitions."""
+    cfg = _config(tmp_path)  # run_commands = "no"
+    repo = RepoSummary(
+        root=tmp_path,
+        branch="main",
+        head_sha="0" * 40,
+        file_count=0,
+        top_level=(),
+        agents_md="",
+        recent_log="",
+    )
+    dispatcher = ToolDispatcher(root=tmp_path, config=cfg)
+    for mode in ("plan", "ask"):
+        prompt = loopmod.build_system_prompt(config=cfg, repo=repo, mode=mode, skills=None)  # pyright: ignore[reportPrivateUsage]
+        names = {tool.name for tool in loopmod.tool_definitions(dispatcher, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        assert "run_command" not in names
+        assert "run_command" not in prompt, mode
+        assert "probe's writes" not in prompt, mode
+
+
+def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: Path) -> None:
+    """Plan's rule block opens on a bullet with no blank line, and ask's prose
+    carries the command note as a sentence, not a bullet."""
+    from agent6.config import Config
+
+    repo = RepoSummary(
+        root=tmp_path,
+        branch="main",
+        head_sha="0" * 40,
+        file_count=0,
+        top_level=(),
+        agents_md="",
+        recent_log="",
+    )
+    for commands in ("ask", "no"):
+        cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
+        plan = loopmod.build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)  # pyright: ignore[reportPrivateUsage]
+        rules = plan.split("<tool-use-rules>\n", 1)[1].split("</tool-use-rules>", 1)[0]
+        assert rules.startswith("- ") and "\n\n" not in rules, rules
+        ask = loopmod.build_system_prompt(config=cfg, repo=repo, mode="ask", skills=None)  # pyright: ignore[reportPrivateUsage]
+        assert "\n- run_command" not in ask
+        assert ("not exposed. run_command runs jailed" in ask) == (commands == "ask")
+
+
 def test_tool_definitions_plan_mode_filters_edit_tools(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)

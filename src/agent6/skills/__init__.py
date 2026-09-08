@@ -70,7 +70,11 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], list[str]]:
     if not lines or lines[0].strip() != "---":
         return {}, ["no frontmatter block (file must start with ---)"]
     try:
-        end = next(i for i, ln in enumerate(lines[1:], start=1) if ln.strip() == "---")
+        end = next(
+            i
+            for i, line in enumerate(lines[1:], start=1)
+            if line == line.lstrip() and line.strip() == "---"
+        )
     except StopIteration:
         return {}, ["unclosed frontmatter block (no closing ---)"]
 

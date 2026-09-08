@@ -101,6 +101,16 @@ def test_extra_tool_schemas_structure_matches_golden() -> None:
     )
 
 
+def test_read_background_does_not_claim_the_default_configured_interval() -> None:
+    """The tool resolves an omitted wait_s from workflow.command_checkin_s, so
+    its static description must not claim the 900-second Config default after
+    an operator configures another interval."""
+    from agent6.tools.schema import ReadBackgroundInput
+
+    assert "900 s by default" not in ReadBackgroundInput.TOOL_DESCRIPTION
+    assert "configured check-in interval" in ReadBackgroundInput.TOOL_DESCRIPTION
+
+
 def test_status_pattern_bytes_are_pinned() -> None:
     # The update_task/list_tasks status pattern is DERIVED from the NodeStatus
     # Literal (one owner); this pins the emitted LLM-facing bytes, so growing

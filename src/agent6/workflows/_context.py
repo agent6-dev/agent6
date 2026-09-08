@@ -33,23 +33,45 @@ def _read_text(path: Path) -> str:
         return ""
 
 
+def _agents_md_sources(root: Path) -> tuple[tuple[Path, str], ...]:
+    """Readable AGENTS.md files from the git root through *root*, in order."""
+    top = toplevel(root)
+    if top is None:
+        candidates = (root / "AGENTS.md",)
+    else:
+        top = top.resolve()
+        current = root.resolve()
+        try:
+            relative = current.relative_to(top)
+        except ValueError:
+            candidates = (root / "AGENTS.md",)
+        else:
+            directories = [top]
+            for part in relative.parts:
+                directories.append(directories[-1] / part)
+            candidates = tuple(directory / "AGENTS.md" for directory in directories)
+    return tuple((path, text) for path in candidates if (text := _read_text(path)))
+
+
 def agents_md_text(root: Path) -> str:
     """The AGENTS.md text a session at *root* injects, whole (never clipped).
 
-    When *root* sits below a git toplevel, the toplevel's file loads first and
-    *root*'s own (if any) follows under a heading naming its directory, so a
-    subdirectory start still carries the repo's conventions (pi and Claude Code
-    collect ancestor files the same way)."""
-    own = _read_text(root / "AGENTS.md")
+    When *root* sits below a git toplevel, every ancestor file loads from the
+    toplevel down; a file below the toplevel carries a heading naming its
+    directory, so a subdirectory start gets the same layered conventions as pi
+    and Claude Code."""
     top = toplevel(root)
-    if top is None or top == root:
-        return own
-    root_text = _read_text(top / "AGENTS.md")
-    if not root_text:
-        return own
-    if not own:
-        return root_text
-    return f"{root_text}\n\n# AGENTS.md in {root.name}/ (this run's working directory)\n\n{own}"
+    parts: list[str] = []
+    for path, text in _agents_md_sources(root):
+        directory = path.parent.resolve()
+        if top is None or directory == top.resolve():
+            parts.append(text)
+            continue
+        label = f"{directory.relative_to(top.resolve()).as_posix()}/"
+        if directory == root.resolve():
+            label += " (this run's working directory)"
+        parts.append(f"# AGENTS.md in {label}\n\n{text}")
+    return "\n\n".join(parts)
 
 
 def agents_md_notices(root: Path) -> tuple[str, ...]:
@@ -58,10 +80,22 @@ def agents_md_notices(root: Path) -> tuple[str, ...]:
     is injected whole; the remedy is trimming the file)."""
     out: list[str] = []
     top = toplevel(root)
-    if top is not None and top != root and (top / "AGENTS.md").is_file():
-        also = " plus this directory's" if (root / "AGENTS.md").is_file() else ""
-        out.append(f"loading the repo root's AGENTS.md ({top}){also}")
-    total = len(agents_md_text(root))
+    sources = _agents_md_sources(root)
+    if top is not None and top.resolve() != root.resolve():
+        own = any(path.parent.resolve() == root.resolve() for path, _ in sources)
+        ancestors = [path for path, _ in sources if path.parent.resolve() != root.resolve()]
+        if ancestors:
+            also = " plus this directory's" if own else ""
+            root_loaded = any(path.parent.resolve() == top.resolve() for path in ancestors)
+            location = (
+                f", including the repo root's ({top})"
+                if root_loaded
+                else f" below the repo root ({top})"
+            )
+            files = f"{len(ancestors)} ancestor AGENTS.md file{'s' if len(ancestors) != 1 else ''}"
+            out.append(f"loading {files}{location}{also}")
+    text = agents_md_text(root)
+    total = len(text)
     if total > AGENTS_MD_WARN_CHARS:
         out.append(
             f"WARNING: AGENTS.md totals {total // 1000}k chars and rides in the"

@@ -512,6 +512,22 @@ def test_hardened_fs_rule_renders_only_under_hardened(tmp_path: Path) -> None:
     assert "Under hardened isolation" in hardened
 
 
+def test_patch_only_prompt_names_only_the_offered_edit_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The patch-only experiment removes apply_edit from the schema, so its
+    system prompt must remove that tool's contract too."""
+    monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
+    cfg = _cfg(verify=True)
+    prompt = build_system_prompt(config=cfg, repo=_repo(tmp_path), mode="run", skills=None)
+    from agent6.workflows._toolset import tool_definitions
+
+    names = {tool.name for tool in tool_definitions(ToolDispatcher(root=tmp_path, config=cfg))}
+    assert "apply_edit" not in names
+    assert "apply_edit" not in prompt
+    assert "apply_patch" in names and "apply_patch" in prompt
+
+
 def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: Path) -> None:
     """The .git read-only bind exists only under strict with protect_git on;
     every unjailed run (isolation none, e.g. the SWE-bench containers) was
@@ -582,6 +598,27 @@ def test_prompt_git_rules_match_git_control(tmp_path: Path) -> None:
     block = gateless[start : gateless.index("</no-verify-command>", start)]
     assert "finish_session" not in block and "finish_session ends the run" in gateless
     assert "commits each editing step" not in block
+
+
+def test_model_git_rule_does_not_offer_a_withheld_run_command(tmp_path: Path) -> None:
+    """Model-controlled git cannot tell the worker to commit through
+    run_command when the operator withheld every command tool."""
+    cfg = Config.model_validate(
+        {
+            "git": {"control": "model"},
+            "sandbox": {"run_commands": "no", "protect_git": False},
+        }
+    )
+    prompt = build_system_prompt(config=cfg, repo=_repo(tmp_path), mode="run", skills=None)
+    from agent6.workflows._toolset import tool_definitions
+
+    names = {
+        tool.name
+        for tool in tool_definitions(ToolDispatcher(root=tmp_path, config=cfg), mode="run")
+    }
+    assert "run_command" not in names
+    assert "run_command" not in prompt
+    assert "uncommitted" in prompt
 
 
 def test_budget_block_names_the_plan_meter_for_subscription_runs(tmp_path: Path) -> None:

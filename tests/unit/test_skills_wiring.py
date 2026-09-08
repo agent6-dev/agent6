@@ -72,6 +72,12 @@ class TestSkillsBlock:
         # an always skill is not ALSO indexed
         assert "- caveman —" not in block
 
+    def test_multiline_description_stays_on_one_index_line(self) -> None:
+        skill = _skill("tidy", "Use when output is verbose.\nNever add filler.")
+        block = skills_block(_resolved(enabled=(skill,)))
+        index_lines = [line for line in block.splitlines() if line.startswith("- ")]
+        assert index_lines == ["- tidy — Use when output is verbose. Never add filler."]
+
     def test_long_description_clipped(self) -> None:
         block = skills_block(_resolved(enabled=(_skill("big", "words " * 100),)))
         line = next(ln for ln in block.splitlines() if ln.startswith("- big"))
@@ -88,6 +94,7 @@ class TestSkillsBlock:
         block = skills_block(_resolved(enabled=many))
         assert len(block) < 12_000
         assert "elided" in block
+        assert "agent6 skills list" not in block
 
 
 class TestBuildSystemPromptSkills:

@@ -643,7 +643,7 @@ class Workflow:
             isolation=self.dispatcher.isolation,
             commands_allowed=self.dispatcher.command_policy() != "no",
             protected_paths=bool(self.dispatcher.extra_protect_paths),
-            dag_available=self.curator is not None,
+            dag_available=self.dispatcher.dag_available,
         )
 
         try:
@@ -4074,7 +4074,12 @@ class Workflow:
         if open_tasks:
             self._apply_compaction_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
         conversation.restart(
-            context_restart_notice(self.mode, pins=state.pins, decisions=self._load_decisions())
+            context_restart_notice(
+                self.mode,
+                pins=state.pins,
+                decisions=self._load_decisions(),
+                dag_available=self.dispatcher.dag_available,
+            )
             + summary,
             keep=turns[tail_start:],
         )

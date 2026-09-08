@@ -347,6 +347,17 @@ def test_restart_notice_is_dag_aware() -> None:
 # --- read-waste reduction: identity placeholders + hot-file protection ------
 
 
+def test_restart_notice_omits_dag_recovery_without_a_curator() -> None:
+    """Run mode can be embedded without a curator, in which case list_tasks is
+    absent and the compaction restart must not instruct the worker to call it."""
+    from agent6.prompts.revision import context_restart_notice
+
+    notice = context_restart_notice("run", dag_available=False)
+    assert "list_tasks" not in notice
+    assert "DAG" not in notice
+    assert "Do NOT start over" in notice
+
+
 def test_elision_placeholder_names_the_call() -> None:
     from agent6.workflows._compaction import ELISION_PREFIX, elision_placeholder
 
@@ -737,6 +748,16 @@ def test_strip_thinking_preserves_tool_use_pairing() -> None:
         if isinstance(m.get("content"), list)
         for b in m["content"]
     )
+
+
+def test_restart_summary_parser_ignores_marker_text_inside_a_pin() -> None:
+    """A verbatim operator pin may contain the restart label; parsing the first
+    occurrence mistakes the tail of that pin for the prior progress summary."""
+    from agent6.prompts.revision import context_restart_notice, progress_summary_from_notice
+
+    notice = context_restart_notice("run", pins=("Preserve PROGRESS SUMMARY:\nverbatim",))
+    summary = "actual prior progress"
+    assert progress_summary_from_notice(notice + summary) == summary
 
 
 def test_restart_notice_re_shows_the_operator_rulings() -> None:

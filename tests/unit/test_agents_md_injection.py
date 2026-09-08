@@ -65,6 +65,40 @@ def test_subdirectory_with_its_own_file_gets_both_labeled(tmp_path: Path) -> Non
     assert any("plus this directory's" in n for n in agents_md_notices(sub))
 
 
+def test_nested_start_loads_each_ancestor_file_in_order(tmp_path: Path) -> None:
+    """A start below an intermediate package must not skip that package's
+    AGENTS.md while loading the repository root and leaf files."""
+    _git_repo(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("ROOT RULES\n", encoding="utf-8")
+    package = tmp_path / "packages"
+    package.mkdir()
+    (package / "AGENTS.md").write_text("PACKAGE RULES\n", encoding="utf-8")
+    leaf = package / "api"
+    leaf.mkdir()
+    (leaf / "AGENTS.md").write_text("API RULES\n", encoding="utf-8")
+
+    text = agents_md_text(leaf)
+
+    assert text.index("ROOT RULES") < text.index("PACKAGE RULES") < text.index("API RULES")
+    assert "packages/" in text and "packages/api/" in text
+    notice = " ".join(agents_md_notices(leaf))
+    assert "2 ancestor" in notice and "this directory's" in notice
+
+
+def test_a_start_below_a_root_without_agents_md_labels_the_file(tmp_path: Path) -> None:
+    """With no root file, the outermost file found is a subdirectory's; bare,
+    its rules read as the repository's."""
+    _git_repo(tmp_path)
+    sub = tmp_path / "a"
+    sub.mkdir()
+    (sub / "AGENTS.md").write_text("A RULES\n", encoding="utf-8")
+
+    text = agents_md_text(sub)
+
+    assert text.startswith("# AGENTS.md in a/ (this run's working directory)")
+    assert text.endswith("A RULES\n")
+
+
 def test_repo_root_start_emits_no_subdir_notice(tmp_path: Path) -> None:
     _git_repo(tmp_path)
     (tmp_path / "AGENTS.md").write_text("ROOT RULES\n", encoding="utf-8")

@@ -20,16 +20,22 @@ from agent6.config import Config, plan_metered
 from agent6.memory import INDEX_INJECT_CAP
 from agent6.prompts.loop import (
     AGENT_SYSTEM_PROMPT_BASE,
+    APPLY_EDIT_RULE,
     ASK_SYSTEM_PROMPT_BASE,
     AUTO_COMMIT_RULE,
     AUTO_COMMIT_RULE_GATELESS,
+    CREATE_HINT,
+    CREATE_HINT_PATCH_ONLY,
     GIT_PROTECT_RULE,
     HARDENED_FS_RULE,
     MODEL_GIT_RULE,
+    MODEL_GIT_RULE_NO_COMMANDS,
     NO_AUTO_COMMIT_RULE,
     PLAN_BUDGET_LINE,
     PLAN_SYSTEM_PROMPT_BASE,
     PLAN_VERIFY_RULE,
+    READONLY_COMMAND_NOTE,
+    READONLY_COMMAND_RULE,
     SKILLS_HEADER,
     SYSTEM_PROMPT_BASE,
     V2_BUDGET_BLOCK_TEMPLATE,
@@ -132,7 +138,8 @@ def skills_block(resolved: ResolvedSkills) -> str:
         used = 0
         shown = 0
         for sk in resolved.enabled:
-            line = f"- {sk.name} — {sk.description}"
+            description = " ".join(sk.description.split())
+            line = f"- {sk.name} — {description}"
             if len(line) > SKILL_INDEX_LINE_MAX_CHARS:
                 line = line[: SKILL_INDEX_LINE_MAX_CHARS - 10] + " [clipped]"
             if used + len(line) > SKILLS_INDEX_MAX_CHARS:
@@ -141,9 +148,7 @@ def skills_block(resolved: ResolvedSkills) -> str:
             used += len(line) + 1
             shown += 1
         if shown < len(resolved.enabled):
-            lines.append(
-                f"({len(resolved.enabled) - shown} skills elided; `agent6 skills list` shows all)"
-            )
+            lines.append(f"({len(resolved.enabled) - shown} skills elided from this index)")
         lines.append("</skills>")
         parts.append("\n".join(lines) + "\n")
     return "\n".join(parts)
@@ -231,7 +236,7 @@ def _plan_budget_line(config: Config) -> str:
     return PLAN_BUDGET_LINE.format(percent_cap=cap)
 
 
-def _commit_rule(config: Config, *, has_gate: bool) -> str:
+def _commit_rule(config: Config, *, has_gate: bool, commands_allowed: bool) -> str:
     """The commit fact the run prompt states. Auto-commit is the agent6-control
     chain: under `[git].control = "model"` nothing commits automatically and
     the model owns the record; with `commit_per_step` off nothing commits at
@@ -239,7 +244,7 @@ def _commit_rule(config: Config, *, has_gate: bool) -> str:
     each passing verify when it does, each editing step when it does not (a
     gateless run, or a gate the harness runs at finish)."""
     if config.git.control == "model":
-        return MODEL_GIT_RULE
+        return MODEL_GIT_RULE if commands_allowed else MODEL_GIT_RULE_NO_COMMANDS
     if not config.git.commit_per_step:
         return NO_AUTO_COMMIT_RULE
     if has_gate and config.workflow.verify_when != "finish":
@@ -299,11 +304,17 @@ def build_system_prompt(
     # A run with no curator (a machine agent state) has no DAG tools to teach.
     dag_block = dag_rules_block(config.prompt.decompose == "on") if dag_available else ""
     base = base.replace("__DAG_RULES_BLOCK__", dag_block)
+    patch_only = mode == "run" and os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1"
+    if patch_only:
+        base = base.replace(APPLY_EDIT_RULE, "")
     # The hardened filesystem caveat is real only under hardened with protect
     # paths to carve around (`protected_paths`); elsewhere stating it would
     # misdirect the model.
     carved = isolation == "hardened" and protected_paths
-    base = base.replace("__HARDENED_FS_RULE__", HARDENED_FS_RULE if carved else "")
+    hardened_rule = HARDENED_FS_RULE.replace(
+        "__CREATE_HINT__", CREATE_HINT_PATCH_ONLY if patch_only else CREATE_HINT
+    )
+    base = base.replace("__HARDENED_FS_RULE__", hardened_rule if carved else "")
     # The .git read-only bind exists under strict with protect_git on
     # (policy.py), and in a fork's linked worktree under any jail: its `.git`
     # is a pointer file into the repository's, which the leg grants read-only.
@@ -319,7 +330,12 @@ def build_system_prompt(
     allowed = config.sandbox.run_commands != "no" if commands_allowed is None else commands_allowed
     has_gate = bool(config.workflow.verify_command) and allowed
     base = base.replace("__PLAN_VERIFY_RULE__", PLAN_VERIFY_RULE if has_gate else "")
-    base = base.replace("__AUTO_COMMIT_RULE__", _commit_rule(config, has_gate=has_gate))
+    base = base.replace("__READONLY_COMMAND_RULE__", READONLY_COMMAND_RULE if allowed else "")
+    base = base.replace("__READONLY_COMMAND_NOTE__", READONLY_COMMAND_NOTE + " " if allowed else "")
+    base = base.replace(
+        "__AUTO_COMMIT_RULE__",
+        _commit_rule(config, has_gate=has_gate, commands_allowed=allowed),
+    )
     parts = [base]
 
     # When the bench harness sets
@@ -328,11 +344,11 @@ def build_system_prompt(
     # been removed and waste turns on the resulting `Unknown tool` errors.
     # Plan mode already filters both apply_edit and apply_patch, so the
     # patch-only banner does not apply.
-    if mode == "run" and os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1":
+    if patch_only:
         parts.append(
             "<patch-only-mode>\n"
-            "`apply_edit` has been disabled for this run. The only edit\n"
-            "primitive available is `apply_patch` (unified diff). Use it\n"
+            "The only edit primitive available is `apply_patch` (unified\n"
+            "diff). Use it\n"
             "for every change, including file creation (emit a diff with\n"
             "`--- /dev/null` as the source side).\n"
             "</patch-only-mode>\n"
@@ -410,6 +426,8 @@ def build_system_prompt(
     # Repo memory, after the repo priors. Empty for machine/agent (returned
     # above) and for plan/ask with nothing recorded.
     if memory_part := memory_block(memory_index, memory_dir_path, mode=mode):
+        if patch_only:
+            memory_part = memory_part.replace(" (apply_edit)", "")
         parts.append(memory_part)
     if decisions_part := decisions_block(decisions, decisions_path):
         parts.append(decisions_part)

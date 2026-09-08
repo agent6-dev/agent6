@@ -240,8 +240,8 @@ class ReadBackgroundInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read a background command's output. `id` from run_command's"
         " hand-back; `tail_lines` bounds the tail; `wait_s` waits for exit up"
-        " to that many seconds (0 = look now; omitted = the run's check-in"
-        " interval, 900 s by default). Returns the output tail, running state,"
+        " to that many seconds (0 = look now; omitted = the run's configured"
+        " check-in interval). Returns the output tail, running state,"
         " and returncode when finished. With no `id`, returns this run's"
         " background roster."
     )
