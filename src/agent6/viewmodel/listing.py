@@ -245,16 +245,13 @@ def lanes_of(
     return sorted(lanes, key=_lane_order)
 
 
-def row_json(
-    row: ListingRow, *, winners: Container[str], task_chars: int | None = None
-) -> dict[str, object]:
+def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
     """A listing row and its nested lanes as JSON (`summary_row` for each);
     `mtime` is the row's, the group's latest activity."""
     out = summary_row(
         row.summary,
         winner=row.summary.session_id in winners,
-        task_chars=task_chars,
-        lanes=[row_json(ln, winners=winners, task_chars=task_chars) for ln in row.lanes],
+        lanes=[row_json(ln, winners=winners) for ln in row.lanes],
     )
     out["mtime"] = row.mtime
     return out
@@ -264,23 +261,21 @@ def summary_row(
     s: SessionSummary,
     *,
     winner: bool = False,
-    task_chars: int | None = None,
     lanes: Sequence[dict[str, object]] = (),
 ) -> dict[str, object]:
     """One listing row as JSON: the shape `sessions list --json` prints and
     `/api/hub` serves, so one name per fact reaches every reader.
 
     `label` and `level` are the rendered status cell and its colour level, so a
-    client needs no copy of the status maps. *task_chars* asks for a one-line
-    snippet clipped to that width, for a card with a row to fill; without it
-    the task rides whole, since a JSON reader has its own layout and a
-    multi-line task otherwise arrives as its first line with nothing to say so.
-    *lanes* are a fan-out's lane rows, nested (`row_json` builds them).
+    client needs no copy of the status maps. The task rides whole, with the
+    one-line `task_line` the web hub shows beside it. *lanes*
+    are a fan-out's lane rows, nested (`row_json` builds them).
     """
     return {
         "session_id": s.session_id,
         "mode": s.mode,
-        "task": s.task if task_chars is None else task_snippet(s.task, max_chars=task_chars),
+        "task": s.task,
+        "task_line": task_snippet(s.task),
         "status": s.status,
         "reason": s.reason,
         "label": listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),

@@ -338,6 +338,15 @@ def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
     assert model.session_dir_for(tmp_path, "echo-fern-AA11BB") == ask
 
 
+def test_hub_skips_husk_machine_draft_dirs(tmp_path: Path) -> None:
+    """A draft with neither manifest nor log is absent like a session husk."""
+    draft = _bucket(tmp_path, "machines") / "empty-draft-AAAAAA"
+    draft.mkdir(parents=True)
+
+    assert model.hub_payload(tmp_path)["drafts"] == []
+    assert model.draft_dir_for(tmp_path, draft.name) is None
+
+
 def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: Path) -> None:
     """`prompt.decompose = auto` and the unset compaction thresholds resolve
     from the worker model at runtime; the page showed the raw placeholders
@@ -662,17 +671,16 @@ def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: Path) -> None
 def test_the_hub_row_and_the_cli_json_row_are_one_shape(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One name per fact: `/api/hub` said `id`/`usd`/`mtime` where `sessions
-    list --json` said `session_id`/`cost_usd`/`updated`, so a script reading
-    one could not read the other."""
+    """The shared row includes the full task, not a web-only clipped value."""
     from agent6.ui.cli.sessions_cmds import _cmd_list  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
+    task = "a task whose full text must survive both JSON surfaces " + "x" * 100
     _run(
         tmp_path,
         "r1",
         [
-            {"type": "session.start", "mode": "run", "user_task": "the task"},
+            {"type": "session.start", "mode": "run", "user_task": task},
             {"type": "session.end", "all_passed": True},
         ],
     )
@@ -681,8 +689,44 @@ def test_the_hub_row_and_the_cli_json_row_are_one_shape(
     assert _cmd_list(as_json=True) == 0
     (cli_row,) = json.loads(capsys.readouterr().out)
 
-    assert set(hub_row) == set(cli_row)
-    assert hub_row["session_id"] == cli_row["session_id"] == "r1"
+    assert hub_row == cli_row
+
+
+def test_the_hub_row_carries_the_one_line_task_the_cli_table_shows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The card title is the task's first user-authored line, as the CLI table
+    and the TUI hub render it; the whole composed task rides beside it."""
+    from agent6.viewmodel.listing import task_snippet
+
+    monkeypatch.chdir(tmp_path)
+    task = "Fix the parser\n\nSeeded context the card must not show " + "z" * 80
+    _run(tmp_path, "r2", [{"type": "session.start", "mode": "run", "user_task": task}])
+
+    (row,) = model.hub_payload(tmp_path)["sessions"]
+    assert row["task"] == task
+    assert row["task_line"] == task_snippet(task) == "Fix the parser"
+
+
+def test_the_draft_hub_row_keeps_the_full_cli_json_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.ui.cli.sessions_cmds import _cmd_list  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.chdir(tmp_path)
+    task = "author a machine from this complete description " + "y" * 100
+    draft = _bucket(tmp_path, "machines") / "draft-AAAAAAAA"
+    draft.mkdir(parents=True)
+    (draft / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "machine", "user_task": task}) + "\n",
+        encoding="utf-8",
+    )
+
+    (hub_row,) = model.hub_payload(tmp_path)["drafts"]
+    assert _cmd_list(as_json=True) == 0
+    (cli_row,) = json.loads(capsys.readouterr().out)
+
+    assert hub_row == cli_row
 
 
 def test_a_waiting_machine_is_not_labelled_failed(tmp_path: Path) -> None:

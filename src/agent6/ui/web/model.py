@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -89,7 +88,7 @@ def draft_dir_for(cwd: Path, name: str) -> Path | None:
     if not is_safe_session_id(name):
         return None
     d = bucket_dir(state_dir(cwd), "machines") / name
-    return d if d.is_dir() else None
+    return d if d.is_dir() and not is_session_husk(d) else None
 
 
 def draft_workspace(cwd: Path, name: str, config_path: Path | None) -> Path | None:
@@ -138,18 +137,6 @@ def draft_dir_paths(cwd: Path) -> list[Path]:
 # --- hub listing -------------------------------------------------------------
 
 
-def _session_summary(session_dir: Path, branch_tips: Mapping[str, str]) -> dict[str, Any]:
-    """The hub's one-line run summary: the shared listing row (`summary_row`),
-    task clipped for the card. One shape across `/api/hub`, `sessions list
-    --json` and the TUI hub, so a provider_error death or an unmerged pass
-    reads the same everywhere and the client keeps no copy of the status maps."""
-    return summary_row(
-        summarize_session_dir(session_dir, branch_tips=branch_tips),
-        winner=is_winner(session_dir),  # fan-out compare winner: a ★ on the hub row
-        task_chars=100,
-    )
-
-
 def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
     """Every session a hub lists, summarized, newest first (`session_dirs`),
     a fan-out's lanes nested under its row (`nested_rows`)."""
@@ -157,7 +144,7 @@ def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
     dirs = session_dirs(state_dir(cwd))
     winners = {p.name for p in dirs if is_winner(p)}
     rows = nested_rows(summarize_session_dir(p, branch_tips=tips) for p in dirs)
-    return [row_json(r, winners=winners, task_chars=100) for r in rows]
+    return [row_json(r, winners=winners) for r in rows]
 
 
 def _machine_row(s: MachineSummary) -> dict[str, Any]:
@@ -190,7 +177,11 @@ def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
     """`machine create` drafts summarized like runs (their logs.jsonl is a
     run-style authoring log), newest first, so the machines page can link to
     the #/draft/<name> view."""
-    summaries = [_session_summary(p, {}) for p in draft_dir_paths(cwd)]
+    summaries: list[dict[str, Any]] = [
+        summary_row(summarize_session_dir(p, branch_tips={}), winner=is_winner(p))
+        for p in draft_dir_paths(cwd)
+        if not is_session_husk(p)
+    ]
     summaries.sort(key=lambda s: s["mtime"], reverse=True)
     return summaries
 

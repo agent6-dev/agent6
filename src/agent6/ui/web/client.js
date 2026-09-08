@@ -311,7 +311,7 @@ const expandedFanouts = new Set();
 // fold under it behind a `lanes: N` line, and expand to the same rows indented.
 function paintSession(r, it, g) {
   it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
-  g.appendChild(el('div', 'title', r.task || '(no task)'));
+  g.appendChild(el('div', 'title', r.task_line || r.task || '(no task)'));
   const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
   // id_cell carries the winner mark the CLI and TUI id cells carry.
   g.appendChild(el('div', 'sub', `${esc(r.id_cell || r.session_id)} · ${when(r.mtime)}${cost}`));
@@ -386,7 +386,7 @@ function machinesCard(machines) {
 function draftsCard(drafts) {
   return listCard('Machine drafts', drafts, '', (d, it, g) => {
     it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.session_id);
-    g.appendChild(el('div', 'title', d.task || d.session_id));
+    g.appendChild(el('div', 'title', d.task_line || d.task || d.session_id));
     g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${when(d.mtime)}`));
     it.appendChild(pill(d.level, d.label || d.status)); // keep the reason (failed · provider_error)
   });

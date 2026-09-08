@@ -17,7 +17,7 @@ from agent6.ui.web.page import PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "5423cd58f7fd356d7dcd9bd3f171941cb3aa3703d064e59cf9c66549df8e8ba4"
+PAGE_SHA256 = "9388497fa17c974b36bc58db429f010ea8e96921ac68e38241e4d98a75c9620b"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -30,8 +30,10 @@ def test_rendered_page_bytes_are_pinned() -> None:
 def test_page_assets_load_non_empty() -> None:
     # Guards a packaging regression (an asset missing from the wheel) that the
     # build-time wheel check would otherwise catch only at release.
+    from agent6.ui.web.page import _CLIENT_FILES  # pyright: ignore[reportPrivateUsage]
+
     web = resources.files("agent6.ui.web")
-    for name in ("client.js", "styles.css"):
+    for name in (*_CLIENT_FILES, "styles.css"):
         assert web.joinpath(name).read_text(encoding="utf-8").strip(), f"{name} is empty"
 
 

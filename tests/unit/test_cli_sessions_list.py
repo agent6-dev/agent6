@@ -88,6 +88,7 @@ def test_runs_list_json_carries_the_row_facts(
         "mtime",
         "winner",
         "task",
+        "task_line",
         "lanes",
         "lane",
         "coordinator",
