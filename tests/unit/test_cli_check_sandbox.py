@@ -189,6 +189,25 @@ def test_check_sandbox_probes_the_isolation_the_config_selects(
     assert stub_jail and all(p.isolation == "hardened" for p in stub_jail)
 
 
+def test_check_sandbox_names_the_degrade_reason_only_for_auto(
+    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`degrade_reason` answers why `auto` does not reach `strict` here; it is
+    not about an explicitly configured level. With `sandbox.isolation =
+    "hardened"` set on purpose, a host-wide degrade reason must not print
+    "not strict: ..." as if auto had downgraded -- `check config` and the
+    run's own `warn_sandbox_gaps` both gate this line on `isolation == "auto"`,
+    and `check sandbox` must agree."""
+    why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
+    _force_profile(monkeypatch, "hardened", reason=why)
+    cfg = Config(sandbox=SandboxConfig(isolation="hardened"))
+    rc = check_cmds._cmd_check_sandbox(cfg)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "effective isolation (hardened): hardened" in out
+    assert "not strict" not in out
+
+
 def test_check_names_a_jail_binary_it_cannot_run(
     monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
 ) -> None:

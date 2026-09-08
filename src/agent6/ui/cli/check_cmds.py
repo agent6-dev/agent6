@@ -144,9 +144,11 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
         return _print_sandbox_reports(reports)
     print(f"  effective isolation ({requested}): {isolation}")
     reason = degrade_reason(env)
-    if reason is not None:
-        # A degraded level never appears without its why (same line the run
+    if requested == "auto" and reason is not None:
+        # A degraded 'auto' never appears without its why (same line the run
         # warning and check config print; one owner in detect.degrade_reason).
+        # An explicitly requested level is not a degrade, whatever the reason
+        # says about auto reaching strict here.
         print(f"  not strict: {reason}")
     # What that level gives, in general terms rather than a catalogue of cases:
     # someone whose tool misbehaves needs to know which boundaries exist here
