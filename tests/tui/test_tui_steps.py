@@ -132,3 +132,23 @@ def test_the_diff_pane_keeps_saying_the_model_owns_git(
             assert dash.query_one("#diff").border_title == "diff · the model owns git"
 
     asyncio.run(scenario())
+
+
+def test_a_clipped_diff_pane_marks_the_cut() -> None:
+    """The diff pane sliced patches at a byte cap with no ellipsis, so a
+    truncated patch read as the whole one. `_append_colored_diff` marks the
+    cut, per the repo's clip_cell rule."""
+    from rich.text import Text
+
+    from agent6.ui.tui.dashboard import _append_colored_diff  # pyright: ignore[reportPrivateUsage]
+
+    patch = "+" + "x" * 5000
+    dt = Text()
+    _append_colored_diff(dt, patch, cap=2000)
+    rendered = dt.plain
+    assert "truncated" in rendered
+    assert len(rendered) < len(patch)
+
+    whole = Text()
+    _append_colored_diff(whole, "+small\n", cap=2000)
+    assert "truncated" not in whole.plain  # a patch under the cap is unmarked

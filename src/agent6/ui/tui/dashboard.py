@@ -759,7 +759,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
                     f"{what} iter {step.iteration} · {step.sha[:7]} · {step.subject}\n",
                     style="bold",
                 )
-                _append_colored_diff(dt, self._step_patch(step.sha)[:4000])
+                _append_colored_diff(dt, self._step_patch(step.sha), cap=4000)
                 diff_widget.update(dt)
                 return
         if sel is not None:
@@ -767,7 +767,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             if task_diffs:
                 n = len(task_diffs)
                 dt.append(f"selected task · {n} commit{'s' if n != 1 else ''}\n", style="bold")
-                _append_colored_diff(dt, task_diffs[-1].patch[:2000])
+                _append_colored_diff(dt, task_diffs[-1].patch, cap=2000)
             else:
                 dt.append("(no commits during the selected task yet)", style="dim")
             diff_widget.update(dt)
@@ -775,17 +775,20 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # hidden behind a stale passing diff. A passed verify yields to the diff.
         elif verify is not None and verify.exit_code is None:
             dt.append("verify running: ", style="bold")
-            dt.append(" ".join(verify.cmd)[:200] + "\n")
+            dt.append(clip_cell(" ".join(verify.cmd), 200) + "\n")
             dt.append("…", style="dim")
             diff_widget.update(dt)
         elif verify is not None and verify.exit_code != 0:
             dt.append(f"verify exit={verify.exit_code} ", style="bold red")
-            dt.append(f"({verify.duration_s:.1f}s)  {' '.join(verify.cmd)[:160]}\n")
-            dt.append((verify.stderr_tail or verify.stdout_tail)[:2000] or "(no output)")
+            dt.append(f"({verify.duration_s:.1f}s)  {clip_cell(' '.join(verify.cmd), 160)}\n")
+            out = verify.stderr_tail or verify.stdout_tail
+            dt.append(out[:2000] or "(no output)")
+            if len(out) > 2000:
+                dt.append("\n… (truncated)", style="dim")
             diff_widget.update(dt)
         elif s.latest_diff:
             dt.append("latest commit diff\n", style="bold")
-            _append_colored_diff(dt, s.latest_diff[:2000])
+            _append_colored_diff(dt, s.latest_diff, cap=2000)
             diff_widget.update(dt)
         elif verify is not None:
             dt.append(f"verify passed ({verify.duration_s:.1f}s)", style="bold green")
@@ -794,9 +797,12 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             diff_widget.update(Text("(no diffs yet)", style="dim"))
 
 
-def _append_colored_diff(dt: Text, patch: str) -> None:
-    """Append a unified diff with +/- line coloring (no markup parsing)."""
-    for line in patch.splitlines():
+def _append_colored_diff(dt: Text, patch: str, *, cap: int = 0) -> None:
+    """Append a unified diff with +/- line coloring (no markup parsing). With
+    *cap*, clip to it and mark the cut, so a truncated patch never reads as the
+    whole one (the pane is a preview; `sessions diff` prints the full patch)."""
+    shown = patch if not cap or len(patch) <= cap else patch[:cap]
+    for line in shown.splitlines():
         if line.startswith("+") and not line.startswith("+++ "):
             dt.append(line + "\n", style="green")
         elif line.startswith("-") and not line.startswith("--- "):
@@ -805,3 +811,5 @@ def _append_colored_diff(dt: Text, patch: str) -> None:
             dt.append(line + "\n", style="cyan")
         else:
             dt.append(line + "\n")
+    if cap and len(patch) > cap:
+        dt.append("… (truncated; `sessions diff` for the full patch)\n", style="dim")
