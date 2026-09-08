@@ -99,7 +99,7 @@ def _show_assignments(config_path: Path | None) -> int:
             print(f"  {r:<9} {rm.provider}/{rm.model}  effort={effort}  [{src}]")
     print(
         "\nSet one with: agent6 model worker <provider> <model>"
-        " [--effort low|medium|high|xhigh|max]  (provider/model are prompted if omitted)"
+        " [--effort low|medium|high|xhigh|max]  (prompted if omitted on a TTY)"
     )
     return 0
 

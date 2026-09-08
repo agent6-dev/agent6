@@ -21,12 +21,12 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         sub,
         "attach",
         help=(
-            "Attach to a run or machine live and drive it: follow the conversation"
+            "Attach to a session or machine and drive it live: follow the conversation"
             " (the same render as `agent6 run`) and, on a terminal, answer its"
             " run_command approvals and ask_user questions. --raw is the no-deps"
             " event-line tail, --tui the full-screen TUI, --json a one-shot"
             " snapshot of the folded state. Omit the target for the most recent"
-            " run."
+            " session."
         ),
     )
     watch_target = watch_p.add_argument(
@@ -116,7 +116,10 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     web_p.add_argument(
         "--allow-non-loopback",
         action="store_true",
-        help="Opt in to bind a non-loopback --host (else a non-loopback bind is refused).",
+        help=(
+            "Opt in to a non-loopback bind for this invocation; otherwise"
+            " [web].allow_non_loopback must be true."
+        ),
     )
 
 

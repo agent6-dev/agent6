@@ -54,7 +54,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "show",
         help=(
             "Print every effective config value and where it came from"
-            " (default / global / repo / flag). `*` marks values a config layer"
+            " (default / global / repo / preset / flag / machine). `*` marks values a config layer"
             " set, whatever their value."
         ),
     )
@@ -91,7 +91,9 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "--force", action="store_true", help="Overwrite the target file if it already exists."
     )
     _sub(
-        config_sub, "path", help="Print the resolved global + repo config (and secrets) file paths."
+        config_sub,
+        "path",
+        help="Print the resolved config, secrets, state, skills and cache paths.",
     )
     _sub(
         config_sub,
@@ -112,7 +114,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     _add_machine_file(config_get, "View the value with a machine file's [config] overlay applied.")
     for verb, blurb in (
-        ("set", "Set a leaf to a scalar value (global by default)."),
+        ("set", "Set a leaf to a TOML-typed value (global by default)."),
         ("unset", "Remove a leaf, reverting it to the next-lower layer / default."),
         ("add", "Append a value to a list field such as sandbox.extra_read_paths."),
         ("remove", "Remove a value from a list field."),
@@ -154,7 +156,10 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     connect_p = _sub(
         sub,
         "connect",
-        help="Interactively add a provider + API key (stored in the global secrets file).",
+        help=(
+            "Interactively add or update a provider and its credentials"
+            " (stored in the global secrets file)."
+        ),
     )
     connect_provider = connect_p.add_argument(
         "provider",
@@ -210,7 +215,7 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "provider",
         nargs="?",
         default="",
-        help="Provider name for the role (prompted from connected providers if omitted).",
+        help="Provider name for the role (prompted from connected providers if omitted on a TTY).",
     )
     # Role-gated (not _complete_providers) so the provider list doesn't bleed
     # into the first positional (role), see _complete_model_provider.
@@ -219,7 +224,10 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "model",
         nargs="?",
         default="",
-        help="Model identifier for the role (prompted from the provider's catalog if omitted).",
+        help=(
+            "Model identifier for the role"
+            " (prompted from the provider's catalog if omitted on a TTY)."
+        ),
     )
     model_model.completer = _complete_models  # type: ignore[attr-defined]
     model_p.add_argument(

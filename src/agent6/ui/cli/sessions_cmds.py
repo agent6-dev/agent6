@@ -350,7 +350,7 @@ def _resolve_session_manifest(
 
 
 def _cmd_stop(*, session_id: str) -> int:
-    """Ask a running detached run to stop cleanly after its current step.
+    """Ask a running session to stop cleanly after its current step.
 
     Drops the same 'stop after this step' marker the TUI/web Stop button uses:
     the run finishes the in-flight step (its tool results and auto-commit land),

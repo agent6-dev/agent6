@@ -131,17 +131,88 @@ def test_run_tui_help_does_not_claim_an_extra() -> None:
 
 def test_plan_task_help_does_not_promise_omission() -> None:
     # plan always requires a task ("Omit to execute/offer" is `run` behavior).
-    plan_run = _find(_find(build_parser(), "plan"), "run")
+    plan = _find(build_parser(), "plan")
+    plan_run = _find(plan, "run")
     help_text = _positional(plan_run, "task").help or ""
     assert "Omit" not in help_text
+    assert "run --from <plan-id>" in (plan.description or "")
+
+
+def test_fork_help_covers_read_only_session_modes() -> None:
+    # Fork preserves its source mode: run forks get worktrees, while plan and
+    # ask forks are read-only and stay in the current checkout.
+    fork = _find(build_parser(), "fork")
+    assert "Clone a session" in (fork.description or "")
+    assert "A run fork gets its own git worktree" in (fork.description or "")
+    session_help = _positional(fork, "session_id").help or ""
+    assert session_help.startswith("Source session id")
+    assert "newest resumable session" in session_help
+    assert "worktree" not in (_option(fork, "--no-run").help or "")
+
+
+def test_resume_help_covers_plans_and_asks() -> None:
+    # Resume resolves all resumable buckets, including plans and asks.
+    resume = _find(build_parser(), "resume")
+    assert resume.description == "Resume a paused session from its snapshot."
 
 
 def test_attach_and_web_say_machine_id() -> None:
     parser = build_parser()
+    attach = _find(parser, "attach")
+    assert (attach.description or "").startswith("Attach to a session or machine")
+    assert "most recent session" in (attach.description or "")
     for cmd in ("attach", "web"):
         help_text = _positional(_find(parser, cmd), "target").help or ""
         assert "machine id" in help_text
         assert "machine name" not in help_text
+
+
+def test_web_non_loopback_help_names_both_opt_ins() -> None:
+    web = _find(build_parser(), "web")
+    help_text = _option(web, "--allow-non-loopback").help or ""
+    assert "[web].allow_non_loopback" in help_text
+
+
+def test_sessions_help_matches_each_commands_target_scope() -> None:
+    parser = build_parser()
+    sessions = _find(parser, "sessions")
+    description = sessions.description or ""
+    assert "A session id is positional" in description
+    assert "positional everywhere" not in description
+    diff = _find(sessions, "diff")
+    assert "branch or chain ref" in (diff.description or "")
+    commits = _find(sessions, "commits")
+    assert "branch or chain ref" in (commits.description or "")
+    stop = _find(sessions, "stop")
+    assert "detached" not in (stop.description or "")
+    prune = _find(sessions, "prune")
+    squashed = _option(prune, "--delete-squashed").help or ""
+    assert "recorded target" in squashed
+    assert "their base" not in squashed
+    history_search = _find(_find(parser, "history"), "search")
+    assert history_search.description == "ripgrep-backed search over all sessions."
+
+
+def test_machine_help_covers_running() -> None:
+    machine = _find(build_parser(), "machine")
+    assert (machine.description or "").startswith("Author and run agent6 state machines")
+
+
+def test_config_and_provider_help_cover_all_supported_shapes() -> None:
+    parser = build_parser()
+    config = _find(parser, "config")
+    show = _find(config, "show")
+    for source in ("default", "global", "repo", "preset", "flag", "machine"):
+        assert source in (show.description or "")
+    set_command = _find(config, "set")
+    assert "TOML-typed value" in (set_command.description or "")
+    path = _find(config, "path")
+    assert "config, secrets, state, skills and cache" in (path.description or "")
+    connect = _find(parser, "connect")
+    assert "credentials" in (connect.description or "")
+    model = _find(parser, "model")
+    for positional in ("provider", "model"):
+        assert "on a TTY" in (_positional(model, positional).help or "")
 
 
 def test_profile_flags_have_the_profiles_completer() -> None:

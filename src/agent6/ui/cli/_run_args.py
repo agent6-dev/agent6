@@ -140,7 +140,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    resume_p = _sub(sub, "resume", help="Resume a paused run from its snapshot.")
+    resume_p = _sub(sub, "resume", help="Resume a paused session from its snapshot.")
     _add_session_id(resume_p, _complete_resumable_ids)
     _add_config_flag(resume_p)
     resume_preset = resume_p.add_argument(
@@ -193,14 +193,17 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "fork",
         help=(
-            "Clone a run, rolled back to a checkpoint, into a new run in its own git"
-            " worktree and continue it (the source run and your checkout are never touched)."
+            "Clone a session, rolled back to a checkpoint, and continue it without"
+            " touching the source. A run fork gets its own git worktree; a plan or ask"
+            " fork stays read-only in the current checkout."
         ),
     )
     _add_session_id(
         fork_p,
         _complete_resumable_ids,
-        help_text="Source run id or unambiguous prefix; omit for the newest run.",
+        help_text=(
+            "Source session id or unambiguous prefix; omit for the newest resumable session."
+        ),
     )
     fork_p.add_argument(
         "--at-turn",
@@ -219,7 +222,7 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     fork_p.add_argument(
         "--no-run",
         action="store_true",
-        help="Only create the fork (its run dir and worktree); resume it later.",
+        help="Only create the fork; resume it later.",
     )
     _add_config_flag(fork_p)
     fork_p.add_argument(

@@ -21,7 +21,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         sub,
         "machine",
         help=(
-            "Author-time tooling for agent6 state machines (.asm.toml); bare `machine`"
+            "Author and run agent6 state machines (.asm.toml); bare `machine`"
             " lists this repo's machines."
         ),
     )

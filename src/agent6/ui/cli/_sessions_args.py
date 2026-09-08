@@ -18,8 +18,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help=(
             "List this repo's sessions (`agent6 sessions`, or `sessions list`) or"
             " inspect one: show (liveness/progress), diff, compare, transcript, graph."
-            " The session id is a positional everywhere (exact or unambiguous prefix;"
-            " omit for the most recent). To follow one live, use `agent6 attach`."
+            " A session id is positional (exact or unambiguous prefix; omit for the"
+            " newest matching session). To follow one live, use `agent6 attach`."
         ),
     )
     # A bare `sessions` is `sessions list` (parser._DEFAULT_VERBS).
@@ -63,7 +63,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_diff = _sub(
         sessions_sub,
         "diff",
-        help="Print the git diff produced by a session (manifest.base_sha -> HEAD of run branch).",
+        help=(
+            "Print the git diff produced by a session"
+            " (manifest.base_sha -> HEAD of its run branch or chain ref)."
+        ),
     )
     _add_session_id(sessions_diff, _complete_session_ids)
     sessions_diff.add_argument(
@@ -83,7 +86,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_merge = _sub(
         sessions_sub,
         "merge",
-        help="Merge a session's branch into a target (default: the branch it was cut from).",
+        help="Merge a session's work into a target (default: the branch it was cut from).",
     )
     _add_session_id(sessions_merge, _complete_session_ids)
     sessions_merge.add_argument(
@@ -136,14 +139,14 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_commits = _sub(
         sessions_sub,
         "commits",
-        help="List the per-step commits on a session's branch.",
+        help="List a session's per-step commits from its run branch or chain ref.",
     )
     _add_session_id(sessions_commits, _complete_session_ids)
 
     sessions_stop = _sub(
         sessions_sub,
         "stop",
-        help="Ask a running detached session to stop cleanly after its current step (resumable).",
+        help="Ask a running session to stop cleanly after its current step (resumable).",
     )
     _add_session_id(sessions_stop, _complete_live_session_ids)
 
@@ -188,8 +191,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         action="store_true",
         help=(
             "Also force-delete run branches and chain refs confirmed squash-merged into"
-            " their base (git branch -d refuses these; the content is safe in the base"
-            " commit). Each deletion prints an undelete command."
+            " their recorded target (git branch -d refuses these; the content is safe in"
+            " the target commit). Each deletion prints an undelete command."
         ),
     )
 

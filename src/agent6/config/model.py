@@ -13,7 +13,8 @@ push, `--force`, and history rewrites are refused unconditionally by
 `$XDG_CONFIG_HOME` defaults, then the per-repo config (out of the workspace,
 under the state dir), so a repo is zero-config when the global config supplies
 providers + models. `agent6 config show` audits the *effective* value of every
-field and exactly where it came from (default / global / repo / flag). A
+field and exactly where it came from (default / preset / global / repo / flag
+/ machine). A
 provider+key, which a run cannot guess, is checked by
 :meth:`Config.require_runnable` with a pointer to `agent6 connect` rather
 than a load-time failure, so `config show` always works. The repo's

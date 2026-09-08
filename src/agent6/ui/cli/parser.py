@@ -353,7 +353,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     hist_sub = hist_p.add_subparsers(dest="history_command", required=True, metavar="<subcommand>")
-    hist_search = _sub(hist_sub, "search", help="ripgrep-backed search over all runs.")
+    hist_search = _sub(hist_sub, "search", help="ripgrep-backed search over all sessions.")
     hist_search.add_argument(
         "query",
         nargs="?",
