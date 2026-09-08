@@ -113,6 +113,16 @@ def test_a_misspelled_away_mode_refuses_even_where_a_person_could_answer() -> No
     )
 
 
+@pytest.mark.parametrize("commands", ["yes", "no"])
+def test_a_misspelled_away_mode_refuses_when_commands_are_settled(commands: str) -> None:
+    """Away-mode also decides fetch, MCP and question prompts, so settling
+    run_command does not make an invalid launcher value harmless."""
+    cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
+    refusal = headless_approval_refusal(cfg, tui_enabled=False, away="denied", can_ask=False)
+    assert refusal is not None
+    assert "'denied' is not an away-mode" in refusal
+
+
 def test_an_away_mode_that_is_honored_starts_the_run() -> None:
     for away in ("wait", "deny", "approve"):
         assert (

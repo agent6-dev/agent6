@@ -378,14 +378,14 @@ def headless_approval_refusal(
 
     Returns the message, or None when approval is answerable.
     """
-    if cfg.sandbox.run_commands != "ask":
-        return None
     if away and away not in AWAY_MODES:
         return (
             f"AGENT6_DETACHED_AWAY={away!r} is not an away-mode, so an absent operator's"
             " intent is unknown and an approval would wait forever.\n"
             f"  - set AGENT6_DETACHED_AWAY={'|'.join(AWAY_MODES)}"
         )
+    if cfg.sandbox.run_commands != "ask":
+        return None
     if tui_enabled or can_ask or away:
         return None
     unattended = (

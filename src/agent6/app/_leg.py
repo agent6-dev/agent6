@@ -385,10 +385,14 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
                     raise
         except ResumeError as exc:
             reporter.error(str(exc))
+            reporter.err(f"\n[agent6] {label} crashed")
             return LegEnd(1)
         except KeyboardInterrupt:
             interrupted = True
             reporter.err(f"\n[agent6] {label} interrupted")
+        except Exception:
+            reporter.err(f"\n[agent6] {label} crashed")
+            raise
     finally:
         steer_state.restore()
         session.close()

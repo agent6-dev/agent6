@@ -152,12 +152,13 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         ask_transcript_task=None,
         resuming=True,
     )
+    said: list[str] = []
     end = run_leg(
         Config(),
         layout,
         inputs,
         frontend=frontend,
-        reporter=Reporter(out=lambda _m: None, err=lambda _m: None),
+        reporter=Reporter(out=said.append, err=said.append),
         events=events,
         transcript_sink=MagicMock(),
         cwd=tmp_path,
@@ -166,3 +167,4 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     assert end.rc == 1
     assert seen_at_exit, "the tui_session scope never closed"
     assert "session.end" in seen_at_exit[0], seen_at_exit[0]
+    assert any("resume crashed" in line for line in said)

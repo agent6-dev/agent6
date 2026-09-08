@@ -93,6 +93,7 @@ from agent6.sessions.lock import (
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import ResumableMode, session_bucket, session_kind
+from agent6.viewmodel.listing import finished_needs_new_work
 from agent6.workflows._context import agents_md_notices
 
 
@@ -160,6 +161,13 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     The `planner` model role drives plan mode (falls back to `worker`).
     """
     role = session_kind(mode).role
+    cwd = Path.cwd()
+    if session_id:
+        try:
+            validate_explicit_session_id(session_id)
+        except SessionIdError as exc:
+            reporter.error(str(exc))
+            return 2
 
     # Before anything reads a knob (see session_config): an interactive session
     # (ask / plan) never runs a command unwatched, whether it is starting here
@@ -193,7 +201,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     )
     if parking is not None:
         reporter.note(parking)
-    cwd = Path.cwd()
     try:
         isolation = select_isolation(
             cfg,
@@ -219,12 +226,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
     # Layout: standard run-dir scaffolding for transcripts + logs. ask sessions
     # live under the per-repo state dir (asks subdir) to stay separate from real runs.
-    if session_id:
-        try:
-            validate_explicit_session_id(session_id)
-        except SessionIdError as exc:
-            reporter.error(str(exc))
-            return 2
     state = state_dir(cwd)
     bucket = session_bucket(mode)
     # Same-bucket reuse is the resume/park flow below; another bucket's id is
@@ -253,11 +254,20 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             parked = read_manifest(layout.session_dir).parked_task
         except ManifestError:
             parked = ""
-        if not parked:
-            reporter.error(
-                f"run {session_id!r} already exists. Use `agent6 resume {session_id}` to "
-                "continue it, or choose a different --session-id."
+            resume = ""
+        else:
+            resume = (
+                f'`agent6 resume {session_id} --steer "<what to do next>"` to give it new work'
+                if finished_needs_new_work(layout.session_dir)
+                else f"`agent6 resume {session_id}` to continue it"
             )
+        if not parked:
+            next_step = (
+                f" Use {resume}, or choose a different --session-id."
+                if resume
+                else " Choose a different --session-id."
+            )
+            reporter.error(f"run {session_id!r} already exists.{next_step}")
             return 2
     layout.ensure()
     # One authoritative writer per run dir. Acquire BEFORE touching any shared
@@ -507,43 +517,45 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # run_task in-process, where a leaked flock refuses every later run on
         # the session until the server restarts.
         try:
-            frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
-            if not detach_requested:
-                # A detach keeps it: this process owns the run until the
-                # background `resume` claims it, and `detach_to_background`
-                # clears the pid if that spawn fails.
-                clear_worker_pid(layout.session_dir)
-            if stashed:
-                if detach_requested:
-                    # The run is NOT over: popping the stash now would feed the
-                    # user's pre-run files into the detached continuation's
-                    # auto-commits. Leave the stash and say so.
-                    # By sha, never by position: this hint has the longest window
-                    # of any, since the operator reads it now and runs it after a
-                    # background run that may take hours, by which point a
-                    # positional pop restores whatever else was stashed meanwhile.
-                    hint = stash_recovery_hint(
-                        cwd, session_id=effective_session_id, base_branch=base_branch
-                    )
-                    reporter.note(
-                        "pre-run changes remain stashed while the run continues"
-                        " in the background; after it ends, restore them with:"
-                        f" {hint}"
-                        if hint
-                        else "pre-run changes remain stashed while the run continues"
-                        " in the background, but the stash could not be located; check"
-                        " `git stash list`"
-                    )
-                else:
-                    finalize_auto_stash(
-                        cwd,
-                        base_branch=base_branch,
-                        run_branch=run_branch,
-                        auto_pop=stash_pop,
-                        session_id=layout.session_id,
-                        exclude=untracked_at_start,
-                        reporter=reporter,
-                    )
+            try:
+                frontend.close_console_view()  # stop the heartbeat, clear any spinner line
+            finally:
+                if not detach_requested:
+                    # A detach keeps it: this process owns the run until the
+                    # background `resume` claims it, and `detach_to_background`
+                    # clears the pid if that spawn fails.
+                    clear_worker_pid(layout.session_dir)
+                if stashed:
+                    if detach_requested:
+                        # The run is NOT over: popping the stash now would feed the
+                        # user's pre-run files into the detached continuation's
+                        # auto-commits. Leave the stash and say so.
+                        # By sha, never by position: this hint has the longest window
+                        # of any, since the operator reads it now and runs it after a
+                        # background run that may take hours, by which point a
+                        # positional pop restores whatever else was stashed meanwhile.
+                        hint = stash_recovery_hint(
+                            cwd, session_id=effective_session_id, base_branch=base_branch
+                        )
+                        reporter.note(
+                            "pre-run changes remain stashed while the run continues"
+                            " in the background; after it ends, restore them with:"
+                            f" {hint}"
+                            if hint
+                            else "pre-run changes remain stashed while the run continues"
+                            " in the background, but the stash could not be located; check"
+                            " `git stash list`"
+                        )
+                    else:
+                        finalize_auto_stash(
+                            cwd,
+                            base_branch=base_branch,
+                            run_branch=run_branch,
+                            auto_pop=stash_pop,
+                            session_id=layout.session_id,
+                            exclude=untracked_at_start,
+                            reporter=reporter,
+                        )
         finally:
             release_single_writer(repo_lock_fd)
             release_single_writer(worker_lock_fd)

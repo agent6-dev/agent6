@@ -760,11 +760,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # `detach_to_background` clears the pid if that spawn fails. Nested so
         # an in-process front-end teardown failure cannot strand either flock.
         try:
-            frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
-            if not detach_requested and not handed_to_run_task:
-                # run_task's own teardown keeps the pid through a detach there,
-                # and the spawned child then holds the file: nothing here to clear.
-                clear_worker_pid(layout.session_dir)
+            try:
+                frontend.close_console_view()  # stop the heartbeat, clear any spinner line
+            finally:
+                if not detach_requested and not handed_to_run_task:
+                    # run_task's own teardown keeps the pid through a detach there,
+                    # and the spawned child then holds the file: nothing here to clear.
+                    clear_worker_pid(layout.session_dir)
         finally:
             release_single_writer(repo_lock_fd)
             release_single_writer(worker_lock_fd)

@@ -6,6 +6,7 @@ the invocation's flags, then say so)."""
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable, Sequence
 from dataclasses import replace
@@ -197,7 +198,9 @@ def _returning(value: object) -> Callable[..., object]:
 
 
 def _stub_leg_internals(
-    monkeypatch: pytest.MonkeyPatch, result: SessionResult, built: dict[str, Any] | None = None
+    monkeypatch: pytest.MonkeyPatch,
+    result: SessionResult | Exception,
+    built: dict[str, Any] | None = None,
 ) -> None:
     class _Workflow:
         iterations_reached = 3
@@ -208,6 +211,8 @@ def _stub_leg_internals(
             self._undo_forker: Callable[[], tuple[str, str] | None] = kw["undo_forker"]
 
         def run(self, _task: str) -> SessionResult:
+            if isinstance(result, Exception):
+                raise result
             if result.reason == "undone":
                 self._undo_forker()  # what the loop does before an `undone` end
             return result
@@ -237,6 +242,58 @@ def _stub_leg_internals(
     monkeypatch.setattr(leg_mod, "build_session_tools", _returning(tools))
     monkeypatch.setattr(leg_mod, "Workflow", _Workflow)
     monkeypatch.setattr(leg_mod, "session_facts_provider", _returning(lambda: None))
+
+
+def test_a_loop_crash_prints_the_end_that_it_journals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A loop exception is a crashed session and exit 1, so the visible end
+    must say crashed before the CLI reports the underlying unexpected error."""
+    _stub_leg_internals(monkeypatch, RuntimeError("provider stream broke"))
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="crash-one-AAAAAA")
+    layout.ensure()
+    said: list[str] = []
+    front = acp_frontend(
+        ask=lambda _p, _o, _s, _c, _u=None: None,
+        capabilities=FrontendCapabilities(),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _sid, _flags: "",
+    )
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+
+    with pytest.raises(RuntimeError, match="provider stream broke"):
+        run_leg(
+            Config(),
+            layout,
+            LegInputs(
+                session_id=layout.session_id,
+                mode="run",
+                role="worker",
+                isolation="hardened",
+                tui_enabled=False,
+                interactive=False,
+                task="do the thing",
+                gate=lambda cfg, _b: cfg,
+                chain_branch=None,
+                base_sha="",
+                untracked_at_start=frozenset(),
+                resume_state_path=layout.session_dir / "loop_state.json",
+                undo_forker=lambda: None,
+                prompts=OperatorPrompts(session_dir=layout.session_dir),
+                ask_transcript_task=None,
+            ),
+            frontend=front,
+            reporter=Reporter(out=said.append, err=said.append),
+            events=EventSink(layout.logs_path),
+            transcript_sink=None,  # type: ignore[arg-type]
+            cwd=cwd,
+            state_dir=tmp_path / "state",
+        )
+
+    ended = json.loads(layout.logs_path.read_text(encoding="utf-8").splitlines()[-1])
+    assert ended["reason"] == "crashed"
+    assert any("run crashed" in line for line in said)
 
 
 def test_a_detached_ask_leg_hands_the_run_over_instead_of_answering_with_it(

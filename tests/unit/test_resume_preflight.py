@@ -424,6 +424,39 @@ def _finished_leg(*_a: object, **_k: object) -> object:
     return LegEnd(0)
 
 
+def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An in-process front-end outlives the resume, so its pid must not stay
+    the session's worker identity when closing its console view fails."""
+    from unittest.mock import MagicMock
+
+    from agent6.app._leg import LegEnd
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _plan_session_dir(repo, "plan-TEARDOWN")
+    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
+    session_dir = state_dir(repo) / "sessions" / "runs" / "plan-TEARDOWN"
+
+    def _leg(*_a: object, **_k: object) -> LegEnd:
+        return LegEnd(rc=0)
+
+    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    frontend = MagicMock()
+    frontend.close_console_view.side_effect = OSError("console teardown failed")
+
+    with pytest.raises(OSError, match="console teardown failed"):
+        resume_mod.resume_task(None, "plan-TEARDOWN", frontend=frontend, force=False)
+
+    assert not (session_dir / "worker.pid").exists()
+
+
 def test_a_misspelled_away_mode_refuses_a_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -10,6 +10,7 @@ identical rows, and the web silently picked whichever bucket came first.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -52,6 +53,10 @@ def _load_cfg() -> Config:
     return load_effective(Path.cwd(), None).config
 
 
+def _strict(*_args: object, **_kwargs: object) -> str:
+    return "strict"
+
+
 def test_run_refuses_an_explicit_id_held_by_another_bucket(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -67,3 +72,73 @@ def test_run_refuses_an_explicit_id_held_by_another_bucket(
     assert "plans/" in err and "unique across every bucket" in err
     # Nothing was created under runs/: the refusal fired before any state.
     assert not (state / "sessions" / "runs" / "demo").exists()
+
+
+def test_run_refuses_an_invalid_id_before_sandbox_and_git_preflight(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A malformed identifier is already conclusive, so the run must not ask
+    whether to proceed unconfined or report an unrelated host failure first."""
+    from agent6.app import run as run_mod
+
+    def _must_not_preflight(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("environment preflight ran for an invalid id")
+
+    monkeypatch.setattr(run_mod, "select_isolation", _must_not_preflight)
+    monkeypatch.setattr(run_mod, "git_preflight", _must_not_preflight)
+
+    rc = run_mod.run_task(
+        _load_cfg(), "do a thing", frontend=MagicMock(), session_id="bad id", mode="run"
+    )
+
+    assert rc == 2
+    assert "invalid --session-id 'bad id'" in capsys.readouterr().err
+
+
+def test_an_existing_finished_id_names_a_runnable_resume_command(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A finished run refuses bare resume, so its collision hint must include
+    the --steer that gives that run new work."""
+    from agent6.app import run as run_mod
+
+    session = state_dir(repo) / "sessions" / "runs" / "done-run"
+    session.mkdir(parents=True)
+    (session / "manifest.json").write_text(
+        json.dumps({"version": 3, "session_id": "done-run", "mode": "run", "user_task": "t"}),
+        encoding="utf-8",
+    )
+    (session / "logs.jsonl").write_text(
+        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(run_mod, "select_isolation", _strict)
+
+    rc = run_mod.run_task(
+        _load_cfg(), "do a thing", frontend=MagicMock(), session_id="done-run", mode="run"
+    )
+
+    assert rc == 2
+    assert 'agent6 resume done-run --steer "<what to do next>"' in capsys.readouterr().err
+
+
+def test_a_damaged_existing_id_does_not_name_an_unusable_resume_command(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Resume cannot load a malformed manifest, so this refusal must not send
+    the operator to a command known to fail on the same record."""
+    from agent6.app import run as run_mod
+
+    session = state_dir(repo) / "sessions" / "runs" / "damaged-run"
+    session.mkdir(parents=True)
+    (session / "manifest.json").write_text("{not json\n", encoding="utf-8")
+    monkeypatch.setattr(run_mod, "select_isolation", _strict)
+
+    rc = run_mod.run_task(
+        _load_cfg(), "do a thing", frontend=MagicMock(), session_id="damaged-run", mode="run"
+    )
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "Choose a different --session-id" in err
+    assert "agent6 resume" not in err

@@ -118,3 +118,80 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
     runs = bucket_dir(state_dir(repo), "runs")
     pids = list(runs.glob("*/worker.pid"))
     assert [p for p in pids if p.read_text(encoding="utf-8").strip()] == []
+
+
+def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An in-process frontend outlives the run, so its PID must not remain the
+    session's worker identity when closing its console view fails."""
+    from agent6.app._leg import LegEnd
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    _repo(repo)
+    monkeypatch.chdir(repo)
+
+    def _strict(*_args: object, **_kwargs: object) -> str:
+        return "strict"
+
+    def _finished(*_args: object, **_kwargs: object) -> LegEnd:
+        return LegEnd(0)
+
+    monkeypatch.setattr(run_mod, "select_isolation", _strict)
+    monkeypatch.setattr(run_mod, "run_leg", _finished)
+    frontend = MagicMock()
+    frontend.close_console_view.side_effect = OSError("console teardown failed")
+
+    with pytest.raises(OSError, match="console teardown failed"):
+        run_mod.run_task(
+            Config.model_validate({"sandbox": {"run_commands": "yes"}}),
+            "t",
+            frontend=frontend,
+            session_id="pid-teardown",
+            mode="run",
+        )
+
+    session = state_dir(repo) / "sessions" / "runs" / "pid-teardown"
+    assert not (session / "worker.pid").exists()
+
+
+def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stash pop shares the teardown with the pid clear: a console
+    teardown that raises must not leave the operator's pre-run changes
+    stashed with nothing said."""
+    from agent6.app._leg import LegEnd
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    _repo(repo)
+    monkeypatch.chdir(repo)
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+
+    def _strict(*_args: object, **_kwargs: object) -> str:
+        return "strict"
+
+    def _finished(*_args: object, **_kwargs: object) -> LegEnd:
+        return LegEnd(0)
+
+    monkeypatch.setattr(run_mod, "select_isolation", _strict)
+    monkeypatch.setattr(run_mod, "run_leg", _finished)
+    frontend = MagicMock()
+    frontend.close_console_view.side_effect = OSError("console teardown failed")
+    cfg = Config.model_validate(
+        {
+            "sandbox": {"run_commands": "yes"},
+            "git": {"dirty_tree": "stash", "auto_stash_pop": True},
+        }
+    )
+
+    with pytest.raises(OSError, match="console teardown failed"):
+        run_mod.run_task(cfg, "t", frontend=frontend, session_id="stash-teardown", mode="run")
+
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2\n"
+    stashes = sp.run(
+        ["git", "stash", "list"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout
+    assert stashes == ""
