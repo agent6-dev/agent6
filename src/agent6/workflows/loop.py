@@ -1807,7 +1807,7 @@ class Workflow:
         steps (`commit_per_step = false`) the tree stays dirty for the rest of
         the run, and sampling on dirt alone would re-run the operator's
         benchmark on every turn, read-only ones included."""
-        if turn.metric_sampled:
+        if turn.metric_sampled or state.metric_denied:
             return None
         tree = self._worktree_tree_sha()
         if tree and tree == state.metric_tree:
@@ -1819,9 +1819,7 @@ class Workflow:
         # ToolError, so _auto_metric_feedback does not swallow it).
         try:
             turn.metric_feedback = self._auto_metric_feedback(
-                state.metric_history,
-                iteration=turn.iteration,
-                sha=sha,
+                state, iteration=turn.iteration, sha=sha
             )
         except OperatorCommandUnexecutable as exc:
             return self._unexecutable_abort(
@@ -3756,13 +3754,11 @@ class Workflow:
         )
         return format_metric_feedback(history, goal=goal)
 
-    def _auto_metric_feedback(
-        self,
-        history: list[MetricSample],
-        *,
-        iteration: int,
-        sha: str,
-    ) -> str | None:
+    def _auto_metric_feedback(self, state: LoopState, *, iteration: int, sha: str) -> str | None:
+        """The harness's own metric reading after a green verify, as feedback
+        text; a failed reading is a sample with its error, and a denied one
+        also withholds the automatic metric for the rest of the run."""
+        history = state.metric_history
         metric_cfg = self.config.workflow.metric
         goal = metric_goal(metric_cfg)
         if self.mode != "run" or goal is None:
@@ -3772,19 +3768,19 @@ class Workflow:
         try:
             result = self.dispatcher.dispatch("run_metric_command", {})
         except ToolError as exc:
+            error = str(exc)
+            if isinstance(exc, ToolDenied):
+                state.metric_denied = True
+                error += "; the automatic metric is withheld for the rest of the run"
             sample = MetricSample(
                 label=f"auto iter {iteration}",
                 score=None,
                 returncode=None,
                 sha=sha,
-                error=str(exc),
+                error=error,
             )
             history.append(sample)
-            self._emit(
-                "loop.metric.auto_failed",
-                iteration=iteration,
-                error=str(exc)[:200],
-            )
+            self._emit("loop.metric.auto_failed", iteration=iteration, error=error[:200])
             return format_metric_feedback(history, goal=goal)
         assert isinstance(result, MetricResult)  # run_metric_command's result type
         return self._record_metric_result(

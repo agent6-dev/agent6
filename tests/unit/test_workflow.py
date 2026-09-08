@@ -1435,6 +1435,74 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
     assert dispatcher.calls == ["run_verify_command", "run_metric_command"]
 
 
+def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path) -> None:
+    """The operator's no to the automatic metric (run_commands=ask) holds for
+    the run, as a denied harness verify does: later green verifies do not ask
+    again, and the reading that was denied says so."""
+    from agent6.tools.dispatch import ToolDenied
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            return _tool_resp("run_verify_command")
+
+    class DispatcherStub(_StubDispatcher):
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            del raw_input
+            self.calls.append(name)
+            if name == "run_verify_command":
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
+            if name == "run_metric_command":
+                raise ToolDenied("denied by the operator")
+            raise AssertionError(f"unexpected tool: {name}")
+
+    dispatcher = DispatcherStub()
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            verify_when="never",
+            verify_retries=2,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal="minimize"),
+        ),
+    )
+    ev = _EventCapture()
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=dispatcher,
+        max_iterations=3,
+        events=ev,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
+    trees = iter(["t1", "t2", "t3"])
+    with (
+        patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"),
+        patch.object(wf, "_worktree_tree_sha", side_effect=lambda: next(trees)),
+    ):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            conversation=Conversation.from_wire(messages),
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+
+    assert result.reason == "max_iterations"
+    assert dispatcher.calls.count("run_verify_command") == 3
+    assert dispatcher.calls.count("run_metric_command") == 1
+    failed = [e for e in ev.events if e["type"] == "loop.metric.auto_failed"]
+    assert len(failed) == 1 and "withheld for the rest of the run" in str(failed[0]["error"])
+
+
 def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path: Path) -> None:
     """A turn that runs verify (green) and THEN edits must not auto-commit the
     edited tree labeled 'verify passed': the edit changed the tree the verify

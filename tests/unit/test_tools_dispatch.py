@@ -1230,6 +1230,29 @@ def test_new_index_tools_listed_in_available(tmp_path: Path) -> None:
     assert {"outline", "find_definition", "find_references"} <= names
 
 
+@pytest.mark.parametrize("name", ["run_verify_command", "run_metric_command"])
+def test_empty_input_command_tools_reject_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    """A no-argument tool's empty schema is a contract, not a suggestion."""
+    from agent6.config import load_config
+    from agent6.sandbox.jail import CommandResult
+
+    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"\nnetwork = "host"') + (
+        '\n[workflow.metric]\ncommand = ["true"]\npattern = "(true)"\ngoal = "minimize"\n'
+    )
+    path = tmp_path / "agent6.toml"
+    path.write_text(body, encoding="utf-8")
+
+    def fake_run_in_jail(policy: object, **_kw: object) -> CommandResult:
+        return CommandResult(argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.01)
+
+    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    d = ToolDispatcher(root=tmp_path, config=load_config(path))
+    with pytest.raises(ToolError, match="invalid arguments: unexpected: Extra inputs"):
+        d.dispatch(name, {"unexpected": True})
+
+
 def test_run_metric_command_no_config(tmp_path: Path) -> None:
     cfg = _config_with_run_commands(tmp_path, "yes")
     d = ToolDispatcher(root=tmp_path, config=cfg)

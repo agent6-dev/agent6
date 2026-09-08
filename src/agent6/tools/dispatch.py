@@ -435,7 +435,7 @@ class ToolDispatcher:
             ApplyPatchInput.TOOL_NAME: lambda raw: apply_patch(
                 self._ws, self._config, self.extra_protect_paths, self._index, raw
             ),
-            RunVerifyInput.TOOL_NAME: lambda _raw: self.run_verify(),
+            RunVerifyInput.TOOL_NAME: self._run_verify,
             RunCommandInput.TOOL_NAME: self._run_command,
             ReadSessionInput.TOOL_NAME: self._read_session,
             FetchInput.TOOL_NAME: self._fetch,
@@ -806,6 +806,10 @@ class ToolDispatcher:
             return ToolDenied(f"{name} not run: the run was asked to stop while awaiting approval")
         return ToolDenied(f"{name} not approved (sandbox.run_commands='ask')")
 
+    def _run_verify(self, raw: dict[str, Any]) -> ExecResult:
+        RunVerifyInput.model_validate(raw)
+        return self.run_verify()
+
     def run_verify(self, extra_argv: tuple[str, ...] = ()) -> ExecResult:
         """Run the gate: the model's `run_verify_command` and the harness's
         `verify_when` certification share this one path, approvals included.
@@ -813,10 +817,7 @@ class ToolDispatcher:
         fallback passes the selected test paths); the result's `command`
         carries the argv that actually ran."""
         argv = self._config.workflow.verify_command + extra_argv
-        if self.command_policy() == "ask" and not self._approve(
-            f"Allow run_verify_command: {shlex.join(argv)}", scope=COMMAND_SCOPE
-        ):
-            raise self._not_approved("run_verify_command")
+        self._approve_command("run_verify_command", argv)
         # per-call timeout from config. Defaults to the jail's
         # general 600s but bench configs crank it down so infinite-loop
         # edits fail fast instead of burning ~10 min of wall per attempt.
@@ -849,14 +850,15 @@ class ToolDispatcher:
             )
         return res
 
+    def _approve_command(self, name: str, argv: tuple[str, ...]) -> None:
+        if self.command_policy() == "ask" and not self._approve(
+            f"Allow {name}: {shlex.join(argv)}", scope=COMMAND_SCOPE
+        ):
+            raise self._not_approved(name)
+
     def _run_command(self, raw: dict[str, Any]) -> ExecResult:
         args = RunCommandInput.model_validate(raw)
-        if self.command_policy() == "ask":
-            # A shell-style command line, not a Python tuple repr: the operator
-            # is approving a command, so show it the way they would type it.
-            ok = self._approve(f"Allow run_command: {shlex.join(args.argv)}", scope=COMMAND_SCOPE)
-            if not ok:
-                raise self._not_approved("run_command")
+        self._approve_command("run_command", args.argv)
         if args.background:
             return self._start_detached(args.argv)
         return self._run_model_command(args.argv)
@@ -1059,7 +1061,7 @@ class ToolDispatcher:
         resolved = self.resolved_skills()
         return bool(resolved.enabled or resolved.always)
 
-    def _run_metric(self, _raw: dict[str, Any]) -> MetricResult:
+    def _run_metric(self, raw: dict[str, Any]) -> MetricResult:
         """Run `cfg.workflow.metric.command` in the jail.
 
         Return shape mirrors `_run_argv_in_jail` (returncode / stdout /
@@ -1068,10 +1070,12 @@ class ToolDispatcher:
         agent can then grep stdout itself). Raises ToolError when no metric is
         configured.
         """
+        RunMetricInput.model_validate(raw)
         metric_cfg = self._config.workflow.metric
         if metric_cfg is None:
             raise ToolError("no [workflow.metric] configured")
         argv = metric_cfg.command
+        self._approve_command("run_metric_command", argv)
         self._emit("metric.start", cmd=list(argv))
         outcome, timeout_s = self._run_argv_raw(
             argv, label="metric_command", timeout_s=self._config.workflow.verify_timeout_s

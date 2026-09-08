@@ -144,6 +144,48 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     assert not session_deny_set(tmp_path, COMMAND_SCOPE)
 
 
+@pytest.mark.parametrize(
+    ("name", "raw", "shown"),
+    [
+        ("run_command", {"argv": ["true"]}, "run_command: true"),
+        ("run_verify_command", {}, "run_verify_command: true"),
+        ("run_metric_command", {}, "run_metric_command: true"),
+    ],
+)
+def test_every_ask_command_tool_uses_the_command_scope(
+    tmp_path: Path, name: str, raw: dict[str, object], shown: str
+) -> None:
+    """Each command that runs something asks before acting, on the one command scope."""
+    from agent6.tools.errors import ToolDenied
+
+    seen: list[ApprovalRequest] = []
+
+    def refuse(request: ApprovalRequest, /) -> ApprovalAnswer:
+        seen.append(request)
+        return ApprovalAnswer(False, "stdin")
+
+    cfg = Config.model_validate(
+        {
+            "sandbox": {"run_commands": "ask", "network": "host"},
+            "workflow": {
+                "verify_command": ["true"],
+                "metric": {"command": ["true"], "pattern": "(true)", "goal": "minimize"},
+            },
+        }
+    )
+    d = ToolDispatcher(
+        root=tmp_path,
+        config=cfg,
+        session_dir=tmp_path,
+        prompts=OperatorPrompts(approver=refuse, session_dir=tmp_path),
+    )
+    with pytest.raises(ToolDenied):
+        d.dispatch(name, raw)
+    assert len(seen) == 1
+    assert seen[0].prompt == f"Allow {shown}"
+    assert seen[0].scope == COMMAND_SCOPE
+
+
 def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: Path) -> None:
     """`sessions stop` reaches a run blocked on an approval by breaking the
     wait; the tool result then said "not approved (run_commands='ask')" as

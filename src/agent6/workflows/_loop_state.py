@@ -54,6 +54,10 @@ class LoopState:
     # The worktree tree the metric was last sampled on: one reading per state
     # of the tree, whether or not the harness commits between them.
     metric_tree: str = ""
+    # A denied automatic metric (the operator's no under run_commands=ask) is
+    # withheld for the rest of the run, as a denied harness verify is; the
+    # worker's own run_metric_command still asks.
+    metric_denied: bool = False
     # The tree the verify-settled detector last saw: an unchanged tree is an
     # idle turn. Leg-local, so a resumed leg re-measures on its first turn.
     settled_tree: str = ""
