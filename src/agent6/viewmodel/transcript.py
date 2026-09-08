@@ -416,6 +416,7 @@ class TranscriptFold:
         # from the first/last event ts, the last auto-commit's subject. Each
         # degrades to absent on a journal that never carried it.
         self._usd = 0.0
+        self._usd_partial = False
         self._first_ep: float | None = None
         self._last_ep: float | None = None
         self._commit_subject = ""
@@ -440,10 +441,12 @@ class TranscriptFold:
             self._commits = 0
             self._commit_subject = ""
             self._usd = 0.0
+            self._usd_partial = False
             self._verify = None
             self._finish = ""
         if etype == "budget.update":
             self._usd = float(event.get("usd_total", 0) or 0)
+            self._usd_partial = bool(event.get("usd_partial")) or self._usd_partial
             return True
         if etype == "loop.auto_commit":
             self._commit_subject = str(event.get("subject", "")).strip()
@@ -458,7 +461,7 @@ class TranscriptFold:
         commits = f"{self._commits} commit{'' if self._commits == 1 else 's'}"
         parts = []
         if self._usd:
-            parts.append(f"${self._usd:.4f}")
+            parts.append(format_usd(self._usd, partial=self._usd_partial))
         if self._first_ep is not None and self._last_ep is not None:
             parts.append(f"{max(0, round(self._last_ep - self._first_ep))}s")
         # An ask or a plan never commits: "0 commits" there is noise, not a fact

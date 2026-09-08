@@ -432,7 +432,20 @@ def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
     done = next(it for it in fold_transcript(events) if it.kind == "done")
     assert done.ok is True
     assert done.body == "Fixed."
-    assert done.detail == "$0.0112 · 45s · 1 tool · 1 commit · fix median for even length"
+    assert done.detail == "$0.01 · 45s · 1 tool · 1 commit · fix median for even length"
+
+
+def test_the_receipt_spells_dollars_the_way_every_other_surface_does() -> None:
+    """The done item formatted its own dollars and dropped the `~` mark: a
+    run whose spend was a known under-estimate (a model without price data)
+    closed on `$0.2500` while the hub cell and the run view read `~$0.25`."""
+    events = [
+        {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
+        {"type": "budget.update", "usd_total": 0.25, "usd_partial": True},
+        {"type": "session.end", "ts": "2026-08-09T20:01:00+00:00", "reason": "finish_session"},
+    ]
+    done = next(it for it in fold_transcript(events) if it.kind == "done")
+    assert done.detail.startswith("~$0.25 · ")
 
 
 def test_done_item_degrades_to_counts_on_a_journal_without_receipt_fields() -> None:
