@@ -29,6 +29,7 @@ from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifes
 from agent6.task_text import operator_task_text
 from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.format import (
+    clip_cell,
     format_age,
     format_cost_cell,
     listing_status_label,
@@ -439,11 +440,16 @@ def _unstarted_status(session_dir: Path) -> tuple[str, str]:
     worker that died launching (its pid file survives the kill; a clean
     refusal clears it), or a never-started dir (`fork --no-run`) -> "created".
     The dead-pid case is kept distinct from "created": a killed preflight
-    spent real dollars and must not wear the never-ran word."""
+    spent real dollars and must not wear the never-ran word. A manifest.json
+    that exists but fails to parse reads "unreadable" with its error on one
+    cell-sized line, never the never-ran "created"."""
     if worker_is_alive(session_dir):
         return "starting", ""
-    with contextlib.suppress(ManifestError):
-        manifest = read_manifest(session_dir)
+    if (session_dir / MANIFEST_NAME).is_file():
+        try:
+            manifest = read_manifest(session_dir)
+        except ManifestError as exc:
+            return "unreadable", clip_cell(str(exc), 60)
         if manifest.parked_task:
             return PARKED_WORD, manifest.parked_reason
     if read_worker_pid(session_dir) is not None:
@@ -456,7 +462,7 @@ def _unstarted_status(session_dir: Path) -> tuple[str, str]:
 # awaiting gate deliberately accepts them so an await cannot hang; the web live
 # view closes their stream, and `sessions compare` screens them out (no verdict
 # to compare, spend truncated at the death).
-_DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "?"})
+_DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "unreadable", "?"})
 
 
 def died_without_end(status: str) -> bool:

@@ -232,7 +232,7 @@ STATUS_LEVEL: dict[str, StatusLevel] = {
     "stopped": "warn",  # the operator's own act, not a failure
     "stale": "error",  # a lost worker: a crash is not neutral
     "failed": "error",
-    "unreadable": "error",  # a corrupt machine source or journal
+    "unreadable": "error",  # a corrupt machine source or journal, or a session manifest
     "passed": "ok",
     "answered": "ok",  # an ask that answered is terminal success
     "ok": "ok",  # a machine's clean end

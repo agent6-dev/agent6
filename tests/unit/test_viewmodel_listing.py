@@ -764,6 +764,25 @@ def test_summary_no_logs(tmp_path: Path) -> None:
     assert (s.status, s.task) == ("created", "(no logs)")
 
 
+def test_summary_torn_manifest_reads_unreadable_not_created(tmp_path: Path) -> None:
+    """A dir with no manifest.json yet is a legitimate "created" (`fork
+    --no-run`, or a race before the first write). A dir whose manifest.json
+    EXISTS but fails to parse is damage, not an empty session -- it must not
+    wear the same "created" word, which reads to an operator as "never
+    started" and offers to resume garbage."""
+    rd = tmp_path / "sessions" / "runs" / "torn"
+    rd.mkdir(parents=True)
+    (rd / "manifest.json").write_text("{not json", encoding="utf-8")
+    s = summarize_session_dir(rd)
+    assert s.status == "unreadable"
+    # The reason is a status cell on every surface: a four-line pydantic
+    # report widened every row's column and put a URL in the state line.
+    (rd / "manifest.json").write_text('{"mode": 5}', encoding="utf-8")
+    s = summarize_session_dir(rd)
+    assert s.status == "unreadable"
+    assert "\n" not in s.reason and 0 < len(s.reason) <= 60
+
+
 def test_summary_plan_reads_planned_not_passed(tmp_path: Path) -> None:
     # A plan pass ends via finish_planning (its only clean exit) with
     # all_passed=True; it gates nothing, so it must read "planned", not "passed".
