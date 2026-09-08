@@ -448,6 +448,9 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             if open_ones:
                 ap = open_ones[-1]  # the newest: a resumed leg reuses prompt ids
                 return ap.id, ap.prompt, ap.standing
+            # The host's fold decides: `_approval` mirrors what this screen last
+            # rendered, and a leg boundary the host folded withdraws it.
+            return None
         if self._approval is not None and self._taken(self._approval[0]):
             # Answered from this screen; a reload replays the prompt before the
             # worker journals the answer, and must not reopen the row.

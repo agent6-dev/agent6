@@ -58,11 +58,11 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
             await pilot.pause()
             await pilot.pause()
             assert not isinstance(app.screen, ApprovalModal)
+            assert await _row_shown(app, pilot)
             item = app._conv.query_one("#conv-approval", Static)  # pyright: ignore[reportPrivateUsage]
             assert item.display
             text = str(item.render())
             assert "approval needed" in text and "pytest -q tests/unit/test_x.py" in text
-            assert app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
             # The composer keeps focus: an empty one lets the row's keys answer.
             assert app.focused is app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("a")
@@ -81,6 +81,17 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+async def _row_shown(app: Agent6TUI, pilot: Any) -> bool:
+    """Whether the approval row is up. The host folds the journal in its own
+    thread, so the row follows within a few ticks rather than one pause."""
+    for _ in range(80):
+        if app._conv.query(ApprovalRow):  # pyright: ignore[reportPrivateUsage]
+            return True
+        app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+        await pilot.pause(0.05)
+    return bool(app._conv.query(ApprovalRow))  # pyright: ignore[reportPrivateUsage]
+
+
 async def _open_approval(app: Agent6TUI, pilot: Any, run: Path) -> None:
     await pilot.pause()
     await pilot.pause()
@@ -89,7 +100,7 @@ async def _open_approval(app: Agent6TUI, pilot: Any, run: Path) -> None:
     app._conv._poll()  # pyright: ignore[reportPrivateUsage]
     await pilot.pause()
     await pilot.pause()
-    assert app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+    assert await _row_shown(app, pilot)
 
 
 def test_a_typed_message_never_answers_the_approval(tmp_path: Path) -> None:
@@ -108,7 +119,7 @@ def test_a_typed_message_never_answers_the_approval(tmp_path: Path) -> None:
             assert not (run / "approvals" / "ap1.answer").exists()
             bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == "/btw sure"
-            assert app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            assert await _row_shown(app, pilot)
 
     asyncio.run(scenario())
 
@@ -127,18 +138,20 @@ def test_a_resumed_leg_drops_the_previous_legs_approval(tmp_path: Path) -> None:
                 "id": "ap1",
                 "prompt": "Allow run_command: ls",
             }
+            # The journal is the one feed: the host app and this screen both
+            # tail it in order. Feeding the app by hand as well let its tail
+            # re-deliver the prompt after a hand-fed boundary under load, and
+            # the row flapped.
             _append(run, prompt)
-            app._handle_event(prompt)  # pyright: ignore[reportPrivateUsage]
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
-            assert app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            assert await _row_shown(app, pilot)
             boundary: dict[str, object] = {"type": "loop.resume.start", "iteration": 2}
             _append(run, boundary)
-            app._handle_event(boundary)  # pyright: ignore[reportPrivateUsage]
-            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
-            # The row's removal is an async DOM prune the poll schedules; under
-            # load one pause returns before it lands.
-            for _ in range(40):
+            # The withdrawal is an async DOM prune after the tails read the
+            # boundary: poll and wait rather than trust one pause.
+            for _ in range(80):
+                app._conv._poll()  # pyright: ignore[reportPrivateUsage]
                 await pilot.pause(0.05)
                 if not app._conv.query(ApprovalRow):  # pyright: ignore[reportPrivateUsage]
                     break
@@ -248,7 +261,7 @@ def test_a_non_standing_approvals_session_keys_type_the_letter(tmp_path: Path) -
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.pause()
-            assert app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            assert await _row_shown(app, pilot)
             await pilot.press("s", "x")
             await pilot.pause()
             assert not (run / "approvals" / "ap1.answer").exists()
@@ -275,6 +288,6 @@ def test_a_key_off_the_composer_answers_nothing(tmp_path: Path) -> None:
             assert not (run / "approvals" / "ap1.answer").exists()
             bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == ""
-            assert app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            assert await _row_shown(app, pilot)
 
     asyncio.run(scenario())
