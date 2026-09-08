@@ -164,7 +164,7 @@ def test_menu_dropdown_keys_right_align_to_common_edge() -> None:
         MenuItem("Quit", "d", "q"),
     )
     # No live bindings map -> falls back to each item's own key hint.
-    opts = {o.id: cast(Text, o.prompt).plain for o in _menu_options(items, {})}
+    opts = {o.id: cast(Text, o.prompt).plain for o in _menu_options(items, {}, None)}
     keyed = [opts["a"], opts["b"], opts["d"]]
     assert len({len(r) for r in keyed}) == 1  # all padded to one width => shared right edge
     assert opts["a"].endswith(" n") and opts["b"].endswith("Enter") and opts["d"].endswith(" q")
@@ -191,5 +191,42 @@ def test_help_screen_closes_after_resize_reflow() -> None:
             await pilot.press("escape")
             await pilot.pause()
             assert type(app.screen).__name__ == "HomeScreen"
+
+    asyncio.run(scenario())
+
+
+def test_a_menu_item_the_footer_greys_out_is_not_clickable_either() -> None:
+    """`check_action` greys "Merge selected run" on a live run: the footer's
+    `m` is disabled and the active-bindings audit drops it. The File dropdown
+    offered the same item with no such check, so a live run's menu could still
+    launch a merge the CLI would refuse. The dropdown option must be disabled
+    exactly when the key binding is."""
+    import os
+
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.menubar import MenuBar, _Dropdown
+
+    a6, repo = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
+    live = a6 / "sessions" / "runs" / "r-live"
+    live.mkdir(parents=True)
+    (live / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "x"}) + "\n",
+        encoding="utf-8",
+    )
+    (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            mb = app.screen.query_one(MenuBar)
+            mb.open("f")
+            await pilot.pause()
+            dd = next(iter(app.screen.query(_Dropdown)))
+            ids = [dd.get_option_at_index(i).id for i in range(dd.option_count)]
+            idx = ids.index("merge_selected")
+            assert dd.get_option_at_index(idx).disabled, (
+                "the menu offers a merge the footer's key refuses"
+            )
 
     asyncio.run(scenario())

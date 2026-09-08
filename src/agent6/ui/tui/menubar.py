@@ -125,11 +125,19 @@ def _title_text(menu: Menu) -> Text:
     return t
 
 
-def _menu_options(items: tuple[MenuItem, ...], keys: dict[str, str]) -> list[Option]:
+def _menu_options(
+    items: tuple[MenuItem, ...], keys: dict[str, str], screen: object
+) -> list[Option]:
     """Dropdown rows with labels left-aligned and shortcut keys right-aligned to a
     common edge, so the keys line up in a column. The shortcut comes from the live
     key bindings (`keys` = action -> label, possibly several joined), falling back
-    to the item's own key hint for menu-only actions with no binding."""
+    to the item's own key hint for menu-only actions with no binding.
+
+    An item whose `check_action` reads False or None is disabled, exactly like
+    its key binding: a click must not reach an action the footer already greys
+    out (Merge/Delete on a live run), since `MenuBar` dispatches straight to the
+    handler with no check of its own."""
+    checker = getattr(screen, "check_action", None)
     labels = [keys.get(it.action) or (_key_label(it.key) if it.key else "") for it in items]
     label_w = max((len(it.label) for it in items), default=0)
     key_w = max((len(k) for k in labels), default=0)
@@ -140,7 +148,8 @@ def _menu_options(items: tuple[MenuItem, ...], keys: dict[str, str]) -> list[Opt
         if key:  # pad so the key's right edge lands at `width`
             t.pad_right(width - len(it.label) - len(key))
             t.append(key, style="dim")
-        opts.append(Option(t, id=it.action))
+        disabled = checker is not None and not checker(it.action, ())
+        opts.append(Option(t, id=it.action, disabled=disabled))
     return opts
 
 
@@ -468,7 +477,7 @@ class MenuBar(Horizontal):
         # anchors it at the bottom.) No fixed id: remove() is async, so a re-open
         # could mount a second one before the first is gone (DuplicateIds).
         title = self.query_one(f"#menu-{mnemonic}", _MenuTitle)
-        opts = _menu_options(menu.items, action_keys(self.screen))
+        opts = _menu_options(menu.items, action_keys(self.screen), self.screen)
         dd = _Dropdown(*opts, mnemonic=mnemonic, on_pick=self._dispatch)
         self.screen.mount(dd)
         dd.absolute_offset = Offset(title.region.x, title.region.y + 1)
