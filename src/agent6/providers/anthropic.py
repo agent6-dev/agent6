@@ -198,29 +198,42 @@ def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[st
     return out if changed else messages
 
 
-def drop_foreign_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return `messages` without other wires' opaque blocks.
+def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return messages the Anthropic wire accepts, without mutating history.
 
-    agent6's canonical blocks are Anthropic-shaped and pass through verbatim,
-    so a block another provider minted for its own replay (the ChatGPT
-    `thinking` block carrying a `chatgpt_reasoning` item: unsigned here,
-    its payload foreign) would reach this API raw and 400 the request on a
-    cross-provider resume. Copy-on-write like the cache_control strip.
+    Opaque reasoning from another wire has no Anthropic signature and cannot
+    be replayed. Removing it can empty a message, which the API also rejects.
     """
 
     def foreign(block: Any) -> bool:
-        return isinstance(block, dict) and "chatgpt_reasoning" in block
+        if not isinstance(block, dict):
+            return False
+        if "chatgpt_reasoning" in block:
+            return True
+        return block.get("type") == "thinking" and not (
+            isinstance(block.get("signature"), str) and block["signature"]
+        )
 
     out: list[dict[str, Any]] = []
     changed = False
     for msg in messages:
         content = msg.get("content")
-        if not isinstance(content, list) or not any(foreign(b) for b in content):
+        if not isinstance(content, list):
             out.append(msg)
             continue
-        out.append({**msg, "content": [b for b in content if not foreign(b)]})
-        changed = True
-    return out if changed else messages
+        kept = [block for block in content if not foreign(block)]
+        if not kept:
+            changed = True
+            continue
+        if kept != content:
+            out.append({**msg, "content": kept})
+            changed = True
+        else:
+            out.append(msg)
+    shaped = out if changed else messages
+    if not shaped:
+        raise ProviderError("Anthropic request has no nonempty messages", fatal=True)
+    return shaped
 
 
 def _is_temperature_400(status: int | None, text: str, body: dict[str, Any]) -> bool:
@@ -361,7 +374,7 @@ class AnthropicProvider:
         body: dict[str, Any] = {
             "max_tokens": max_tokens,
             "system": system_blocks,
-            "messages": drop_foreign_blocks(messages),
+            "messages": shape_anthropic_messages(messages),
         }
         # Direct carries the model in the body; Vertex carries it in the URL
         # path and moves the protocol version into the body.

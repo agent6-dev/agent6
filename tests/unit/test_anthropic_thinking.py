@@ -199,23 +199,74 @@ def test_nonstreaming_thinking_requires_its_replay_signature(
         provider.call(system="sys", messages=[{"role": "user", "content": "go"}])
 
 
-class _FakeStreamResponse:
-    def __init__(self, *, status_code: int, lines: list[str]) -> None:
-        self.status_code = status_code
-        self.headers: dict[str, str] = {}
-        self._lines = lines
+def test_request_drops_foreign_block_without_sending_empty_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bodies: list[dict[str, Any]] = []
+    _capture_body(monkeypatch, bodies)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test", prompt_caching=False)
+    provider.call(
+        system="sys",
+        messages=[
+            {"role": "user", "content": "before"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "thinking": "foreign",
+                        "chatgpt_reasoning": {"type": "reasoning", "id": "rs_1"},
+                    }
+                ],
+            },
+            {"role": "user", "content": "after"},
+        ],
+    )
+    assert bodies[0]["messages"] == [
+        {"role": "user", "content": "before"},
+        {"role": "user", "content": "after"},
+    ]
 
-    def __enter__(self) -> _FakeStreamResponse:
-        return self
 
-    def __exit__(self, *exc: object) -> None:
-        return None
+def test_request_with_no_nonempty_messages_is_not_sent(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_post(url: str, **kwargs: Any) -> _FakeResponse:
+        raise AssertionError("an empty Messages request reached the transport")
 
-    def iter_lines(self) -> list[str]:
-        return self._lines
+    monkeypatch.setattr("agent6.providers._transport.http_post", fail_post)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test", prompt_caching=False)
+    with pytest.raises(ProviderError, match="no nonempty messages") as exc_info:
+        provider.call(system="sys", messages=[{"role": "assistant", "content": []}])
+    assert exc_info.value.fatal  # a shaping refusal never clears on retry
 
-    def read(self) -> bytes:
-        return b""
+
+def test_request_drops_unsigned_thinking_but_keeps_anthropic_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bodies: list[dict[str, Any]] = []
+    _capture_body(monkeypatch, bodies)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test", prompt_caching=False)
+    provider.call(
+        system="sys",
+        messages=[
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "foreign reasoning"},
+                    {
+                        "type": "thinking",
+                        "thinking": "anthropic reasoning",
+                        "signature": "sig_1",
+                    },
+                    {"type": "text", "text": "answer"},
+                ],
+            },
+            {"role": "user", "content": "continue"},
+        ],
+    )
+    assert bodies[0]["messages"][0]["content"] == [
+        {"type": "thinking", "thinking": "anthropic reasoning", "signature": "sig_1"},
+        {"type": "text", "text": "answer"},
+    ]
 
 
 def _sse(events: list[tuple[str, dict[str, Any]]]) -> list[str]:

@@ -602,7 +602,7 @@ def test_streaming_with_budget_requires_usage_tokens(
 def test_foreign_opaque_blocks_never_reach_the_wire() -> None:
     """A cross-provider resume can carry another wire's opaque replay state
     (the ChatGPT reasoning item); sent verbatim it would 400 this API."""
-    from agent6.providers.anthropic import drop_foreign_blocks
+    from agent6.providers.anthropic import shape_anthropic_messages
 
     messages = [
         {
@@ -618,7 +618,7 @@ def test_foreign_opaque_blocks_never_reach_the_wire() -> None:
         },
         {"role": "user", "content": "next"},
     ]
-    out = drop_foreign_blocks(messages)
+    out = shape_anthropic_messages(messages)
     assert out[0]["content"] == [{"type": "text", "text": "hi"}]
     assert out[1] is messages[1]
     original = messages[0]["content"]
