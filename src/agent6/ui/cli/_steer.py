@@ -426,7 +426,9 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
         # The request marker, not the in-memory stage, keeps the action
         # alive: requested() survives a Ctrl-Z, and the next Ctrl-C does not
         # drop it as a stale answer.
-        submit_steer(session_dir, action)
+        if not submit_steer(session_dir, action):
+            state["stage"] = 0
+            tty_message("[agent6] could not write the steer request\n")
 
     def restore() -> None:
         with contextlib.suppress(Exception):

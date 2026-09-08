@@ -375,6 +375,26 @@ def test_compact_request_reports_a_failed_write(tmp_path: Path) -> None:
     assert read_compact_request(blocked) is None
 
 
+def test_an_urgent_steer_request_publishes_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loop must never consume an urgent marker before its `now` body lands."""
+    from agent6.sessions import ipc
+
+    calls: list[tuple[Path, str]] = []
+    real = ipc.atomic_write
+
+    def spy(path: Path, data: str) -> None:
+        calls.append((path, data))
+        real(path, data)
+
+    monkeypatch.setattr(ipc, "atomic_write", spy)
+    ipc.request_steer(tmp_path, now=True)
+
+    assert (tmp_path / "steer.request", "now") in calls
+    assert ipc.steer_interrupt_pending(tmp_path)
+
+
 def test_compact_request_publishes_atomically(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

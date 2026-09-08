@@ -445,8 +445,8 @@ def _sweep_workdirs(cwd: Path, state: Path, config_path: Path | None) -> tuple[s
     clones_swept, clones_kept = sweep_fanout_clones(cwd, cfg)
     if clones_kept:
         print(
-            f"[agent6] kept {clones_kept} fan-out clone dir(s) holding commits this"
-            " repo lacks (merge or archive their lanes first)"
+            f"[agent6] kept {clones_kept} fan-out clone dir(s) holding a live lane or"
+            " commits this repo lacks (merge or archive their lanes first)"
         )
     worktrees_removed, worktrees_kept = sweep_fork_worktrees(cwd, state)
     for fork_id in worktrees_removed:

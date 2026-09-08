@@ -287,8 +287,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # previous leg's bridge state; a marker written since that leg's last
         # journal line is this run's (an editor's cancel while it came up).
         clear_pending_answers(layout.session_dir, before=layout.previous_leg_end())
-        if initial_steer.strip():
-            submit_steer(layout.session_dir, initial_steer.strip())
+        if initial_steer.strip() and not submit_steer(layout.session_dir, initial_steer.strip()):
+            reporter.error("could not write the initial steer request")
+            return 2
         settle_away_mode(layout.session_dir, cfg)
         # A visible branch named after the run id is 1:1 with the run (find it
         # from any run id, `agent6 sessions diff <id>`, or delete the branch to

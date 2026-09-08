@@ -181,8 +181,9 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
     urgent = parse_now(text)  # `/now <text>`: the CLI's `steer --now`
     if urgent == "":
         return False, "/now needs the instruction: /now <text>"
-    submit_steer(session_dir, urgent or text, now=urgent is not None)
-    return True, "steer requested now" if urgent else "steer requested"
+    queued = submit_steer(session_dir, urgent or text, now=urgent is not None)
+    message = "steer requested now" if urgent else "steer requested"
+    return (True, message) if queued else (False, "could not write the steer request")
 
 
 def fork_run(
@@ -400,7 +401,8 @@ def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[
     target = _state_dir_for_verb(cwd, name, "steer", state)
     if not isinstance(target, Path):
         return target
-    submit_steer(target, text)
+    if not submit_steer(target, text):
+        return False, "could not write the steer request"
     return True, "steer requested"
 
 

@@ -489,8 +489,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             if urgent == "":
                 self.notify("/now needs the instruction: /now <text>", severity="warning")
                 return
-            submit_steer(self.session_dir, urgent or text, now=urgent is not None)
-            self.notify("steering this session now…" if urgent else "steering this session…")
+            if submit_steer(self.session_dir, urgent or text, now=urgent is not None):
+                self.notify("steering this session now…" if urgent else "steering this session…")
+            else:
+                self.notify("could not write the steer request", severity="warning")
         else:
             self.resume_with_instruction(text)
 
@@ -501,8 +503,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         if self.session_controllable():
             # The loop forks at its next boundary and emits session.undone;
             # the fold's undone_to hands the follow-up to this app.
-            submit_steer(self.session_dir, "/undo")
-            self.notify("undo requested; applies at the next step")
+            if submit_steer(self.session_dir, "/undo"):
+                self.notify("undo requested; applies at the next step")
+            else:
+                self.notify("could not write the undo request", severity="warning")
             return
         said: list[str] = []
         result = undo_fork(
@@ -608,8 +612,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             return
 
         def _confirmed(yes: bool | None) -> None:
-            if yes:
-                submit_steer(self.session_dir, "abort")
+            if yes and not submit_steer(self.session_dir, "abort"):
+                self.notify("could not write the stop request", severity="warning")
 
         self.push_screen(
             ConfirmModal(
@@ -793,8 +797,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         # resume and exits, as the CLI pause menu's /detach does, and the
         # shell comes back. run_tui prints the hint once the terminal is
         # restored.
-        if self.exit_on_end:
-            submit_steer(self.session_dir, "detach")
+        if self.exit_on_end and not submit_steer(self.session_dir, "detach"):
+            self.notify("could not write the detach request", severity="warning")
+            return
         self.detached = True
         self.exit(QUIT_HUB_CODE if self.from_hub else 0)
 

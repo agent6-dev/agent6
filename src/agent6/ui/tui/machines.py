@@ -278,9 +278,11 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         if state_dir is None or self._steer_open:
             self.app.notify("no agent state to steer", severity="warning", timeout=4.0)
             return
-        self._steer_open = True
         clear_steer_answer(state_dir)
-        request_steer(state_dir)
+        if not request_steer(state_dir):
+            self.app.notify("could not write the steer request", severity="warning", timeout=4.0)
+            return
+        self._steer_open = True
         self.app.push_screen(SteerModal(), self._on_steer(state_dir))
 
     def _on_steer(self, state_dir: Path) -> Callable[[str | None], None]:

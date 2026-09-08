@@ -16,6 +16,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 from agent6.sessions.ipc import (
     FRONTENDS_DIR,
     _answer_path,  # pyright: ignore[reportPrivateUsage]
@@ -37,6 +39,44 @@ def test_a_live_front_end_reads_live(tmp_path: Path) -> None:
     session = _session(tmp_path)
     register_frontend(session, os.getpid())
     assert frontend_is_live(session) is True
+
+
+def test_a_frontend_claim_is_published_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A liveness probe must never prune a partially written start identity."""
+    from agent6.sessions import ipc
+
+    writes: list[Path] = []
+    real = ipc.atomic_write
+
+    def spy(path: Path, text: str) -> None:
+        writes.append(path)
+        real(path, text)
+
+    monkeypatch.setattr(ipc, "atomic_write", spy)
+    register_frontend(tmp_path, os.getpid())
+
+    assert writes == [tmp_path / FRONTENDS_DIR / str(os.getpid())]
+    assert frontend_is_live(tmp_path) is True
+
+
+def test_a_liveness_probe_does_not_delete_an_inflight_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The claim scan must leave atomic_write's visible sibling temp alone."""
+    from agent6.sessions import ipc
+
+    def publish_with_probe(path: Path, text: str) -> None:
+        temp = path.with_name(f".{path.name}.race.tmp")
+        temp.write_text(text, encoding="utf-8")
+        assert frontend_is_live(tmp_path) is False
+        temp.replace(path)
+
+    monkeypatch.setattr(ipc, "atomic_write", publish_with_probe)
+    register_frontend(tmp_path, os.getpid())
+
+    assert frontend_is_live(tmp_path) is True
 
 
 def test_a_recycled_pid_does_not_read_as_a_front_end(tmp_path: Path) -> None:

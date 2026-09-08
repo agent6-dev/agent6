@@ -30,7 +30,7 @@ from agent6.app.parallel import (
     build_lane_specs,
     run_parallel,
 )
-from agent6.app.reporter import STDIO_REPORTER
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.directive import DirectiveError
 from agent6.git_ops import branch_exists, commit_all, create_branch
@@ -2039,6 +2039,45 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     assert (foreign / ".git").exists()  # out of scope: untouched
 
 
+def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
+    origin: Path, tmp_path: Path
+) -> None:
+    """A lane checkpoints nothing before its first run ref, so its clone is
+    kept while its worker lives; kept unconditionally, every lane that died
+    before its first checkpoint (and every plan or ask lane) held a full repo
+    clone for good, under a prune message about commits it never held."""
+    from agent6.app.parallel import sweep_fanout_clones
+    from agent6.paths import repo_id
+    from agent6.sessions.ipc import write_worker_pid
+
+    workdir = tmp_path / "cache"
+    cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
+    lane = workdir / repo_id(origin) / "fan-starting" / "lane-1"
+    lane.parent.mkdir(parents=True)
+    clone_workspace(origin, lane)
+    # No session dir yet: a lane between its clone and its first write looks
+    # like one that never started, and a prune in that window must not win.
+    assert sweep_fanout_clones(origin, cfg) == (0, 1)
+    session = state_dir(lane) / "sessions" / "runs" / "fan-starting-l1"
+    session.mkdir(parents=True)
+    (session / "logs.jsonl").write_text("", encoding="utf-8")  # a record, not a husk
+    write_worker_pid(session, os.getpid())
+
+    assert sweep_fanout_clones(origin, cfg) == (0, 1)
+    assert lane.is_dir()
+
+    (session / "worker.pid").unlink()
+    assert sweep_fanout_clones(origin, cfg) == (1, 0)
+    assert not lane.parent.exists()
+
+    # A lane that died in preflight leaves a husk (a session dir with no
+    # record and no worker): ended, so its clone goes too.
+    clone_workspace(origin, lane)
+    husk = state_dir(lane) / "sessions" / "runs" / "fan-starting-l2"
+    husk.mkdir(parents=True)
+    assert sweep_fanout_clones(origin, cfg) == (1, 0)
+
+
 def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     origin: Path, tmp_path: Path
 ) -> None:
@@ -2194,6 +2233,37 @@ def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
     assert "interrupted; stopping lanes" in capsys.readouterr().err
 
 
+def test_a_stop_during_spawn_prevents_more_lanes(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """A stopped fan-out must not keep cloning and launching unneeded lanes."""
+    from agent6.sessions.ipc import request_stop
+
+    origin_state = state_dir(origin)
+    cfg = Config()
+    calls: list[int] = []
+
+    def stopped(spec: LaneSpec, task: str) -> LaneResult:
+        del task
+        calls.append(spec.lane)
+        request_stop(origin_state / "sessions" / "runs" / "fan")
+        return LaneResult(spec, spec.workdir, f"agent6/{spec.session_id}", False, "stopped")
+
+    rc = run_parallel(
+        "t",
+        _specs(tmp_path, cfg, "fan", "3"),
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=stopped,
+        fanout_id="fan",
+    )
+
+    assert rc == 130
+    assert calls == [1]
+
+
 def test_the_coordinator_journals_a_crash_and_an_interrupt(
     origin: Path, tmp_path: Path, runtime: LaneRuntime, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2260,14 +2330,19 @@ def test_a_fan_out_leaves_no_stop_marker_behind(
     coordinator.mkdir(parents=True)
     request_stop(coordinator)
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    said: list[str] = []
     run_parallel(
         "t",
-        _specs(tmp_path, cfg, "fan", "1"),
+        _specs(tmp_path, cfg, "fan", "1,2"),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
         runtime=runtime,
         spawner=spawner,
         fanout_id="fan",
+        reporter=Reporter(out=said.append, err=said.append),
     )
     assert not stop_request_pending(coordinator)
+    # A stop that lands mid-spawn leaves the unstarted lanes out of every
+    # table; the report names them.
+    assert [line for line in said if "stopped before lanes 1-2 started" in line]

@@ -93,6 +93,7 @@ from agent6.sessions.manifest import (
 from agent6.types import session_bucket
 from agent6.viewmodel import produced_result, summarize_session_dir
 from agent6.viewmodel.format import status_label
+from agent6.viewmodel.listing import HUB_BUCKETS
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
@@ -225,11 +226,22 @@ def _recorded_merged(origin: Path, clone: Path, tip: str) -> bool:
     return False
 
 
+def _lane_may_run(clone: Path) -> bool:
+    """Whether *clone* still belongs to a lane: one with a live worker, or one
+    with no session dir at all yet (a lane about to start looks the same from
+    outside as one that never did). A session dir with no live worker, record
+    or husk, is a lane that ended."""
+    state = state_dir(clone)
+    dirs = [d for bucket in HUB_BUCKETS for d in bucket_dir(state, bucket).glob("*") if d.is_dir()]
+    return not dirs or any(worker_is_alive(d) for d in dirs)
+
+
 def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
     """Delete fan-out clone dirs whose every lane branch tip already exists in
     *origin* (content-safe by commit proof, the prune --delete-squashed
     philosophy). Returns (swept, kept). A lane clone holding any commit the
-    origin lacks keeps its whole fan-out dir: the clone may be the only copy.
+    origin lacks, or a live lane, keeps its whole fan-out dir: the clone may
+    be the only copy.
     Only a dir holding `lane-*` clones is a fan-out group: anything else
     under the scope (a fork's worktree, which `fork_worktrees.sweep_fork_worktrees`
     owns through its manifest; a directory the operator put there) is left
@@ -251,6 +263,11 @@ def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
                 # the only copy of chain-only commits.
                 tips += [sha for _ref, sha in list_chain_refs(clone)]
             except GitError:
+                safe = False
+                break
+            if not tips and _lane_may_run(clone):
+                # The clone exists before its lane creates a run ref: a
+                # starting lane's work is its working tree alone.
                 safe = False
                 break
             # Reachability, not existence: a tip the origin holds only as a
@@ -1076,6 +1093,8 @@ def _drive_fanout(
     results: list[LaneResult] = []
     try:
         for spec in lanes:
+            if stop_request_pending(coordinator_dir):
+                break
             res = spawner(spec, task)
             results.append(res)
             if res.ok:
@@ -1085,6 +1104,7 @@ def _drive_fanout(
                 reporter.note(f"lane {spec.lane} [{spec.session_id}]: FAILED to start: {res.error}")
         interrupted = await_lanes(
             [r for r in results if r.ok],
+            already_interrupted=stop_request_pending(coordinator_dir),
             should_stop=lambda: stop_request_pending(coordinator_dir),
             reporter=reporter,
         )
@@ -1096,6 +1116,10 @@ def _drive_fanout(
             already_interrupted=True,
             reporter=reporter,
         )
+    if len(results) < len(lanes):
+        first = lanes[len(results)].lane
+        span = f"lane {first}" if first == len(lanes) else f"lanes {first}-{len(lanes)}"
+        reporter.note(f"stopped before {span} started")
 
     # The stop request, honoured or arrived too late to matter, is consumed
     # with the session: nothing outlives the fan-out in its dir.

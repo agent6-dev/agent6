@@ -49,6 +49,23 @@ def test_steer_queues_for_a_live_run(
     assert take_steer_answer(d) == "wrap up"
 
 
+def test_steer_reports_a_failed_marker_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A queued message is only true when the request marker landed."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    session = _run_session(tmp_path, "tiny-run-EEEE55")
+    write_worker_pid(session, os.getpid())
+    (session / "steer.request").mkdir()
+
+    assert main(["steer", "tiny-run-EEEE55", "hello"]) == 1
+    captured = capsys.readouterr()
+    assert "could not write the steer request" in captured.err
+    assert "steer queued" not in captured.out
+    assert take_steer_answer(session) is None
+
+
 def test_steer_refuses_a_session_that_is_not_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

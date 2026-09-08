@@ -13,10 +13,12 @@ from pathlib import Path
 import pytest
 
 from agent6.sessions.ipc import (
+    await_frontend_reply,
     frontend_is_live,
     read_answer,
     read_question_answers,
     register_frontend,
+    request_stop,
     unregister_frontend,
     write_answer,
     write_question_answers,
@@ -97,6 +99,28 @@ def test_read_answer_falls_back_after_grace_expires(tmp_path: Path) -> None:
     elapsed = time.monotonic() - start
     assert result is None
     assert 0.3 <= elapsed < 5.0  # grace elapsed, timeout not
+
+
+def test_stop_interrupts_a_live_frontend_answer_poll(tmp_path: Path) -> None:
+    """A Stop must end a parked prompt without waiting for its answer timeout."""
+    register_frontend(tmp_path, os.getpid())
+
+    def stop() -> None:
+        time.sleep(0.05)
+        request_stop(tmp_path)
+
+    thread = threading.Thread(target=stop)
+    thread.start()
+    started = time.monotonic()
+    reply = await_frontend_reply(
+        tmp_path,
+        lambda: read_answer(tmp_path, "g3", timeout_s=1.0, poll_s=0.01),
+    )
+    elapsed = time.monotonic() - started
+    thread.join()
+
+    assert reply is None
+    assert elapsed < 0.5
 
 
 def test_read_question_answer_survives_transient_frontend_drop(tmp_path: Path) -> None:

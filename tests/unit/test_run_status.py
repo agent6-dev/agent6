@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -550,6 +551,36 @@ def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: Path) -> None:
     for junk in ("0", "-1"):
         (tmp_path / "worker.pid").write_text(junk, encoding="utf-8")
         assert worker_is_alive(tmp_path) is False, junk
+
+
+def test_pid_alive_rejects_nonpositive_values_without_proc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PID 0 and -1 are process-group selectors on hosts without /proc too."""
+    from agent6.sessions import ipc
+
+    monkeypatch.setattr(ipc, "_HAS_PROC", False)
+    assert ipc.pid_alive(0) is False
+    assert ipc.pid_alive(-1) is False
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
+def test_a_zombie_worker_is_not_alive(tmp_path: Path) -> None:
+    """A worker that exited but has not been reaped is dead, despite kill-0."""
+    proc = subprocess.Popen(["/bin/true"])
+    try:
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            stat = Path(f"/proc/{proc.pid}/stat").read_text(encoding="ascii")
+            if stat.rpartition(")")[2].split()[0] == "Z":
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail("child did not become a zombie")
+        write_worker_pid(tmp_path, proc.pid)
+        assert worker_is_alive(tmp_path) is False
+    finally:
+        proc.wait()
 
 
 def test_worker_pid_is_published_atomically(tmp_path: Path) -> None:

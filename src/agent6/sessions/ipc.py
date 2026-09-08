@@ -126,7 +126,7 @@ def register_frontend(session_dir: Path, pid: int) -> None:
     :func:`frontend_is_live`)."""
     d = session_dir / FRONTENDS_DIR
     mkdir_for_real_user(d)
-    (d / str(pid)).write_text(_proc_start_time(pid), encoding="utf-8")
+    atomic_write(d / str(pid), _proc_start_time(pid))
 
 
 def unregister_frontend(session_dir: Path, pid: int) -> None:
@@ -142,16 +142,32 @@ def pid_alive(pid: int) -> bool:
     spawned by the same user that later probes them, so a foreign-owned pid
     can only mean the original process died and the kernel reused the number
     for another user's process; reading that pid as live would render a dead
-    run "running" forever and hang the /parallel lane await."""
+    run "running" forever and hang the /parallel lane await. A zombie (exited,
+    unreaped) is dead, and 0 and -1 are not pids: they name a process group
+    and every process."""
+    if pid <= 0:
+        return False
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError, OSError):
         return False
+    if _HAS_PROC:
+        fields = _proc_stat_fields(pid)
+        return bool(fields) and fields[0] not in {"Z", "X", "x"}
     return True
 
 
 # /proc exists on Linux; on macOS `ps` answers the same question instead.
 _HAS_PROC = Path("/proc").is_dir()
+
+
+def _proc_stat_fields(pid: int) -> list[str]:
+    """Fields after comm in `/proc/<pid>/stat`, or [] when it vanished."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
+    except OSError:
+        return []
+    return stat.rpartition(")")[2].split()
 
 
 def _ps_start_time(pid: int) -> str:
@@ -180,12 +196,8 @@ def _proc_start_time(pid: int) -> str:
     may contain spaces/parens, so split after the LAST ')'."""
     if not _HAS_PROC:
         return _ps_start_time(pid)
-    try:
-        stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
-    except OSError:
-        return ""
-    rest = stat.rpartition(")")[2].split()
-    return rest[19] if len(rest) > 19 else ""
+    fields = _proc_stat_fields(pid)
+    return fields[19] if len(fields) > 19 else ""
 
 
 def write_session_netns_pid(session_dir: Path, pid: int) -> None:
@@ -313,10 +325,8 @@ def _still_the_process(pid: int, recorded_start: str) -> bool:
     identity: a front-end that died and had its pid reused by another process
     of ours would read live forever, and an approval would then wait out its
     whole timeout instead of the dead-grace, the stall away-mode exists to
-    avoid. No recorded start time is trusted. `os.kill(0, 0)` probes the
-    process GROUP and `os.kill(-1, 0)` every process, so both answer alive:
-    0 and -1 are not pids."""
-    if pid <= 0 or not pid_alive(pid):
+    avoid. No recorded start time is trusted."""
+    if not pid_alive(pid):
         return False
     return not recorded_start or _proc_start_time(pid) == recorded_start
 
@@ -332,13 +342,15 @@ def _claim_is_live(claim: Path, pid: int) -> bool:
 
 
 def effective_away(session_dir: Path) -> str:
-    """This run's away answer: the env a launcher set, else the one recorded on
-    the run dir.
+    """This run's valid away answer: the env a launcher set, else the one
+    recorded on the run dir.
 
-    THE one owner: a run detached from a terminal (or spawned by the hub)
+    The one owner: a run detached from a terminal (or spawned by the hub)
     carries its operator's choice in `approvals/away.mode`, so the preflight
-    and the approver read the env and the file the same way."""
-    return os.environ.get("AGENT6_DETACHED_AWAY", "") or away_mode(session_dir)
+    and the approver read the env and the file the same way. An invalid env
+    value is unset, not evidence that an unattended run has a policy."""
+    marker = os.environ.get("AGENT6_DETACHED_AWAY", "")
+    return marker if marker in AWAY_MODES else away_mode(session_dir)
 
 
 def frontend_is_live(session_dir: Path) -> bool:
@@ -352,6 +364,10 @@ def frontend_is_live(session_dir: Path) -> bool:
         return False
     live = False
     for f in entries:
+        # atomic_write publishes a claim through a visible hidden sibling.
+        # It is not a claim yet, and deleting it here makes its rename fail.
+        if f.name.startswith("."):
+            continue
         try:
             pid = int(f.name)
         except ValueError:
@@ -381,17 +397,20 @@ def _await_answer(
 ) -> str | None:
     """Poll for *target*, consume it, and return its text.
 
-    Returns None when the front-end registered on *live* stays dead for
-    *dead_grace_s* consecutive seconds (see FRONTEND_DEAD_GRACE_S) or when
-    *timeout_s* elapses. A file that vanishes between polls is not-yet-answered,
-    never an error. A final consume runs before either None verdict, so an answer landing
-    between the round's read and the verdict is honoured rather than denied
-    with its file left on disk."""
+    Returns None when Stop is requested, the front-end registered on *live*
+    stays dead for *dead_grace_s* consecutive seconds (see
+    FRONTEND_DEAD_GRACE_S), or *timeout_s* elapses. A file that vanishes
+    between polls is not-yet-answered, never an error. A final consume runs
+    before a timeout or dead verdict, so an answer landing between the round's
+    read and the verdict is honoured rather than denied with its file left on
+    disk."""
     deadline = time.monotonic() + timeout_s
     dead_since: float | None = None
     while time.monotonic() < deadline:
         if (txt := _consume_answer(target)) is not None:
             return txt
+        if steer_answer_is_abort(live) or stop_request_pending(live):
+            return None
         if frontend_is_live(live):
             dead_since = None
         else:
@@ -614,8 +633,9 @@ def read_answer(
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
 ) -> str | None:
     """Called by the workflow. Returns the operator's literal choice ("yes",
-    "no", "session", "session-deny"), or None on timeout or once the front-end
-    has stayed dead past `dead_grace_s` (a shorter drop keeps waiting).
+    "no", "session", "session-deny"), or None on timeout, once a stop is
+    requested, or once the front-end has stayed dead past `dead_grace_s` (a
+    shorter drop keeps waiting).
 
     `live_dir` overrides which dir the liveness gate probes for front-end claims
     (defaults to `session_dir`). A machine agent state reads answers from its
@@ -666,8 +686,9 @@ def read_question_answers(
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
 ) -> tuple[str, ...] | None:
     """Called by the workflow. Returns the answers tuple (aligned to the prompt's
-    questions), or None on timeout or once the front-end has stayed dead past
-    `dead_grace_s`. `live_dir` overrides the liveness-gate dir (see
+    questions), or None on timeout, once a stop is requested, or once the
+    front-end has stayed dead past `dead_grace_s`. `live_dir` overrides the
+    liveness-gate dir (see
     :func:`read_answer`)."""
     target = _answer_path(questions_dir(session_dir), question_id)
     raw = _await_answer(
@@ -741,12 +762,16 @@ def steer_answer_is_abort(session_dir: Path) -> bool:
 STEER_REQUEST_FILE = "steer.request"
 
 
-def request_steer(session_dir: Path, *, now: bool = False) -> None:
+def request_steer(session_dir: Path, *, now: bool = False) -> bool:
     """Drop the steer marker the session polls. The default is consumed at
     the next step boundary; `now=True` writes the urgency into the marker and
-    the loop aborts the in-flight model call to take it."""
-    with contextlib.suppress(OSError):
-        (session_dir / STEER_REQUEST_FILE).write_text("now" if now else "", encoding="utf-8")
+    the loop aborts the in-flight model call to take it. Returns whether the
+    marker landed."""
+    try:
+        atomic_write(session_dir / STEER_REQUEST_FILE, "now" if now else "")
+    except OSError:
+        return False
+    return True
 
 
 def steer_request_pending(session_dir: Path) -> bool:
@@ -763,12 +788,20 @@ def steer_interrupt_pending(session_dir: Path) -> bool:
         return False
 
 
-def submit_steer(session_dir: Path, text: str, *, now: bool = False) -> None:
+def submit_steer(session_dir: Path, text: str, *, now: bool = False) -> bool:
     """Queue *text* as the session's next steer (a front-end composer, a
     `--steer` seed): the answer lands before the request marker, so the loop
-    finds it the moment it notices the request and never waits on a modal."""
-    write_steer_answer(session_dir, text)
-    request_steer(session_dir, now=now)
+    finds it the moment it notices the request and never waits on a modal.
+    Returns whether both files landed; a failed marker removes its stranded
+    answer."""
+    try:
+        write_steer_answer(session_dir, text)
+    except OSError:
+        return False
+    if request_steer(session_dir, now=now):
+        return True
+    clear_steer_answer(session_dir)
+    return False
 
 
 def clear_steer_request(session_dir: Path) -> None:
@@ -842,8 +875,9 @@ def clear_compact_request(session_dir: Path) -> None:
 
 def read_steer_answer(session_dir: Path, *, live_dir: Path | None = None) -> str | None:
     """Called by the workflow when a front-end is live. Returns the answer
-    string (consuming the file), or None after ten minutes or once the
-    front-end has stayed dead past `FRONTEND_DEAD_GRACE_S`. `live_dir`
+    string (consuming the file), or None after ten minutes, once a stop is
+    requested, or once the front-end has stayed dead past
+    `FRONTEND_DEAD_GRACE_S`. `live_dir`
     overrides the liveness-gate dir (see :func:`read_answer`)."""
     return _await_answer(
         session_dir / STEER_ANSWER_FILE,

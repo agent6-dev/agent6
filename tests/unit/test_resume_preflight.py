@@ -424,6 +424,32 @@ def _finished_leg(*_a: object, **_k: object) -> object:
     return LegEnd(0)
 
 
+def test_a_misspelled_away_mode_refuses_a_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The typo refusal reads the raw launcher value on resume as on run; the
+    valid-or-recorded away answer hid the typo and let the resume start."""
+    from agent6.app._leg import LegEnd
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _plan_session_dir(repo, "plan-TYPO")
+    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "denny")
+    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+
+    def _leg(*_a: object, **_k: object) -> LegEnd:
+        raise AssertionError("the resume started")
+
+    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+
+    assert _cmd_resume(None, "plan-TYPO", force=False) == 2
+    assert "'denny' is not an away-mode" in capsys.readouterr().err
+
+
 def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

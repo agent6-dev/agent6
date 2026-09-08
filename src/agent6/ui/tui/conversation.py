@@ -783,8 +783,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             if urgent == "":
                 self.notify("/now needs the instruction: /now <text>", severity="warning")
                 return
-            submit_steer(self._logs_path.parent, urgent or message.text, now=urgent is not None)
-            self.notify("steering this session now…" if urgent else "steering this session…")
+            if submit_steer(self._logs_path.parent, urgent or message.text, now=urgent is not None):
+                self.notify("steering this session now…" if urgent else "steering this session…")
+            else:
+                self.notify("could not write the steer request", severity="warning")
 
     def action_history_search(self) -> None:
         open_history_search(self, self.query_one("#conv-input", SteerInput), self._logs_path)

@@ -30,7 +30,9 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
             f" agent6 resume {layout.session_id} --steer TEXT"
         )
         return 2
-    submit_steer(layout.session_dir, text, now=now)
+    if not submit_steer(layout.session_dir, text, now=now):
+        error(f"could not write the steer request for {layout.session_id}")
+        return 1
     picked = (
         "an in-flight model call is interrupted to take it"
         if now

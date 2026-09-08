@@ -349,7 +349,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # --steer: queue the operator's follow-up as the first steering
         # instruction. Seeded AFTER the stale-state clear (which drops steer
         # files), so the loop's steer poll injects it at its first boundary.
-        submit_steer(layout.session_dir, steer.strip())
+        if not submit_steer(layout.session_dir, steer.strip()):
+            reporter.error("could not write the initial steer request")
+            release_single_writer(worker_lock_fd)
+            return 2
         # On a fork still carrying its source's task, that instruction IS the
         # work: it names the fork's row and titles its squashed merge, which
         # otherwise read as the source's task.
@@ -581,9 +584,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         refusal = headless_approval_refusal(
             cfg,
             tui_enabled=tui_enabled,
-            # The env a launcher set, else the choice recorded on the run dir,
-            # the same two the approver reads.
-            away=effective_away(layout.session_dir),
+            # The raw env a launcher set, so a typo refuses here as on run,
+            # else the choice recorded on the run dir.
+            away=os.environ.get("AGENT6_DETACHED_AWAY", "") or effective_away(layout.session_dir),
             can_ask=frontend.capabilities.can_ask,
             clamped=session_kind(mode).clamps_commands,
         )

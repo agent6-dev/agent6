@@ -109,6 +109,21 @@ def test_a_recorded_away_mode_is_the_runs_away_answer(
     assert effective_away(session_dir) == "deny"
 
 
+def test_an_invalid_detached_away_env_is_not_an_away_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A typo must not tell preflight that an unattended run has a policy."""
+    from agent6.sessions.ipc import effective_away, set_away_mode
+
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "denny")
+
+    assert effective_away(session_dir) == ""
+    set_away_mode(session_dir, "wait")
+    assert effective_away(session_dir) == "wait"
+
+
 def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: Path) -> None:
     """A fresh run asks about the operator's uncommitted changes; a resume
     swept them into the run's next auto-commit, under the agent's identity and
