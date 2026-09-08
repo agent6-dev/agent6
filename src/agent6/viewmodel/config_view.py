@@ -130,6 +130,10 @@ def _type_label(ann: Any) -> str:
         return "list"
     if origin is dict:
         return "table"
+    if isinstance(ann, type) and issubclass(ann, BaseModel):
+        # An unset optional nested section (models.reviewer, workflow.metric):
+        # groups with the other structured leaves, not the model's own class name.
+        return "table"
     if isinstance(ann, type):
         return ann.__name__
     return "str"
@@ -319,7 +323,8 @@ def render_key_detail(
     """Render the config leaves under *keys* (each a leaf or a whole section
     prefix) untruncated, in the order asked, for `agent6 config show <key>...`:
     the full-width table clips long values (e.g. a verify_command), so this
-    view prints the whole value plus its source, default, and choices. Raises
+    view prints the value as every surface does (a table as `{...}`, whole
+    under `--json`) plus its source, default, and choices. Raises
     KeyError naming the first key that matches nothing."""
     view = build_config_view(eff, resolved=resolved)
     matched: list[ConfigSetting] = []

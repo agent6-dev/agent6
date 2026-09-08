@@ -134,6 +134,16 @@ def test_build_config_view_provenance_type_choices(repo: Path) -> None:
     assert ap.py_type == "bool" and ap.default is False
 
 
+def test_build_config_view_unset_nested_section_is_typed_table(repo: Path) -> None:
+    """An unset optional nested section (models.reviewer, no [models.reviewer]
+    anywhere) must read as py_type \"table\", not leak the pydantic model's own
+    class name (RoleModel) into a surface that promises str/int/bool/float/
+    choice/list/table."""
+    s = _by_key(build_config_view(load_effective(repo)))["models.reviewer"]
+    assert s.value is None and s.source == "default"
+    assert s.py_type == "table"
+
+
 def test_build_config_view_adaptive_resolution(repo: Path) -> None:
     view = build_config_view(load_effective(repo), resolved={"context.drop_at_chars": 999_999})
     s = _by_key(view)["context.drop_at_chars"]
