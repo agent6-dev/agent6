@@ -104,6 +104,32 @@ def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
     assert (tmp_path / "a.txt").name in _git(tmp_path, "show", "--name-only", "--format=", merged)
 
 
+def test_commits_follows_the_chain_when_the_visible_branch_diverged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The visible run branch can survive after the run's chain moves past it;
+    commits must list the chain rather than report that hidden ref as a pruned branch."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "frozen-commits1", commits=[("a.txt", "one\n", "agent6 iter 1")])
+    chain = chain_ref_for("frozen-commits1")
+    _git(tmp_path, "update-ref", chain, "agent6/frozen-commits1")
+    _git(tmp_path, "checkout", "-q", "agent6/frozen-commits1")
+    (tmp_path / "theirs.txt").write_text("the operator's\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "operator work")
+    _git(tmp_path, "checkout", "-q", "main")
+    tree = _git(tmp_path, "rev-parse", f"{chain}^{{tree}}")
+    later = _git(tmp_path, "commit-tree", tree, "-p", chain, "-m", "agent6 iter 2")
+    _git(tmp_path, "update-ref", chain, later)
+
+    assert main(["sessions", "commits", "frozen-commits1"]) == 0
+
+    captured = capsys.readouterr()
+    assert "agent6 iter 1" in captured.out and "agent6 iter 2" in captured.out
+    assert "is gone" not in captured.out
+    assert chain in captured.err
+
+
 def test_a_fork_of_a_squash_merged_run_lands_only_its_own_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

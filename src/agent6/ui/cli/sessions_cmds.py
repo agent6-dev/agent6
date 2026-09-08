@@ -426,7 +426,8 @@ def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -
 
 
 def _cmd_commits(*, session_id: str) -> int:
-    """List the per-step commits on a run's branch (manifest.base_sha -> run branch)."""
+    """List the per-step commits on a run's branch or chain ref
+    (manifest.base_sha -> the ref a merge reads)."""
     cwd = Path.cwd()
     res = _resolve_session_manifest(cwd, session_id)
     if isinstance(res, int):
@@ -440,20 +441,22 @@ def _cmd_commits(*, session_id: str) -> int:
     if not base_sha:
         error("manifest has no base_sha; nothing to list commits from")
         return 2
-    run_branch = ref.head_ref
-    # Only a recorded branch can be pruned; the HEAD fallback is not a ref
-    # whose absence means anything (same guard as diff's).
-    pruned = _pruned_branch_note(cwd, manifest, run_branch) if manifest.run_branch else None
+    head_ref = ref.head_ref
+    # Only the recorded branch can be pruned; the chain ref may be the commit
+    # source precisely because that still-existing branch diverged from it.
+    pruned = (
+        _pruned_branch_note(cwd, manifest, manifest.run_branch) if manifest.run_branch else None
+    )
     if pruned is not None:
         print(pruned)
         return 0
-    rows = list_run_commits(cwd, base_sha, run_branch)
+    rows = list_run_commits(cwd, base_sha, head_ref)
     if not rows:
-        print("[agent6] no commits on the run branch.")
+        print(f"[agent6] no commits on {head_ref}.")
         return 0
     for row in rows:
         print(f"{row.sha[:12]}  {row.subject}")
-    print(f"\n[agent6] {len(rows)} commit(s) on {run_branch}", file=sys.stderr)
+    print(f"\n[agent6] {len(rows)} commit(s) on {head_ref}", file=sys.stderr)
     return 0
 
 
