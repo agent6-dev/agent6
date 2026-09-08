@@ -67,33 +67,6 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 
 **SessionSnapshot** &mdash; The persisted state of an in-flight session: what `resume` re-enters and what `fork` clones.
 
-| field | type | default |
-| --- | --- | --- |
-| `version` | `int` | `SNAPSHOT_VERSION` |
-| `system` | `str` | required |
-| `messages` | `list[dict[str, Any]]` | required |
-| `tool_calls` | `int` | required |
-| `next_iteration` | `int` | required |
-| `root_task_id` | `str | None` | required |
-| `original_task` | `str` | required |
-| `verify_command` | `tuple[str, ...]` | required |
-| `review_rejections_total` | `int` | `0` |
-| `verify_ever_passed` | `bool` | `False` |
-| `gateless_ever_edited` | `bool` | `False` |
-| `metric_best_score` | `float | None` | `None` |
-| `metric_at_ceiling` | `bool` | `False` |
-| `last_verify_ok` | `bool | None` | `None` |
-| `edited_since_verify` | `bool` | `False` |
-| `baseline_ok` | `bool | None` | `None` |
-| `verify_scoped` | `bool` | `False` |
-| `ok_tool_calls` | `int` | `0` |
-| `standing_tools_mark` | `int` | `-1` |
-| `standing_fruitless` | `int` | `0` |
-| `parallel_groups_dispatched` | `int` | `0` |
-| `pins` | `tuple[str, ...]` | `()` |
-| `head_sha` | `str` | `''` |
-| `graph_version` | `int` | `0` |
-
 - **Written by:** workflows/loop
 - **Read by:** app/{_leg, fork, resume, undo}, workflows/_loop_state
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (17 test files exercise it)

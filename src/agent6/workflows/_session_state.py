@@ -144,7 +144,7 @@ class ResumeError(Exception):
 # older agent6 then refuses to resume/fork loudly (see load_session_snapshot) rather
 # than parsing into a half-populated run. Finished runs never need a snapshot, so
 # they keep rendering across the bump.
-SNAPSHOT_VERSION = 3
+SNAPSHOT_VERSION = 4
 
 
 class SessionSnapshot(BaseModel):
@@ -186,6 +186,7 @@ class SessionSnapshot(BaseModel):
     # plateau seed need. review_rejections_total keeps the anti-stall gate-disarm.
     review_rejections_total: int = 0
     verify_ever_passed: bool = False
+    verify_ever_failed: bool = False
     gateless_ever_edited: bool = False
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
@@ -202,6 +203,11 @@ class SessionSnapshot(BaseModel):
     # a full run passes. A fact about the suite, not the tree, so a resumed
     # leg carries it unconditionally instead of burning the timeout again.
     verify_scoped: bool = False
+    # Memory nudges and their finish deferral are once per run, not once per
+    # resume leg. Carry both what the worker wrote and which notices fired.
+    memory_written: bool = False
+    memory_flip_nudged: bool = False
+    memory_finish_nudged: bool = False
     # Executed-dispatch count for the standing spin guard (0 on old snapshots:
     # one extra re-entry at most, then the mark resyncs).
     ok_tool_calls: int = 0

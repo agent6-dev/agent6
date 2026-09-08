@@ -424,6 +424,27 @@ def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
     assert (s.status, s.reason) == ("finished", "")
 
 
+@pytest.mark.parametrize(
+    ("reason", "verify_exit", "detail"),
+    [
+        ("silent_finish", 1, "gate red"),
+        ("metric_plateau", 0, "unverified"),
+    ],
+)
+def test_implicit_clean_ends_do_not_read_as_failures(
+    tmp_path: Path, reason: str, verify_exit: int, detail: str
+) -> None:
+    """Silent and metric-driven completion are deliberate clean ends like
+    finish_session; a not-green tree qualifies them instead of calling them failures."""
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "verify.end", "cmd": ["pytest"], "exit_code": verify_exit},
+        {"type": "session.end", "all_passed": False, "reason": reason},
+    ]
+    s = summarize_session_dir(_write_run(tmp_path, "runs", reason, events))
+    assert (s.status, s.reason) == ("finished", detail)
+
+
 def test_summary_ask_reads_answered_not_passed(tmp_path: Path) -> None:
     # An ask verifies nothing; "passed" for a Q&A is a category error. The ask
     # flow's own banner already says "answered", so listings must agree.
@@ -967,6 +988,23 @@ def test_summary_gateless_settle_reads_finished_unverified(tmp_path: Path) -> No
     )
     s = summarize_session_dir(rd)
     assert (s.status, s.reason) == ("finished", "unverified")
+
+
+def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
+    """Settling after a failed reverify is a deliberate red-gated end, not an
+    unverified end where the gate never covered the final tree."""
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "red-settle",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "fix it"},
+            {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+            {"type": "session.end", "all_passed": False, "reason": "settled"},
+        ],
+    )
+    s = summarize_session_dir(rd)
+    assert (s.status, s.reason, s.verify_ok) == ("finished", "gate red", False)
 
 
 def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:

@@ -201,7 +201,7 @@ def _print_unknown_baseline(
 
 
 def _print_unverified(result: SessionResult, *, layout: SessionLayout, reporter: Reporter) -> None:
-    """A gated finish nothing observed: say what is missing, not "red"."""
+    """A gated end nothing observed: say what is missing, not "red"."""
     if result.verified != "unverified":
         return
     reporter.out(

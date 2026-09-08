@@ -126,6 +126,26 @@ def test_a_run_that_already_went_green_owns_its_later_red(monkeypatch: pytest.Mo
     assert state.verify.baseline_ok is None
 
 
+def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
+    """Once this run made an inherited red gate green, its later red is
+    actionable and must not retain the inherited-failure finish label."""
+    wf = _wf()
+    wf.mode = "run"
+    wf.dispatcher = MagicMock()
+    wf.dispatcher.command_policy.return_value = "ask"
+    wf.config.workflow.verify_when = "finish"
+    wf.config.workflow.verify_retries = 2
+    state = _state()
+    state.verify.baseline_ok = False
+    state.verify.ever_passed = True
+    state.verify.last_ok = False
+    turn = _turn()
+    turn.finish_kind = "finish_session"
+
+    assert wf._red_gate_returns(state) is True  # pyright: ignore[reportPrivateUsage]
+    assert wf._finish_reason(turn, state) == "finish_session"  # pyright: ignore[reportPrivateUsage]
+
+
 @pytest.mark.parametrize(
     "result",
     [

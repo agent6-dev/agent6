@@ -1006,6 +1006,7 @@ class Workflow:
         )
         return SessionResult(
             completed=False,
+            verified=self._verification(state),
             reason="max_iterations",
             summary=f"max_iterations={self.max_iterations} reached without finish_session",
             iterations=self.iterations_reached,
@@ -1106,6 +1107,7 @@ class Workflow:
             )
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="budget_exhausted",
                 summary=f"budget exhausted at iter {iteration}: {exc}",
                 iterations=iteration,
@@ -1117,6 +1119,7 @@ class Workflow:
             self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="steer_abort",
                 summary=f"operator stopped the run at iter {iteration}{self._dirty_tree_note()}",
                 iterations=iteration,
@@ -1151,6 +1154,7 @@ class Workflow:
             detail = f": {exc}" if exc.fatal else ""
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="provider_error",
                 summary=f"provider error at iter {iteration}{status}{hint}{detail}",
                 iterations=iteration,
@@ -1231,7 +1235,7 @@ class Workflow:
                 self._maybe_tool_error_ladder(state, turn)
             except OperatorCommandUnexecutable as exc:
                 return self._unexecutable_abort(
-                    exc, iteration=turn.iteration, tool_calls=state.tool_calls
+                    exc, iteration=turn.iteration, tool_calls=state.tool_calls, state=state
                 )
             turn.tool_results.append(
                 ToolResultItem(
@@ -1625,7 +1629,7 @@ class Workflow:
             return None
         except OperatorCommandUnexecutable as exc:
             return self._unexecutable_abort(
-                exc, iteration=turn.iteration, tool_calls=state.tool_calls
+                exc, iteration=turn.iteration, tool_calls=state.tool_calls, state=state
             )
         if (
             result.returncode == self._EXIT_TIMEOUT
@@ -1810,7 +1814,7 @@ class Workflow:
             )
         except OperatorCommandUnexecutable as exc:
             return self._unexecutable_abort(
-                exc, iteration=turn.iteration, tool_calls=state.tool_calls
+                exc, iteration=turn.iteration, tool_calls=state.tool_calls, state=state
             )
         turn.metric_plateau_finish = self._plateau_finish(state.metric_history)
         return None
@@ -2295,15 +2299,15 @@ class Workflow:
     def _red_gate_returns(self, state: LoopState) -> bool:
         """Whether a red gate is the model's to fix, so an end over it goes
         back: a gate exists and is the harness's to run, was not red before
-        the run touched anything, was not denied or withheld by the operator,
-        and returns are left. One answer for finish_session and the ends the
-        harness declares, so neither can hand back a gate the model cannot
-        run."""
+        the run touched anything (or this run has since made it green), was
+        not denied or withheld by the operator, and returns are left. One
+        answer for finish_session and the ends the harness declares, so
+        neither can hand back a gate the model cannot run."""
         wf = self.config.workflow
         return (
             wf.verify_when != "never"
             and bool(wf.verify_command)
-            and state.verify.baseline_ok is not False
+            and (state.verify.baseline_ok is not False or state.verify.ever_passed)
             and state.verify_finish_retries_used < wf.verify_retries
             and self.dispatcher.command_policy() != "no"
             and not state.verify.denied
@@ -2622,6 +2626,7 @@ class Workflow:
             )
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="tool_error_stuck",
                 summary=(
                     "stopped: the same tool call failed"
@@ -2646,6 +2651,7 @@ class Workflow:
             )
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="no_progress",
                 summary=(
                     "stopped: the same verify failure persisted through"
@@ -2679,20 +2685,23 @@ class Workflow:
             # verified the FINAL tree, so this end never claims "passed".
             self._pass_pending_root_tasks()
             self._emit("session.end", reason="settled", iterations=turn.iteration, all_passed=False)
-            if state.verify.ever_passed:
+            if state.verify.last_ok is False:
+                summary = "the worker settled, but the verify gate is still red"
+            elif state.verify.ever_passed:
                 summary = (
                     "the worker settled, but edits after the last green verify were"
                     " never re-verified"
                 )
-            elif self.config.workflow.verify_command:
+            else:
                 # A command can exist here only via mid-run adoption (an
                 # operator-set one is never gateless).
                 summary = (
                     "the worker settled after committing work; the adopted verify never passed"
-                )
-            else:
-                summary = (
-                    "the worker settled after committing work; no verify command existed to gate it"
+                    if self.config.workflow.verify_command
+                    else (
+                        "the worker settled after committing work; no verify command"
+                        " existed to gate it"
+                    )
                 )
             return SessionResult(
                 completed=True,
@@ -2748,6 +2757,7 @@ class Workflow:
             )
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="loop_guard_killed",
                 summary=(
                     f"loop-guard killed run: `{latched_name}`"
@@ -2815,6 +2825,7 @@ class Workflow:
             )
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="plan_unreadable",
                 summary=remedy,
                 iterations=iteration,
@@ -3222,6 +3233,7 @@ class Workflow:
         )
         return SessionResult(
             completed=False,
+            verified=self._verification(state),
             reason="went_quiet",
             summary="(agent emitted no text and no tool_use)",
             iterations=iteration,
@@ -3388,9 +3400,8 @@ class Workflow:
             self._emit_graph_snapshot()
 
     def _verification(self, state: LoopState) -> Verification:
-        """The verify verdict for the SessionResult, from the same tri-state
-        `session.end.all_passed` is grounded on, so the result and the event can
-        never disagree. Not-green splits on the last observation: "failed"
+        """The verify verdict for the SessionResult, grounded on what the gate
+        last saw of the tree. Not-green splits on that observation: "failed"
         claims someone SAW a red gate, so a leg where no verify ran (or edits
         landed after the last green) is "unverified" instead -- both exit 4,
         but only one sends the operator chasing a red that never happened.
@@ -3441,7 +3452,7 @@ class Workflow:
         if turn.finish_kind == "finish_session" and self._tree_is_verify_green(state) is False:
             if turn.finish_stale_gate:
                 return "gate_stale"
-            if state.verify.baseline_ok is False:
+            if state.verify.baseline_ok is False and not state.verify.ever_passed:
                 return "gate_red_at_base"
         return turn.finish_kind
 
@@ -3613,6 +3624,7 @@ class Workflow:
             verify_command=self.config.workflow.verify_command,
             review_rejections_total=state.review_rejections_total,
             verify_ever_passed=state.verify.ever_passed,
+            verify_ever_failed=state.verify.ever_failed,
             gateless_ever_edited=state.gateless_ever_edited,
             parallel_groups_dispatched=state.parallel_groups_dispatched,
             pins=tuple(state.pins),
@@ -3622,6 +3634,9 @@ class Workflow:
             edited_since_verify=state.verify.edited_since,
             baseline_ok=state.verify.baseline_ok,
             verify_scoped=state.verify.scoped,
+            memory_written=state.memory_written,
+            memory_flip_nudged=state.memory_flip_nudged,
+            memory_finish_nudged=state.memory_finish_nudged,
             standing_tools_mark=state.standing_tools_mark,
             standing_fruitless=state.standing_fruitless,
             ok_tool_calls=state.ok_tool_calls,
@@ -3781,7 +3796,12 @@ class Workflow:
         return self.budget.fraction_remaining()
 
     def _unexecutable_abort(
-        self, exc: OperatorCommandUnexecutable, *, iteration: int, tool_calls: int
+        self,
+        exc: OperatorCommandUnexecutable,
+        *,
+        iteration: int,
+        tool_calls: int,
+        state: LoopState,
     ) -> SessionResult:
         """Graceful abort when an operator verify/metric command cannot run in
         the jail (e.g. its binary is not on the jail PATH). The model cannot fix
@@ -3802,6 +3822,7 @@ class Workflow:
         )
         return SessionResult(
             completed=False,
+            verified=self._verification(state),
             reason="verify_command_unexecutable",
             summary=str(exc),
             iterations=iteration,
@@ -4409,6 +4430,7 @@ class Workflow:
             self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="steer_abort",
                 summary=(
                     f"operator stopped the run after step {iteration}{self._dirty_tree_note()}"
@@ -4464,6 +4486,7 @@ class Workflow:
                 )
                 return SessionResult(
                     completed=False,
+                    verified=self._verification(state),
                     reason="steer_abort",
                     summary=f"operator stopped the parked run{self._dirty_tree_note()}",
                     iterations=iteration,
@@ -4492,6 +4515,7 @@ class Workflow:
             self._emit("session.end", reason=reason, iterations=iteration, all_passed=False)
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason=reason,
                 summary=(
                     f"operator {'exited' if steer_result == 'exit' else 'aborted'}"
@@ -4513,6 +4537,7 @@ class Workflow:
             self._emit("session.end", reason="undone", iterations=iteration, all_passed=False)
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="undone",
                 summary=f"operator undid the last message at iter {iteration}; forked to {new_id}",
                 iterations=iteration,
@@ -4524,6 +4549,7 @@ class Workflow:
             # The per-iteration snapshot is the resume point.
             return SessionResult(
                 completed=False,
+                verified=self._verification(state),
                 reason="detached",
                 summary=f"operator detached at iter {iteration}; resuming in the background",
                 iterations=iteration,

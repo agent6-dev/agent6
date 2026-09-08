@@ -127,7 +127,7 @@ class LoopState:
     standing_tools_mark: int = -1
     standing_fruitless: int = 0
     run_budget_nudged: bool = False
-    # Cross-run memory write nudges (run mode, memory store wired): one flip
+    # Run-lifetime memory write nudges (run mode, memory store wired): one flip
     # advisory when verify first goes green after failing, one deferred
     # finish_session as the backstop. Both suppressed once the worker records
     # anything; a run whose verify never failed is never nudged.
@@ -167,8 +167,12 @@ def restore_completion_state(state: LoopState, snap: SessionSnapshot) -> None:
     persisted completion field is one field on SessionSnapshot plus one line here."""
     state.review_rejections_total = snap.review_rejections_total
     state.verify.ever_passed = snap.verify_ever_passed
+    state.verify.ever_failed = snap.verify_ever_failed
     state.verify.scoped = snap.verify_scoped
     state.gateless_ever_edited = snap.gateless_ever_edited
+    state.memory_written = snap.memory_written
+    state.memory_flip_nudged = snap.memory_flip_nudged
+    state.memory_finish_nudged = snap.memory_finish_nudged
     state.parallel_groups_dispatched = snap.parallel_groups_dispatched
     state.pins = list(snap.pins)
     if snap.metric_at_ceiling or snap.metric_best_score is not None:

@@ -959,6 +959,70 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
     assert wf.iterations_reached == 8
 
 
+@pytest.mark.parametrize(
+    ("ending", "expected_reason"),
+    [
+        ("budget", "budget_exhausted"),
+        ("provider", "provider_error"),
+        ("quiet", "went_quiet"),
+        ("iterations", "max_iterations"),
+    ],
+)
+def test_abnormal_end_keeps_an_observed_red_verdict(
+    tmp_path: Path, ending: str, expected_reason: str
+) -> None:
+    """A terminal fault is separate from gate state: after observing red, the
+    result exported to hooks must not revert verification to not_applicable."""
+    from agent6.budget import BudgetExceeded
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            if self.calls == 1:
+                return _tool_resp("run_verify_command", tool_id="v1")
+            if ending == "budget":
+                raise BudgetExceeded("token cap")
+            if ending == "provider":
+                raise ProviderError("provider unavailable", fatal=True)
+            if ending == "quiet":
+                return _resp("")
+            raise AssertionError("max_iterations should stop before another call")
+
+    class DispatcherStub(_StubDispatcher):
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            del name, raw_input
+            return ExecResult(
+                returncode=1, stdout="red", stderr="", duration_s=5.0, exec_failed=False
+            )
+
+    wf = _wf(
+        root=tmp_path,
+        config=_cfg_with_verify(),
+        mode="run",
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=1 if ending == "iterations" else 3,
+        went_quiet_max_nudges=0,
+    )
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        conversation=Conversation.from_wire(
+            [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
+        ),
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+
+    assert result.reason == expected_reason
+    assert result.verified == "failed"
+
+
 def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> None:
     """A permanent provider error's raw upstream body (which can carry a noisy
     account user_id) belongs in the ONE diagnostic log line, not echoed again in
@@ -2011,6 +2075,23 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
     assert "never re-verified" in result.summary
     ends = [e for e in events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is False
+
+
+def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
+    """A settled tree whose latest verify ran and failed was re-verified; its
+    summary must report that red instead of claiming no reverify happened."""
+    wf = _wf(mode="run", config=_cfg_with_verify())
+    state = _state(verify=VerifyVerdict(ever_passed=True, last_ok=False))
+    turn = _turn(iteration=8, verify_settled_stop=True)
+
+    with patch.object(wf, "_worktree_dirty", return_value=False):
+        result = wf._turn_stop_checks(  # pyright: ignore[reportPrivateUsage]
+            state, turn, Conversation()
+        )
+
+    assert result is not None and result.reason == "settled"
+    assert result.verified == "failed"
+    assert "verify gate is still red" in result.summary
 
 
 def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: Path) -> None:

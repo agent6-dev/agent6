@@ -118,6 +118,43 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     assert loaded.metric_at_ceiling is True
 
 
+def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> None:
+    """A resume must not forget a prior red or re-arm memory notices and the
+    once-only finish deferral that already fired earlier in the same run."""
+    from agent6.workflows.loop import restore_completion_state
+
+    snap = tmp_path / "loop_state.json"
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            verify_when="never",
+            verify_retries=2,
+            verify_command=(),
+            verify_infer=True,
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    wf = _wf(resume_state_path=snap, config=config)
+    state = LoopState(original_task="t", tool_calls=0)
+    state.verify.ever_failed = True
+    state.memory_written = True
+    state.memory_flip_nudged = True
+    state.memory_finish_nudged = True
+    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=[], tool_calls=0, next_iteration=3, root_task_id=None, state=state
+    )
+
+    loaded = load_session_snapshot(snap)
+    fresh = LoopState(original_task="t", tool_calls=0)
+    restore_completion_state(fresh, loaded)
+
+    assert fresh.verify.ever_failed is True
+    assert fresh.memory_written is True
+    assert fresh.memory_flip_nudged is True
+    assert fresh.memory_finish_nudged is True
+
+
 def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path) -> None:
     """A prose turn plus its nudge is a completed iteration; an operator stop
     at its boundary must resume from AFTER it. The post-turn snapshot only ran

@@ -336,21 +336,21 @@ def status_word(
         return "stopped", ""  # each is the operator's own act, not a failure
     # A clean exit that verified nothing gets its own word, never "passed": a
     # plan pass ends via finish_planning, an ask by answering, /undo takes the
-    # last message back (the fork it cut continues), and a gateless run
-    # settles with committed work no verify ever gated (deliberate, so
-    # "finished"; never green, never "failed").
-    no_verify = {
+    # last message back (the fork it cut continues), and a run settles with
+    # committed work the gate never passed: gateless "unverified", over a red
+    # gate "gate red" (deliberate, so "finished"; never green, never "failed").
+    not_green = {
         "finish_planning": ("planned", ""),
         "answered": ("answered", ""),
         "undone": ("undone", ""),
-        "settled": ("finished", "unverified"),
+        "settled": ("finished", "gate red" if gate_red else "unverified"),
         # The gate is red, and a verify against an unmodified tree proved it
         # was red before this run touched anything. "Your run failed" and "your
         # change broke nothing new" are different facts.
         "gate_red_at_base": ("finished", "gate was already red"),
     }
-    if end_reason in no_verify:
-        return no_verify[end_reason]
+    if end_reason in not_green:
+        return not_green[end_reason]
     if all_passed:
         return "passed", "scoped gate" if scoped else ""
     # Only an observed not-green (False) can word "failed"; a deliberate finish
@@ -358,7 +358,8 @@ def status_word(
     # The ungated None falls through to a bare "finished" whatever the reason.
     if all_passed is False and end_reason:
         detail = "gate red" if gate_red else "unverified"
-        return ("finished", detail) if end_reason == "finish_session" else ("failed", end_reason)
+        clean_end = end_reason in ("finish_session", "silent_finish", "metric_plateau")
+        return ("finished", detail) if clean_end else ("failed", end_reason)
     return "finished", ""
 
 
