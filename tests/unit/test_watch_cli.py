@@ -146,8 +146,12 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
     t.join(timeout=5)
     assert not t.is_alive(), "attach failed to terminate on a crashed run"
     assert result == [0]
-    err = capsys.readouterr().err
-    assert "stale · worker exited without finishing (crashed or killed)" in err
+    out = capsys.readouterr()
+    assert "stale · worker exited without finishing (crashed or killed)" in out.err
+    # The tool call left open when the worker died is not silently dropped: the
+    # web snapshot (`conversation_items(..., worker_dead=True)`) settles it as
+    # "no result", and the CLI replay must show the same fact, not omit it.
+    assert "no result (the run died)" in out.out
 
 
 def test_attach_names_a_parked_run_instead_of_a_filesystem_error(

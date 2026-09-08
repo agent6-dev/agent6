@@ -374,6 +374,9 @@ def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> 
     try:
         for event in tail_events(events_path, follow=False):
             view.feed(event)
+        if not finished:
+            # No session.end settled the call the worker died on.
+            view.settle_dead("the run died")
     finally:
         view.close()
     if not finished:
@@ -456,6 +459,8 @@ def _watch_transcript(target: Path) -> int:
         if front_end is not None:
             unregister_frontend(target, os.getpid())  # our claim only
     if not interrupted and not scan_session_log(events_path).finished:
+        # No session.end settled the call the worker died on.
+        view.settle_dead("the run died")
         _print_crashed_line(target)
     return 0
 

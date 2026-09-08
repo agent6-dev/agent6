@@ -144,6 +144,14 @@ class ConsoleView:
         with self._lock:
             self._btw.append(block)
 
+    def settle_dead(self, reason: str) -> None:
+        """Render the tool calls still open as ones that never returned: the
+        worker is gone and no session.end settles them, as
+        `fold_transcript(worker_dead=True)` does for the web snapshot."""
+        with self._lock:
+            for item in self._fold.settle_open_calls(reason):
+                self._render(item)
+
     def _drain_btw(self) -> None:
         """Print any finished btw answers. Caller holds the lock and has just
         closed the open block, so this lands between turns."""
