@@ -1233,9 +1233,12 @@ class Workflow:
                     # The provider's front-end checked the input and answered
                     # the model itself; the same error is the result here.
                     raise ToolError(refusal)
+                tree_before = self._tree_before_command(name)
                 result = self.dispatcher.dispatch(name, tool_input)
                 content = json.dumps(result.to_wire(), ensure_ascii=False)
-                self._note_tool_effects(state, turn, name, result, tool_input)
+                self._note_tool_effects(
+                    state, turn, name, result, tool_input, tree_before=tree_before
+                )
                 # Dedupe a back-to-back identical (name, args) call whose result
                 # bytes are unchanged: serve a short stub instead of re-sending
                 # the full payload, so a re-read spiral cannot grow the context.
@@ -1396,20 +1399,25 @@ class Workflow:
             # A NEW stuck point: the nudge allowance starts over with it.
             state.no_progress_nudges_used = 0
 
-    def _left_the_tree_dirty(self, name: str) -> bool:
-        """True when a child-process tool left uncommitted changes behind.
-
-        Only `run_command` and MCP tools are asked: `run_verify_command` and
-        `run_metric_command` are the operator's own gates, and the caches they
-        drop must not invalidate the pass they just produced. Git itself decides,
-        so a read-only probe (`ls`, `grep`) costs its pass nothing --
-        and gitignored build artifacts never count as a change.
-        """
+    def _tree_before_command(self, name: str) -> str:
+        """The worktree's content sha ahead of a child-process tool's call,
+        for `_left_the_tree_dirty`; "" for every other tool. `run_verify_command`
+        and `run_metric_command` are the operator's own gates, and the caches
+        they drop must not invalidate the pass they just produced."""
         if name != "run_command" and not name.startswith(MCP_TOOL_PREFIX):
+            return ""
+        return self._worktree_tree_sha()
+
+    def _left_the_tree_dirty(self, tree_before: str) -> bool:
+        """True when a child-process tool changed the tree: its content sha
+        after the call differs from *tree_before*. Git decides, so a read-only
+        probe (`ls`, `grep`) costs its pass nothing, over uncommitted work too,
+        and gitignored build artifacts never count as a change. "" (no sha, or
+        a tool that cannot touch the tree) reads as unchanged."""
+        if not tree_before:
             return False
-        # Chain-relative (see _worktree_dirty): against a fixed HEAD every
-        # already-committed step would count as "left dirty" forever.
-        return self._worktree_dirty()
+        after = self._worktree_tree_sha()
+        return bool(after) and after != tree_before
 
     def _note_tool_effects(
         self,
@@ -1418,11 +1426,13 @@ class Workflow:
         name: str,
         result: ToolResult,
         tool_input: Any,
+        tree_before: str = "",
     ) -> None:
         """Record a dispatched tool's side effects on the turn: verify results
         (they feed auto-commit-on-verify-pass and ground the review panel:
         verify-pass presumes correctness, verify-red is the hard signal),
-        manual metric samples, tree edits, and DAG mutations."""
+        manual metric samples, tree edits, and DAG mutations. *tree_before* is
+        `_tree_before_command`'s sha for a child-process tool."""
         if name == "ask_user" and isinstance(result, AnswersResult):
             # Through the tool's own model: it also accepts one question flat
             # (`{question, options}`), which a second parse of the raw dict
@@ -1478,7 +1488,7 @@ class Workflow:
             # gate must not label this edited tree "verify passed".
             turn.edit_since_verify_pass = True
             state.verify.note_edit()
-        elif self._left_the_tree_dirty(name):
+        elif self._left_the_tree_dirty(tree_before):
             # A command (or an MCP tool) can change the tree just as an edit
             # tool can, and a green verify must not survive it: the tree the
             # gate approved is no longer the tree we have. Asked of git rather

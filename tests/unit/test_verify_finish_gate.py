@@ -199,17 +199,49 @@ def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: P
     sp.run(["git", "add", "a.txt"], cwd=tmp_path, check=True)
     sp.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
 
-    dirty = _wf(verify=True, root=tmp_path)._left_the_tree_dirty  # pyright: ignore[reportPrivateUsage]
+    wf = _wf(verify=True, root=tmp_path)
+    dirty = wf._left_the_tree_dirty  # pyright: ignore[reportPrivateUsage]
+    before = wf._tree_before_command  # pyright: ignore[reportPrivateUsage]
 
-    assert dirty("run_command") is False  # clean tree: a read-only probe costs nothing
-    assert dirty("read_file") is False  # never asked of in-process read tools
+    sha = before("run_command")
+    assert sha and before("mcp__srv__write") == sha
+    assert dirty(sha) is False  # a read-only probe costs nothing
+    assert before("read_file") == ""  # never asked of in-process read tools
     (tmp_path / "a.txt").write_text("mutated\n", encoding="utf-8")
-    assert dirty("run_command") is True
-    assert dirty("mcp__srv__write") is True
+    assert dirty(sha) is True
     # verify/metric are the operator's own gates; their caches must not
     # invalidate the pass they just produced.
-    assert dirty("run_verify_command") is False
-    assert dirty("run_metric_command") is False
+    assert before("run_verify_command") == ""
+    assert before("run_metric_command") == ""
+    assert dirty("") is False
+
+
+def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(tmp_path: Path) -> None:
+    """The check asked git whether anything was uncommitted, not whether the
+    command changed the tree: over work the chain had not recorded (a red
+    gate's leftovers, `commit_per_step` off) every `rg` or `git diff` through
+    run_command re-marked the tree edited, so `step` mode re-ran the gate on
+    identical bytes and a green verdict died under a read-only probe."""
+    _git_seed(tmp_path)
+    (tmp_path / "a.txt").write_text("uncommitted\n", encoding="utf-8")
+    wf = _wf(verify=True, root=tmp_path)
+    assert wf._worktree_dirty() is True  # pyright: ignore[reportPrivateUsage]
+    state = LoopState(original_task="t", tool_calls=0)
+    state.verify.note_edit()
+    state.verify.note_pass()
+    turn = _turn()
+    before = wf._tree_before_command("run_command")  # pyright: ignore[reportPrivateUsage]
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, turn, "run_command", _exec(0), {"argv": ["git", "diff"]}, tree_before=before
+    )
+    assert state.verify.green_and_untouched is True
+    assert turn.edit_since_verify_pass is False
+    (tmp_path / "a.txt").write_text("the command wrote this\n", encoding="utf-8")
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, turn, "run_command", _exec(0), {"argv": ["sed", "-i"]}, tree_before=before
+    )
+    assert state.verify.green_and_untouched is False
+    assert turn.edit_since_verify_pass is True
 
 
 def _git_seed(tmp_path: Path) -> str:

@@ -102,10 +102,11 @@ def _command(
 ) -> None:
     """run_command through the real path: whatever it wrote is on disk when
     the loop asks git whether the tree moved."""
+    before = wf._tree_before_command("run_command")  # pyright: ignore[reportPrivateUsage]
     for rel in writes:
         (wf.root / rel).write_text("z = 3\n", encoding="utf-8")
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_command", _exec(0), {"command": "ls"}
+        state, turn, "run_command", _exec(0), {"command": "ls"}, tree_before=before
     )
 
 
