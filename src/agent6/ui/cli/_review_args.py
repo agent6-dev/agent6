@@ -11,6 +11,13 @@ import argparse
 from agent6.ui.cli._common import _add_config_flag, _sub
 
 
+def _reviewer_count(raw: str) -> int:
+    value = int(raw)
+    if value < 0:
+        raise argparse.ArgumentTypeError("reviewer count must be non-negative")
+    return value
+
+
 def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     check_p = _sub(
         sub,
@@ -96,7 +103,7 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     review_p.add_argument(
         "--reviewers",
-        type=int,
+        type=_reviewer_count,
         default=0,
         metavar="N",
         help=(

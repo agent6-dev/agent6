@@ -14,6 +14,26 @@ from agent6.config import ConfigError
 from agent6.ui.cli import cli_main
 
 
+def test_negative_reviewer_count_is_rejected_by_the_parser(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli_main(["review", "--reviewers", "-1"])
+    assert exc.value.code == 2
+    assert "non-negative" in capsys.readouterr().err
+
+
+def test_head_without_base_is_rejected_before_config_load(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def should_not_load(*_a: object, **_k: object) -> object:
+        raise AssertionError("config loaded")
+
+    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", should_not_load)
+    assert cli_main(["review", "--head", "topic"]) == 2
+    assert "--head requires --base" in capsys.readouterr().err
+
+
 def test_personas_without_reviewers_is_said_to_be_ignored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

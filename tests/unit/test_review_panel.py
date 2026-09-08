@@ -10,9 +10,11 @@ gaps, and uncited claims are mechanically downgraded and can never stall a run.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 from agent6.workflows._panel import (
     Finding,
@@ -115,11 +117,11 @@ def test_grounded_security_block_gates_under_veto() -> None:
     assert res.merged_findings[0].severity == "block"
 
 
-def test_ungrounded_block_is_downgraded_and_does_not_gate() -> None:
-    # cites a line the diff never touched -> downgraded to warn -> no gate.
+def test_ungrounded_block_is_not_reported_and_does_not_gate() -> None:
+    # A finding at a line absent from the reviewed tree is not reportable.
     res = _agg([_seat("m1", _block("security", "foo.py:99"))], decision="veto")
     assert res.blocked is False and res.n_block == 0
-    assert res.merged_findings[0].severity == "warn"
+    assert res.merged_findings == ()
 
 
 def test_non_gating_category_block_is_downgraded() -> None:
@@ -194,10 +196,10 @@ def test_abstain_does_not_count_as_pass_or_block() -> None:
     # even more lopsided: one block, two abstentions -> still no gate.
     res3 = _agg([blk, err, err2], decision="all")
     assert res3.n_abstain == 2 and res3.blocked is False
-    # but a strict majority responding and unanimously blocking still gates.
+    # "all" means every configured seat, so an abstention prevents a gate.
     blk2 = _seat("m2", _block("security", "bar.py:1"), seat="b")
-    res4 = _agg([blk, blk2, err2], decision="all")  # 2 of 3 responded, both block
-    assert res4.n_abstain == 1 and res4.blocked is True
+    res4 = _agg([blk, blk2, err2], decision="all")
+    assert res4.n_abstain == 1 and res4.blocked is False
     # under veto, a single grounded block still gates regardless of abstentions.
     assert _agg([blk, err], decision="veto").blocked is True
     # an all-abstain panel never blocks
@@ -246,6 +248,13 @@ def test_render_findings_formats_and_empty() -> None:
     assert "[block:security]" in out and "foo.py:11" in out and "leak" in out and "fix it" in out
 
 
+def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
+    finding = _block("security", "foo.py:11")
+    contradictory = ReviewVerdict(seat="s", model="m1", verdict="pass", findings=(finding,))
+    res = _agg([contradictory], decision="veto")
+    assert res.blocked is False and res.n_block == 0
+
+
 # --- diff-parsing edge cases (regressions fixed in the pre-squash review) ------
 
 
@@ -282,10 +291,8 @@ def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
 
 def test_in_place_modification_grounds_old_side_lines() -> None:
     # A hunk that deletes lines from a kept (not renamed) file: a block citing
-    # the deleted code at its OLD line number must ground. Previously the
-    # old-side range was recorded only when oldpath != newpath, so such a
-    # citation was ungrounded and the block silently downgraded to warn (the
-    # gate failed open on reviews of deleted code).
+    # the deleted code at its OLD line number grounds, so a review of deleted
+    # code can gate.
     diff = "--- a/mod.py\n+++ b/mod.py\n@@ -100,5 +50,2 @@\n ctx\n-gone1\n-gone2\n-gone3\n ctx2\n"
     ranges = diff_hunks(diff)
     assert [h.old for h in ranges["mod.py"]] == [(100, 104)]  # old side of the in-place hunk
@@ -300,8 +307,8 @@ def test_in_place_modification_grounds_old_side_lines() -> None:
 
 
 def test_pure_deletion_grounds_on_the_old_path() -> None:
-    # A file deleted entirely (post-image /dev/null) must still ground a citation
-    # of the deleted file so a data-loss/off-topic block on it can gate.
+    # A file deleted entirely (post-image /dev/null) still grounds a citation
+    # of the deleted file, so a data-loss block on it can gate.
     diff = "--- a/gone.py\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-a\n-b\n-c\n"
     ranges = diff_hunks(diff)
     assert ranges["gone.py"] == [Hunk(old=(1, 3), new=None)]
@@ -354,15 +361,16 @@ def test_range_block_with_unchanged_start_still_gates() -> None:
     assert res.merged_findings[0].severity == "block"
 
 
-def test_all_abstain_panel_prints_inconclusive_not_pass(monkeypatch: Any, capsys: Any) -> None:
+def test_all_abstain_panel_prints_inconclusive_not_pass(
+    monkeypatch: Any, capsys: Any, tmp_path: Path
+) -> None:
     """3 seats, 3 abstains, real dollars spent, ZERO review produced -- and the
     command printed "VERDICT: PASS". Nothing was reviewed; "0 blocking" is not
     a verdict. (The gate itself is fine: run_panel short-circuits on an
     all-abstain panel. The PRINTED verdict was the lie, so this pins the CLI.)"""
-    from typing import cast
-
     from agent6.budget import BudgetTracker
     from agent6.config import Config
+    from agent6.providers import TranscriptSink
     from agent6.ui.cli import review_cmds
 
     class _Seat:
@@ -397,29 +405,31 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(monkeypatch: Any, capsys
         Config(),
         git="git",
         root=Path.cwd(),
-        base="",
-        head="HEAD",
+        base="main",
+        head="topic",
         diff="d",
         agents_md="",
         reviewers=3,
         personas="security,correctness,tests",
         model_override="",
-        transcript_sink=cast(Any, object()),  # only handed to the mocked seat builder
+        transcript_sink=TranscriptSink(tmp_path),
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
     )
-    out, _err = capsys.readouterr()
+    out, err = capsys.readouterr()
+    assert "main..topic" in err
     assert "VERDICT: PASS" not in out
     assert "INCONCLUSIVE" in out
     assert "abstained" in out  # the why is on the verdict line, not buried in stderr
     assert rc == 1  # a panel that reviewed nothing is not a success
+    (record_path,) = tuple(tmp_path.glob("*.json"))
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["response"]["body"]["stdout"] == out
 
 
 def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys: Any) -> None:
     """The exit code carried the verdict for INCONCLUSIVE (1) but left BLOCK at
     0 -- a CI gate passed a security block and failed on 'nothing reviewed'.
     PASS 0, INCONCLUSIVE 1, BLOCK 2, consistently."""
-    from typing import cast
-
     from agent6.budget import BudgetTracker
     from agent6.config import Config
     from agent6.ui.cli import review_cmds
@@ -463,7 +473,7 @@ def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys
             reviewers=1,
             personas="security",
             model_override="",
-            transcript_sink=cast(Any, object()),
+            transcript_sink=MagicMock(),
             budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         )
         capsys.readouterr()
@@ -585,9 +595,7 @@ def test_review_degrades_on_an_unreadable_agents_md(
 
 def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
     """A binary change, a pure rename and a mode flip carry no hunks, so the
-    file was absent from the map: a path-only citation of it was ungrounded
-    and its block downgraded to a warning. The path is recorded with no
-    ranges: grounded by path, not by line."""
+    path is recorded with no ranges: grounded by path, not by line."""
     diff = (
         "diff --git a/img.png b/img.png\n"
         "index 1111111..2222222 100644\n"
@@ -614,6 +622,14 @@ def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
 
     prompt = _build_user_message(ReviewContext(task="t"))
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
+
+
+def test_the_seat_prompt_carries_the_whole_large_diff() -> None:
+    from agent6.workflows._review import _build_user_message  # pyright: ignore[reportPrivateUsage]
+
+    diff = "start\n" + "x" * 200_000 + "\nend"
+    prompt = _build_user_message(ReviewContext(task="t", diff=diff))
+    assert prompt.endswith(f"DIFF:\n{diff}")
 
 
 # A second hunk in foo.py, well away from the first.

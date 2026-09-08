@@ -63,7 +63,7 @@ def code_review(
         parts.append(f"RECENT COMMITS:\n{recent_log.strip()[:2000]}")
     if extra_context.strip():
         parts.append(extra_context.strip()[:4000])
-    parts.append(f"DIFF:\n{diff[:60_000]}")
+    parts.append(f"DIFF:\n{diff}")
     user = "\n\n".join(parts)
     try:
         resp: ProviderResponse = provider.call(

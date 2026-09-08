@@ -145,7 +145,7 @@ def _run_review_panel(
     except ProviderError as exc:
         error(f"provider init failed: {exc}")
         return 2
-    label = base or "working tree vs HEAD"
+    label = f"{base}..{head}" if base else "working tree vs HEAD"
     ctx = ReviewContext(task=f"code review: {label}", agents_md=agents_md, diff=diff)
     # explore-tier seats need a read-only tool surface over the repo.
     tools = None
@@ -164,7 +164,7 @@ def _run_review_panel(
     print(
         f"[agent6] review panel: {len(seats)} seats"
         f" ({', '.join(s.persona for s in seats)}) | decision={cfg.review.decision}"
-        f" | tier={cfg.review.tier}",
+        f" | tier={cfg.review.tier} | range={label}",
         file=sys.stderr,
     )
     try:
@@ -192,10 +192,17 @@ def _run_review_panel(
         verdict, rc = "PASS (with findings)", 0
     else:
         verdict, rc = "PASS", 0
-    print(f"VERDICT: {verdict}", flush=True)
     body = render_findings(result.merged_findings)
-    if body:
-        print(body, flush=True)
+    stdout = f"VERDICT: {verdict}\n" + (f"{body}\n" if body else "")
+    print(stdout, end="", flush=True)
+    transcript_sink.record(
+        url="agent6://review-panel/result",
+        request_headers={},
+        request_body={"range": label},
+        response_status=200,
+        response_body={"stdout": stdout},
+        seat="review:panel",
+    )
     print(
         f"\nper-seat ({result.n_block} blocking model(s), {result.n_abstain} abstained):",
         file=sys.stderr,
@@ -207,7 +214,7 @@ def _run_review_panel(
     return rc
 
 
-def _cmd_review(  # noqa: PLR0911
+def _cmd_review(  # noqa: PLR0911, PLR0912
     config_path: Path | None,
     *,
     base: str,
@@ -220,6 +227,9 @@ def _cmd_review(  # noqa: PLR0911
     """Print a code review of a diff to stdout. Read-only; no jail. With
     `reviewers >= 1`, runs the grounded adversarial review panel instead of the
     single freeform review."""
+    if not base and head not in ("", "HEAD"):
+        error("--head requires --base; without --base, review uses the working tree vs HEAD.")
+        return 2
     if personas.strip() and reviewers < 1:
         print(
             "note: --personas ignored (no --reviewers N; this is the single freeform review).",

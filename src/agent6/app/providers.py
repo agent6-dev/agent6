@@ -521,9 +521,10 @@ def build_review_seats(
                 model_override=model_override,
                 seat=f"review:{persona}",
             )
-            label = model_override or (rm.model if rm is not None else "reviewer")
+            seat_model = model_override or (rm.model if rm is not None else "reviewer")
+            label = f"{rm.provider}/{seat_model}" if rm is not None else seat_model
             provider = _instrumented(
-                provider, persona, label, rm.provider if rm is not None else ""
+                provider, persona, seat_model, rm.provider if rm is not None else ""
             )
         seats.append(
             ReviewSeat(persona=persona, model=label, provider=provider, tier=cfg.review.tier)

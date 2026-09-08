@@ -84,7 +84,7 @@ def _build_user_message(ctx: ReviewContext) -> str:
     if ctx.prior_findings:
         already = "; ".join(f"{f.file_line} {f.category}" for f in ctx.prior_findings[:20])
         parts.append(f"ALREADY RAISED (do not repeat): {already}")
-    parts.append(f"DIFF:\n{ctx.diff[:60_000]}")
+    parts.append(f"DIFF:\n{ctx.diff}")
     return "\n\n".join(parts)
 
 
@@ -105,9 +105,9 @@ def _coerce_findings(raw: object) -> tuple[Finding, ...]:
             Finding(
                 category=category,
                 severity=severity,  # type: ignore[arg-type]
-                file_line=str(item.get("file_line", "")).strip(),
-                title=str(item.get("title", "")).strip()[:200],
-                detail=str(item.get("detail", "")).strip()[:1000],
+                file_line=" ".join(str(item.get("file_line", "")).split()),
+                title=" ".join(str(item.get("title", "")).split())[:200],
+                detail=" ".join(str(item.get("detail", "")).split())[:1000],
             )
         )
     return tuple(out)
@@ -169,8 +169,13 @@ def structured_review(
 
 
 def _verdict_from_obj(obj: dict[str, Any], seat: str, model: str) -> ReviewVerdict:
+    raw_verdict = obj.get("verdict")
+    if not isinstance(raw_verdict, str) or raw_verdict.lower() not in ("pass", "block"):
+        return ReviewVerdict(
+            seat=seat, model=model, verdict="pass", error="invalid reviewer verdict"
+        )
     findings = _coerce_findings(obj.get("findings"))
-    verdict = "block" if str(obj.get("verdict", "")).lower() == "block" else "pass"
+    verdict = "block" if raw_verdict.lower() == "block" else "pass"
     return ReviewVerdict(
         seat=seat,
         model=model,

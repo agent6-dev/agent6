@@ -4,9 +4,9 @@
 grounded aggregator.
 
 The panel's rule is executable rather than prose a reviewer can rationalize
-around: a `block` only gates if a machine check passes (the cited line is in
-the diff it was shown, and the category is one we allow to block). Everything
-else is mechanically downgraded to `warn` before any veto/quorum counting, and
+around: a finding is reported only when its citation is in the diff (a touched
+path, or a line on either side of a hunk), and a `block` only gates in an
+allowed category. A block in another category is downgraded to `warn`;
 `warn`/`nit` never gate. This module is network-free; `run_panel` (the
 orchestration that calls models) lives separately.
 """
@@ -242,14 +242,10 @@ def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
 
 
 def is_grounded(file_line: str, hunks: dict[str, list[Hunk]]) -> bool:
-    """True iff the citation refers to something the diff actually changed:
-    a touched path (path-only citation) or a line/range that OVERLAPS a hunk,
-    on either side. A range citation "path:A-B" grounds if *any* line in
-    [A, B] falls inside a hunk, not just the start line A -- otherwise a
-    finding that cites a real changed range whose start happens to be
-    unchanged-but-interior (the hunk modified the middle of the cited span)
-    would be wrongly treated as ungrounded and a legit block silently
-    downgraded to warn."""
+    """Whether the citation is in the diff: a touched path (path-only), or a
+    line or range that overlaps a hunk on either side (a range grounds when
+    any line in it does, so a changed span whose first line is unchanged
+    still grounds)."""
     path, span = _split_cite(file_line, hunks)
     if not path:
         return False
@@ -297,7 +293,7 @@ def _ground_severity(f: Finding, ctx: ReviewContext, hunks: dict[str, list[Hunk]
     if f.severity != "block":
         return f.severity
     coherent = f.category != "verify-uncovered-correctness" or ctx.verify_ok is True
-    if f.category in ALLOWED_BLOCK_CATEGORIES and coherent and is_grounded(f.file_line, hunks):
+    if f.category in ALLOWED_BLOCK_CATEGORIES and coherent:
         return "block"
     return "warn"
 
@@ -307,7 +303,11 @@ def _ground_seat(
 ) -> ReviewVerdict:
     out: list[Finding] = []
     for f in v.findings:
+        if not is_grounded(f.file_line, hunks):
+            continue
         sev = _ground_severity(f, ctx, hunks)
+        if v.verdict != "block" and sev == "block":
+            sev = "warn"
         out.append(f if sev == f.severity else replace(f, severity=sev))
     return replace(v, findings=tuple(out))
 
@@ -320,7 +320,9 @@ def _has_new_block(
     a block whose key dedups away is dropped from `merged_findings`, so
     letting it gate would reject the work while reporting no blocking
     findings."""
-    return any(f.severity == "block" and _dedup_key(f, hunks) not in prior_keys for f in v.findings)
+    return v.verdict == "block" and any(
+        f.severity == "block" and _dedup_key(f, hunks) not in prior_keys for f in v.findings
+    )
 
 
 def _decide(
@@ -329,25 +331,18 @@ def _decide(
     quorum: int,
     *,
     n_seats_blocking: int,
-    n_responding: int,
     n_total: int,
 ) -> bool:
-    """*n_block* counts distinct blocking models, *n_seats_blocking* the seats
-    with a surviving non-prior block, *n_responding* the seats that answered."""
-    if decision == "advisory" or not n_responding:
+    """*n_block* counts distinct blocking models and *n_seats_blocking* the
+    seats with a surviving non-prior block."""
+    if decision == "advisory" or not n_total:
         return False
     if decision == "veto":
         return n_block >= 1
     if decision == "quorum":
         return n_block >= max(1, quorum)
     if decision == "all":
-        # "all" means UNANIMOUS agreement among the seats that actually reviewed.
-        # Abstentions (provider error / unparseable / deadline) are not votes, so
-        # they must not let a lone blocker gate while everyone else failed to
-        # respond. Require both: (a) every non-abstaining seat blocked, AND (b) a
-        # meaningful quorum actually responded -- a strict majority of all seats
-        # must be non-abstaining.
-        return n_seats_blocking == n_responding and n_responding * 2 > n_total
+        return n_seats_blocking == n_total
     return False  # pragma: no cover - exhaustive
 
 
@@ -361,10 +356,10 @@ def aggregate_verdicts(
 ) -> PanelResult:
     """Fold per-seat verdicts into one panel result with EXECUTABLE grounding.
 
-    1. Ground every `block` finding: it survives as a block only if its
-       `file_line` is in the diff AND its category is allowed to block (and a
-       `verify-uncovered-correctness` claim is only coherent when verify
-       actually passed). Otherwise it is downgraded to `warn`.
+    1. Drop every finding whose `file_line` is not in the diff (a touched
+       path, or a line on either side of a hunk). A `block` survives only when
+       its category is allowed to block (and `verify-uncovered-correctness` is
+       coherent only when verify passed); otherwise it is downgraded to `warn`.
     2. Dedup across seats and against `prior_findings` by (path, category,
        hunk): a re-citation of one defect a few lines off collapses, a second
        finding in another hunk of the same file stays (`_dedup_key`). An
@@ -373,8 +368,7 @@ def aggregate_verdicts(
     3. Decide: advisory never blocks; veto blocks on any surviving block; quorum
        needs >= `quorum` blocks counting **at most one per distinct model**
        (correlated same-model seats cannot fabricate a quorum); all needs every
-       non-abstaining seat to block AND a strict majority of all seats to have
-       actually responded (abstentions cannot let a lone blocker gate under "all").
+       configured seat to block (an abstention is not a block).
     """
     hunks = diff_hunks(ctx.diff)
     prior_keys = {_dedup_key(f, hunks) for f in ctx.prior_findings}
@@ -385,7 +379,7 @@ def aggregate_verdicts(
     for v in per_seat:
         if v.error is not None:
             n_abstain += 1
-            grounded_seats.append(v)
+            grounded_seats.append(replace(v, findings=()))
             continue
         gv = _ground_seat(v, ctx, hunks)
         grounded_seats.append(gv)
@@ -413,7 +407,6 @@ def aggregate_verdicts(
         n_block,
         quorum,
         n_seats_blocking=n_seats_blocking,
-        n_responding=len(grounded_seats) - n_abstain,
         n_total=len(grounded_seats),
     )
 
@@ -435,8 +428,7 @@ def render_findings(findings: tuple[Finding, ...]) -> str:
         return ""
     lines = []
     for f in findings:
-        loc = f" ({f.file_line})" if f.file_line.strip() else ""
-        lines.append(f"- [{f.severity}:{f.category}]{loc} {f.title}")
+        lines.append(f"- [{f.severity}:{f.category}] ({f.file_line}) {f.title}")
         if f.detail.strip():
             lines.append(f"    {f.detail.strip()}")
     return "\n".join(lines)

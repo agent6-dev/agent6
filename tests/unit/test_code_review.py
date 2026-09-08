@@ -64,13 +64,11 @@ def test_code_review_passes_diff_and_context() -> None:
     assert "senior code reviewer" in provider.last_system
 
 
-def test_code_review_truncates_huge_diff() -> None:
+def test_code_review_sends_the_whole_large_diff() -> None:
     provider = _FakeProvider()
-    huge = "x" * 200_000
+    huge = "start\n" + "x" * 200_000 + "\nend"
     code_review(provider, diff=huge)  # type: ignore[arg-type]
-    # Diff is truncated to 60k chars in the prompt; user content must be smaller
-    # than the raw input.
-    assert len(provider.last_user) < len(huge)
+    assert provider.last_user == f"DIFF:\n{huge}"
 
 
 def test_code_review_rejects_empty_response() -> None:

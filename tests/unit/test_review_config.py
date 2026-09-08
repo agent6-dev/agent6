@@ -58,5 +58,5 @@ def test_trigger_on_with_no_seats_builds_the_one_seat_roster() -> None:
     )
     seats = build_review_seats(cfg, transcript_sink=MagicMock(), budget=MagicMock(), n=1)
     assert len(seats) == 1
-    assert seats[0].model == "rm"
+    assert seats[0].model == "o/rm"
     assert seats[0].persona  # a built-in persona, not an empty stance

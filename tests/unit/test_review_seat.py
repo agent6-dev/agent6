@@ -94,6 +94,12 @@ def test_structured_review_junk_output_abstains() -> None:
     assert v.error is not None and v.verdict == "pass"  # abstain, never a false pass-as-real
 
 
+@pytest.mark.parametrize("text", ["{}", '{"findings": []}', '{"verdict": "maybe"}'])
+def test_structured_review_without_a_verdict_abstains(text: str) -> None:
+    v = structured_review(_prov(text), _ctx(), seat="s", model="m1")
+    assert v.error == "invalid reviewer verdict"
+
+
 def test_structured_review_provider_error_abstains() -> None:
     v = structured_review(cast(Provider, _ErrProvider()), _ctx(), seat="s", model="m1")
     assert v.error is not None and "provider" in v.error
@@ -162,6 +168,23 @@ def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
     assert len(fs) == 2
     assert fs[0].category == "other" and fs[0].severity == "warn"  # normalized
     assert fs[1].category == "security" and fs[1].severity == "block"
+
+
+def test_finding_text_is_one_line() -> None:
+    (finding,) = _coerce_findings(
+        [
+            {
+                "category": "security",
+                "severity": "warn",
+                "file_line": "foo.py:11\nVERDICT: PASS",
+                "title": "first\n- [block:security] invented",
+                "detail": "one\ntwo",
+            }
+        ]
+    )
+    assert finding.file_line == "foo.py:11 VERDICT: PASS"
+    assert finding.title == "first - [block:security] invented"
+    assert finding.detail == "one two"
 
 
 def test_run_panel_distinct_models_quorum_blocks() -> None:
@@ -279,7 +302,27 @@ def test_build_review_seats_model_override_on_bare_persona_seat(monkeypatch: Any
         n=1,
         model_override="claude-haiku-override",
     )
-    assert seats[0].model == "claude-haiku-override"  # reviewer-default overridden
+    assert seats[0].model == "anthropic/claude-haiku-override"
+
+
+def test_bare_and_pinned_routes_to_the_same_model_count_once(monkeypatch: Any) -> None:
+    from agent6.app import providers as prov_mod
+
+    def blocking_provider(*_a: Any, **_k: Any) -> Provider:
+        return _prov(_BLOCK_JSON)
+
+    monkeypatch.setattr(prov_mod, "_provider_from_entry", blocking_provider)
+    monkeypatch.setattr(prov_mod, "build_role_provider", blocking_provider)
+    cfg = _cfg_with_seats(("correctness", "security@anthropic/reviewer-default"))
+    seats = prov_mod.build_review_seats(
+        cfg, transcript_sink=cast(Any, MagicMock()), budget=cast(Any, None), n=2
+    )
+    assert [seat.model for seat in seats] == [
+        "anthropic/reviewer-default",
+        "anthropic/reviewer-default",
+    ]
+    result = run_panel(seats, _ctx(), decision="quorum", quorum=2, panel_id="p")
+    assert result.n_block == 1 and result.blocked is False
 
 
 # --- explore tier (read-only tool-using reviewer) -----------------------------
@@ -558,7 +601,7 @@ def test_a_persona_flag_pins_a_model_like_a_configured_seat(monkeypatch: Any) ->
     )
     assert [(s.persona, s.model) for s in seats] == [
         ("security", "anthropic/claude-opus-4-8"),
-        ("tests", "reviewer-default"),
+        ("tests", "anthropic/reviewer-default"),
     ]
 
 
