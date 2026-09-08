@@ -43,6 +43,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from agent6.tools._edit_diag import closest_on_disk_region
+
 _HUNK_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
     r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@"
@@ -128,8 +130,15 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
     is_delete = plus_header == "/dev/null"
     if is_create and is_delete:
         raise PatchError("a patch cannot both create and delete (`/dev/null` on both sides)")
+    old_path = _strip_ab_prefix(minus_header)
+    new_path = _strip_ab_prefix(plus_header)
+    if not is_create and not is_delete and old_path != new_path:
+        raise PatchError(
+            "an update patch's `---` and `+++` headers must name the same file; "
+            f"received {old_path!r} and {new_path!r}"
+        )
 
-    target_path = _strip_ab_prefix(minus_header if is_delete else plus_header)
+    target_path = old_path if is_delete else new_path
     if not target_path or target_path == "/dev/null":
         raise PatchError(f"Invalid target path in `+++` header: {plus_header!r}")
 
@@ -319,7 +328,8 @@ def apply_parsed_patch(  # noqa: PLR0912
         # "at the very beginning"). For `old_count > 0`, `old_start` is the
         # 1-based first line of the replaced range.
         buf_start = hunk.old_start + offset if hunk.old_count == 0 else hunk.old_start - 1 + offset
-        if buf_start < 0 or buf_start + hunk.old_count > len(buf):
+        in_bounds = buf_start >= 0 and buf_start + hunk.old_count <= len(buf)
+        if hunk.old_count == 0 and not in_bounds:
             raise PatchError(
                 f"Hunk @@ -{hunk.old_start},{hunk.old_count} @@ for "
                 f"{patch.target_path!r} reaches outside the file "
@@ -334,16 +344,23 @@ def apply_parsed_patch(  # noqa: PLR0912
             if prefix in (" ", "+"):
                 replacement_new.append(txt)
 
-        actual_old = buf[buf_start : buf_start + hunk.old_count]
+        actual_old = buf[buf_start : buf_start + hunk.old_count] if in_bounds else []
         moved_heal = False
         if actual_old != expected_old:
             heal = _heal_hunk(buf, buf_start, expected_old, replacement_new, hunk.body)
             if heal is None:
+                if not in_bounds:
+                    raise PatchError(
+                        f"Hunk @@ -{hunk.old_start},{hunk.old_count} @@ for "
+                        f"{patch.target_path!r} reaches outside the file "
+                        f"(file has {len(base_lines)} lines)"
+                    )
                 raise PatchError(
                     f"Context mismatch in {patch.target_path!r} at "
-                    f"hunk @@ -{hunk.old_start},{hunk.old_count} @@.\n"
-                    f"Expected lines:\n{_render_lines(expected_old)}\n"
-                    f"On-disk lines:\n{_render_lines(actual_old)}"
+                    f"hunk @@ -{hunk.old_start},{hunk.old_count} @@. Accepted: the exact "
+                    "block at the header line, one trailing-whitespace or uniform-indent "
+                    "match there, or one exact block at a moved line.\n"
+                    f"{_match_failure_detail(buf, expected_old)}"
                 )
             buf_start, replacement_new, kind = heal
             moved_heal = kind == "moved"
@@ -406,7 +423,19 @@ def _common_shift(actual: list[str], expected: list[str]) -> tuple[str, str] | N
         act_body = act.lstrip()
         if exp_body != act_body:
             return None
-        pair = (exp[: len(exp) - len(exp_body)], act[: len(act) - len(act_body)])
+        exp_indent = exp[: len(exp) - len(exp_body)]
+        act_indent = act[: len(act) - len(act_body)]
+        common = 0
+        while (
+            common < len(exp_indent)
+            and common < len(act_indent)
+            and exp_indent[-common - 1] == act_indent[-common - 1]
+        ):
+            common += 1
+        pair = (
+            exp_indent[: len(exp_indent) - common],
+            act_indent[: len(act_indent) - common],
+        )
         if transform is None:
             transform = pair
         elif transform != pair:
@@ -460,14 +489,28 @@ def _heal_hunk(
       (stale line numbers); ambiguity stays a hard error.
     """
     count = len(expected_old)
-    actual = buf[buf_start : buf_start + count]
+    in_bounds = buf_start >= 0 and buf_start + count <= len(buf)
+    actual = buf[buf_start : buf_start + count] if in_bounds else []
     if len(actual) == count and [a.rstrip() for a in actual] == [e.rstrip() for e in expected_old]:
-        return buf_start, _replacement_with_actual_context(body, actual), "rstrip"
+        # An exact copy elsewhere is the moved rule's business, not a second
+        # whitespace match: counted here, it sent the edit to that copy.
+        hits = sum(
+            window != expected_old
+            and [line.rstrip() for line in window] == [line.rstrip() for line in expected_old]
+            for window in (buf[i : i + count] for i in range(len(buf) - count + 1))
+        )
+        if hits == 1:
+            return buf_start, _replacement_with_actual_context(body, actual), "rstrip"
     shift = _common_shift(actual, expected_old) if len(actual) == count else None
-    if shift is not None:
-        strip, add = shift
-        if _reindent(expected_old, strip, add) == actual:
-            return buf_start, _reindent(replacement_new, strip, add), "indent"
+    if shift is not None and _reindent(expected_old, *shift) == actual:
+        hits = 0
+        for i in range(len(buf) - count + 1):
+            window = buf[i : i + count]
+            candidate = _common_shift(window, expected_old)
+            if candidate is not None and _reindent(expected_old, *candidate) == window:
+                hits += 1
+        if hits == 1:
+            return buf_start, _reindent(replacement_new, *shift), "indent"
     if count:
         hits = [i for i in range(len(buf) - count + 1) if buf[i : i + count] == expected_old]
         if len(hits) == 1:
@@ -475,10 +518,42 @@ def _heal_hunk(
     return None
 
 
-def _render_lines(lines: list[str]) -> str:
+def _render_lines(lines: list[str], start: int = 1) -> str:
     if not lines:
         return "  (empty)"
-    return "\n".join(f"  {i + 1}| {ln}" for i, ln in enumerate(lines))
+    return "\n".join(f"  {start + i}| {ln}" for i, ln in enumerate(lines))
+
+
+def _match_failure_detail(lines: list[str], expected: list[str]) -> str:
+    """Counts by accepted match rule, and the closest same-sized on-disk block
+    when it is similar enough to anchor a retry."""
+    count = len(expected)
+    exact = 0
+    rstrip = 0
+    indent = 0
+    for i in range(len(lines) - count + 1):
+        window = lines[i : i + count]
+        if window == expected:
+            exact += 1
+        elif [line.rstrip() for line in window] == [line.rstrip() for line in expected]:
+            rstrip += 1
+        else:
+            shift = _common_shift(window, expected)
+            if shift is not None and _reindent(expected, *shift) == window:
+                indent += 1
+    head = (
+        f"Found {exact} exact matches, {rstrip} trailing-whitespace matches, and "
+        f"{indent} uniform-indent matches.\n"
+        f"Expected lines:\n{_render_lines(expected)}"
+    )
+    nearest = closest_on_disk_region("\n".join(lines), "\n".join(expected))
+    # apply_edit's similarity floor: a dissimilar block is a wrong anchor to copy.
+    if nearest is None or nearest[2] < 0.5:
+        return head
+    start, region, _ratio = nearest
+    received = region.split("\n")
+    end = start + len(received) - 1
+    return f"{head}\nNearest on-disk lines {start}-{end}:\n{_render_lines(received, start)}"
 
 
 def apply_patch_text(
@@ -494,7 +569,7 @@ def apply_patch_text(
         if new_content != "":
             raise PatchError(
                 "a deletion patch (`+++ /dev/null`) must remove the entire file; "
-                f"{len(new_content)} chars of content survive the hunks"
+                f"{len(new_content.encode('utf-8'))} bytes of content survive the hunks"
             )
         return patch.target_path, None, healed
     return patch.target_path, new_content, healed
@@ -681,10 +756,11 @@ def _v4a_apply_update(
         if count == 0:
             heal = _v4a_heal(content, old_block, new_block, body)
             if heal is None:
+                expected = old_block.split("\n")
                 raise PatchError(
-                    f"V4A hunk context not found in {path!r}. The ` `/`-` lines must match "
-                    f"the file byte-for-byte. Closest-anchor failed; re-read and retry.\n"
-                    f"Expected block:\n{_render_lines(old_block.split(chr(10)))}"
+                    f"V4A hunk context not found in {path!r}. Accepted: one exact block, "
+                    "or one trailing-whitespace or uniform-indent match.\n"
+                    f"{_match_failure_detail(content.splitlines(), expected)}"
                 )
             content, kind = heal
             healed.append(f"{path} ~{kind}")
@@ -698,9 +774,10 @@ def _v4a_apply_update(
         idx = _v4a_locate_with_hints(content, hints, old_block)
         if idx is None:
             raise PatchError(
-                f"V4A hunk context is ambiguous in {path!r} ({count} matches); include "
-                "more surrounding context lines, or a `@@ <section>` marker naming the "
-                "enclosing def/class, so the location is unique"
+                f"V4A hunk context is ambiguous in {path!r}; include more surrounding "
+                "context lines, or a `@@ <section>` marker naming the enclosing def/class, "
+                "so the location is unique.\n"
+                f"{_match_failure_detail(content.splitlines(), old_block.split(chr(10)))}"
             )
         content = _v4a_splice(content, idx, old_block, new_block)
     return path, content, tuple(healed)

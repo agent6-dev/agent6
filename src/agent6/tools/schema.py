@@ -120,8 +120,8 @@ class ApplyPatchInput(_ToolInput):
         " patches are staged all-or-nothing (unified needs `diff --git`"
         " separators between files); a write that fails part way names the"
         " files already changed. Context lines match exactly or heal through a strict"
-        " ladder (trailing whitespace / uniform indent / unique moved block;"
-        " the result names each heal). A file whose lines end in CRLF is written"
+        " ladder (trailing whitespace, uniform indent, moved block, each unique in"
+        " the file; the result names each heal). A file whose lines end in CRLF is written"
         " back with CRLF. `path` optional (taken from headers; single-file only)."
         " preview=true echoes the diffs without writing."
     )

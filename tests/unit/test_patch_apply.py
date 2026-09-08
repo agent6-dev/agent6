@@ -493,3 +493,96 @@ def test_moved_heal_tail_state_follows_the_healed_position() -> None:
     # The tail (y + trailing newline) was untouched by the healed mid-file
     # edit; the patch's no-newline marker must not strip the file's tail.
     assert new2 == "a\nB\nx\ny\n"
+
+
+def test_patch_indent_heal_preserves_nested_relative_indent() -> None:
+    original = "class C:\n    def f():\n        if ready:\n            value = 1\n"
+    unified = (
+        "--- a/f.py\n+++ b/f.py\n@@ -2,3 +2,3 @@\n"
+        "-def f():\n-    if ready:\n-        value = 1\n"
+        "+def f():\n+    if ready:\n+        value = 2\n"
+    )
+    _, unified_new, unified_healed = apply_patch_text(unified, original)
+    assert unified_new == "class C:\n    def f():\n        if ready:\n            value = 2\n"
+    assert unified_healed == ("f.py @@ -2,3 ~indent",)
+
+    v4a = (
+        "*** Begin Patch\n*** Update File: f.py\n@@\n"
+        "-def f():\n-    if ready:\n-        value = 1\n"
+        "+def f():\n+    if ready:\n+        value = 2\n*** End Patch"
+    )
+    _, v4a_new, v4a_healed = apply_v4a_text(v4a, original)
+    assert v4a_new == unified_new
+    assert v4a_healed == ("f.py ~indent",)
+
+
+def test_whitespace_heal_stays_at_its_anchor_beside_an_exact_copy() -> None:
+    """An exact copy of the block elsewhere counted as a second whitespace
+    match, so the heal fell through to the moved rule and edited the copy."""
+    patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n+A\n"
+    _, new, healed = apply_patch_text(patch, "a \nother\na\n")
+    assert new == "A\nother\na\n"
+    assert healed == ("f.py @@ -1,1 ~rstrip",)
+
+
+@pytest.mark.parametrize(
+    ("original", "patch"),
+    [
+        (
+            "a  \nother\na \n",
+            "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n+A\n",
+        ),
+        (
+            "    a\nother\n        a\n",
+            "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-a\n+A\n",
+        ),
+    ],
+)
+def test_unified_heal_refuses_multiple_matching_regions(original: str, patch: str) -> None:
+    with pytest.raises(PatchError, match="Context mismatch"):
+        apply_patch_text(patch, original)
+
+
+def test_moved_heal_accepts_stale_coordinates_past_eof() -> None:
+    original = "before\ntarget\nafter\n"
+    patch = "--- a/f.py\n+++ b/f.py\n@@ -99 +99 @@\n-target\n+TARGET\n"
+    _, new, healed = apply_patch_text(patch, original)
+    assert new == "before\nTARGET\nafter\n"
+    assert healed == ("f.py @@ -99,1 ~moved",)
+
+
+def test_unified_file_headers_must_name_the_same_file() -> None:
+    patch = "--- a/old.py\n+++ b/new.py\n@@ -1 +1 @@\n-a\n+A\n"
+    with pytest.raises(PatchError) as exc:
+        apply_patch_text(patch, "a\n")
+    message = str(exc.value)
+    assert "old.py" in message
+    assert "new.py" in message
+
+
+def test_deletion_refusal_counts_surviving_utf8_bytes() -> None:
+    patch = "--- a/f.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n"
+    with pytest.raises(PatchError, match="3 bytes of content survive"):
+        apply_patch_text(patch, "a\né\n")
+
+
+def test_unified_mismatch_names_match_count_and_nearest_lines() -> None:
+    original = "first\nneedlf\nlast\n"
+    patch = "--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-needle\n+replacement\n"
+    with pytest.raises(PatchError) as exc:
+        apply_patch_text(patch, original)
+    message = str(exc.value)
+    assert "0 exact matches" in message
+    assert "Expected lines:\n  1| needle" in message
+    assert "Nearest on-disk lines 2-2:\n  2| needlf" in message
+
+
+def test_v4a_mismatch_names_match_count_and_nearest_lines() -> None:
+    original = "first\nneedlf\nlast\n"
+    patch = "*** Begin Patch\n*** Update File: f.py\n@@\n-needle\n+replacement\n*** End Patch"
+    with pytest.raises(PatchError) as exc:
+        apply_v4a_text(patch, original)
+    message = str(exc.value)
+    assert "0 exact matches" in message
+    assert "Expected lines:\n  1| needle" in message
+    assert "Nearest on-disk lines 2-2:\n  2| needlf" in message
