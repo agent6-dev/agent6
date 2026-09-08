@@ -204,10 +204,13 @@ class HomeScreen(ScreenChrome, Screen[None]):
         listing = nested_rows(summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values())
         self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
 
-        def add(s: SessionSummary, id_cell: str) -> None:
+        def add(row: ListingRow, id_cell: str) -> None:
             # Text cells: task is model/user input and may carry markup brackets.
+            # The time is the row's (a fan-out's latest lane activity while its
+            # own journal is quiet), as `sessions list` and the web hub show it.
+            s = row.summary
             table.add_row(
-                format_when(s.mtime),
+                format_when(row.mtime),
                 _status_cell(s),
                 format_cost_cell(s.cost_usd, partial=s.usd_partial),
                 Text(id_cell),
@@ -220,13 +223,13 @@ class HomeScreen(ScreenChrome, Screen[None]):
             s = row.summary
             marked = winner_id(s.session_id, winner=is_winner(dirs[s.session_id]))
             if depth:
-                add(s, lane_id_cell(marked, depth))
+                add(row, lane_id_cell(marked, depth))
                 for lane in row.lanes:
                     emit(lane, depth + 1)
                 return
             expanded = s.session_id in self._expanded
             folded = f" ({lane_count(len(row.lanes))})" if row.lanes and not expanded else ""
-            add(s, marked + folded)
+            add(row, marked + folded)
             if expanded:
                 for lane in row.lanes:
                     emit(lane, 1)

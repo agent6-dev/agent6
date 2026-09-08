@@ -627,6 +627,57 @@ def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: Path) -> None:
+    """A folded fan-out's row time is the group's latest activity, matching
+    `sessions list` and the web hub: the coordinator's own journal is quiet
+    while its lanes run, so showing its own mtime buried a fan-out whose lanes
+    are working right now under any solo run touched since the coordinator
+    wrote its one line."""
+    import asyncio
+
+    from textual.widgets import DataTable
+
+    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+    from agent6.viewmodel.format import format_when
+
+    a6 = tmp_path / ".agent6"
+    coord = _write_run(
+        a6, "runs", "fan", [{"type": "session.start", "mode": "run", "user_task": "t"}]
+    )
+    (coord / "manifest.json").write_text(
+        json.dumps({"mode": "run", "fanout": {"lanes": 2, "spec": "2"}}), encoding="utf-8"
+    )
+    for lane in (1, 2):
+        ld = _write_run(
+            a6,
+            "runs",
+            f"fan-l{lane}",
+            [{"type": "session.start", "mode": "run", "user_task": "t"}],
+        )
+        (ld / "manifest.json").write_text(
+            json.dumps(
+                {"mode": "run", "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"}}
+            ),
+            encoding="utf-8",
+        )
+    old, new = 1_700_000_000, 1_700_007_200
+    os.utime(coord / "logs.jsonl", (old, old))
+    for lane in (1, 2):
+        os.utime(a6 / "sessions" / "runs" / f"fan-l{lane}" / "logs.jsonl", (new, new))
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HomeScreen)
+            table = screen.query_one("#sessions", DataTable)
+            assert table.row_count == 1  # folded: one row for the fan-out
+            assert str(table.get_row_at(0)[0]) == format_when(new)
+
+    asyncio.run(scenario())
+
+
 def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: Path) -> None:
     """The time column had three names across the hubs: `updated` (CLI),
     `when` (TUI) and a locale string (web)."""
