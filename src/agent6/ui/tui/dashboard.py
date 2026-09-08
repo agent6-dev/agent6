@@ -38,6 +38,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
     ) from e
 
 from agent6.git_ops import commit_diff, diff_range
+from agent6.graph.order import DONE_STATUSES
 from agent6.sessions.ipc import (
     listening_ports,
 )
@@ -551,7 +552,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         finished = self._end_label()
         ds, as_of = self._details_state(s)
         # tasks and cost are both as-of the selected step; ctx is live.
-        done_n = sum(1 for t in ds.tasks if t.status in ("passed", "skipped"))
+        done_n = sum(1 for t in ds.tasks if t.status in DONE_STATUSES)
         step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
         cost = f"[b]{format_usd(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
         # Consumption of the binding ledger: this leg's metered spend vs its

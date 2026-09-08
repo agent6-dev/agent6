@@ -116,6 +116,41 @@ def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_the_task_count_credits_an_obsolete_task_as_done(tmp_path: Path) -> None:
+    """An obsolete task is retired, exactly like a skipped one -- both satisfy a
+    dependent's wait (`graph.order.DONE_STATUSES`) and need no
+    further work -- but the top line's `tasks: N/M` counted only passed/skipped,
+    undercounting a plan with a retired task."""
+    d = tmp_path / "obsolete1"
+    d.mkdir()
+    evs = [
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+        {
+            "type": "graph.update",
+            "cursor": "t3",
+            "nodes": {
+                "t1": {"title": "first", "parent_id": None, "status": "obsolete"},
+                "t2": {"title": "second", "parent_id": None, "status": "passed"},
+                "t3": {"title": "third", "parent_id": None, "status": "pending"},
+            },
+        },
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            for _ in range(80):  # the reader thread folds the graph
+                if len(app.state.tasks) == 3:
+                    break
+                await pilot.pause(0.05)
+            top = str(app._dash.query_one("#top", Static).render())
+            assert "tasks: 2/3" in top
+
+    asyncio.run(scenario())
+
+
 def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: Path) -> None:
     """A plan's product is plan.md; the CLI prints it at the end and the web
     shows it in a card, but the dashboard's end story showed only the summary

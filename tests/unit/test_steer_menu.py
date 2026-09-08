@@ -123,6 +123,40 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert pause_menu(tmp_path, input_fn=_feed([])) is None
 
 
+def test_status_counts_a_retired_task_as_done(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An obsolete task needs no work, like a skipped one; /status counted only
+    passed and skipped tasks as done."""
+    import json
+
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text(
+        "\n".join(
+            json.dumps(e)
+            for e in (
+                {"type": "session.start", "user_task": "t", "mode": "run"},
+                {
+                    "type": "graph.update",
+                    "cursor": "t3",
+                    "nodes": {
+                        "t1": {"title": "first", "parent_id": None, "status": "obsolete"},
+                        "t2": {"title": "second", "parent_id": None, "status": "passed"},
+                        "t3": {"title": "third", "parent_id": None, "status": "pending"},
+                    },
+                },
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert pause_menu(tmp_path, input_fn=_feed(["/status", "/continue"])) == ""
+
+    assert "tasks 2/3" in capsys.readouterr().out
+
+
 def test_pause_menu_status_clips_the_task_like_every_listing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

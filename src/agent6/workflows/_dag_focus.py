@@ -17,14 +17,13 @@ work to surface.
 from __future__ import annotations
 
 from agent6.graph.models import TaskNode
-from agent6.graph.order import OPEN_STATUSES, has_open_child, tree_order
+from agent6.graph.order import DONE_STATUSES, OPEN_STATUSES, has_open_child, tree_order
 
 # Tool names that mutate the task DAG; after one runs the loop re-snapshots the
 # graph (graph.update event) so a live viewer can render the worker's task
 # breakdown.
 DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task"})
 
-DEPS_SATISFIED_STATUSES = frozenset({"passed", "skipped", "obsolete"})
 
 # Anti-grind: a weak model on a vague/oversized task can stay on one DAG task for
 # many turns, reading without ever marking it done, decomposing it, or trying to
@@ -46,7 +45,7 @@ def ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
         return False
     for dep in node.depends_on:
         d = nodes.get(dep)
-        if d is None or d.status not in DEPS_SATISFIED_STATUSES:
+        if d is None or d.status not in DONE_STATUSES:
             return False
     return not has_open_child(nodes, node)
 

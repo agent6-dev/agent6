@@ -42,6 +42,7 @@ from pathlib import Path
 
 from agent6.config.layer import load_effective
 from agent6.directive import STEER_COMMANDS, parse_btw
+from agent6.graph.order import DONE_STATUSES
 from agent6.paths import data_dir
 from agent6.sessions.ipc import request_compact, steer_answer_written, take_steer_answer
 from agent6.sessions.layout import LOGS_NAME
@@ -152,7 +153,7 @@ def _print_status(session_dir: Path) -> None:
     # The dir decision, not the fold alone: an attached run's worker can be
     # gone ("stale"), which the fold-only label reads as "running".
     label = status_label(*status_for_session_dir(session_dir, status_facts(s)))
-    done = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
+    done = sum(1 for t in s.tasks if t.status in DONE_STATUSES)
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     role = s.last_role
     model = f"{role.role}/{role.model}" if role else "—"

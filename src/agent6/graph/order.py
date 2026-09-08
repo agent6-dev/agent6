@@ -12,6 +12,10 @@ from agent6.graph.models import TaskNode
 # work: its children are.
 OPEN_STATUSES = frozenset({"pending", "in_progress"})
 
+# A task nobody needs to work on: finished, skipped or retired. Any of them
+# satisfies a dependent's wait, and a count of done tasks includes them all.
+DONE_STATUSES = frozenset({"passed", "skipped", "obsolete"})
+
 
 def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     """True if any of `node`'s children is still open. A subtask with open
