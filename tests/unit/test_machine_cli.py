@@ -532,6 +532,45 @@ def test_uncommitted_refusal_tracks_git_state(tmp_path: Path) -> None:
     assert uncommitted_refusal(f, tmp_path) is not None  # modified again
 
 
+def test_uncommitted_refusal_checks_the_machine_symlink_not_its_target(tmp_path: Path) -> None:
+    """Retargeting a tracked machine symlink is an uncommitted bundle edit."""
+    from agent6.app.machine.run import uncommitted_refusal
+
+    _git_init(tmp_path)
+    first = tmp_path / "first.asm.toml"
+    second = tmp_path / "second.asm.toml"
+    first.write_text(TINY, encoding="utf-8")
+    second.write_text(TINY, encoding="utf-8")
+    machine = tmp_path / "machine.asm.toml"
+    machine.symlink_to(first.name)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
+
+    machine.unlink()
+    machine.symlink_to(second.name)
+
+    assert uncommitted_refusal(machine, tmp_path) is not None
+
+
+def test_uncommitted_refusal_follows_a_symlinked_repo_path(tmp_path: Path) -> None:
+    """A repo reached through a symlinked prefix keeps its committed-bundle
+    gate: the unresolved piece under the resolved base skipped it silently."""
+    from agent6.app.machine.run import uncommitted_refusal
+
+    real = tmp_path / "real"
+    real.mkdir()
+    _git_init(real)
+    machine = real / "machine.asm.toml"
+    machine.write_text(TINY, encoding="utf-8")
+    subprocess.run(["git", "-C", str(real), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(real), "commit", "-q", "-m", "add"], check=True)
+    machine.write_text(TINY + "\n# edited\n", encoding="utf-8")
+    link = tmp_path / "link"
+    link.symlink_to(real)
+
+    assert uncommitted_refusal(link / "machine.asm.toml", link) is not None
+
+
 def test_uncommitted_refusal_covers_the_scripts_bundle(tmp_path: Path) -> None:
     """One committed-bundle rule: a tool executes `scripts/` as trusted logic
     exactly like the .asm.toml, so a dirty bundle REFUSES (not a warning a
@@ -834,6 +873,39 @@ def test_run_says_where_a_machines_work_landed(
     assert "git merge agent6/machine-wait-then-run" in out
 
 
+def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state that pins both provider and model is runnable without a worker default."""
+    from agent6.app.machine import run as run_mod
+    from agent6.machine import AgentExecResult
+
+    monkeypatch.chdir(tmp_path)
+    config_home = tmp_path.parent / f"{tmp_path.name}-config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    machine = tmp_path / "pinned.asm.toml"
+    machine.write_text(
+        AGENT_MACHINE_HARD.replace(
+            'prompt = "judge"', 'prompt = "judge"\nprovider = "p"\nmodel = "m"'
+        ),
+        encoding="utf-8",
+    )
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[providers.p]\napi_format = "openai"\nbase_url = "http://127.0.0.1:9"\n',
+        encoding="utf-8",
+    )
+
+    def build(*_args: object, **_kwargs: object):  # type: ignore[no-untyped-def]
+        def run(*_args: object, **_kwargs: object) -> AgentExecResult:
+            return AgentExecResult(reason="finish_session", payload={"ok": True})
+
+        return run
+
+    monkeypatch.setattr(run_mod, "build_machine_agent_runner", build)
+    assert main(["--config", str(cfg), "machine", "run", str(machine)]) == 0
+
+
 def test_run_warns_on_mode_run_states_under_ask_policy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -923,6 +995,12 @@ model = "m"
     assert code == 2
     assert "chain branch 'agent6/machine-run-warn' exists" in err
     assert "git branch -D agent6/machine-run-warn" in err
+    # A preflight refusal is not a running worker. The pid was stamped before
+    # this check and never cleared, so in-process callers reported it as live.
+    from agent6.sessions.ipc import read_worker_pid
+
+    root = state_dir(repo) / "machines" / "run-warn"
+    assert read_worker_pid(root) is None
 
 
 PARKED_RUN_MACHINE = """

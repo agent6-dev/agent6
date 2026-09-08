@@ -252,9 +252,11 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # carry the operator's effective settings as the leg's overlay, the way a
     # fan-out lane materializes them into its clone. Without it a repo-pinned
     # worker model is invisible to the leg and every attempt fails.
-    overlay = cfg.model_dump(mode="json", exclude_defaults=True)
-    overlay.pop("preset", None)  # the overlay layer forbids both of these
-    overlay.get("agent6", {}).pop("state_dir", None)
+    # Carry the complete effective config. Omitting values equal to built-in
+    # defaults loses an explicit repo reset when this workspace reloads the
+    # operator's non-default global layer.
+    overlay = cfg.model_dump(mode="json")
+    overlay.pop("preset", None)  # the overlay layer forbids a preset
     # The leg writes files and nothing else. `run_commands = "no"` withholds
     # the three command tools; the operator's metric goes too, since
     # `run_metric_command` runs its command in the jail and authoring has no
@@ -293,14 +295,15 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # subprocess is otherwise a fresh tracker, so N retries could bill N full
     # budgets. -1 = unlimited (the config's own convention).
     create_cap = None if cfg.budget.max_usd == -1 else cfg.budget.max_usd
-    attempt = 0  # bound for the session.end below (the loop always runs: max_attempts >= 1)
-    for attempt in range(1, max_attempts + 1):
+    attempt = 0
+    for next_attempt in range(1, max_attempts + 1):
         if create_cap is not None and total_usd >= create_cap:
             reporter.err(
                 f"machine create: budget max_usd (${create_cap}) exhausted after"
-                f" {attempt - 1} attempt(s) (spent ~${total_usd:.4f}); stopping."
+                f" {attempt} attempt(s) (spent ~${total_usd:.4f}); stopping."
             )
             break
+        attempt = next_attempt
         prompt = build_authoring_prompt(task, attempt=attempt, diagnostics=diagnostics)
         reporter.err(f"machine create: attempt {attempt}/{max_attempts}...")
         events.emit("loop.note", text=f"attempt {attempt}/{max_attempts}")
@@ -407,7 +410,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # contradicts the word. `iterations` = authoring attempts made.
     if spec is None or valid_path is None:
         events.emit("session.end", reason="no_valid_machine", iterations=attempt, all_passed=False)
-        reporter.err(f"FAILED: no valid machine after {max_attempts} attempt(s).")
+        reporter.err(f"FAILED: no valid machine after {attempt} attempt(s).")
         if diagnostics:
             reporter.err("Last diagnostics:")
             for problem in diagnostics:
@@ -427,7 +430,9 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         # (unrecoverable if uncommitted). `-o` keeps its documented
         # overwrite-freely contract.
         clashes = [
-            p for p in (target, *(target.parent / rel for rel in valid_scripts)) if p.exists()
+            p
+            for p in (target, *(target.parent / rel for rel in valid_scripts))
+            if p.exists() or p.is_symlink()
         ]
         if clashes:
             # The refusal fails the command with nothing written; session.end must

@@ -209,6 +209,24 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
     assert not clone_cwd.exists()  # scratch tree, discarded
 
 
+def test_spawn_failure_routes_failed_and_discards_the_unused_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A child that cannot start is a failed state, not an escaping host exception."""
+    origin = _origin(tmp_path)
+
+    def fail_spawn(argv: list[str] | tuple[str, ...], **kwargs: Any) -> Any:
+        if any("machine_agent" in str(arg) for arg in argv):
+            raise OSError("process table full")
+        return _REAL_POPEN(argv, **kwargs)
+
+    monkeypatch.setattr(ma.subprocess, "Popen", fail_spawn)
+    result = _runner(origin, tmp_path)(_req(0), None)
+
+    assert result.reason.startswith("error: machine agent failed to start:")
+    assert not any((tmp_path / "clones").glob("state-*"))
+
+
 def test_import_failure_keeps_the_clone_and_routes_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

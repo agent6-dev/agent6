@@ -602,35 +602,39 @@ def build_machine_agent_runner(
             # prctl/getppid/_exit, no allocation or locks.
             # AGENT6_SUBRUN: a machine state is subordinate work and must
             # not itself fan out (the same depth-1 flag every lane carries).
-            proc = subprocess.Popen(
-                argv,
-                start_new_session=True,
-                env={**os.environ, "AGENT6_SUBRUN": "1"},
-                preexec_fn=die_with_parent(os.getpid()),  # noqa: PLW1509
-            )
             try:
-                proc.wait(timeout=request.timeout_s)
-            except subprocess.TimeoutExpired:
-                with contextlib.suppress(ProcessLookupError):
-                    # By pid: start_new_session made it the group leader, and an
-                    # unreaped child's pgid cannot have been recycled. Looking
-                    # it up first would leave a window where, under sudo, an
-                    # unrelated group could be killed as root.
-                    os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
-                result = salvaged("timeout")
+                proc = subprocess.Popen(
+                    argv,
+                    start_new_session=True,
+                    env={**os.environ, "AGENT6_SUBRUN": "1"},
+                    preexec_fn=die_with_parent(os.getpid()),  # noqa: PLW1509
+                )
+            except OSError as exc:
+                result = salvaged(f"error: machine agent failed to start: {exc}")
             else:
-                if proc.returncode != 0 or not out_file.is_file():
-                    result = salvaged("error")
+                try:
+                    proc.wait(timeout=request.timeout_s)
+                except subprocess.TimeoutExpired:
+                    with contextlib.suppress(ProcessLookupError):
+                        # By pid: start_new_session made it the group leader, and an
+                        # unreaped child's pgid cannot have been recycled. Looking
+                        # it up first would leave a window where, under sudo, an
+                        # unrelated group could be killed as root.
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+                    result = salvaged("timeout")
                 else:
-                    try:
-                        result = AgentExecResult.model_validate_json(
-                            out_file.read_text(encoding="utf-8")
-                        )
-                    except (OSError, ValidationError):
-                        # A malformed result.json is treated like a missing
-                        # one: the spend salvage keeps the budget honest.
+                    if proc.returncode != 0 or not out_file.is_file():
                         result = salvaged("error")
+                    else:
+                        try:
+                            result = AgentExecResult.model_validate_json(
+                                out_file.read_text(encoding="utf-8")
+                            )
+                        except (OSError, ValidationError):
+                            # A malformed result.json is treated like a missing
+                            # one: the spend salvage keeps the budget honest.
+                            result = salvaged("error")
         if clone is not None and chain is not None and machine_id is not None:
             result = _land_machine_clone(cwd, clone, chain, machine_branch_for(machine_id), result)
         return result

@@ -21,6 +21,8 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from agent6.app._session import resolve_isolation_or_refuse
 from agent6.app._setup import check_provider_keys, detect_env
 from agent6.app.confine import (
@@ -118,7 +120,10 @@ def uncommitted_refusal(path: Path, cwd: Path) -> str | None:
     pieces = [(path, "machine")] + ([(scripts, "scripts bundle")] if scripts.exists() else [])
     for piece, label in pieces:
         try:
-            rel = piece.resolve().relative_to(cwd.resolve()).as_posix()
+            # Resolve the directory but keep the entry itself: resolving the
+            # entry would turn a dirty retargeted symlink into its clean
+            # destination and authorize an uncommitted machine.
+            rel = (piece.parent.resolve() / piece.name).relative_to(cwd.resolve()).as_posix()
         except ValueError:
             continue
         try:
@@ -309,11 +314,20 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # One clone base for every state of a machine that writes: the agent
     # states' per-state clones and the tool states' per-call trees.
     clone_root = subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
+    agent_states = [s for s in spec.states.values() if isinstance(s, AgentState)]
     if has_agent_state or tool_states:
         try:
-            if has_agent_state:
-                cfg.require_runnable("worker")
-        except ConfigError as exc:
+            for state in agent_states:
+                state_cfg = cfg.with_machine_agent_overrides(
+                    provider=state.provider,
+                    model=None if state.model == "inherit" else state.model,
+                    effort=state.effort,
+                    temperature=state.temperature,
+                    max_usd=state.max_usd,
+                    max_tokens_fallback=state.max_tokens_fallback,
+                )
+                state_cfg.require_runnable("worker")
+        except (ConfigError, ValidationError) as exc:
             reporter.error(str(exc))
             return 2
         try:
@@ -343,17 +357,22 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # The machine's statically reachable routes include every agent
             # state's provider/model pins; discovering a dead route only when
             # that state fires wastes the run up to it.
-            agent_states = [s for s in spec.states.values() if isinstance(s, AgentState)]
-            pinned_providers = [s.provider for s in agent_states if s.provider]
-            pinned_routes = [
-                (s.provider or "", s.model) for s in agent_states if s.model != "inherit"
-            ]
+            routes = []
+            for state in agent_states:
+                state_cfg = cfg.with_machine_agent_overrides(
+                    provider=state.provider,
+                    model=None if state.model == "inherit" else state.model,
+                )
+                route = state_cfg.models.resolve("worker")
+                if route is not None:
+                    routes.append((route.provider, route.model))
+            pinned_providers = [provider for provider, _model in routes]
             missing = check_provider_keys(cfg, extra_providers=pinned_providers)
             if missing is not None:
                 reporter.err(missing)
                 return 2
             # After check_provider_keys so the price cache has been refreshed.
-            budget_err = budget_preflight(cfg, extra_routes=pinned_routes, reporter=reporter)
+            budget_err = budget_preflight(cfg, extra_routes=routes, reporter=reporter)
             if budget_err is not None:
                 reporter.refuse(budget_err)
                 return 2
@@ -444,9 +463,6 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # its approvals/questions for the front-end instead of the headless
             # deny, the same detach semantics a spawned run gets.
             apply_spawned_away_default(root, approval_scopes(cfg))
-            # Liveness marker for watchers (the web SSE stream probes it to
-            # tell a crashed machine from a parked one), mirroring cli/run.py.
-            write_worker_pid(root, os.getpid())
             if not journal.exists():
                 # A fresh instance must not silently continue a dead one's
                 # tree: the chain ref outlives an archived instance dir, and
@@ -515,6 +531,9 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 notify_hook=surface_notify,
                 on_wait=say_where_it_parked,
             )
+            # Stamp liveness only after every refusal which can still return
+            # from preflight. From here the finally always clears it.
+            write_worker_pid(root, os.getpid())
             try:
                 result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
             finally:

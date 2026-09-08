@@ -194,6 +194,42 @@ def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.Monkey
     assert captured[0].mode == "run"
 
 
+def test_create_carries_an_effective_default_that_resets_the_global_layer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drafting workspace receives the effective repo value, even when it equals a default."""
+    from agent6.config.layer import load_effective_with_overlay
+
+    monkeypatch.chdir(tmp_path)
+    config_home = tmp_path / "config"
+    (config_home / "agent6").mkdir(parents=True)
+    (config_home / "agent6" / "config.toml").write_text(
+        "[workflow]\nmax_iterations = 7\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    _stub_preflight(monkeypatch)  # models a repo resetting 7 to the built-in default
+    seen: list[int] = []
+
+    def fake_build(
+        overlay: dict[str, object],
+        root: Path,
+        isolation: object,
+        transcript_dir: Path,
+        **_kw: object,
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        seen.append(load_effective_with_overlay(root, overlay).config.workflow.max_iterations)
+
+        def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+            _write_draft(root, _draft(VALID_MACHINE))
+            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
+
+        return run
+
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    assert main(["machine", "create", "Greet the user"]) == 0
+    assert seen == [Config().workflow.max_iterations]
+
+
 def test_create_writes_default_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -359,6 +395,24 @@ def test_create_refuses_to_overwrite_default_path(
     assert "REFUSING to overwrite" in out.err
     # validated draft dumped to stdout
     assert out.out.startswith('machine = "greeter"')
+
+
+def test_create_refuses_to_replace_a_broken_output_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The no-output default clobbers no filesystem entry, including a broken symlink."""
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "greeter.asm.toml"
+    target.symlink_to("missing.asm.toml")
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
+    )
+
+    assert main(["machine", "create", "Greet the user"]) == 2
+    assert target.is_symlink()
+    assert target.readlink() == Path("missing.asm.toml")
 
 
 def test_create_collision_refusal_ends_the_watchable_log_as_failed(
@@ -668,6 +722,7 @@ def test_create_attempts_share_one_budget_ledger(
     request carries the REMAINING cap, and a spent-out create stops instead
     of paying for another attempt."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
     caps: list[float | None] = []
 
@@ -684,7 +739,13 @@ def test_create_attempts_share_one_budget_ledger(
     code = main(["machine", "create", "Run a script"])
     assert code == 1  # no valid draft, and no third full-budget attempt
     assert caps == [10.0, 4.0]
-    assert "exhausted" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "exhausted" in err
+    assert "no valid machine after 2 attempt(s)" in err
+    logs = next((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
+    events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
+    end = next(e for e in events if e["type"] == "session.end")
+    assert end["iterations"] == 2
 
 
 def test_create_writes_script_bundle(
@@ -1125,9 +1186,9 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     # The operator's own settings ride as the overlay: the workspace's per-repo
     # layer is empty, so without them a repo-pinned worker model is invisible
     # to the leg and every attempt fails.
-    assert cfg["models"] == {"worker": {"provider": "openrouter", "model": "test-model"}}
+    assert cfg["models"]["worker"]["provider"] == "openrouter"
+    assert cfg["models"]["worker"]["model"] == "test-model"
     assert cfg["sandbox"]["run_commands"] == "no", "and it still carries no command tool"
-    assert "state_dir" not in cfg.get("agent6", {}), "global-only; the overlay forbids it"
     # A workspace that never ran has no state dir to remove, which rmtree
     # reports like a failure: every published create printed that it stayed.
     assert "the drafting workspace stays" not in capsys.readouterr().err
@@ -1198,7 +1259,9 @@ def test_discarding_the_workspace_takes_its_empty_base_with_it(tmp_path: Path) -
 
 
 def test_an_operator_stop_ends_create_instead_of_retrying(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """An operator stopping the drafting agent (`steer_abort`) ends the
     command; absent that reason from `_CREATE_STOP_REASONS`, the loop read
@@ -1221,3 +1284,4 @@ def test_an_operator_stop_ends_create_instead_of_retrying(
     monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user", "--max-attempts", "3"]) == 1
     assert attempts == 1
+    assert "no valid machine after 1 attempt(s)" in capsys.readouterr().err
