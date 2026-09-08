@@ -64,7 +64,7 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 | `extra_headers` | `{}` | Extra HTTP headers on every request to this provider. Never a secret: the config file is not `0600`. |
 | `extra_body` | `{}` | Provider-specific JSON merged last into every request body, so tuning keys (`max_tokens`, `temperature`) win; the structural keys agent6 owns (messages, model, stream, tools, tool choice, response shape) are filtered out. Values must be JSON-shaped (a TOML date or time is refused). OpenRouter's routing options go here. |
 | `extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
-| `http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is bounded at 20 s regardless. |
+| `http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
 | `prompt_caching` | `true` | Anthropic prompt caching: the system prompt, the tools, and the growing conversation are re-read at 0.1x the input price. `anthropic` format only. |
 | `binary` | `"claude"` | The Claude Code executable: a name on PATH or an absolute path. `claude_code` format only. |
 
@@ -217,7 +217,7 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 | `control` | `"agent6"` | Who manages git during a run: `agent6` records every step on the run's own commit chain and branch, never touching HEAD; `model` hands git to the model: no per-step chain, no run branch, the model's own commits and branches are the record, and `sessions diff`/`merge`, `/undo`, and `fork` refuse for such runs. Requires `sandbox.protect_git = false`. |
 | `branch_per_run` | `true` | Also advance a visible `agent6/<run-id>` branch to the run's chain tip; `false` keeps only the hidden `refs/agent6/<run-id>/head` ref. Forced on for `--parallel` lanes (their work is imported by branch). |
 | `commit_per_step` | `true` | Commit each editing step onto the run's detached chain (a temp index; HEAD, your index, and your checkout are never touched). `false`: agent6 never commits; the work stays only in the worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch from a changed tree degrade. |
-| `merge_strategy` | `"squash"` | How `agent6 sessions merge` lands a run on its base: `squash` (one commit), `merge` (a `--no-ff` merge that keeps the per-step history), or `ff` (fast-forward). Consolidation only; per-step commits always land on the run's chain. |
+| `merge_strategy` | `"squash"` | How `agent6 sessions merge` lands a run on its base: `squash` (one commit), `merge` (a merge commit keeping the per-step history), or `ff` (fast-forward). Consolidation only; per-step commits always land on the run's chain. |
 | `auto_merge` | `false` | After a run that finished with nothing red, merge its work into its base branch automatically (never over a red or stale verify). With `branch_per_run` off it merges the hidden chain ref. On a conflict nothing moves and the instructions are printed. |
 | `auto_prune` | `false` | After an `auto_merge`, delete the run branch when `git branch -d` can (a `merge` or `ff` merge). A squash-merged branch is reported with its `-D` line, never force-deleted. Requires `auto_merge`; nothing to do without a run branch. |
 | `run_repo_hooks` | `false` | Run the repo's own `.git/hooks/*` during agent6's git operations. `false` skips them: a repo hook is repo-controlled code that would run on the host. `core.fsmonitor` and `diff.external` are always neutralized. |

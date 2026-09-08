@@ -406,8 +406,7 @@ StateSpec = Annotated[
 
 # Operator-only security policy an untrusted machine `[config]` overlay may never
 # carry. The loader enforces it and `config set --machine-file` refuses the same
-# keys, both off this one set. `mcp`, `notify.on_complete`, `machine.notify`, and
-# `git.run_repo_hooks` all spawn an operator/repo argv on the host outside the jail.
+# keys, both off this one set; each entry says why.
 PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("providers", "sandbox", "presets", "mcp")
 PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "machine.notify": "the notify hook runs an operator argv on the host outside the jail",

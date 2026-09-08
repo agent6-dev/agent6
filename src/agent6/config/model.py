@@ -134,8 +134,9 @@ class ModelsConfig(BaseModel):
     - `planner` drives `agent6 plan` (the planning pass).
       Unset -> falls back to `worker` (set it to a frontier model + high
       thinking for careful up-front planning).
-    - `reviewer` drives the one-shot `agent6 review` subcommand and the
-      in-loop review panel. Unset -> falls back to `worker`.
+    - `reviewer` drives `agent6 review`, the in-loop review panel and the
+      side calls (the context summariser and gister, the prompt reviser).
+      Unset -> falls back to `worker`.
 
     Any configured provider may serve any role. Leaving every role unset is
     valid (e.g. a global config that only declares providers); a role is

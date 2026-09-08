@@ -176,7 +176,7 @@ class GitConfig(BaseModel):
         default="squash",
         description=(
             "How `agent6 sessions merge` lands a run on its base: `squash` (one commit), `merge` "
-            "(a `--no-ff` merge that keeps the per-step history), or `ff` (fast-forward). "
+            "(a merge commit keeping the per-step history), or `ff` (fast-forward). "
             "Consolidation only; per-step commits always land on the run's chain."
         ),
     )

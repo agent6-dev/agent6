@@ -70,14 +70,13 @@ def session_exit_code(result: SessionResult, *, stranded: bool = False) -> int:
     4 finished over a not-green verify / 5 finished with its edits stranded
     uncommitted (`stranded_edits`) / 1 else.
 
-    4 covers red AND unverified: the tree is not green, and that is what 4
+    4 covers red and unverified: the tree is not green, and that is what 4
     means; exiting 0 on "no verify ran" would let a worker pass by never
     running the gate. 5 is the same principle for the deliverable: no commit
     landed and the edits sit uncommitted, so 0 would tell a script the work
-    landed. A red gate outranks 5 (the gate is
-    the primary signal; the footer still says both). WHOSE failure it is
-    shows in the word and the reason, not here; a script reading 0 would
-    take it as passing."""
+    landed. A red gate outranks 5 (the gate is the primary signal; the footer
+    still says both). Whose failure it is shows in the word and the reason,
+    not in the code."""
     if result.completed:
         if result.verified in ("failed", "unverified"):
             return EXIT_VERIFY_FAILED

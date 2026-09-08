@@ -190,8 +190,7 @@ class _ProviderBase(BaseModel):
         gt=0.0,
         default=600.0,
         description=(
-            "Seconds one HTTP call may take to read or write; the connect phase is bounded at 20 s "
-            "regardless."
+            "Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s."
         ),
     )
 

@@ -156,7 +156,7 @@ class WebConfig(BaseModel):
     front of the loopback bind; the tailnet identity is the access control, so
     there is no app-level auth. Binding a non-loopback address exposes the write
     surface (spawn runs, answer prompts) to anyone who can reach the port, so it
-    is gated behind `allow_non_loopback = true` and carries no default.
+    is gated behind `allow_non_loopback = true`.
     """
 
     model_config = MODEL_CONFIG
