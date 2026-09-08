@@ -374,7 +374,7 @@ def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
         return MachineSummary(machine_dir.name, "", "", "unreadable", "", mtime)
     reason = ms.ended.reason if ms.ended is not None and ms.ended.status == "failed" else ""
     if ms.ended is None and (blocked_in := machine_operator_blocked(machine_dir)):
-        reason = f"waiting on an approval in {blocked_in}"
+        reason = f"waiting on an answer in {blocked_in}"
     return MachineSummary(
         name=machine_dir.name,
         machine=ms.machine,

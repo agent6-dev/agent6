@@ -338,3 +338,17 @@ def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: Path) -
     ms = fold_machine(_spec(tmp_path), [])
     assert machine_status_word(ms, parked=False, alive=True, blocked=True) == "waiting"
     assert machine_status_word(ms, parked=False, alive=True) == "running"
+
+
+def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: Path) -> None:
+    """A machine held on an unanswered `ask_user` question read "waiting on
+    an approval": the summary's reason named one prompt kind for both."""
+    from agent6.viewmodel.machine_state import summarize_machine_dir
+
+    (tmp_path / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    log = tmp_path / "states" / "0001-attempt" / "logs.jsonl"
+    log.parent.mkdir(parents=True)
+    prompt = {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]}
+    log.write_text(json.dumps(prompt) + "\n", encoding="utf-8")
+
+    assert summarize_machine_dir(tmp_path).reason == "waiting on an answer in 0001-attempt"
