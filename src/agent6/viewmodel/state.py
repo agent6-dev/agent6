@@ -622,7 +622,10 @@ def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNode
                 is_cursor=(nid == cursor),
             )
         )
-        for child in node.get("children", ()) or ():
+        children = node.get("children", ())
+        if not isinstance(children, (list, tuple)):
+            return
+        for child in children:
             visit(str(child), depth + 1)
 
     roots = [
