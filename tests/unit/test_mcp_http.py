@@ -266,6 +266,44 @@ def test_an_http_failure_is_a_clean_tool_error() -> None:
         httpd.shutdown()
 
 
+def test_a_non_2xx_body_is_kept_in_the_error() -> None:
+    """The status code alone drops whatever the server said was wrong: a rate
+    limiter's retry-after detail, an auth rejection's reason. The body is
+    untrusted but finite, so it rides along in the error rather than being
+    discarded before it is ever read."""
+    url, _seen, httpd = _serve(None, status=429, body=b'{"error": "rate limited, retry after 30s"}')
+    try:
+        with pytest.raises(MCPHttpError, match="retry after 30s"):
+            HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+    finally:
+        httpd.shutdown()
+
+
+def test_a_redirect_is_an_error_not_a_silent_accept() -> None:
+    """A 3xx is not 2xx: treating anything under 400 as fine took a redirect's
+    empty body for an accepted notification, so a misconfigured `url` (or an
+    auth portal in front of it) went unnoticed instead of failing loudly."""
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers.get("content-length", "0")))
+            self.send_response(302)
+            self.send_header("location", "https://evil.example/mcp")
+            self.end_headers()
+
+        def log_message(self, format: str, *args: Any) -> None:
+            return
+
+    httpd = HTTPServer(("127.0.0.1", 0), _Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{httpd.server_port}/mcp"
+    try:
+        with pytest.raises(MCPHttpError, match="HTTP 302"):
+            HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+    finally:
+        httpd.shutdown()
+
+
 @pytest.mark.parametrize(
     ("entry", "message"),
     [

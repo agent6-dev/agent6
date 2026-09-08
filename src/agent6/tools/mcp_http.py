@@ -32,6 +32,10 @@ from agent6.tools.http_body import BodyRefused, read_capped
 # enough to OOM the process that owns the run and the provider keys.
 MAX_BODY_BYTES = 8 << 20
 
+# How much of a non-2xx body rides into the error message, so a server's
+# explanation reaches the model without a whole capped body behind it.
+_MAX_ERROR_DETAIL_CHARS = 2048
+
 
 def _clean_session_id(value: str) -> str:
     """A server-assigned session id the transport can safely ECHO back in a header, or "".
@@ -148,14 +152,6 @@ class HttpTransport:
                     # keep echoing a dead id, and signal a re-initialize.
                     self.session_id = ""
                     raise MCPSessionExpired(f"server {self.name!r} expired its session (HTTP 404)")
-                if response.status_code >= 400:
-                    raise MCPHttpError(f"server {self.name!r} returned HTTP {response.status_code}")
-                # The server assigns the session id on the initialize response;
-                # capture it here and every request after echoes it. A stateless
-                # server sends none, so this leaves session_id "".
-                assigned = _clean_session_id(response.headers.get("mcp-session-id", ""))
-                if assigned:
-                    self.session_id = assigned
                 deadline = time.monotonic() + timeout_s
                 try:
                     body = read_capped(
@@ -163,6 +159,23 @@ class HttpTransport:
                     )
                 except BodyRefused as exc:
                     raise MCPHttpError(f"server {self.name!r}: {exc}") from exc
+                if not 200 <= response.status_code < 300:
+                    # A 3xx is no JSON-RPC answer either. The body is the
+                    # server's own words about what went wrong (a rate limit,
+                    # an auth rejection): kept, bounded.
+                    detail = body.decode("utf-8", errors="replace").strip()
+                    if len(detail) > _MAX_ERROR_DETAIL_CHARS:
+                        detail = detail[:_MAX_ERROR_DETAIL_CHARS] + " …[agent6: truncated]"
+                    suffix = f": {detail}" if detail else ""
+                    raise MCPHttpError(
+                        f"server {self.name!r} returned HTTP {response.status_code}{suffix}"
+                    )
+                # The server assigns the session id on the initialize response;
+                # capture it here and every request after echoes it. A stateless
+                # server sends none, so this leaves session_id "".
+                assigned = _clean_session_id(response.headers.get("mcp-session-id", ""))
+                if assigned:
+                    self.session_id = assigned
         except MCPHttpError:
             raise
         except Exception as exc:
