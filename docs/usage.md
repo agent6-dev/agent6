@@ -119,7 +119,7 @@ agent6 fork <session-id> --at-turn 7 # new run from turn 7 (--steer seeds it)
     - the run's untracked-at-start files stay, and so do HEAD and the index; the later commits and the pre-undo commit stay on the run's ref
     - refused while another live run drives the checkout
 
-Exit codes for `agent6 run`, `resume` and `review --reviewers N`, for scripts to branch on:
+Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scripts to branch on:
 
 | Code | Meaning |
 |---|---|

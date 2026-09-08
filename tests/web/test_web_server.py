@@ -480,8 +480,7 @@ def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path
 def test_steer_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
     """A crashed run (no session.end, dead worker) folds as unfinished, so the
     composer offers steer; the action must refuse like stop_step/compact do
-    instead of toasting "steer sent" for a marker nothing will ever read (the
-    next resume even deletes it via clear_pending_answers)."""
+    instead of toasting "steer sent" for a marker nothing will ever read."""
     _srv, port = server
     _make_run(tmp_path, "run-sd", [{"type": "session.start"}, {"type": "session.end"}])
     status, data = _post(port, "/api/session/run-sd/steer", {"text": "abort"})

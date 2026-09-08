@@ -42,6 +42,7 @@ from agent6.app.finalize import (
     stranded_edits,
 )
 from agent6.app.frontend import SessionFrontend, approval_scopes
+from agent6.app.manifest import parked_stamp, unpark
 from agent6.app.providers import build_prompt_reviser_provider, close_provider, role_temperature
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
@@ -229,7 +230,13 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             ),
         )
     except (KeyboardInterrupt, Exception) as exc:
-        reporter.err(f"\n[agent6] {label} {_journal_escape(events, exc, iterations=0)}")
+        # A parked run whose start crashes here never ran (unpark is past this
+        # block): it stays parked, so no session.end is journaled and it does
+        # not read "crashed". Every other start is a real leg and journals one.
+        if parked_stamp(layout.session_dir) is not None:
+            reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
+        else:
+            reporter.err(f"\n[agent6] {label} {_journal_escape(events, exc, iterations=0)}")
         with contextlib.ExitStack() as cleanup:
             if prompt_reviser_provider is not None:
                 cleanup.callback(close_provider, prompt_reviser_provider)
@@ -376,6 +383,9 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             keep_thinking_turns=cfg.context.keep_thinking_turns,
             compact_elision_gists=cfg.context.elision_gists,
         )
+        if inputs.task is not None:
+            # The leg begins: a parked submission is a run from here.
+            unpark(layout.session_dir, run_branch=inputs.chain_branch)
         try:
             with frontend.tui_session(layout.session_dir, inputs.tui_enabled):
                 try:
@@ -418,8 +428,9 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
         # The loop's own handler journaled its escape; one before the loop
         # is journaled here; one from the dashboard scope after the run
         # ended is the leg's failure, not the run's, so the run's end stays
-        # its last. Every escape prints its one line here.
-        if not escape_handled and result is None:
+        # its last. A parked start that failed before the loop stays parked:
+        # nothing ran. Every escape prints its one line here.
+        if not escape_handled and result is None and parked_stamp(layout.session_dir) is None:
             _journal_escape(events, exc, iterations=wf.iterations_reached if wf else 0)
         reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         raise
@@ -449,6 +460,9 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
                     cleanup.callback(close_provider, prompt_reviser_provider)
                 cleanup.callback(session.close)
                 cleanup.callback(steer_state.restore)
+                # A stop that landed mid-call and was never read at a boundary
+                # (the leg ended first) would stop the next leg at its first.
+                cleanup.callback(clear_stop_request, layout.session_dir)
             if (
                 not interrupted
                 and result is not None
@@ -491,7 +505,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)
             reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
         reporter.err(budget.format_summary())
-        return LegEnd(0 if result.completed else 1)
+        return LegEnd(session_exit_code(result))
 
     print_session_end(
         result,

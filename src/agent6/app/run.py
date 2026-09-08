@@ -34,6 +34,7 @@ from agent6.app.frontend import (
     settle_away_mode,
 )
 from agent6.app.manifest import (
+    parked_stamp,
     pin_gate,
     stamp_parked,
     write_session_manifest,
@@ -247,8 +248,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # graph/checkpoints/transcripts (mixed state). Refuse and point at resume.
     # (ask sessions are transient Q&A, so reusing their dir is fine.) The one
     # reusable dir is a PARKED run (manifest carries parked_task, nothing else
-    # ever ran): starting it IS its fresh start, and the manifest rewrite below
-    # un-parks it.
+    # ever ran): starting it IS its fresh start, and the leg's start un-parks
+    # it.
     if session_id and mode != "ask" and layout.manifest_path.exists():
         try:
             parked = read_manifest(layout.session_dir).parked_task
@@ -349,7 +350,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # any future tooling that wants to reproduce a run reads from here.
         # Written before the gates below, which PARK rather than refuse: a
         # parked run keeps its dir and manifest, and `agent6 resume <id>` starts
-        # it fresh (that start rewrites the manifest and un-parks it).
+        # it fresh. The rewrite keeps the park, which the leg's start clears
+        # (`unpark` in run_leg): a start that fails before the loop leaves the
+        # run parked, its verbatim task still saved.
+        parked = parked_stamp(layout.session_dir)
         write_session_manifest(
             layout,
             session_id=effective_session_id,
@@ -363,6 +367,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
             isolation=isolation,
         )
+        if parked is not None:
+            stamp_parked(layout.session_dir, task=parked[0], reason=parked[1])
 
         def _park(reason: str, detail: str, *, hint: str = "") -> int:
             # *reason* is the short cause every listing shows beside "parked";

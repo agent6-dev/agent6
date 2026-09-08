@@ -108,6 +108,7 @@ def _stub_start_of_run(
 ) -> dict[str, object]:
     """Let a parked resume reach `run_task`; capture the kwargs it hands over."""
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)  # no key in a unit test
     captured: dict[str, object] = {}
 
     def _capture_run_task(*_a: object, **k: object) -> int:
@@ -505,6 +506,7 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     session_dir = state_dir(repo) / "sessions" / "runs" / "parked-DETACH"
     _park_manifest(session_dir, preset="", from_flag=False)
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)  # no key in a unit test
     child = subprocess.Popen(["sleep", "60"])
     try:
 
@@ -553,6 +555,7 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
         return EffectiveConfig(config=cfg, sources={"workflow.max_iterations": "global"}, layers=())
 
     monkeypatch.setattr(setup_mod, "load_effective", _load)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)  # no key in a unit test
     seen: dict[str, object] = {}
 
     def _run_task(*_a: object, **kw: object) -> int:

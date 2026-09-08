@@ -122,6 +122,11 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return repo
 
 
+def _no_missing_keys(*_a: object, **_k: object) -> None:
+    """check_provider_keys stand-in for a unit test with no real provider key."""
+    return None
+
+
 def _load_cfg() -> Config:
     from agent6.config.layer import load_effective
 
@@ -200,6 +205,7 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
         return 0
 
     monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(None, "run-PARKED2", frontend=MagicMock(), force=False)
     assert rc == 0
     assert called == {"task": "do the saved thing", "session_id": "run-PARKED2", "mode": "run"}
@@ -389,6 +395,7 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
         return 0
 
     monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
         None, "run-PSTEER", frontend=MagicMock(), force=False, steer="also update the docs"
     )

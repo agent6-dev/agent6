@@ -386,7 +386,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # start. Hand the verbatim saved task to
             # run_task under the same run id; it re-acquires both locks itself
             # (and re-parks with a fresh message if the checkout is STILL busy),
-            # so release ours first. Its manifest rewrite clears parked_task.
+            # so release ours first. Its leg's start clears the park.
             try:
                 # replay_preset, not the raw stamped name: a config-selected
                 # preset re-resolves from the same files, and handing its name
@@ -403,6 +403,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg = effective.config
             except ConfigError as exc:
                 reporter.error(str(exc))
+                return 2
+            missing = check_provider_keys(cfg)
+            if missing is not None:
+                reporter.err(missing)
                 return 2
             why = f" ({manifest.parked_reason})" if manifest.parked_reason else ""
             reporter.note(f"run {session_id!r} was parked at submission{why}; starting it now.")
@@ -658,7 +662,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             return undo_fork(config_path, session_id, cwd=repo, reporter=reporter)
 
         untracked_at_start = read_untracked_at_start(layout.session_dir)
-        if writes_code:
+        if mode == "run":
             # A file untracked now that the run never checkpointed and no tool
             # call of it wrote arrived between legs (the operator's log or
             # note): it joins the set the run never commits. The run's own
@@ -697,7 +701,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # This leg's models and policy, so `agent6 exec` joins the jail the
         # agent is in and every policy surface describes the leg that is live.
         stamp_leg(layout.session_dir, cfg, mode, isolation)
-        if writes_code:
+        if mode == "run":
             # What the tree holds that the chain does not: the previous leg's
             # uncommitted tail after a crash, and any edit of the operator's
             # between legs. The next auto-commit takes both, under the agent's

@@ -159,9 +159,9 @@ graph TD
     n_pin_gate["pin_gate"]
     n_build_session_tools["build_session_tools"]
     n_finalize_auto_merge["finalize_auto_merge"]
+    n_session_exit_code["session_exit_code"]
     n_print_session_end["print_session_end"]
     n_fire_notify_hook["fire_notify_hook"]
-    n_session_exit_code["session_exit_code"]
     n_finalize_auto_stash["finalize_auto_stash"]
     n_run_task --> n_session_config
     n_session_config --> n_headless_approval_refusal
@@ -174,10 +174,10 @@ graph TD
     n_drop_gate_if_unrunnable --> n_pin_gate
     n_pin_gate --> n_build_session_tools
     n_build_session_tools --> n_finalize_auto_merge
-    n_finalize_auto_merge --> n_print_session_end
+    n_finalize_auto_merge --> n_session_exit_code
+    n_session_exit_code --> n_print_session_end
     n_print_session_end --> n_fire_notify_hook
-    n_fire_notify_hook --> n_session_exit_code
-    n_session_exit_code --> n_finalize_auto_stash
+    n_fire_notify_hook --> n_finalize_auto_stash
 ```
 
 ## Tool dispatch

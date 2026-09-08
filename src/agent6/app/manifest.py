@@ -187,11 +187,37 @@ def _parallel_lineage() -> ParallelLineage | None:
 def stamp_parked(session_dir: Path, *, task: str, reason: str) -> None:
     """Record that this run was submitted and never started: the verbatim
     task (resume starts it fresh), why it waits, and no run branch (none was
-    cut). The fresh start's manifest rewrite replaces all three."""
+    cut). The leg's start (`unpark`) replaces all three."""
     m = read_manifest(session_dir)
     write_manifest(
         session_dir / MANIFEST_NAME,
         m.model_copy(update={"parked_task": task, "parked_reason": reason, "run_branch": None}),
+    )
+
+
+def parked_stamp(session_dir: Path) -> tuple[str, str] | None:
+    """The (task, reason) of a parked submission; None for no manifest, or one
+    carrying no park."""
+    try:
+        m = read_manifest(session_dir)
+    except ManifestError:
+        return None
+    return (m.parked_task, m.parked_reason) if m.parked_task else None
+
+
+def unpark(session_dir: Path, *, run_branch: str | None) -> None:
+    """The leg is starting: the park is over and *run_branch* (the branch the
+    start cut) is the run's. A manifest carrying no park (or none readable, an
+    embedder that wrote no manifest) is left alone."""
+    try:
+        m = read_manifest(session_dir)
+    except ManifestError:
+        return
+    if not m.parked_task:
+        return
+    write_manifest(
+        session_dir / MANIFEST_NAME,
+        m.model_copy(update={"parked_task": "", "parked_reason": "", "run_branch": run_branch}),
     )
 
 
