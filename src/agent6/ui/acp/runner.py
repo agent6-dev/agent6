@@ -500,10 +500,12 @@ class RunBridge:
             # A stop before the run had anything to say for itself.
             self.server.notify_raw(message_update(session.acp_id, f"the run stopped (exit {code})"))
         # A refusal that returns before journaling its own session.end leaves
-        # the previous turn's reason in the journal: only a journal that grew
-        # ended this turn.
+        # the previous turn's reason in the journal, and a resume start clears
+        # the fold's `finished` but not its `end_reason`: only a journal that
+        # grew and ended this leg carries a reason of this turn.
         grown = journal_size(layout.logs_path) > journal_before
-        end_reason = scan_session_log(layout.logs_path).end_reason if grown else ""
+        scan = scan_session_log(layout.logs_path)
+        end_reason = scan.end_reason if grown and scan.finished else ""
         return stop_reason(code, end_reason=end_reason)
 
     def _stream(

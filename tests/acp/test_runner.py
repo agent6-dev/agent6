@@ -263,6 +263,53 @@ def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
     assert "RuntimeError: the provider client exploded" in capsys.readouterr().err
 
 
+def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_run` trusted the journal's LAST `session.end` whenever the file grew
+    at all, but `session.start`/`loop.resume.start` never clear `end_reason`:
+    a leg that appends only a `loop.resume.start` before dying (its own
+    provider crash, exit 1) inherited an EARLIER, already-finished leg's
+    reason. A leg that really did hit `max_iterations` two turns ago made
+    every later provider-crashed turn report itself as `max_turn_requests`
+    to the editor instead of `refusal`."""
+    from agent6.paths import state_dir
+
+    monkeypatch.chdir(tmp_path)
+    session_id = "brave-oak-AAAAAA"
+    layout = SessionLayout(
+        state_dir(tmp_path), session_id, subdir=session_mod.session_bucket("run")
+    )
+    layout.ensure()
+    layout.logs_path.write_text(
+        "\n".join(
+            json.dumps(e)
+            for e in [
+                {"type": "session.start", "mode": "run", "user_task": "t"},
+                {"type": "session.end", "reason": "max_iterations", "all_passed": False},
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
+
+    def _crashes_after_resuming(*_a: object, **_kw: object) -> int:
+        with layout.logs_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "loop.resume.start"}) + "\n")
+        return 1  # a provider crash this turn, unrelated to any iteration cap
+
+    monkeypatch.setattr(runner, "resume_task", _crashes_after_resuming)
+    bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id=session_id)
+
+    reason = bridge.run(session, "keep going")
+
+    assert reason == "refusal", (
+        f"got {reason!r}: the crash borrowed the old leg's max_iterations ending"
+    )
+
+
 def test_a_fault_after_session_end_still_keeps_its_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
