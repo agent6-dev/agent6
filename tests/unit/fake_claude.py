@@ -33,7 +33,8 @@ Scenario keys (all optional):
 - `can_use_tool`: ask `can_use_tool` before every `tools/call`.
 - `ping`: send an MCP `ping` request after `tools/list`.
 - `hang_s`: sleep this long before each round's `message_start`.
-- `ping_while_hanging`: emit stream `ping` events during that sleep.
+- `while_hanging`: `ping` emits stream `ping` events during that sleep,
+  `rate_limit` emits `rate_limit_event` lines.
 - `die_in_round`: exit 3 with `die_message` (default `boom`) on stderr after
   that round's `message_start` (rounds count across turns).
 - `synthetic_error`: `{"text"}`: the signed-out shape, a synthetic
@@ -280,17 +281,21 @@ class _Fake:
             }
         )
 
+    def _hang(self) -> None:
+        """Sleep `hang_s`, emitting the scenario's `while_hanging` keepalive."""
+        deadline = time.monotonic() + float(self.scenario.get("hang_s", 0))
+        keepalive = self.scenario.get("while_hanging")
+        while (left := deadline - time.monotonic()) > 0:
+            if keepalive == "ping":
+                self.stream({"type": "ping"})
+            elif keepalive == "rate_limit":
+                self.rate_limit({})
+            time.sleep(min(left, 0.05) if keepalive else left)
+
     def play_round(self, rnd: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         """Stream one API round; return the tool calls it left pending."""
         self.round_no += 1
-        hang = float(self.scenario.get("hang_s", 0))
-        if hang and self.scenario.get("ping_while_hanging"):
-            deadline = time.monotonic() + hang
-            while time.monotonic() < deadline:
-                self.stream({"type": "ping"})
-                time.sleep(0.05)
-        elif hang:
-            time.sleep(hang)
+        self._hang()
         rl = self.scenario.get("rate_limit", {})
         if rl.get("when") == "before_round":
             self.rate_limit()

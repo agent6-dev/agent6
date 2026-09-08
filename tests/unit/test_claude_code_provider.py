@@ -586,7 +586,23 @@ def test_stream_ping_does_not_mask_an_idle_child(
     monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
     binary, _ = _install(
         tmp_path,
-        {"hang_s": 0.8, "ping_while_hanging": True, "turns": [[_round(text="late")]]},
+        {"hang_s": 0.8, "while_hanging": "ping", "turns": [[_round(text="late")]]},
+    )
+
+    with pytest.raises(ProviderError, match="produced no output"):
+        _provider(binary).call(system="s", messages=USER0, tools=TOOLS)
+
+
+def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CLI repeats `rate_limit_event` while it waits out a window; each
+    line re-marked the idle clock, so a call sat inside one wait for 25
+    minutes with no output and no error."""
+    monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
+    binary, _ = _install(
+        tmp_path,
+        {"hang_s": 0.8, "while_hanging": "rate_limit", "turns": [[_round(text="late")]]},
     )
 
     with pytest.raises(ProviderError, match="produced no output"):

@@ -738,11 +738,18 @@ class ClaudeCodeProvider:
                 s.stderr_drain.join(timeout=_KILL_GRACE_S)
                 tail = self._scrub(s, stderr_tail(s.stderr_tail)) or "no stderr"
                 raise ProviderError(f"claude exited {rc}: {tail}")
-            if line.get("type") == "_agent6_error":
+            kind = line.get("type")
+            if kind == "_agent6_error":
                 raise ProviderError(str(line.get("text")))
+            if kind == "rate_limit_event":
+                # A plan reading is bookkeeping: the CLI repeats it while it
+                # waits out a window, and it says nothing about progress.
+                self._absorb(s, line)
+                watch.tick()
+                continue
             event = line.get("event")
             if (
-                line.get("type") == "stream_event"
+                kind == "stream_event"
                 and isinstance(event, Mapping)
                 and event.get("type") == "ping"
             ):
