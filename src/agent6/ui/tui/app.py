@@ -804,7 +804,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self.notify("could not write the detach request", severity="warning")
             return
         self.detached = True
-        self.exit(QUIT_HUB_CODE if self.from_hub else 0)
+        self.exit(0)
 
     def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
         # Drop textual's "Keys" panel (our Help page replaces it), "Screenshot" (an

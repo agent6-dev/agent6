@@ -860,8 +860,18 @@ def test_ctrl_z_on_the_run_spawned_view_detaches_the_run_itself(tmp_path: Path) 
         assert app.detached
         assert not steer_request_pending(tmp_path)
 
+    async def hub_viewer() -> None:
+        app = Agent6TUI(tmp_path, from_hub=True)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+        assert app.detached
+        assert app.return_value == 0  # reopen the hub, do not quit its loop
+
     asyncio.run(spawned_view())
     asyncio.run(viewer())
+    asyncio.run(hub_viewer())
 
 
 def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
