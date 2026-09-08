@@ -90,7 +90,7 @@ def record_merge_in_manifest(
     manifest must not fail a merge that already happened.
 
     Returns "" when the stamp landed, else why it did not: silence would make
-    `prune` call a merged branch "NOT merged" and leave `--delete-squashed`
+    `prune` call a merged branch "unmerged" and leave `--delete-squashed`
     unable to clean it up."""
     try:
         m = read_manifest(layout.session_dir)

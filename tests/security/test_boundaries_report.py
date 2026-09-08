@@ -93,7 +93,7 @@ def test_boundaries_report_covers_every_actor(
     assert "network  session" in out
     assert "memory   no cap (sandbox.memory_limit_mb = 0)" in out
     assert "mcp servers: none run" in out
-    assert "egress is NOT bounded" in out
+    assert "egress is unbounded" in out
     assert "secrets.toml" in out
 
 

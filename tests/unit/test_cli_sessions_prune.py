@@ -97,7 +97,7 @@ def test_runs_prune_classifies_branches(
     assert _branch_exists(tmp_path, "agent6/unmrg11")  # kept (unmerged)
     assert "deleted agent6/reach11" in text
     assert "squash-merged" in text  # sqush11 classification
-    assert "NOT merged" in text  # unmrg11 classification
+    assert "unmerged" in text  # unmrg11 classification
     assert cap.out.index("kept agent6/sqush11") < cap.out.index("[agent6] deleted 1; kept 2")
 
 

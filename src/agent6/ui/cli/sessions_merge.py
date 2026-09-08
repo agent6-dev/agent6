@@ -409,7 +409,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
             continue
         if stamp is None or not stamp.sha:
             unmerged_kept += 1
-            print(f"[agent6] kept {br} (NOT merged; review, then: git branch -D {br})")
+            print(f"[agent6] kept {br} (unmerged; review, then: git branch -D {br})")
             continue
         state = landed(cwd, stamp, branch_tip_sha(cwd, br), delete_squashed=delete_squashed)
         if _prune_branch(cwd, br, stamp, state, current):

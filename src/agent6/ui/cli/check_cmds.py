@@ -606,7 +606,7 @@ def _check_boundaries_section(
         return [_DoctorCheck(name="boundaries", status="FAIL", detail=str(exc))]
     print()
     print(
-        "  agent process: its own egress is NOT bounded (documented in"
+        "  agent process: its own egress is unbounded (documented in"
         " docs/security.md); the jail bounds commands, not the agent"
     )
     print(

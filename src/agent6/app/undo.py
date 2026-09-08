@@ -343,7 +343,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
             )
         except GitError as exc:
             reporter.error(
-                f"the checkout was NOT put back to {turn}: {exc}."
+                f"the checkout was not put back to {turn}: {exc}."
                 f" Fork {child} continues from the tree as it is."
             )
             return child, target.undone_text

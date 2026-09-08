@@ -373,7 +373,8 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             problems.extend(offline.problems)
             if offline.skipped:
                 reporter.err(
-                    f"machine create: {offline.skipped} offline script test(s) NOT run"
+                    f"machine create: {offline.skipped} offline script test"
+                    f"{'' if offline.skipped == 1 else 's'} not run"
                     f" ({offline.skip_reason}); static checks still applied"
                 )
             report = dry_run(candidate_spec, None)

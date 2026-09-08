@@ -164,7 +164,7 @@ def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
         # A skip rides the verdict line, not a stderr aside: OK with tests
         # silently unrun read as "tests ran green".
         skipped = (
-            f"; {plural(offline.skipped, 'offline script test')} NOT run ({offline.skip_reason})"
+            f"; {plural(offline.skipped, 'offline script test')} not run ({offline.skip_reason})"
             if offline.skipped
             else ""
         )
