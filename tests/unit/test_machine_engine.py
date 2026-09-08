@@ -1790,6 +1790,77 @@ def test_a_wait_never_inherits_the_previous_waits_record(tmp_path: Path) -> None
     assert world.sleep_deadlines == [4600.0]
 
 
+LOOP_WAIT = """
+machine = "loop_wait"
+version = 1
+initial = "poll"
+
+[budget]
+max_usd = 1.0
+max_transitions = 100
+
+[vars.code]
+hop = { type = "json", default = 0 }
+
+[states.poll]
+kind = "wait"
+every_secs = "60"
+on = { tick = "route", signal = "route" }
+
+[states.route]
+kind = "branch"
+when = [
+  { if = "hop == 0", goto = "bump" },
+  { else = true, goto = "done" },
+]
+
+[states.bump]
+kind = "tool"
+command = ["bump"]
+capture = { stdout_json = "hop" }
+timeout_secs = 5
+on = { ok = "poll", nonzero = "done", timeout = "done" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "looped"
+"""
+
+
+def test_a_revisited_wait_state_arms_its_own_fresh_instant(tmp_path: Path) -> None:
+    """`poll` is reached twice on a loop back through `route`/`bump`. A death
+    between the first visit's wake StepEvent and the pending-wait clear (the
+    same window `test_a_wait_never_inherits_the_previous_waits_record` covers
+    for two DIFFERENT state names) leaves a stale record also named `poll`.
+    Keying the reuse on state name alone cannot tell that stale first-visit
+    record from a fresh second visit: the second `poll` must arm its own
+    instant off the current clock, not fire on the first visit's stale one."""
+    journal, f = _load(tmp_path, LOOP_WAIT)
+    spec = load_machine(f)
+    appended = journal.append
+
+    def _die_after_the_step(event: object) -> None:
+        appended(event)  # pyright: ignore[reportArgumentType]
+        if isinstance(event, StepEvent) and event.seq == 0:
+            raise KeyboardInterrupt("died between the wake's StepEvent and the clear")
+
+    journal.append = _die_after_the_step  # type: ignore[method-assign]
+    first = FakeWorld({"bump": _ok("1")})
+    first.clock = 1000.0
+    with pytest.raises(KeyboardInterrupt):
+        drive(spec, journal, first, live=True)
+    journal.append = appended  # type: ignore[method-assign]
+    assert journal.read_pending_wait() == PendingWait(state="poll", wake_epoch=1060.0)
+
+    second = FakeWorld({"bump": _ok("1")})
+    second.clock = 5000.0
+    assert drive(spec, journal, second, live=True).status == "ok"
+    # The second `poll` must arm 5060.0 (fresh off the new clock), never reuse
+    # the first visit's stale 1060.0.
+    assert second.sleep_deadlines == [5060.0]
+
+
 def test_a_corrupt_wait_record_refuses_before_the_notify_re_fires(tmp_path: Path) -> None:
     """The parked-entry guard read wait.json under a suppressed JournalError and
     fell open to "a fresh entry", so every scheduler tick over a corrupt record

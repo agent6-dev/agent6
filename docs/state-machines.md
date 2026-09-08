@@ -555,7 +555,7 @@ Mirrors the existing per-run layout under the per-repo state dir, out of the wor
   data/                      # writable scratch ($AGENT6_MACHINE_DATA_DIR)
   machine.lock               # single-writer guard (one process per machine)
   worker.pid                 # the live worker; absent or stale once it exits
-  wait.json                  # the armed wait (state, next wake), written before a
+  wait.json                  # the armed wait (state, seq, next wake), written before a
                              #   wait sleeps or parks, cleared when it fires
   signal                     # a poke awaiting the wait's next check (payload inside)
   signal.consuming           # a claimed poke, until the wake's step is acked

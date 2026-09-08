@@ -590,14 +590,17 @@ def _arm_pending_wait(
     journal: MachineJournal,
     world: World,
     state_name: str,
+    seq: int,
 ) -> PendingWait:
-    """The persisted wait record for *state_name*: the one already armed, else
-    a fresh one whose absolute wake instant is journaled before anything waits
-    on it, so a resume compares against the same instant."""
+    """The persisted wait record for this occurrence of *state_name* (its
+    transition *seq*): the one already armed, else a fresh one whose absolute
+    wake instant is journaled before anything waits on it, so a resume
+    compares against the same instant. The seq tells a fresh visit of a wait
+    state from an earlier visit's uncleared record (§5.4)."""
     pending = journal.read_pending_wait()
-    if pending is None or pending.state != state_name:
+    if pending is None or pending.state != state_name or pending.seq != seq:
         wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
-        pending = PendingWait(state=state_name, wake_epoch=wake)
+        pending = PendingWait(state=state_name, wake_epoch=wake, seq=seq)
         journal.write_pending_wait(pending)
     return pending
 
@@ -608,6 +611,7 @@ def _block_on_wait(
     journal: MachineJournal,
     world: World,
     state_name: str,
+    seq: int,
 ) -> tuple[str, str, Fact] | None:
     """Foreground wait: block until the durable wake instant or a poke, or
     None when a stop request interrupted the sleep, leaving the pending wait
@@ -619,7 +623,7 @@ def _block_on_wait(
     this state's notify on re-entry, reuse a stale wake_epoch under a later
     `--exit-on-wait`, and pin machine_is_parked in the web UI.
     """
-    pending = _arm_pending_wait(state, blackboard, journal, world, state_name)
+    pending = _arm_pending_wait(state, blackboard, journal, world, state_name, seq)
     woke = world.sleep_until(pending.wake_epoch)
     if woke.woke_by == "stop":
         return None
@@ -636,6 +640,7 @@ def _fire_persisted_wait(
     journal: MachineJournal,
     world: World,
     state_name: str,
+    seq: int,
 ) -> tuple[str, str, Fact] | None:
     """Arm-or-fire a `wait` without blocking (`--exit-on-wait`, §6).
 
@@ -644,7 +649,7 @@ def _fire_persisted_wait(
     ready, leaving the record persisted for the caller to yield on. The record
     is the caller's to clear, once the transition it produced is in the journal.
     """
-    pending = _arm_pending_wait(state, blackboard, journal, world, state_name)
+    pending = _arm_pending_wait(state, blackboard, journal, world, state_name, seq)
     signaled, payload = journal.take_signal()
     if signaled:
         return (
@@ -997,7 +1002,9 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
         already_parked = False
         if isinstance(current, WaitState):
             pending = journal.read_pending_wait()
-            already_parked = pending is not None and pending.state == state
+            already_parked = (
+                pending is not None and pending.state == state and pending.seq == transitions
+            )
         if not already_parked:
             try:
                 _emit_notify(current, blackboard, journal, world, state)
@@ -1037,7 +1044,9 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
 
         try:
             if exit_on_wait and isinstance(current, WaitState):
-                fired = _fire_persisted_wait(current, blackboard, journal, world, state)
+                fired = _fire_persisted_wait(
+                    current, blackboard, journal, world, state, transitions
+                )
                 if fired is None:
                     pending = journal.read_pending_wait()
                     if pending is not None and pending.wake_epoch is not None:
@@ -1049,7 +1058,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
                     )
                 label, goto, fact = fired
             elif isinstance(current, WaitState):
-                blocked = _block_on_wait(current, blackboard, journal, world, state)
+                blocked = _block_on_wait(current, blackboard, journal, world, state, transitions)
                 if blocked is None:
                     clear_stop_request(journal.root)
                     return MachineResult(

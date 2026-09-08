@@ -261,6 +261,12 @@ class PendingWait(BaseModel):
     # `None` for a wait with no timer: it fires only on a `signal` poke, never
     # on a wake instant, so `--exit-on-wait` parks it until the operator pokes.
     wake_epoch: float | None = None
+    # The transition this occurrence of `state` belongs to (the seq its
+    # StepEvent carries once it fires): a wait state reached again on a loop
+    # shares its name with an earlier visit whose record a death between its
+    # StepEvent and the clear left behind. 0 parses a record written before
+    # the field existed, the value a wait reached from a fresh journal has.
+    seq: int = Field(default=0, ge=0)
 
     @property
     def wake_at(self) -> str:
