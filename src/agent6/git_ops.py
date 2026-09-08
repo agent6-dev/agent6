@@ -70,10 +70,6 @@ class CommitIdentity:
     email: str | None = None
     trailer: str | None = None
 
-    @property
-    def has_override(self) -> bool:
-        return bool(self.name or self.email or self.trailer)
-
 
 def verify_git_identity(path: Path, identity: CommitIdentity) -> tuple[str, str]:
     """Resolve the effective author identity, or raise GitError.
