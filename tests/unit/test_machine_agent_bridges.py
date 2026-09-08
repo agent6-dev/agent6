@@ -261,3 +261,39 @@ def test_away_wait_prompt_stops_with_the_run(tmp_path: Path) -> None:
     t.start()
     assert b.prompts.approve("run ls?", scope="command") is False
     t.join()
+
+
+def test_the_agent_seat_journals_under_a_driving_role(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seat stamped `role="agent"`, a label no SessionKind carries, so a
+    reader deriving the session's own words from the kind table (read_session,
+    the transcript fold) dropped a machine leg's every reply as a side call's."""
+    from unittest.mock import MagicMock
+
+    from agent6.app import machine_agent
+    from agent6.budget import BudgetTracker
+    from agent6.config import Config
+    from agent6.machine import AgentRequest
+    from agent6.types import is_side_role
+
+    def stub_provider(*_args: object, **_kwargs: object) -> MagicMock:
+        return MagicMock()
+
+    monkeypatch.setattr(machine_agent, "build_role_provider", stub_provider)
+    monkeypatch.setattr(machine_agent, "reviewer_seat_provider", stub_provider)
+    req = machine_agent.MachineAgentRequest(
+        cwd=tmp_path,
+        root=tmp_path,
+        overlay={},
+        isolation="none",
+        transcript_dir=tmp_path / "transcripts",
+        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="agent"),
+    )
+    provider, _summariser, _events = machine_agent._build_agent_providers(  # pyright: ignore[reportPrivateUsage]
+        Config(),
+        req,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        attach_console=lambda _sink: None,
+    )
+    assert not is_side_role(provider.role)

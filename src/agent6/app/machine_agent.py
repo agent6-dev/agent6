@@ -343,7 +343,7 @@ def _build_agent_providers(
         attach_console(events_sink)
     provider = InstrumentedProvider(
         inner=inner_provider,
-        role="agent",
+        role="worker",
         model=rm.model if rm is not None else "",
         provider_name=rm.provider if rm is not None else "",
         events=events_sink,

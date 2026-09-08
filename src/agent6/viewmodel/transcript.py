@@ -28,7 +28,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 
-from agent6.types import SESSION_KINDS
+from agent6.types import is_side_role
 from agent6.viewmodel.events import SESSION_START_EVENTS, as_int, event_epoch, tool_result_ok
 from agent6.viewmodel.format import format_usd, lane_count, status_label
 from agent6.viewmodel.listing import status_word
@@ -382,12 +382,6 @@ def _pending_key(event: dict[str, Any], name: str) -> int | str:
     return cid if isinstance(cid, int) else name
 
 
-# The roles whose output is the session talking. Derived from the code table so
-# it cannot drift: everything else (verify_inferer, summariser,
-# reviewer) is a side call whose raw answer is not addressed to the operator.
-DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values())
-
-
 class TranscriptFold:
     """Incremental event -> `TranscriptItem` fold. Feed events in order; each
     `feed` returns the items that event produced (usually zero or one).
@@ -590,16 +584,9 @@ class TranscriptFold:
         return []
 
     def _is_side_call(self, event: dict[str, Any]) -> bool:
-        """Whether this result belongs to a role other than one that drives a
-        session: an inferer, summariser or reviewer.
-
-        Allowlisted from the SessionKind table rather than listing the side
-        roles, so a new driving mode is covered and a new side call is silent by
-        default. An unnamed role is not a side call: older events carry none,
-        and a streamed leg keeps its prose in the deltas anyway.
-        """
-        role = str(event.get("role", ""))
-        return bool(role) and role not in DRIVING_ROLES
+        """Whether this result is a side call's (a streamed leg keeps its own
+        prose in the deltas anyway)."""
+        return is_side_role(str(event.get("role", "")))
 
     def _flush_message(self, *, settled: str = "") -> list[TranscriptItem]:
         out: list[TranscriptItem] = []

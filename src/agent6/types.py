@@ -117,6 +117,18 @@ SESSION_KINDS: dict[str, SessionKind] = {
 # agent legs are driven by the machine agent.
 OPERATOR_MODES: tuple[str, ...] = tuple(k.name for k in SESSION_KINDS.values() if k.resumable)
 
+# The roles whose output is the session talking; everything else is a side
+# call made during the session onto the same journal (a review seat, the
+# verify-command inferer, a squash or compaction pass, the prompt reviser).
+DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values())
+
+
+def is_side_role(role: str) -> bool:
+    """Whether a `role.*` event's answer is a side call's, not the session's own.
+    Allowlisted from the SessionKind table, so a new side call is silent by
+    default. An unnamed role is not a side call: older events carry none."""
+    return bool(role) and role not in DRIVING_ROLES
+
 
 class UnknownSessionKind(ValueError):
     """A mode string this agent6 does not know."""

@@ -39,7 +39,7 @@ from agent6.errors import OperatorError
 from agent6.paths import state_dir
 from agent6.sessions.id import unused_session_id
 from agent6.sessions.ipc import clear_stop_request
-from agent6.types import session_bucket
+from agent6.types import is_side_role, session_bucket
 from agent6.ui.acp.frontend import PERMISSION_TIMEOUT_S, acp_frontend
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import ACP_MODE, Session, Sessions, StopReason
@@ -54,7 +54,7 @@ from agent6.ui.acp.updates import (
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 from agent6.viewmodel.listing import scan_session_log
 from agent6.viewmodel.tail import journal_size, tail_events
-from agent6.viewmodel.transcript import DRIVING_ROLES, TranscriptFold, TranscriptItem
+from agent6.viewmodel.transcript import TranscriptFold, TranscriptItem
 
 # A safety net on joining the streaming tail, not the normal path: `_stop`
 # ends it one read pass after the run returns. This bounds a tail wedged on a
@@ -580,8 +580,7 @@ class RunBridge:
                 if event_type == "role.call":
                     streamed.clear()
                 is_delta = event_type in ("role.thinking_delta", "role.text_delta")
-                role = str(event.get("role", ""))
-                side_delta = is_delta and bool(role) and role not in DRIVING_ROLES
+                side_delta = is_delta and is_side_role(str(event.get("role", "")))
                 items = [] if side_delta else fold.feed(event)
                 if is_delta and not side_delta:
                     kind = "thinking" if event_type == "role.thinking_delta" else "text"

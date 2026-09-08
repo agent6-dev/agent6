@@ -20,6 +20,7 @@ from pathlib import Path
 
 from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.types import is_side_role
 
 # What a reader needs from another session: who said what, and from which
 # field. Deltas are the same prose arriving in pieces, so only the settled
@@ -31,19 +32,6 @@ _SPEAKER = {
     "session.start": ("user", "user_task"),
     "loop.steer.injected": ("user", "text"),
 }
-
-# `role.result` events NOT from the session's own driving role: a before_finish
-# review-panel seat (`review:<persona>`), the verify-command inferer, or a
-# squash pass, each a side call made DURING the session onto the same sink.
-# Folding one in as "assistant" misattributes a reviewer's critique (or an
-# inferer's guess) as the session's own reply.
-_SIDE_ROLE_PREFIXES = ("review:",)
-_SIDE_ROLES = frozenset({"verify_inferer", "squash"})
-
-
-def _is_side_role(role: str) -> bool:
-    return role in _SIDE_ROLES or role.startswith(_SIDE_ROLE_PREFIXES)
-
 
 # A roster is context the model pays for on every call, so it is capped. The
 # newest sessions are the ones a reader wants; `query` is how you reach an older
@@ -137,8 +125,8 @@ def conversation(layout: SessionLayout, *, max_chars: int) -> str:
             if etype == "tool.call":
                 lines.append(f"[tool] {event.get('name', '')}")
             continue
-        if etype == "role.result" and _is_side_role(str(event.get("role", ""))):
-            continue  # a review seat / verify inferer / squash, not this session's own
+        if etype == "role.result" and is_side_role(str(event.get("role", ""))):
+            continue  # a side call's answer, not this session's own
         speaker, field = said
         body = str(event.get(field, "")).strip()
         if body:

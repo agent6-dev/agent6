@@ -84,22 +84,38 @@ def test_a_query_finds_a_session_by_its_content(tmp_path: Path) -> None:
     assert roster(tmp_path, "nothing here").briefs == ()
 
 
-def test_a_review_panels_critique_is_not_read_as_the_assistants_own_words(
-    tmp_path: Path,
-) -> None:
-    """A before_finish review panel emits its own `role.result` events (role=
-    `review:<persona>`) onto the same session log the worker writes to.
-    Folding every `role.result` in as \"assistant\" misattributed a reviewer's
-    critique as the session's own reply."""
+def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(tmp_path: Path) -> None:
+    """Every side call made during a session (a review seat, the verify
+    inferer, a squash pass, the summariser, the prompt reviser) emits its own
+    `role.result` onto the session's log. Folding one in as "assistant"
+    misattributed a reviewer's critique, or a compaction summary, as the
+    session's own reply: a denylist of side roles missed two of the five."""
     d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
     lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     lines.append(json.dumps({"type": "role.result", "role": "worker", "text": "use ffmpeg"}))
-    lines.append(json.dumps({"type": "role.result", "role": "review:security", "text": "REJECTED"}))
+    side = ("review:security", "verify_inferer", "squash", "summariser", "prompt_reviser")
+    for role in side:
+        lines.append(json.dumps({"type": "role.result", "role": role, "text": f"FROM {role}"}))
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     layout = session_layout(tmp_path, "brave-elk-BBBBBB")
     assert layout is not None
     text = conversation(layout, max_chars=10_000)
-    assert "use ffmpeg" in text and "REJECTED" not in text
+    assert "use ffmpeg" in text
+    assert [role for role in side if f"FROM {role}" in text] == []
+
+
+def test_a_role_result_with_no_role_reads_as_the_sessions_own_words(tmp_path: Path) -> None:
+    """Older journals carry no `role` field on `role.result`; that absence is not a side role."""
+    d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
+    lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+    lines.append(json.dumps({"type": "role.result", "text": "use ffmpeg"}))
+    lines.append(json.dumps({"type": "role.result", "role": "", "text": "with libx265"}))
+    (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    layout = session_layout(tmp_path, "brave-elk-BBBBBB")
+    assert layout is not None
+    text = conversation(layout, max_chars=10_000)
+    assert "use ffmpeg" in text
+    assert "with libx265" in text
 
 
 def test_a_torn_journal_line_does_not_break_the_read(tmp_path: Path) -> None:
