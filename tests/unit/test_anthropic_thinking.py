@@ -439,3 +439,23 @@ def test_streaming_preserves_thinking_blocks(
     assert blocks[1]["type"] == "tool_use"
     assert blocks[1]["input"] == {"path": "."}
     assert resp.stop_reason == "tool_use"
+
+
+def test_two_text_blocks_in_a_response_stay_separated() -> None:
+    """A turn's text arrives as several blocks around thinking; joined bare
+    into the response's settled text they ran together, and that text is
+    what the journal, read_session and the console show."""
+    from agent6.providers.anthropic import _parse_response  # pyright: ignore[reportPrivateUsage]
+
+    resp = _parse_response(
+        {
+            "content": [
+                {"type": "text", "text": "First message."},
+                {"type": "thinking", "thinking": "hm", "signature": "sig"},
+                {"type": "text", "text": "Second message."},
+            ],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+    )
+    assert resp.text == "First message.\n\nSecond message."

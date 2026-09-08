@@ -22,8 +22,9 @@ Scenario keys (all optional):
   carrying its own `rate_limit` emits one after its message_stop (a window
   moved).
 - `turns`: one list of rounds per user line received; a round is
-  `{"thinking", "text", "tool_uses": [{"id", "name", "input"}],
-  "stop_reason", "usage"}`. A tool round waits for every answer (the next
+  `{"thinking", "text", "texts", "tool_uses": [{"id", "name", "input"}],
+  "stop_reason", "usage"}` (`texts` names several text blocks). A tool round
+  waits for every answer (the next
   `tools/call` only after the previous answer), then the next round plays.
   When a turn's rounds run out after a tool round, a `DONE` round follows.
 - `delta_chars`: split every text and thinking delta into pieces of this
@@ -409,7 +410,7 @@ class _Fake:
             pending.append((tool_use_id, tool_use))
             if len(pending) == 1 and not tool_use.get("refused_late"):
                 first_rid = self.tools_call(tool_use_id, tool_use)  # before message_delta
-        if rnd.get("text"):
+        for piece in ([rnd["text"]] if rnd.get("text") else []) + list(rnd.get("texts", [])):
             self.stream(
                 {
                     "type": "content_block_start",
@@ -417,9 +418,10 @@ class _Fake:
                     "content_block": {"type": "text", "text": ""},
                 }
             )
-            self.deltas(index, "text_delta", "text", rnd["text"])
-            self.assistant_line(message_id, {"type": "text", "text": rnd["text"]}, start_usage)
+            self.deltas(index, "text_delta", "text", piece)
+            self.assistant_line(message_id, {"type": "text", "text": piece}, start_usage)
             self.stream({"type": "content_block_stop", "index": index})
+            index += 1
         stop_reason = rnd.get("stop_reason") or ("tool_use" if pending else "end_turn")
         self.stream(
             {

@@ -1437,3 +1437,25 @@ def test_the_turns_notices_survive_a_turn_the_cli_refused_whole(tmp_path: Path) 
     second = provider.call(system="s", messages=messages, tools=TOOLS)
     assert second.text == "again"
     assert steer in _user_texts(cap)
+
+
+def test_two_text_blocks_in_a_round_stay_separated(tmp_path: Path) -> None:
+    """The Anthropic and ChatGPT parsers keep a blank line between a turn's
+    text blocks; this one joined them bare, so two messages around a thinking
+    block ran together in the settled text the journal carries."""
+    binary, _cap = _install(
+        tmp_path,
+        {
+            "turns": [
+                [
+                    {
+                        "thinking": "hm",
+                        "texts": ["First message.", "Second message."],
+                        "stop_reason": "end_turn",
+                    }
+                ]
+            ]
+        },
+    )
+    resp = _provider(binary).call(system="s", messages=USER0, tools=None)
+    assert resp.text == "First message.\n\nSecond message."

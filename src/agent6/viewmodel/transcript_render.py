@@ -172,7 +172,7 @@ def _responses_turns(items: list[Any], names: dict[str, str]) -> list[Turn]:
         elif kind == "message":
             text = _item_text(item)
             if text:
-                current.text = f"{current.text}\n{text}".strip()
+                current.text = f"{current.text}\n\n{text}".strip()
         elif kind == "function_call":
             name = str(item.get("name", ""))
             call_id = str(item.get("call_id") or item.get("id") or "")
@@ -267,14 +267,14 @@ def _anthropic_turns(m: dict[str, Any], names: dict[str, str]) -> list[Turn]:
         return [
             Turn(
                 role="assistant",
-                text="\n".join(text_parts).strip(),
+                text="\n\n".join(text_parts).strip(),
                 thinking="\n".join(thinking_parts).strip(),
                 tool_calls=calls,
             )
         ]
     # The loop may append a notice after a batch of tool results in the same
     # canonical user message; both are conversation turns.
-    text = "\n".join(text_parts).strip()
+    text = "\n\n".join(text_parts).strip()
     if tool_results:
         return [*tool_results, *([Turn(role=role, text=text)] if text else [])]
     return [Turn(role=role, text=text)]

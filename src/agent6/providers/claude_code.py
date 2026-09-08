@@ -908,7 +908,7 @@ class ClaudeCodeProvider:
         if self.context_tokens and live_context > self.context_tokens - _CONTEXT_RESERVE_TOKENS:
             s.restart_next = True  # the next call replays the compacted mirror
         return ProviderResponse(
-            text="".join(str(b.get("text", "")) for b in r.blocks if b.get("type") == "text"),
+            text="\n\n".join(str(b.get("text", "")) for b in r.blocks if b.get("type") == "text"),
             tool_uses=tuple(
                 {"id": b.get("id"), "name": b.get("name"), "input": b.get("input")}
                 for b in r.blocks

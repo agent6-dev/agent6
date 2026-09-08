@@ -850,3 +850,74 @@ def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: Pat
     assert [t["seq"] for t in loaded] == ["notanumber", 2]
     marks = [t.text for t in fold_conversation(loaded) if t.role == "marker"]
     assert any("unreadable seq 'notanumber'" in m for m in marks)
+
+
+def test_two_text_blocks_in_one_turn_render_as_two_paragraphs() -> None:
+    """The providers keep a blank line between a turn's text blocks in the
+    settled text; the view joined them with one newline on both wire shapes,
+    which Markdown reads as one paragraph."""
+    from agent6.viewmodel.transcript_render import fold_conversation
+
+    anthropic = [
+        {
+            "seq": 1,
+            "request": {
+                "body": {
+                    "system": "S",
+                    "messages": [{"role": "user", "content": [{"type": "text", "text": "do X"}]}],
+                }
+            },
+            "response": {
+                "body": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "First message."},
+                        {"type": "thinking", "thinking": "hm"},
+                        {"type": "text", "text": "Second message."},
+                    ],
+                }
+            },
+        }
+    ]
+    responses = [
+        {
+            "seq": 1,
+            "request": {
+                "body": {
+                    "instructions": "S",
+                    "input": [
+                        {
+                            "type": "message",
+                            "role": "user",
+                            "content": [{"type": "input_text", "text": "do X"}],
+                        }
+                    ],
+                }
+            },
+            "response": {
+                "body": {
+                    "output": [
+                        {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [{"type": "output_text", "text": "First message."}],
+                        },
+                        {
+                            "type": "reasoning",
+                            "id": "rs_1",
+                            "summary": [{"type": "summary_text", "text": "hm"}],
+                        },
+                        {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [{"type": "output_text", "text": "Second message."}],
+                        },
+                    ],
+                    "status": "end_turn",
+                }
+            },
+        }
+    ]
+    for data in (anthropic, responses):
+        turn = next(t for t in fold_conversation(data) if t.role == "assistant")
+        assert turn.text == "First message.\n\nSecond message."

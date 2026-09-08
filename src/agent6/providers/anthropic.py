@@ -878,7 +878,7 @@ def _parse_response(data: dict[str, Any]) -> ProviderResponse:
             _response_string(block.get("data", ""), "content redacted_thinking data", empty=False)
     usage = _usage_mapping(data.get("usage"))
     return ProviderResponse(
-        text="".join(text_parts),
+        text="\n\n".join(text_parts),
         tool_uses=tuple(tool_uses),
         stop_reason=_response_string(data.get("stop_reason"), "stop_reason", empty=False),
         input_tokens=_usage_count(usage, "input_tokens"),

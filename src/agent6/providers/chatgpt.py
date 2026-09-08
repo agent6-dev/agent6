@@ -249,7 +249,7 @@ def parse_output_items(
             if tool_use is not None:
                 tool_uses.append(tool_use)
                 blocks.append({"type": "tool_use", **tool_use})
-    text = "".join(text_parts)
+    text = "\n\n".join(text_parts)
     if tool_uses and stop_reason == "end_turn":
         # Anthropic-shape semantics: a turn that stopped to call tools says
         # so. This also arms the loop's empty-tool-call detector for this

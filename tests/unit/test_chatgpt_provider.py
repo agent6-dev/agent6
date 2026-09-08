@@ -1173,3 +1173,20 @@ def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
     snap = budget.snapshot()
     assert "gpt-5-codex" in snap.per_model, "the refused round is on the ledger"
     assert snap.plan_latest is not None and snap.plan_latest.used_percent == 37.0
+
+
+def test_two_message_items_in_a_response_stay_separated() -> None:
+    """One text block per message item, joined bare into the response's
+    settled text, ran together around a reasoning item."""
+    from agent6.providers.chatgpt import parse_output_items
+
+    resp = parse_output_items(
+        [
+            {"type": "message", "content": [{"type": "output_text", "text": "First message."}]},
+            {"type": "reasoning", "summary": [{"text": "thinking"}]},
+            {"type": "message", "content": [{"type": "output_text", "text": "Second message."}]},
+        ],
+        usage={"input_tokens": 1, "output_tokens": 1},
+        stop_reason="end_turn",
+    )
+    assert resp.text == "First message.\n\nSecond message."
