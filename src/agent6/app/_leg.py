@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.app._session import (
+    SessionProviders,
     build_session_providers,
     build_session_tools,
     session_facts_provider,
@@ -49,7 +50,7 @@ from agent6.config import Config, RoleName
 from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import chain_ref_for
 from agent6.paths import chown_to_real_user
-from agent6.providers import TranscriptSink
+from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox.jail import SessionNetwork, survivors_message
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
@@ -155,6 +156,20 @@ def detach_to_background(
     reporter.out(f"          reattach:  agent6 attach {layout.session_id}")
 
 
+def _escape_reason(exc: BaseException) -> SessionEndReason:
+    return "interrupted" if isinstance(exc, KeyboardInterrupt) else "crashed"
+
+
+def _journal_escape(events: EventSink, exc: BaseException, *, iterations: int) -> SessionEndReason:
+    """The end an escape leaves in the journal, and its reason: without one
+    every surface reads the dead run as running until the silence window
+    expires. A dead journal must not mask the exit code."""
+    reason = _escape_reason(exc)
+    with contextlib.suppress(EventWriteError):
+        events.emit("session.end", reason=reason, iterations=iterations, all_passed=False)
+    return reason
+
+
 def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per ending
     cfg: Config,
     layout: SessionLayout,
@@ -170,49 +185,62 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     """Drive one leg to its end block. See the module docstring."""
     mode, role = inputs.mode, inputs.role
     label = "resume" if inputs.resuming else "run"
-    # The interactive revision prompt reads the terminal; with the TUI owning
-    # it the prompt would land invisibly in the console log and contend for
-    # stdin. Skip revision for this leg instead.
-    effective_revise_prompt = cfg.prompt.revise_prompt
-    if effective_revise_prompt == "interactive" and (
-        inputs.tui_enabled or frontend.select_revised_prompt is None
-    ):
-        owner = "the TUI owns it" if inputs.tui_enabled else "this surface has none"
-        reporter.note(
-            f"prompt.revise_prompt='interactive' needs the terminal; {owner}."
-            " Skipping prompt revision for this leg."
+    session: SessionProviders | None = None
+    prompt_reviser_provider: Provider | None = None
+    try:
+        # The interactive revision prompt reads the terminal; with the TUI owning
+        # it the prompt would land invisibly in the console log and contend for
+        # stdin. Skip revision for this leg instead.
+        effective_revise_prompt = cfg.prompt.revise_prompt
+        if effective_revise_prompt == "interactive" and (
+            inputs.tui_enabled or frontend.select_revised_prompt is None
+        ):
+            owner = "the TUI owns it" if inputs.tui_enabled else "this surface has none"
+            reporter.note(
+                f"prompt.revise_prompt='interactive' needs the terminal; {owner}."
+                " Skipping prompt revision for this leg."
+            )
+            effective_revise_prompt = "off"
+        stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)
+        if console_stream:
+            frontend.attach_console_view(events)
+        session = build_session_providers(
+            cfg,
+            role=role,
+            events=events,
+            transcript_sink=transcript_sink,
+            stream_text=stream_text,
+            reporter=reporter,
         )
-        effective_revise_prompt = "off"
-    stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)
-    if console_stream:
-        frontend.attach_console_view(events)
-    session = build_session_providers(
-        cfg,
-        role=role,
-        events=events,
-        transcript_sink=transcript_sink,
-        stream_text=stream_text,
-        reporter=reporter,
-    )
-    budget = session.budget
-    prompt_reviser_provider = build_prompt_reviser_provider(
-        cfg, transcript_sink=transcript_sink, budget=budget, events=events
-    )
-    cfg = inputs.gate(cfg, budget)
+        budget = session.budget
+        prompt_reviser_provider = build_prompt_reviser_provider(
+            cfg, transcript_sink=transcript_sink, budget=budget, events=events
+        )
+        cfg = inputs.gate(cfg, budget)
 
-    # Steering (mid-run Ctrl-C -> the pause menu) needs the terminal; the
-    # console view's heartbeat spinner is suspended for the prompt so its
-    # line-erase cannot wipe the pause-menu line.
-    steer_state = frontend.make_steer_state(
-        events,
-        layout.session_dir,
-        session_facts_provider(
-            budget, session.rm_role.model, cfg.sandbox.run_commands, inputs.isolation
-        ),
-    )
+        # Steering (mid-run Ctrl-C -> the pause menu) needs the terminal; the
+        # console view's heartbeat spinner is suspended for the prompt so its
+        # line-erase cannot wipe the pause-menu line.
+        steer_state = frontend.make_steer_state(
+            events,
+            layout.session_dir,
+            session_facts_provider(
+                budget, session.rm_role.model, cfg.sandbox.run_commands, inputs.isolation
+            ),
+        )
+    except (KeyboardInterrupt, Exception) as exc:
+        reporter.err(f"\n[agent6] {label} {_journal_escape(events, exc, iterations=0)}")
+        with contextlib.ExitStack() as cleanup:
+            if prompt_reviser_provider is not None:
+                cleanup.callback(close_provider, prompt_reviser_provider)
+            if session is not None:
+                cleanup.callback(session.close)
+        raise
 
     interrupted = False
     result: SessionResult | None = None
+    wf: Workflow | None = None
+    escape_handled = False
     undo_outcome: list[tuple[str, str]] = []
     dispatcher: ToolDispatcher | None = None
     # Spawned inside the try so the finally below tears it down even if a
@@ -370,55 +398,70 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
                     # run as running until the silence window expires. The end
                     # is journaled here, inside the TUI scope: its exit waits
                     # on a dashboard that leaves only on an end it can see.
-                    # suppress: the exit code must not be masked by a dead
-                    # journal.
-                    reason: SessionEndReason = (
-                        "interrupted" if isinstance(exc, KeyboardInterrupt) else "crashed"
-                    )
-                    with contextlib.suppress(EventWriteError):
-                        events.emit(
-                            "session.end",
-                            reason=reason,
-                            iterations=wf.iterations_reached,
-                            all_passed=False,
-                        )
+                    escape_handled = True
+                    if result is None:
+                        _journal_escape(events, exc, iterations=wf.iterations_reached)
                     raise
         except ResumeError as exc:
             reporter.error(str(exc))
             reporter.err(f"\n[agent6] {label} crashed")
             return LegEnd(1)
         except KeyboardInterrupt:
-            interrupted = True
-            reporter.err(f"\n[agent6] {label} interrupted")
-        except Exception:
-            reporter.err(f"\n[agent6] {label} crashed")
-            raise
+            if result is not None:
+                # After the run's own end an interrupt cuts only the
+                # background settle: the result stands.
+                reporter.err(f"\n[agent6] {label} had ended; its result stands")
+            else:
+                interrupted = True
+                reporter.err(f"\n[agent6] {label} interrupted")
+    except (KeyboardInterrupt, Exception) as exc:
+        # The loop's own handler journaled its escape; one before the loop
+        # is journaled here; one from the dashboard scope after the run
+        # ended is the leg's failure, not the run's, so the run's end stays
+        # its last. Every escape prints its one line here.
+        if not escape_handled and result is None:
+            _journal_escape(events, exc, iterations=wf.iterations_reached if wf else 0)
+        reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
+        raise
     finally:
-        steer_state.restore()
-        session.close()
-        if prompt_reviser_provider is not None:
-            close_provider(prompt_reviser_provider)
-        if dispatcher is not None:
-            dispatcher.close()
-        if mcp_manager is not None and (survivors := mcp_manager.close()):
-            with contextlib.suppress(EventWriteError):  # a dead journal must not skip the rest
-                events.emit("jail.degraded", detail=survivors_message(survivors))
-        if session_net is not None:
-            # The last handles on the run's network: closing them is what lets
-            # the kernel reclaim it.
-            session_net.close()
-            clear_session_netns_pid(layout.session_dir)
-        if (
-            not interrupted
-            and result is not None
-            and auto_merge_eligible(result)
-            and cfg.git.auto_merge
-        ):
-            finalize_auto_merge(
-                cwd, layout=layout, cfg=cfg, reporter=reporter, budget=budget, events=events
-            )
-        # Never leave root-owned run state in the user's repo (sudo case).
-        chown_to_real_user(state_dir)
+
+        def _close_mcp() -> None:
+            if mcp_manager is not None and (survivors := mcp_manager.close()):
+                with contextlib.suppress(EventWriteError):  # a dead journal must not skip cleanup
+                    events.emit("jail.degraded", detail=survivors_message(survivors))
+
+        # Registered in reverse teardown order. ExitStack runs every close
+        # even when an earlier one raises, so a provider close cannot strand a
+        # command, MCP server or network namespace; a raising close still
+        # re-raises after them, so no merge lands on a leg whose teardown
+        # failed.
+        try:
+            with contextlib.ExitStack() as cleanup:
+                if session_net is not None:
+                    cleanup.callback(clear_session_netns_pid, layout.session_dir)
+                    # The last handles on the run's network: closing them is what
+                    # lets the kernel reclaim it.
+                    cleanup.callback(session_net.close)
+                cleanup.callback(_close_mcp)
+                if dispatcher is not None:
+                    cleanup.callback(dispatcher.close)
+                if prompt_reviser_provider is not None:
+                    cleanup.callback(close_provider, prompt_reviser_provider)
+                cleanup.callback(session.close)
+                cleanup.callback(steer_state.restore)
+            if (
+                not interrupted
+                and result is not None
+                and auto_merge_eligible(result)
+                and cfg.git.auto_merge
+            ):
+                finalize_auto_merge(
+                    cwd, layout=layout, cfg=cfg, reporter=reporter, budget=budget, events=events
+                )
+        finally:
+            # Never leave root-owned run state in the user's repo (sudo case):
+            # after every write above, whatever raised.
+            chown_to_real_user(state_dir)
 
     if interrupted:
         print_interrupt_end(layout=layout, cwd=cwd, budget=budget, reporter=reporter)
