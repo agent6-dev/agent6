@@ -7506,7 +7506,7 @@ def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
         st,
         turn,
         "ask_user",
-        AnswersResult(answers=("8931", "no")),
+        AnswersResult(answers=("8931", "no"), asked=("Which port?", "Keep the modal?")),
         {"questions": [{"question": "Which port?"}, {"question": "Keep the modal?"}]},
     )
     conv = Conversation()
@@ -7782,8 +7782,9 @@ def _ruling_wf(tmp_path: Path) -> Workflow:
 
 def test_a_flat_ask_user_call_records_its_ruling(tmp_path: Path) -> None:
     """`AskUserInput` accepts one question flat (`{question, options}`) and
-    folds it into `questions`; the bookkeeping re-parsed the raw dict for
-    `questions` and recorded nothing for the shape the tool had accepted."""
+    folds it into `questions`; the result carries what was asked, so the
+    ruling is recorded from it and never from a second parse of the raw dict
+    (which once recorded nothing for the shape the tool had accepted)."""
     from agent6.memory import decisions_path
     from agent6.tools.results import AnswersResult
 
@@ -7795,8 +7796,40 @@ def test_a_flat_ask_user_call_records_its_ruling(tmp_path: Path) -> None:
     )
     flat = {"question": question, "options": ["yes", "no"]}
 
-    wf._note_tool_effects(state, turn, "ask_user", AnswersResult(answers=("yes",)), flat)  # pyright: ignore[reportPrivateUsage]
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, turn, "ask_user", AnswersResult(answers=("yes",), asked=(question,)), flat
+    )
 
+    assert len(state.decisions_recorded) == 1
+    assert question in decisions_path(tmp_path / "state").read_text(encoding="utf-8")
+
+
+def test_ask_user_args_the_dispatcher_coerced_still_record_their_ruling(tmp_path: Path) -> None:
+    """A model sent `questions` as a JSON string: the dispatcher coerced it and
+    the operator answered, then the bookkeeping parsed the RAW input again and
+    the ValidationError escaped the loop, so the leg died after the answer was
+    given. The result carries what was asked; nothing parses the input twice."""
+    import json
+
+    from agent6.memory import decisions_path
+    from agent6.tools.dispatch import ToolDispatcher
+    from agent6.tools.operator_prompts import OperatorPrompts, QuestionAnswer, QuestionRequest
+
+    def questioner(request: QuestionRequest, /) -> QuestionAnswer:
+        return QuestionAnswer(answers=tuple("yes" for _ in request.questions), source="stdin")
+
+    dispatcher = ToolDispatcher(
+        root=tmp_path, config=Config(), prompts=OperatorPrompts(questioner=questioner), mode="run"
+    )
+    question = "Ship it?"
+    raw = {"questions": json.dumps([{"question": question, "options": ["yes", "no"]}])}
+    result = dispatcher.dispatch("ask_user", raw)
+    wf = _ruling_wf(tmp_path)
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = TurnState(
+        iteration=1, resp=_resp(""), assistant=AssistantTurn(raw_content=(), tool_uses=())
+    )
+    wf._note_tool_effects(state, turn, "ask_user", result, raw)  # pyright: ignore[reportPrivateUsage]
     assert len(state.decisions_recorded) == 1
     assert question in decisions_path(tmp_path / "state").read_text(encoding="utf-8")
 

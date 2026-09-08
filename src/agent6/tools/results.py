@@ -439,6 +439,7 @@ class FinishPlanningResult(ToolResult):
 class AnswersResult(ToolResult):
     answers: tuple[str, ...]
     note: str = ""  # why the answers are empty when nobody saw the questions
+    asked: tuple[str, ...] = ()  # the questions' texts, index-aligned; the loop's decision record
 
     def to_wire(self) -> dict[str, Any]:
         wire: dict[str, Any] = {"answers": list(self.answers)}

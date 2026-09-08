@@ -1037,7 +1037,11 @@ class ToolDispatcher:
             answer = self._prompts.ask(args.questions, call_id=self._gating_call_id())
         finally:
             self.operator_wait_s += time.monotonic() - started
-        return AnswersResult(answers=answer.answers, note=unanswered_note(answer))
+        return AnswersResult(
+            answers=answer.answers,
+            note=unanswered_note(answer),
+            asked=tuple(q.question for q in args.questions),
+        )
 
     def resolved_skills(self) -> ResolvedSkills:
         """Discover + state-resolve operator skills, once per dispatcher.

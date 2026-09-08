@@ -85,7 +85,6 @@ from agent6.tools.mcp_client import MCP_TOOL_PREFIX
 from agent6.tools.patch_apply import PatchError, patch_target_path, split_patch_files
 from agent6.tools.results import AnswersResult, ExecResult, MetricResult, PreviewResult, ToolResult
 from agent6.tools.schema import (
-    AskUserInput,
     FinishPlanningInput,
     FinishSessionInput,
     ReadBackgroundInput,
@@ -1434,12 +1433,10 @@ class Workflow:
         manual metric samples, tree edits, and DAG mutations. *tree_before* is
         `_tree_before_command`'s sha for a child-process tool."""
         if name == "ask_user" and isinstance(result, AnswersResult):
-            # Through the tool's own model: it also accepts one question flat
-            # (`{question, options}`), which a second parse of the raw dict
-            # would miss.
-            asked = AskUserInput.model_validate(tool_input).questions
-            for q, answer in zip(asked, result.answers, strict=False):
-                self._record_decision(state, q.question, answer)
+            # The result carries the questions the dispatcher accepted (one
+            # flat, a stringified list); the raw input is never parsed twice.
+            for question, answer in zip(result.asked, result.answers, strict=False):
+                self._record_decision(state, question, answer)
         if name == "run_verify_command" and isinstance(result, ExecResult):
             # The model's own gate overran its budget: the same scoped
             # follow-up the harness gate gets, whose verdict is the turn's
