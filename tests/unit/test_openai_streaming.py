@@ -372,6 +372,7 @@ def test_streaming_with_budget_requires_usage_trailer() -> None:
     lines = [
         *_chunk({"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}),
         "data: [DONE]",
+        "",
     ]
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
@@ -738,3 +739,28 @@ def test_streaming_wire_fields_are_not_coerced(event: dict[str, Any]) -> None:
             messages=[{"role": "user", "content": "x"}],
             text_delta_callback=lambda _piece: None,
         )
+
+
+def test_streaming_joins_the_data_lines_of_one_event() -> None:
+    """SSE lets an event carry its payload over several `data:` lines; the
+    reader joins them at the blank line, as it does for every wire."""
+    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    lines = [
+        'data: {"choices": [{"index": 0, "delta": {"content": "hello"},',
+        'data: "finish_reason": "stop"}],',
+        'data: "usage": {"prompt_tokens": 1, "completion_tokens": 1}}',
+        "",
+        "data: [DONE]",
+        "",
+    ]
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    with mock.patch("httpx2.stream", side_effect=fake_stream):
+        resp = provider.call(
+            system="s",
+            messages=[{"role": "user", "content": "hi"}],
+            text_delta_callback=lambda _piece: None,
+        )
+    assert resp.text == "hello"

@@ -32,7 +32,7 @@ import httpx2
 from agent6.budget import BudgetTracker
 from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
 from agent6.providers._openai_parse import parse_response, response_string
-from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
+from agent6.providers._stream import SseCall, StreamClock, record_billed_usage, sse_events
 from agent6.providers._transport import ProviderCall, envelope_status, meter_completion
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
@@ -522,30 +522,21 @@ class OpenAIProvider:
 
         def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: PLR0912, PLR0915
             nonlocal finish_reason, usage, done_seen
-            for raw_line in bounded_lines(resp):
-                line = raw_line.strip()
-                if not line:
-                    continue
-                # SSE comment heartbeats (OpenRouter, etc). Deliberately NOT
-                # marked on the clock -- heartbeats are exactly the bytes that
-                # mask an upstream hang from httpx2's read timeout.
-                if line.startswith(":"):
-                    continue
-                if not line.startswith("data:"):
-                    continue
-                # Real SSE data line. Reset the idle clock; the watchdog is
-                # satisfied as long as these keep arriving at all (even
-                # `[DONE]` counts as progress). NOTE: mark_output (the switch
-                # to the short mid-stream idle timeout) happens later, only on
-                # the first real CONTENT token -- an empty role/keepalive delta
-                # arrives immediately and must not end the generous prefill
-                # budget before the model has actually started producing output.
+            # An event resets the idle clock (comment heartbeats never do:
+            # they are exactly the bytes that mask an upstream hang); the
+            # watchdog is satisfied as long as events keep arriving, `[DONE]`
+            # included. mark_output (the switch to the short mid-stream idle
+            # timeout) happens later, only on the first real CONTENT token: an
+            # empty role/keepalive delta arrives immediately and must not end
+            # the generous prefill budget before the model has started
+            # producing output.
+            for _event, data in sse_events(resp):
                 clock.mark_data()
-                data_str = line[5:].strip()
-                if not data_str or data_str == "[DONE]":
-                    if data_str == "[DONE]":
-                        done_seen = True
-                        return
+                data_str = data.strip()
+                if data_str == "[DONE]":
+                    done_seen = True
+                    return
+                if not data_str:
                     continue
                 try:
                     evt: dict[str, Any] = json.loads(data_str)

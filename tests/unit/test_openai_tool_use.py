@@ -1105,9 +1105,12 @@ def test_streaming_indexless_parallel_tool_calls_get_separate_slots(
                 ]
             }
         ),
+        "",
         'data: {"choices": [{"delta": {}, "finish_reason": "tool_calls"}],'
         ' "usage": {"prompt_tokens": 1, "completion_tokens": 1}}',
+        "",
         "data: [DONE]",
+        "",
     ]
 
     class _Stream:

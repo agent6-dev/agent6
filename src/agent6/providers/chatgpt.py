@@ -34,7 +34,7 @@ import httpx2
 from agent6.budget import BudgetTracker, PlanUsage, PlanWindow
 from agent6.providers._openai_messages import tool_result_text
 from agent6.providers._openai_recovery import lenient_json_object
-from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
+from agent6.providers._stream import SseCall, StreamClock, record_billed_usage, sse_events
 from agent6.providers._transport import ProviderCall
 from agent6.providers.chatgpt_oauth import ChatGPTCredential
 from agent6.providers.types import (
@@ -614,12 +614,9 @@ class ChatGPTProvider:
             resp: httpx2.Response, clock: StreamClock
         ) -> None:
             nonlocal usage, stop_reason, done
-            for raw_line in bounded_lines(resp):
-                line = raw_line.strip()
-                if not line or line.startswith(":") or not line.startswith("data:"):
-                    continue
+            for _event, data in sse_events(resp):
                 clock.mark_data()
-                data_str = line[5:].strip()
+                data_str = data.strip()
                 if not data_str or data_str == "[DONE]":
                     continue
                 try:

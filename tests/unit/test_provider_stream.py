@@ -376,6 +376,24 @@ def test_an_endless_frame_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
         call.run(consume)
 
 
+def test_an_endless_event_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A server that never sends the blank line ending an event would have
+    the reader gather data lines until the watchdog; the event ceiling refuses
+    past it as the per-line one does."""
+    from agent6.providers._stream import sse_events
+
+    call = _call()
+    lines = ["data: " + "x" * 300] * 4
+    monkeypatch.setattr(stream_mod.httpx2, "stream", _serve(_LinesResponse(lines)))
+
+    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
+        for _event in sse_events(resp, max_event_bytes=512):
+            clock.mark_data()
+
+    with pytest.raises(ProviderError, match="SSE event exceeded"):
+        call.run(consume)
+
+
 def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
     """The non-streaming twin: a parse that trips on a malformed 2xx body
     surfaces as a retryable ProviderError from the one transport seam."""
