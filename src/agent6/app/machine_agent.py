@@ -115,7 +115,11 @@ class MachineAgentRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    # The operator's checkout: config layers and cross-run memory resolve
+    # from it (keyed by the repo's own path), whatever `root` is.
     cwd: Path
+    # Where the workflow, the dispatcher and the jail work: the clone for a
+    # mode="run" state, else `cwd`.
     root: Path
     # The machine's `[config]` overlay, applied over the effective config.
     overlay: dict[str, Any]
@@ -393,7 +397,7 @@ def run_one(
     if net_err is not None:
         reporter.refuse(net_err)
         return _result("error", None, None)
-    hide_err = check_hide_paths_support(cfg, isolation, req.cwd)
+    hide_err = check_hide_paths_support(cfg, isolation, req.root)
     if hide_err is not None:
         reporter.refuse(hide_err)
         return _result("error", None, None)
@@ -435,8 +439,9 @@ def run_one(
         # The REPO's state dir (not this state's per-state dir above): a
         # mode="run" agent state participates in cross-run memory like any
         # other run; for read-only states the dispatcher mode guard and
-        # the machine/agent prompt assembly keep it inert.
-        state_dir=state_dir(req.root),
+        # the machine/agent prompt assembly keep it inert. Keyed on `cwd`,
+        # the checkout: a clone has no memory of its own.
+        state_dir=state_dir(req.cwd),
     )
     rm = cfg.models.resolve("worker")
     compact_drop, compact_summarise, keep_recent = resolve_compaction_thresholds(
@@ -464,7 +469,7 @@ def run_one(
         ),
         chain_fallback_parent=_machine_head_sha(req.root) if not read_only else None,
         commit_per_step=cfg.git.commit_per_step,
-        state_dir=state_dir(req.root),
+        state_dir=state_dir(req.cwd),
         compact_drop_at_chars=compact_drop,
         compact_summarise_at_chars=compact_summarise,
         context_summary_max_tokens=cfg.context.summary_max_tokens,
@@ -560,7 +565,9 @@ def build_machine_agent_runner(
                 return salvaged(f"error: clone for machine {machine_id!r} failed: {exc}")
         workdir = clone or cwd
         payload = MachineAgentRequest(
-            cwd=workdir,
+            # `cwd` stays the checkout in a clone: the subprocess reloads its
+            # config and memory from it; `root` is where it works.
+            cwd=cwd,
             root=workdir,
             overlay=overlay,
             isolation=isolation,

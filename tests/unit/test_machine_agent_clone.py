@@ -61,13 +61,17 @@ class _FakeChild:
 
     captured_env: ClassVar[dict[str, str]] = {}
     workdirs: ClassVar[list[Path]] = []
+    seen_cwds: ClassVar[list[Path]] = []
     seen_files: ClassVar[list[set[str]]] = []
 
     def __init__(self, argv: list[str], **kw: Any) -> None:
         _FakeChild.captured_env = dict(kw.get("env") or {})
         req = json.loads(Path(argv[-2]).read_text(encoding="utf-8"))
-        cwd = Path(req["cwd"])
+        # `root` is the execution root (a clone for a run state); `cwd` stays
+        # the true checkout, for the subprocess's own config reload.
+        cwd = Path(req["root"])
         _FakeChild.workdirs.append(cwd)
+        _FakeChild.seen_cwds.append(Path(req["cwd"]))
         _FakeChild.seen_files.append({e.name for e in cwd.iterdir()})
         seq = req["request"]["step_seq"]
         if req["request"]["mode"] == "run":
@@ -128,6 +132,28 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
     # Clones are gone once landed; the subprocess ran subordinate.
     assert not any((tmp_path / "clones").glob("state-*"))
     assert _FakeChild.captured_env["AGENT6_SUBRUN"] == "1"
+
+
+def test_run_state_request_keeps_the_true_checkout_as_cwd_for_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run state's request set `cwd` to its own clone, so the subprocess's
+    config reload (`load_effective_with_overlay(req.cwd, ...)`) and its
+    cross-run memory dir (`state_dir(req.cwd)`) resolved against a fresh
+    clone path, invisible to the operator's per-repo config and memory --
+    every one of a machine's run states silently lost both. `cwd` now stays
+    the origin; `root` (the clone) is what the subprocess actually works in.
+    """
+    origin = _origin(tmp_path)
+    monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
+    _FakeChild.workdirs = []
+    _FakeChild.seen_cwds = []
+    runner = _runner(origin, tmp_path)
+
+    assert runner(_req(0), None).reason == "finish_session"
+
+    assert _FakeChild.seen_cwds[-1] == origin
+    assert _FakeChild.workdirs[-1] != origin
 
 
 def test_read_only_states_see_the_machine_tree_and_land_nothing(
