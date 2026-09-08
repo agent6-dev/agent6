@@ -158,6 +158,41 @@ def test_config_page_edit_persists(repo: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_edit_defaults_to_the_setting_source_layer(repo: Path) -> None:
+    """Editing a repo-sourced value must target the repo config by default;
+    otherwise the repo layer masks the global write and Save appears to do nothing."""
+    from agent6.config.write import set_config_value
+
+    assert set_config_value(repo, "sandbox.run_commands", "no", to_repo=True) is None
+
+    async def scenario() -> None:
+        from agent6.ui.tui.config_page import ChoiceField
+
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            table = screen.query_one("#tbl-sandbox", DataTable)
+            table.focus()
+            row = next(
+                i for i in range(table.row_count) if "run_commands" in str(table.get_row_at(i)[0])
+            )
+            table.move_cursor(row=row)
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, EditModal)
+            assert modal.query_one("#edit-target", ChoiceField).value == "repo config"
+            modal.query_one("#edit-value", ChoiceField).select_value("ask")
+            modal.action_save()
+            await pilot.pause()
+            assert load_effective(repo).config.sandbox.run_commands == "ask"
+
+    asyncio.run(scenario())
+
+
 def test_edit_unset_reverts_to_default(repo: Path) -> None:
     """The edit modal's "Unset → default" returns a setting to its default by
     removing the override (not by writing the default value back)."""
@@ -398,6 +433,40 @@ def test_list_setting_prefill_saves_back_unchanged(
     asyncio.run(scenario())
     saved = load_effective(repo_root, None).config.workflow.verify_command
     assert saved == ("uv", "run", "pytest")  # unchanged, not corrupted to a str
+
+
+def test_string_setting_saves_toml_like_text_as_a_string(repo: Path) -> None:
+    """A free-text field's schema, not TOML-looking text, determines its type;
+    otherwise entering ``true`` parses as a bool and the rejected save disappears."""
+    from agent6.config.write import set_config_value
+
+    assert set_config_value(repo, "git.commit.name", "Agent Six") is None
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            table = screen.query_one("#tbl-git", DataTable)
+            table.focus()
+            row = next(
+                i
+                for i in range(table.row_count)
+                if str(table.get_row_at(i)[0]).strip() == "commit.name"
+            )
+            table.move_cursor(row=row)
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, EditModal)
+            modal.query_one("#edit-value", Input).value = "true"
+            modal.action_save()
+            await pilot.pause()
+            assert load_effective(repo).config.git.commit.name == "true"
+
+    asyncio.run(scenario())
 
 
 def test_editing_a_model_survives_a_broken_secrets_file(
@@ -722,7 +791,7 @@ def test_config_actions_in_command_palette(repo: Path) -> None:
                 "Filter",
                 "Modified only",
                 "Edit setting…",
-                "Reset to default",
+                "Unset override",
                 "Refresh",
                 "Keys & actions",
             ):
@@ -804,6 +873,67 @@ def test_filter_arrow_in_and_out(repo: Path) -> None:
             await pilot.press("up")
             await pilot.pause()
             assert screen.focused is search
+
+    asyncio.run(scenario())
+
+
+def test_modified_filter_moves_focus_out_of_a_hidden_section(repo: Path) -> None:
+    """Turning on the modified-only filter must move focus when it hides the
+    selected section; otherwise arrows and Edit remain trapped in an invisible table."""
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            hidden = screen.query_one("#tbl-agent6", DataTable)
+            hidden.focus()
+            await pilot.pause()
+            screen.action_toggle_modified()
+            await pilot.pause()
+            assert screen.focused is screen.query_one("#tbl-providers", DataTable)
+
+    asyncio.run(scenario())
+
+
+def test_empty_modified_filter_keeps_focus_on_the_filter(repo: Path) -> None:
+    """When no settings are modified, the modified-only view must focus its one
+    remaining control instead of dropping keyboard focus with every section hidden."""
+    global_config_dir().joinpath("config.toml").write_text("", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            screen.action_toggle_modified()
+            await pilot.pause()
+            assert screen.focused is screen.query_one("#search", Input)
+
+    asyncio.run(scenario())
+
+
+def test_filter_down_stops_on_a_collapsed_first_section(repo: Path) -> None:
+    """Down from the filter must land on a visible header when the first section
+    is collapsed, not focus that section's hidden table."""
+    from textual.widgets import Collapsible
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            first = screen.query_one("#sec-agent6", Collapsible)
+            first.collapsed = True
+            screen.action_search()
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.pause()
+            assert screen.focused is not None
+            assert screen.focused.parent is first
 
     asyncio.run(scenario())
 
@@ -894,6 +1024,42 @@ def test_add_provider_via_form_persists(repo: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_add_provider_preserves_existing_provider_fields(repo: Path) -> None:
+    """Submitting an existing provider name must not replace its whole table and
+    erase advanced fields or comments that the short form does not expose."""
+    config_path = global_config_dir() / "config.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'api_format = "anthropic"',
+            'api_format = "anthropic"\n# keep this tuning\nhttp_timeout_s = 120',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        from agent6.ui.tui.config_page import ProviderModal
+
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            screen.action_add_provider()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ProviderModal)
+            modal.query_one("#prov-name", Input).value = "anthropic"
+            await pilot.pause()
+            modal.action_add()
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    text = config_path.read_text(encoding="utf-8")
+    assert "# keep this tuning" in text
+    assert "http_timeout_s = 120" in text
+
+
 def test_add_provider_prefills_known_preset_base_url(repo: Path) -> None:
     """Regression: typing a known provider name (openrouter) in the Add-provider
     form prefills its api_format + base_url from PROVIDER_DEFAULTS, so submitting
@@ -952,6 +1118,33 @@ def test_add_provider_prefill_keeps_user_typed_base_url(repo: Path) -> None:
             await pilot.pause()
             # Their URL is preserved (only our own autofill, or a blank, is replaced).
             assert modal.query_one("#prov-baseurl", Input).value == "https://my.proxy/v1"
+
+    asyncio.run(scenario())
+
+
+def test_add_provider_clears_a_stale_preset_base_url(repo: Path) -> None:
+    """Changing a preset provider name to a custom one must clear the URL that
+    name autofilled, or the custom provider silently points at the old provider."""
+    from agent6.ui.tui.config_page import ProviderModal
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            screen.action_add_provider()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ProviderModal)
+            name = modal.query_one("#prov-name", Input)
+            base_url = modal.query_one("#prov-baseurl", Input)
+            name.value = "openrouter"
+            await pilot.pause()
+            assert base_url.value == "https://openrouter.ai/api/v1"
+            name.value = "custom"
+            await pilot.pause()
+            assert base_url.value == ""
 
     asyncio.run(scenario())
 
@@ -1035,6 +1228,35 @@ def test_up_off_first_setting_reveals_top_header_then_filter(repo: Path) -> None
             await pilot.press("up")
             await pilot.pause()
             assert isinstance(screen.focused, Input)  # Up off the top header -> filter
+
+    asyncio.run(scenario())
+
+
+def test_unset_names_the_layer_instead_of_claiming_the_default(repo: Path) -> None:
+    """Unsetting a repo override can reveal a global override rather than the
+    built-in default, so its success notice must describe the actual operation."""
+    from agent6.config.write import set_config_value
+
+    assert set_config_value(repo, "sandbox.run_commands", "no", to_repo=True) is None
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            setting = next(
+                s
+                for s in build_config_view(load_effective(repo, None)).settings
+                if s.key == "sandbox.run_commands"
+            )
+            assert setting.source == "repo"
+            screen._current_setting = lambda: setting  # type: ignore[method-assign]
+            screen.action_reset()
+            await pilot.pause()
+            assert load_effective(repo).config.sandbox.run_commands == "yes"
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert notes[-1] == "Unset sandbox.run_commands from repo config"
 
     asyncio.run(scenario())
 
@@ -1125,9 +1347,22 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: Path
             assert _row_total(screen) == baseline  # last-good view retained
             notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
             assert any("config fix" in m for m in notes), notes
-            # Edit must not crash either (the choice helpers no longer re-read disk).
-            await pilot.press("e")
+            assert "Config reloaded." not in notes
+            # Model suggestions use the last-good effective config too; their worker
+            # must not re-read the invalid file and tear down the app.
+            table = screen.query_one("#tbl-models", DataTable)
+            table.focus()
+            row = next(
+                i
+                for i in range(table.row_count)
+                if str(table.get_row_at(i)[0]).strip() == "worker.model"
+            )
+            table.move_cursor(row=row)
             await pilot.pause()
+            screen.action_edit()
+            for _ in range(4):
+                await pilot.pause(0.05)
+            assert isinstance(app.screen, EditModal)
 
     asyncio.run(scenario())
 

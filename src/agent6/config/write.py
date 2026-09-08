@@ -479,8 +479,8 @@ def set_config_table(
     *,
     to_repo: bool = False,
 ) -> str | None:
-    """Insert/replace a whole `[table]` block in one shot (e.g. a new
-    `[providers.<name>]` entry from the TUI's add-provider form). Revalidates
+    """Insert/replace a whole `[table]` block in one shot (`agent6 model` writes
+    each `[models.<role>]` table this way). Revalidates
     the merged config and rolls the file back on failure. Returns an error string
     on invalid config, else None. `None` field values are omitted."""
     target = _prepare_write_target(repo_root, to_repo=to_repo)

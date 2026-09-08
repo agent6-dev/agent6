@@ -45,7 +45,7 @@ from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.config.write import (
     PROVIDER_DEFAULTS,
     provider_choices,
-    set_config_table,
+    set_config_leaves,
     set_config_value,
     unset_config_value,
 )
@@ -98,7 +98,7 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
     # the home hub; Reset (which unsets a setting) stays off `r` and lives on
     # `d` (default). Label is "Refresh" (not "Reload") + "Help" (not
     # "Help / keys") to match the home/run footers.
-    Action("reset", "Reset", "Reset the selected setting to its default (unset)", key="d"),
+    Action("reset", "Unset", "Unset the selected setting in its source config layer", key="d"),
     Action("reload", "Refresh", "Re-read config from disk", key="r"),
     # No key (View-menu / palette only, like the home hub): key=None is skipped by
     # the BINDINGS comprehension so it adds no footer binding, but palette_commands
@@ -186,7 +186,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
     """Edit one setting with a natural terminal chooser: a [x]/[ ] list (↑↓ select
     as they move) for enum choices and bools -- with an inline "custom" row for
     values the choices don't cover, a text box otherwise. The action row (Save
-    · Unset → default · Cancel) is flat text, ←/→ navigable + clickable. Returns
+    · Unset override · Cancel) is flat text, ←/→ navigable + clickable. Returns
     `(action, value, to_repo)` (action "save"/"unset") or None on cancel."""
 
     # No enter->save: Space/Enter on a chooser selects the highlighted option, so
@@ -301,10 +301,11 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                     classes="edit-input edit-gap",
                 )
             yield Static("save to", classes="edit-label")
-            yield ChoiceField(("global config", "repo config"), "global config", id="edit-target")
+            target = "repo config" if s.source == "repo" else "global config"
+            yield ChoiceField(("global config", "repo config"), target, id="edit-target")
             with Horizontal(id="edit-actions"):
                 yield ActionItem("Save", "save")
-                yield ActionItem("Unset → default", "unset")
+                yield ActionItem("Unset override", "unset")
                 yield ActionItem("Cancel", "cancel")
             yield Static(
                 Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
@@ -312,12 +313,9 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
             )
 
     def _new_value(self) -> str:
-        w = self.query_one("#edit-value")
-        if isinstance(w, (ChoiceField, TypeaheadField)):
-            return w.value
-        if isinstance(w, Input):
-            return w.value
-        return ""
+        field = self.query_one("#edit-value")
+        value = field.value if isinstance(field, (ChoiceField, TypeaheadField, Input)) else ""
+        return format_toml_value(value) if self._setting.py_type == "str" else value
 
     @on(Input.Submitted)
     def _input_submitted(self, event: Input.Submitted) -> None:
@@ -439,10 +437,13 @@ class ProviderModal(_FormModal[None]):
         editable; only overwrites a base_url we ourselves autofilled (or a blank
         one), never a URL the user typed."""
         preset = PROVIDER_DEFAULTS.get(event.value.strip())
+        baseurl = self.query_one("#prov-baseurl", Input)
         if preset is None:
+            if self._autofilled_baseurl and baseurl.value == self._autofilled_baseurl:
+                baseurl.value = ""
+            self._autofilled_baseurl = ""
             return
         self.query_one("#prov-format", ChoiceField).select_value(preset["api_format"])
-        baseurl = self.query_one("#prov-baseurl", Input)
         if baseurl.value in ("", self._autofilled_baseurl):
             self._autofilled_baseurl = preset.get("base_url", "")
             baseurl.value = self._autofilled_baseurl
@@ -466,13 +467,13 @@ class ProviderModal(_FormModal[None]):
             fields["api_key_env"] = keyenv
         to_repo = self.query_one("#prov-target", ChoiceField).index == 1
         try:
-            err = set_config_table(self._repo, f"providers.{name}", fields, to_repo=to_repo)
+            err = set_config_leaves(self._repo, f"providers.{name}", fields, to_repo=to_repo)
         except OperatorError as exc:
             err = str(exc)  # an unwritable config file is a form error, not a crash
         if err:
             self.notify(f"Invalid: {err}", severity="error", timeout=8.0)
             return  # stay in the form so the user can fix it
-        self.notify(f"Added provider '{name}'.")
+        self.notify(f"Set provider '{name}'.")
         self.dismiss(None)
 
     def action_cancel(self) -> None:
@@ -541,7 +542,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             (
                 MenuItem("Edit setting…", "edit", "e"),
                 MenuItem("Add provider…", "add_provider", "a"),
-                MenuItem("Reset to default", "reset", "d"),
+                MenuItem("Unset override", "reset", "d"),
             ),
         ),
         Menu(
@@ -636,7 +637,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self._eff = eff
         self._view = build_config_view(eff, resolved=resolved_config_values(eff.config))
 
-    def _reload(self) -> None:
+    def _reload(self) -> bool:
         # Every interactive re-read funnels through here. An external hand-edit
         # can invalidate the on-disk config while the page is open; keep the
         # last-good view and point at the fix instead of crashing the TUI out
@@ -650,8 +651,9 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 severity="error",
                 timeout=10.0,
             )
-            return
+            return False
         self._refresh()
+        return True
 
     def on_mount(self) -> None:
         # The single pinned header carries the column labels; section tables hide
@@ -685,6 +687,13 @@ class ConfigScreen(ScreenChrome, Screen[None]):
     def _refresh(self) -> None:
         if self._view is None:
             return
+        focused = self.focused
+        parent = getattr(focused, "parent", None)
+        focused_section: str | None = None
+        if isinstance(focused, _NavTable) and focused.id:
+            focused_section = focused.id[4:]
+        elif isinstance(parent, Collapsible) and parent.id and parent.id.startswith("sec-"):
+            focused_section = parent.id[4:]
         query = self.query_one("#search", Input).value.strip().lower()
         by_section: dict[str, list[ConfigSetting]] = {}
         for s in self._view.settings:
@@ -711,6 +720,8 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             shown += len(rows)
         flt = "   ·   modified only" if self._modified_only else ""
         self.query_one("#status", Static).update(f"{shown} settings{flt}")
+        if focused_section is not None and focused_section not in self._ordered_sections():
+            self._focus_first_setting()
 
     def _current_setting(self) -> ConfigSetting | None:
         focused = self.focused
@@ -836,17 +847,19 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         filter box into the settings)."""
         order = self._ordered_sections()
         if order:
-            self._focus_table(order[0], top=True)
+            first = order[0]
+            if self._section_has_rows(first):
+                self._focus_table(first, top=True)
+            else:
+                self._focus_title(first)
         else:
-            tables = list(self.query(_NavTable))
-            if tables:
-                tables[0].focus()
+            self.query_one("#search", Input).focus()
 
     def _cancel_search(self) -> bool:
         """Esc in/with an active filter clears it and drops back to the settings;
         returns True so Esc backs out of the filter before it closes the page."""
         box = self.query_one("#search", Input)
-        if not box.value and self.focused is not box:
+        if not box.value and (self.focused is not box or not self._ordered_sections()):
             return False  # nothing to back out of -> Esc closes the page
         box.value = ""
         self._refresh()
@@ -858,8 +871,8 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self._refresh()
 
     def action_reload(self) -> None:
-        self._reload()
-        self.notify("Config reloaded.")
+        if self._reload():
+            self.notify("Config reloaded.")
 
     def action_quit(self) -> None:
         # The menu's "Quit" (^Q) quits the whole app. On a Screen `quit` isn't
@@ -874,7 +887,10 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self.dismiss(None)
 
     def action_add_provider(self) -> None:
-        self.app.push_screen(ProviderModal(self.repo_root), lambda _: self._reload())
+        def reload_config(_: None) -> None:
+            self._reload()
+
+        self.app.push_screen(ProviderModal(self.repo_root), reload_config)
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         self.action_edit()  # Enter / double-click a setting row edits it
@@ -907,13 +923,13 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         # A model-id field gets a type-to-narrow picker over the provider's
         # models (the cache now, refreshed live in a worker); everything else
         # the plain edit, with the view's choices as its picker.
-        provider = model_role_provider(self._eff, setting.key) if self._eff is not None else None
-        if provider is not None:
-            repo, overlay, key = self.repo_root, self.config_path, setting.key
+        eff = self._eff
+        provider = model_role_provider(eff, setting.key) if eff is not None else None
+        if provider is not None and eff is not None:
             modal = EditModal(
                 setting,
                 typeahead=cached_models(provider),
-                fetch=lambda: config_value_choices(load_effective(repo, overlay), key),
+                fetch=lambda: config_value_choices(eff, setting.key),
             )
         else:
             modal = EditModal(setting)
@@ -927,7 +943,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self._unset(setting)
 
     def _unset(self, setting: ConfigSetting) -> None:
-        """Reset *setting* to its default in the layer that set it, and say so."""
+        """Remove *setting* from the layer that set it, and say so."""
         # "Already at its default" is only truthful when it IS the default; a
         # leaf from any other layer (a preset's synthesized [presets.<name>], a
         # `--config` file) is modified but outside the two files an unset writes.
@@ -950,7 +966,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         if err:
             self.notify(err, severity="error", timeout=8.0)
         else:
-            self.notify(f"Reset {setting.key} to default")
+            self.notify(f"Unset {setting.key} from {setting.source} config")
             self._reload()
 
     @on(Input.Changed, "#search")
