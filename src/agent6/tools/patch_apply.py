@@ -190,7 +190,7 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
                     old_no_newline = True
                 elif prev_prefix == "+":
                     new_no_newline = True
-                else:  # " " context line — applies to both sides
+                else:  # " " context line: applies to both sides
                     old_no_newline = True
                     new_no_newline = True
                 i += 1
@@ -339,8 +339,8 @@ def apply_parsed_patch(  # noqa: PLR0912
 
         # Determine whether this hunk touches the file's tail from the ACTUAL
         # splice position: a `moved` heal relocates `buf_start` away from the
-        # stale header numbers, which once kept a hunk healed onto the tail
-        # from carrying its no-newline state (and vice versa).
+        # stale header numbers, which otherwise keeps a hunk healed onto the
+        # tail from carrying its no-newline state (and vice versa).
         touches_tail = (
             buf_start == len(buf)
             if hunk.old_count == 0
@@ -706,8 +706,8 @@ def _v4a_splice(content: str, idx: int, old_block: str, new_block: str) -> str:
 
     The blocks are line TEXT with no trailing newline, so a pure deletion (an
     empty new block) must take the newline that terminated the last removed
-    line with it -- leaving it behind put a stray blank line where the deletion
-    happened, and deleting every line left the file as a lone newline."""
+    line with it: leaving it behind puts a stray blank line where the deletion
+    happened, and deleting every line leaves the file as a lone newline."""
     rest = content[idx + len(old_block) :]
     if not new_block and rest.startswith("\n"):
         rest = rest[1:]

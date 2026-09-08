@@ -135,7 +135,7 @@ def parse_response(  # noqa: PLR0912, PLR0915
     # OpenAI's cached_tokens field, when present, lives under
     # usage.prompt_tokens_details.cached_tokens. Treat absent as 0.
     #
-    # CRITICAL provider-format asymmetry: Anthropic's `input_tokens`
+    # Provider-format asymmetry: Anthropic's `input_tokens`
     # already EXCLUDES cache-read tokens (they're surfaced separately under
     # `cache_read_input_tokens`). OpenAI's `prompt_tokens`, by contrast, is
     # the TOTAL prompt size, cached + fresh. We normalise to Anthropic's

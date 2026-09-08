@@ -189,8 +189,8 @@ class EditResult(ToolResult):
 class PatchResult(ToolResult):
     """apply_patch that wrote (not preview). A multi-file patch carries one
     (path, bytes_written) row per file in `files`; `path`/`bytes_written`
-    then hold the first file and the total, and the single-file wire is
-    unchanged (`files` empty)."""
+    then hold the first file and the total, and a single-file patch leaves
+    `files` empty."""
 
     path: str
     bytes_written: int
@@ -315,7 +315,7 @@ class ExecResult(ToolResult):
     background_id: str = ""
     # The wall-clock cap the runner enforced, 0 when none. rc=124 is the
     # jail's documented timeout result; pairing it with the cap on the wire
-    # is what lets the model tell "killed at 240s" from "tests failed".
+    # lets the model tell "killed at 240s" from "tests failed".
     timeout_s: float = 0.0
 
     def to_wire(self) -> dict[str, Any]:

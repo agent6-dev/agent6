@@ -71,8 +71,8 @@ from agent6.tools.schema import (
 # truncated=True. Revisit if a legitimate read hits it.
 MAX_READ_CHARS = 5_000_000
 # Upper bound on a listing: a generated or vendored directory (node_modules)
-# holds tens of thousands of entries, and every one went into the context and
-# the transcript. Capped and marked, like every sibling result.
+# holds tens of thousands of entries, and uncapped every one goes into the
+# context and the transcript. Capped and marked, like every sibling result.
 LIST_DIR_CAP = 1_000
 
 
@@ -100,11 +100,10 @@ def read_file(ws: Workspace, raw: dict[str, Any]) -> ReadFileResult:
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {args.path}")
     try:
-        # Bounded read: the whole file was pulled into memory regardless of
-        # start_line/limit, so a multi-GB file (a checked-in blob, a log, a
-        # file a command produced) OOM-crashed the unsandboxed agent. Read one
-        # char past the cap to detect the overflow, then trim; pagination and
-        # the line counts operate on the capped prefix, and `truncated` says so.
+        # Bounded read: read_contained loads the whole file regardless of
+        # start_line/limit. Read one char past the cap to detect the overflow,
+        # then trim; pagination and the line counts operate on the capped
+        # prefix, and `truncated` says so.
         full = read_contained(sp, limit_chars=MAX_READ_CHARS + 1)
     except UnicodeDecodeError as exc:
         raise ToolError(f"File is not UTF-8 text: {args.path}") from exc
@@ -113,7 +112,7 @@ def read_file(ws: Workspace, raw: dict[str, Any]) -> ReadFileResult:
         full = full[:MAX_READ_CHARS]
     # A NUL byte is what "binary" means in practice, and some binary payloads
     # decode as UTF-8 -- so the description's promise needs this, not just the
-    # decode error. Without it such a file went verbatim into the transcript.
+    # decode error. Without it such a file goes verbatim into the transcript.
     if "\x00" in full:
         raise ToolError(f"File is binary (contains NUL bytes): {args.path}")
     # One split is the source of truth for every line count: lines_total is its
@@ -260,15 +259,15 @@ def refuse_protected_writes(
 def _existing_text(sp: SafePath, rel_path: str) -> str | None:
     """The file's current text, or None when it does not exist yet (both edit
     tools create). A path that exists but is not a file gets the same clear
-    error the read tools give -- letting read_text raise leaked
+    error the read tools give: letting read_text raise leaks
     "[Errno 21] Is a directory: /abs/host/path" into the model's transcript."""
     if not sp.abs_path.exists():
         return None
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {rel_path}")
     # The read_file cap, refused rather than truncated: a partial read must
-    # never become a whole-file write, and the uncapped read OOM-crashed the
-    # unsandboxed agent on a file a jailed command had made.
+    # never become a whole-file write, and an uncapped read OOM-crashes the
+    # unsandboxed agent on a file a jailed command made.
     text = read_contained(sp, limit_chars=MAX_READ_CHARS + 1)
     if len(text) > MAX_READ_CHARS:
         raise ToolError(
@@ -448,7 +447,7 @@ def apply_patch(
     if (dupe := _first_repeated(seen_paths)) is not None:
         # Each section reads the file from DISK during staging, so two sections
         # over one file both start from the original and the last write wins:
-        # the earlier edit vanished while the result reported it applied. The
+        # the earlier edit vanishes while the result reports it applied. The
         # preview says the same thing, so it is refused there too.
         count = sum(1 for path in seen_paths if path == dupe)
         raise ToolError(

@@ -41,15 +41,16 @@ from agent6.types import BackgroundHandoff, JailPolicy
 # only thing granted. The run's jail session grants it when it opens, before
 # any background command exists, which a per-shell grant cannot do. The cost is
 # that a run's background commands share the root and can write each other's
-# logs; the launcher's result and each command's identity stay OUTSIDE it, so
-# what a command cannot do is rewrite its own exit code or its own name. (A
-# command that exited 42 once reported "exited 0: npm test (all green)".)
+# logs; the launcher's result and each command's identity stay OUTSIDE it, so a
+# command cannot rewrite its own exit code or its own name (a command that
+# exits 42 reporting "exited 0: npm test (all green)").
 #
 # The grant includes MakeSym, so the agent NEVER resolves that path again: it
 # reads through the descriptor it opened before the jail existed. Opening
-# `out.log` by name, outside the jail and as the operator, let a command unlink
-# it, symlink it at the operator's secrets, and have the next `read_background`
-# hand them to the model -- or point it at a FIFO and hang the loop forever.
+# `out.log` by name, outside the jail and as the operator, lets a command
+# unlink it, symlink it at the operator's secrets, and have the next
+# `read_background` hand them to the model, or point it at a FIFO and hang the
+# loop forever.
 _LOG_ROOT = "logs"
 _LOG_NAME = "out.log"
 # How much of a log a read considers. A build can print gigabytes; only the
@@ -220,8 +221,8 @@ class BackgroundShells:
         meta = shell.dir / _META_NAME
         try:
             # AFTER the start: this file is the whole roster for a surface in
-            # another process, so writing it first listed a command that never
-            # started while read_background denied the id existed.
+            # another process, so writing it first would list a command that
+            # never started while read_background denies the id exists.
             meta.write_text(
                 json.dumps({"id": shell.id, "command": shell.command}), encoding="utf-8"
             )
@@ -250,9 +251,9 @@ class BackgroundShells:
         Every step is relative to a descriptor on the log root, never by path:
         that root is granted read-write to every command in the run, so one can
         plant `<log_root>/bg<N>` as a symlink, and `mkdir(exist_ok=True)` (like
-        its `is_dir()` check) FOLLOWS it -- which had the agent, unconfined and
+        its `is_dir()` check) FOLLOWS it, which lets the agent, unconfined and
         outside the jail, create the log inside a directory a command named.
-        O_NOFOLLOW on the leaf never covered the path above it. Creating the
+        O_NOFOLLOW on the leaf does not cover the path above it. Creating the
         directory rather than accepting one also means a planted name fails
         here instead of quietly becoming this command's log.
 
@@ -296,9 +297,9 @@ class BackgroundShells:
         """Observe every command, which is what writes an ending down.
 
         A model can start a command and never ask again, and only an observed
-        exit reaches disk -- so a surface reading the run's shells from
-        elsewhere reported one that ended in seconds as maybe-running for the
-        rest of the run. Called at the turn boundary.
+        exit reaches disk, so a surface reading the run's shells from elsewhere
+        shows one that ended in seconds as maybe-running for the rest of the
+        run. Called at the turn boundary.
         """
         for shell in self._shells.values():
             shell.job.status()

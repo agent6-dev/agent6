@@ -2,12 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """Shared SSE lifecycle for the provider streaming paths.
 
-Both providers speak Server-Sent Events over a single POST and need the same
-machinery around their event loops: an idle watchdog that heartbeats cannot
+The HTTP providers speak Server-Sent Events over a single POST and need the
+same machinery around their event loops: an idle watchdog that heartbeats cannot
 satisfy, operator stop/steer that ends an in-flight turn promptly, and
 classification of the teardown into `ProviderAborted` /
 `ProviderInterrupted` / a retryable `ProviderError`. Event parsing stays
-per-provider (the two wire formats share nothing); this module owns
+per-provider (the wire formats share nothing); this module owns
 everything around it.
 
 Why a watchdog at all: httpx2's `timeout` (float or `httpx2.Timeout` with
@@ -31,8 +31,7 @@ different things:
   which legitimately runs long on a big context or a slow model, so be patient
   (`STREAM_FIRST_DATA_TIMEOUT_S`).
 - Once real output has started, models emit a data event every few seconds; a
-  45s gap then means the stream wedged. Recovering a mid-stream wedge in 45s
-  instead of 180s is 4x faster (`STREAM_IDLE_TIMEOUT_S`).
+  45s gap then means the stream wedged (`STREAM_IDLE_TIMEOUT_S`).
 - Inside a display:omitted extended-thinking block (Anthropic adaptive thinking
   on Sonnet 5 / Opus 4.7+ / Fable 5) the stream is ping-only by design while the
   model reasons, so neither budget above applies; wait out a generous thinking
@@ -98,7 +97,7 @@ def bounded_lines(resp: httpx2.Response, *, max_line_bytes: int = 8 * 1024 * 102
     downstream: a line over it raises a retryable ProviderError instead of
     being parsed (the non-streaming path caps its whole body). A line that
     never ends is bounded by the watchdog, since iter_lines materializes it
-    first. Both providers' consume loops read through this."""
+    first. Every consume loop reads through this."""
     for line in resp.iter_lines():
         if len(line) * 4 > max_line_bytes and len(line.encode("utf-8")) > max_line_bytes:
             raise ProviderError(
@@ -185,10 +184,10 @@ def record_billed_usage(
 
     A stream that dies after the provider reported usage has been billed: the
     input was accepted, and whatever was generated was produced. Counting only
-    completed calls left that spend invisible to `max_usd`, so a retry-heavy
-    run had no ceiling at all -- every retry re-sends the whole input and is
-    billed again. The operator set a number for the task; going past it without
-    being told is the failure, and a run can always be resumed.
+    completed calls would leave that spend invisible to `max_usd`, and every
+    retry re-sends the whole input and is billed again. The operator set a
+    number for the task; going past it without being told is the failure, and a
+    run can always be resumed.
 
     Records nothing when the provider reported nothing: an unknown amount is
     not a licence to invent one. A reported plan window is a report: the
@@ -218,8 +217,8 @@ class SseCall:
     """One provider SSE request: what the shared lifecycle needs around the
     per-provider event loop."""
 
-    api_label: str  # "OpenAI" / "Anthropic"; leads API-error messages
-    api_format: str  # "openai" / "anthropic"; names the wire format
+    api_label: str  # "OpenAI" / "Anthropic" / "ChatGPT"; leads API-error messages
+    api_format: str  # "openai" / "anthropic" / "chatgpt"; names the wire format
     url: str
     headers: dict[str, str]
     body: dict[str, Any]

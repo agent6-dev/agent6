@@ -15,7 +15,7 @@ from agent6.types import session_kind
 
 # Derived from the NodeStatus Literal so the task-status vocabulary has ONE
 # owner (a new status can't silently drift the tool schema). Same order, so
-# the LLM-facing pattern bytes are unchanged; pinned in
+# the pattern the model sees is stable; pinned in
 # tests/unit/test_tool_schema_wire.py.
 _STATUS_PATTERN = f"^({'|'.join(get_args(NodeStatus))})$"
 
@@ -320,11 +320,9 @@ class FinishPlanningInput(_ToolInput):
     )
 
     # Per-field descriptions so the disambiguation lives IN the JSON schema the
-    # model fills, not only in the prose above. finish_planning is the one finish
-    # tool whose fields were self-undocumented, and models put the whole plan
-    # into `summary` (listed first, and a natural sink for "primary output"),
-    # leaving a degenerate plan.md that still passed min_length=1. finish_session's
-    # `result` already carries a field description; this matches it.
+    # model fills, not only in the prose above: models put the whole plan into
+    # `summary` (listed first, and a natural sink for "primary output"),
+    # leaving a degenerate plan.md that still passes min_length=1.
     summary: str = Field(
         min_length=1,
         description=(
@@ -362,8 +360,8 @@ class DagAddTaskInput(_ToolInput):
     )
 
     title: str = Field(min_length=1)
-    # ULID is exactly 26 chars, like update_task; None still means
-    # "under the run root". "" silently attached to root before the constraint.
+    # ULID is exactly 26 chars, like update_task; None means "under the run
+    # root", and the length constraint rejects "".
     parent_id: str | None = Field(default=None, min_length=26, max_length=26)
     # A sibling under the same parent; the task lands right after it.
     after: str | None = Field(default=None, min_length=26, max_length=26)

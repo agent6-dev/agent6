@@ -20,8 +20,7 @@ against `max_tokens_fallback`. Both caps: -1 unlimited, 0 refuse that
 ledger, > 0 the cap (see `[budget]` in config).
 
 This module is import-light (stdlib + agent6.models.pricing, which is itself
-stdlib + cache-file reads); both providers wire it in via
-constructor.
+stdlib + cache-file reads); every provider wires it in via constructor.
 """
 
 from __future__ import annotations
@@ -688,7 +687,7 @@ class BudgetTracker:
         total = format_usd(total_usd) + ("+" if any_unknown else "")
         # `of <cap>` states what meters this spend. With every model unpriced,
         # or every one drawing on a subscription plan, max_usd meters none of it
-        # (the preflight says so too), and naming it here contradicted that.
+        # (the preflight says so too), so naming it here would contradict that.
         cap = ""
         if metered or not snap.per_model:
             usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)

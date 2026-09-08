@@ -3,8 +3,8 @@
 """Read this project's other sessions.
 
 A run, a plan and an ask are all sessions, and their journals sit side by side
-under the project's state dir. Without this the model can only see its own: to
-use what an earlier session worked out, an operator had to copy it by hand.
+under the project's state dir. Without this the model sees only its own, and
+using what an earlier session worked out means the operator copying it by hand.
 
 Read-only, and confined to the state dir by construction -- a session is named
 by id, resolved against the buckets on disk, so no path from the model reaches
@@ -35,7 +35,7 @@ _SPEAKER = {
 
 # A roster is context the model pays for on every call, so it is capped. The
 # newest sessions are the ones a reader wants; `query` is how you reach an older
-# one. 2000 sessions rendered ~70k tokens before this.
+# one. Uncapped, 2000 sessions render ~70k tokens.
 ROSTER_MAX = 40
 
 
@@ -62,8 +62,8 @@ class SessionBrief:
     task: str
     started: str
     # Which bucket it lives in. Carried rather than re-resolved: looking it up
-    # per brief re-scanned every bucket, which made a query O(N^2) -- 44s at
-    # 2000 sessions, with the loop blocked the whole time.
+    # per brief re-scans every bucket, making a query O(N^2), 44s at 2000
+    # sessions with the loop blocked the whole time.
     bucket: str
 
     def line(self) -> str:
@@ -132,7 +132,7 @@ def conversation(layout: SessionLayout, *, max_chars: int) -> str:
     text = "\n\n".join(lines)
     if len(text) > max_chars:
         # The header counts against the cap: added on top of a max_chars slice,
-        # the result was longer than the caller asked for.
+        # the result would be longer than the caller asked for.
         header = "... {cut} earlier characters elided ...\n\n"
         kept = max(max_chars - len(header.format(cut=len(text))), 0)
         text = header.format(cut=len(text) - kept) + text[-kept:] if kept else ""
@@ -163,8 +163,8 @@ def _file_contains(path: Path, needle: str) -> bool:
     """Whether *path* contains *needle*, read in chunks.
 
     A real journal reaches megabytes (every streamed delta is persisted), and
-    reading whole ones into memory to answer a yes/no was ~1 GB per call across
-    a couple of hundred sessions.
+    reading whole ones into memory to answer a yes/no costs ~1 GB per call
+    across a couple of hundred sessions.
     """
     overlap = len(needle)
     try:

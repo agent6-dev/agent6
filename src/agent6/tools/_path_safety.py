@@ -56,7 +56,7 @@ def fold_name(name: str) -> str:
 
     macOS and Windows match names case-insensitively, and macOS runs agent6
     unsandboxed, so these in-process refusals are the only thing protecting
-    `.git` and the hidden trees there: comparing exactly, `.GIT/config` opened
+    `.git` and the hidden trees there: comparing exactly, `.GIT/config` opens
     the real `.git/config` (reproduced on a casefolded ext4). Folded on every
     platform rather than per-filesystem -- one rule, and the cost where case
     does matter is refusing a path to a distinct `.GIT`, which nobody has.
@@ -259,7 +259,7 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
     except NotADirectoryError as exc:
         # O_NOFOLLOW|O_DIRECTORY on a symlink is ENOTDIR on Linux, not ELOOP:
         # without this probe, a component swapped for a symlink mid-walk (the
-        # race this walk exists to contain) read as the bland message below.
+        # race this walk exists to contain) reads as the bland message below.
         # One lstat, on the error path only.
         with contextlib.suppress(OSError):
             if stat.S_ISLNK(os.lstat(at, dir_fd=dir_fd).st_mode):

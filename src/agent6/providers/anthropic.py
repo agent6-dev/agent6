@@ -650,7 +650,7 @@ class AnthropicProvider:
             # Billed already: input usage arrives in message_start, long before
             # a mid-stream error, the idle watchdog, or an operator steer can
             # end the turn. The retry re-sends the whole input and is billed
-            # again, so a run with any flakiness had no ceiling.
+            # again.
             _record_billed()
             raise
 
@@ -658,9 +658,8 @@ class AnthropicProvider:
         # not a completion signal). The accumulated blocks are a truncated turn,
         # possibly with text already fanned to the TUI; returning them as a
         # finished response feeds the loop a bogus went_quiet/silent_finish.
-        # Raise a retryable ProviderError so the loop's ProviderCaller re-issues the
-        # request -- but record what the cut turn already cost first: the
-        # operator's cap is about money spent, not turns completed.
+        # Raise a retryable ProviderError so the loop's ProviderCaller re-issues
+        # the request, recording what the cut turn already cost first.
         if not saw_message_stop:
             _record_billed()
             call.record(status=0, response="stream ended without message_stop (truncated)")

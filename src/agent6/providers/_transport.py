@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Shared request transport for the provider call paths.
 
-Both providers execute one API call the same way: an attempt loop with
+The HTTP providers execute one API call the same way: an attempt loop with
 per-attempt auth headers (a `token_command` credential mints a short-lived
 bearer, and a 401/403 refreshes it once and retries), one-shot 4xx body
 adaptation (each provider decides which parameter-rejection 400s it can fix
@@ -203,8 +203,8 @@ class ProviderCall:
     headers; errors it raises flow through the same adapt/refresh logic.
     """
 
-    api_label: str  # "OpenAI" / "Anthropic"; leads API-error messages
-    api_format: str  # "openai" / "anthropic"; names the wire format
+    api_label: str  # "OpenAI" / "Anthropic" / "ChatGPT"; leads API-error messages
+    api_format: str  # "openai" / "anthropic" / "chatgpt"; names the wire format
     url: str
     body: dict[str, Any]
     timeout_s: float
@@ -297,7 +297,7 @@ class ProviderCall:
         """A 2xx body -> ProviderResponse: decode, record, meter, budget."""
         try:
             # Annotated Any: json() returns whatever the body holds; the
-            # dict shape is PROVEN by the guard below, not assumed.
+            # guard below proves the dict shape.
             data: Any = resp.json()
         except (json.JSONDecodeError, ValueError) as exc:
             # A 2xx with a non-JSON body (transient proxy/gateway glitch)

@@ -197,10 +197,10 @@ def jail_policy(
     # HOST, outside the jail. Strict re-binds `.git` read-only, which needs a
     # mount namespace.
     #
-    # Hardened has none, so the only tool is Landlock -- which has no deny
-    # rules. Protecting `.git` there meant not granting the workspace ROOT,
+    # Hardened has none, so the only tool is Landlock, which has no deny
+    # rules. Protecting `.git` there means not granting the workspace ROOT,
     # because a Landlock grant is recursive and granting the root its own
-    # create/remove rights grants them over `.git` too. That cost every
+    # create/remove rights grants them over `.git` too. That costs every
     # top-level write (`touch newfile`, `mkdir build`), which is too much to
     # pay for a protection the operator can have properly by using strict.
     # The in-process edit tools refuse `.git` writes on both isolation levels.

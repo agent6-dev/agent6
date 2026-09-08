@@ -40,9 +40,8 @@ from agent6.providers.types import (
 class Provider(Protocol):
     """Vendor-agnostic surface used by every sub-agent.
 
-    `AnthropicProvider` and `OpenAIProvider` both satisfy this. The worker
-    loop and the review seats pass real `tools` every turn; execution itself
-    is Python-side via `ToolDispatcher`.
+    The worker loop and the review seats pass real `tools` every turn;
+    execution itself is Python-side via `ToolDispatcher`.
 
     `text_delta_callback` / `thinking_delta_callback` are opt-in SSE
     streaming hooks. When either is set, providers MAY stream visible

@@ -258,10 +258,9 @@ class TranscriptSink:
                 "body": response_body,
             },
         }
-        # atomic_write (mkstemp, unpredictable name, O_EXCL) instead of a fixed
-        # `<name>.json.tmp` + write_text: the predictable temp was symlink-
-        # followable (the class hardened out of secrets.py), and this also makes
-        # the record durable.
+        # atomic_write (mkstemp, unpredictable name, O_EXCL): a predictable
+        # `<name>.json.tmp` is symlink-followable, and the rename makes the
+        # record durable.
         text = scrub_secret_values(json.dumps(payload, indent=2, sort_keys=True), request_headers)
         atomic_write(path, text)
         return path
@@ -300,8 +299,8 @@ class ProviderResponse:
     output_tokens: int
     cache_read_tokens: int
     cache_creation_tokens: int
-    # provider-reported USD cost for this single call. Currently
-    # populated only by the OpenAI-compatible provider when the upstream
+    # provider-reported USD cost for this single call. Populated only by
+    # the OpenAI-compatible provider when the upstream
     # gateway returns `usage.cost` (OpenRouter does; OpenAI direct does
     # not; Anthropic does not). Zero means "no authoritative figure was
     # supplied", callers fall back to the price-table estimate in
@@ -319,7 +318,7 @@ _OUTPUT_CAP_STOP_REASONS = frozenset({"length", "max_tokens"})
 
 
 def output_cap_truncated(resp: ProviderResponse) -> bool:
-    """Whether *resp* was cut off by the output token cap. THE single owner: the
-    review seats and the loop's starvation trip-wire all ask it, so "the cap
-    ate the answer" cannot be spelled three different ways."""
+    """Whether *resp* was cut off by the output token cap. The single owner of
+    the check: the review seats and the loop's starvation trip-wire both ask
+    it."""
     return resp.stop_reason.strip().lower() in _OUTPUT_CAP_STOP_REASONS

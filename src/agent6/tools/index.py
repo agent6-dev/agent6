@@ -21,9 +21,9 @@ identifier-level, never inside strings or comments, but cross-file
 *resolution* (which `foo` is the same symbol?) needs a real LSP and is out of
 scope.
 
-This module is NOT exposed via `ToolDispatcher` here; that wiring lives
-in `tools/dispatch.py` + `tools/schema.py` and requires a security review
-note when added.
+The navigation tools over it (`outline`, `find_definition`,
+`find_references`) are wired in `tools/dispatch.py` and `tools/schema.py`;
+adding another tool there takes a security review note.
 """
 
 from __future__ import annotations

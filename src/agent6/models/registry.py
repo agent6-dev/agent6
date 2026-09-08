@@ -63,8 +63,7 @@ BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
 _CHARS_PER_TOKEN = 4
 _DROP_FRACTION = 0.45
 _RESERVE_TOKENS = 16_384
-# Used when the window is unknown: the historical fixed defaults, so behaviour
-# is unchanged for unsizable models. Mirrors workflows._compaction
+# Used when the window is unknown. Mirrors workflows._compaction
 # DROP_BLOCKS_AT_CHARS / SUMMARISE_AT_CHARS.
 _FALLBACK_DROP_CHARS = 256_000
 _FALLBACK_SUMMARISE_CHARS = 768_000
@@ -129,7 +128,7 @@ def compaction_thresholds(
 # benched model (qwen3-coder-30b, qwen3.6-35b, claude-haiku-4-5) sat at the
 # score ceiling and paid a 2-4x iteration tax, so `prompt.decompose = "auto"`
 # resolves to on ONLY for these families and unknown models stay off. Grow
-# this list with bench evidence, not vibes.
+# this list with bench evidence.
 DECOMPOSE_WIN_MODEL_FAMILIES: tuple[str, ...] = ("mistral-small-3.2",)
 
 

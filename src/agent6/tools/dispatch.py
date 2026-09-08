@@ -476,8 +476,7 @@ class ToolDispatcher:
         """Whether the model is denied *name*, extras included. The tool list is
         built from the mode's surface, which carries tools that are not in
         ALL_TOOLS (`run_metric_command`), so `available_tool_names` cannot
-        answer for them and one was offered under `run_commands = "no"` with
-        nothing but a refusal behind it."""
+        answer for them."""
         return name in _COMMAND_TOOLS and self.command_policy() == "no"
 
     def _tool_refusal(self, name: str) -> str | None:
@@ -757,7 +756,7 @@ class ToolDispatcher:
             # With no session dir the full text stays in the prompt: hiding
             # any of it with nowhere to point is the worse trade.
             # One file per prompt: concurrent review seats share a dispatcher,
-            # and one shared name had the operator reading call B's payload
+            # and one shared name has the operator reading call B's payload
             # while approving call A.
             full = self._session_dir / f"approval_payload-{next(_PAYLOAD_IDS)}.json"
             full.write_text(args, encoding="utf-8")
@@ -845,7 +844,7 @@ class ToolDispatcher:
 
         Only a session that EDITS owns a background command's lifetime: every
         other mode is a short read-only pass, and a command killed at its end
-        would have been started for nothing. Derived from the same tool set that
+        would be started for nothing. Derived from the same tool set that
         withholds read_background there, so the two cannot disagree.
         """
         if ReadBackgroundInput.TOOL_NAME not in mode_tools(self._mode).permitted:

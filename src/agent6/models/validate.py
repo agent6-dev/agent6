@@ -4,10 +4,10 @@
 spawns, with a did-you-mean, instead of dying at the first provider call where
 the raw upstream 400 leaks.
 
-Two callers, one policy: `validate_configured_model` checks a configured
-`models.<role>.model` at run start; `validate_spec_models` checks a `/parallel`
-spec's per-lane models (every lane runs on the WORKER provider by construction
--- the lane config overrides only the model -- so the universe is worker-scoped:
+`validate_configured_model` checks a configured `models.<role>.model` at run
+start; `validate_spec_models` checks a `/parallel` spec's per-lane models
+(every lane runs on the WORKER provider by construction -- the lane config
+overrides only the model -- so the universe is worker-scoped:
 the worker's configured model unioned with the worker provider's listing. A
 sibling provider's catalog is unrunnable in a lane).
 

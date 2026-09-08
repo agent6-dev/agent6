@@ -337,8 +337,7 @@ def coerce_text_tool_calls(  # noqa: PLR0911
                 drop_spans.append(match.span())
         if recovered:
             # Remove ONLY the tags that parsed. A malformed sibling tag stays
-            # in the remaining text so the model can see its failed call
-            # (silently scrubbing it made the model assume the call happened).
+            # in the remaining text so the model can see its failed call.
             return recovered, _remove_spans(text, drop_spans)
     # 2) A single fenced JSON object that is itself a tool call.
     for fence in _JSON_FENCE_RE.finditer(text):

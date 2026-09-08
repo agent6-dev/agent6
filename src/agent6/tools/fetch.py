@@ -107,7 +107,7 @@ def check_url(url: str) -> Checked:
     and a literal address that is public. A name is NOT resolved here: the DNS
     query for `<data>.attacker.example` delivers its label to whoever runs
     that name's authoritative server, so resolving ahead of the operator's
-    gate was itself an egress channel. `fetch` resolves behind the gate.
+    gate is itself an egress channel. `fetch` resolves behind the gate.
     """
     try:
         parts = urlsplit(url)
@@ -143,12 +143,12 @@ def fetch(checked: Checked) -> Fetched:
     (169.254.169.254), a loopback admin port, or the operator's LAN. The
     connection then dials exactly the address chosen, with the original name
     in SNI and Host, so the certificate is still proved against the name while
-    no second DNS answer can move it. Handing the name onward instead let two
+    no second DNS answer can move it. Handing the name onward instead lets two
     resolvers disagree: CPython's `getaddrinfo` encodes an international name
-    with IDNA2003 and httpx with UTS-46, so `ßeta.example.com` was vetted as
-    `sseta.example.com` and connected to `xn--eta-4ka.example.com` -- a
-    different host entirely, and a complete bypass needing no race at all.
-    Re-resolving also reopened the plain rebinding window.
+    with IDNA2003 and httpx with UTS-46, so `ßeta.example.com` vets as
+    `sseta.example.com` and connects to `xn--eta-4ka.example.com`, a different
+    host entirely, and a bypass needing no race at all. Re-resolving also
+    reopens the plain rebinding window.
 
     Redirects are returned, not followed: a 30x hands its Location back for the
     model to decide on, which re-runs every check. Following them silently is

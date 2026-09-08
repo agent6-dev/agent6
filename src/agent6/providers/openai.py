@@ -320,8 +320,8 @@ class OpenAIProvider:
         # They are reached only on the OpenAI-direct host; other
         # openai-compatible hosts (OpenRouter, Azure, vLLM, llama.cpp) still
         # require `max_tokens` and accept arbitrary temperature, so gate the
-        # rename on host + model. OpenRouter masked this by normalising
-        # `max_tokens` -> `max_completion_tokens` itself.
+        # rename on host + model. OpenRouter normalises `max_tokens` ->
+        # `max_completion_tokens` itself.
         is_openai_direct = is_openai_direct_host(self.base_url, self.deployment)
         is_openai_direct_reasoning = is_openai_direct and _is_openai_direct_reasoning_model(
             self.model
@@ -615,8 +615,8 @@ class OpenAIProvider:
                         # Indexless chunk carrying a NEW id (a gateway that
                         # sends whole calls in one chunk without index
                         # fields): open a fresh slot instead of collapsing
-                        # every call onto slot 0 (which overwrote the first
-                        # call and concatenated both argument strings).
+                        # every call onto slot 0, which overwrites the first
+                        # call and concatenates both argument strings.
                         idx = max(tool_calls) + 1
                     else:
                         idx = max(tool_calls) if tool_calls else 0

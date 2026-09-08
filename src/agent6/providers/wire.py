@@ -13,7 +13,7 @@ agent6 separates three concerns:
 - **auth** (`style` + a static key or a refreshable `token_command`) decides
   the auth header.
 
-This module is the small, security-relevant core shared by both providers: it is
+This module is the small, security-relevant core the provider modules share: it is
 where the auth credential becomes a header and where `base_url` becomes the
 exact URL dialled. Keeping it in one place keeps the egress allow-list (which is
 derived from the same `base_url` host) and the redaction set honest.

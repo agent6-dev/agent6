@@ -47,9 +47,9 @@ from agent6.providers.wire import request_url
 
 DEFAULT_MAX_TOKENS = 8192
 
-# Terminal stream events, keyed by their `type`. `completed` and `incomplete`
-# both carry the final response object (usage, status, output); `failed`
-# carries the error envelope.
+# Terminal stream events, by `type`: each carries the final response object
+# (usage, status, output). `response.failed` carries an error envelope instead,
+# and is handled separately.
 _TERMINAL_EVENTS = frozenset({"response.completed", "response.done", "response.incomplete"})
 
 # Backend error codes that mean the plan's usage window is exhausted: carry

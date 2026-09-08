@@ -413,8 +413,7 @@ def refresh_pricing_catalog(*, ttl_s: int = _CACHE_TTL_S) -> None:
 
     Direct-Anthropic model ids are priced through pricing's alias into this
     catalog; a config with only [providers.anthropic] otherwise never fetches
-    it and every claude-* run is honestly-but-needlessly unpriced (found by
-    an unmetered $ cap inside a cold-cache container)."""
+    it and every claude-* run is honestly-but-needlessly unpriced."""
     entry = OpenAIProviderEntry(api_format="openai", base_url=_PRICING_CATALOG_BASE_URL)
     list_models("openrouter", entry, None, ttl_s=ttl_s)
 

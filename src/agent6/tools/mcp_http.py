@@ -8,11 +8,10 @@ browser, a device or a network of its own, that is the wrong owner: the
 operator runs it however they like -- their container, their sandbox, their
 credentials -- and agent6 only connects.
 
-One request, one response: JSON-RPC over POST. What that buys in simplicity it
-does not buy in trust, so this side carries the same defences the `fetch` tool
-does -- no compression, a streamed cap, a total deadline -- plus the id check
-the stdio reader has always applied. A response is only this call's answer if
-it says so.
+One request, one response: JSON-RPC over POST, with the same defences the
+`fetch` tool carries (no compression, a streamed cap, a total deadline) plus
+the stdio reader's id check. A response is only this call's answer if it says
+so.
 """
 
 from __future__ import annotations
@@ -29,8 +28,8 @@ from agent6.tools.http_body import BodyRefused, read_capped
 
 # The same bound the stdio reader applies, and applied the same way: while the
 # body arrives, not after. `response.content` materializes first, so a 400 MiB
-# body reached 849 MiB of RSS before the check, and a 1 MiB gzip bomb reached
-# 2 GiB -- enough to OOM the process that owns the run and the provider keys.
+# body reaches 849 MiB of RSS before the check, and a 1 MiB gzip bomb 2 GiB,
+# enough to OOM the process that owns the run and the provider keys.
 MAX_BODY_BYTES = 8 << 20
 
 
@@ -168,8 +167,8 @@ class HttpTransport:
             raise
         except Exception as exc:
             # Deliberately broad: httpx2.InvalidURL does not derive from
-            # HTTPError, so an operator typo in `url` escaped a narrower catch
-            # and crashed the run instead of being logged and skipped. The
+            # HTTPError, so an operator typo in `url` escapes a narrower catch
+            # and crashes the run instead of being logged and skipped. The
             # message is the exception's TYPE, never its text, which can quote
             # a rejected header value back into the run's output.
             raise MCPHttpError(f"server {self.name!r} unreachable ({type(exc).__name__})") from None
@@ -200,8 +199,8 @@ def _sse_data(text: str, *, name: str) -> str:
     `retry:` (resumability), may carry `data` across several lines the spec
     says to join with newlines, and its line endings may be CR, LF or CRLF.
     `str.splitlines()` also splits on U+2028/U+2029/U+0085, which are LEGAL
-    raw characters inside a JSON string -- so a tool result containing one was
-    cut in half, every time, and the model could plant one deliberately.
+    raw characters inside a JSON string, so a tool result containing one is cut
+    in half, every time, and the model could plant one deliberately.
     """
     data: list[str] = []
     for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):

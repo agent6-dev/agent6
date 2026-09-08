@@ -248,8 +248,7 @@ def _result_of(response: dict[str, Any], *, name: str, method: str) -> Any:
 
 @dataclass(frozen=True, slots=True)
 class MCPServerSpec:
-    """What starting one MCP server needs. The config's shape, at the boundary:
-    a positional tuple grew a field per feature and every caller had to count."""
+    """What starting one MCP server needs: the config's shape, at the boundary."""
 
     name: str
     command: tuple[str, ...]
@@ -599,7 +598,7 @@ class _MCPServer:
             # The same two checks the stdio reader applies, for the same
             # reason: a keepalive frame, a server-initiated request
             # (sampling/createMessage, roots/list) or a multiplexing gateway
-            # can put SOMEONE ELSE'S message first, and taking it handed the
+            # can put SOMEONE ELSE'S message first, and taking it hands the
             # model another request's answer as this call's result.
             if "method" in response:
                 raise MCPError(
@@ -626,8 +625,9 @@ class _MCPServer:
                     if remaining <= 0:
                         # Its own words if it left any, exactly as the died-
                         # first arm below reports them: a server that logs its
-                        # reason and then waits on stdin (the common shape) was
-                        # a bare timeout pointing at the sandbox grants.
+                        # reason and then waits on stdin (the common shape)
+                        # otherwise reads as a bare timeout pointing at the
+                        # sandbox grants.
                         said = self._redact_secrets(stderr_tail(self._errors))
                         detail = f": {said}" if said else ""
                         raise MCPTimeout(
@@ -722,10 +722,8 @@ class MCPManager:
     """Owns N MCP server subprocesses for one agent6 run; closed by the
     lifecycle that built it.
 
-    The `configs` arg is an iterable of (name, command, startup_timeout_s,
-    call_timeout_s) tuples; we keep this constructor decoupled from the
-    `Config` types so tests can pass plain tuples without booting
-    the whole config validator.
+    `start` takes one `MCPServerSpec` per server rather than the `Config`
+    types, so a caller can build one without the config validator.
     """
 
     _servers: dict[str, _MCPServer] = field(default_factory=dict)

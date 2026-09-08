@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """DAG-as-tool handlers: add_task, update_task, list_tasks. All raise
-ToolError if no curator was wired so standalone test instantiation works
-unchanged."""
+ToolError when no curator was wired, so a standalone instantiation works."""
 
 from __future__ import annotations
 
@@ -100,8 +99,8 @@ def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> ListTasksRe
     # (and its list-valued relevant_paths/depends_on) is what tool callers hold.
     out: list[dict[str, Any]] = []
     # Tree order, the order the frontier executes and every renderer shows:
-    # iterating the map gave insertion order live and filesystem order after a
-    # resume, so the model read back a plan it had not written.
+    # iterating the map gives insertion order live and filesystem order after a
+    # resume, so the model would read back a plan it had not written.
     nodes = curator.nodes()
     for node_id in tree_order(nodes):
         node = nodes[node_id]

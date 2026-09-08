@@ -51,8 +51,8 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
     # Ids of assistant tool_use blocks dropped for a blank name (see
     # `parse_response`). Their paired tool_result must be dropped too, else
     # the request carries a role=tool message with no matching tool_call and
-    # strict backends reject it. Defense-in-depth for resumed runs whose
-    # snapshot history predates the parse-time filter.
+    # strict backends reject it. Defense-in-depth for a resumed run whose
+    # snapshot history already holds one.
     dropped_tool_use_ids: set[str] = set()
     for msg in anthropic_msgs:
         role = str(msg.get("role", "user"))
@@ -63,8 +63,6 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
         if not isinstance(content, list):
             out.append({"role": role, "content": str(content)})
             continue
-        # Walk content blocks. Behaviour depends on the block types
-        # present.
         text_chunks: list[str] = []
         tool_calls: list[dict[str, Any]] = []
         tool_results: list[dict[str, Any]] = []
@@ -97,8 +95,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
                     # Orphaned result for a dropped blank-name tool_use. Skip it
                     # so the request stays well-formed.
                     continue
-                # Tool results become separate role=tool messages.
-                # `content` field may be a string or a list of text
+                # The `content` field may be a string or a list of text
                 # blocks; OpenAI accepts either string or its own
                 # content-blocks shape. Flatten to string for the
                 # broadest compatibility (Ollama, Kimi, etc).
@@ -134,9 +131,8 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             # replies -- most OpenAI-compatible gateways tolerate that, but
             # it is technically malformed -- and (b) make injected
             # "[loop-guard]" / "[harness]" / "[review]" notices arrive
-            # before the tool result they were commenting on, so weak
-            # models lost the causal link entirely. Tool results first,
-            # then any operator/harness text as a follow-up user turn.
+            # before the tool result they comment on, so weak models lose
+            # the causal link.
             for tr in tool_results:
                 out.append(tr)
             if text_chunks:

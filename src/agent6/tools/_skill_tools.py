@@ -20,8 +20,8 @@ from agent6.tools.schema import UseSkillInput
 
 def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any]) -> SkillResult:
     args = UseSkillInput.model_validate(raw)
-    # Resolve after validation, exactly where the original handler did (the
-    # first-use disk scan never happens for a rejected call).
+    # Resolve after validation: the first-use disk scan never happens for a
+    # rejected call.
     resolved = resolve_skills()
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
     skill = by_name.get(args.name)

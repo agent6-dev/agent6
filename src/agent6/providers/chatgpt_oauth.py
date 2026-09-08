@@ -511,10 +511,10 @@ class ChatGPTCredential:
                 f" run `agent6 connect {self._provider}`.",
                 status_code=401,
             )
-        # The stored id must match the token's own claim: an entry written by
-        # an older parser can hold a USER id where the account id belongs, and
-        # trusting it would send a wrong chatgpt-account-id header. The repair
-        # is a reconnect, never a silent migration.
+        # The stored id must match the token's own claim: a stored entry can
+        # hold a USER id where the account id belongs, and trusting it would
+        # send a wrong chatgpt-account-id header. The repair is a reconnect,
+        # never a silent migration.
         claimed = account_id_of(TokenGrant(tokens.access_token, "", 0.0, ""))
         if claimed and tokens.account_id and claimed != tokens.account_id:
             raise ProviderError(
@@ -580,7 +580,7 @@ class ChatGPTCredential:
                     if "refresh_token_reused" not in str(exc):
                         raise
                     # Another HOST may have rotated (the flock covers only this
-                    # one). One beat, one re-read; a fresh sibling grant wins.
+                    # one), and a fresh sibling grant wins.
                     time.sleep(1.0)
                     rescued = self._stored()
                     if rescued.access_token == tokens.access_token:
