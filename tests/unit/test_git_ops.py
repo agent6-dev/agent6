@@ -935,6 +935,29 @@ def test_a_merge_stamp_stops_holding_once_the_run_commits_past_it(tmp_path: Path
     assert merge_stamp_holds(tmp_path, "gone-run111", "", tip)
 
 
+def test_a_merge_stamp_on_the_chain_holds_through_an_operator_commit_on_the_branch(
+    tmp_path: Path,
+) -> None:
+    """The stamp names the chain tip a merge took, and the operator then
+    commits on the run branch: the listing's unmerged mark accepts either tip,
+    so the stamp holds here too, or `sessions show` offered a merge the
+    listing called done."""
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    chain = _lane_commit(tmp_path, base, "a.txt", "one\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-ref", chain_ref_for("stamped1"), chain], check=True
+    )
+    own = _lane_commit(tmp_path, chain, "b.txt", "two\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-ref", "refs/heads/agent6/stamped1", own], check=True
+    )
+
+    assert merge_stamp_holds(tmp_path, "stamped1", "agent6/stamped1", chain)
+    assert merge_stamp_holds(tmp_path, "stamped1", "agent6/stamped1", own)
+    assert not merge_stamp_holds(tmp_path, "stamped1", "agent6/stamped1", base)
+
+
 def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
     tmp_path: Path,
 ) -> None:

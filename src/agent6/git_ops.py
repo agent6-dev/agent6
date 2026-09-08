@@ -645,20 +645,19 @@ def merge_stamp_holds(path: Path, session_id: str, run_branch: str, merged_tip: 
     """Does a run's merged stamp still describe everything it committed?
 
     A resumed run keeps committing under a prior leg's stamp: "merged" holds
-    only while the run's tip is the one that merge landed (the comparison
-    `sessions prune` trusts). The tip is the run's chain, its record, and the
-    branch only for a run with no chain, since a branchless run
-    (`branch_per_run` off) has no branch to compare against the stamp. A gone
-    chain and branch (auto_prune), unreadable git, or a stamp carrying no `tip`
-    keeps the claim."""
+    while the stamp's tip is the chain's or the run branch's (the operator's
+    own commits on the branch are what a merge took), the predicate the
+    listing's unmerged mark reads, so every surface answers alike. A gone
+    chain and branch (auto_prune), unreadable git, or a stamp carrying no
+    `tip` keeps the claim."""
     if not merged_tip:
         return True
-    tip = None
+    tips: set[str] = set()
     with contextlib.suppress(GitError):
-        tip = chain_tip(path, chain_ref_for(session_id)) if session_id else None
-        if tip is None and run_branch:
-            tip = branch_tip_sha(path, run_branch)
-    return tip is None or tip == merged_tip
+        chain = chain_tip(path, chain_ref_for(session_id)) if session_id else None
+        branch = branch_tip_sha(path, run_branch) if run_branch else None
+        tips = {t for t in (chain, branch) if t}
+    return not tips or merged_tip in tips
 
 
 def force_delete_squash_merged_branch(path: Path, branch: str) -> bool:

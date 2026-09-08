@@ -320,8 +320,8 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
     assert "passed · unmerged" in row
 
 
-def test_a_merge_stamped_on_a_diverged_branch_drops_the_mark(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The operator's own commit on the run branch moves the branch and not the
     chain, and a merge then stamps the branch tip; a listing reading the chain
@@ -375,6 +375,13 @@ def test_a_merge_stamped_on_a_diverged_branch_drops_the_mark(
     manifest["merged"] = {"into": "main", "sha": own, "tip": own}
     (session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert summarize_session_dir(session_dir, branch_tips=run_ref_tips(repo)).unmerged is False
+
+    from agent6.ui.cli.sessions_show import _cmd_status  # pyright: ignore[reportPrivateUsage]
+
+    assert _cmd_status(session_id) == 0
+    out = capsys.readouterr().out
+    assert f"changes:    {branch} (merged into main)" in out
+    assert "merge with:" not in out
 
 
 def test_model_controlled_run_refuses_the_git_surfaces() -> None:
