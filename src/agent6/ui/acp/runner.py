@@ -459,9 +459,10 @@ class RunBridge:
             return False
 
         order = ProseOrder(self.server, session.acp_id, layout.logs_path)
+        start_at = journal_before if resuming else None
         tail = threading.Thread(
             target=self._stream,
-            args=(session, layout.logs_path, _stop, resuming, announced, order),
+            args=(session, layout.logs_path, _stop, start_at, announced, order),
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
@@ -510,7 +511,7 @@ class RunBridge:
         session: Session,
         logs_path: Path,
         stop: Callable[[], bool],
-        resuming: bool,
+        journal_before: int | None,
         announced: Announced,
         order: ProseOrder | None = None,
     ) -> None:
@@ -518,8 +519,9 @@ class RunBridge:
         the lifecycle's own lines taking their place between events.
 
         A resumed run appends to the journal its prior legs already fill, and
-        the editor rendered those turns as they happened: start at the end, or
-        the whole conversation replays as if new. The ending also goes to
+        the editor rendered those turns as they happened: start where the
+        journal ended before this leg (*journal_before*), or the whole
+        conversation replays as if new. The ending also goes to
         stderr, the editor's agent log: the editor is the live view, so the
         lifecycle prints no ending of its own."""
         fold = TranscriptFold()
@@ -533,7 +535,7 @@ class RunBridge:
                 logs_path,
                 stop_when_finished=True,
                 should_stop=stop,
-                start_at_end=resuming,
+                start_at=journal_before,
                 on_position=_at,
             ):
                 for item in fold.feed(event):

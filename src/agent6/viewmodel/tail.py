@@ -18,7 +18,7 @@ def tail_events(
     follow: bool = True,
     stop_when_finished: bool = False,
     should_stop: Callable[[], bool] | None = None,
-    start_at_end: bool = False,
+    start_at: int | None = None,
     on_position: Callable[[int], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield JSON-decoded events from *path* as they are appended.
@@ -33,9 +33,10 @@ def tail_events(
     - If *should_stop* is given, exits at the next poll boundary once it returns
       True (lets a caller cancel a follow, e.g. on client disconnect).
     - If *follow* is false, yields existing lines and returns.
-    - If *start_at_end* is true, existing lines are skipped and tailing starts
-      at the file's current end, for a resumed run's journal, which already
-      holds the prior legs a viewer has seen.
+    - If *start_at* is given, the bytes before that offset are skipped: a
+      resumed run's journal already holds the prior legs a viewer has seen,
+      and the caller measures the end before the leg starts, so a line the
+      leg appends before the tail attaches is not lost with them.
     - Skips malformed JSON lines silently (the writer may have a partial
       write in flight; we'll pick it up on the next poll).
 
@@ -51,7 +52,7 @@ def tail_events(
     if not path.exists():
         return
 
-    pos = journal_size(path) if start_at_end else 0
+    pos = start_at or 0
     pending = b""
     heard = on_position or _ignore_position
     final_drain = False  # should_stop fired: read what is already appended, then stop

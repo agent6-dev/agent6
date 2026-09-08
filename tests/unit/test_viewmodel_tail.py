@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent6.viewmodel.tail import LogTail, tail_events
+from agent6.viewmodel.tail import LogTail, journal_size, tail_events
 
 
 def test_tail_yields_existing_lines_in_non_follow_mode(tmp_path: Path) -> None:
@@ -242,9 +242,28 @@ def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> Non
     assert out[-1]["reason"] == "finish_session"  # stopped at the final end, not the stop
 
 
-def test_start_at_end_skips_existing_lines(tmp_path: Path) -> None:
+def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: Path) -> None:
+    """The caller measures the offset before its leg starts; a line the leg
+    appends before the tail opens the file follows the offset and is yielded.
+    Measured at attach time instead, that line was skipped with the prior
+    legs, and a resumed ACP turn's first tool call never reached the editor."""
+    path = tmp_path / "logs.jsonl"
+    path.write_text(
+        '{"type": "session.start"}\n{"type": "tool.call", "call_id": 1}\n', encoding="utf-8"
+    )
+    offset = journal_size(path)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write('{"type": "loop.resume.start"}\n{"type": "tool.call", "call_id": 2}\n')
+
+    events = list(tail_events(path, follow=False, start_at=offset))
+
+    assert [e["type"] for e in events] == ["loop.resume.start", "tool.call"]
+    assert events[1]["call_id"] == 2
+
+
+def test_start_at_skips_the_lines_before_the_offset(tmp_path: Path) -> None:
     """A resumed run appends to a journal whose prior legs the viewer already
-    rendered: start_at_end yields only what arrives after the tail attaches --
+    rendered: start_at yields only what follows the measured offset --
     including past a prior leg's session.end, which must not stop it."""
     path = tmp_path / "logs.jsonl"
     path.write_text(
@@ -266,7 +285,7 @@ def test_start_at_end_skips_existing_lines(tmp_path: Path) -> None:
             poll_s=0.01,
             stop_when_finished=True,
             should_stop=_should_stop,
-            start_at_end=True,
+            start_at=journal_size(path),
         )
     )
     assert [e["type"] for e in got] == ["fresh", "session.end"]
