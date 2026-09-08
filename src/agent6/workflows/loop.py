@@ -4129,7 +4129,7 @@ class Workflow:
         if not completed and not new_tasks:
             return
         passed = queued = 0
-        # One try per write: a refusal (a container with open children, a
+        # One try per write: a refusal (a container with unresolved children, a
         # retired task) or a write error skips that item, never the rest.
         for cid in completed:
             try:
@@ -4154,7 +4154,7 @@ class Workflow:
             queued += 1
         if passed or queued:
             # What LANDED, not what the summariser asked for: the cap above and
-            # a refused status (a container with open children) both make the
+            # a refused status (a container with unresolved children) both make the
             # request bigger than the change.
             self._log(f"LOOP: compaction check-off -- passed {passed}, queued {queued}")
             self._emit_graph_snapshot()

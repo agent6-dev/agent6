@@ -189,3 +189,29 @@ def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: Path) -> 
     assert update_task(cur, {"id": models_own, "status": "skipped"}).status == "skipped"
     # The curator (the operator's route) can still retire it.
     cur.update_status(UpdateStatusIntent(id=operators, new_status="skipped"))
+
+
+def test_a_parent_over_a_failed_child_is_focused_and_its_refusal_names_the_child(
+    tmp_path: Path,
+) -> None:
+    """A failed child leaves its parent the unit of work (the frontier's
+    answer) and unable to pass (the curator's): the refusal names the child,
+    so the retry or the retirement is one call away, and the parent passes
+    once the child is retired."""
+    import pytest
+
+    from agent6.graph.curator import CuratorError
+    from agent6.graph.models import UpdateStatusIntent
+    from agent6.workflows._dag_focus import first_ready_subtask
+
+    cur = _curator(tmp_path)
+    root = _add(cur, None, "root")
+    phase = _add(cur, root, "phase")
+    step = _add(cur, phase, "step")
+    cur.update_status(UpdateStatusIntent(id=step, new_status="failed"))
+    assert first_ready_subtask(cur.nodes()) == phase
+    with pytest.raises(CuratorError, match=f"unresolved children \\({step}\\)"):
+        cur.update_status(UpdateStatusIntent(id=phase, new_status="passed"))
+    cur.update_status(UpdateStatusIntent(id=step, new_status="skipped"))
+    cur.update_status(UpdateStatusIntent(id=phase, new_status="passed"))
+    assert cur.nodes()[phase].status == "passed"

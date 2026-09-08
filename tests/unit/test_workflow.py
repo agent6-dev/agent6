@@ -3286,6 +3286,21 @@ def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
     assert _first_ready_subtask(_typed(nodes)) == "a"
 
 
+def test_first_ready_subtask_surfaces_a_parent_over_a_failed_child() -> None:
+    """A failed child is not open: the parent is the unit of work again (the
+    curator still refuses to pass it, naming the child to retry or retire),
+    so the frontier surfaces the parent, not nothing and not the child the
+    model gave up on."""
+    from agent6.workflows._dag_focus import first_ready_subtask as _first_ready_subtask
+
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "r", "children": ["a"]},
+        "a": {"parent_id": "root", "status": "in_progress", "title": "a", "children": ["a1"]},
+        "a1": {"parent_id": "a", "status": "failed", "title": "a1"},
+    }
+    assert _first_ready_subtask(_typed(nodes)) == "a"
+
+
 def test_current_task_banner_carries_title_acceptance_paths() -> None:
     from agent6.workflows.loop import current_task_banner  # pyright: ignore[reportPrivateUsage]
 

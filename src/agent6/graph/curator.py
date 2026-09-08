@@ -54,7 +54,7 @@ from agent6.graph.models import (
     TaskNode,
     UpdateStatusIntent,
 )
-from agent6.graph.order import has_open_child
+from agent6.graph.order import unresolved_children
 from agent6.graph.storage import (
     SessionLayout,
     flock,
@@ -297,16 +297,17 @@ class GraphCurator:
             if (
                 intent.new_status == "passed"
                 and node.parent_id is not None
-                and has_open_child(self._nodes, node)
+                and (unresolved := unresolved_children(self._nodes, node))
             ):
-                # A parent with open children is a container: the frontier
-                # surfaces its children instead, and passing it would satisfy
-                # every dependency on it while the work they name goes undone.
-                # The root is exempt: nothing depends on it, and a run that ends
-                # with a standing goal or a subtask left open still completed it.
+                # Passing a parent over an open or failed child would satisfy
+                # every dependency on it while the work they name goes undone;
+                # the children are named, so the retry or retirement is one
+                # call away. The root is exempt: nothing depends on it, and a
+                # run that ends with a standing goal or a subtask left open
+                # still completed it.
                 raise CuratorError(
-                    f"{intent.id} has open children, so it is not finished; mark them"
-                    " passed, skipped or obsolete first"
+                    f"{intent.id} has unresolved children ({', '.join(unresolved)}), so it is"
+                    " not finished; mark them passed, skipped or obsolete first"
                 )
             updated = node.model_copy(
                 update={

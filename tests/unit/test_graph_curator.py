@@ -132,7 +132,7 @@ def test_a_container_with_open_children_cannot_pass(tmp_path: Path) -> None:
     parent = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("phase")))
     child = c.add_subtask(AddSubtaskIntent(parent_id=parent.id, draft=_draft("step")))
 
-    with pytest.raises(CuratorError, match="open children"):
+    with pytest.raises(CuratorError, match="unresolved children"):
         c.update_status(UpdateStatusIntent(id=parent.id, new_status="passed"))
 
     c.update_status(UpdateStatusIntent(id=child.id, new_status="passed"))
@@ -142,6 +142,19 @@ def test_a_container_with_open_children_cannot_pass(tmp_path: Path) -> None:
     open_child = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("later")))
     assert c.update_status(UpdateStatusIntent(id=root.id, new_status="passed")).status == "passed"
     assert c.get(open_child.id).status == "pending"
+
+
+def test_a_container_with_a_failed_child_cannot_pass(tmp_path: Path) -> None:
+    """A failed child is neither open nor done: the work under it is still
+    unresolved, so passing the container over it would satisfy every
+    dependency on the container while the failed work stays outstanding."""
+    c = GraphCurator(_layout(tmp_path))
+    root = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("root")))
+    parent = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("phase")))
+    child = c.add_subtask(AddSubtaskIntent(parent_id=parent.id, draft=_draft("step")))
+    c.update_status(UpdateStatusIntent(id=child.id, new_status="failed"))
+    with pytest.raises(CuratorError, match="unresolved children"):
+        c.update_status(UpdateStatusIntent(id=parent.id, new_status="passed"))
 
 
 def test_retire_as_obsolete_and_record_commit(tmp_path: Path) -> None:
