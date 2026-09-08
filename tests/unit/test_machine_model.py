@@ -191,6 +191,16 @@ def test_non_identifier_variable(tmp_path: Path) -> None:
     assert any("not a valid identifier" in p for p in problems)
 
 
+def test_identifier_rejects_a_trailing_newline(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'cursor  = { type = "str",       default = "" }',
+        'cursor  = { type = "str",       default = "" }\n'
+        '"hidden\\n" = { type = "str", default = "" }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any("not a valid identifier" in p and "hidden" in p for p in problems)
+
+
 # -- ownership wall --------------------------------------------------------
 
 
@@ -430,6 +440,24 @@ def test_enum_only_on_str(tmp_path: Path) -> None:
     )
     problems = _problems(tmp_path, body)
     assert any("enum" in p and "str" in p for p in problems)
+
+
+def test_enum_must_allow_a_value(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'label      = { type = "str", enum = ["urgent", "normal", "spam"] }',
+        'label      = { type = "str", enum = [] }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any("enum" in p and "at least one" in p for p in problems)
+
+
+def test_record_default_must_respect_field_enum(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'verdict = { type = "classification", default = {} }',
+        'verdict = { type = "classification", default = { label = "other" } }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any("verdict" in p and ".label" in p and "not one of enum" in p for p in problems)
 
 
 def test_schema_cycle(tmp_path: Path) -> None:

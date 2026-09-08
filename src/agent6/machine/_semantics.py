@@ -141,7 +141,7 @@ def validate_semantics(spec: MachineSpec) -> list[str]:
     problems: list[str] = []
 
     for sname in spec.schemas:
-        if not IDENT_RE.match(sname):
+        if not IDENT_RE.fullmatch(sname):
             problems.append(f"schema name {sname!r} is not a valid identifier (^[a-z][a-z0-9_]*$)")
         elif sname in BUILTIN_TYPE_NAMES:
             # `parse_type` resolves the built-ins before the schema names, so a
@@ -158,7 +158,7 @@ def validate_semantics(spec: MachineSpec) -> list[str]:
         problems.append(f"initial state {spec.initial!r} is not a declared state")
 
     for name, state in spec.states.items():
-        if not IDENT_RE.match(name):
+        if not IDENT_RE.fullmatch(name):
             problems.append(f"state name {name!r} is not a valid identifier (^[a-z][a-z0-9_]*$)")
         problems.extend(_validate_state(name, state, env))
 
@@ -174,15 +174,22 @@ def _resolve_schemas(
     for sname, fields in spec.schemas.items():
         resolved_fields: dict[str, TypeRef] = {}
         for fname, field in fields.items():
-            if not IDENT_RE.match(fname):
+            if not IDENT_RE.fullmatch(fname):
                 problems.append(f"schema {sname!r}: field name {fname!r} is not a valid identifier")
             try:
                 ftype = parse_type(field.type, schema_names)
             except TypeParseError as exc:
                 problems.append(f"schema {sname!r}.{fname}: {exc}")
                 continue
-            if field.enum is not None and ftype != ScalarT("str"):
-                problems.append(f"schema {sname!r}.{fname}: `enum` is only valid on `str` fields")
+            if field.enum is not None:
+                if not field.enum:
+                    problems.append(
+                        f"schema {sname!r}.{fname}: `enum` must contain at least one value"
+                    )
+                if ftype != ScalarT("str"):
+                    problems.append(
+                        f"schema {sname!r}.{fname}: `enum` is only valid on `str` fields"
+                    )
             resolved_fields[fname] = ftype
         resolved[sname] = resolved_fields
     problems.extend(_detect_schema_cycles(resolved))
@@ -231,7 +238,7 @@ def _resolve_vars(
     )
     for owner, table in owners:
         for vname, varspec in table.items():
-            if not IDENT_RE.match(vname):
+            if not IDENT_RE.fullmatch(vname):
                 problems.append(
                     f"variable name {vname!r} in `[vars.{owner}]` is not a valid identifier"
                     " (^[a-z][a-z0-9_]*$)"
@@ -254,7 +261,15 @@ def _resolve_vars(
             var_types[vname] = vtype
             value = varspec.value if owner == "operator" else varspec.default
             var_values[vname] = value
-            problems.extend(_check_value(value, vtype, schemas, f"variable {vname!r}"))
+            problems.extend(
+                _check_value(
+                    value,
+                    vtype,
+                    schemas,
+                    f"variable {vname!r}",
+                    raw_schemas=spec.schemas,
+                )
+            )
     return var_types, var_owner, var_values, problems
 
 
@@ -269,12 +284,25 @@ def fixture_problems(spec: MachineSpec, fixture: dict[str, Any]) -> list[str]:
         if name not in env.var_types:
             problems.append(f"blackboard fixture: {name!r} is not a declared variable")
             continue
-        problems.extend(_check_value(value, env.var_types[name], env.schemas, f"fixture {name!r}"))
+        problems.extend(
+            _check_value(
+                value,
+                env.var_types[name],
+                env.schemas,
+                f"fixture {name!r}",
+                raw_schemas=spec.schemas,
+            )
+        )
     return problems
 
 
 def _check_value(
-    value: Any, t: TypeRef, schemas: dict[str, dict[str, TypeRef]], label: str
+    value: Any,
+    t: TypeRef,
+    schemas: dict[str, dict[str, TypeRef]],
+    label: str,
+    *,
+    raw_schemas: dict[str, dict[str, FieldSpec]] | None = None,
 ) -> list[str]:
     if isinstance(t, ScalarT):
         return _check_scalar(value, t.name, label)
@@ -298,8 +326,20 @@ def _check_value(
         if not isinstance(key, str) or key not in fields:
             problems.append(f"{label}: unknown field {key!r} for record {t.name!r}")
             continue
-        problems.extend(_check_value(sub, fields[key], schemas, f"{label}.{key}"))
+        field_problems = _check_value(
+            sub, fields[key], schemas, f"{label}.{key}", raw_schemas=raw_schemas
+        )
+        if not field_problems and raw_schemas is not None:
+            field_problems = _enum_problems(sub, raw_schemas[t.name][key], f"{label}.{key}")
+        problems.extend(field_problems)
     return problems
+
+
+def _enum_problems(value: Any, field: FieldSpec, label: str) -> list[str]:
+    """The `enum` check a spec-time record default and a runtime field value share."""
+    if field.enum is None or value in field.enum:
+        return []
+    return [f"{label}: {value!r} is not one of enum {list(field.enum)}"]
 
 
 def _check_scalar(value: Any, name: str, label: str) -> list[str]:
@@ -401,10 +441,7 @@ def _check_field_value(
         return [f"{label}: {exc}"]
     if isinstance(ftype, RecordT):
         return _check_record_strict(value, ftype.name, raw_schemas, schema_names, label)
-    problems = _check_value(value, ftype, {}, label)
-    if not problems and field.enum is not None and value not in field.enum:
-        problems.append(f"{label}: {value!r} is not one of enum {list(field.enum)}")
-    return problems
+    return _check_value(value, ftype, {}, label) or _enum_problems(value, field, label)
 
 
 # --------------------------------------------------------------------------
