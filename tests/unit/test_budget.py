@@ -404,6 +404,31 @@ def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
     assert t2.snapshot().plan_consumed == 2.0
 
 
+def test_percent_cap_names_the_window_whose_consumption_bound_it() -> None:
+    """The max-percent error names the window that consumed the capped points."""
+    from agent6.budget import PlanWindow
+
+    def reading(primary: float, spark: float) -> PlanUsage:
+        return PlanUsage(
+            windows=(
+                PlanWindow("primary", primary, 10080, 2e9),
+                PlanWindow("gpt-5-6-spark", spark, 300, 2e9),
+            )
+        )
+
+    tracker = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=5)
+    _record_plan(tracker, reading(90, 10))
+    _record_plan(tracker, reading(91, 16))
+
+    with pytest.raises(BudgetExceeded, match="gpt-5-6-spark window"):
+        tracker.check()
+    # The latest reading need not carry the window that bound: the backend
+    # adds and drops per-model windows per response.
+    _record_plan(tracker, PlanUsage(windows=(PlanWindow("primary", 92, 10080, 2e9),)))
+    with pytest.raises(BudgetExceeded, match="gpt-5-6-spark window"):
+        tracker.check()
+
+
 def test_purchased_credit_spend_meters_against_max_usd() -> None:
     """With allow_paid_credits the balance that left the account during the
     run is dollars spent: it counts into the USD estimate and trips max_usd.

@@ -451,13 +451,18 @@ class BudgetTracker:
         """This run's consumption on its binding window: the most any one
         window moved, since the cap is "no more than N points of the plan".
         *route* narrows it to one provider entry's plan."""
+        return self._plan_consumption_binding(route)[2]
+
+    def _plan_consumption_binding(self, route: str = "") -> tuple[str, str, float]:
+        """The provider entry, window, and consumed points nearest the cap."""
         return max(
             (
-                points
-                for (entry, _window), points in self._plan_consumed_by_window.items()
+                (entry, window, points)
+                for (entry, window), points in self._plan_consumed_by_window.items()
                 if not route or entry == route
             ),
-            default=0.0,
+            key=lambda row: row[2],
+            default=("", "", 0.0),
         )
 
     def _note_plan_usage(self, route: str, plan: PlanUsage) -> None:
@@ -518,11 +523,12 @@ class BudgetTracker:
                 " raise [budget].max_percent)"
             )
         elif self.max_percent > 0.0 and self._plan_consumed() >= self.max_percent:
+            route, window, consumed = self._plan_consumption_binding()
+            used_percent = self._plan_last_percent[(route, window)]
             self._exceeded_reason = (
-                f"plan budget exhausted: this run consumed ~{self._plan_consumed():.1f}"
+                f"plan budget exhausted: this run consumed ~{consumed:.1f}"
                 f" percentage points >= max_percent {self.max_percent:g}"
-                f" (account at {plan_usage.used_percent:g}% on its"
-                f" {plan_usage.binding.name} window)"
+                f" ({route}: account at {used_percent:g}% on its {window} window)"
             )
         elif self.max_usd > 0.0 and self._credits_spent_usd >= self.max_usd:
             # Purchased credits are dollars: they meter against max_usd like
