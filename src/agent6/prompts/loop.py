@@ -62,7 +62,8 @@ READONLY_COMMAND_RULE = (
 # control nothing commits automatically and saying so would misdirect the
 # model into never committing.
 AUTO_COMMIT_RULE = """- The harness commits pending changes automatically after each passing
-  verify; manual git commit is optional.
+  verify, and each editing turn once no gate can run (a verify the operator
+  denied). Manual git commit is optional.
 """
 
 AUTO_COMMIT_RULE_GATELESS = """- The harness commits each editing turn automatically; a turn that

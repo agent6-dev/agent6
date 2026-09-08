@@ -33,6 +33,8 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> Workflow:
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         workflow=SimpleNamespace(verify_command=("pytest",))
     )
+    # Gate presence reads the command policy first: a gate someone may run.
+    wf.dispatcher = SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
     return wf
 
 
@@ -180,6 +182,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         workflow=SimpleNamespace(verify_command=("pytest",))
     )
+    wf.dispatcher = SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
     state = _state()
     state.verify.baseline_ok = False
     state.verify.last_ok = False

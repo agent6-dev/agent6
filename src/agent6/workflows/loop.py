@@ -715,7 +715,7 @@ class Workflow:
         instructions = initial_instructions(
             self.mode,
             self.config.sandbox.run_commands,
-            has_gate=bool(self.config.workflow.verify_command),
+            has_gate=self._gate_present(denied=False),
         )
         initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
         conversation = Conversation()
@@ -1617,6 +1617,20 @@ class Workflow:
             )
         )
 
+    def _may_run_gate(self, *, denied: bool) -> bool:
+        """Whether anyone may run a verify command in this run: `run_commands =
+        "no"` withholds it from the harness as from the model, and so does a
+        denied gate (`denied`: an ask answered no, or the unattended
+        auto-deny)."""
+        return self.dispatcher.command_policy() != "no" and not denied
+
+    def _gate_present(self, *, denied: bool) -> bool:
+        """Whether a verify gate can judge this run's steps: a command is
+        configured (or adopted) and someone may run it. The one answer behind
+        the harness gate, the per-step commit, the nudges, the verdict and the
+        prompt's commit rule, so none of them can disagree."""
+        return bool(self.config.workflow.verify_command) and self._may_run_gate(denied=denied)
+
     def _turn_harness_verify(
         self, state: LoopState, turn: TurnState, *, ending: bool = False
     ) -> SessionResult | None:
@@ -1632,12 +1646,7 @@ class Workflow:
         ends the run as it does on the tool path."""
         why = harness_verify_due(
             when=self.config.workflow.verify_when,
-            gate_present=(
-                self.mode == "run"
-                and bool(self.config.workflow.verify_command)
-                and self.dispatcher.command_policy() != "no"
-                and not state.verify.denied
-            ),
+            gate_present=self.mode == "run" and self._gate_present(denied=state.verify.denied),
             # The verdict the run holds over the tree AS IT STANDS -- this
             # turn's own verify or a standing one nothing has edited since.
             # A red tree nothing touched is not re-judged (the finish reports
@@ -1741,10 +1750,11 @@ class Workflow:
 
         Returns a SessionResult for the REPL hook's "stop" directive or an
         unexecutable operator metric command; None otherwise."""
-        gateless = not self.config.workflow.verify_command
-        # A step no gate judged commits as a checkpoint: every gateless step,
-        # and under `verify_when = "finish"` every step the model did not
-        # verify itself (the gate certifies the tree the run ends on).
+        gateless = not self._gate_present(denied=state.verify.denied)
+        # A step no gate judged commits as a checkpoint: every gateless step
+        # (no command, or one nobody may run), and under `verify_when =
+        # "finish"` every step the model did not verify itself (the gate
+        # certifies the tree the run ends on).
         unjudged = gateless or (
             self.config.workflow.verify_when == "finish"
             and not (turn.verify_just_passed or turn.verify_just_failed)
@@ -1777,7 +1787,13 @@ class Workflow:
                     "loop.auto_commit", iteration=turn.iteration, sha=sha, subject=commit_subject
                 )
             turn.committed = bool(sha)
-            if gateless and sha:
+            # Adoption fills an ABSENT command, for a worker who may run one:
+            # a configured gate nobody may run stays the operator's.
+            if (
+                sha
+                and not self.config.workflow.verify_command
+                and self._may_run_gate(denied=state.verify.denied)
+            ):
                 self._maybe_adopt_verify(state, turn)
             if sha:
                 # Surface "what the worker just changed" to a live viewer
@@ -2260,10 +2276,7 @@ class Workflow:
         if attemptless and elapsed >= self.stagnation_notice_after_s:
             state.stagnation_nudged = True
             minutes = max(1, int(elapsed // 60))
-            gated = (
-                bool(self.config.workflow.verify_command)
-                and self.dispatcher.command_policy() != "no"
-            )
+            gated = self._gate_present(denied=state.verify.denied)
             notice = STAGNATION_NUDGE if gated else STAGNATION_NUDGE_GATELESS
             turn.tool_results.append(Notice(notice.format(minutes=minutes)))
             self._emit("loop.stagnation.nudged", iteration=turn.iteration, elapsed_s=int(elapsed))
@@ -2340,11 +2353,14 @@ class Workflow:
             return (
                 "the worker settled, but edits after the last green verify were never re-verified"
             )
-        # A command can exist here only via mid-run adoption (an operator-set
-        # one is never gateless).
-        if self.config.workflow.verify_command:
-            return "the worker settled after committing work; the adopted verify never passed"
-        return "the worker settled after committing work; no verify command existed to gate it"
+        if not self.config.workflow.verify_command:
+            return "the worker settled after committing work; no verify command existed to gate it"
+        if not self._gate_present(denied=state.verify.denied):
+            return (
+                "the worker settled after committing work; the verify command could not run"
+                " (commands withheld, or the gate denied)"
+            )
+        return "the worker settled after committing work; the verify never passed"
 
     def _red_gate_returns(self, state: LoopState) -> bool:
         """Whether a red gate is the model's to fix, so an end over it goes
@@ -2356,11 +2372,9 @@ class Workflow:
         wf = self.config.workflow
         return (
             wf.verify_when != "never"
-            and bool(wf.verify_command)
+            and self._gate_present(denied=state.verify.denied)
             and (state.verify.baseline_ok is not False or state.verify.ever_passed)
             and state.verify_finish_retries_used < wf.verify_retries
-            and self.dispatcher.command_policy() != "no"
-            and not state.verify.denied
         )
 
     def _end_gates(self, state: LoopState, turn: TurnState, *, ending: str) -> SessionResult | None:
@@ -2945,7 +2959,7 @@ class Workflow:
                 state.run_budget_nudged = True
                 nudge = (
                     RUN_BUDGET_NUDGE
-                    if self.config.workflow.verify_command
+                    if self._gate_present(denied=state.verify.denied)
                     else RUN_BUDGET_NUDGE_GATELESS
                 )
                 conversation.notice(nudge)
@@ -3469,9 +3483,10 @@ class Workflow:
     def _tree_is_verify_green(self, state: LoopState) -> bool | None:
         """Is the current tree in a verified-green state? None when no verify
         command is configured (nothing to gate on); else True iff the last verify
-        was green AND nothing has been edited since. Grounds both the honest
-        finish signal and the opt-in hard finish gate, so 'passed' can never mean
-        'finished over a red or stale verify'."""
+        was green AND nothing has been edited since, so a gate nobody may run
+        leaves the run unverified, as documented. Grounds both the honest
+        finish signal and the opt-in hard finish gate, so 'passed' can never
+        mean 'finished over a red or stale verify'."""
         if not self.config.workflow.verify_command:
             return None
         return state.verify.green_and_untouched

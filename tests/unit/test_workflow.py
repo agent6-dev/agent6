@@ -8064,3 +8064,159 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
         )
     assert result.reason == "metric_plateau"
     assert panels == ["before_finish"]
+
+
+def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: Path) -> None:
+    """`run_commands = "no"` withholds the verify gate from the harness and the
+    model alike, and the prompt says the run is gateless; the commit decision
+    alone still read the configured command as a gate, so under `verify_when =
+    "step"` no editing turn ever committed. Gate presence has one owner."""
+    from unittest.mock import patch
+
+    from agent6.tools.results import FinishSessionResult
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            if self.calls == 1:
+                return _tool_resp("apply_edit", {"path": "x", "edits": []}, tool_id="e1")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="f1")
+
+    class DispatcherStub(_StubDispatcher):
+        def command_policy(self) -> str:
+            return "no"
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            if name == "finish_session":
+                return FinishSessionResult(
+                    summary_text=str(raw_input.get("summary", "")), result=None
+                )
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            verify_when="step",
+            verify_retries=2,
+            verify_command=("true",),
+            verify_infer=False,
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=5,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
+    with patch("agent6.workflows.loop.chain_commit", return_value="sha1") as commit:
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert result.reason == "finish_session"
+    assert commit.call_count >= 1  # the edit landed as a checkpoint
+
+
+def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: Path) -> None:
+    """A configured gate the operator denied makes the run gateless for its
+    commits; the adoption that fills an ABSENT command then fired at every
+    checkpoint, overwrote the operator's command in the run config and told
+    the model a new gate ruled the run while nobody could run one."""
+    from unittest.mock import patch
+
+    from agent6.events import EventSink
+    from agent6.tools.errors import ToolDenied
+    from agent6.tools.results import FinishSessionResult
+
+    (tmp_path / "AGENTS.md").write_text(
+        "# AGENTS.md\n\n## Verify command\n\n```bash\necho ok\n```\n", encoding="utf-8"
+    )
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            if self.calls <= 3:
+                return _tool_resp(
+                    "apply_edit", {"path": "x", "edits": []}, tool_id=f"e{self.calls}"
+                )
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="f1")
+
+    class DispatcherStub(_StubDispatcher):
+        def __init__(self) -> None:
+            self.adopted: list[tuple[str, ...]] = []
+
+        def run_verify(self, *, extra_argv: tuple[str, ...] = ()) -> ExecResult:
+            del extra_argv
+            raise ToolDenied("operator denied the verify gate")
+
+        def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
+            self.adopted.append(tuple(argv))
+            return True
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            if name == "finish_session":
+                return FinishSessionResult(
+                    summary_text=str(raw_input.get("summary", "")), result=None
+                )
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+    cfg = Config.model_validate(
+        {
+            "workflow": {
+                "verify_command": ["configured-gate"],
+                "verify_when": "step",
+                "verify_infer": True,
+            }
+        }
+    )
+    dispatcher = DispatcherStub()
+    events_path = tmp_path / "logs.jsonl"
+    wf = _wf(
+        root=tmp_path,
+        config=cfg,
+        provider=ProviderStub(),
+        dispatcher=dispatcher,
+        events=EventSink(events_path),
+        max_iterations=8,
+        mode="run",
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
+    shas = iter(f"sha{i}" for i in range(1, 20))
+
+    def _next_sha(*_args: object, **_kwargs: object) -> str:
+        return next(shas)
+
+    with patch("agent6.workflows.loop.chain_commit", side_effect=_next_sha):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert result.reason == "finish_session"
+    assert dispatcher.adopted == []
+    assert wf.config.workflow.verify_command == ("configured-gate",)
+    assert "loop.verify_inferred" not in events_path.read_text(encoding="utf-8")
