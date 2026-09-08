@@ -154,7 +154,7 @@ function editConfig(key, s) {
   box.appendChild(field);
   const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
   const repoCb = el('input'); repoCb.type = 'checkbox';
-  // Default the target layer to the value's ORIGIN: editing a repo-sourced value
+  // Default the target layer to the value's origin: editing a repo-sourced value
   // must write the repo config, or the repo overlay keeps masking the edit and it
   // looks like the save vanished.
   repoCb.checked = (s.source === 'repo');

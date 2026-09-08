@@ -11,8 +11,10 @@ detached spawn (`agent6.ui.spawn`) and the approval / steer answer files
 
 Layout:
     model.py   pure JSON payload builders (hub / run / machine / conversation / config).
-    server.py  ThreadingHTTPServer + routing + SSE (`run_web`).
-    page.py    the embedded HTML/CSS/JS single-page app.
+    actions.py the write side: answers, steers, spawns, the fixed-argv CLI bridge.
+    server.py  ThreadingHTTPServer + routing + POST bodies (`run_web`).
+    _sse.py    the run and machine server-sent-event streams.
+    page.py    the HTML/CSS/JS single-page app.
 
 Secure by default: binds loopback; a non-loopback bind is opt-in via `[web]`
 config and remote access is expected behind `tailscale serve` (the tailnet

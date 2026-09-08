@@ -3,10 +3,10 @@
 """The `/btw` runner every composer shares (CLI menu, TUI, web): spawn the
 side question, deliver the answer.
 
-The menu owns the grammar and `app.btw` owns the session; this owns the two
-things only a front-end can do -- spawning through whatever escape the run
-has from its namespace, and landing the finished answer in the run's journal,
-which each surface renders at its next turn boundary.
+The menu owns the grammar and `app.btw` owns the session; this owns what only
+a front-end can do: spawning through whatever escape the run has from its
+namespace, and landing the finished answer in the run's journal, which each
+surface renders at its next turn boundary.
 """
 
 from __future__ import annotations
@@ -65,8 +65,7 @@ def make_btw_runner(
 
     Returns immediately with (opened, the line to show); the answer lands
     later as a `btw.answered` event on the run's journal. A btw never blocks
-    the run: that is the whole point of asking beside it rather than steering
-    it.
+    the run.
     """
 
     def run_btw(question: str, _session_dir: Path) -> tuple[bool, str]:
@@ -86,12 +85,11 @@ def _watch(session: BtwSession, events: EventSink) -> None:
     """Poll until the btw answers, then put the block on the run's journal.
 
     The journal, not the console view: under --tui or the web there is no
-    console view, and an answer handed to a missing one was dropped after the
-    model had already been paid for. Every surface folds the same log, and a
-    parent that exits first leaves the answer on disk to read afterwards.
+    console view to hand it to. Every surface folds the same log, and a parent
+    that exits first leaves the answer on disk to read afterwards.
 
     Daemon thread: a btw must never hold the run open, and an unanswered one at
-    exit is simply an ask the operator can resume.
+    exit is an ask the operator can resume.
     """
     deadline = time.monotonic() + _GIVE_UP_S
     while time.monotonic() < deadline:

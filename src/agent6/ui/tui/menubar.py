@@ -2,11 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """A slim, universal menu bar for the TUI: classic `File / Edit / View / Help`
 titles with a mnemonic letter, each opening a dropdown of actions (with their
-shortcut keys shown). One widget, reused on every screen — each screen just
-passes its own :class:`Menu` list. Selecting an item runs the host screen's
-`action_<id>` (falling back to app actions), dispatched by the bar itself —
-so the menu, the buttons, the key bindings, and the command palette all reach
-the same handlers and never drift.
+shortcut keys shown). One widget, reused on every screen: each screen passes
+its own :class:`Menu` list. Selecting an item runs the host screen's
+`action_<id>` (falling back to app actions), dispatched by the bar itself, so
+the menu, the buttons, the key bindings, and the command palette all reach the
+same handlers and never drift.
 
 Every action is therefore reachable by mouse (click a title, click an item), by
 keyboard (`Alt+<letter>` opens a menu; arrows + Enter pick; Esc closes), and
@@ -57,7 +57,7 @@ class Menu:
 def menu_bindings(menus: tuple[Menu, ...]) -> list[Binding]:
     """Keyboard openers for the menu bar, spread into a host's BINDINGS:
     Alt+<mnemonic> per menu, plus F10 to open the first one (the classic,
-    terminal-robust menu key -- some terminals eat Alt+f as 'forward-word').
+    terminal-robust menu key; some terminals eat Alt+f as 'forward-word').
     Once open, Left/Right switch menus and arrows/Enter pick."""
     binds = [Binding(f"alt+{m.mnemonic}", f"menu('{m.mnemonic}')", show=False) for m in menus]
     if menus:
@@ -101,7 +101,7 @@ def _key_label(key: str) -> str:
 
 
 def action_keys(source: object) -> dict[str, str]:
-    """Map each bound `action` to its shortcut label(s) from the ACTIVE bindings --
+    """Map each bound `action` to its shortcut label(s) from the active bindings,
     the single source of truth, so the menu bar, the help page, and the footer all
     show the same keys and can't drift from the actual key bindings. Multiple keys on
     one action (e.g. PageDown + Ctrl+End, or Shift+Enter + Ctrl+J) are joined:
@@ -126,7 +126,7 @@ def _title_text(menu: Menu) -> Text:
 
 
 def _menu_options(items: tuple[MenuItem, ...], keys: dict[str, str]) -> list[Option]:
-    """Dropdown rows with labels left-aligned and shortcut keys RIGHT-aligned to a
+    """Dropdown rows with labels left-aligned and shortcut keys right-aligned to a
     common edge, so the keys line up in a column. The shortcut comes from the live
     key bindings (`keys` = action -> label, possibly several joined), falling back
     to the item's own key hint for menu-only actions with no binding."""
@@ -147,7 +147,7 @@ def _menu_options(items: tuple[MenuItem, ...], keys: dict[str, str]) -> list[Opt
 def _footer_only_rows(
     source: object, menus: tuple[Menu, ...], keys: dict[str, str]
 ) -> tuple[tuple[str, str], ...]:
-    """(description, shortcut) for each VISIBLE footer binding no menu item covers,
+    """(description, shortcut) for each visible footer binding no menu item covers,
     so the help page lists every advertised shortcut even when a screen binds keys
     outside its menus. Menu openers (F10 / Alt+letter) are excluded: the page's own
     footer line covers them."""
@@ -165,10 +165,10 @@ def _footer_only_rows(
 
 class HelpScreen(Screen[None]):
     """A full-screen keys & actions page generated from a screen's menus and its
-    LIVE key bindings, so it is always complete and accurate: every menu action
+    live key bindings, so it is always complete and accurate: every menu action
     with its shortcut, every visible footer binding a menu doesn't cover, and the
     screen's extra interaction hints. Sections flow into up-to-3 centered columns
-    and REFLOW when the terminal resizes. Esc/q (or ? again) closes."""
+    and reflow when the terminal resizes. Esc/q (or ? again) closes."""
 
     BINDINGS: ClassVar = [Binding("escape,q,question_mark,f1", "dismiss", "Close", show=False)]
     CSS = """
@@ -243,7 +243,7 @@ class HelpScreen(Screen[None]):
         out: list[list[Static]] = []
         for col_sections in packed:
             rows = [r for _, section_rows in col_sections for r in section_rows]
-            # Only rows WITH a key set the alignment edge, so a long keyless
+            # Only rows with a key set the alignment edge, so a long keyless
             # hint line can't push the whole column's keys far from their labels.
             label_w = max((len(label) for label, key in rows if key), default=0)
             key_w = max((len(key) for _, key in rows), default=0)
@@ -281,8 +281,8 @@ class HelpScreen(Screen[None]):
         # Reflow: the column count is computed from the width at compose time,
         # so a terminal resize rebuilds the page (cheap: a few dozen Statics).
         # Recompose replaces #help-scroll; without a refocus, focus stays on the
-        # detached old instance, whose binding chain no longer reaches this
-        # screen -- Esc/q/? stop closing the page.
+        # detached old instance, whose binding chain does not reach this screen,
+        # so Esc/q/? stop closing the page.
         self.refresh(recompose=True)
         self.call_after_refresh(self._focus_scroll)
 
@@ -290,7 +290,7 @@ class HelpScreen(Screen[None]):
 class _MenuTitle(Static):
     """One clickable title in the bar. Clicking opens (or toggles/switches) its
     menu; each title carries its own mnemonic because events.Click has no
-    `.widget` to say which was hit. Titles are deliberately NOT focusable: a
+    `.widget` to say which was hit. Titles are deliberately not focusable: a
     click on one then can't blur the open dropdown, so toggling is a race-free
     state check, and Tab moves to real content (closing any open menu) instead
     of hopping between titles. Keyboard opening is Alt+<letter> (menu_bindings)
@@ -317,7 +317,7 @@ class _Dropdown(OptionList):
     so a pick reaches the bar (it's mounted on the *screen*, not the bar, so its
     messages don't bubble through the bar).
 
-    The styling lives HERE, not on MenuBar: the dropdown is mounted on the
+    The styling lives here, not on MenuBar: the dropdown is mounted on the
     screen, outside MenuBar's subtree, so MenuBar's rules wouldn't beat
     OptionList's own defaults (full-width, tall border). `overlay: screen` lifts
     it out of the screen's layout so it sizes to its content and floats.
@@ -347,7 +347,7 @@ class _Dropdown(OptionList):
     def on_blur(self) -> None:
         # Close only if I'm still the bar's open menu: a genuine dismiss (Tab to
         # content, click away). If a switch already replaced me (bar._open is now
-        # another menu), I'm a stale dropdown being removed -- don't close the
+        # another menu), I'm a stale dropdown being removed, so don't close the
         # new one. Routed through close_menu() so the -open highlight clears too.
         bar = self._bar()
         if bar.is_open(self.mnemonic):
@@ -371,7 +371,7 @@ class _Dropdown(OptionList):
 class MenuBar(Horizontal):
     """The single top row: the menu titles on the left, and the app title +
     context (`agent6 — <path>`) filling the rest on the right. Replaces a
-    separate Header row entirely -- one row, no clock, no command-palette icon
+    separate Header row entirely: one row, no clock, no command-palette icon
     (the palette is in the Help menu, the footer, and Ctrl+P)."""
 
     DEFAULT_CSS = """
@@ -396,7 +396,7 @@ class MenuBar(Horizontal):
             super().__init__()
 
     async def on_menu_bar_selected(self, event: Selected) -> None:
-        # ONE dispatcher for every screen: the host screen's action_<id> first,
+        # One dispatcher for every screen: the host screen's action_<id> first,
         # then app-level built-ins (quit, command_palette); await coroutines.
         # The menu, the key bindings, and the command palette all reach the
         # same handlers, so the surfaces cannot diverge.
@@ -412,14 +412,14 @@ class MenuBar(Horizontal):
     def __init__(self, menus: tuple[Menu, ...]) -> None:
         super().__init__()
         self._menus = menus
-        # The currently-open menu (or None). Tracking it in state -- rather than
-        # inferring from focus/DOM -- lets a dropdown's on_blur tell "I'm being
+        # The currently-open menu (or None). Tracking it in state, rather than
+        # inferring from focus/DOM, lets a dropdown's on_blur tell "I'm being
         # dismissed" from "I'm being replaced by a switch", with no async race.
         self._open: str | None = None
         # The widget that had focus before the menu was opened, so closing the
         # dropdown returns focus there. Without this, removing the focused
-        # dropdown lets textual's _reset_focus fall to the LAST focusable widget
-        # in the chain -- which then auto-scrolls a scroll container (e.g. the
+        # dropdown lets textual's _reset_focus fall to the last focusable widget
+        # in the chain, which then auto-scrolls a scroll container (e.g. the
         # config #settings) to the bottom to reveal it.
         self._restore_focus: Widget | None = None
 
@@ -444,7 +444,7 @@ class MenuBar(Horizontal):
         """Open the menu *mnemonic* (a single letter). Opening the menu that is
         already open toggles it shut."""
         was_open = self._open
-        # Tear down any open dropdown WITHOUT restoring focus yet (the dispatch
+        # Tear down any open dropdown without restoring focus yet (the dispatch
         # below decides). No menu open -> nothing to tear down anyway.
         self._teardown()
         if was_open is None:
@@ -463,11 +463,10 @@ class MenuBar(Horizontal):
         self._open = mnemonic
         # Float the dropdown on the screen, pinned one row below its title.
         # `overlay: screen` lifts it out of layout; absolute_offset places it.
-        # (Mounting it in the 1-row bar clipped it to one row; mounting it in the
-        # title Static suppressed the title's own text -- Static isn't a
-        # container; mounting it on the screen with a plain offset anchored it at
-        # the bottom.) No fixed id: remove() is async, so a re-open could mount a
-        # second one before the first is gone (DuplicateIds).
+        # (The 1-row bar clips it to one row; the title Static is not a
+        # container, so it suppresses the title's own text; a plain screen offset
+        # anchors it at the bottom.) No fixed id: remove() is async, so a re-open
+        # could mount a second one before the first is gone (DuplicateIds).
         title = self.query_one(f"#menu-{mnemonic}", _MenuTitle)
         opts = _menu_options(menu.items, action_keys(self.screen))
         dd = _Dropdown(*opts, mnemonic=mnemonic, on_pick=self._dispatch)
@@ -499,15 +498,15 @@ class MenuBar(Horizontal):
 
     def _teardown(self) -> None:
         """Remove any open dropdown (returning focus to the opener) and clear the
-        open-title highlights -- but KEEP _restore_focus, so a menu *switch* can
+        open-title highlights, keeping _restore_focus so a menu *switch* can
         reuse it. Callers that are truly closing clear it themselves."""
         self._open = None
-        # Move focus back to the opener BEFORE removing the dropdown: with the
-        # dropdown no longer the focused widget, textual's _reset_focus on its
-        # removal is a no-op -- it won't fall to the LAST focusable widget and
-        # auto-scroll a scroll container (e.g. config #settings) to the bottom.
-        # Use set_focus, not Widget.focus (which DEFERS via call_later, leaving
-        # the dropdown focused at removal time).
+        # Move focus back to the opener before removing the dropdown: with the
+        # dropdown unfocused, textual's _reset_focus on its removal is a no-op,
+        # so it won't fall to the last focusable widget and auto-scroll a scroll
+        # container (e.g. config #settings) to the bottom. Use set_focus, not
+        # Widget.focus (which defers via call_later, leaving the dropdown
+        # focused at removal time).
         restore = self._restore_focus
         if restore is not None and restore.is_attached and self.screen.focused is not restore:
             self.screen.set_focus(restore, scroll_visible=False)

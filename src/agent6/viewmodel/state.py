@@ -100,9 +100,9 @@ class VerifyView:
 
 @dataclass(frozen=True, slots=True)
 class BudgetView:
-    # Token counters are the CURRENT leg's (they pair with the per-leg
-    # enforcement caps); usd_total is CUMULATIVE across resume legs -- "cost"
-    # on any surface means what the run cost, and the hub scanner
+    # Token counters are the current leg's (they pair with the per-leg
+    # enforcement caps); usd_total is cumulative across resume legs: "cost" on
+    # any surface means what the run cost, and the hub scanner
     # (listing.scan_session_log) sums legs the same way, so the surfaces agree.
     input_total: int = 0
     output_total: int = 0
@@ -129,9 +129,9 @@ class RoleCall:
     # The provider that dialled the model (role.call carries it); pairs with
     # `model` for the registry's context-window lookup.
     provider: str = ""
-    # Context size at the LAST COMPLETED call: the full prompt in tokens
-    # (fresh input + cache reads + cache writes -- input_tokens is normalised
-    # to fresh-only across providers). 0 until a result lands.
+    # Context size at the last completed call: the full prompt in tokens
+    # (fresh input + cache reads + cache writes; input_tokens is normalised to
+    # fresh-only across providers). 0 until a result lands.
     ctx_tokens: int = 0
     # Live SSE text accumulator. Reset on every role.call,
     # appended-to on each role.text_delta, frozen on role.result.
@@ -261,14 +261,14 @@ MAX_LOG_TAIL = 400  # public: the inline log RichLog caps to this so it stays a 
 # The full turn is preserved in the transcript, which the conversation view folds.
 _STREAM_TAIL = 6000
 
-# Streaming deltas are ephemeral live-view events -- the reasoning shows in the
-# stream/conversation panes as it arrives. They are NOT audit-log events, so the
+# Streaming deltas are ephemeral live-view events: the reasoning shows in the
+# stream/conversation panes as it arrives. They are not audit-log events, so the
 # log_tail and the full LogScreen skip them; otherwise a reasoning model floods the
 # log with thousands of contentless "role.thinking_delta" lines.
 STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
 # Loop-side mirrors of events already rendered (tool.call carries the args,
-# budget.update the totals); they doubled every tool call and budget tick in
-# the log view without adding a field worth reading.
+# budget.update the totals); folding them would double every tool call and
+# budget tick in the log view without adding a field worth reading.
 LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
 
 
@@ -292,9 +292,9 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
     etype = event.get("type", "")
     if not state.session_id and event.get("session_id"):
         state = replace(state, session_id=str(event["session_id"]))
-    # The idle anchor for every "working… Ns" timer: the EVENT's own ts, so a
+    # The idle anchor for every "working… Ns" timer: the event's own ts, so a
     # viewer that replays history (attach, the web/TUI catch-up) measures from
-    # when the run last spoke, not from when it started watching -- an arrival
+    # when the run last spoke, not from when it started watching. An arrival
     # anchor would read "working… 3s" on a run wedged 40 minutes.
     if (ep := events.event_epoch(event.get("ts"))) is not None:
         state = replace(state, last_event_ep=ep)
@@ -304,7 +304,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
         entry = LogLine(format_log_line(event), state.cursor_task_id)
         new_log = _push_bounded(state.log_tail, entry, MAX_LOG_TAIL)
         # log_count is monotonic; log_tail is a sliding window. A live viewer must
-        # diff on the count (which keeps growing) -- diffing on len(log_tail) freezes
+        # diff on the count (which keeps growing): diffing on len(log_tail) freezes
         # the panel once the window saturates at MAX_LOG_TAIL.
         state = replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
@@ -313,7 +313,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             # A session.start begins a leg: by definition it is running. The ask REPL
             # re-enters wf.run() per follow-up on the same log, so a second
             # session.start must clear the prior leg's terminal state. Unlike
-            # ResumeStart, do NOT bank usd: the REPL reuses one BudgetTracker,
+            # ResumeStart, do not bank usd: the REPL reuses one BudgetTracker,
             # so usd_total is already cumulative across legs.
             return replace(
                 state,
@@ -331,13 +331,13 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             # leg's budget counters start fresh, so bank the cumulative spend now
             # (usd_total keeps its value until the leg's first budget.update) and
             # zero the token counters/caps: BudgetView documents them as the
-            # CURRENT leg's, and scan_session_log resets for the same reason.
-            # Unanswered prompts are the DEAD leg's: the resumed leg re-asks
+            # current leg's, and scan_session_log resets for the same reason.
+            # Unanswered prompts are the dead leg's: the resumed leg re-asks
             # with restarted ids, so a held-over orphan would read "waiting"
             # forever and duplicate when the same id is re-prompted.
             return replace(
                 state,
-                # `started` = a leg has begun, NOT "a session.start was seen": a
+                # `started` = a leg has begun, not "a session.start was seen": a
                 # fork is driven by resume(), so its fresh log never carries one.
                 started=True,
                 finished=False,
@@ -395,7 +395,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
 
         case events.RoleTextDelta(text=piece):
             # Append SSE delta to the in-flight RoleCall. Scrub the
-            # CONCATENATION: an escape sequence can arrive split across deltas,
+            # concatenation: an escape sequence can arrive split across deltas,
             # and per-piece scrubbing would let the reassembled whole through.
             last = state.last_role
             if last is None or not last.in_flight or not piece:
@@ -505,7 +505,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             plan_cap=plan_cap,
             plan_resets_at=plan_resets,
         ):
-            # The event's usd_total is the current LEG's; the view's is
+            # The event's usd_total is the current leg's; the view's is
             # cumulative. usd_partial is sticky: unpriced spend in any prior
             # leg keeps the cumulative total an under-estimate.
             return replace(
@@ -677,7 +677,7 @@ def fold_until_commit(events: Iterable[dict[str, Any]], sha: str) -> SessionStat
 
 
 def status_facts(state: SessionState) -> StatusFacts:
-    """The fold's answers to the status questions -- the typed twin of
+    """The fold's answers to the status questions, the typed twin of
     `LogScan.status_facts()`, for surfaces that hold a `SessionState`. The two
     producers must agree on the same log (pinned by the status matrix test)."""
     pending: list[tuple[str, float | None]] = [
@@ -726,15 +726,14 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     view dataclasses become dicts. `status_label` is a computed convenience the
     web/CLI render verbatim so the label logic lives in one place.
 
-    Pass *session_dir* whenever the caller has one: the label is then THE dir-aware
+    Pass *session_dir* whenever the caller has one: the label is then the dir-aware
     status (parked/starting/stale/waiting, not the fold's blanket "running"),
     `live` says whether steer/stop/compact would reach anything, `ports` lists
     what the run's network is serving, a plan's `plan_md` is its written
     deliverable, and the dir-backed identity (session_id, the manifest's
     user_task) fills what the fold left empty.
-    Without it the payload keeps the fold-only label and `live: None` --
-    correct only for a genuinely dir-less stream (the machine reasoning
-    snapshot)."""
+    Without it the payload keeps the fold-only label and `live: None`, correct
+    only for a genuinely dir-less stream (the machine reasoning snapshot)."""
     d = asdict(state)
     d["context_pct"] = context_fill(state)
     d["budget"]["usd_text"] = budget_usd_text(
@@ -750,14 +749,13 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         d["live"] = word in LIVE_STATUS_WORDS
         # The dir is authoritative for identity: a resumed/forked leg's log can
         # start at loop.resume.start, folding session_id/user_task empty. Fill them
-        # HERE so every consumer (web, watch, SSE) carries the same identity.
+        # here so every consumer (web, watch, SSE) carries the same identity.
         # The same fold the CLI banner and the TUI composer read, so a web
         # client cannot show a different answer.
         d["policy"] = session_policy(session_dir).line()
         d["session_id"] = d["session_id"] or session_dir.name
-        # The MODE is dir-backed identity too: without it a client cannot say
-        # WHAT it is showing and heads every session "Run", right one time in
-        # three.
+        # The mode is dir-backed identity too: without it a client cannot say
+        # what it is showing and heads every session "Run".
         d["mode"] = d.get("mode") or ""
         with contextlib.suppress(ManifestError):
             manifest = read_manifest(session_dir)
@@ -787,15 +785,15 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
             scoped=state.verify_scoped,
             gate_red=status_facts(state).gate_red,
         )
-    # The raw status WORD, not only the human label, so a client can branch on it
-    # -- e.g. render the waiting line instead of the "working" heartbeat when the
-    # run is blocked on the operator (a "waiting" run is still LIVE).
+    # The raw status word, not only the human label, so a client can branch on
+    # it: the waiting line in place of the "working" heartbeat when the run is
+    # blocked on the operator (a "waiting" run is still live).
     d["status"] = word
     d["status_label"] = status_label(word, reason)
     # A run no model is touching (parked, never started, worker gone), worded
     # once for every surface; "" otherwise.
     d["dead_state"] = dead_run_note(word, reason)[0]
-    # Whether an operator prompt is unanswered, straight from the fold: a DIR-LESS
+    # Whether an operator prompt is unanswered, straight from the fold: a dir-less
     # consumer (the machine watch folds an agent-state log with no session_dir, so it
     # has no dir status) still needs the "blocked, not working" signal to quiet
     # its heartbeat.

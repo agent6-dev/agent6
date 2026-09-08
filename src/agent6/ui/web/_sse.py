@@ -57,8 +57,8 @@ def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
 
     Server-computed, like the run stream's, so a browser on another machine
     needs no clock agreement: the client anchors its "working... Ns" timer to
-    (its own now) - age and ticks locally. Anchoring to the frame's ARRIVAL
-    instead showed a state wedged for forty minutes as three seconds of work.
+    (its own now) - age and ticks locally. Anchoring to the frame's arrival
+    would show a state wedged for forty minutes as three seconds of work.
     """
     reasoning = payload.get("reasoning") or {}
     ep = reasoning.get("last_event_ep")
@@ -78,17 +78,17 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None:
     def tail() -> None:
         src = session_dir / LOGS_NAME
         try:
-            # NOT stop_when_finished: a finished run resumed from any other
-            # surface logs into this same file, and a stream that closed at
-            # session.end left the page frozen on "stopped" while the hub
-            # said "running", forever. The TUI follows across legs the same
-            # way; the client closes only on stream_dead (or navigation).
+            # Not stop_when_finished: a finished run resumed from any other
+            # surface logs into this same file, and a stream closing at
+            # session.end would freeze the page on "stopped" while the hub
+            # says "running". The TUI follows across legs the same way; the
+            # client closes only on stream_dead (or navigation).
             for ev in tail_events(
                 src, follow=True, stop_when_finished=False, should_stop=stop.is_set
             ):
                 events.put(ev)
         finally:
-            # ALWAYS enqueue the sentinel, even if the tailer raises: without
+            # Always enqueue the sentinel, even if the tailer raises: without
             # it the response loop would block on heartbeats forever.
             events.put(None)  # run ended (or tail cancelled/failed), tailer done
 
@@ -113,8 +113,8 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None:
             # Transport signal, distinct from the fold's `finished`: this
             # stream will send nothing more (dead worker, no session.end), so
             # the client must close instead of letting EventSource retry
-            # into a reconnect-refold loop. `finished` stays the fold truth
-            # -- a crashed run is stale, not "finished".
+            # into a reconnect-refold loop. `finished` stays the fold truth:
+            # a crashed run is stale, not "finished".
             d["stream_dead"] = True
         return d
 
@@ -138,7 +138,7 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None:
                     chan.send(frame(dead=True))
                     return
                 continue
-            # Fold everything already queued into ONE frame. On connect the
+            # Fold everything already queued into one frame. On connect the
             # tailer replays the whole history, and a full SessionState frame per
             # historical event is quadratic (13 MB probed on a 502-event run).
             last_type = ""
@@ -180,7 +180,7 @@ def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
             return
         blob = json.dumps(payload, sort_keys=True)
         if blob != prev:
-            # The age is derived at SEND time and deliberately outside the
+            # The age is derived at send time and deliberately outside the
             # comparison above: it changes every poll, so including it would
             # send a frame every poll. The epoch it comes from does not.
             if not chan.send(_with_idle_age(payload)):
@@ -196,7 +196,7 @@ def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
         if payload["machine"].get("ended") is not None:
             return  # machine terminated: final snapshot sent, close the stream
         # A machine that died mid-state (no MachineEnd) would pin this
-        # stream forever: its worker.pid points at a dead process AND no
+        # stream forever: its worker.pid points at a dead process and no
         # armed wait explains the absence (a parked --exit-on-wait machine
         # legitimately has no live process between scheduler ticks).
         if (
@@ -204,9 +204,9 @@ def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
             and not worker_is_alive(machine_dir)
             and not machine_is_parked(machine_dir)
         ):
-            # Supervisor loss is NOT a journaled end: the instance is
+            # Supervisor loss is not a journaled end: the instance is
             # resumable, and a fabricated `ended` (a status the journal
-            # vocabulary does not even hold) styled it terminal. A
+            # vocabulary does not even hold) would style it terminal. A
             # distinct field closes the stream truthfully; `ended` stays
             # reserved for a durable MachineEnd. A bare return would
             # leave the tab reconnecting forever over a "running" machine.

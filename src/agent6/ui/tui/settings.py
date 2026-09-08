@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """UI-only preferences for the TUI (theme, copy method).
 
-Stored in `<global-config-dir>/ui.toml` — a sibling of `config.toml` and
-`secrets.toml`, NOT part of the agent config. A theme or a copy method is a
+Stored in `<global-config-dir>/ui.toml`, a sibling of `config.toml` and
+`secrets.toml`, not part of the agent config. A theme or a copy method is a
 viewer preference, not agent behavior, so it must never go through the config
 schema or the (shareable, per-repo) config layers. This module is the whole
 contract:
@@ -11,8 +11,8 @@ contract:
     get_theme() / save_theme(name)
     get_copy_method() / save_copy_method(name)
 
-Everything is best-effort: a missing, unreadable, or corrupt `ui.toml` simply
-degrades to the default — a UI preference must never break the TUI. Writes are
+Everything is best-effort: a missing, unreadable, or corrupt `ui.toml` degrades
+to the default, since a UI preference must never break the TUI. Writes are
 atomic and `chown`-ed back to the real user under sudo (same idiom as
 `secrets.py`); there's deliberately no `tomli_w` dependency, the writer is a
 tiny hand-rolled serializer for the one flat `[ui]` table.
@@ -67,9 +67,9 @@ def _save_ui_key(key: str, value: str, user: RealUser | None = None) -> None:
         mkdir_for_real_user(path.parent, user)
         # atomic_write uses mkstemp (unpredictable name, O_EXCL): a pre-planted
         # `ui.toml.tmp` symlink cannot redirect this write. A fixed `.tmp` +
-        # write_text (O_CREAT|O_TRUNC) would follow such a symlink, and this path
-        # can run under sudo (it chowns to the real user) -- an arbitrary-file
-        # truncate-as-root primitive.
+        # write_text (O_CREAT|O_TRUNC) would follow such a symlink, and this
+        # path can run under sudo (it chowns to the real user): an
+        # arbitrary-file truncate-as-root primitive.
         atomic_write(path, _render_ui_toml(data))
         chown_to_real_user(path.parent, user)
         chown_to_real_user(path, user)

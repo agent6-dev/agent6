@@ -4,11 +4,10 @@
 
 The dashboard's live log pane is a small sliding window that snaps to the
 bottom on every new line, so a fast run "plays through" with no way to scroll
-back, and finished runs in the hub had no log view at all. `LogScreen` reads
-a run's whole logs.jsonl, renders each STRUCTURAL event with the SAME one-line
-formatter the dashboard uses (so the two read identically), and lets the
-operator scroll -- and select/copy -- freely. It is read-only; reload re-reads
-the file (a live run keeps appending).
+back. `LogScreen` reads a run's whole logs.jsonl, renders each structural event
+with the same one-line formatter the dashboard uses (so the two read
+identically), and lets the operator scroll, select and copy freely. It is
+read-only; reload re-reads the file (a live run keeps appending).
 
 Two deliberate choices:
 - Ephemeral streaming deltas are skipped (see STREAM_DELTA_EVENTS): a reasoning

@@ -32,9 +32,9 @@ from agent6.types import SESSION_KINDS
 from agent6.viewmodel.events import SESSION_START_EVENTS, as_int, event_epoch, tool_result_ok
 from agent6.viewmodel.format import format_usd, lane_count
 
-# Terminal control sequences in MODEL-AUTHORED text and command output.
-# Default-deny, not a CSI-only blocklist: stripping CSI alone left OSC intact
-# (a demonstrated OSC 52 writes the terminal's clipboard) and DCS/SOS/PM/APC
+# Terminal control sequences in model-authored text and command output.
+# Default-deny, not a CSI-only blocklist: stripping CSI alone leaves OSC intact
+# (an OSC 52 writes the terminal's clipboard) and DCS/SOS/PM/APC
 # carry arbitrary payloads; a C1 byte opens the same doors 8-bit. Sequences are
 # removed whole (a payload cut off at a chunk boundary surfaces as inert text);
 # stray C0 controls (BEL, \r spoofing) and DEL drop too, keeping \n and \t.
@@ -130,7 +130,7 @@ _END_REASON_LABEL = {
 ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator"]
 
 
-# Events that render BETWEEN turns rather than as part of one: {type: (kind,
+# Events that render between turns rather than as part of one: {type: (kind,
 # the field holding the text)}. An empty field renders nothing.
 _BETWEEN_TURNS: dict[str, tuple[ItemKind, str]] = {
     # The operator's typed instruction: a steer, or the follow-up a resume
@@ -188,9 +188,8 @@ class TranscriptItem:
     detail: str = ""
     tail: str = ""  # a failed tool's captured output tail
     # The provider's stamped call_id, for a surface that pairs a tool's start
-    # with its outcome by identity. Reconstructing one from name+arg made two
-    # identical calls collide, and an editor keyed on it overwrote the first
-    # call's FAILURE with the second's success.
+    # with its outcome by identity: two identical calls collide under a key
+    # reconstructed from name+arg.
     call_id: str = ""
 
 
@@ -198,15 +197,15 @@ _PRIMARY_ARGS = ("path", "file", "pattern", "query", "command", "cmd", "url", "t
 
 
 def _clip(text: str, n: int = 60) -> str:
-    # One LINE by contract: every caller puts the clip on a single rendered
-    # line, and an embedded newline (a multi-line arg value) split the tool
-    # head in two on every skin.
+    # One line by contract: every caller puts the clip on a single rendered
+    # line, and an embedded newline (a multi-line arg value) would split the
+    # tool head in two on every skin.
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 3] + "…"
 
 
 def _call_preview(name: str, args: Any) -> str:
-    """A bounded preview carried from the CALL side of a tool whose substance
+    """A bounded preview carried from the call side of a tool whose substance
     is in its arguments: apply_edit's first hunk (the journal carries the edit
     pairs nearly whole). Other tools carry none."""
     if name != "apply_edit" or not isinstance(args, dict):
@@ -267,9 +266,9 @@ def _parallel_group_label(event: dict[str, Any]) -> str:
 
 def _parallel_dispatched_body(event: dict[str, Any]) -> str:
     """The coordinator dispatched a group: how many lanes (the count every
-    listing shows) for how many tasks, and which tasks; a journal from
-    before the event carried the lane count names the tasks alone (lane ids
-    do not exist yet: the spawner names them)."""
+    listing shows) for how many tasks, and which tasks; a journal whose event
+    carries no lane count names the tasks alone (lane ids do not exist yet: the
+    spawner names them)."""
     tasks_raw = event.get("tasks")
     tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
     n = len(tasks)
@@ -325,7 +324,7 @@ def _parallel_failed_body(event: dict[str, Any]) -> str | None:
     """A `/parallel` dispatch failure (nothing was joined): name the group + error.
 
     Two shapes: a dispatch failure carries `error`; a post-join failure carries
-    only `lanes` -- a subset of the joined event, which already showed each
+    only `lanes`, a subset of the joined event, which already showed each
     lane's status, so it renders nothing rather than a redundant marker.
     """
     error = str(event.get("error", "")).strip()
@@ -337,8 +336,8 @@ def _parallel_failed_body(event: dict[str, Any]) -> str | None:
 def _mcp_unavailable_body(event: dict[str, Any]) -> str:
     """A configured MCP server that did not start: why, and what it costs.
 
-    The tools it would have carried are simply absent, so without this the run
-    looks normal and quietly cannot do what the operator configured it for. The
+    The tools it would have carried are absent, so without this the run looks
+    normal and quietly cannot do what the operator configured it for. The
     error already names the server (every startup-path MCPError does), so the
     line adds only the consequence.
     """
@@ -349,7 +348,7 @@ def _mcp_unavailable_body(event: dict[str, Any]) -> str:
     return f"{error}; its tools are missing"
 
 
-# Events that render as a marker BETWEEN turns, each composing its own body.
+# Events that render as a marker between turns, each composing its own body.
 # A builder returning None renders nothing.
 def _compact_requested_body(event: dict[str, Any]) -> str:
     focus = str(event.get("focus", "")).strip()
@@ -404,7 +403,7 @@ def _pending_key(event: dict[str, Any], name: str) -> int | str:
     return cid if isinstance(cid, int) else name
 
 
-# The roles whose output IS the session talking. Derived from the code table so
+# The roles whose output is the session talking. Derived from the code table so
 # it cannot drift: everything else (verify_inferer, summariser,
 # reviewer) is a side call whose raw answer is not addressed to the operator.
 DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values())
@@ -525,11 +524,11 @@ class TranscriptFold:
             # The settled text, used only when no deltas arrived: a streaming
             # leg already has the same prose in `self._text`.
             #
-            # Only the role DRIVING the session speaks. agent6 makes side calls
-            # with their own roles -- the verify-command inferer runs before the
-            # loop starts -- and folding their results as messages opened an ACP
-            # editor and the web conversation with a bare "[]", the inferer's
-            # answer for "no verify command found", looking like the agent.
+            # Only the role driving the session speaks. agent6 makes side calls
+            # with their own roles (the verify-command inferer runs before the
+            # loop starts), and folding their results as messages would open a
+            # conversation with the inferer's bare "[]" answer for "no verify
+            # command found", looking like the agent.
             settled = "" if self._is_side_call(event) else str(event.get("text", ""))
             return self._flush_message(settled=settled)
         if etype == "tool.call":
@@ -579,9 +578,9 @@ class TranscriptFold:
             out.extend(self._flush_message())
             counts = self._receipt_detail()
             reason = str(event.get("reason", ""))
-            # Pair the finish summary with the done line ONLY on a clean finish
+            # Pair the finish summary with the done line only on a clean finish
             # (a run's finish_session, a plan's finish_planning). On a
-            # failure/stop the summary is from an EARLIER finish call and
+            # failure/stop the summary is from an earlier finish call and
             # pairing it (e.g. "provider error  Plan seeded.") misreads as success.
             body = self._finish if reason in ("", "finish_session", "finish_planning") else ""
             out.append(
@@ -591,7 +590,7 @@ class TranscriptFold:
                     # The gate's tri-state, not a bool: null (no gate ran, or
                     # the operator ended the run) is neither pass nor fail;
                     # flattened, `stopped` and a gateless finish would take the
-                    # failure colour of a finish over a RED gate, which exits 4.
+                    # failure colour of a finish over a red gate, which exits 4.
                     ok=all_passed
                     if isinstance(all_passed := event.get("all_passed"), bool)
                     else None,
@@ -603,8 +602,8 @@ class TranscriptFold:
         return []
 
     def _is_side_call(self, event: dict[str, Any]) -> bool:
-        """Whether this result belongs to a role other than one that DRIVES a
-        session -- an inferer, summariser or reviewer.
+        """Whether this result belongs to a role other than one that drives a
+        session: an inferer, summariser or reviewer.
 
         Allowlisted from the SessionKind table rather than listing the side
         roles, so a new driving mode is covered and a new side call is silent by
@@ -622,7 +621,7 @@ class TranscriptFold:
             out.append(TranscriptItem("thinking", body=thinking))
         text = "".join(self._text).strip() or settled.strip()
         self._text.clear()
-        if text:  # only when non-empty: no more blank response blocks
+        if text:  # only when non-empty: a blank response block renders nothing
             out.append(TranscriptItem("text", body=text))
         return out
 
@@ -684,7 +683,7 @@ class TranscriptFold:
             ok = tool_result_ok(event.get("ok"))
             detail = str(event.get("summary", "")).strip()
         # A failed tool shows why (stderr, else stdout). On success the tail is
-        # the item's substance: command output (the operator ran it to SEE it),
+        # the item's substance: command output (the operator ran it to see it),
         # a read's head preview with the true line count, or the edit's hunk
         # carried from the call side. Absent fields degrade to no tail.
         if not ok:

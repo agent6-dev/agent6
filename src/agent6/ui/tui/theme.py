@@ -9,7 +9,7 @@ persists any change.
 Design: keep one quiet accent for focus and a calm, low-contrast resting state
 (the lazygit/openapi-tui feel). All widget CSS across the TUI already uses
 Textual theme variables ($primary, $accent, $surface, $panel, $text…), so
-switching the theme re-skins everything for free — this module only chooses the
+switching the theme re-skins everything for free: this module only chooses the
 palettes and remembers the choice (in `ui.toml`, never the agent config).
 """
 
@@ -48,7 +48,7 @@ AGENT6_DARK = Theme(
     name="agent6-dark",
     primary="#7AA2F7",  # selection / cursor / resting card borders
     secondary="#9ECE6A",  # green; no agent6 widget styles it directly (textual palette slot)
-    accent="#06F5F3",  # focus borders, button/action text, key hints -- a vivid neon cyan
+    accent="#06F5F3",  # focus borders, button/action text, key hints: a vivid neon cyan
     foreground="#C0CAF5",
     # Near-black teal (the cyan brand's neutral): screen < card < panel, so
     # tables/panels read as raised surfaces over an almost-black background.
@@ -59,8 +59,8 @@ AGENT6_DARK = Theme(
     warning="#E0AF68",
     error="#F7768E",
     dark=True,
-    # The footer the baseline had: warm amber keys + neutral labels (reads more
-    # "modern" than green keys on lavender text).
+    # The footer: warm amber keys + neutral labels (reads more "modern" than
+    # green keys on lavender text).
     variables={
         "footer-key-foreground": "#FFA62B",
         "footer-foreground": "#E0E0E0",
@@ -206,7 +206,7 @@ _SCROLLBAR_BAR = Color.parse("bright_magenta")
 
 
 class ThinScrollBarRender(ScrollBarRender):
-    """Horizontal scrollbar thumbs at HALF cell height: a terminal cell is about
+    """Horizontal scrollbar thumbs at half cell height: a terminal cell is about
     twice as tall as it is wide, so textual's full-cell horizontal thumb reads
     twice as heavy as a one-cell-wide vertical bar. The thumb body is a lower
     half-block band with quadrant end caps for half-cell granularity; vertical
@@ -280,7 +280,7 @@ class PlainNotify:
     """Mix into an App (before App in the bases): notifications carry text,
     never markup. Every toast here relays a message assembled elsewhere (a
     refusal naming `[git].dirty_tree`, a path, an error), and textual's
-    default markup parse ate the bracketed parts ("set .dirty_tree=stash")."""
+    default markup parse eats the bracketed parts ("set .dirty_tree=stash")."""
 
     def notify(
         self,
@@ -304,9 +304,9 @@ class PlainNotify:
 class MuxPointerShapes:
     """Mix into an App (before App in the bases): re-emits the kitty
     pointer-shape OSC (`ESC ] 22 ; <shape> BEL`) wrapped for tmux/screen
-    passthrough. textual writes it bare, which a multiplexer swallows -- the
-    same lesson as bare OSC 52 copy -- so the I-beam over text never reached
-    the outer terminal under byobu."""
+    passthrough. textual writes it bare, which a multiplexer swallows (as it
+    swallows a bare OSC 52 copy), so the I-beam over text never reaches the
+    outer terminal under byobu."""
 
     def _set_pointer_shape(self, shape: str) -> None:
         driver = getattr(self, "_driver", None)
@@ -317,9 +317,9 @@ class MuxPointerShapes:
 def setup_theme(app: App[Any]) -> None:
     """Register the built-in themes, apply the saved one, and persist changes.
 
-    Call from `App.on_mount`. Subscribing to `theme_changed_signal` means
-    EVERY path that changes the theme — the View>Theme picker, the built-in
-    Ctrl+P "change theme" palette — is remembered, with no extra wiring.
+    Call from `App.on_mount`. Subscribing to `theme_changed_signal` means every
+    path that changes the theme (the View>Theme picker, the built-in Ctrl+P
+    "change theme" palette) is remembered, with no extra wiring.
     Also installs the half-height horizontal scrollbar renderer (a class-level
     hook, so one assignment restyles every bar in the process)."""
     ScrollBar.renderer = ThinScrollBarRender
@@ -376,8 +376,8 @@ class ThemePicker(ModalScreen[None]):
             names.insert(0, current)
         with Vertical(id="theme-box"):
             yield Static("Theme", id="theme-title")
-            # Just the scrollable list -- no button below (it added a cross-scroll
-            # focus stop). Close with Esc or a click outside (handled below).
+            # Just the scrollable list, no button below (a button adds a
+            # cross-scroll focus stop). Close with Esc or a click outside.
             with VerticalScroll(id="theme-scroll"):
                 yield ChoiceField(tuple(names), current, id="theme-list")
             # Two balanced lines: the 44-wide box would wrap one line mid-phrase.

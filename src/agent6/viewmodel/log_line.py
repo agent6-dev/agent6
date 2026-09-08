@@ -3,7 +3,7 @@
 """One-line renderings of a run's events for the log views: the argument
 preview every tool call carries, and the `format_log_line` row.
 
-One line means one line: every log pane paints the return value as a row."""
+Every log pane paints the return value as one row."""
 
 from __future__ import annotations
 
@@ -34,8 +34,8 @@ def _render_arg_value(key: str, value: Any) -> str:
         q = first.get("question", "") if isinstance(first, dict) else str(first)
         return str(q) + (f" (+{len(value) - 1})" if len(value) > 1 else "")
     if key == "edits" and isinstance(value, (list, tuple)) and value:
-        # apply_edit: the kinds (replace/create), not the raw {old_string, ...}
-        # dict repr that flooded the drawer + TUI tool table.
+        # apply_edit: the kinds (replace/create), not the raw
+        # {old_string, ...} dict repr.
         return ", ".join(_edit_kind(e) if isinstance(e, dict) else str(e) for e in value)
     return value if isinstance(value, str) else repr(value)
 
@@ -199,7 +199,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
     line = f"{ts[11:23] if len(ts) > 23 else ts}  {etype:<18}"
     # The salient text embeds model-authored fields (args, summaries, output
     # tails): scrub the finished line so no skin's log pane relays an escape.
-    # ONE line by contract: the scrubber keeps \n (a transcript needs it), and
+    # One line by contract: the scrubber keeps \n (a transcript needs it), and
     # a provider error carrying an SSE dump would paint a dozen rows with no
     # timestamp and no event name on any of them.
     if not salient:

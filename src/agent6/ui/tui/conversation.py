@@ -3,18 +3,18 @@
 """A full-screen, scrollable view of a run's LLM conversation (current or past).
 
 The companion to `LogScreen`: it folds the same `logs.jsonl` stream through
-the shared `TranscriptFold` into the conversation -- assistant reasoning and
-text, every tool call with its result, commits, and the verdict -- with the same
+the shared `TranscriptFold` into the conversation (assistant reasoning and
+text, every tool call with its result, commits, and the verdict) with the same
 glyphs the CLI stream uses.
 
 Completed turns scroll in the main pane; a docked live pane at the bottom streams
-the turn IN PROGRESS -- a reasoning model can think for 30-60s before producing a
-tool call, so without it the view looks frozen.
+the turn in progress, since a reasoning model can think for 30-60s before
+producing a tool call and the view would otherwise look frozen.
 
 The scrollback is a `Static` in a `VerticalScroll` (not a `RichLog`): a
 `RichLog` renders as line Strips, which the framework's text selection cannot
 extract, so its text is not copyable; a `Static` renders as `Content` and is
-selectable -- matching the live pane, which is already a `Static`.
+selectable, matching the live pane, which is already a `Static`.
 """
 
 from __future__ import annotations
@@ -74,9 +74,9 @@ from agent6.viewmodel.transcript import (
 from agent6.viewmodel.transcript_style import DetailLevel, Line, StyleName, item_lines
 
 _LIVE_TAIL = 1600  # chars of the in-progress turn kept in the live pane
-# Sealed-chunk size for the transcript body. The body is a SEQUENCE of Static
-# chunks, not one widget: appending to a single Static re-wraps the WHOLE
-# transcript every poll (185ms at ~1800 lines, and growing -- the live-run input
+# Sealed-chunk size for the transcript body. The body is a sequence of Static
+# chunks, not one widget: appending to a single Static re-wraps the whole
+# transcript every poll (185ms at ~1800 lines, and growing: the live-run input
 # lag), while only the small tail chunk ever changes here.
 _CHUNK_LINES = 200
 
@@ -93,7 +93,7 @@ def _tail(text: str, n: int) -> str:
 
 
 # Semantic style name -> Rich style. The CLI has the sibling ANSI map; both skins
-# render item_lines(), so the structure and which element is coloured live in ONE
+# render item_lines(), so the structure and which element is coloured live in one
 # place (transcript_style) and can't drift.
 _STYLE_RICH: dict[StyleName, str] = {
     "thinking": "#6C7086",
@@ -137,7 +137,7 @@ def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text
     return out
 
 
-# What Enter in the composer does: steer a LIVE session, resume a finished
+# What Enter in the composer does: steer a live session, resume a finished
 # one with a follow-up, or start a new session from a draft.
 
 
@@ -239,7 +239,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
     )
 
     # The composer bar owns plain letters + Enter, so every shortcut here is a
-    # priority binding (fires before the bar) on a modified key -- the same set,
+    # priority binding (fires before the bar) on a modified key: the same set,
     # in the same footer order, as the dashboard. Everything else lives in the
     # menu bar (which shows the shortcuts from these bindings) and the palette.
     # `?` opens help too, when focus is not in the bar.
@@ -285,7 +285,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._detail: DetailLevel = "collapsed"  # one shortcut cycles none/collapsed/expanded
         self._tail = LogTail(logs_path)
         self._fold = TranscriptFold()
-        self._content = Text()  # the WHOLE transcript (copy + anchor bookkeeping)
+        self._content = Text()  # the whole transcript (copy + anchor bookkeeping)
         self._item_starts: list[int] = []  # logical start line of each rendered item (anchor)
         self._content_lines = 0  # total logical lines in _content
         # The not-yet-sealed tail of the transcript: the only widget content the
@@ -535,7 +535,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         if not self._host_live():
             # The deltas of the turn a killed worker never finished sit in the
             # buffers forever (only role.call/role.result clear them), so this
-            # pane would keep saying "thinking…" over a corpse -- on the primary
+            # pane would keep saying "thinking…" over a corpse, on the primary
             # view, which carries no status label to contradict it.
             live.display = False
             self._settle_dead()
@@ -622,16 +622,16 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             self._flush_tail()
         elif items and self._detail == "hidden":
             # A conversation of reasoning and tool calls alone renders no line at
-            # the "hidden" level; the placeholder for an EMPTY conversation would
+            # the "hidden" level; the placeholder for an empty conversation would
             # lie over it. (A call still in flight renders no sealed line at any
             # level and shows in the live pane.)
             note = "(reasoning and tool calls are hidden at this detail level; Ctrl+T shows them)"
             self._tail_widget().update(Text(note, style="dim italic"))
         else:
-            # Past tense only when the host POSITIVELY knows the session ended.
+            # Past tense only when the host positively knows the session ended.
             # `_host_live`'s event-derived fallback is False before the first
             # event, so using it here would promise nothing to a run that has
-            # simply not started streaming yet -- the same lie, inverted.
+            # not started streaming yet: the same lie, inverted.
             live_fn = getattr(self.app, "session_controllable", None)
             ended = callable(live_fn) and not live_fn()
             word, detail = getattr(self.app, "dir_status", ("", ""))
@@ -667,7 +667,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
                     scroll.scroll_end(animate=False)
             return
         scroll = self._scroll()
-        following = self._at_bottom(scroll)  # BEFORE this frame's layout changes
+        following = self._at_bottom(scroll)  # before this frame's layout changes
         wrote = False
         for event in new_events:
             self._track_live(event)
@@ -677,7 +677,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             self._flush_tail()
         self._render_live()
         self._sync_input()
-        # Re-pin AFTER the live pane / steer bar have (re)sized this frame: growing
+        # Re-pin after the live pane / steer bar have (re)sized this frame: growing
         # them shrinks the scroll viewport and would otherwise nudge us off the exact
         # bottom, silently dropping follow mode even when nothing new was appended.
         if following:
@@ -800,10 +800,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         return self._content.plain, "whole transcript"
 
     def _body_selection(self) -> str | None:
-        """Selected text from the transcript BODY only (its chunk Statics, in
+        """Selected text from the transcript body only (its chunk Statics, in
         document order), so a drag that strays over the footer or live pane
-        never copies their text -- Textual's screen-wide get_selected_text()
-        would otherwise include them (they are chrome)."""
+        never copies their text: Textual's screen-wide get_selected_text() would
+        otherwise include them (they are chrome)."""
         parts: list[str] = []
         for chunk in self.query(".conv-chunk"):
             selection = self.selections.get(chunk)

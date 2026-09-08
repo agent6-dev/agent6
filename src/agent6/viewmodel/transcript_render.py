@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Render a session's per-call provider transcripts into a readable conversation.
 
-agent6 writes one JSON file per LLM round-trip under `<run>/transcripts/` --
+agent6 writes one JSON file per LLM round-trip under `<run>/transcripts/`:
 the full, lossless `{request, response}` (secrets redacted). Each request
 carries the whole conversation up to that call, so the sequence is a complete,
 self-contained record (no join with `logs.jsonl` needed). This module folds
@@ -27,7 +27,7 @@ from typing import Any
 
 from agent6.providers import result_text
 
-# Matches ELISION_PREFIX in workflows/_compaction.py -- duplicated so the
+# Matches ELISION_PREFIX in workflows/_compaction.py, duplicated so the
 # read-model needs no runtime import of the engine; a test pins the equality
 # and the placeholder bytes themselves are pinned in the compaction tests.
 ELISION_MARKER_PREFIX = "<elided by context compaction"
@@ -52,28 +52,26 @@ class Turn:
     seq: int = 0
 
 
-# The seats whose round-trips ARE the conversation: the loop's driving provider,
-# whose role differs by mode ("planner" in plan mode). Everything else shares the
-# run's sink but is a side-call -- the gist distiller, the tier-2 summariser, a
-# review seat -- and a side-call's one-message request reads as a
-# compaction restart to the fold below, which then printed a phantom "context
-# summarised" marker, rendered its scratch prompt as a turn, and re-emitted the
-# history behind it. A transcript written before seats were stamped has none and
-# is the driving seat's by default.
+# The seats whose round-trips are the conversation: the loop's driving provider,
+# whose role differs by mode ("planner" in plan mode). Everything else (the gist
+# distiller, the tier-2 summariser, a review seat) shares the run's sink but is a
+# side-call, and a side-call's one-message request reads as a compaction restart
+# to the fold below. A transcript with no stamped seat is the driving seat's.
 CONVERSATION_SEATS = frozenset({"worker", "planner"})
 
 
 def transcript_seq(t: dict[str, Any]) -> int:
     """A transcript's run-global seq, 0 when the record carries no integer one:
     the one owner of that coercion for the sort, the `(seq N)` label and the
-    `--seq` window, which a hand-edited or corrupt `seq` crashed."""
+    `--seq` window, which a hand-edited or corrupt `seq` would otherwise
+    crash."""
     seq = t.get("seq", 0)
     return seq if isinstance(seq, int) else 0
 
 
 def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
     """Every transcript JSON object under a session's transcripts/ dir, in seq
-    order -- ALL seats. The raw list is `sessions transcript --json`'s output, the
+    order, all seats. The raw list is `sessions transcript --json`'s output, the
     one CLI surface for a side-call's actual request/response; the conversation
     fold filters for itself (`conversation_transcripts`)."""
     if not transcripts_dir.is_dir():
@@ -137,7 +135,7 @@ def _item_text(item: dict[str, Any]) -> str:
 def _responses_turns(items: list[Any], names: dict[str, str]) -> list[Turn]:
     """Responses items -> turns. One model response spans several items
     (reasoning, a message, function calls), so consecutive assistant-side items
-    fold into ONE assistant turn; a user message or a call output ends it."""
+    fold into one assistant turn; a user message or a call output ends it."""
     turns: list[Turn] = []
     current: Turn | None = None
 
@@ -291,7 +289,7 @@ def _response_turns(resp: dict[str, Any], shape: str, names: dict[str, str]) -> 
         choices = resp.get("choices") or []
         if not choices:
             return []
-        # A response message IS the assistant's, so stamp the role rather than
+        # A response message is the assistant's, so stamp the role rather than
         # trusting the body to carry it: the streaming path synthesises the
         # message without one.
         message = {**_as_dict(choices[0].get("message")), "role": "assistant"}
@@ -335,7 +333,7 @@ def _elision_marker(prev: list[Any], msgs: list[Any], upto: int) -> str:
     """Marker text when old tool_results were mutated into elision placeholders
     between two request snapshots, or "" when none were. The conversation view
     keeps showing the original results; this line is the truth about what the
-    MODEL still sees. Compares identity COUNTS, not placeholder bytes: a gist
+    model still sees. Compares identity counts, not placeholder bytes: a gist
     demoting to the bare marker is not re-reported, while a second result of
     the same identity elided in a later pass still is."""
     labels: list[str] = []
@@ -363,12 +361,12 @@ def _elision_marker(prev: list[Any], msgs: list[Any], upto: int) -> str:
 def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     """Fold per-call transcripts into one ordered conversation (no double-print).
 
-    Reconciles each request against the PRIOR one instead of predicting: a
+    Reconciles each request against the prior one instead of predicting: a
     recorded response only reappears as the next request's `msgs[prev_len]`
     when the history actually grew. Error transcripts (a 5xx body) and
-    empty-response retries re-send the identical message list, so blindly
-    assuming one committed assistant message per transcript misread every
-    provider retry as a compaction restart and re-printed the whole history.
+    empty-response retries re-send the identical message list, so assuming one
+    committed assistant message per transcript would misread every provider
+    retry as a compaction restart and re-print the whole history.
 
     Folds only the conversation seats: a side-call's one-message request reads
     as a restart here (see `CONVERSATION_SEATS`).

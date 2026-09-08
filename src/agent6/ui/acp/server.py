@@ -5,7 +5,7 @@
 Framing is line-delimited JSON with a bounded read, the same shape
 `ui/mcp_server.py` uses and for the same reason: an unbounded `readline`
 buffers a whole line before any size check, so a runaway client could exhaust
-memory before the cap could refuse it. The dispatch is NOT shared -- different
+memory before the cap could refuse it. The dispatch is not shared: different
 protocol, different methods.
 """
 
@@ -60,7 +60,7 @@ class _Pending:
 
 
 def capabilities_from(_client: dict[str, Any]) -> FrontendCapabilities:
-    """What the CLIENT said it can do, as the seam every front-end declares.
+    """What the client said it can do, as the seam every front-end declares.
 
     `session/request_permission` is required of every ACP client, so a
     connected one can always be asked."""
@@ -81,7 +81,7 @@ class ACPServer:
     # stream session/update, and two interleaved writes are a line no editor
     # can parse.
     _write_lock: threading.Lock = field(default_factory=threading.Lock)
-    # Requests WE sent the client, awaiting its answer.
+    # Requests we sent the client, awaiting its answer.
     _pending: dict[object, _Pending] = field(default_factory=dict)
     _pending_lock: threading.Lock = field(default_factory=threading.Lock)
     _next_id: int = 0
@@ -148,8 +148,8 @@ class ACPServer:
         """`(id, method, params)`, or None when there is nothing to act on.
 
         A malformed line has no id to answer against, which is the one case
-        with no reply at all -- and dropping it beats ending the session an
-        editor is mid-conversation on.
+        with no reply at all; dropping it beats ending the session an editor is
+        mid-conversation on.
         """
         try:
             message = json.loads(line)
@@ -161,7 +161,7 @@ class ACPServer:
         method = message.get("method")
         raw = message.get("params")
         if not isinstance(method, str):
-            # A message with no method and an id we allocated is the CLIENT
+            # A message with no method and an id we allocated is the client
             # answering something we asked: the reply path for
             # session/request_permission.
             if req_id is not None and self._deliver(req_id, message):
@@ -176,10 +176,10 @@ class ACPServer:
 
         The read loop is the only thing that delivers a client's answer, so
         once it is gone a worker waiting on an approval waits the full
-        permission timeout -- far longer than the EOF grace, so the process
-        always exited and killed the run it was trying to let finish. The
-        seam already reads an empty answer as the cautious deny, so the run
-        reaches its next boundary and the stop marker takes effect.
+        permission timeout, far longer than the EOF grace: the process would
+        exit and kill the run it was trying to let finish. The seam already
+        reads an empty answer as the cautious deny, so the run reaches its next
+        boundary and the stop marker takes effect.
         """
         with self._pending_lock:
             waiting = list(self._pending.values())
@@ -192,8 +192,8 @@ class ACPServer:
         ours."""
         if "result" not in message and "error" not in message:
             # A JSON-RPC response carries one or the other. Without this, any
-            # malformed frame that happened to carry an outstanding id became
-            # that approval's answer -- and an unreadable answer denies.
+            # malformed frame carrying an outstanding id would become that
+            # approval's answer, and an unreadable answer denies.
             return False
         with self._pending_lock:
             slot = self._pending.pop(req_id, None)
@@ -211,10 +211,10 @@ class ACPServer:
         timeout_s: float,
         until: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
-        """Ask the CLIENT something and wait for its answer.
+        """Ask the client something and wait for its answer.
 
-        Called from a worker thread, never from the read loop -- the loop is
-        what delivers the answer, so waiting on it there would deadlock. A
+        Called from a worker thread, never from the read loop: the loop
+        delivers the answer, so waiting on it there would deadlock. A
         timeout answers with nothing rather than wedging the turn: an editor
         that never replies must not cost the session. So does *until*
         holding (polled every 0.2 s): the question was answered by another
@@ -257,10 +257,10 @@ class ACPServer:
 
     def _session_cancel(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         # A notification in ACP: no reply, and it must land while the turn it
-        # cancels is still running -- which is why the turn is not on this
-        # thread. A cancel for a session this server does not have would otherwise vanish
-        # with zero bytes written, so the stop button does nothing and says
-        # nothing; tell the editor instead.
+        # cancels is still running, which is why the turn is not on this
+        # thread. A cancel for a session this server does not have would
+        # otherwise vanish with zero bytes written, so the stop button does
+        # nothing and says nothing; tell the editor instead.
         sessions = self._sessions()
         try:
             sessions.cancel(sessions.get(params))
@@ -280,7 +280,7 @@ class ACPServer:
             "protocolVersion": PROTOCOL_VERSION,
             "agentCapabilities": {
                 # `session/load` is what v2 reorganises, and resume is where
-                # agent6 has the most of its own semantics. Absent, not half.
+                # agent6 has the most of its own semantics.
                 "loadSession": False,
                 # Not advertised: `prompt_text` keeps only text blocks, and a
                 # resource block's uri is client-controlled, so passing one

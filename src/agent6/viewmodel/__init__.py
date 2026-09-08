@@ -3,17 +3,21 @@
 """The shared view-model: the JSONL event stream folded into render-ready state.
 
 This is the data contract every front-end consumes. The CLI, the textual TUI,
-and the web UI all read the same `<run-dir>/logs.jsonl`, fold it through
+the web UI and ACP all read the same `<run-dir>/logs.jsonl`, fold it through
 the same pure functions here, and only differ in how they paint the result.
-Keeping the fold in one place is what stops the front-ends from drifting.
 
 Layout:
+    events.py            typed read model of the event families the fold consumes.
     state.py             pure event-fold: list[event] -> SessionState (a run / agent state).
     machine_state.py     pure fold: machine journal -> MachineState (+ the watch cursor).
     tail.py              stdlib JSONL file tailer (the event source).
     transcript.py        event-fold: logs.jsonl -> live conversation TranscriptItems.
+    transcript_style.py  one styled-line renderer for a folded TranscriptItem.
     transcript_render.py fold + Markdown render of the per-call provider transcripts.
     listing.py           run-dir scan -> SessionSummary rows (sessions list / pickers).
+    log_line.py          one-line renderings of an event for the log views.
+    snapshot.py          the one-object wire snapshots (a session's, a machine's).
+    policy.py            a session's policy facts, folded from its dir.
     format.py            shared glyphs + cost/status formatting.
     config_view.py       effective-config tree -> the `config show` view.
 

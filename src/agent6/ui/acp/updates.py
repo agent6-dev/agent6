@@ -3,9 +3,9 @@
 """Project the shared transcript fold into ACP `session/update` notifications.
 
 The fold (`viewmodel.transcript`) is what the CLI, the TUI and the web already
-render. Projecting it -- rather than reading the journal again with ACP's own
-rules -- is what keeps a fourth surface from disagreeing with the other three
-about what happened in a run.
+render. Projecting it, rather than reading the journal again with ACP's own
+rules, keeps a fourth surface from disagreeing with the other three about what
+happened in a run.
 
 Pure: events in, notification bodies out. Nothing here touches the wire, so a
 test can assert the exact JSON an editor would receive.
@@ -19,15 +19,15 @@ from agent6.viewmodel.transcript import TranscriptItem
 
 # Which ACP update a fold item becomes. `thinking` is the model's reasoning and
 # ACP has a distinct channel for it; an editor renders it collapsed rather than
-# as the answer. `operator` is the human's own words -- a steer, or the
-# follow-up a resume began with -- so it echoes back as a user message, not as
-# something the agent said.
+# as the answer. `operator` is the human's own words (a steer, or the follow-up
+# a resume began with), so it echoes back as a user message, not as something
+# the agent said.
 _CHUNK_KIND = {
     "thinking": "agent_thought_chunk",
     "text": "agent_message_chunk",
     "operator": "user_message_chunk",
     # Harness prose: a compaction, a btw answer, an operator notice. Not the
-    # model speaking, but it IS what the run said.
+    # model speaking, but what the run said.
     "marker": "agent_message_chunk",
 }
 
@@ -58,7 +58,7 @@ def updates_for(
         ]
     if item.kind == "commit":
         # `body` is empty on a commit; the sha and the line count live in
-        # `detail`. Keying on body alone dropped every auto-commit.
+        # `detail`.
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)
         return [
             _update(
@@ -93,15 +93,14 @@ def ending(item: TranscriptItem) -> str:
     """How a run ended, in words.
 
     The fold sets `body` only for a clean `finish_session`, carrying everything
-    else in `ok`/`name`/`detail`. Reading `body` alone made a provider error, a
-    budget stop and an iteration cap render as SILENCE -- an editor watching a
-    run that simply stops -- and made a finish over a red gate look identical
-    to a green one.
+    else in `ok`/`name`/`detail`. Reading `body` alone would render a provider
+    error, a budget stop and an iteration cap as silence, and make a finish
+    over a red gate look identical to a green one.
 
-    The words are the status vocabulary every other surface uses: "passed"
-    only for all-gates-green, otherwise the end reason's own label --
-    "finished" is a deliberate finish that verified nothing (a gateless run),
-    never a failure verdict like "did not pass" implied.
+    The words are the status vocabulary every other surface uses: "passed" only
+    for all-gates-green, otherwise the end reason's own label. "finished" is a
+    deliberate finish that verified nothing (a gateless run), not a failure
+    verdict.
     """
     word = "passed" if item.ok else (item.name or "ended")
     parts = [f"Session {word}"]
@@ -116,8 +115,8 @@ def message_update(acp_session_id: str, text: str) -> dict[str, Any]:
 
     What the harness says when there is no run to say it: a cancel for a
     session that does not exist, a run that died before it had a journal. Both
-    otherwise wrote zero bytes, and an editor cannot render silence. Marked as
-    agent6's own, because the model did not say it.
+    would otherwise put nothing on the wire, and an editor cannot render
+    silence. Marked as agent6's own, because the model did not say it.
     """
     return _update(
         acp_session_id,
@@ -136,11 +135,10 @@ def _update(acp_session_id: str, update: dict[str, Any]) -> dict[str, Any]:
 def printable(text: str) -> str:
     """Model-authored text, with control characters dropped.
 
-    Every string this front-end puts on the wire that the MODEL had a hand in
-    goes through here. Applying it only to ContentBlocks left two ways past
-    it: a tool call's `title` (the model's own argv, via `salient_arg`) and a
-    permission request's title and option names -- the latter being the one
-    surface an operator MUST read before granting a command.
+    Every string this front-end puts on the wire that the model had a hand in
+    goes through here: a ContentBlock, a tool call's `title` (the model's own
+    argv, via `salient_arg`), and a permission request's title and option
+    names, the one surface an operator must read before granting a command.
     """
     return "".join(c for c in text if c.isprintable() or c in "\n\t")
 
@@ -151,7 +149,7 @@ def _text(text: str) -> dict[str, Any]:
     Every string this module puts on the wire goes through here, and most of
     them are model-authored. The fold scrubs its own previews and deltas
     (viewmodel.transcript.scrub_terminal_controls), but the renderer here is a
-    THIRD PARTY: agent6 does not get to assume it treats an escape as inert,
+    third party: agent6 does not get to assume it treats an escape as inert,
     so this layer scrubs everything it emits regardless. `isprintable` is
     false for every C0/C1 control, so a sequence loses its ESC and becomes
     the literal text it was pretending not to be.
@@ -169,16 +167,15 @@ def _tool_status(item: TranscriptItem) -> str:
 
 
 def _tool_content(item: TranscriptItem) -> list[dict[str, Any]]:
-    """What the tool produced, in ACP's TAGGED shape.
+    """What the tool produced, in ACP's tagged shape.
 
     `ToolCallContent` is a discriminated union (`content` | `diff` |
-    `terminal`), not a bare ContentBlock array. Sending the bare array made a
-    strict client reject the whole notification, so the `completed`/`failed`
-    it carried never arrived and the call announced a line earlier stayed
-    `pending` for the rest of the session.
+    `terminal`), not a bare ContentBlock array. A bare array makes a strict
+    client reject the whole notification, so its `completed`/`failed` never
+    arrives and the call stays `pending` for the rest of the session.
 
-    `tail` is the failure's actual output -- a red gate's test log, a command's
-    stderr. The fold fills it for exactly this, and dropping it left an editor
+    `tail` is the failure's actual output (a red gate's test log, a command's
+    stderr). The fold fills it for exactly this; dropping it leaves an editor
     showing "failed" with no reason.
     """
     body = "\n".join(part for part in (item.detail, item.tail) if part)

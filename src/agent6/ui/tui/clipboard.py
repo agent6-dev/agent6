@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Copy-to-clipboard primitives for the TUI, framework-agnostic.
 
-Over SSH the only route to the operator's LOCAL clipboard is OSC 52 through the
+Over SSH the only route to the operator's local clipboard is OSC 52 through the
 terminal (a remote xclip/wl-copy would hit the server's non-existent clipboard).
 byobu/tmux swallow a bare app OSC 52 unless configured, so we offer wrapped
 variants and tmux's own set-buffer. `resolve_method("auto")` picks a sane
@@ -48,7 +48,7 @@ def osc52_sequence(text: str, *, wrap: str) -> str:
 
 
 def mux_passthrough(seq: str) -> str:
-    """Wrap a terminal escape for the ACTIVE multiplexer's passthrough (tmux DCS
+    """Wrap a terminal escape for the active multiplexer's passthrough (tmux DCS
     with doubled inner ESCs; GNU screen DCS), else return it bare. Inside tmux
     the outer terminal additionally needs `allow-passthrough on` (off by
     default since tmux 3.3)."""

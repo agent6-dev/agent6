@@ -32,7 +32,7 @@ header .brand { font-weight: 700; letter-spacing: .3px; }
 header .brand b { color: var(--accent); }
 header .spacer { flex: 1; }
 /* min-height keeps the header the same height with an empty crumb (hub,
-   config): without it the bar shrank 21px and views jumped on navigation. */
+   config): without it the bar shrinks 21px and views jump on navigation. */
 header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 21px; }
 button, .btn {
   font: inherit; color: var(--text); background: var(--surface2); border: 1px solid var(--border);
@@ -80,7 +80,7 @@ main { padding: 0; }
   .grid.cols2 > :nth-child(2n) { border-left: 1px solid var(--border); }
   .grid.cols2 > :nth-child(n+3) { border-top: 1px solid var(--border); }
   /* A full-width row inside a cols2 grid (the machine view's conversation:
-     half-width left an empty cell beside it). */
+     half-width leaves an empty cell beside it). */
   .grid.cols2 > .span2 { grid-column: 1 / -1; }
 }
 
@@ -150,7 +150,7 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 .conv { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
 .conv .ci { padding: 2px 4px; margin: 0 -4px 8px; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
 .conv .ci.exp { cursor: pointer; }
-/* hover-capable devices only: on touch, a tap left the hover background stuck */
+/* hover-capable devices only: on touch, a tap leaves the hover background stuck */
 @media (hover: hover) { .conv .ci.exp:hover { background: var(--surface2); } }
 .conv .s-thinking { color: var(--muted); font-style: italic; }
 .conv .s-think-marker { color: var(--accent); }
@@ -270,8 +270,8 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }
-  /* The top bar is a compact FIXED strip, the mirror of the bottom tab bar:
-     sticky slid away with horizontal overflow, fixed never moves. It takes no
+  /* The top bar is a compact fixed strip, the mirror of the bottom tab bar:
+     sticky slides away with horizontal overflow, fixed never moves. It takes no
      flow space, so main pads down to clear it (--hdr-h = 6+34+6 padding+row
      plus the 1px border). */
   :root { --hdr-h: 47px; }
@@ -334,7 +334,7 @@ aside.rail { display: none; }
   padding: 6px 22px calc(10px + env(safe-area-inset-bottom));
 }
 /* Docked at the screen bottom there is no room to drag a native bottom-right
-   resize grip down; the strip along the dock's TOP resizes instead (drag up). */
+   resize grip down; the strip along the dock's top resizes instead (drag up). */
 .composer.dock textarea.field { min-height: 46px; resize: none; }
 .composer .grow-grip { height: 8px; margin: 0 0 2px; cursor: ns-resize; border-radius: 4px; }
 @media (hover: hover) { .composer .grow-grip:hover, .composer .grow-grip.dragging { background: var(--border); } }
@@ -347,7 +347,7 @@ aside.rail { display: none; }
 @media (min-width: 781px) {
   .run-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
   /* prompts / controls / status keep their natural height; only the body pane
-     flexes (without this the column SHRINKS them and clips the status kv) */
+     flexes (without this the column shrinks them and clips the status kv) */
   .run-app > * { flex: none; }
   .run-app > .page-pad { max-height: 40vh; overflow: auto; } /* a prompt pile can't push the composer off-screen */
   .run-app .run-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
@@ -360,7 +360,7 @@ aside.rail { display: none; }
     overflow: auto; border-right: 1px solid var(--border); flex: none;
   }
   .run-app .drawer.closed { display: none; }
-  /* ONE scroll surface: the drawer itself; its cards lose their own caps
+  /* One scroll surface: the drawer itself; its cards lose their own caps
      (except the event log, which keeps a follow-the-tail window). */
   .run-app .drawer .card.scroll { max-height: none; overflow: visible; }
   .run-app .drawer .card-log .card-body { max-height: 45vh; overflow: auto; }
@@ -386,10 +386,10 @@ aside.rail { display: none; }
   .composer.dock .row > button { flex: 1 1 auto; }
   main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + 140px); }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,
-     so every card flows at natural height and the PAGE is the one scroller. */
+     so every card flows at natural height and the page is the one scroller. */
   .card.scroll, .conv-box { max-height: none !important; overflow: visible; }
-  /* The run view shows ONE widget at a time (the widget menu picks it):
-     stacked, the transcripts and the event log made the page a mile long.
+  /* The run view shows one widget at a time (the widget menu picks it):
+     stacked, the transcripts and the event log make the page a mile long.
      Scoped to .card: the menu's own buttons carry data-w as their choice id. */
   .run-app.paged .card[data-w] { display: none; }
   .run-app.paged .card[data-w].w-active { display: block; }

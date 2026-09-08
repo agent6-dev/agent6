@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The TUI config viewer/editor — a thin renderer over the shared config
+"""The TUI config viewer/editor: a thin renderer over the shared config
 view-model (`viewmodel.config_view.build_config_view`) and the shared edit
 path (`config.write.set_config_value` / `unset_config_value`). All config
 logic lives in those layers, so this page and the web editor never drift.
 
-Discoverability is driven by ONE action registry (:data:`CONFIG_ACTIONS`): the
+Discoverability is driven by one action registry (:data:`CONFIG_ACTIONS`): the
 same list generates the on-screen action bar (clickable + keyboard-navigable
 buttons), the key bindings shown in the footer, the help/keys overlay, and the
 command-palette entries.
@@ -95,14 +95,14 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
     Action("edit", "Edit", "Edit the selected setting (dropdown for choices)", key="e"),
     Action("add_provider", "Add provider…", "Add a [providers.<name>] entry via a form", key="a"),
     # `r` is a harmless Refresh here (re-read config), matching `r`=Refresh on
-    # the home hub; Reset (which UNSETS a setting) stays off `r` and lives on
+    # the home hub; Reset (which unsets a setting) stays off `r` and lives on
     # `d` (default). Label is "Refresh" (not "Reload") + "Help" (not
     # "Help / keys") to match the home/run footers.
     Action("reset", "Reset", "Reset the selected setting to its default (unset)", key="d"),
     Action("reload", "Refresh", "Re-read config from disk", key="r"),
     # No key (View-menu / palette only, like the home hub): key=None is skipped by
     # the BINDINGS comprehension so it adds no footer binding, but palette_commands
-    # still lists it -- so the live-preview Theme… picker stays reachable from the
+    # still lists it, so the live-preview Theme… picker stays reachable from the
     # config Ctrl+P palette (the built-in "Theme" is filtered out app-wide).
     Action("choose_theme", "Theme…", "Choose a colour theme", key=None),
     Action("help", "Help", "Show all actions and shortcuts", key="question_mark"),
@@ -185,11 +185,11 @@ class _FormModal[ResultT](ModalScreen[ResultT]):
 class EditModal(_FormModal[tuple[str, str, bool] | None]):
     """Edit one setting with a natural terminal chooser: a [x]/[ ] list (↑↓ select
     as they move) for enum choices and bools -- with an inline "custom" row for
-    values the choices don't cover -- a text box otherwise. The action row (Save
+    values the choices don't cover, a text box otherwise. The action row (Save
     · Unset → default · Cancel) is flat text, ←/→ navigable + clickable. Returns
     `(action, value, to_repo)` (action "save"/"unset") or None on cancel."""
 
-    # No enter->save: Space/Enter on a chooser SELECTS the highlighted option, so
+    # No enter->save: Space/Enter on a chooser selects the highlighted option, so
     # Enter must not also save (you'd save while just picking). Save via the Save
     # action (Enter on it / click). A plain text field still saves on Enter
     # (Input.Submitted) since there's nothing to "select" there.
@@ -252,9 +252,9 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                 # What the leaf means, as the docs table and the web editor
                 # say it; Text, never markup (a description names `[git]`).
                 yield Static(Text(plain_description(s.description)), id="edit-description")
-            # The DISPLAY formatter (_fmt) renders lists unquoted ([uv, run,
-            # pytest]) -- friendly in the table, but not valid TOML, so an
-            # untouched Save of a list/dict field failed revalidation ("Input
+            # The display formatter (_fmt) renders lists unquoted ([uv, run,
+            # pytest]): friendly in the table, but not valid TOML, so an
+            # untouched Save of a list/dict field fails revalidation ("Input
             # should be a valid tuple"). Prefill the edit box with the exact
             # inverse of parse_cli_value instead; scalars stay bare.
             raw = s.value if s.value is not None else s.default
@@ -485,8 +485,8 @@ class ProviderModal(_FormModal[None]):
 
 class ConfigScreen(ScreenChrome, Screen[None]):
     """Full config viewer/editor: collapsible per-section tables, search, a
-    modified-only filter, provenance, and edit/reset — all reachable by button,
-    key, or the command palette."""
+    modified-only filter, provenance, edit and unset, each reachable by
+    button, key, or the command palette."""
 
     CSS = """
     ConfigScreen { layers: base dropdown; background: $surface; }
@@ -571,13 +571,13 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 a.id,
                 a.label,
                 show=a.id in {"search", "edit", "toggle_modified", "reload", "help", "close"},
-                # Back responds to both Esc and q -- shown as one "Esc/q" footer entry.
+                # Back responds to both Esc and q, shown as one "Esc/q" footer entry.
                 key_display="Esc/q" if a.id == "close" else None,
             )
             for a in CONFIG_ACTIONS
             if a.key is not None
         ]
-        # Config is one level below the hub, so q (like Esc) backs out -- only the
+        # Config is one level below the hub, so q (like Esc) backs out; only the
         # root hub quits on q. (q is typeable in #search: the focused Input eats it
         # first.) Ctrl+Q is the app-wide hard quit; Quit is in the menu as ^Q.
         + [Binding("q", "close", "Back", show=False)]
@@ -607,7 +607,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
     def compose(self) -> ComposeResult:
         # Load the view first so the (fixed) set of sections is known, then
         # compose one Collapsible+DataTable per section up front. Reloads only
-        # repopulate rows -- the section structure never needs remounting.
+        # repopulate rows: the section structure never needs remounting.
         self._rebuild_view()
         yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <path>"
         # One slim row: the inline filter on the left, the count (+ "modified
@@ -615,7 +615,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         with Horizontal(id="topbar"):
             yield Input(placeholder="/  filter settings…", id="search")
             yield Static("", id="status")
-        # ONE column header, pinned above the scroll (the per-section tables hide
+        # One column header, pinned above the scroll (the per-section tables hide
         # theirs and share these fixed column widths, so everything lines up under
         # this single header instead of repeating "setting value source").
         with Vertical(id="config-card"):
@@ -670,8 +670,8 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self._refresh()
         # Show "agent6 — config · <repo>" in the menu-bar title for this screen.
         self.app.sub_title = f"config · {self.repo_root}"
-        # Focus the first SECTION table (a _NavTable), not the pinned col-header
-        # (which is can_focus=False) -- opening config shouldn't look like a menu
+        # Focus the first section table (a _NavTable), not the pinned col-header
+        # (which is can_focus=False): opening config shouldn't look like a menu
         # is half-activated. Alt+letter still reaches the menu bar.
         tables = list(self.query(_NavTable))
         if tables:
@@ -702,9 +702,9 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 # Values/keys may carry brackets (lists, regexes) -> render as
                 # Text so they are never parsed as Rich markup.
                 table.add_row(Text(leaf), Text(display_value(s)), Text(src), key=s.key)
-            # Pin each table to its full row count so it never scrolls internally --
-            # only #settings scrolls. (DataTable's height:auto otherwise gets clamped
-            # to the viewport in a short window, giving a table scrollbar AND the
+            # Pin each table to its full row count so it never scrolls internally,
+            # so only #settings scrolls. (DataTable's height:auto otherwise gets clamped
+            # to the viewport in a short window, giving a table scrollbar and the
             # config scrollbar: a double scrollbar.)
             table.styles.height = max(1, len(rows))
             self.query_one(f"#sec-{section}", Collapsible).display = bool(rows)
@@ -746,10 +746,10 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self.scroll_focused_into_view(table)
 
     def scroll_focused_into_view(self, target: Widget | None = None) -> None:
-        """Scroll #settings just enough to show *target* (the focused row -- a table
+        """Scroll #settings just enough to show *target* (the focused row: a table
         cursor or a section header). Pass the target explicitly when you've just
         focused it: Widget.focus() updates self.focused asynchronously, so reading
-        it here would scroll the OLD row. Textual's focus auto-scroll brings the
+        it here would scroll the old row. Textual's focus auto-scroll brings the
         whole section into view (jumps at edges); this scrolls a single row."""
         settings = self.query_one("#settings", VerticalScroll)
         focused = target if target is not None else self.focused
@@ -758,9 +758,9 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         if isinstance(focused, _NavTable):
             screen_y = focused.region.y + focused.cursor_row  # header hidden -> row 0 at top
         elif isinstance(focused.parent, Collapsible):
-            # The first VISIBLE section's header is the topmost row. scroll_to_region
-            # won't pull that last row flush to the top (leaves it ~1 line off, so Up
-            # off the first setting looked like it skipped the header) -- pin to home.
+            # The first visible section's header is the topmost row. scroll_to_region
+            # won't pull that last row flush to the top (it leaves it ~1 line off, so
+            # Up off the first setting reads as skipping the header): pin to home.
             first = next((c for c in self.query("#settings Collapsible") if c.display), None)
             if focused.parent is first:
                 settings.scroll_home(animate=False)
@@ -813,7 +813,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 self._focus_first_setting()
                 event.stop()
             return
-        # On a focused section HEADER (a CollapsibleTitle under our #sec-* block),
+        # On a focused section header (a CollapsibleTitle under our #sec-* block),
         # Up/Down flow through the sections and Space toggles it (Enter already
         # does, built-in).
         parent = getattr(focused, "parent", None)
@@ -864,7 +864,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
     def action_quit(self) -> None:
         # The menu's "Quit" (^Q) quits the whole app. On a Screen `quit` isn't
         # built-in and doesn't bubble, so call exit() directly. (q backs out
-        # instead -- see action_close; only the root hub quits on q.)
+        # instead, see action_close; only the root hub quits on q.)
         self.app.exit()
 
     def action_close(self) -> None:

@@ -8,7 +8,7 @@ let live = null; // the active EventSource, closed on navigation
 let hbState = { active: false, role: 'worker', last: 0, spin: 0 };
 // A run is live per the dir-aware `live` flag the server stamps; the fold's
 // `finished` stays false for a run whose worker was killed, so using it alone
-// painted a ticking "working…" heartbeat under a "stale" header.
+// paints a ticking "working…" heartbeat under a "stale" header.
 function notLive(s) { return typeof s.live === 'boolean' ? !s.live : !!s.finished; }
 let hbTimer = null;
 let hubTimer = null; // the hub's list refresh, cleared by closeLive()
@@ -119,12 +119,12 @@ function setTab(name) {
 // --- router ------------------------------------------------------------------
 let booted = false; // the one-shot deep-link to `agent6 web <target>` ran
 // Navigation generation: route() is an async, directly re-entrant hashchange
-// handler, and every render helper awaits a fetch BEFORE its first DOM write /
+// handler, and every render helper awaits a fetch before its first DOM write /
 // EventSource assignment. A superseded render's continuation must bail at each
-// await boundary or it paints the WRONG view over the current one, appends a
-// duplicate wmenu button, and overwrites `live` -- orphaning the current
-// view's stream (whose stale onmessage could later closeLive() the visible
-// view when the old run finishes).
+// await boundary or it paints the wrong view over the current one, appends a
+// duplicate wmenu button, and overwrites `live`, orphaning the current view's
+// stream (whose stale onmessage could later closeLive() the visible view when
+// the old run finishes).
 let routeGen = 0;
 async function route() {
   const gen = ++routeGen;
@@ -167,7 +167,7 @@ window.addEventListener('hashchange', route);
 // --- hub ---------------------------------------------------------------------
 // /parallel model-id autocomplete for the new-work composer. When the task text
 // starts with `/parallel ` and the caret sits in the spec token, offer the known
-// model ids (GET /api/config/suggest/parallel.models — exactly the set
+// model ids (GET /api/config/suggest/parallel.models, exactly the set
 // run --parallel accepts) filtered by the comma-fragment under the caret; click,
 // Enter, or ↑/↓+Enter inserts it. The web analogue of the config editor's
 // datalist (a <textarea> can't carry a native datalist).
@@ -433,9 +433,9 @@ async function renderHub(focus, gen) {
   let lists = build(data);
   view.appendChild(lists);
   view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets));
-  // The hub painted once and never again, so a lane that finished, failed, or
-  // crashed kept its "running" pill until a manual reload -- and clicking the
-  // already-active tab does not re-enter route(). Refresh the LISTS only: a
+  // Without this the hub paints once, so a lane that finished, failed or
+  // crashed keeps its "running" pill until a manual reload; clicking the
+  // already-active tab does not re-enter route(). Refresh the lists only: a
   // whole-view repaint would discard text typed into the dock's composer.
   const refreshLists = async () => {
     if (document.hidden) return; // a background tab has nobody to mislead
@@ -449,7 +449,7 @@ async function renderHub(focus, gen) {
     } catch (_) { /* transient: keep the last good paint */ }
   };
   hubTimer = setInterval(refreshLists, HUB_POLL_MS);
-  // Re-focusing the tab otherwise showed the pre-blur pills (the interval
+  // Re-focusing the tab otherwise shows the pre-blur pills (the interval
   // skips hidden ticks) for up to a full poll period.
   hubVisWake = () => { refreshLists(); };
   document.addEventListener('visibilitychange', hubVisWake);
@@ -543,7 +543,7 @@ function makeConv(url, box, body) {
     }
     if (s.status === 'waiting') {
       // Blocked on the operator (the prompt card above): no thinking, no tool
-      // running, so neither pulse may say so -- nor "appears as the run
+      // running, so neither pulse may say so, nor "appears as the run
       // streams" over a run that has not started its first turn.
       liveHost.style.display = '';
       if (note) note.style.display = 'none';
@@ -630,7 +630,7 @@ let pendingComposerFill = '';
 // Fill a composer through an edit the browser records, so the native undo
 // stack (Ctrl-Z / Cmd-Z) survives programmatic fills like history recall and
 // slash completion. execCommand is deprecated but remains the only widely
-// implemented way to write a textarea's value AS a user edit; the fallback
+// implemented way to write a textarea's value as a user edit; the fallback
 // keeps the fill working, minus undo.
 function fillAsEdit(ta, text) {
   ta.focus();
@@ -674,7 +674,7 @@ const STEER_COMMANDS = [
   ['/now', 'steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)'],
   ['/shells', 'background commands this run started, and how they ended'],
 ];
-// Slash-command completion for a session composer: while the FIRST word is
+// Slash-command completion for a session composer: while the first word is
 // being typed (`/…`, no whitespace yet), the matching directives with their
 // help. Same popup contract as attachParallelSuggest; Tab (or Enter/click on
 // a highlighted row) completes the word plus a trailing space.
@@ -720,9 +720,9 @@ function attachCommandSuggest(ta, root, liveNow) {
   } };
 }
 
-// Ctrl-R in a session composer: search this session's past messages (the
-// task, then every steer -- journal-read via the conversation payload, so
-// resumes and steers typed on other surfaces appear). Newest first, one line
+// Ctrl-R in a session composer: search this session's past messages (the task,
+// then every steer, journal-read via the conversation payload, so resumes and
+// steers typed on other surfaces appear). Newest first, one line
 // each, repeats collapsed: the same list the CLI and TUI searches show.
 // Picking fills the composer for editing (Enter keeps the highlighted match,
 // or the typed text itself when nothing matches); nothing is sent.
@@ -782,8 +782,8 @@ function openHistorySearch(entries, onPick) {
   render();
 }
 
-// The composer bar under a run's conversation. On a LIVE run Enter sends the
-// text as a steer (injected at the run's next safe boundary); on a FINISHED
+// The composer bar under a run's conversation. On a live run Enter sends the
+// text as a steer (injected at the run's next safe boundary); on a finished
 // run Enter resumes the run with the text as the follow-up instruction (empty
 // = plain resume), then waits for the resumed worker to take over and
 // re-renders. Shift+Enter inserts a newline. setState(s) keeps the mode in
@@ -812,7 +812,7 @@ function makeComposer(id) {
     }).catch(() => {});
   };
   let finished = null; // unknown until the first SSE frame
-  // A run the AGENT ended has nothing to continue, so resume takes an
+  // A run the agent ended has nothing to continue, so resume takes an
   // instruction or is refused; every other ending resumes bare.
   let needsWork = false;
   let busy = false;
@@ -839,12 +839,12 @@ function makeComposer(id) {
     try {
       await postJSON('/api/session/' + encodeURIComponent(id) + '/resume', { text, preset: preset.value });
       toast(preset.value ? 'resuming the run under preset ' + preset.value + '…' : 'resuming the run…');
-      // The resume is a detached spawn: wait for it to come LIVE, then re-open
+      // The resume is a detached spawn: wait for it to come live, then re-open
       // the view so the SSE stream and controls come back. Waiting on
-      // `finished === false` declared takeover on the first poll, because the
-      // parked and stale runs this composer offers resume for are already
-      // unfinished — so a resume that died on spawn (its stderr goes to
-      // DEVNULL) reported success and the operator saw nothing.
+      // `finished === false` would declare takeover on the first poll, since
+      // the parked and stale runs this composer offers resume for are already
+      // unfinished, so a resume that died on spawn (its stderr goes to
+      // DEVNULL) would report success with nothing to show.
       for (let i = 0; i < 25; i++) {
         await new Promise(r => setTimeout(r, 1000));
         if (!root.isConnected) return; // navigated away
@@ -929,7 +929,7 @@ function makeComposer(id) {
     }
     if (!finished) {
       if (!text) return;
-      // The server decides what the text WAS: `/compact [focus]` is an
+      // The server decides what the text was: `/compact [focus]` is an
       // out-of-band request, not a steer, and it says so.
       postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
         .then(r => { toast((r && r.message) || 'steer sent'); ta.value = ''; })
@@ -940,8 +940,8 @@ function makeComposer(id) {
   };
   root.appendChild(growGrip(ta)); root.appendChild(presetRow); root.appendChild(ta); root.appendChild(hint);
   // `live` is the dir-aware truth (a parked or stale run is not live even
-  // though the fold says unfinished); fall back to the fold for a payload
-  // that predates it.
+  // though the fold says unfinished); fall back to the fold when a payload
+  // carries no boolean `live`.
   root.setState = (s) => {
     if (busy) return;
     needsWork = s.finished === true && s.end_reason === 'finish_session';

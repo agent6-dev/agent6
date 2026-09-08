@@ -61,10 +61,9 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
     """Locate a session dir by exact id across the hub buckets (no prefix match: the
     web client always sends the full id from the hub payload). Rejects a session_id
     that is not a single safe path component. Husks are skipped so an orphaned
-    dir in runs/ cannot shadow a real ask of the same id. An id in TWO buckets
-    (state from before ids were one namespace) is ambiguous, so it resolves to
-    None rather than silently showing one of two sessions; the CLI resolver
-    names the ambiguity."""
+    dir in runs/ cannot shadow a real ask of the same id. An id in two buckets
+    is ambiguous, so it resolves to None rather than silently showing one of
+    two sessions; the CLI resolver names the ambiguity."""
     if not is_safe_session_id(session_id):
         return None
     found: Path | None = None
@@ -174,7 +173,7 @@ def _machine_row(s: MachineSummary) -> dict[str, Any]:
         entry["current"] = s.current
     if s.reason:
         # The shared cell, like every other surface: `reason` is also set for a
-        # LIVE machine blocked on an operator prompt, whose label sends the
+        # live machine blocked on an operator prompt, whose label sends the
         # operator to answer it.
         entry["label"] = status_label(s.status, s.reason)
     return entry
@@ -283,11 +282,11 @@ def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:
     Carries `state_dir` (the per-state dir name, e.g. `0001-work`) so a
     client echoes it back when answering a prompt: prompt ids reset per state
     (`approval-1` in every state), so routing an answer to whichever state is
-    newest AT POST TIME would misdeliver it if the machine advanced meanwhile.
+    newest at post time would misdeliver it if the machine advanced meanwhile.
 
     Also carries `last_event_ep`, the epoch of the newest folded event, which
     is what the stream turns into the age the client's "working… Ns" timer
-    anchors to. The EPOCH rides in the payload rather than the age because the
+    anchors to. The epoch rides in the payload rather than the age because the
     machine stream only sends a frame when the payload changes: an age would
     differ on every poll and send one every time, while the epoch moves only
     when something actually happened.

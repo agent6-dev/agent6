@@ -69,7 +69,7 @@ class TransitionView:
 
     `detail` is the failure evidence a debugging operator needs at the
     surface, bounded: a failed tool's exit code and last stderr/stdout line,
-    a failed agent state's stop reason. Empty on success -- the happy path
+    a failed agent state's stop reason. Empty on success, so the happy path
     stays one line."""
 
     seq: int
@@ -177,7 +177,7 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
 def machine_status_word(
     ms: MachineState, *, parked: bool, alive: bool, blocked: bool = False
 ) -> str:
-    """THE liveness word front-ends read, so a machine that isn't working never
+    """The liveness word front-ends read, so a machine that isn't working never
     renders busy. Terminal reports its ok/failed end; an armed `--exit-on-wait`
     wait (parked), a live worker blocked in a foreground `wait` state, or a live
     worker whose agent state holds an unanswered operator prompt (blocked) is
@@ -258,18 +258,17 @@ def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
     """The latest running budget totals from an agent state's per-state event log,
     or `Spend()` if there is none / the log is unreadable.
 
-    Each turn's `budget.update` event carries cumulative totals FROM THAT
-    CALL'S OWN BudgetTracker, so the last one is the running total -- of
-    whichever call wrote it. `from_offset` scopes the read to events appended
-    after a byte offset: a caller salvaging one call on a SHARED log (machine
-    create's draft log spans every attempt) must pass the log size captured
-    before its spawn, or a call that died before its first budget.update reads
-    the PRIOR call's totals and double-books them. Recovers spend for a
-    timed-out/killed subprocess whose `result.json` never landed, and reads
-    the LIVE total of an in-flight state whose `StepEvent` is not written yet
-    (an agent state's spend would otherwise book as
-    $0, so a 24/7 machine burns real money against a $0 ledger and its budget
-    guard never trips)."""
+    Each turn's `budget.update` event carries cumulative totals from that
+    call's own BudgetTracker, so the last one is the running total of whichever
+    call wrote it. `from_offset` scopes the read to events appended after a
+    byte offset: a caller salvaging one call on a shared log (machine create's
+    draft log spans every attempt) must pass the log size captured before its
+    spawn, or a call that died before its first budget.update reads the prior
+    call's totals and double-books them. Recovers spend for a timed-out/killed
+    subprocess whose `result.json` never landed, and reads the live total of an
+    in-flight state whose `StepEvent` is not written yet (an agent state's spend
+    would otherwise book as $0, so a 24/7 machine burns real money against a $0
+    ledger and its budget guard never trips)."""
     usd, tin, tout = 0.0, 0, 0
     partial = False
     with contextlib.suppress(OSError):
@@ -301,7 +300,7 @@ def state_dir_seq(dir_name: str) -> int | None:
 def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple[Spend, str]:
     """Total spend for a machine instance and the in-flight state's name (`""`
     if none): the sum of completed states' booked AgentFacts and crashed
-    attempts' booked AttemptSpends, PLUS the live spend of the
+    attempts' booked AttemptSpends, plus the live spend of the
     currently-running state.
 
     A state books its StepEvent only when it completes, so a machine
@@ -329,7 +328,7 @@ def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple
             # A slice that ran but never got a StepEvent (a capture that could
             # not be reduced) rides on the end event. Folded unconditionally: an
             # end with no unbooked slice contributes Spend() anyway, while
-            # gating on a truthy `usd` would drop an UNPRICED slice whole (its
+            # gating on a truthy `usd` would drop an unpriced slice whole (its
             # usd is 0.0 by definition) with its tokens and the sticky
             # lower-bound flag.
             total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
@@ -407,7 +406,7 @@ def verb_refusals(
     alive: bool,
     waiting: bool,
 ) -> dict[MachineVerb, str]:
-    """Why each verb cannot reach machine *name*, "" where it can. THE decision,
+    """Why each verb cannot reach machine *name*, "" where it can. The decision,
     pure like :func:`machine_status_word`: an unknown machine is named as
     unknown (not as stopped); an ended one consumes no signal; a stopped one has
     no state polling a marker (a poke still wakes it); a live one in a wait
@@ -502,7 +501,7 @@ def _in_wait_state(machine_dir: Path, events: Sequence[object]) -> bool:
 
 
 def machine_word_for_dir(ms: MachineState, machine_dir: Path) -> str:
-    """THE status word for a machine instance with a dir on disk:
+    """The status word for a machine instance with a dir on disk:
     :func:`machine_status_word` fed the two dir probes (armed wait, worker
     pid), so surfaces cannot pair the probes differently."""
     return machine_status_word(
@@ -619,10 +618,10 @@ def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> 
     """The JSON-able wire form of a MachineState, stable field names: what
     `agent6 attach --json` and a web client serialize.
 
-    Pass *machine_dir* whenever the caller has one: `status` is then THE
+    Pass *machine_dir* whenever the caller has one: `status` is then the
     dir-aware word (:func:`machine_word_for_dir`), so a client can tell a
     parked "waiting" instance from a running one. Without it a client's only
-    liveness signal is `ended`, and Steer on a parked machine looked live."""
+    liveness signal is `ended`, and Steer on a parked machine reads as live."""
     d = asdict(ms)
     if machine_dir is not None:
         parked = machine_is_parked(machine_dir)
@@ -636,7 +635,7 @@ def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> 
         # Every verb's refusal, so a front-end gates and labels its buttons from
         # the one decision the CLI and the TUI already use instead of deriving
         # its own from the status word (which conflates parked, in-a-wait-state
-        # and live-but-blocked). Fed from THIS fold and these probes: asking
+        # and live-but-blocked). Fed from this fold and these probes: asking
         # `machine_verb_refusals` would read the journal and fold it again,
         # doubling the work of every SSE frame.
         d["refusals"] = verb_refusals(

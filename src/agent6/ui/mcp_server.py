@@ -52,7 +52,7 @@ from agent6.viewmodel.listing import ListingRow, nested_rows, summarize_session_
 
 _PROTOCOL_VERSION = "2024-11-05"
 _SERVER_NAME = "agent6"
-_MAX_LINE_BYTES = 1 << 22  # 4 MiB; mirrors the client-side cap.
+_MAX_LINE_BYTES = 1 << 22  # 4 MiB per JSON-RPC line.
 
 
 # ---------------------------------------------------------------------------
@@ -92,10 +92,9 @@ class _ToolSpec:
 _COMMAND_TOOLS = frozenset({"run_verify", "run_in_sandbox", "apply_patch_in_sandbox"})
 
 # The two that run the workspace's gate. With no verify command there is
-# nothing for them to run, and `apply_patch_in_sandbox` must refuse BEFORE
-# applying the patch, or the workspace changes under a call the client is
-# told failed. The run loop hides
-# `run_verify_command` for the same reason.
+# nothing for them to run, and `apply_patch_in_sandbox` must refuse before
+# applying the patch, or the workspace changes under a call the client is told
+# failed. The run loop hides `run_verify_command` for the same reason.
 _GATE_TOOLS = frozenset({"run_verify", "apply_patch_in_sandbox"})
 
 
@@ -161,12 +160,10 @@ def _no_one_to_ask(config: Config) -> Config:
     """Withdraw the command tools when the config would prompt for them.
 
     The MCP transport has no human at the other end, so `"ask"` cannot be
-    answered -- and offering a tool that will refuse every call is worse than
-    not offering it: `run_verify` and `run_in_sandbox` failed on every call
-    under the default config, and `apply_patch_in_sandbox` applied the patch
-    and THEN errored on its verify step, leaving the workspace changed and the
-    call failed. Same rule as a detached run with an away-mode of "deny": no
-    one to ask means the tools are gone, not broken.
+    answered: an offered tool would refuse every call, and
+    `apply_patch_in_sandbox` would apply the patch before failing its verify
+    step, leaving the workspace changed under a failed call. Same rule as a
+    detached run with an away-mode of "deny".
     """
     if config.sandbox.run_commands != "ask":
         return config
@@ -212,9 +209,9 @@ class MCPServer:
         self._stdout = stdout
         self._dispatcher = ToolDispatcher(root=self._root, config=_no_one_to_ask(config))
         # `ask` clamps to no-commands (no one to answer here) and `no` is the
-        # operator's own refusal; either way the command tools are GONE from
-        # tools/list, not offered-and-failing. _call_tool still names the real
-        # reason for a client that calls one by name anyway.
+        # operator's own refusal; either way the command tools are absent from
+        # tools/list. _call_tool still names the real reason for a client that
+        # calls one by name anyway.
         self._commands_withdrawn = config.sandbox.run_commands in ("ask", "no")
         self._gate_missing = not config.workflow.verify_command
         specs = self._build_tools()
@@ -233,8 +230,8 @@ class MCPServer:
             while True:
                 # Bounded read (mirrors tools/mcp_client._read_loop): an
                 # unbounded readline() buffers the entire line into memory
-                # BEFORE the size check, so the cap could not prevent memory
-                # exhaustion by a runaway client.
+                # before any size check, so the cap would not bound memory
+                # against a runaway client.
                 line = self._stdin.readline(_MAX_LINE_BYTES + 1)
                 if not line:
                     return
@@ -417,9 +414,9 @@ class MCPServer:
         try:
             payload = self._tools[name].handler(args)
         except (ToolError, OperatorCommandUnexecutable) as exc:
-            # OperatorCommandUnexecutable aborts a RUN loudly by design; here
-            # the contract is an isError result -- escaping killed the whole
-            # serve process and every later client call died on a broken pipe.
+            # OperatorCommandUnexecutable aborts a run loudly by design; here
+            # the contract is an isError result: escaping would end the serve
+            # process and break the pipe for every later client call.
             return {
                 "content": [{"type": "text", "text": str(exc)}],
                 "isError": True,

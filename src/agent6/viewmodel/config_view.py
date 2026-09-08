@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The effective-config view-model: one structure every front-end renders.
 
-`config show` (CLI), the TUI config page, and the web UI all render the SAME
+`config show` (CLI), the TUI config page, and the web UI all render the same
 ConfigView, so config display logic (provenance, defaults, enum choices,
 adaptive resolution) lives here once and the renderers stay thin. Loading,
 merging, and writing config stays in `agent6.config.layer`; this module only
@@ -185,7 +185,7 @@ def build_config_view(
     *resolved* maps a dotted key to its resolved value for settings whose raw
     value is a placeholder for runtime resolution (compaction left unset ->
     adaptive, sized from the model's context window). It never changes
-    provenance or the modified flag -- it only fills `effective_value` /
+    provenance or the modified flag: it only fills `effective_value` /
     `is_adaptive` so a UI can show the real number.
     """
     resolved = resolved or {}
@@ -218,7 +218,7 @@ def build_config_view(
                     effective_value=eff_val,
                     default=default,
                     source=source,
-                    # Provenance, NOT "differs from the default": a preset or a
+                    # Provenance, not "differs from the default": a preset or a
                     # config file may pin a leaf to the default's own value, and
                     # the TUI's Reset needs to know a layer owns it.
                     modified=source != "default",
@@ -317,7 +317,7 @@ def render_key_detail(
     as_json: bool = False,
 ) -> str:
     """Render the config leaves under *keys* (each a leaf or a whole section
-    prefix) UNTRUNCATED, in the order asked, for `agent6 config show <key>...`:
+    prefix) untruncated, in the order asked, for `agent6 config show <key>...`:
     the full-width table clips long values (e.g. a verify_command), so this
     view prints the whole value plus its source, default, and choices. Raises
     KeyError naming the first key that matches nothing."""
@@ -366,7 +366,7 @@ def render_show(
     ones to eyeball; settings whose value is resolved at runtime (compaction
     left adaptive) show their resolved value tagged `(adaptive)`. JSON mode
     emits the full per-leaf view (value, effective, default, source, modified,
-    adaptive, type, choices) -- the complete machine-readable picture.
+    adaptive, type, choices), the complete machine-readable picture.
 
     *resolved* maps dotted keys to their resolved values (e.g. adaptive
     compaction sized from the worker model); the caller computes it. *color*

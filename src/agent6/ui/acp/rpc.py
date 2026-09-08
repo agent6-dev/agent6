@@ -3,8 +3,8 @@
 """The JSON-RPC 2.0 vocabulary, shared by the transport and the methods.
 
 Its own module because both need it: the transport turns an `RpcError` into a
-reply, and a method raises one. Keeping the codes with the transport made the
-two import each other.
+reply, and a method raises one. Keeping the codes here keeps the two from
+importing each other.
 """
 
 from __future__ import annotations

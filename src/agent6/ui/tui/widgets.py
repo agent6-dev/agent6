@@ -41,9 +41,9 @@ def _scroll_row_into_view(widget: Widget, row: int) -> None:
 def focus_neighbor(widget: Widget, direction: int) -> None:
     """Move focus to the next/previous *control* (ChoiceField / TypeaheadField /
     Input / ActionItem)
-    in the dialog, skipping scroll containers and NOT wrapping — so the top and
-    bottom of a dialog are hard stops, never a jump to a focusable scroll box (or
-    to the far end) that strands the arrows."""
+    in the dialog, skipping scroll containers and never wrapping, so the top
+    and bottom of a dialog are hard stops, never a jump to a focusable scroll
+    box (or to the far end) that strands the arrows."""
     kinds = (ChoiceField, TypeaheadField, Input, ActionItem)
     nav = [w for w in widget.screen.focus_chain if isinstance(w, kinds)]
     for i, w in enumerate(nav):
@@ -56,7 +56,7 @@ def focus_neighbor(widget: Widget, direction: int) -> None:
 
 def _selection_bar(primary: str) -> str:
     """A rich style for a full-row selection bar in *primary*, with black/white
-    ink chosen by luminance so the text stays readable on ANY theme's color."""
+    ink chosen by luminance so the text stays readable on any theme's color."""
     rgb = Color.parse(primary).get_truecolor()
     lum = 0.299 * rgb.red + 0.587 * rgb.green + 0.114 * rgb.blue
     ink = "#11111b" if lum > 140 else "#f8f8f2"
@@ -65,15 +65,15 @@ def _selection_bar(primary: str) -> str:
 
 class ChoiceField(Widget, can_focus=True):
     """A natural terminal chooser: a vertical `[x]`/`[ ]` list. ↑↓ move a
-    HIGHLIGHT (the selection does NOT follow, so arrowing through to the next
+    highlight (the selection does not follow, so arrowing through to the next
     field never corrupts the value); Space (or Enter) selects the highlighted
     row; ↑↓ hand off focus at the top/bottom edge so a dialog reads as one
-    continuous ↑↓ chain. A single focusable widget -- Tab-ing onto it never
+    continuous ↑↓ chain. A single focusable widget: Tab-ing onto it never
     changes the value.
 
     With `allow_custom` the last row is an inline text field: highlight it and
     type (typing selects it). Click selects. Posts :class:`Changed` when the
-    SELECTION changes (live-preview dialogs, e.g. the theme picker). Space
+    selection changes (live-preview dialogs, e.g. the theme picker). Space
     consumes the key; Enter also bubbles, so a dialog can confirm on Enter."""
 
     DEFAULT_CSS = """
@@ -146,7 +146,7 @@ class ChoiceField(Widget, can_focus=True):
             bar = _selection_bar(self.app.current_theme.primary)
         except Exception:  # pragma: no cover - defensive (teardown/no theme)
             bar = "bold reverse"
-        # A subtle hover bar ($panel) for the mouse row -- weaker than the primary
+        # A subtle hover bar ($panel) for the mouse row, weaker than the primary
         # cursor bar, matching the DataTable's hover (so the picker isn't "dead"
         # under the mouse). $boost would be transparent, so use the resolved panel.
         hover_bg = ""
@@ -245,7 +245,7 @@ class ChoiceField(Widget, can_focus=True):
 
     def on_click(self, event: events.Click) -> None:
         # offset.y is from the widget region, which includes any padding-top
-        # (.edit-gap) -- subtract it. A click highlights AND selects.
+        # (.edit-gap), so subtract it. A click highlights and selects.
         row = int(event.offset.y) - self.styles.padding.top
         if 0 <= row < self._row_count:
             self._cursor = row
@@ -254,7 +254,7 @@ class ChoiceField(Widget, can_focus=True):
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
         # Track the mouse row so render() can highlight it (refresh only on a
-        # change -- mouse moves fire per cell).
+        # change: mouse moves fire per cell).
         row = int(event.offset.y) - self.styles.padding.top
         row = row if 0 <= row < self._row_count else -1
         if row != self._hover:
@@ -270,7 +270,7 @@ class ChoiceField(Widget, can_focus=True):
 class TypeaheadField(Widget, can_focus=True):
     """A type-to-narrow picker for big lists (e.g. model ids): an editable text
     line plus, while focused, the top matching suggestions. Type to narrow; ↓
-    highlights a suggestion (↑ back); Enter saves the current value -- the
+    highlights a suggestion (↑ back); Enter saves the current value: the
     highlighted suggestion, or the typed text if none. Hands off ↑/↓ at its edges
     like ChoiceField. `value` is whatever would be saved. Suggestions can be
     swapped in later (e.g. a background fetch) via `set_suggestions`."""
@@ -298,7 +298,7 @@ class TypeaheadField(Widget, can_focus=True):
         self._cursor = len(current)
         self._all = list(suggestions)
         self._index = -1  # -1 == editing the text; >=0 == a highlighted match
-        # "Fresh" = still showing the current value, untouched: list ALL
+        # "Fresh" = still showing the current value, untouched: list all
         # suggestions (so ↓ browses everything) and let the first keystroke
         # replace it (you're searching for a new value, not appending to it).
         self._fresh = bool(current)
@@ -416,7 +416,7 @@ class TypeaheadField(Widget, can_focus=True):
 
     def _edit(self, event: events.Key) -> None:
         """Text-line editing: backspace / ←→ / typing (the first keystroke
-        replaces the current value -- you're searching, not appending)."""
+        replaces the current value: you're searching, not appending)."""
         key = event.key
         if key == "left":
             event.stop()
@@ -459,7 +459,7 @@ class TypeaheadField(Widget, can_focus=True):
 
 
 class ActionItem(Static):
-    """A flat, focusable, clickable action label (Save / Unset / Cancel) -- the
+    """A flat, focusable, clickable action label (Save / Unset / Cancel), the
     natural terminal equivalent of a button. Enter or click activates it; the
     dialog moves ←/→ between items. (Textual's Button assumes a 3-row box and
     won't render its label flat at height 1.)"""

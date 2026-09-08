@@ -7,9 +7,9 @@ the editor; everything a terminal front-end would draw becomes nothing, because
 an ACP client renders from `session/update` instead.
 
 A client that declared it cannot be asked is never asked: the answer comes from
-the CAUTIOUS default rather than a hang or an invented yes. That is what
-`FrontendCapabilities` is for, and why an editor with no way to show a prompt
-still gets a working session -- one where the model simply has fewer powers.
+the cautious default rather than a hang or an invented yes. That is what
+`FrontendCapabilities` is for, so an editor with no way to show a prompt still
+gets a working session, one where the model has fewer powers.
 """
 
 from __future__ import annotations
@@ -52,10 +52,10 @@ PERMISSION_TIMEOUT_S = 300.0
 
 
 # What the client is asked, and what an unaskable client is assumed to have
-# said. Every one of these is the CAUTIOUS answer: a session that cannot ask
-# is a session that does less, never one that does something unwatched.
+# said. Every one of these is the cautious answer: a session that cannot ask
+# does less, never something unwatched.
 # (prompt, options, standing, call_id) -> the chosen option, or None for no
-# answer. `standing` is None for a QUESTION, whose options the model wrote: an
+# answer. `standing` is None for a question, whose options the model wrote: an
 # answer among several is not a permission, and must never be offered as one
 # the editor may remember. `call_id` is the dispatcher's stamp on the tool
 # call the prompt gates (the `call_id` its journaled prompt carries), or None
@@ -96,8 +96,8 @@ def acp_frontend(
         held first)."""
         if not capabilities.can_ask:
             return False  # nobody to ask, so the answer is no
-        # No scope means an "always allow" the editor remembers must NOT cover
-        # this one -- the fetch tool's off-list host, where a GET can carry data
+        # No scope means an "always allow" the editor remembers must not cover
+        # this one: the fetch tool's off-list host, where a GET can carry data
         # out in its path. The option names carry it, because an editor that
         # offers "always" needs something to key that decision on.
         standing = scope is not None
@@ -135,8 +135,8 @@ def acp_frontend(
                 return QuestionAnswer(tuple("" for _ in request.questions), "headless", unseen=True)
             # An unanswered question becomes an empty string, which the loop
             # already treats as "the operator said nothing", not as a value.
-            # One deadline for the request: a timeout per question made an
-            # N-question ask wait N times the documented bound.
+            # One deadline for the request: a timeout per question would make
+            # an N-question ask wait N times the documented bound.
             deadline = time.monotonic() + PERMISSION_TIMEOUT_S
             answers: list[str] = []
             for question in request.questions:
@@ -162,14 +162,14 @@ def acp_frontend(
     def _confirm_unconfined(isolation: IsolationLevel, cfg: Config) -> bool:
         """Only ask when it is actually true.
 
-        The lifecycle calls this on EVERY run; the "is this dangerous" test
-        lives in the answer, not the call. Asking regardless told the editor a
-        confined run was unsandboxed -- a false statement about the run, on the
-        one approval that must never become reflexive.
+        The lifecycle calls this on every run; the "is this dangerous" test
+        lives in the answer, not the call. Asking regardless would tell the
+        editor a confined run is unsandboxed, on the one approval that must
+        never become reflexive.
         """
         if isolation != "none" or cfg.sandbox.run_commands != "yes":
             return True
-        # No scope: docs/security.md documents this as a ONE-TIME gate, and
+        # No scope: docs/security.md documents this as a one-time gate, and
         # ACP's `allow_always` is exactly the button that would let one click
         # silence it for every later session.
         return bool(_approve("Run commands UNSANDBOXED on this host, with no per-command prompt?"))
@@ -179,7 +179,7 @@ def acp_frontend(
     ) -> SteerHooks:
         # The file bridge: a later prompt on this session resumes the run with
         # its text seeded through the steer files (resume --steer), and the
-        # loop's pre-call drain reads THESE hooks, so the seeded instruction
+        # loop's pre-call drain reads these hooks, so the seeded instruction
         # reaches the resumed model. Mid-run nothing here writes steer files,
         # so no new affordance is offered.
         return file_bridge_steer(session_dir)
@@ -244,5 +244,5 @@ def _no_coordinator(
     _auto_approve: bool,
 ) -> None:
     """`/parallel` fans out sibling runs, which need somewhere to be watched.
-    An ACP client renders ONE session; lanes would run invisibly."""
+    An ACP client renders one session; lanes would run invisibly."""
     return None

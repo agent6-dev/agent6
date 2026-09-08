@@ -58,7 +58,7 @@ def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[st
     """Branch facts from the run's manifest (run_branch / base_branch /
     merged_into, and `branch_line`, their one wording) plus `commits_ref`,
     the ref a merge or diff reads, for the run header.
-    The event fold does not carry them, and an operator needs to SEE where a
+    The event fold does not carry them, and an operator needs to see where a
     run's work lives and where Merge lands (consecutive spawns chain branches
     invisibly otherwise). Empty for a run with no manifest. With *repo*,
     `run_branch` is the branch only while it exists

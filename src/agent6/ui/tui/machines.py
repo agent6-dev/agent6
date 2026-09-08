@@ -4,9 +4,9 @@
 
 A separate page from the run hub (machines are not runs). Like the hub's run
 actions, it never drives a machine in-process: Run and Create shell out to
-`agent6 machine run|create` (detached). View is the one in-process step -- it
+`agent6 machine run|create` (detached). View is the one in-process step: it
 parses the .asm.toml via agent6.machine to show the machine's structure,
-validation, and graph -- which is why ui depends on agent6.machine for this page
+validation, and graph, which is why ui depends on agent6.machine for this page
 (see tach.toml).
 """
 
@@ -107,7 +107,8 @@ def _discrete_log_line(evt: dict[str, object], *, in_flight: bool = False) -> Te
     or None to skip it. Thinking/text deltas are accumulated separately.
 
     Only the turn still *in_flight* is marked "thinking…": the screen replays
-    the whole state log on open, and a finished turn's role.call read live."""
+    the whole state log on open, where a finished turn's role.call would
+    otherwise read as live."""
     t = evt.get("type")
     if t == "role.call":
         mark = " thinking…" if in_flight else ""
@@ -134,7 +135,7 @@ _ANSWER_LOST = (
 class MachineWatchScreen(ScreenChrome, Screen[None]):
     """Live view of a running (or finished) machine: the state overview with the
     current state marked, each transition as it lands, and the active agent
-    state's reasoning streamed from its per-state logs.jsonl -- the in-TUI
+    state's reasoning streamed from its per-state logs.jsonl, the in-TUI
     equivalent of `agent6 attach`. Polls every 0.5s.
 
     Interactive: while open it registers as an answer front-end (a frontends/ claim on
@@ -225,7 +226,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         seeded = fold_machine(self._spec, events)
         self._cursor.seed_notifications(seeded)
         # An end that predates the open is history, not news (same as the web's
-        # endedNotified seed); a machine ending WHILE watched still announces.
+        # endedNotified seed); a machine ending while watched still announces.
         self._end_notified = seeded.ended is not None
         self._poll()
         self.set_interval(0.5, self._poll)
@@ -324,7 +325,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             return
         # The footer's Steer key follows liveness, not just the _ended edge: a
         # --exit-on-wait park or a killed worker flips _steerable() with no
-        # MachineEnd, and the lit key otherwise offered a steer nobody reads.
+        # MachineEnd, and the lit key otherwise offers a steer nobody reads.
         steerable = self._steerable()
         if steerable != self._was_steerable:
             self._was_steerable = steerable
@@ -359,13 +360,13 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             mark = s.mark
             table.update_cell(s.name, "mark", mark)
 
-        # Mark ended BEFORE rendering the log so a terminal instance's final
-        # agent state doesn't render a live "thinking…" line (see C13).
+        # Mark ended before rendering the log so a terminal instance's final
+        # agent state doesn't render a live "thinking…" line.
         if ms.ended is not None and not self._ended:
             self._ended = True
             self.refresh_bindings()  # dim Steer/Message: a dead machine takes no input
-        # Liveness for the render + prompt gate, recomputed AFTER the _ended
-        # flip above (the line-286 `steerable` is for the footer edge and is
+        # Liveness for the render + prompt gate, recomputed after the _ended
+        # flip above (the earlier `steerable` is for the footer edge and is
         # stale-True on the poll that first observes the end).
         live = self._steerable()
 
@@ -412,9 +413,9 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         """Pop approval/question modals for the current agent state's pending
         prompts, writing answers back to that state's per-state dir.
 
-        Only while the machine is RUNNING: a parked/stopped/ended instance's
+        Only while the machine is running: a parked/stopped/ended instance's
         newest agent state is finished, so the fold still carries an unanswered
-        prompt but nothing would poll the answer -- popping live-looking
+        prompt but nothing would poll the answer. Popping live-looking
         Allow/Deny (a destructive-command approval among them) over a dead
         machine is the machine twin of the run-modal gate."""
         if not live:
@@ -701,7 +702,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         # Enter on a row opens the parsed view (the DataTable consumes Enter, so the
-        # screen's binding never fires -- handle the row event itself, like the hub).
+        # screen's binding never fires; handle the row event itself, like the hub).
         self.action_view()
 
     def action_view(self) -> None:
@@ -833,7 +834,7 @@ class _MachineWatchApp(PlainNotify, MuxPointerShapes, App[None]):
         + """
     * { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }  /* match the other apps */
     /* A footer that does not fit clips (textual's default); the 1-row widget has no
-       room for the scrollbar the universal rule gives it, which replaced every hint. */
+       room for the scrollbar the universal rule gives it, which would replace every hint. */
     Footer { scrollbar-size-vertical: 0; scrollbar-size-horizontal: 0; }
     Input, TextArea { pointer: text; }
     """

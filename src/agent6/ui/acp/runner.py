@@ -2,19 +2,19 @@
 # Copyright 2026 Eric Lesiuta
 """One ACP prompt becomes one agent6 run.
 
-The protocol OWNS stdout, so the run's reporter writes to stderr. One status
+The protocol owns stdout, so the run's reporter writes to stderr. One status
 line on stdout desynchronises the stream irrecoverably, and no editor recovers
 from it.
 
-The run id is minted HERE, before the run starts, so `session/cancel` has
-something to address. Letting the lifecycle mint its own left the session with
-no handle: the cancel reported success while the run continued to completion,
-spending budget and making commits. It is minted ONCE per ACP session: later
-prompts resume that same run with the new text seeded as its first steering
-instruction, so the session is one conversation, not a row of strangers.
+The run id is minted here, before the run starts, so `session/cancel` has
+something to address: a lifecycle minting its own would leave the session with
+no handle, and a cancel would report success while the run ran on, spending
+budget and making commits. It is minted once per ACP session: later prompts
+resume that same run with the new text seeded as its first steering
+instruction, so the session stays one conversation.
 
 `run_task` reads the process cwd, so a run in a session's directory has to
-chdir there -- which is process-global. Runs are therefore serialised on the
+chdir there, which is process-global. Runs are therefore serialised on the
 connection: a second prompt waits rather than running in the wrong repository.
 """
 
@@ -73,7 +73,7 @@ class ProseOrder:
 
     The lifecycle speaks from the run thread while the tail projects the
     journal from its own, a poll behind; sent as they are said, an ending
-    line landed before the turn's last tool calls. Each line is stamped with
+    line would land before the turn's last tool calls. Each line is stamped with
     the journal's size when said, and the tail emits it once it has read
     past that point (everything, once the tail is done).
     """
@@ -133,12 +133,12 @@ def forwarding_reporter(
 
 
 def option_kind(text: str, standing: bool | None) -> str:
-    """ACP's button kinds, from WHO asked -- never from the option text.
+    """ACP's button kinds, from who asked, never from the option text.
 
-    `standing=True` is an approval an editor may REMEMBER. `False` is the
+    `standing=True` is an approval an editor may remember. `False` is the
     fetch tool's off-list host, where remembering would silently cover a
-    different host. `None` is a `UserQuestion`, whose options the MODEL
-    wrote: keying on the text let a model emit an option literally named
+    different host. `None` is a `UserQuestion`, whose options the model wrote:
+    keying on the text would let a model emit an option literally named
     "allow" and have it advertised as `allow_always`, so an editor keying its
     memory on the title would auto-approve later real permission requests.
     """
@@ -155,8 +155,8 @@ def stop_reason(code: int) -> StopReason:
     A deliberate finish is `end_turn` even when the verify gate stayed red
     (exit 4) or the edits stranded uncommitted (exit 5): the agent answered,
     and that state is already on the wire as messages. `refusal` is for a run
-    that could not complete -- it broke, was refused, or hit its budget; ACP
-    has no finer failure word, and the DETAIL again arrives as messages.
+    that could not complete (it broke, was refused, or hit its budget); ACP has
+    no finer failure word, and the detail again arrives as messages.
     """
     if code == 130:
         return "cancelled"
@@ -166,7 +166,7 @@ def stop_reason(code: int) -> StopReason:
 def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
     """The option the editor chose, or None for no usable answer.
 
-    A cancel, a timeout and an id we did not issue are all "no answer" -- and
+    A cancel, a timeout and an id we did not issue are all "no answer", and
     the answer has to be one we offered, or an unknown string could become an
     "allow" by prefix.
     """
@@ -248,7 +248,7 @@ class RunBridge:
         """Put one approval or question to the editor.
 
         ACP v1 has no method for a free-form question, so a `UserQuestion` goes
-        out as a permission request too -- its options ARE the answers. The
+        out as a permission request too: its options are the answers. The
         editor renders buttons either way, which is what the seam needs.
 
         A question with no options has no buttons, so there is nothing for the
@@ -262,7 +262,7 @@ class RunBridge:
         `salient_arg` clipped to 60 chars, which would show the operator an
         argv whose first line looks benign and whose rest they never see. A
         prompt gating a tool call (*call_id*, the dispatcher's
-        stamp) names THAT call, once the tail has announced it; its lifecycle
+        stamp) names that call, once the tail has announced it; its lifecycle
         carries on from there (pending, then its outcome). A prompt gating no
         call announces an entity of its own, and closes it: an entity ACP
         models as having a lifecycle needs its end, or an editor keeps one
@@ -295,7 +295,7 @@ class RunBridge:
                 "toolCall": tool_call,
                 "options": [
                     {
-                        # An INDEX, not the option text: the text can be
+                        # An index, not the option text: the text can be
                         # model-written (a UserQuestion's options are), and an
                         # identifier is not a place for model input. It also
                         # makes "only an option we offered" structural rather
@@ -359,13 +359,13 @@ class RunBridge:
         return session.layout(state_dir(session.cwd)).logs_path.exists()
 
     def run(self, session: Session, text: str) -> StopReason:
-        # BEFORE the queue, not after. `_runs` is held for a whole run, so a
+        # Before the queue, not after. `_runs` is held for a whole run, so a
         # second session's turn can wait here for many minutes, and deciding
         # the id inside would leave that whole window with no run to address:
         # a cancel writes no marker, the turn runs to completion spending
         # budget and making commits, and the editor is told "cancelled".
-        # Through the owner: a fresh id reaches run_task as an EXPLICIT one,
-        # which skips the lifecycle's own minting -- a collision would refuse
+        # Through the owner: a fresh id reaches run_task as an explicit one,
+        # which skips the lifecycle's own minting; a collision would refuse
         # the turn with "use agent6 resume <id>" over an id the editor never
         # chose.
         try:
@@ -441,11 +441,11 @@ class RunBridge:
         def _stop() -> bool:
             """Stop the tail one read pass after the run returns.
 
-            `tail_events` checks this at the TOP of each poll, so answering
+            `tail_events` checks this at the top of each poll, so answering
             False once lets the journal's last lines still reach the editor.
-            Stopping immediately dropped them; waiting for the run's own
-            `session.end` taxed every turn that ends without one (a config error,
-            an early refusal) with the full drain timeout.
+            Stopping immediately would drop them; waiting for the run's own
+            `session.end` would tax every turn that ends without one (a config
+            error, an early refusal) with the full drain timeout.
             """
             if not ended.is_set():
                 return False
@@ -510,8 +510,8 @@ class RunBridge:
         the lifecycle's own lines taking their place between events.
 
         A resumed run appends to the journal its prior legs already fill, and
-        the editor rendered those turns as they happened -- start at the end,
-        or the whole conversation replays as if new. The ending also goes to
+        the editor rendered those turns as they happened: start at the end, or
+        the whole conversation replays as if new. The ending also goes to
         stderr, the editor's agent log: the editor is the live view, so the
         lifecycle prints no ending of its own."""
         fold = TranscriptFold()

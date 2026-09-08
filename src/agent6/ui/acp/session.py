@@ -4,8 +4,8 @@
 
 A prompt runs on a worker thread, not on the read loop. Answering it inline
 would block reading for the whole run, and a blocked loop cannot receive the
-`session/cancel` that ACP requires to work DURING one -- so the cancel an
-editor sends would arrive only after the thing it meant to stop had finished.
+`session/cancel` that ACP requires to work during one, so the cancel an editor
+sends would arrive only after the thing it meant to stop had finished.
 """
 
 from __future__ import annotations
@@ -49,18 +49,18 @@ class Session:
     turn: int = 0
     thread: threading.Thread | None = None
     cancelled: bool = False
-    # Cleared BEFORE the turn answers. `thread.is_alive()` is still true while
-    # `finish` runs -- and `finish` IS the reply -- so a conforming editor that
-    # writes its next prompt the instant it reads the answer was refused at
-    # random.
+    # Cleared before the turn answers: `thread.is_alive()` is still true while
+    # `finish` runs, and `finish` is the reply, so a conforming editor that
+    # writes its next prompt the instant it reads the answer would be refused
+    # at random.
     turn_live: bool = False
 
     def is_running(self) -> bool:
         return self.turn_live
 
     def layout(self, state_dir: Path) -> SessionLayout:
-        """This turn's agent6 session dir. Named once: three call sites built it
-        with the DEFAULT bucket, which is only right while ACP runs one mode."""
+        """This turn's agent6 session dir, under ACP's own bucket rather than
+        the default one."""
         return SessionLayout(
             state_dir=state_dir, session_id=self.session_id, subdir=session_bucket(ACP_MODE)
         )
@@ -84,7 +84,7 @@ class Sessions:
             raise RpcError(INVALID_PARAMS, "cwd must be an absolute path")
         cwd = Path(raw_cwd)
         # The same wall `agent6 run` puts in front of a workspace. This
-        # directory becomes what the jail mounts WRITABLE, and here it arrives
+        # directory becomes what the jail mounts writable, and here it arrives
         # over the wire: without this a client could point a run at any
         # absolute path, and `$HOME` on a machine with dotfiles under git would
         # hand the model the whole home directory.
@@ -135,10 +135,10 @@ class Sessions:
         try:
             session.thread.start()
         except RuntimeError:
-            # Set before starting on purpose (the worker clears it), so a
-            # thread that never ran left the session refusing every later
-            # prompt as busy -- and EOF joining an unstarted thread raised out
-            # of the read loop.
+            # Set before starting on purpose (the worker clears it): a thread
+            # that never ran would leave the session refusing every later
+            # prompt as busy, and EOF joining an unstarted thread would raise
+            # out of the read loop.
             session.turn_live = False
             session.thread = None
             raise
@@ -154,8 +154,8 @@ class Sessions:
         live = [s for s in self._by_id.values() if s.is_running()]
         for session in live:
             self.cancel(session)
-        # ONE deadline across every join: per-thread timeouts made N sessions
-        # wait N times the documented bound.
+        # One deadline across every join: per-thread timeouts would make N
+        # sessions wait N times the documented bound.
         deadline = time.monotonic() + timeout_s
         for session in live:
             if session.thread is not None:
@@ -183,7 +183,7 @@ def prompt_text(params: dict[str, Any]) -> str:
     """The prompt's text and resource_link blocks, joined.
 
     ACP sends content blocks; agent6's task is prose. A `resource_link` (the
-    baseline attach-a-file shape) is rendered as its uri VERBATIM: the model
+    baseline attach-a-file shape) is rendered as its uri verbatim: the model
     reads it through the ordinary tools, so the workspace boundary still
     decides what the path reaches. Other non-text blocks (an image, an
     embedded resource) are dropped rather than rendered as a placeholder the

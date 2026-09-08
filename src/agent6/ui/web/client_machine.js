@@ -2,13 +2,13 @@
 async function renderMachine(name, gen) {
   const base = '/api/machine/' + encodeURIComponent(name);
   // Existence + readability probe: a bad name or a corrupt machine throws here
-  // and route() shows the error (the SSE error frame alone left a hollow view).
+  // and route() shows the error (the SSE error frame alone leaves a hollow view).
   await getJSON(base);
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   setCrumb(name);
   view.innerHTML = '';
   // Ephemeral notification banners live here; the prompts host holds pending
-  // approval/question boxes; both are APPENDED to, never wiped, so a repaint can
+  // approval/question boxes; both are appended to, never wiped, so a repaint can
   // never clear a half-typed answer.
   const notifs = el('div', 'page-pad'); view.appendChild(notifs);
   const prompts = el('div', 'page-pad'); view.appendChild(prompts);
@@ -31,7 +31,7 @@ async function renderMachine(name, gen) {
   view.appendChild(grid);
   cc.conv.refresh();
 
-  // The machine composer, docked at the bottom: ONE text entry with the two
+  // The machine composer, docked at the bottom: one text entry with the two
   // machine verbs, matching the TUI machine watch (s = Steer, m = Message).
   // Steer injects into the current agent state at its next safe boundary
   // (blank = continue); Message is a poke payload a waiting machine's next
@@ -86,7 +86,7 @@ function machineNotify(ctx, m) {
   const notes = m.notifications || [];
   const keyOf = n => (n.ts || '') + '|' + (n.state || '') + '|' + (n.message || '');
   if (ctx.seen === null) {
-    // First frame: seed history (notifications AND an already-ended machine)
+    // First frame: seed history (notifications and an already-ended machine)
     // silently, so opening a finished machine does not replay past notifications
     // or fire a spurious "ended" banner/OS-notify. Only events that happen while
     // watching fire.
@@ -119,9 +119,9 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // What each verb can reach, decided once server-side (`machine_verb_refusals`,
   // the same reading the CLI and the TUI gate on). A machine whose answer verb
   // is refused takes no prompt: painting {} reconciles the boxes away. The
-  // status word cannot stand in for this -- a LIVE machine blocked on an
-  // approval reads "waiting", and gating on the word hid the box it was
-  // blocked on from the page that had claimed the instance.
+  // status word cannot stand in for this: a live machine blocked on an approval
+  // reads "waiting", and gating on the word would hide the box it is blocked on
+  // from the page that claimed the instance.
   const refusals = m.refusals || {};
   const canAnswer = !refusals.answer;
   // A stop is refused exactly when the instance has ended or its worker is
@@ -174,7 +174,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // An ended machine takes no input: poking or steering it would only pretend
   // to work (nothing reads the signal), and its final state's log often has no
   // session.end, which would leave a live "thinking..." marker up forever. Steer
-  // additionally needs a RUNNING worker (a parked or stopped machine's newest
+  // additionally needs a running worker (a parked or stopped machine's newest
   // state is finished; nothing polls the marker) and an agent state to inject
   // into. A poke is the exception: waking a waiting machine is its purpose.
   if (cards._steer_btn) {
@@ -197,7 +197,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   const r = data.reasoning || {};
   // Gate on the machine's own liveness (agentLive), not the reasoning fold's
   // `finished`: an agent-state per-state log carries no session.end, so the dir-less
-  // fold's `finished` is STRUCTURALLY always false -- a parked/ended/stopped
+  // fold's `finished` is structurally always false, and a parked/ended/stopped
   // machine would otherwise show its last (finished) turn as live and tick
   // "agent working…" forever. Matches the TUI, which gates on worker liveness.
   cards._conv.setLive(agentLive ? r : { finished: true });
@@ -205,12 +205,12 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   const streaming = r.last_role && (r.last_role.streamed_thinking || r.last_role.streamed_text);
   hbState = {
     // agentLive quiets the beat for a machine that is not working;
-    // operator_blocked still quiets a RUNNING state blocked on an
+    // operator_blocked still quiets a running state blocked on an
     // approval/question (the run pane's rule).
     active: agentLive && !!r.last_role && !streaming && !r.operator_blocked,
     role: (r.last_role && r.last_role.role) || 'agent',
     // Server-computed age, as the run pane uses: anchoring to this frame's
-    // ARRIVAL showed a state wedged for forty minutes as "working… 3s".
+    // arrival would show a state wedged for forty minutes as "working… 3s".
     last: Date.now() - 1000 * (r.last_event_age_s || 0),
     spin: hbState.spin,
   };

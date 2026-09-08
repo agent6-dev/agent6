@@ -10,8 +10,8 @@ here touches the workflow, so any other front-end can drop them in or replace
 them.
 
 Unlike the theme/edit/provider/help overlays, these consequential prompts have
-NO backdrop-click-to-close: an accidental click outside must not silently
-approve/deny/answer -- dismissal is explicit (buttons / keys) only.
+no backdrop-click-to-close: an accidental click outside must not silently
+approve/deny/answer, so dismissal is explicit (buttons / keys) only.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ _ARROW_NAV = (
 
 
 # Modal frames pin a static round $accent (focused) border: a modal always owns
-# focus, so it always shows the focused accent -- the $primary<->$accent
+# focus, so it always shows the focused accent; the $primary<->$accent
 # resting/focus toggle is only for non-modal cards where focus actually moves.
 class ApprovalModal(ModalScreen[str]):
     """Dismisses "yes", "no", or "session" (allow this prompt's whole scope for
@@ -64,7 +64,7 @@ class ApprovalModal(ModalScreen[str]):
     #approval-buttons Button:focus { background: $primary; color: $text; text-style: bold; }
     """
 
-    # Keys handled on the MODAL (not the app) so they reach the focused button.
+    # Keys handled on the modal (not the app) so they reach the focused button.
     BINDINGS: ClassVar = [
         *_ARROW_NAV,
         Binding("y", "approve", "Allow", show=True),
@@ -102,7 +102,7 @@ class ApprovalModal(ModalScreen[str]):
         self.query_one("#no", Button).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id or "no")  # button ids ARE the answer values
+        self.dismiss(event.button.id or "no")  # button ids are the answer values
 
     def action_approve(self) -> None:
         self.dismiss("yes")
@@ -183,7 +183,7 @@ class ConfirmModal(ModalScreen[bool]):
 
 class SteerModal(ModalScreen[str]):
     """Steer the run: inject a multi-line instruction, or continue as-is. Stopping
-    is a separate action -- this dialog never stops the run.
+    is a separate action: this dialog never stops the run.
 
     Result string: "" = continue, anything else = the steering instruction.
     """
@@ -381,9 +381,8 @@ class HistorySearchModal(ModalScreen[str | None]):
     """Ctrl-R: pick one of this session's past messages to edit and resend.
     Type to narrow, ↓/↑ highlight, Enter keeps the highlighted match (the
     typed text when none is highlighted); Esc or a backdrop click cancels.
-    Picking is never consequential -- sending still takes Enter in the
-    composer -- so unlike the consequential prompts above, the backdrop
-    closes it."""
+    Picking is never consequential (sending still takes Enter in the composer),
+    so unlike the consequential prompts above, the backdrop closes it."""
 
     DEFAULT_CSS = """
     HistorySearchModal { align: center middle; }

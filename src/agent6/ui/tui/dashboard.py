@@ -103,7 +103,7 @@ class _ScrollPane(VerticalScroll):
 
 class DashboardScreen(ScreenChrome, Screen[None]):
     """The run dashboard panes: task graph, live stream, tool table, log window,
-    diff/verify, and the composer bar. Presentation only -- it renders the app's
+    diff/verify, and the composer bar. Presentation only: it renders the app's
     folded SessionState and dispatches run control back through the app (see the
     module docstring)."""
 
@@ -116,10 +116,10 @@ class DashboardScreen(ScreenChrome, Screen[None]):
     #stream { width: 1fr; border: round $primary; padding: 0 1; }
     /* The tool table spans the full width so all four columns stay visible. */
     #tools { height: 20%; border: round $primary; }
-    /* Maximized, a pane fills the screen instead of holding its resting
-       size -- textual tags the maximized widget with `-maximized`. The tool table
-       drops its 20% height; the task graph drops its 32% width (else it stays a
-       narrow column when maximized, like the tool table stayed short). */
+    /* Maximized, a pane fills the screen instead of holding its resting size;
+       textual tags the maximized widget with `-maximized`. The tool table drops
+       its 20% height; the task graph drops its 32% width (else it stays a
+       narrow column when maximized). */
     #tools.-maximized { height: 1fr; }
     #plan.-maximized { width: 1fr; }
     /* Log and diff share the tallest row; either maximizes full-screen. */
@@ -175,8 +175,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             ),
         ),
     )
-    # The composer bar is the default focus, so -- exactly like the conversation
-    # view -- there are no plain-letter shortcuts: the same priority-bound set,
+    # The composer bar is the default focus, so (exactly like the conversation
+    # view) there are no plain-letter shortcuts: the same priority-bound set,
     # in the same footer order, on both screens. Run control lives in the Run
     # menu and the palette. `?` opens help when focus is not in the bar.
     BINDINGS: ClassVar = [
@@ -284,7 +284,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             return self._compare_line
         formatted = format_compare(session_compare(self._tui.session_dir))
         if formatted is None:
-            return ""  # not stamped (yet); don't cache -- a live lane may get stamped later
+            return ""  # not stamped (yet); don't cache: a live lane may get stamped later
         headline, rationale = formatted
         rat = f" — {rationale[:100]}" if rationale else ""
         self._compare_line = f"\ncompare: {headline}{rat}"
@@ -302,8 +302,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         """Where the run's work lives, for the header: the run branch and the
         base a merge lands on, or the branch merged (the web header's line and
         `sessions show`'s `changes:`). Read from the manifest once it names a
-        branch and cached: the merge stamp lands after the run ends, when this
-        screen no longer repaints (a reopen re-reads)."""
+        branch and cached: the merge stamp lands after the run ends, once this
+        screen has stopped repainting (a reopen re-reads)."""
         if self._branch_line is not None:
             return self._branch_line
         line = manifest_branches(self._tui.session_dir, repo=Path.cwd()).get("branch_line", "")
@@ -435,7 +435,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
 
     def _scroll_target(self) -> Widget:
         """The pane the shared scroll keys drive: the focused scrollable if any
-        (Tab reaches every pane), else the log -- the dashboard's main scrollback."""
+        (Tab reaches every pane), else the log, the dashboard's main scrollback."""
         focused = self.focused
         if isinstance(focused, (ScrollView, ScrollableContainer)):
             return focused
@@ -469,8 +469,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             self.maximize(self.focused)
 
     def action_view_logs(self) -> None:
-        """Open the full, scrollable log of THIS run -- the inline #log pane is a
-        small sliding window; this is the whole history, scroll-anchored. (l again
+        """Open the full, scrollable log of this run: the inline #log pane is a
+        small sliding window, this is the whole history, scroll-anchored. (l again
         inside the view closes it: LogScreen binds l -> close.)"""
         self.app.push_screen(
             LogScreen(self._tui.logs_path, title=lambda: self._tui.screen_title("logs"))
@@ -514,7 +514,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
     # --- rendering ---------------------------------------------------
 
     def _end_label(self) -> str:
-        """The top-line status label, from THE dir decision (status_for_session_dir,
+        """The top-line status label, from the dir decision (status_for_session_dir,
         the same word the hub row shows), in the word's shared colour; empty
         while running (the heartbeat line carries live activity)."""
         word, reason = self._tui.dir_status
@@ -523,7 +523,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         return f"[b {status_style(word)}]{escape(status_label(word, reason))}[/]"
 
     def render_heartbeat(self) -> None:
-        """The CHEAP once-a-second repaint: the top status line, the composer
+        """The cheap once-a-second repaint: the top status line, the composer
         bar's labels, and the live stream pane. The full pane rebuild
         (render_state) runs only when events actually arrive: rebuilding the
         task tree and tool table every heartbeat would be pure idle churn."""
@@ -539,9 +539,9 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
         # the run is active: silent thinking and the resume gap tick visibly.
-        # NOT while "waiting": a run blocked on an operator prompt is controllable
+        # Not while "waiting": a run blocked on an operator prompt is controllable
         # (steerable) but not working, so the ticking beat would contradict the
-        # same line's "waiting · needs answer" -- the rule the stream body honors.
+        # same line's "waiting · needs answer", the rule the stream body honors.
         active = tui.session_controllable() and tui.dir_status[0] != "waiting"
         beat = ""
         if active and role is not None:
@@ -554,7 +554,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         done_n = sum(1 for t in ds.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
         cost = f"[b]{format_usd(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
-        # Consumption of the binding ledger: THIS leg's metered spend vs its
+        # Consumption of the binding ledger: this leg's metered spend vs its
         # usd_cap (resume re-arms the cap while usd_total stays cumulative),
         # plus the unmetered-token fraction when that ledger has traffic.
         budget = ""
@@ -712,7 +712,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
                     log.scroll_end(animate=False)
             self._last_log_count = s.log_count
 
-        # Diff: the latest auto-commit or live verify output -- or, when a task is
+        # Diff: the latest auto-commit or live verify output, or, when a task is
         # selected, the commits made while it was in focus. Built as rich Text to
         # avoid markup parsing of diff/verify bodies (which contain brackets).
         # Skipped whenever none of its inputs changed.
@@ -758,7 +758,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             else:
                 dt.append("(no commits during the selected task yet)", style="dim")
             diff_widget.update(dt)
-        # A RUNNING or FAILED verify takes precedence so a failure is never
+        # A running or failed verify takes precedence so a failure is never
         # hidden behind a stale passing diff. A passed verify yields to the diff.
         elif verify is not None and verify.exit_code is None:
             dt.append("verify running: ", style="bold")

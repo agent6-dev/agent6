@@ -80,8 +80,8 @@ def _status_cell(summary: SessionSummary) -> Text:
 
 class HomeScreen(ScreenChrome, Screen[None]):
     """The hub view: browse recent runs, start new work, open the config editor.
-    Its bindings live here (not on the App) so the footer of a pushed screen --
-    e.g. the config editor -- shows only that screen's keys, not the hub's."""
+    Its bindings live here (not on the App) so the footer of a pushed screen (the
+    config editor, say) shows only that screen's keys, not the hub's."""
 
     MENUS: ClassVar = (
         Menu(
@@ -173,8 +173,8 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
     def on_screen_resume(self) -> None:
         # Returning from a pushed screen (e.g. config) doesn't re-run on_mount, so
-        # refresh -- which also resets the menu-bar sub_title that config changed
-        # to "config · …" (otherwise the hub keeps showing "agent6 — config").
+        # refresh, which also resets the menu-bar sub_title config changed to
+        # "config · …" (otherwise the hub keeps showing "agent6 — config").
         self.action_refresh()
 
     def _poll(self) -> None:
@@ -187,13 +187,13 @@ class HomeScreen(ScreenChrome, Screen[None]):
     def action_refresh(self) -> None:
         table = self.query_one("#sessions", DataTable)
         # The poll rebuilds the whole table; keep the operator's selection by
-        # run id, not row index -- new activity reorders the rows.
+        # run id, not row index: new activity reorders the rows.
         selected = ""
         if self._runs and 0 <= table.cursor_row < len(self._runs):
             selected = self._runs[table.cursor_row].name
         table.clear()
         # Keep self._runs 1:1 with the table rows: a run dir that vanished between
-        # the listing and its stat() must be dropped from BOTH, or every
+        # the listing and its stat() must be dropped from both, or every
         # cursor_row-indexed selection action (open/logs/merge) maps to the wrong
         # run for cursor positions past the gap.
         survivors: list[Path] = []
@@ -241,10 +241,10 @@ class HomeScreen(ScreenChrome, Screen[None]):
                 table.move_cursor(row=row)
         # Useful context in the header sub-title rather than a duplicate hint bar.
         # "sessions", not "runs": this hub lists every bucket, so a hub of one
-        # run, one plan and one ask announced "3 runs".
+        # run, one plan and one ask would announce "3 runs".
         count = len(dirs)
-        # The empty state says what to do next, as the CLI and the web do and as
-        # the machines screen next door does: a blank table is not an answer.
+        # The empty state says what to do next, as the CLI, the web and the
+        # machines screen next door do.
         tally = (
             'no sessions yet (n starts one, or: agent6 run "<task>")'
             if not count
@@ -291,8 +291,8 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
     def action_view_logs(self) -> None:
         """Open a scrollable, read-only log of the selected run (current or
-        finished) without leaving the hub -- the run list only shows a one-line
-        status, so this is how you read what a past run actually did."""
+        finished) without leaving the hub: the run list shows only a one-line
+        status."""
         table = self.query_one("#sessions", DataTable)
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
@@ -303,13 +303,13 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         # Enter / double-click a run row opens it. The DataTable consumes Enter
-        # for its own RowSelected, so the screen's `enter` binding never fires --
+        # for its own RowSelected, so the screen's `enter` binding never fires;
         # handle the row event itself instead.
         self.action_open_selected()
 
     def action_quit(self) -> None:
         # On the App, `quit` is a built-in; on a Screen it isn't, and the binding
-        # doesn't bubble to it -- so define it here, or the footer's "q Quit"
+        # doesn't bubble to it, so define it here, or the footer's "q Quit"
         # would lie (only Ctrl+Q, an app-level default, would work).
         self.app.exit()
 
@@ -324,16 +324,15 @@ class HomeScreen(ScreenChrome, Screen[None]):
         )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Grey Merge and Delete out on a LIVE run, which `sessions merge` and
-        `sessions rm` always refuse
-        (the web disables the same button and says why). None, not False:
-        False also HIDES the key, and a key missing from the footer reads as a
-        capability this hub does not have.
+        """Grey Merge and Delete out on a live run, which `sessions merge` and
+        `sessions rm` always refuse (the web disables the same button and says
+        why). None, not False: False also hides the key, and a key missing from
+        the footer reads as a capability this hub does not have.
 
         The other refusals (no commits, already merged) are the CLI's to make:
         deciding them here needs a git read per selection, and the summary's
         `unmerged` mark is branch-derived, so it reads False for a run whose
-        commits live only on its chain ref -- one the CLI merges fine.
+        commits live only on its chain ref, one the CLI merges fine.
         """
         del parameters
         if action == "toggle_lanes":

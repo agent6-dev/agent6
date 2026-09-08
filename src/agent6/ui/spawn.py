@@ -3,8 +3,8 @@
 """Find the agent6 executable and spawn it detached.
 
 Shared by every front-end (TUI hub, machines page, web server) so a UI action
-shells out to the same CLI a user would run, never doing the work in-process:
-one argv head, one detached environment, one new-work spawn."""
+shells out to the same CLI a user would run, never doing the work
+in-process."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def agent6_argv(config_path: Path | None) -> list[str]:
 
 
 # The environment of work a front-end drives over the bridge: approvals and
-# questions WAIT for a front-end instead of the headless default's fabricated
+# questions wait for a front-end instead of the headless default's fabricated
 # empty answer (`spawn_and_confirm` sets it for every child it starts), and a
 # run's headless child streams its reasoning deltas to logs.jsonl so a live
 # view renders them.
@@ -192,7 +192,7 @@ def spawn_detached_resume(
     )
 
 
-# Subcommand groups whose verb is the SECOND argv word ("machine run",
+# Subcommand groups whose verb is the second argv word ("machine run",
 # "sessions prune", "config set"); everything else is a one-word subcommand whose
 # next arg is already a value.
 _COMMAND_GROUPS = frozenset({"machine", "sessions", "config"})
@@ -277,8 +277,7 @@ def spawn_and_confirm(
     The pid-signalled analogue of `spawn_and_locate`, behind `machine run` and
     a detached `resume`: their refusals (lock held, network refusal, bad
     bundle, a finished run) print to stderr and exit nonzero without ever
-    starting, which a fire-and-forget spawn (stderr to /dev/null) silently
-    swallowed."""
+    starting, and the capture hands them back."""
     _, err = _spawn_and_wait(
         argv,
         cwd,
@@ -319,7 +318,7 @@ def spawn_and_locate(
     env: dict[str, str] | None = None,
     timeout_s: float = 25.0,
 ) -> tuple[Path | None, str]:
-    """Spawn *argv* detached, then poll *list_dirs* for a NEW dir (not in *before*)
+    """Spawn *argv* detached, then poll *list_dirs* for a new dir (not in *before*)
     whose `logs.jsonl` exists, and return `(dir, "")` so the caller can hand it
     to the dashboard; `(None, message)` on any failure (`_spawn_and_wait`).
 

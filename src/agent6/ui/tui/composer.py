@@ -37,9 +37,9 @@ ComposerMode = Literal["steer", "resume", "start"]
 def composer_labels(mode: ComposerMode, *, continue_as: str = "") -> tuple[str, str]:
     """(border title, key hint) for the composer.
 
-    One conversation view serves runs, plans and asks, so it says "session":
-    a fixed "the run" is wrong two times in three. *continue_as* names the
-    fork an undone run continues as (Enter resumes THAT session).
+    One conversation view serves runs, plans and asks, so it says "session".
+    *continue_as* names the fork an undone run continues as (Enter resumes that
+    session).
     """
     if mode == "steer":
         return ("steer this session (/pin, /compact [focus])", "Enter sends · Ctrl-J newline")
@@ -197,8 +197,8 @@ _STANDING_ANSWERS = frozenset({"session", "session-deny"})
 class SteerInput(TextArea):
     """The bottom composer bar: a TextArea that submits on Enter (Ctrl+J /
     Shift+Enter insert a newline instead) and grows with its content up to
-    _INPUT_MAX_ROWS. Two modes (set_mode): steer a LIVE run, or type the
-    follow-up instruction a FINISHED run is resumed with. While an approval
+    _INPUT_MAX_ROWS. Two modes (set_mode): steer a live run, or type the
+    follow-up instruction a finished run is resumed with. While an approval
     row is on the screen and the composer is empty, the row's keys answer it
     (check_action); anything typed makes them letters again."""
 
@@ -294,8 +294,8 @@ class SteerInput(TextArea):
 
 def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path) -> None:
     """Ctrl-R on a composer: pick one of this session's past messages (the
-    task, then every steer -- journal-read, so resumes and other surfaces'
-    steers appear) into *field* for editing. Newest first, flattened to one
+    task, then every steer, journal-read, so resumes and other surfaces' steers
+    appear) into *field* for editing. Newest first, flattened to one
     line each, repeats collapsed: the same list every surface's search shows."""
     if not field.display:
         screen.notify("this view has no composer to fill", severity="warning")

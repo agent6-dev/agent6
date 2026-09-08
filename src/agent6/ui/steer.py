@@ -41,8 +41,8 @@ class SteerState:
     # A Ctrl-C pause is armed (an operator prompt counts as a boundary: the
     # approval prompt consults this to open the menu right after its answer).
     armed: Callable[[], bool] = field(default=lambda: False)
-    # Run the pause menu NOW and seed its action as the steer answer the next
-    # boundary consumes without re-prompting; an empty action (continue)
+    # Runs the pause menu at once and seeds its action as the steer answer the
+    # next boundary consumes without re-prompting; an empty action (continue)
     # disarms instead. No-op off the terminal (the file bridge has no menu).
     prompt_now: Callable[[], None] = field(default=lambda: None)
 
@@ -50,10 +50,7 @@ class SteerState:
 def file_bridge_steer(session_dir: Path) -> SteerState:
     """Steer for a run with no controlling terminal (detached spawn from the
     TUI hub or the web UI, an ACP connection): no SIGINT handler, requests and
-    answers travel only over the front-end file bridge. Without this, a
-    hub-spawned run would never poll the `steer.request` marker, every web/TUI
-    steer would be silently lost, and a `resume --steer` seed (an ACP
-    session's later prompt) would never reach the resumed model."""
+    answers travel only over the front-end file bridge."""
 
     def prompt() -> str | None:
         answer = read_steer_answer(session_dir)

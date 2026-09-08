@@ -13,7 +13,7 @@ Architecture:
 - `DashboardScreen` is the presentation: the panes, their key bindings and
   menus, and the coalesced repaint of the app's SessionState.
 
-The dashboard is READ-ONLY on the log stream and only writes the answer files
+The dashboard is read-only on the log stream and only writes the answer files
 the workflow polls: `<session_dir>/approvals/<id>.answer` (approve), `.../questions/
 <id>.answer` (ask_user), `<session_dir>/steer.answer` (steer), and the
 `<session_dir>/compact.request` marker (Compact now). Any other front-end can
@@ -178,7 +178,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self._light_dirty = False  # only stream deltas / heartbeat: light repaint
         self._stop = threading.Event()
         # When True (the auto-spawned co-process of `agent6 run`), the view
-        # ends WITH the run: once it finishes, the dashboard holds on the
+        # ends with the run: once it finishes, the dashboard holds on the
         # payoff until the user leaves (Ctrl+Q), and only then does the parent
         # command return. `agent6 attach --tui` leaves this False and keeps
         # following.
@@ -190,8 +190,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self._continue_child = ""
         # Set by action_detach_exit; run_tui reads it to print the reattach hint.
         self.detached = False
-        # THE (word, reason) for this run -- status_for_session_dir, the same
-        # decision the hub row shows -- refreshed on the ~1/s heartbeat.
+        # The (word, reason) for this run (status_for_session_dir, the same
+        # decision the hub row shows), refreshed on the ~1/s heartbeat.
         # Derived, never latched: a crash->resume flips it back to running
         # (a one-way latch would keep "worker exited" painted over the live
         # resumed leg and drop operator steers).
@@ -230,9 +230,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         )
 
     def _task_lead(self) -> str:
-        """What names this run in a title: the TASK (clipped), the pet name
-        only when no task is known yet -- the web hub's rows lead the same
-        way, and the id stays in the header line and every resume hint."""
+        """What names this run in a title: the task (clipped), the pet name
+        only when no task is known yet, as the web hub's rows lead; the id stays
+        in the header line and every resume hint."""
         task = self.state.user_task or self.fallback_task
         return task_snippet(task, max_chars=57) or self.session_dir.name
 
@@ -258,14 +258,14 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self._seed_from_disk()
         # Pushed (not the app's default screen): only the push path loads a
         # screen's CSS, and the hub pushes its HomeScreen the same way. The
-        # conversation opens on top -- the primary view -- with the dashboard
+        # conversation opens on top (the primary view) with the dashboard
         # beneath it; Ctrl+D toggles between them.
         # Installed, so popping the conversation hides rather than destroys it.
         self.push_screen(self._dash)
         self.install_screen(self._conv, "conversation")
         self.push_screen(self._conv)
         # Auto-spawn close: the exit condition (run over, prompts answered) is
-        # polled from a timer in the app's OWN loop and exits there. Exit()
+        # polled from a timer in the app's own loop and exits there. Exit()
         # scheduled from inside a call_from_thread callback does not take effect,
         # but exiting from a timer callback does. The same timer also drives the
         # approval / question modals and the steer composer focus.
@@ -300,7 +300,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             stop_when_finished=self.exit_on_end,
             # Without this, closing the dashboard on a run that never ends
             # (finished + exit_on_end=False, or crashed) leaks this thread in
-            # the idle poll forever -- one per run the hub session opens.
+            # the idle poll forever: one per run the hub session opens.
             should_stop=self._stop.is_set,
         ):
             if self._stop.is_set():
@@ -327,7 +327,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self._fill_composers(self.state.undone_text)
             self.notify(f"undone: continue as {self.state.undone_to}; your message is back to edit")
         if event.get("type") in SESSION_START_EVENTS:
-            # A session boundary (fresh run OR a resumed leg -- a resume emits
+            # A session boundary (a fresh run or a resumed leg: a resume emits
             # only loop.resume.start, never a second session.start) restarts the
             # prompt id counters at approval-1/question-1; a stale seen-set
             # would swallow the new session's first prompts and the run would
@@ -339,14 +339,14 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
                 self.sub_title = self.run_title()
         if event.get("type") in _STATUS_NOW_EVENTS:
             # A terminal / leg-boundary / operator-blocking event changes the
-            # status NOW: refresh synchronously so the chip, the label, and the
+            # status now: refresh synchronously so the chip, the label, and the
             # composer routing never serve the previous state for up to a
             # heartbeat.
             self._refresh_dir_status()
         # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
         # finished run floods hundreds of events on open; rendering each one would
         # rebuild the whole dashboard per event (UI thrash). Streaming deltas
-        # only move the live stream pane, so they take the LIGHT repaint (a
+        # only move the live stream pane, so they take the light repaint (a
         # reasoning burst would otherwise force full rebuilds 5x/s).
         if event.get("type") in STREAM_DELTA_EVENTS:
             self._light_dirty = True
@@ -364,9 +364,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
     def _refresh_dir_status(self) -> None:
         """Recompute dir_status (a pid probe + a manifest read pre-start; the
         same cost class as the spinner tick, so it rides the ~1/s heartbeat).
-        A change repaints and relabels BOTH composer bars -- the covered
-        screen's too, which otherwise kept a stale label until its next
-        event-driven paint (the two bars visibly disagreed live)."""
+        A change repaints and relabels both composer bars, the covered screen's
+        too, which otherwise keeps a stale label until its next event-driven
+        paint (the two bars would visibly disagree)."""
         status = status_for_session_dir(self.session_dir, status_facts(self.state))
         if status != self.dir_status:
             self.dir_status = status
@@ -387,7 +387,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         # keeps an unanswered prompt across session.end and a worker death (it
         # clears only on the answer event or a leg boundary), so an open would
         # otherwise pop live-looking Allow/Deny over a dead run and write the
-        # answer into a file nobody polls. Skipped ids are NOT marked seen, so
+        # answer into a file nobody polls. Skipped ids are not marked seen, so
         # a prompt that outlives a stale probe still pops on the next tick.
         # No screen yet (the first screens land async at startup) or none
         # left (teardown): nothing can render a prompt, and unclaimed ids
@@ -399,7 +399,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         if self.state.steer_requests > self._seen_steer:
             self._seen_steer = self.state.steer_requests
             self._steer_request_to_bar()
-        # Heartbeat: refresh the dir status ~1/s (always -- it is how a death,
+        # Heartbeat: refresh the dir status ~1/s (always: it is how a death,
         # a parked resume, or a revival is noticed with no event to trigger a
         # paint), and while the run is live advance the spinner so the
         # "working… Ns" timer visibly ticks (thinking, not hung).
@@ -429,11 +429,11 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
                 with contextlib.suppress(NoMatches):
                     self._dash.render_heartbeat()
         # Once the run ended (a clean session.end, or the worker died without
-        # one) and no modal is open -- never yank an in-flight answer, but a
-        # ghost prompt on a dead run (its answer read by nobody) must not pin
-        # the hold off forever -- the dashboard HOLDS on the payoff (verify,
-        # diff, cost) instead of tearing down under the user. Ctrl+Q leaves;
-        # the composer still routes a typed follow-up to resume.
+        # one) and no modal is open, the dashboard holds on the payoff (verify,
+        # diff, cost) instead of tearing down under the user: never yank an
+        # in-flight answer, though a ghost prompt on a dead run (its answer read
+        # by nobody) must not pin the hold off forever. Ctrl+Q leaves; the
+        # composer still routes a typed follow-up to resume.
         if (
             self.exit_on_end
             and not self._end_hold
@@ -452,8 +452,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
 
     def submit_instruction(self, text: str) -> None:
         """A composer-bar line. Live: inject it at the run's next safe boundary
-        (after the current step, never mid tool-call) -- the run keeps going.
-        Finished: resume THIS run with the instruction as the follow-up."""
+        (after the current step, never mid tool-call), and the run keeps going.
+        Finished: resume this run with the instruction as the follow-up."""
         if text.strip() == "/undo":
             self._undo_session()
             return
@@ -617,7 +617,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         )
 
     def action_stop_step(self) -> None:
-        """Stop AFTER the current step completes: drop the stop.request marker
+        """Stop after the current step completes: drop the stop.request marker
         the loop honors at its next completed-iteration boundary, so the step's
         tool results and auto-commit land before the run ends (resumable)."""
         if not self.session_controllable():
@@ -724,13 +724,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.call_from_thread(self.notify, f"run started: {new_dir.name} (open it from the hub)")
 
     def action_fork(self) -> None:
-        """Fork this run at its latest checkpoint into a NEW run, unstarted. On
+        """Fork this run at its latest checkpoint into a new run, unstarted. On
         a finished run the composer is handed to the fork: the next typed line
         is its instruction (Enter resumes the fork with it), the way /undo
-        hands over its fork. On a live run the composer keeps steering THIS
-        run, so the notice says how the fork starts. A fork that simply
-        continued had no direction: of a finished run it re-read a done
-        conversation and ended as a silent finish."""
+        hands over its fork. On a live run the composer keeps steering this
+        run, so the notice says how the fork starts. A fork with no direction of
+        its own re-reads a finished conversation and ends as a silent finish."""
         said: list[str] = []
         child, rc = create_fork(
             self.config_path,
@@ -798,7 +797,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         # Drop textual's "Keys" panel (our Help page replaces it), "Screenshot" (an
         # unused default whose SVG export is broken in our terminals), "Theme"
         # (replaced by our live-preview Theme… picker), and "Quit" (its plain exit()
-        # returns the wrong code here -- our File menu's Back to hub / Quit do). All
+        # returns the wrong code here; our File menu's Back to hub / Quit do). All
         # of these are provided by MENUS via palette_commands, so nothing's added.
         for cmd in super().get_system_commands(screen):
             if cmd.title not in ("Keys", "Screenshot", "Theme", "Quit"):

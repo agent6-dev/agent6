@@ -6,8 +6,8 @@ async function stopRun(base, label) {
 
 // opts: { base, readOnly, title }: a draft (machine-create authoring log) is
 // watched read-only against /api/draft/<name>; a run is driveable at /api/session/<id>.
-// The snapshot fetch up front is the existence probe (a bad id used to leave a
-// hollow dashboard: the conversation fetch swallowed its 404 and the
+// The snapshot fetch up front is the existence probe (without it a bad id
+// leaves a hollow dashboard: the conversation fetch swallows its 404 and the
 // EventSource error is silent) and the first paint, so the view never flashes
 // empty while waiting for the first SSE frame.
 // The details drawer: the run's context widgets combined into one collapsible,
@@ -60,7 +60,7 @@ async function renderRun(id, opts, gen) {
   const drawer = el('div', 'grid drawer');
   const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; const h = el('h2', null, title); c.appendChild(h); if (key === 'head') cards._head_title = h; const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
 
-  // Controls at the TOP so Stop stays reachable without scrolling; the Details
+  // Controls at the top so Stop stays reachable without scrolling; the Details
   // toggle folds the drawer away (persisted; default open on wide screens).
   const actions = el('div', 'row wrap page-pad'); actions.style.margin = '10px 22px';
   const dBtn = el('button', 'details-btn', 'Details'); // desktop drawer toggle; phones page widgets instead
@@ -127,8 +127,7 @@ async function renderRun(id, opts, gen) {
   }
   app.appendChild(actions);
 
-  // The heading is where the MODE belongs; paintRun fills it in from the
-  // snapshot. A fixed word was right one time in three.
+  // The heading states the mode; paintRun fills it in from the snapshot.
   mk('head', opts.title || 'Session', ''); // status/summary leads the drawer
   // A planning run's deliverable (plan.md), shown only when there is one.
   mk('plan', 'plan.md', 'scroll');
@@ -191,8 +190,8 @@ async function renderRun(id, opts, gen) {
 
   live = new EventSource(base + '/events');
   // The stream stays open across a finish: a resume from any surface logs into
-  // the same file and painting continues (the TUI follows the same way) -- a
-  // close-on-finished froze this page on "stopped" while the hub said
+  // the same file and painting continues (the TUI follows the same way).
+  // Closing on finished would freeze this page on "stopped" while the hub says
   // "running". Only stream_dead (transport: nothing more will come) closes.
   let sawEnd = false;
   live.onmessage = ev => {
@@ -225,7 +224,7 @@ function paintPrompts(cards, s) {
   const base = cards._base || ('/api/session/' + encodeURIComponent(cards._id));
   // For a machine, the per-state dir the reasoning (and its prompts) came from.
   // Prompt ids reset per state (approval-1 in every state), so the answer must
-  // carry it AND the box key must include it: when the machine advances to a new
+  // carry it and the box key must include it: when the machine advances to a new
   // state, the key changes so the stale box is rebuilt rather than reused with a
   // now-wrong prompt still showing.
   const state = cards._state || '';
@@ -265,7 +264,7 @@ function paintPrompts(cards, s) {
   for (const q of (s.pending_questions || [])) {
     if (q.answered) continue;
     build[pfx + 'q:' + q.id] = () => {
-      // One or more related questions answered together; option buttons FILL that
+      // One or more related questions answered together; option buttons fill that
       // question's field, and a single Submit posts all answers (review first).
       const box = el('div', 'prompt-box');
       // agent6's own start question (the fold says so): name the asker, since the
@@ -321,7 +320,7 @@ function paintDetails(cards, s, asOf) {
   };
   // Metered spend vs max_usd (-1 = unlimited); unmetered tokens vs the fallback
   // cap only when that ledger has traffic. The cap re-arms each resume leg, so
-  // the bar meters THIS leg's spend (usd_total - usd_prior_legs) while the cost
+  // the bar meters this leg's spend (usd_total - usd_prior_legs) while the cost
   // figure stays cumulative; the text is the server's `usd_text`.
   const usdCap = b.usd_cap || 0;
   const legUsd = Math.max(0, (b.usd_total || 0) - (b.usd_prior_legs || 0));
@@ -391,12 +390,13 @@ function paintRun(cards, s) {
   }
   if (cards._composer) cards._composer.setState(s);
   // header
-  // The panel's own heading states the MODE, which is the fact that tells an
-  // operator what they are looking at -- and the one the fixed word denied.
+  // The panel's own heading states the mode, the fact that tells an operator
+  // what they are looking at.
   if (cards._head_title && s.mode) cards._head_title.textContent = s.mode;
   // A phone shows one widget at a time and opens on the conversation, so the
-  // state sat on a card the operator had to go find. The crumb is in the fixed
-  // header on every widget page; state leads it, since the crumb ellipsises.
+  // state would sit on a card the operator has to go find. The crumb is in the
+  // fixed header on every widget page; state leads it, since the crumb
+  // ellipsises.
   if (cards._crumb) setCrumb(runState(s) + ' · ' + cards._crumb);
   cards.head.innerHTML = '';
   const kv = el('div', 'kv');
@@ -428,7 +428,7 @@ function paintRun(cards, s) {
   if (s.policy) cards.head.appendChild(el('div', 'sub muted', esc(s.policy)));
   if (s.last_role) {
     // The in-flight mark means a call is in flight. A killed worker leaves a
-    // role.call with no role.result, so it stayed on forever beside "stale".
+    // role.call with no role.result, so it would stay on beside "stale".
     const r = s.last_role;
     const inFlight = r.in_flight && s.live;
     cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${inFlight ? ' …' : ''}`));
@@ -444,12 +444,12 @@ function paintRun(cards, s) {
   cards._conv.setLive(s);
   cards._conv.poke();
   hbState = {
-    // a "waiting" run is LIVE but blocked on the operator, not working: the
+    // a "waiting" run is live but blocked on the operator, not working: the
     // conversation shows its own waiting line, so the heartbeat must go quiet.
     active: !notLive(s) && !!s.last_role && !streaming && s.status !== 'waiting',
     role: (s.last_role && s.last_role.role) || 'worker',
     // Server-computed age: replayed history must not read as fresh activity
-    // (an arrival anchor showed a 40-minute-wedged run as "working… 3s").
+    // (an arrival anchor would show a 40-minute-wedged run as "working… 3s").
     last: Date.now() - 1000 * (s.last_event_age_s || 0),
     spin: 0,
   };

@@ -9,9 +9,9 @@ Serves web.page to a browser, fed by:
 
 Uses the stdlib `http.server.ThreadingHTTPServer`. Binds loopback by default; a
 non-loopback bind is opt-in (see the `[web]` config section) and widens the
-inbound network surface. The server only ever renders folded read-state and (in
-the write phase) drives the typed `agent6.sessions.ipc` contracts; it never serves
-secrets and never executes arbitrary input.
+inbound network surface. The server only ever renders folded read-state and
+drives the typed `agent6.sessions.ipc` contracts; it never serves secrets and
+never executes arbitrary input.
 """
 
 from __future__ import annotations
@@ -175,7 +175,7 @@ class WebServer(ThreadingHTTPServer):
     def handle_error(self, request: Any, client_address: Any) -> None:
         # A client vanishing mid-request (navigate-away, reload, an abandoned
         # body) raises at the request-line read, outside every handler try;
-        # the stdlib default printed a traceback for each. Real errors keep it.
+        # the stdlib default prints a traceback for each. Real errors keep it.
         exc = sys.exc_info()[1]
         if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
             return
@@ -336,9 +336,8 @@ class _Handler(BaseHTTPRequestHandler):
         The web UI has no app-level auth: on the default loopback bind the
         machine is the trust boundary (any local process/user reaches
         127.0.0.1, so a shared box is not confined here), behind `tailscale
-        serve` the tailnet is. Neither stops a page on ANOTHER origin in the
-        operator's
-        browser from POSTing here (classic CSRF). Two standard,
+        serve` the tailnet is. Neither stops a page on another origin in the
+        operator's browser from POSTing here (classic CSRF). Two standard,
         deployment-agnostic checks close it:
 
         - Require `Content-Type: application/json` for a body. A cross-site
@@ -347,8 +346,8 @@ class _Handler(BaseHTTPRequestHandler):
           This shuts the hole where a JSON body rides in as `text/plain`.
         - If an `Origin` is present, its host:port must equal `Host`. Our own
           page matches; a cross-site page (Origin: https://evil.example) does
-          not. A missing Origin (curl, the CLI) is allowed -- not
-          browser-driven, so not a CSRF vector.
+          not. A missing Origin (curl, the CLI) is allowed: not browser-driven,
+          so not a CSRF vector.
 
         Residual: DNS rebinding (an attacker page rebinds its own hostname to
         127.0.0.1 so its request is same-origin) is not covered here; a Host

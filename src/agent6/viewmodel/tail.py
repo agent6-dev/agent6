@@ -34,7 +34,7 @@ def tail_events(
       True (lets a caller cancel a follow, e.g. on client disconnect).
     - If *follow* is false, yields existing lines and returns.
     - If *start_at_end* is true, existing lines are skipped and tailing starts
-      at the file's current end -- for a resumed run's journal, which already
+      at the file's current end, for a resumed run's journal, which already
       holds the prior legs a viewer has seen.
     - Skips malformed JSON lines silently (the writer may have a partial
       write in flight; we'll pick it up on the next poll).
@@ -58,10 +58,10 @@ def tail_events(
     while True:
         if should_stop is not None and not final_drain and should_stop():
             # The writer is gone (a dead worker) or the caller is leaving: what
-            # sits in the file is final, so hand it over before returning. A
-            # worker that finishes and exits within one poll otherwise had its
-            # last events (the finish, session.end) unread, and `attach`
-            # stopped one step short of the run's end.
+            # sits in the file is final, so hand it over before returning.
+            # Otherwise a worker that finishes and exits within one poll leaves
+            # its last events (the finish, session.end) unread, one step short
+            # of the run's end.
             final_drain = True
         try:
             with path.open("rb") as fh:
@@ -78,7 +78,7 @@ def tail_events(
             base = pos - len(chunk) - len(pending)  # where the first line below starts
             parsed, pending = _complete_lines(pending + chunk, base)
             # stop_when_finished halts at a session.end only when nothing follows it
-            # in this batch: a resume appends events AFTER a session.end (a stopped
+            # in this batch: a resume appends events after a session.end (a stopped
             # run's steer_abort, or the resume of a finished one), and stopping
             # at that superseded end would silently drop everything the resumed
             # run does. A live run's real end is the batch's last event.

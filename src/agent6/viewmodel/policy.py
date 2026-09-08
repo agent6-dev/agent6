@@ -5,8 +5,7 @@
 The few things an operator wants to see without opening config or interrupting
 the run: which model is driving it, whether commands ask, how it is sandboxed,
 and what gate will judge it. One fold, so the CLI banner, the TUI composer and
-the web header cannot drift apart -- the two front-ends are other processes and
-have only the run dir to read.
+the web header cannot drift apart.
 """
 
 from __future__ import annotations
@@ -37,9 +36,8 @@ class SessionPolicy:
         return f"{shlex.join(self.verify_command)} ({self.verify_origin or 'unknown origin'})"
 
     def short(self) -> str:
-        """The compact form for a border or header: the two facts a watching
-        operator acts on. The model has its own place on those surfaces and the
-        gate belongs with the run's outcome, not next to the composer."""
+        """The compact form for a border or header: commands mode and
+        isolation."""
         parts = [
             p
             for p in (f"commands {self.run_commands}" if self.run_commands else "", self.isolation)
@@ -49,7 +47,7 @@ class SessionPolicy:
 
     def line(self) -> str:
         """The one-line form every surface shows; "" for a run whose manifest
-        could not be read -- an all-empty policy must not claim "no verify
+        could not be read, since an all-empty policy must not claim "no verify
         gate" about a run it knows nothing of."""
         if not (self.model or self.isolation or self.run_commands or self.verify_command):
             return ""

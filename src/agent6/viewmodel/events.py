@@ -28,12 +28,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-# A run SESSION begins: a fresh run() emits session.start; a resumed leg emits only
-# loop.resume.start (never a second session.start). Per-process state that restarts
-# at a session boundary -- the prompt-id counters (approval-1/question-1 again),
-# a screen's live/finished tracking, the receipt's mode -- must key on BOTH;
-# keying on session.start alone made every resumed leg invisible to that state
-# (swallowed modals, a steer bar that mislabeled a live leg). One definition so
+# A run session begins: a fresh run() emits session.start; a resumed leg emits
+# only loop.resume.start (never a second session.start). Per-process state that
+# restarts at a session boundary (the prompt-id counters, a screen's
+# live/finished tracking, the receipt's mode) keys on both. One definition so
 # the folds can't drift.
 SESSION_START_EVENTS = frozenset({"session.start", "loop.resume.start"})
 
@@ -57,17 +55,17 @@ def event_epoch(value: object) -> float | None:
 
 
 def tool_result_ok(value: Any) -> bool:
-    """The persisted `tool.result.ok` flag, tolerating the historical
-    stringified form: "True" is ok, "False" (and everything else) is not. THE
-    one coercion both folds use, so a run-state surface and the conversation
-    can never disagree on a tool's verdict."""
+    """The persisted `tool.result.ok` flag, tolerating the stringified form on
+    older logs: "True" is ok, "False" (and everything else) is not. The one
+    coercion both folds use, so a run-state surface and the conversation can
+    never disagree on a tool's verdict."""
     return value in (True, "True")
 
 
 def readable_summary(value: Any) -> str:
     """A tool result's `summary` should be a string; a malformed dict/list value
-    renders as neutral JSON, not the single-quoted Python repr `str()` produces
-    (which leaked `{'unexpected': ...}` into the web/TUI tool detail + log tail)."""
+    renders as neutral JSON, not the single-quoted Python repr `str()`
+    produces."""
     if isinstance(value, str):
         return value
     if isinstance(value, (dict, list)):
@@ -146,8 +144,8 @@ class RoleThinkingDelta:
 @dataclass(frozen=True, slots=True)
 class ToolCall:
     name: str
-    # Raw args: rendered per-value and isinstance-checked for the finish summary,
-    # so a non-dict value degrades exactly as the fold did inline.
+    # Raw args: rendered per-value and isinstance-checked for the finish
+    # summary, so a non-dict value degrades instead of raising.
     args: Any
     # Correlation id stamped per dispatch; None on historical id-less logs.
     call_id: int | None = None
@@ -184,8 +182,7 @@ class BudgetUpdate:
     usd_cap: float
     tokens_unmetered: int
     tokens_fallback_cap: int
-    # Subscription plan usage (percent-metered providers); 0s when absent,
-    # and on logs written before the fields existed.
+    # Subscription plan usage (percent-metered providers); 0s when absent.
     plan_used_percent: float = 0.0
     plan_consumed: float = 0.0
     plan_cap: float = 0.0
@@ -198,7 +195,7 @@ class ApprovalPrompt:
     prompt: str
     # Whether an "allow all" would actually cover anything beyond this call, so
     # a front-end only offers the button when it means something. A log written
-    # before the field existed folds True, the old behaviour.
+    # before the field existed folds True.
     standing: bool = True
     # When it was asked (epoch), for the waiting status's age; None on a log
     # whose line carried no parseable ts.
@@ -253,9 +250,8 @@ class PinsRestored:
 @dataclass(frozen=True, slots=True)
 class CompactRestored:
     """loop.compact.restored: a resume/fork leg counted the elision markers its
-    RESTORED context actually carries. The counts replace the fold's (a fork's
-    fresh log has no compact.dropped events to fold, so it reported zero over a
-    context full of markers)."""
+    restored context actually carries. The counts replace the fold's, since a
+    fork's fresh log has no compact.dropped events to fold."""
 
     elided: int
     gists: int
@@ -311,8 +307,8 @@ class SessionUndone:
 @dataclass(frozen=True, slots=True)
 class RawEvent:
     """Any event the fold does not structurally consume (the ~65 loop.* telemetry
-    types, unknown/future types, a line with no `type`). Carries the raw dict so the
-    log-line renderer still reads it; the fold drops it (its old `case _`)."""
+    types, unknown/future types, a line with no `type`). Carries the raw dict so
+    the log-line renderer still reads it; the fold drops it."""
 
     type: str
     raw: dict[str, Any] = field(default_factory=dict)
@@ -358,7 +354,7 @@ def _call_id(raw: dict[str, Any]) -> int | None:
 def parse_event(raw: dict[str, Any]) -> Event:
     """One raw logs.jsonl event dict -> one typed family, or RawEvent for the rest.
 
-    A malformed field inside a KNOWN family (a torn numeric in `verify.end` or
+    A malformed field inside a known family (a torn numeric in `verify.end` or
     `budget.update`) degrades to RawEvent exactly like an unknown type: the
     fold runs unwrapped inside live tails (web SSE, TUI reader), so it must
     never raise on a line an interrupted writer left behind."""
@@ -369,9 +365,8 @@ def parse_event(raw: dict[str, Any]) -> Event:
 
 
 def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
-    """The per-family arms. Each reproduces, field-for-field, the coercion the
-    SessionState fold applied inline before this module existed, so the fold output
-    is byte-identical for every historical event."""
+    """The per-family arms, one coercion per family, so every event on disk
+    folds to the same output field for field."""
     match raw.get("type", ""):
         case "session.start":
             return SessionStart(user_task=str(raw.get("user_task", "")))
@@ -380,7 +375,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
         case "graph.update":
             nodes = raw.get("nodes", {}) or {}
             if not isinstance(nodes, dict):
-                # Degrade, don't coerce: an empty-dict fold would REPLACE the
+                # Degrade, don't coerce: an empty-dict fold would replace the
                 # task tree; RawEvent keeps the last good graph.
                 raise ValueError("graph.update nodes must be an object")
             cursor = raw.get("cursor")
@@ -444,7 +439,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
                 output_total=int(raw.get("output_total", 0)),
                 usd_total=float(raw.get("usd_total", 0.0)),
                 usd_partial=bool(raw.get("usd_partial", False)),
-                # Post-redesign keys; a historical log without them folds 0.
+                # A log written without these keys folds 0.
                 usd_cap=float(raw.get("usd_cap", 0.0)),
                 tokens_unmetered=int(raw.get("tokens_unmetered", 0)),
                 tokens_fallback_cap=int(raw.get("tokens_fallback_cap", 0)),
@@ -511,7 +506,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             )
         case "session.end":
             # An explicit null is the ungated tri-state; an absent key (a
-            # pre-tri-state log) stays False, reading as it always did.
+            # pre-tri-state log) stays False.
             raw_ap = raw.get("all_passed", False)
             return SessionEnd(
                 all_passed=None if raw_ap is None else bool(raw_ap),

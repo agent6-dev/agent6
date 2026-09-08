@@ -4,12 +4,11 @@
 
 Used by the CLI (`agent6 attach`) and the TUI to surface a machine's
 `machine.notify`/end while an operator is at the machine. Fire-and-forget with a
-FIXED argv (`notify-send -- <title> <body>`): the `--` end-of-options terminator
-plus positional-only data arguments that never reach a shell means a model-authored
-notify message is inert data, not a command or an option, even if it begins with
-`-`. A missing `notify-send` is a silent no-op (the caller also rings the
-terminal bell / uses the in-app toast). No network, no `notify-send` install is
-required.
+fixed argv (`notify-send -- <title> <body>`): the `--` end-of-options terminator
+and positional-only data arguments that never reach a shell keep a
+model-authored notify message inert, even when it begins with `-`. A missing
+`notify-send` is a silent no-op (the caller also rings the terminal bell / uses
+the in-app toast).
 """
 
 from __future__ import annotations

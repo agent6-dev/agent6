@@ -63,7 +63,6 @@ from agent6.viewmodel.listing import finished_needs_new_work
 from agent6.viewmodel.machine_state import MachineVerb
 
 
-# Modes `agent6 web` can start as new work, mapped 1:1 to the CLI subcommand.
 def spawn_machine_create(
     cwd: Path, task: str, config_path: Path | None = None
 ) -> tuple[str | None, str]:
@@ -152,7 +151,7 @@ def answer_question(
         return False, "that question is no longer open"
     if len(answers) != len(prompt.questions):
         # Answers align to the prompt's questions by index, and the asking side
-        # raises on a mismatch AFTER consuming the file: the operator's text
+        # raises on a mismatch after consuming the file: the operator's text
         # would be gone and the model would get an error instead.
         return False, f"that prompt has {len(prompt.questions)} question(s)"
     write_question_answers(session_dir, question_id, answers)
@@ -189,7 +188,7 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
 def fork_run(
     cwd: Path, session_id: str, config_path: Path | None = None
 ) -> tuple[dict[str, str] | None, str]:
-    """Fork a run at its latest checkpoint into a NEW run, unstarted (the CLI's
+    """Fork a run at its latest checkpoint into a new run, unstarted (the CLI's
     `agent6 fork --no-run`, the TUI's Run > Fork): the new session's composer
     starts it with its instruction. Returns ({new_session_id}, "") or (None,
     why)."""
@@ -240,9 +239,9 @@ def resume_run(
     if session_is_live(session_dir):
         return False, "the session is still live; steer it instead"
     if not text.strip() and finished_needs_new_work(session_dir):
-        # The spawn is DETACHED, so the same refusal from `agent6 resume` would
+        # The spawn is detached, so the same refusal from `agent6 resume` would
         # land on a process nobody is reading and the composer would report
-        # "resuming" for a run that never started. The remedy HERE is the
+        # "resuming" for a run that never started. The remedy here is the
         # composer, not the CLI line the shared refusal quotes.
         return False, (
             f"run {session_id!r} already finished (the agent called finish_session);"
@@ -433,7 +432,7 @@ def prune_sessions(
 
 
 def remove_session(cwd: Path, session_id: str, config_path: Path | None = None) -> tuple[bool, str]:
-    """Delete one run's history: `agent6 sessions rm <id>`. History only -- the run
+    """Delete one run's history: `agent6 sessions rm <id>`. History only: the run
     branch is git's, and `sessions prune` is the branch verb. The CLI refuses a live
     run, so this surface inherits that."""
     return run_cli_capture([*agent6_argv(config_path), "sessions", "rm", "--", session_id], cwd)

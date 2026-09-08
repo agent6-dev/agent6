@@ -6,8 +6,8 @@ Served verbatim by web.server at `GET /`. It renders the wire form the JSON / SS
 endpoints emit (the same shape as `agent6 attach --json`); it is a thin renderer,
 so all domain logic stays in the Python read-side.
 
-`client.js` and `styles.css` are real static assets living alongside this
-module; read once via `importlib.resources` at import time and spliced in
+The `client*.js` files and `styles.css` are real static assets living alongside
+this module; read once via `importlib.resources` at import time and spliced in
 verbatim, so `PAGE_HTML` stays a module-level constant the server serves
 straight from memory and tests can assert against directly.
 """
