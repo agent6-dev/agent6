@@ -30,7 +30,8 @@ from typing import Any, Literal
 
 from agent6.types import SESSION_KINDS
 from agent6.viewmodel.events import SESSION_START_EVENTS, as_int, event_epoch, tool_result_ok
-from agent6.viewmodel.format import format_usd, lane_count
+from agent6.viewmodel.format import format_usd, lane_count, status_label
+from agent6.viewmodel.listing import status_word
 
 # Terminal control sequences in model-authored text and command output.
 # Default-deny, not a CSI-only blocklist: stripping CSI alone leaves OSC intact
@@ -92,40 +93,6 @@ OPERATOR = "❯"  # noqa: RUF001 -- deliberate prompt glyph, not a mistyped >
 # verdict rather than shown as an ordinary step. Kept as literals so viewmodel
 # stays free of a tools import (layering).
 _FINISH_TOOLS = frozenset({"finish_session", "finish_planning"})
-
-# Friendly word for a session.end reason on the terminal/TUI "done" line, so a stop
-# reads as "stopped" (not the raw "steer_abort") and an error names itself.
-_END_REASON_LABEL = {
-    "finish_session": "finished",
-    "finish_planning": "planned",
-    "answered": "answered",
-    "silent_finish": "finished (no finish call)",
-    "went_quiet": "went quiet",
-    "budget_exhausted": "budget exhausted",
-    "provider_error": "provider error",
-    "metric_plateau": "metric plateaued",
-    "verify_settled": "verify settled",
-    "settled": "settled (unverified)",
-    "no_progress": "no progress",
-    "tool_error_stuck": "stuck on tool errors",
-    "verify_command_unexecutable": "verify command could not run",
-    "loop_guard_killed": "loop guard killed the run",
-    "interactive_stop": "stopped interactively",
-    "interrupted": "interrupted",
-    "crashed": "crashed",
-    "steer_abort": "stopped",
-    "steer_exit": "stopped",
-    "undone": "undone (forked back)",
-    "detached": "detached",
-    "prompt_revision_failed": "prompt revision failed",
-    "plan_unreadable": "plan unreadable",
-    "max_iterations": "hit iteration cap",
-    "ask_repl_empty": "ask ended (empty input)",
-    "gate_stale": "finished over a stale gate",
-    "gate_red_at_base": "gate was already red before this run",
-    "no_lane_result": "no lane produced a result",
-    "no_lane_passed": "no lane passed its gate",
-}
 
 ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator"]
 
@@ -466,6 +433,8 @@ class TranscriptFold:
             self._tools = 0
             self._commits = 0
             self._commit_subject = ""
+            self._verify = None
+            self._finish = ""
         if etype == "budget.update":
             self._usd = float(event.get("usd_total", 0) or 0)
             return True
@@ -578,6 +547,14 @@ class TranscriptFold:
             out.extend(self._flush_message())
             counts = self._receipt_detail()
             reason = str(event.get("reason", ""))
+            all_passed = event.get("all_passed")
+            word, detail = status_word(
+                finished=True,
+                all_passed=all_passed if isinstance(all_passed, bool) else None,
+                end_reason=reason,
+                scoped=bool(event.get("scoped", False)),
+                gate_red=self._verify is not None and not self._verify[0],
+            )
             # Pair the finish summary with the done line only on a clean finish
             # (a run's finish_session, a plan's finish_planning). On a
             # failure/stop the summary is from an earlier finish call and
@@ -591,11 +568,9 @@ class TranscriptFold:
                     # the operator ended the run) is neither pass nor fail;
                     # flattened, `stopped` and a gateless finish would take the
                     # failure colour of a finish over a red gate, which exits 4.
-                    ok=all_passed
-                    if isinstance(all_passed := event.get("all_passed"), bool)
-                    else None,
+                    ok=all_passed if isinstance(all_passed, bool) else None,
                     detail=counts,
-                    name=_END_REASON_LABEL.get(reason, reason),
+                    name=status_label(word, detail),
                 )
             )
             return out

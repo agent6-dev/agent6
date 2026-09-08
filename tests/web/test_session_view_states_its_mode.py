@@ -77,6 +77,17 @@ def test_the_run_crumb_carries_the_state_word() -> None:
     assert "add('state', runState(s))" in client
 
 
+def test_live_and_empty_conversation_notes_use_the_server_state_words() -> None:
+    """The client cannot rename waiting/dead states already worded by the viewmodel."""
+    assert "function runState(s) { return s.status_label || ''; }" in CLIENT_JS
+    assert "el('div', 'muted', '· ' + runState(s))" in CLIENT_JS
+
+
+def test_the_composer_does_not_flatten_an_outcome_to_finished() -> None:
+    """The canonical outcome stays in the header; the composer names only its action."""
+    assert "This session finished" not in CLIENT_JS
+
+
 def test_the_run_card_shows_the_task_as_sessions_show_prints_it() -> None:
     """A task seeded from a plan carries the whole plan below its title, and
     the card printed all of it into one cell (`# Plan: ...  ## Original task

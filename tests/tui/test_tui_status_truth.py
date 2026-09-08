@@ -561,6 +561,17 @@ def test_exit_on_end_holds_over_a_ghost_prompt_and_ctrl_q_leaves(tmp_path: Path)
     asyncio.run(scenario())
 
 
+def test_end_hold_header_keeps_the_shared_status_reason(tmp_path: Path) -> None:
+    """The run header cannot shorten the hub's qualified status to one word."""
+    d = tmp_path / "failed"
+    d.mkdir()
+    app = Agent6TUI(d)
+    app.dir_status = ("failed", "provider_error")
+    app._end_hold = True
+
+    assert "failed · provider error" in app.run_title()
+
+
 def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) -> None:
     """The payoff (green verify, diff, cost) vanished exactly when the user
     was looking at it: exit_on_end tore the TUI down on session.end and dumped
@@ -665,7 +676,7 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
             app._tick()
             await pilot.pause()
             body = str(app._dash.query_one("#stream-body", Static).render())
-            assert "waiting for your answer" in body
+            assert "waiting · needs answer" in body
             assert "working…" not in body
 
     asyncio.run(scenario())

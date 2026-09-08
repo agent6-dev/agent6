@@ -177,7 +177,7 @@ def test_the_done_badge_keeps_the_gates_tri_state() -> None:
         item = TranscriptItem("done", ok=ok, name=name, detail="1 tool")
         return item_lines(item, detail="collapsed")[1][0]
 
-    assert badge(True, "") == ("● done", "done-ok")
+    assert badge(True, "finished") == ("● finished", "done-ok")
     assert badge(False, "finished") == ("● finished", "done-fail")
     assert badge(None, "finished") == ("● finished", "done-neutral")
     assert badge(None, "stopped") == ("● stopped", "done-neutral")

@@ -472,7 +472,7 @@ def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: Pa
             return str(pane.content)
 
     text = asyncio.run(scenario())
-    assert "waiting for your answer" in text
+    assert "waiting · needs answer" in text
     assert "thinking" not in text and "working" not in text
 
 

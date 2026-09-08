@@ -82,6 +82,7 @@ from agent6.ui.tui.theme import (
 )
 from agent6.viewmodel import restate
 from agent6.viewmodel.events import SESSION_START_EVENTS
+from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import (
     LIVE_STATUS_WORDS,
     finished_needs_new_work,
@@ -243,7 +244,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         frozen at construction: the task name lands after the first fold, and
         the end hold must survive whichever stamp runs last."""
         if self._end_hold:
-            return f"{context} · {self._task_lead()} · {self.dir_status[0]} · Ctrl+Q to leave"
+            return (
+                f"{context} · {self._task_lead()} · {status_label(*self.dir_status)}"
+                " · Ctrl+Q to leave"
+            )
         return f"{context} · {self._task_lead()}"
 
     def run_title(self) -> str:
@@ -443,7 +447,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self._end_hold = True
             self.sub_title = self.run_title()
             self.notify(
-                f"{self.dir_status[0]} · Ctrl+Q to leave, or type below to continue the session",
+                f"{status_label(*self.dir_status)} · Ctrl+Q to leave, or type below to continue"
+                " the session",
                 timeout=8.0,
             )
             self._dirty = True

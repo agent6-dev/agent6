@@ -547,7 +547,7 @@ function makeConv(url, box, body) {
       // streams" over a run that has not started its first turn.
       liveHost.style.display = '';
       if (note) note.style.display = 'none';
-      liveHost.appendChild(el('div', 'muted', '· waiting for your answer'));
+      liveHost.appendChild(el('div', 'muted', '· ' + runState(s)));
       return;
     }
     if (!r) {
@@ -825,7 +825,7 @@ function makeComposer(id) {
     if (busy) { hint.textContent = 'resuming…'; return; }
     if (finished && needsWork) {
       ta.placeholder = 'what should it do next…';
-      hint.textContent = 'This session finished: Enter resumes it with your instruction · Shift+Enter newline · Ctrl-R past messages';
+      hint.textContent = 'Enter resumes it with your instruction · Shift+Enter newline · Ctrl-R past messages';
     } else if (finished) {
       ta.placeholder = 'continue this session…';
       hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages';

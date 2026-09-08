@@ -40,7 +40,7 @@ from agent6.sessions.layout import LOGS_NAME, SessionLayout, read_untracked_at_s
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.verify_infer import line_to_argv
 from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
-from agent6.viewmodel.format import format_usd
+from agent6.viewmodel.format import format_usd, status_label
 from agent6.viewmodel.snapshot import commits_ref
 from agent6.workflows.loop import SessionResult
 
@@ -262,7 +262,7 @@ def print_session_end(
     word, reason = summary.status, summary.reason
     if not console_stream:
         # Headless: no ConsoleView ran, so this block is the only end output.
-        headline = word if not reason else f"{word} · {reason.replace('_', ' ')}"
+        headline = status_label(word, reason)
         reporter.out(f"\n{headline}")
         if result.summary:
             reporter.out(f"  {result.summary}")

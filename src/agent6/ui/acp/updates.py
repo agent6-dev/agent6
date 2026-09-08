@@ -102,8 +102,7 @@ def ending(item: TranscriptItem) -> str:
     deliberate finish that verified nothing (a gateless run), not a failure
     verdict.
     """
-    word = "passed" if item.ok else (item.name or "ended")
-    parts = [f"Session {word}"]
+    parts = [f"Session {item.name or 'ended'}"]
     if item.detail:
         parts.append(f"- {item.detail}")
     ending = " ".join(parts)

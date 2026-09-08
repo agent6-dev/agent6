@@ -145,7 +145,7 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
     assert not worker_is_alive(d)
     _cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
-    assert "state:      stale (no worker, no session.end: likely crashed or killed)" in out
+    assert "state:      stale (worker exited without finishing (crashed or killed))" in out
     assert "stopped" not in out
 
 

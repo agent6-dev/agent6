@@ -259,9 +259,8 @@ def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
 
 def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
     """The app layer emits session.end reason="interrupted" on KeyboardInterrupt;
-    the value must live in SessionEndReason (the wire vocabulary of session.end.reason).
-    The raw token IS the accepted done-line rendering (it reads fine; the
-    label map exists only for unfriendly tokens like steer_abort)."""
+    the value must live in SessionEndReason (the wire vocabulary of session.end.reason),
+    and the done line words it as every listing does: the operator's own stop."""
     from typing import get_args
 
     from agent6.workflows._session_state import SessionEndReason
@@ -270,7 +269,7 @@ def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
     (done,) = fold_transcript(
         [{"type": "session.end", "reason": "interrupted", "all_passed": False}]
     )
-    assert done.kind == "done" and done.ok is False and done.name == "interrupted"
+    assert done.kind == "done" and done.ok is False and done.name == "stopped"
 
 
 def test_operator_steer_text_becomes_an_operator_item() -> None:
@@ -541,17 +540,57 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
     assert done.detail == "0 tools"
 
 
+_DONE_LABELS = {
+    "finish_session": "finished · unverified",
+    "finish_planning": "planned",
+    "answered": "answered",
+    "silent_finish": "failed · silent finish",
+    "went_quiet": "failed · went quiet",
+    "budget_exhausted": "failed · budget exhausted",
+    "provider_error": "failed · provider error",
+    "metric_plateau": "failed · metric plateau",
+    "verify_settled": "failed · verify settled",
+    "settled": "finished · unverified",
+    "no_progress": "failed · no progress",
+    "tool_error_stuck": "failed · tool error stuck",
+    "verify_command_unexecutable": "failed · verify command unexecutable",
+    "loop_guard_killed": "failed · loop guard killed",
+    "interactive_stop": "stopped",
+    "interrupted": "stopped",
+    "crashed": "failed · crashed",
+    "steer_abort": "stopped",
+    "steer_exit": "stopped",
+    "undone": "undone",
+    "detached": "failed · detached",
+    "prompt_revision_failed": "failed · prompt revision failed",
+    "plan_unreadable": "failed · plan unreadable",
+    "max_iterations": "failed · max iterations",
+    "ask_repl_empty": "failed · ask repl empty",
+    "gate_stale": "failed · gate stale",
+    "gate_red_at_base": "finished · gate was already red",
+    "no_lane_result": "failed · no lane result",
+    "no_lane_passed": "failed · no lane passed",
+}
+
+
 def test_every_end_reason_has_a_done_line_label() -> None:
-    """The done marker words every end (`● stopped`, never `● steer_exit`):
-    a reason added to SessionEndReason without a label leaked its raw token
-    to the CLI, TUI and web transcripts."""
+    """The done marker's label for every end reason, with `all_passed` false and
+    no verify event: an operator stop reads stopped, a clean end finished, the
+    rest failed with the reason. A new reason extends the table."""
     from typing import get_args
 
-    from agent6.viewmodel.transcript import _END_REASON_LABEL  # pyright: ignore[reportPrivateUsage]
     from agent6.workflows._session_state import SessionEndReason
 
-    missing = set(get_args(SessionEndReason)) - set(_END_REASON_LABEL)
-    assert not missing, f"end reasons with no done-line label: {sorted(missing)}"
+    assert set(_DONE_LABELS) == set(get_args(SessionEndReason))
+    for reason, label in _DONE_LABELS.items():
+        done = next(
+            it
+            for it in fold_transcript(
+                [{"type": "session.end", "reason": reason, "all_passed": False}]
+            )
+            if it.kind == "done"
+        )
+        assert done.name == label, reason
 
 
 def test_a_resumed_legs_receipt_is_its_own() -> None:

@@ -31,6 +31,7 @@ from agent6.viewmodel import (
     summarize_session_dir,
 )
 from agent6.viewmodel.format import (
+    dead_run_note,
     format_branch,
     format_compare,
     format_cost_cell,
@@ -153,7 +154,7 @@ def _status_state(
         return word, cell, end
     detail = {
         "waiting": "needs answer; attach to respond",
-        "stale": "no worker, no session.end: likely crashed or killed",
+        "stale": dead_run_note("stale", "")[0],
         "parked": f"{reason}; resume to start" if reason else "resume to start",
         # A log that holds events (a worker that died launching writes
         # preflight ones) is "never started", not "no events yet".

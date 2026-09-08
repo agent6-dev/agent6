@@ -41,7 +41,7 @@ function drawerHandle(drawer) {
 { const w = localStorage.getItem('a6-drawer-w'); if (w) document.documentElement.style.setProperty('--drawer-w', w); }
 
 // The run's state word, from the one field the fold stamps it in.
-function runState(s) { return s.status_label || (s.finished ? 'finished' : 'running'); }
+function runState(s) { return s.status_label || ''; }
 
 async function renderRun(id, opts, gen) {
   opts = opts || {};

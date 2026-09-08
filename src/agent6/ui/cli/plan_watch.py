@@ -44,6 +44,7 @@ from agent6.viewmodel import (
     tail_events,
 )
 from agent6.viewmodel.events import SESSION_START_EVENTS
+from agent6.viewmodel.format import dead_run_note, status_label
 
 
 def _resolve_plan_session_id(session_id: str) -> str | None:
@@ -354,8 +355,8 @@ class _CliFrontEnd:
 
 def _print_crashed_line(target: Path) -> None:
     print(
-        f"[agent6] {target.name}: worker not running and the run never ended"
-        f" (crashed or killed); see `agent6 sessions show {target.name}`.",
+        f"[agent6] {target.name}: {status_label('stale', dead_run_note('stale', '')[0])};"
+        f" see `agent6 sessions show {target.name}`.",
         file=sys.stderr,
     )
 
@@ -411,7 +412,7 @@ def _watch_transcript(target: Path) -> int:
         # line) has no log yet. Answer with the same word the listings and
         # `sessions show` use, plus what to do, instead of a raw filesystem message.
         word, reason = status_for_session_dir(target, StatusFacts())
-        print(f"{target.name}: {word}" + (f" ({reason})" if reason else ""))
+        print(f"{target.name}: {status_label(word, reason)}")
         if word == "starting":
             # A live worker is mid-preflight: it is running, not resumable.
             # Telling the operator to `resume` would refuse (or fork a second

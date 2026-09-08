@@ -147,7 +147,7 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
     assert not t.is_alive(), "attach failed to terminate on a crashed run"
     assert result == [0]
     err = capsys.readouterr().err
-    assert "crashed or killed" in err
+    assert "stale · worker exited without finishing (crashed or killed)" in err
 
 
 def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
@@ -175,7 +175,7 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
 
     assert main(["attach", "parked-run-77"]) == 0
     out = capsys.readouterr().out
-    assert "parked" in out
+    assert "parked-run-77: parked" in out
     assert "resume" in out
     assert "logs.jsonl" not in out
 
@@ -384,7 +384,7 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
     t.join(timeout=5)
     assert not t.is_alive(), "attach followed a finished run"
     assert result == [0]
-    capsys.readouterr()
+    assert "passed" in capsys.readouterr().out
 
 
 def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(

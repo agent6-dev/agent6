@@ -36,7 +36,7 @@ def test_reasoning_tool_call_and_result_all_render() -> None:
     assert "let me read the file" in out  # reasoning shown
     assert "→ read_file" in out and "a.py" in out  # the tool call, invisible before
     assert "└" in out and "12 bytes" in out  # its result
-    assert "done" in out
+    assert "passed" in out
 
 
 def test_whitespace_only_text_prints_no_empty_block() -> None:

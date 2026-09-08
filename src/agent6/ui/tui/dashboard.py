@@ -615,7 +615,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             if role.streamed_text:
                 st.append(role.streamed_text[-1200:])
         elif tui.dir_status[0] == "waiting":
-            st.append("waiting for your answer (see the prompt)", style="bold yellow")
+            st.append(status_label(*tui.dir_status), style="bold yellow")
         elif active and role is not None:
             # No live deltas: the model is thinking, or a resume is rebuilding
             # context. A ticking heartbeat, never a stale "idle" or blank.

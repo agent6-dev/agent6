@@ -158,16 +158,12 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
         # Green for a verified pass, the failure colour for a red gate,
         # neutral for an end no gate judged (a gateless finish, the operator's
         # own stop or undo).
-        badge: Line = (
-            [(f"{DONE} done", "done-ok")]
-            if item.ok
-            else [
-                (
-                    f"{DONE} {item.name or 'stopped'}",
-                    "done-fail" if item.ok is False else "done-neutral",
-                )
-            ]
-        )
+        badge: Line = [
+            (
+                f"{DONE} {item.name}",
+                "done-ok" if item.ok else "done-fail" if item.ok is False else "done-neutral",
+            )
+        ]
         body_lines = item.body.split("\n") if item.body else []
         if body_lines:
             badge.append((f"  {body_lines[0]}", "body"))

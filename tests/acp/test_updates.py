@@ -154,9 +154,9 @@ def test_a_run_that_failed_does_not_render_as_silence() -> None:
     and an iteration cap produce ZERO notifications -- an editor watching a run
     that simply stops."""
     labels = {
-        "provider_error": "provider error",
-        "budget_exhausted": "budget exhausted",
-        "max_iterations": "hit iteration cap",
+        "provider_error": "failed · provider error",
+        "budget_exhausted": "failed · budget exhausted",
+        "max_iterations": "failed · max iterations",
         "steer_abort": "stopped",
     }
     for reason, label in labels.items():
@@ -164,8 +164,7 @@ def test_a_run_that_failed_does_not_render_as_silence() -> None:
         updates = updates_for_events(events, acp_session_id="s")
         assert updates, f"{reason} rendered as nothing"
         text = updates[-1]["params"]["update"]["content"]["text"]
-        # The reason's own label, in the shared status vocabulary -- never a
-        # blanket "did not pass" verdict.
+        # The same status label as every header and listing.
         assert f"Session {label}" in text
 
 

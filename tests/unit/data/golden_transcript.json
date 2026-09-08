@@ -92,7 +92,7 @@
   {
     "kind": "done",
     "body": "all green",
-    "name": "finished",
+    "name": "passed",
     "arg": "",
     "ok": true,
     "detail": "$0.0048 · 2s · 0 tools · 0 commits",

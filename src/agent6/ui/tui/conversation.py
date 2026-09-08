@@ -63,7 +63,7 @@ from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
 from agent6.viewmodel import approval_parts, restate
 from agent6.viewmodel.events import SESSION_START_EVENTS
-from agent6.viewmodel.format import dead_run_note, spinner_frame
+from agent6.viewmodel.format import dead_run_note, spinner_frame, status_label
 from agent6.viewmodel.policy import session_policy
 from agent6.viewmodel.state import SessionState
 from agent6.viewmodel.tail import LogTail, tail_events
@@ -552,7 +552,12 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             # model is not thinking and no tool is running, so the pulse that
             # says so would lie under the very modal asking.
             live.display = True
-            live.update(Text("waiting for your answer…", style="bold yellow"))
+            live.update(
+                Text(
+                    status_label(*getattr(self.app, "dir_status", ("waiting", ""))),
+                    style="bold yellow",
+                )
+            )
             return
         think = "".join(self._live_think).strip()
         text = "".join(self._live_text).strip()
