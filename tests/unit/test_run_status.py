@@ -102,6 +102,34 @@ def test_status_elapsed_of_a_fork_leg_runs_from_its_first_event(
     assert "elapsed:    30s" in capsys.readouterr().out
 
 
+def test_a_finished_runs_elapsed_time_stops_at_its_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worker can remain alive during teardown after `session.end` is written.
+
+    The finished receipt fixes the run's elapsed time at its end event; worker
+    teardown must not make that completed duration keep growing.
+    """
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"type": "session.start", "ts": "2026-01-01T00:00:00+00:00"},
+            {
+                "type": "session.end",
+                "ts": "2026-01-01T00:00:10+00:00",
+                "reason": "finish_session",
+                "iterations": 1,
+                "all_passed": True,
+            },
+        ],
+    )
+    write_worker_pid(d, os.getpid())
+
+    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert json.loads(capsys.readouterr().out)["elapsed_s"] == 10.0
+
+
 def test_status_waiting_when_blocked_on_an_operator_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -188,6 +216,35 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
     assert state_word() == "waiting"
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
     assert state_word() == "stale"
+
+
+def test_status_prints_the_final_iteration_count_from_the_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The terminal receipt's `session.end.iterations` is the final count.
+
+    A run that ended before another iteration-stamped event printed `-`, even
+    though its journal recorded the figure the command promises to show.
+    """
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start"},
+            {
+                "ts": _ts(1),
+                "type": "session.end",
+                "reason": "finish_session",
+                "iterations": 7,
+                "all_passed": True,
+            },
+        ],
+    )
+
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert "iteration:  7\n" in capsys.readouterr().out
+    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert json.loads(capsys.readouterr().out)["iteration"] == 7
 
 
 def test_status_leads_with_the_listing_word_then_the_raw_reason(

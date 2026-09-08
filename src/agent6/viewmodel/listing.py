@@ -691,6 +691,8 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         start_ep = ep
                 elif etype == "session.end":
                     finished = True
+                    if isinstance(ev.get("iterations"), int):
+                        iteration = ev["iterations"]
                     # An explicit null is the ungated tri-state; an absent key
                     # stays False.
                     raw_ap = ev.get("all_passed", False)
