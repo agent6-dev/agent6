@@ -75,6 +75,7 @@ async function renderMachine(name, gen) {
   live = new EventSource(base + '/events');
   live.onmessage = ev => {
     let data; try { data = JSON.parse(ev.data); } catch (_) { return; }
+    if (data.type === 'error') { closeLive(); toast('stream error: ' + data.error, true); return; }
     paintMachine(structBody, pathBody, cards, ctx, data);
     hbState.spin++;
     if (data.machine && (data.machine.ended || data.machine.worker_lost)) closeLive(); // machine done or worker lost; stop the stream

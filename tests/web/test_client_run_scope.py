@@ -91,6 +91,32 @@ def test_the_in_flight_mark_needs_a_live_run() -> None:
     assert "r.in_flight && s.live" in body, "the in-flight mark must read liveness too"
 
 
+def test_a_typed_stream_error_is_not_replayed_on_reconnect() -> None:
+    """A server-side stream error closes that stream after showing its reason;
+    automatic reconnect would otherwise replay the same terminal frame forever."""
+    from importlib import resources
+
+    web = resources.files("agent6.ui.web")
+    for name in ("client_run.js", "client_machine.js"):
+        source = web.joinpath(name).read_text(encoding="utf-8")
+        error_branch = next(line for line in source.splitlines() if "type === 'error'" in line)
+        assert "closeLive()" in error_branch, name
+        assert "toast(" in error_branch and ", true)" in error_branch, name
+
+
+def test_a_submitted_prompt_disables_its_controls_until_repaint() -> None:
+    """After a successful answer POST, every control in that prompt stays
+    disabled until an SSE frame removes it; a failed POST restores the controls."""
+    assert "async function postPrompt(" in CLIENT_JS
+    start = CLIENT_JS.index("function paintPrompts(")
+    body = CLIENT_JS[start : CLIENT_JS.index("function paintDetails(", start)]
+    assert body.count("postPrompt(box, base +") == 2
+    helper = CLIENT_JS[CLIENT_JS.index("function setPromptBusy(") : start]
+    assert "querySelectorAll('button,input')" in helper
+    assert "disabled = busy" in helper
+    assert "setPromptBusy(box, false)" in helper
+
+
 def test_the_web_tool_row_counts_the_args_lines_it_drops() -> None:
     """The TUI row folds every args line (`clip_cell`); the web row showed
     line one and dropped the rest unmarked, counting only the result's."""

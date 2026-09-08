@@ -196,7 +196,7 @@ async function renderRun(id, opts, gen) {
   let sawEnd = false;
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
-    if (s.type === 'error') { toast('stream error: ' + s.error); return; }
+    if (s.type === 'error') { closeLive(); toast('stream error: ' + s.error, true); return; }
     if (s.undone_to) {
       // /undo landed: follow the fork with the undone text back to edit.
       toast('undone: forked to ' + s.undone_to);
@@ -212,6 +212,15 @@ async function renderRun(id, opts, gen) {
   };
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
   live.onerror = () => { /* EventSource auto-retries a live run; leave last paint up */ };
+}
+
+function setPromptBusy(box, busy) {
+  for (const control of box.querySelectorAll('button,input')) control.disabled = busy;
+}
+async function postPrompt(box, url, body) {
+  setPromptBusy(box, true);
+  try { await postJSON(url, body); }
+  catch (error) { setPromptBusy(box, false); throw error; }
 }
 
 // Render the run's unanswered approval / ask_user prompts as actionable boxes.
@@ -247,7 +256,7 @@ function paintPrompts(cards, s) {
       const row = el('div', 'form-row');
       const yes = el('button', 'primary', 'Allow');
       const no = el('button', 'danger', 'Deny');
-      const send = (answer) => async () => { try { await postJSON(base + '/approve', { id: ap.id, answer, ...extra }); } catch (e) { toast(e.message, true); } };
+      const send = (answer) => async () => { try { await postPrompt(box, base + '/approve', { id: ap.id, answer, ...extra }); } catch (e) { toast(e.message, true); } };
       yes.onclick = send('yes'); no.onclick = send('no');
       row.appendChild(yes);
       // Only when the prompt says an "allow all" would actually cover its scope:
@@ -291,7 +300,7 @@ function paintPrompts(cards, s) {
         // Guard an accidental Send: an all-empty submit would consume this
         // one-shot question and continue the run on fabricated empty input.
         if (answers.every(a => a === '')) { toast('Pick an option or type an answer first.', true); return; }
-        try { await postJSON(base + '/answer', { id: q.id, answers, ...extra }); } catch (e) { toast(e.message, true); }
+        try { await postPrompt(box, base + '/answer', { id: q.id, answers, ...extra }); } catch (e) { toast(e.message, true); }
       };
       box.appendChild(send);
       return box;
