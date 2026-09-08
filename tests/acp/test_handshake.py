@@ -8,6 +8,7 @@ import io
 import json
 from typing import Any
 
+from agent6.ui.acp.rpc import INVALID_PARAMS, PARSE_ERROR
 from agent6.ui.acp.server import (
     INVALID_REQUEST,
     MAX_LINE_BYTES,
@@ -74,19 +75,67 @@ def test_a_request_with_no_method_is_refused_by_id() -> None:
     assert reply["error"]["code"] == INVALID_REQUEST
 
 
-def test_garbage_does_not_kill_the_connection() -> None:
-    """An editor that sends one bad line must not lose the session."""
+def test_garbage_gets_a_parse_error_without_killing_the_connection() -> None:
+    """JSON-RPC requires a null-id parse error, then the next valid request
+    must still work on the same connection."""
     replies = _exchange(raw=b"not json\n" + json.dumps(_init()).encode() + b"\n")
-    assert len(replies) == 1 and replies[0]["id"] == 1
+    assert replies[0]["id"] is None
+    assert replies[0]["error"]["code"] == PARSE_ERROR
+    assert "invalid JSON" in replies[0]["error"]["message"]
+    assert replies[1]["id"] == 1
 
 
-def test_an_oversized_line_is_dropped_not_buffered() -> None:
+def test_a_wrong_jsonrpc_version_names_the_invalid_envelope() -> None:
+    (reply,) = _exchange({**_init(), "jsonrpc": "1.0"})
+    assert reply["error"]["code"] == INVALID_REQUEST
+    assert "jsonrpc" in reply["error"]["message"] and "2.0" in reply["error"]["message"]
+
+
+def test_non_object_params_name_the_supported_method_they_malformed() -> None:
+    (reply,) = _exchange({"jsonrpc": "2.0", "id": 8, "method": "initialize", "params": []})
+    assert reply["error"]["code"] == INVALID_PARAMS
+    assert "initialize" in reply["error"]["message"] and "object" in reply["error"]["message"]
+
+
+def test_initialize_requires_a_numeric_protocol_version() -> None:
+    for params in (
+        {},
+        {"protocolVersion": "one"},
+        {"protocolVersion": True},
+        {"protocolVersion": -1},
+        {"protocolVersion": 65_536},
+    ):
+        (reply,) = _exchange({"jsonrpc": "2.0", "id": 9, "method": "initialize", "params": params})
+        assert reply["error"]["code"] == INVALID_PARAMS
+        assert "protocolVersion" in reply["error"]["message"]
+
+
+def test_an_invalid_request_id_is_refused_with_a_null_protocol_id() -> None:
+    for bad_id in ([], True, 1.5):
+        (reply,) = _exchange({**_init(), "id": bad_id})
+        assert reply["id"] is None
+        assert reply["error"]["code"] == INVALID_REQUEST
+        assert "id" in reply["error"]["message"]
+
+
+def test_a_non_object_message_is_an_invalid_request() -> None:
+    (reply,) = _exchange(["initialize"])
+    assert reply["id"] is None
+    assert reply["error"]["code"] == INVALID_REQUEST
+    assert "object" in reply["error"]["message"]
+
+
+def test_an_oversized_line_is_refused_not_buffered() -> None:
     """An unbounded readline buffers the whole line BEFORE any size check, so
-    a runaway client could exhaust memory before the cap could refuse it."""
+    a runaway client could exhaust memory before the cap could refuse it. The
+    refusal carries no id (the id is in the dropped bytes) and the next
+    request still works."""
     huge = b'{"jsonrpc":"2.0","id":9,"method":"initialize","params":{"x":"'
     huge += b"A" * (MAX_LINE_BYTES + 64) + b'"}}\n'
     replies = _exchange(raw=huge + json.dumps(_init()).encode() + b"\n")
-    assert [r["id"] for r in replies] == [1], "the oversized message was answered"
+    assert [r["id"] for r in replies] == [None, 1]
+    assert replies[0]["error"]["code"] == INVALID_REQUEST
+    assert str(MAX_LINE_BYTES) in replies[0]["error"]["message"]
 
 
 def test_text_that_cannot_encode_does_not_desynchronise_the_stream() -> None:
@@ -98,3 +147,35 @@ def test_text_that_cannot_encode_does_not_desynchronise_the_stream() -> None:
     line = out.getvalue()
     assert line.endswith(b"\n")
     assert json.loads(line)["params"]["t"].startswith("ok ")
+
+
+def test_a_clients_answer_is_delivered_before_its_envelope_is_judged() -> None:
+    """An answer to session/request_permission that omits `jsonrpc` was
+    refused by the envelope check before the reply path saw it: the worker
+    waited out the permission timeout and denied, and the error frame named
+    the id agent6 had minted, answering agent6's own request. The slot
+    waiting on the answer vouches for it; a malformed answer to a minted id
+    is refused under a null id."""
+    import threading
+
+    answer = {"id": "agent6-1", "result": {"outcome": {"outcome": "selected", "optionId": "0"}}}
+    malformed = {"jsonrpc": "2.0", "id": "agent6-2"}
+    payload = (json.dumps(answer) + "\n" + json.dumps(malformed) + "\n").encode()
+    out = io.BytesIO()
+    server = ACPServer(stdin=io.BytesIO(payload), stdout=out)
+    got: list[dict[str, Any]] = []
+
+    def ask() -> None:
+        got.append(server.request("session/request_permission", {}, timeout_s=5.0))
+
+    asker = threading.Thread(target=ask, daemon=True)
+    asker.start()
+    while "agent6-1" not in server._pending:  # pyright: ignore[reportPrivateUsage]
+        pass
+    server.serve()
+    asker.join(timeout=5.0)
+    assert got == [answer["result"]]
+    frames = [json.loads(line) for line in out.getvalue().decode().splitlines() if line]
+    errors = [f for f in frames if "error" in f]
+    assert [f["id"] for f in errors] == [None]
+    assert "no method" in errors[0]["error"]["message"]

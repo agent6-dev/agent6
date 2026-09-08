@@ -114,7 +114,9 @@ def test_the_handshake_answer_is_a_valid_initialize_response() -> None:
     from agent6.ui.acp.server import ACPServer
 
     server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
-    result = server._initialize({"clientCapabilities": {}}, None)  # pyright: ignore[reportPrivateUsage]
+    result = server._initialize(  # pyright: ignore[reportPrivateUsage]
+        {"protocolVersion": 1, "clientCapabilities": {}}, None
+    )
     assert not _errors(_validator("InitializeResponse"), result), json.dumps(result)
 
 

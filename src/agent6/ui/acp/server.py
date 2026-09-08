@@ -24,8 +24,10 @@ from agent6 import __version__
 from agent6.app.frontend import FrontendCapabilities
 from agent6.ui.acp.rpc import (
     INTERNAL_ERROR,
+    INVALID_PARAMS,
     INVALID_REQUEST,
     METHOD_NOT_FOUND,
+    PARSE_ERROR,
     RpcError,
 )
 from agent6.ui.acp.session import Sessions, prompt_text
@@ -110,9 +112,17 @@ class ACPServer:
                 return
             if len(line) > MAX_LINE_BYTES:
                 # Drain the rest of the oversized line in bounded chunks and
-                # drop the whole payload: refusing beats buffering it.
+                # drop the payload: refusing beats buffering it. Its id is
+                # inside the dropped bytes, so the refusal carries none.
                 while line and not line.endswith(b"\n"):
                     line = self.stdin.readline(MAX_LINE_BYTES + 1)
+                self.reply(
+                    None,
+                    error=(
+                        INVALID_REQUEST,
+                        f"a request line over {MAX_LINE_BYTES} bytes was dropped",
+                    ),
+                )
                 continue
             if not line.strip():
                 continue
@@ -144,32 +154,70 @@ class ACPServer:
         if req_id is not None:
             self.reply(req_id, result=result)
 
-    def _envelope(self, line: bytes) -> tuple[object, str, dict[str, Any]] | None:
+    def _envelope(  # noqa: PLR0911
+        self, line: bytes
+    ) -> tuple[object, str, dict[str, Any]] | None:
         """`(id, method, params)`, or None when there is nothing to act on.
 
-        A malformed line has no id to answer against, which is the one case
-        with no reply at all; dropping it beats ending the session an editor is
-        mid-conversation on.
+        Invalid JSON has no request id to echo, so its parse-error response
+        carries a null id. The connection stays open for the next request.
         """
         try:
             message = json.loads(line)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            self.reply(
+                None,
+                error=(
+                    PARSE_ERROR,
+                    f"invalid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}",
+                ),
+            )
             return None
         if not isinstance(message, dict):
+            self.reply(None, error=(INVALID_REQUEST, "the JSON-RPC message must be an object"))
             return None
         req_id = message.get("id")
+        if "method" not in message and self._ours(req_id) and self._deliver(req_id, message):
+            # The client answering something we asked (the reply path for
+            # session/request_permission): the slot waiting on it vouches for
+            # the frame, so an envelope fault does not cost the worker the
+            # permission timeout.
+            return None
+        if message.get("jsonrpc") != "2.0":
+            self.reply(
+                req_id
+                if isinstance(req_id, str | int)
+                and not isinstance(req_id, bool)
+                and not self._ours(req_id)
+                else None,
+                error=(INVALID_REQUEST, "jsonrpc must be '2.0'"),
+            )
+            return None
+        if req_id is not None and (isinstance(req_id, bool) or not isinstance(req_id, str | int)):
+            self.reply(
+                None,
+                error=(INVALID_REQUEST, "id must be a string, number, or null"),
+            )
+            return None
         method = message.get("method")
         raw = message.get("params")
         if not isinstance(method, str):
-            # A message with no method and an id we allocated is the client
-            # answering something we asked: the reply path for
-            # session/request_permission.
-            if req_id is not None and self._deliver(req_id, message):
-                return None
             if req_id is not None:
-                self.reply(req_id, error=(INVALID_REQUEST, "no method"))
+                # An error frame naming an id we minted would answer our own
+                # request: a malformed answer to one is refused under null.
+                self.reply(
+                    None if self._ours(req_id) else req_id,
+                    error=(INVALID_REQUEST, "no method"),
+                )
             return None
-        return req_id, method, raw if isinstance(raw, dict) else {}
+        if raw is not None and not isinstance(raw, dict):
+            if req_id is not None:
+                self.reply(
+                    req_id,
+                    error=(INVALID_PARAMS, f"params for {method!r} must be an object"),
+                )
+            return None
+        return req_id, method, raw or {}
 
     def abandon_pending(self) -> None:
         """Answer every outstanding request with nothing, because nobody will.
@@ -186,6 +234,11 @@ class ACPServer:
             self._pending.clear()
         for slot in waiting:
             slot.arrived.set()
+
+    @staticmethod
+    def _ours(req_id: object) -> bool:
+        """Whether *req_id* is one `request` minted."""
+        return isinstance(req_id, str) and req_id.startswith("agent6-")
 
     def _deliver(self, req_id: object, message: dict[str, Any]) -> bool:
         """Hand a client response to whoever is waiting for it. True if it was
@@ -276,6 +329,13 @@ class ACPServer:
         return self.sessions
 
     def _initialize(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
+        protocol_version = params.get("protocolVersion")
+        if (
+            not isinstance(protocol_version, int)
+            or isinstance(protocol_version, bool)
+            or not 0 <= protocol_version <= 65_535
+        ):
+            raise RpcError(INVALID_PARAMS, "protocolVersion must be an integer from 0 to 65535")
         raw = params.get("clientCapabilities")
         self.client_capabilities = capabilities_from(raw if isinstance(raw, dict) else {})
         return {

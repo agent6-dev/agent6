@@ -65,7 +65,11 @@ class _Wire:
         self._thread.join(timeout=5.0)
 
     def new_session(self, cwd: Path) -> str:
-        self.send(id=1, method="initialize", params={"clientCapabilities": {}})
+        self.send(
+            id=1,
+            method="initialize",
+            params={"protocolVersion": 1, "clientCapabilities": {}},
+        )
         self.recv()
         self.send(id=2, method="session/new", params={"cwd": str(cwd)})
         return str(self.recv()["result"]["sessionId"])
