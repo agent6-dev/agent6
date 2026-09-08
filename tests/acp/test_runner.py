@@ -1580,6 +1580,32 @@ def test_an_internal_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch) -> 
         wire.close()
 
 
+def test_a_cancel_before_the_turn_starts_leaves_no_marker_for_the_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cancel writes the run's stop marker before the turn starts (the id
+    exists, the run does not); a turn cancelled unstarted is stopped by not
+    starting, and the marker would otherwise stop the session's next turn at
+    its first step."""
+    from agent6.sessions.ipc import request_stop, stop_request_pending
+
+    monkeypatch.chdir(tmp_path)
+
+    def _state_dir(_cwd: Path) -> Path:
+        return tmp_path / "state"
+
+    monkeypatch.setattr(runner, "state_dir", _state_dir)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-AAAA11")
+    session_dir = SessionLayout(tmp_path / "state", "run-AAAA11").session_dir
+    assert request_stop(session_dir)  # what Sessions.cancel writes
+    session.cancelled = True
+
+    assert bridge.run(session, "never starts") == "cancelled"
+    assert not stop_request_pending(session_dir)
+
+
 def test_a_second_prompt_after_a_recorded_turn_with_no_snapshot_starts_a_new_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

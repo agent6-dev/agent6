@@ -874,8 +874,10 @@ def request_stop(session_dir: Path) -> bool:
 
     Returns whether the marker landed, the `request_compact` rule: a failed
     write neither raises into a front-end action nor reads as a stop nothing
-    will honor."""
+    will honor. The session directory is created here because ACP can cancel
+    after assigning the run id but before its lifecycle creates the layout."""
     try:
+        mkdir_for_real_user(session_dir)
         (session_dir / STOP_REQUEST_FILE).write_text("", encoding="utf-8")
     except OSError:
         return False

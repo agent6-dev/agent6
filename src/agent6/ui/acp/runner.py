@@ -38,6 +38,7 @@ from agent6.app.run import run_task
 from agent6.errors import OperatorError
 from agent6.paths import state_dir
 from agent6.sessions.id import unused_session_id
+from agent6.sessions.ipc import clear_stop_request
 from agent6.types import session_bucket
 from agent6.ui.acp.frontend import PERMISSION_TIMEOUT_S, acp_frontend
 from agent6.ui.acp.server import ACPServer
@@ -380,6 +381,13 @@ class RunBridge:
             return False
         return session.layout(state_dir(session.cwd)).manifest_path.exists()
 
+    def _cancelled_unstarted(self, session: Session) -> StopReason:
+        """A turn cancelled before it started is stopped by not starting it;
+        the marker the cancel wrote would otherwise stop the session's next
+        turn at its first step."""
+        clear_stop_request(session.layout(state_dir(session.cwd)).session_dir)
+        return "cancelled"
+
     def had_journal(self, session: Session) -> bool:
         """Whether this turn got far enough to write a journal of its own."""
         if not session.session_id:
@@ -433,13 +441,11 @@ class RunBridge:
             )
             while not self._runs.acquire(timeout=QUEUE_POLL_S):
                 if session.cancelled:
-                    return "cancelled"
+                    return self._cancelled_unstarted(session)
         try:
             self._running = session
             if session.cancelled:
-                # Cancelled while queued. The marker is for a run in flight;
-                # one that has not started is stopped by not starting it.
-                return "cancelled"
+                return self._cancelled_unstarted(session)
             try:
                 return self._run(session, text, resuming=resuming)
             except Exception as exc:
