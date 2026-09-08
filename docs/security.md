@@ -214,7 +214,7 @@ The agent works within the environment it is given and cannot expand it:
     - `strict`'s single-uid map is then root to root: jailed children run as real root under Landlock, seccomp, and `NO_NEW_PRIVS` only
     - a setuid bit planted through `openat2` (the one create path seccomp cannot filter) then lands on a root-owned file in the workspace: local root for whoever runs it outside the jail
     - writes outside the workspace and routes off the box stay closed
-    - readable files now include root-only ones (`/etc/shadow` under `hardened`; `strict`'s rootfs hides it)
+    - readable files include root-only ones (`/etc/shadow` under `hardened`; `strict`'s rootfs hides it)
 - Under `sudo`, agent6 reads the real user's config and secrets (`SUDO_UID` / `SUDO_USER`) and chowns state-dir writes back
     - it does not drop privileges in-process; confinement comes from the jail
 
@@ -388,7 +388,7 @@ Each `tool` state is jailed, so a per-tool `network` sets its netns independentl
 
 - `network` is read only from the operator's config
     - a machine's `[config]` overlay is rejected at load if it declares a protected table or leaf ([the list](state-machines.md#47-machine-config-overlay-config))
-- A `tool` only declares `network`; honoring `allow` is the operator's call, and every conflict is refused at startup naming the state.
+- A `tool` only declares `network`; whether it is granted is the operator's `sandbox.network`, and every conflict is refused at startup naming the state.
 
 **Bundle confinement**
 

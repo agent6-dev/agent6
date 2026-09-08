@@ -233,7 +233,7 @@ A single command, argv-style (never a shell string), through the existing `run_i
     - **Typed field-capture**: `output_schema = "<record>"` types `result`; pull fields with `set = { <var> = "{{ result.<field> }}" }`
         - every `result.<field>` is statically checked, mirroring how an `agent` state validates `finish_session`
 
-- a `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands to one argument per element, and an EMPTY list contributes no argument at all ([Templating and list-splicing](#44-templating-and-list-splicing))
+- a `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands to one argument per element, and an empty list contributes no argument at all ([Templating and list-splicing](#44-templating-and-list-splicing))
 - `scan-inbox` is an illustrative stand-in: a `tool` state runs whatever audited command the operator names
 
 **Network (opt-in, host network off by default).**
@@ -389,7 +389,7 @@ There are exactly two filters, both zero-argument:
 **List-splicing (argv only).**
 
 - a `command` element that is exactly `"{{ listvar }}"` (lone list reference, no filter, no surrounding text) expands to one argv element per item
-- an empty list contributes NO argument, so the command runs one element shorter: guard it with a `branch` on `len(x)` where that changes the command's meaning
+- an empty list contributes no argument, so the command runs one element shorter: guard it with a `branch` on `len(x)` where that changes the command's meaning
 - the only way a list crosses into a command; injection-safe (each element stays a distinct argument, never shell-re-parsed)
 - two load errors guard it: splicing a non-list, and embedding `{{ listvar }}` inside a larger string (`"--x={{ items }}"`)
 - filter and reference grammar are validated at `machine check`
@@ -606,7 +606,7 @@ Sizing for long-running machines:
 
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
-| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam), written into a drafting workspace of its own; per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail; failures hand the problems back (`--max-attempts`, default 3); output: a DRAFT for operator review + commit ([Security considerations](#9-security-considerations)) |
+| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam), written into a drafting workspace of its own; per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail; failures hand the problems back (`--max-attempts`, default 3); output: a draft for operator review + commit ([Security considerations](#9-security-considerations)) |
 | `agent6 machine check <file>`             | validate: the `[config]` overlay against the config schema (and its refusals); parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff + ty, config from the nearest `pyproject.toml`/`ruff.toml` above the file); no execution, no network |
 | `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/*_test.py` mock tests in a no-network jail (`strict` only: elsewhere they count as skipped on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
@@ -678,7 +678,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
     - per-state network and refusals: [security.md, Network](security.md#5-network)
 - **Spend bounds**
     - `[budget].max_transitions` is required and always binds
-    - `max_usd` (optional) caps cumulative metered spend; an unpriced model is bounded per state by `[budget].max_tokens_fallback` (`0` refuses unmetered models outright)
+    - `max_usd` (optional) caps cumulative metered spend; an unpriced model is bounded per state by the agent6 config's `[budget].max_tokens_fallback` (`0` refuses unmetered models outright)
     - a supervisor crash mid-state cannot re-grant its slice: the resume books the orphaned per-state totals as an `attempt.spend` journal event, counted everywhere
 - **Machines are operator artifacts, never LLM-authored**
     - the threat model assumes the file is operator-written and reviewed like code; an LLM may propose (`machine create` drafts), running requires operator review + commit
