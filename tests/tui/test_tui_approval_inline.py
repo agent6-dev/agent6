@@ -66,8 +66,7 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
             # The composer keeps focus: an empty one lets the row's keys answer.
             assert app.focused is app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("a")
-            await pilot.pause()
-            assert (run / "approvals" / "ap1.answer").read_text(encoding="utf-8") == "yes"
+            assert await _answer_written(run, pilot) == "yes"
             _append(run, {"type": "approval.answer", "id": "ap1", "approved": True})
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
@@ -79,6 +78,17 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
             assert "allowed" in str(item.render())
 
     asyncio.run(scenario())
+
+
+async def _answer_written(run: Path, pilot: Any, name: str = "ap1") -> str:
+    """The answer file's text once the click's or key's answer has landed
+    through the host: a single pause is not enough under a loaded gate."""
+    path = run / "approvals" / f"{name}.answer"
+    for _ in range(80):
+        if path.exists():
+            break
+        await pilot.pause(0.05)
+    return path.read_text(encoding="utf-8")
 
 
 async def _row_shown(app: Agent6TUI, pilot: Any) -> bool:
@@ -188,9 +198,19 @@ def test_a_click_on_a_row_label_answers(tmp_path: Path) -> None:
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
             label = app._conv.query_one(".answer-yes", Static)  # pyright: ignore[reportPrivateUsage]
+            for _ in range(80):  # the row is queryable before it is laid out
+                if label.region.width > 0:
+                    break
+                await pilot.pause(0.05)
             await pilot.click(label)
-            await pilot.pause()
-            assert (run / "approvals" / "ap1.answer").read_text(encoding="utf-8") == "yes"
+            answer = run / "approvals" / "ap1.answer"
+            for _ in range(40):
+                if answer.exists():
+                    break
+                await pilot.pause(0.05)
+            else:  # a click under a loaded pilot can land before the layout settles
+                await pilot.click(label)
+            assert await _answer_written(run, pilot) == "yes"
 
     asyncio.run(scenario())
 
