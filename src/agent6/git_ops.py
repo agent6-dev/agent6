@@ -1070,7 +1070,8 @@ def chain_commit(
 ) -> str | None:
     """Record the worktree's current content (minus *exclude*, the run's
     `untracked_at_start`) on the agent's own commit chain, touching neither
-    HEAD, the operator's index, nor any checkout.
+    HEAD nor any checkout; a checked-out *also_branch* has its index brought
+    forward with the ref.
 
     Stages everything into a temp index, writes the tree, and `commit-tree`s
     it parented on *ref*'s current value: the ref itself is the chain state,
@@ -1110,8 +1111,10 @@ def _advance_run_branch(path: Path, branch: str | None, sha: str, *, expected: s
     Compare-and-swap, like `plumb_merge`'s: a bare `update-ref` would rewind
     whatever else moved the branch, such as the operator's own commit on the
     run branch the end banner leaves them sitting on, leaving it only in the
-    reflog. A branch that moved keeps its own tip; the
-    chain ref is the run's record either way."""
+    reflog. A branch that moved keeps its own tip; the chain ref is the run's
+    record either way. A checked-out *branch* has its index, and any changed
+    path its worktree still holds at *expected*, brought forward with the
+    ref."""
     if not branch:
         return
     ref = f"refs/heads/{branch}"
@@ -1121,6 +1124,7 @@ def _advance_run_branch(path: Path, branch: str | None, sha: str, *, expected: s
         return
     if expected is not None and current == expected:
         _run(path, "update-ref", ref, sha, expected)
+        _bring_index_forward(path, branch, expected, sha)
 
 
 def chain_merge(
@@ -1133,11 +1137,11 @@ def chain_merge(
     identity: CommitIdentity | None = None,
     also_branch: str | None = None,
 ) -> str | None:
-    """Merge *merge_rev* into the chain at *ref* without touching HEAD, the
-    shared index, or any checkout (`git merge-tree --write-tree` + a two-parent
-    `commit-tree`). Advances *ref* (and *also_branch*) to the result and syncs
-    the worktree from the old tip's tree to the merged tree, so the running
-    agent sees the lane's files. An unborn ref merges onto *fallback_parent*
+    """Merge *merge_rev* into the chain at *ref* without touching HEAD (`git
+    merge-tree --write-tree` + a two-parent `commit-tree`). Advances *ref* to
+    the result, syncs the worktree from the old tip's tree to the merged tree,
+    so the running agent sees the lane's files, and then moves *also_branch* (a
+    checked-out one with its index). An unborn ref merges onto *fallback_parent*
     (HEAD at run start); a *merge_rev* that descends from the tip
     fast-forwards instead of stacking an empty merge commit. Returns the new
     (or already-containing old) tip; None on textual conflicts (the chain and
@@ -1169,8 +1173,8 @@ def chain_merge(
             env_extra=_identity_env(identity),
         ).stdout.strip()
     _run(path, "update-ref", ref, sha)
-    _advance_run_branch(path, also_branch, sha, expected=ours)
     sync_worktree(path, ours, sha)
+    _advance_run_branch(path, also_branch, sha, expected=ours)
     return sha
 
 

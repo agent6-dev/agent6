@@ -1345,6 +1345,62 @@ def test_chain_commit_touches_no_head_index_or_checkout(tmp_path: Path) -> None:
     assert "b.txt" in tree and "README.md" in tree
 
 
+def test_chain_commit_brings_a_checked_out_run_branch_index_forward(tmp_path: Path) -> None:
+    """Moving a checked-out run branch advances its clean index with the ref."""
+    from agent6.git_ops import chain_commit
+
+    _init_repo(tmp_path)
+    base = _rev(tmp_path, "HEAD")
+    create_branch(tmp_path, "agent6/r1")
+    (tmp_path / "README.md").write_text("run\n", encoding="utf-8")
+
+    sha = chain_commit(
+        tmp_path,
+        "step",
+        ref="refs/agent6/r1/head",
+        fallback_parent=base,
+        also_branch="agent6/r1",
+    )
+
+    assert sha == _rev(tmp_path, "HEAD")
+    assert status(tmp_path).is_clean
+
+
+def test_chain_merge_lands_a_lane_on_a_checked_out_run_branch(tmp_path: Path) -> None:
+    """With the run branch checked out, merging a lane advances the branch,
+    lands the lane's file and leaves a clean status. Moving the branch's index
+    and worktree before the worktree sync made the sync refuse to overwrite
+    the file the move had just written, after both refs had advanced."""
+    from agent6.git_ops import chain_commit, chain_merge
+
+    _init_repo(tmp_path)
+    base = _rev(tmp_path, "HEAD")
+    create_branch(tmp_path, "agent6/r1")
+    (tmp_path / "README.md").write_text("run\n", encoding="utf-8")
+    tip = chain_commit(
+        tmp_path, "step", ref="refs/agent6/r1/head", fallback_parent=base, also_branch="agent6/r1"
+    )
+    assert tip is not None
+    lane_dir = tmp_path.parent / "lane"
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "worktree", "add", "-q", str(lane_dir), "-b", "lane", tip],
+        check=True,
+    )
+    (lane_dir / "lane.txt").write_text("lane\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(lane_dir), "add", "lane.txt"], check=True)
+    subprocess.run(["git", "-C", str(lane_dir), "commit", "-q", "-m", "lane"], check=True)
+    merge_rev = _rev(lane_dir, "HEAD")
+
+    sha = chain_merge(
+        tmp_path, merge_rev, "merge lane", ref="refs/agent6/r1/head", also_branch="agent6/r1"
+    )
+
+    assert sha is not None
+    assert sha == _rev(tmp_path, "HEAD")
+    assert (tmp_path / "lane.txt").read_text(encoding="utf-8") == "lane\n"
+    assert status(tmp_path).is_clean
+
+
 def test_chain_commit_skips_identical_trees_and_survives_branch_switches(
     tmp_path: Path,
 ) -> None:
