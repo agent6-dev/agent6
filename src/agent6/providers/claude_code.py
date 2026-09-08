@@ -193,6 +193,8 @@ class _Session:
     consumed: tuple[Skeleton, ...] = ()
     pending: tuple[str, ...] = ()
     calls: dict[str, _ToolCall] = field(default_factory=dict)
+    # The CLI's own error result per tool_use id it refused to forward.
+    refused: dict[str, str] = field(default_factory=dict)
     plan: PlanUsage | None = None
     resolved_model: str = ""
     session_id: str = ""
@@ -422,6 +424,30 @@ class _Watch:
             raise ProviderError(f"claude produced no output for {self.limit:.0f}s")
 
 
+def _note_refusals(s: _Session, line: Mapping[str, Any]) -> None:
+    """A `user` echo carrying an `is_error` tool_result the CLI wrote itself:
+    it refused that call's input (unparsable or off-schema) and never sent the
+    `tools/call`; the model reads the CLI's error and the next round follows."""
+    content = (line.get("message") or {}).get("content")
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if not isinstance(block, Mapping) or block.get("type") != "tool_result":
+            continue
+        if block.get("is_error"):
+            s.refused[str(block.get("tool_use_id", ""))] = _echo_reason(block.get("content"))
+
+
+def _echo_reason(content: object) -> str:
+    """The first line of an echoed tool_result, its `<tool_use_error>` tag off."""
+    if isinstance(content, list):
+        text = "\n".join(str(b.get("text", "")) for b in content if isinstance(b, Mapping))
+    else:
+        text = str(content or "")
+    text = text.strip().removeprefix("<tool_use_error>").removesuffix("</tool_use_error>").strip()
+    return text.splitlines()[0][:200] if text else "no reason given"
+
+
 @dataclass(frozen=True, slots=True)
 class ClaudeCodeProvider:
     """The worker on the operator's Claude Code login (module docstring)."""
@@ -639,6 +665,11 @@ class ClaudeCodeProvider:
         or the next one the CLI sends (it serialises calls, one per answer)."""
         watch.limit = STREAM_FIRST_DATA_TIMEOUT_S
         while tool_use_id not in s.calls:
+            if tool_use_id in s.refused:
+                raise ProviderError(
+                    f"claude refused tool call {tool_use_id} itself and moved on"
+                    f" ({s.refused[tool_use_id]}); agent6's result for it is undeliverable"
+                )
             line = self._next_line(s, watch)
             if line.get("type") in ("stream_event", "assistant", "result"):
                 raise ProviderError(
@@ -651,10 +682,13 @@ class ClaudeCodeProvider:
     def _absorb(self, s: _Session, line: Mapping[str, Any]) -> None:
         """A line outside a round's stream: stash a tools/call, allow a stray
         can_use_tool, refuse any other control request, take a plan reading,
-        drop the CLI's echoes and progress lines."""
+        note a tool call the CLI refused, drop the CLI's other echoes and
+        progress lines."""
         kind = line.get("type")
         if kind == "control_request":
             self._control(s, line)
+        elif kind == "user":
+            _note_refusals(s, line)
         elif kind == "rate_limit_event":
             s.plan = plan_usage_from_rate_limit(line.get("rate_limit_info") or {}) or s.plan
         elif kind == "system" and line.get("subtype") == "init":

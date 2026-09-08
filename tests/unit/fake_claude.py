@@ -32,6 +32,9 @@ Scenario keys (all optional):
   result line.
 - `can_use_tool`: ask `can_use_tool` before every `tools/call`.
 - `ping`: send an MCP `ping` request after `tools/list`.
+- a tool use's `refused`: the CLI's own error text; the fake echoes it as an
+  `is_error` tool_result and never sends the `tools/call`, as the CLI does
+  for input it cannot parse or validate.
 - `hang_s`: sleep this long before each round's `message_start`.
 - `while_hanging`: `ping` emits stream `ping` events during that sleep,
   `rate_limit` emits `rate_limit_event` lines.
@@ -398,6 +401,26 @@ class _Fake:
             self.assistant_line(message_id, block, start_usage)
             self.stream({"type": "content_block_stop", "index": index})
             index += 1
+            if tool_use.get("refused"):
+                _emit(
+                    {
+                        "type": "user",
+                        "message": {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "content": tool_use["refused"],
+                                    "is_error": True,
+                                    "tool_use_id": tool_use_id,
+                                }
+                            ],
+                        },
+                        "session_id": SESSION_ID,
+                        "tool_use_result": tool_use["refused"],
+                    }
+                )
+                continue
             pending.append((tool_use_id, tool_use))
             if len(pending) == 1:
                 first_rid = self.tools_call(tool_use_id, tool_use)  # before message_delta

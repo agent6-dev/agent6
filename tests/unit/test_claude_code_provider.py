@@ -609,6 +609,67 @@ def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
         _provider(binary).call(system="s", messages=USER0, tools=TOOLS)
 
 
+def test_a_call_the_cli_refused_itself_names_its_reason(tmp_path: Path) -> None:
+    """The CLI checks a tool call's input itself and, on a failure, feeds the
+    model its own error and starts the next round without a `tools/call`; the
+    provider saw only that round's stream and reported "claude moved on"."""
+    refusal = (
+        "<tool_use_error>InputValidationError: mcp__agent6__run_command was called with"
+        " input that could not be parsed as JSON.\nYou sent (first 27 of 27 bytes): x"
+    )
+    binary, _ = _install(
+        tmp_path,
+        {
+            "turns": [
+                [
+                    _round(
+                        tool_uses=[
+                            {
+                                "id": "toolu_1",
+                                "name": "run_command",
+                                "input": {},
+                                "refused": refusal,
+                            }
+                        ]
+                    ),
+                    _round(text="again"),
+                ]
+            ]
+        },
+    )
+    provider = _provider(binary)
+    first = provider.call(system="s", messages=USER0, tools=TOOLS)
+    with pytest.raises(ProviderError, match="refused tool call toolu_1 itself") as exc:
+        provider.call(
+            system="s",
+            messages=[
+                *USER0,
+                {"role": "assistant", "content": first.raw["content"]},
+                {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "R"}],
+                },
+            ],
+            tools=TOOLS,
+        )
+    assert "InputValidationError" in str(exc.value)
+    assert "You sent" not in str(exc.value)
+    assert not exc.value.fatal
+
+
+def test_an_echoed_reason_is_its_first_line_without_the_tag() -> None:
+    from agent6.providers.claude_code import _echo_reason  # pyright: ignore[reportPrivateUsage]
+
+    assert _echo_reason("\n<tool_use_error>InputValidationError: bad\nYou sent: x") == (
+        "InputValidationError: bad"
+    )
+    assert _echo_reason([{"type": "text", "text": "<tool_use_error>boom"}]) == "boom"
+    assert _echo_reason("<tool_use_error>Error: No such tool available: x</tool_use_error>") == (
+        "Error: No such tool available: x"
+    )
+    assert _echo_reason("") == "no reason given"
+
+
 def test_failures_map_to_provider_errors(tmp_path: Path) -> None:
     with pytest.raises(ProviderError, match="not found on PATH") as exc:
         _provider(str(tmp_path / "missing")).call(system="s", messages=USER0, tools=None)
