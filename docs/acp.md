@@ -26,10 +26,12 @@ ACP is a fourth projection of that fold, so an editor sees what `agent6 attach` 
 A tool call arrives twice, as ACP models it.
 
 - `tool_call` (`in_progress`) when the run dispatches it, `tool_call_update` (`completed` or `failed`, with the output) when its result lands
+- built-in calls carry their ACP kind, and an edit result carries each journaled path as an absolute follow-along location
 - a call waiting on an approval or an `ask_user` answer is updated to `pending` while its prompt is open, and back to `in_progress` once answered
 - a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.end` is written, or when the tail ends without one (a worker killed mid-call)
 - `toolCallId` is `<run id>:<turn>:<call>`, unique for the life of the session: each turn is one leg of the run, and a leg's call numbers start at 1
 
+Worker text and thinking deltas arrive in journal order as they stream; side-role output stays out of the conversation.
 Everything the lifecycle prints (the `agent6 run` footer: where the changes are, the auto-stash notice and how to restore it, a refusal's reason) arrives as an `[agent6]` agent message as it is printed, whatever state the journal is in.
 The cost receipt goes to stderr only, where a client that shows the agent's log picks it up.
 

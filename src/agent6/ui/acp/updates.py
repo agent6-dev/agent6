@@ -13,6 +13,7 @@ test can assert the exact JSON an editor would receive.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from agent6.viewmodel.transcript import TranscriptItem
@@ -31,6 +32,34 @@ _CHUNK_KIND = {
     "marker": "agent_message_chunk",
 }
 
+# ACP's kind per built-in tool, the editor's icon; an MCP tool reads `other`.
+_TOOL_KINDS = {
+    "read_file": "read",
+    "list_dir": "read",
+    "agent6_docs": "read",
+    "read_session": "read",
+    "read_background": "read",
+    "use_skill": "read",
+    "outline": "search",
+    "find_definition": "search",
+    "find_references": "search",
+    "list_tasks": "read",
+    "apply_edit": "edit",
+    "apply_patch": "edit",
+    "run_verify_command": "execute",
+    "run_command": "execute",
+    "run_metric_command": "execute",
+    "stop_background": "execute",
+    "fetch": "fetch",
+    "ask_user": "other",
+    "add_task": "think",
+    "update_task": "think",
+    # The finish tools never fold to a call (the transcript drops them);
+    # listed so the map covers the whole surface.
+    "finish_session": "other",
+    "finish_planning": "other",
+}
+
 
 def updates_for(
     item: TranscriptItem,
@@ -38,6 +67,9 @@ def updates_for(
     acp_session_id: str,
     wire_id: str = "",
     announced: bool = False,
+    cwd: Path | None = None,
+    paths: tuple[str, ...] = (),
+    streamed: bool = False,
 ) -> list[dict[str, Any]]:
     """The `session/update` notifications one fold item becomes.
 
@@ -48,6 +80,8 @@ def updates_for(
     ACP models a tool call as a thing with a lifecycle, and an editor that
     only sees the finished one cannot show work in progress, which for a
     long verify is the whole point.
+
+    `streamed`: *item* is one delta of a message in flight, sent whole.
     """
     if item.kind == "done":
         return [
@@ -79,11 +113,14 @@ def updates_for(
                     "toolCallId": wire_id,
                     "status": _tool_status(item),
                     **({"content": _tool_content(item)} if _tool_content(item) else {}),
+                    **({"locations": _tool_locations(paths, cwd)} if paths and cwd else {}),
                 },
             )
         ]
     chunk = _CHUNK_KIND.get(item.kind)
-    body = item.body.strip()
+    # A streamed delta keeps every byte (a paragraph break arrives as its own
+    # delta); a whole message is stripped, and a blank one is no message.
+    body = item.body if streamed else item.body.strip()
     if chunk is None or not body:
         return []
     return [_update(acp_session_id, {"sessionUpdate": chunk, "content": _text(body)})]
@@ -181,6 +218,13 @@ def _tool_content(item: TranscriptItem) -> list[dict[str, Any]]:
     return [{"type": "content", "content": _text(body)}] if body else []
 
 
+def _tool_locations(paths: tuple[str, ...], cwd: Path) -> list[dict[str, str]]:
+    """ACP's absolute follow-along locations from a tool.result's paths, each
+    once."""
+    resolved = ((cwd / path).resolve() for path in paths)
+    return [{"path": str(path)} for path in dict.fromkeys(resolved)]
+
+
 def wire_call_id(session_id: str, turn: int, within_leg: str) -> str:
     """One tool call's id on the wire, `<run>:<turn>:<call>`: unique for the
     life of the ACP session, which is what an editor keys a call's lifecycle
@@ -208,9 +252,6 @@ def _tool_call(item: TranscriptItem, wire_id: str) -> dict[str, Any]:
     return {
         "toolCallId": wire_id,
         "title": title,
-        # ACP's `kind` drives the editor's icon. agent6's own tool names are
-        # the honest source; guessing a finer category from them would be a
-        # second vocabulary to keep in sync.
-        "kind": "other",
+        "kind": _TOOL_KINDS.get(item.name, "other"),
         "status": _tool_status(item),
     }

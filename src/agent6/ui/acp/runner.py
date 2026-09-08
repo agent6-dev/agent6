@@ -53,7 +53,7 @@ from agent6.ui.acp.updates import (
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 from agent6.viewmodel.listing import scan_session_log
 from agent6.viewmodel.tail import journal_size, tail_events
-from agent6.viewmodel.transcript import TranscriptFold
+from agent6.viewmodel.transcript import DRIVING_ROLES, TranscriptFold, TranscriptItem
 
 # A safety net on joining the streaming tail, not the normal path: `_stop`
 # ends it one read pass after the run returns. This bounds a tail wedged on a
@@ -218,6 +218,14 @@ class Announced:
         with self._changed:
             while tool_call_id not in self._ids and not self._closed and not abandoned():
                 self._changed.wait(0.5)  # *abandoned* is polled; add/close wake at once
+
+
+def _result_paths(event: dict[str, Any]) -> tuple[str, ...]:
+    """The paths a tool.result journaled, for the editor's follow-along."""
+    raw = event.get("paths")
+    if not isinstance(raw, list):
+        return ()
+    return tuple(path for path in raw if isinstance(path, str) and path.strip())
 
 
 @dataclass
@@ -508,7 +516,7 @@ class RunBridge:
         end_reason = scan.end_reason if grown and scan.finished else ""
         return stop_reason(code, end_reason=end_reason)
 
-    def _stream(
+    def _stream(  # noqa: PLR0912
         self,
         session: Session,
         logs_path: Path,
@@ -527,6 +535,7 @@ class RunBridge:
         stderr, the editor's agent log: the editor is the live view, so the
         lifecycle prints no ending of its own."""
         fold = TranscriptFold()
+        streamed: set[str] = set()
         consumed = [0]
 
         def _at(position: int) -> None:
@@ -540,7 +549,26 @@ class RunBridge:
                 start_at=journal_before,
                 on_position=_at,
             ):
-                for item in fold.feed(event):
+                event_type = str(event.get("type", ""))
+                paths = _result_paths(event) if event_type == "tool.result" else ()
+                if event_type == "role.call":
+                    streamed.clear()
+                is_delta = event_type in ("role.thinking_delta", "role.text_delta")
+                role = str(event.get("role", ""))
+                side_delta = is_delta and bool(role) and role not in DRIVING_ROLES
+                items = [] if side_delta else fold.feed(event)
+                if is_delta and not side_delta:
+                    kind = "thinking" if event_type == "role.thinking_delta" else "text"
+                    streamed.add(kind)
+                    for body in updates_for(
+                        TranscriptItem(kind, body=str(event.get("text", ""))),
+                        acp_session_id=session.acp_id,
+                        streamed=True,
+                    ):
+                        self.server.notify_raw(body)
+                for item in items:
+                    if item.kind in streamed:
+                        continue
                     wire_id = (
                         tool_call_id(item, session.session_id, announced.turn)
                         if item.kind == "tool"
@@ -551,12 +579,16 @@ class RunBridge:
                         acp_session_id=session.acp_id,
                         wire_id=wire_id,
                         announced=wire_id in announced,
+                        cwd=session.cwd,
+                        paths=paths,
                     ):
                         self.server.notify_raw(body)
                     if item.kind == "tool":
                         announced.add(wire_id)
                     elif item.kind == "done":
                         _stderr(ending(item))
+                if event_type == "role.result":
+                    streamed.clear()
                 if order is not None:
                     order.flush(consumed[0])
         finally:
@@ -568,6 +600,7 @@ class RunBridge:
                     acp_session_id=session.acp_id,
                     wire_id=wire_id,
                     announced=wire_id in announced,
+                    cwd=session.cwd,
                 ):
                     self.server.notify_raw(body)
             if order is not None:

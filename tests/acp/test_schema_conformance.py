@@ -90,6 +90,7 @@ def test_the_recorded_run_produces_only_valid_session_updates() -> None:
         TranscriptItem(kind="tool", name="run_verify", arg="", ok=False, detail="exit 1"),
         TranscriptItem(kind="tool", name="grep", arg="x", ok=None),
         TranscriptItem(kind="tool", name="read_file", arg="a.py", ok=True, tail="4 lines"),
+        TranscriptItem(kind="tool", name="apply_edit", arg="a.py", ok=True),
         TranscriptItem(kind="done", ok=False, name="budget", detail="stopped"),
         TranscriptItem(kind="commit", arg="abc1234", detail="+3 -1"),
         TranscriptItem(kind="thinking", body="hmm"),
@@ -99,7 +100,14 @@ def test_the_recorded_run_produces_only_valid_session_updates() -> None:
 def test_each_fold_item_projects_to_a_valid_update(item: TranscriptItem) -> None:
     """Item kinds the recorded run does not happen to contain."""
     validator = _validator("SessionNotification")
-    for body in updates_for(item, acp_session_id="s", wire_id=tool_call_id(item, "r", 1)):
+    paths = ("a.py",) if item.name == "apply_edit" else ()
+    for body in updates_for(
+        item,
+        acp_session_id="s",
+        wire_id=tool_call_id(item, "r", 1),
+        cwd=Path("/repo"),
+        paths=paths,
+    ):
         assert not _errors(validator, body["params"]), json.dumps(body["params"])
 
 

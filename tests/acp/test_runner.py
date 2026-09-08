@@ -11,7 +11,7 @@ import select
 import subprocess
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -1129,6 +1129,56 @@ def test_a_late_tail_keeps_its_own_turn(tmp_path: Path) -> None:
     assert sent and sent[0]["params"]["update"]["toolCallId"] == "run-x:1:1", sent
 
 
+def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ACP is a live surface: waiting for role.result batches the stream, and
+    side-role deltas are not messages from the agent to the operator."""
+    events = [
+        {"type": "role.call", "role": "reviewer"},
+        {"type": "role.text_delta", "role": "reviewer", "text": "private"},
+        {"type": "role.result", "role": "reviewer", "text": "private"},
+        {"type": "role.call", "role": "worker"},
+        {"type": "role.thinking_delta", "role": "worker", "text": "think "},
+        {"type": "role.text_delta", "role": "worker", "text": "answer "},
+        {"type": "role.thinking_delta", "role": "worker", "text": "two"},
+        {"type": "role.text_delta", "role": "worker", "text": "one"},
+        {"type": "role.result", "role": "worker", "text": "ignored fallback"},
+    ]
+    at = [-1]
+
+    def _events(*_args: object, **_kwargs: object) -> Iterator[dict[str, Any]]:
+        for index, event in enumerate(events):
+            at[0] = index
+            yield event
+
+    sent: list[tuple[int, dict[str, Any]]] = []
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = lambda body: sent.append(  # pyright: ignore[reportAttributeAccessIssue]
+        (at[0], body)
+    )
+    monkeypatch.setattr(runner, "tail_events", _events)
+    bridge = RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
+
+    bridge._stream(  # pyright: ignore[reportPrivateUsage]
+        session, tmp_path / "logs.jsonl", lambda: True, 0, Announced(turn=1)
+    )
+
+    chunks = [
+        (position, update["sessionUpdate"], update["content"]["text"])
+        for position, message in sent
+        if (update := message["params"]["update"])["sessionUpdate"]
+        in {"agent_thought_chunk", "agent_message_chunk"}
+    ]
+    assert chunks == [
+        (4, "agent_thought_chunk", "think "),
+        (5, "agent_message_chunk", "answer "),
+        (6, "agent_thought_chunk", "two"),
+        (7, "agent_message_chunk", "one"),
+    ]
+
+
 def test_a_dead_workers_open_tool_call_is_settled(tmp_path: Path) -> None:
     """When a worker died between tool.call and tool.result, ACP left the call
     in progress even though every dir-aware surface read the worker as dead."""
@@ -1528,3 +1578,30 @@ def test_an_internal_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch) -> 
         assert "KeyError" in error["message"] and "no such row" in error["message"]
     finally:
         wire.close()
+
+
+def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: Path) -> None:
+    """The tool_call_update for an edit carries each path the result journaled,
+    absolute, so the editor follows along."""
+    from agent6.events import EventSink
+
+    sent: list[dict[str, Any]] = []
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    bridge = RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", turn=1)
+    log = tmp_path / "logs.jsonl"
+    sink = EventSink(log)
+    sink.emit("tool.call", name="apply_edit", args={"path": "src/x.py"}, call_id=1)
+    sink.emit("tool.result", name="apply_edit", call_id=1, ok=True, paths=["src/x.py", "src/x.py"])
+    sink.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+
+    bridge._stream(  # pyright: ignore[reportPrivateUsage]
+        session, log, lambda: True, 0, Announced(turn=1)
+    )
+
+    updates = [m["params"]["update"] for m in sent]
+    located = [
+        u for u in updates if u.get("sessionUpdate") == "tool_call_update" and "locations" in u
+    ]
+    assert located and located[0]["locations"] == [{"path": str((tmp_path / "src/x.py").resolve())}]

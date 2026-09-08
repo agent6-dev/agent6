@@ -9,6 +9,7 @@ cannot disagree with the other three about what happened.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from agent6.ui.acp.updates import updates_for
@@ -68,6 +69,53 @@ def test_a_tool_is_a_call_and_then_an_outcome() -> None:
     assert announced["toolCallId"] == done["toolCallId"], "the update must pair with its call"
     assert announced["status"] == "in_progress"
     assert done["status"] == "completed"
+
+
+def test_known_tools_carry_their_acp_kinds() -> None:
+    expected = {
+        "read_file": "read",
+        "apply_edit": "edit",
+        "find_references": "search",
+        "run_command": "execute",
+        "fetch": "fetch",
+    }
+    for name, kind in expected.items():
+        (notification,) = updates_for(TranscriptItem("tool", name=name), acp_session_id="s")
+        assert notification["params"]["update"]["kind"] == kind
+
+
+def test_journaled_tool_paths_reach_the_editor_as_absolute_locations() -> None:
+    """An edit's tool.result journals the paths it wrote; dropping them from
+    ACP prevents the editor from following the files the run changed."""
+    fold = TranscriptFold()
+    fold.feed(
+        {
+            "type": "tool.call",
+            "name": "apply_edit",
+            "args": {"path": "src/agent6/ui/acp/updates.py"},
+            "call_id": 1,
+        }
+    )
+    (item,) = fold.feed(
+        {
+            "type": "tool.result",
+            "name": "apply_edit",
+            "ok": True,
+            "paths": ["src/agent6/ui/acp/updates.py"],
+            "call_id": 1,
+        }
+    )
+
+    (notification,) = updates_for(
+        item,
+        acp_session_id="s",
+        cwd=Path("/repo"),
+        paths=("src/agent6/ui/acp/updates.py",),
+    )
+
+    assert notification["params"]["update"]["locations"] == [
+        {"path": "/repo/src/agent6/ui/acp/updates.py"}
+    ]
 
 
 def test_an_approval_wait_reads_pending_then_in_progress() -> None:
@@ -304,3 +352,34 @@ def test_a_gateless_finish_never_reads_as_a_failed_check() -> None:
     text = updates[-1]["params"]["update"]["content"]["text"]
     assert "Session finished" in text
     assert "did not pass" not in text
+
+
+def test_every_built_in_tool_names_its_acp_kind() -> None:
+    """The fixed tool surface maps to an ACP kind, so a new tool names its
+    editor icon here; only an MCP tool reads `other` by default."""
+    from agent6.tools.schema import (
+        ALL_TOOLS,
+        ASK_EXTRA_TOOLS,
+        LOOP_EXTRA_TOOLS,
+        MACHINE_EXTRA_TOOLS,
+        PLAN_EXTRA_TOOLS,
+    )
+    from agent6.ui.acp.updates import _TOOL_KINDS  # pyright: ignore[reportPrivateUsage]
+
+    registries = (
+        ALL_TOOLS,
+        LOOP_EXTRA_TOOLS,
+        PLAN_EXTRA_TOOLS,
+        ASK_EXTRA_TOOLS,
+        MACHINE_EXTRA_TOOLS,
+    )
+    names = {tool.TOOL_NAME for registry in registries for tool in registry}
+    assert names == set(_TOOL_KINDS), names ^ set(_TOOL_KINDS)
+
+
+def test_a_whitespace_delta_reaches_the_editor() -> None:
+    """A provider streams a paragraph break as its own delta; dropped, the
+    editor ran two paragraphs together while every other surface kept them."""
+    (update,) = updates_for(TranscriptItem("text", body="\n\n"), acp_session_id="s", streamed=True)
+    assert update["params"]["update"]["content"]["text"] == "\n\n"
+    assert updates_for(TranscriptItem("text", body=""), acp_session_id="s", streamed=True) == []
