@@ -1134,6 +1134,38 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: Path) -> None
     assert "HTTP" not in result.summary and "agent6 connect" not in result.summary
 
 
+def test_exhausted_provider_retries_keep_the_attempt_count_and_reason(tmp_path: Path) -> None:
+    """The terminal retry is counted and its statusless reason reaches the run summary."""
+    reason = "Server disconnected without sending a response"
+    provider = MagicMock()
+    provider.call.side_effect = ProviderError(reason)
+    logs: list[str] = []
+    wf = _wf(
+        root=tmp_path,
+        provider=provider,
+        dispatcher=MagicMock(),
+        logger=logs.append,
+        provider_retry_count=2,
+        provider_retry_delay_s=0,
+    )
+
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="system",
+        conversation=Conversation.from_wire(
+            [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
+        ),
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+
+    assert provider.call.call_count == 3
+    assert any("3 attempts" in line for line in logs)
+    assert "3 attempts" in result.summary
+    assert reason in result.summary
+
+
 class _OneShotSteer:
     """A file-bridge steer stand-in that fires once, returning *text*."""
 

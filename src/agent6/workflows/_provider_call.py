@@ -150,6 +150,7 @@ class ProviderCaller:
                     )
                     raise
                 if attempt == attempts:
+                    exc.attempts = attempt
                     raise
                 delay = self._backoff(attempt, exc.retry_after_s)
                 self.log(

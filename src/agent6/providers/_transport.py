@@ -267,7 +267,8 @@ class ProviderCall:
             except httpx2.HTTPError as exc:
                 self.record(headers, 0, f"HTTPError: {exc}")
                 raise ProviderError(
-                    f"HTTP error calling {self.url} ({self.api_format} format): {exc}"
+                    f"HTTP error calling {self.url} ({self.api_format} format): "
+                    f"{scrub_secret_values(str(exc), headers)}"
                 ) from exc
             recorded = False
             if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):

@@ -1139,10 +1139,11 @@ class Workflow:
             return NEXT_TURN  # "continue" or an injected instruction -> re-do the turn
         except ProviderError as exc:
             hint = provider_error_hint(exc.status_code, exc.provider)
+            attempts = f" after {exc.attempts} attempts" if exc.attempts > 1 else ""
             # The full upstream body (which can carry a noisy account user_id)
             # goes in this one diagnostic log line; the end-block summary below
             # stays concise so the raw blob is not echoed to the operator twice.
-            self._log(f"LOOP: provider error at iter {iteration}: {exc}{hint}")
+            self._log(f"LOOP: provider error{attempts} at iter {iteration}: {exc}{hint}")
             self._final_checkpoint(iteration)
             self._emit(
                 "session.end",
@@ -1151,13 +1152,14 @@ class Workflow:
                 all_passed=False,
             )
             status = f" (HTTP {exc.status_code})" if exc.status_code else ""
-            # A fatal error's text is agent6's own remedy, not an upstream body.
-            detail = f": {exc}" if exc.fatal else ""
+            # A fatal error's text and a statusless transport failure are the
+            # only available reason; an HTTP response's raw body stays in the log.
+            detail = f": {exc}" if exc.fatal or exc.status_code is None else ""
             return SessionResult(
                 completed=False,
                 verified=self._verification(state),
                 reason="provider_error",
-                summary=f"provider error at iter {iteration}{status}{hint}{detail}",
+                summary=f"provider error{attempts} at iter {iteration}{status}{hint}{detail}",
                 iterations=iteration,
                 tool_calls=state.tool_calls,
             )

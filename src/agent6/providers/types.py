@@ -41,9 +41,12 @@ class ProviderError(Exception):
     wrapper stamps it), so a credential hint can name the config key to fix.
 
     `fatal` marks a permanent failure that carries no HTTP status (a missing
-    binary, a signed-out login): the retry wrapper re-raises it at once and
-    the run summary carries its text, which is agent6-authored, never an
-    upstream body.
+    binary, a signed-out login): the retry wrapper re-raises it at once. The
+    run summary carries the text of a fatal error and of a statusless one;
+    an HTTP response's body stays in the log.
+
+    `attempts` is how many calls the retry wrapper spent before re-raising
+    (1 for an error it never retried).
     """
 
     def __init__(
@@ -53,12 +56,14 @@ class ProviderError(Exception):
         retry_after_s: float | None = None,
         provider: str = "",
         fatal: bool = False,
+        attempts: int = 1,
     ) -> None:
         super().__init__(*args)
         self.status_code = status_code
         self.retry_after_s = retry_after_s
         self.provider = provider
         self.fatal = fatal
+        self.attempts = attempts
 
 
 class ProviderAborted(ProviderError):
