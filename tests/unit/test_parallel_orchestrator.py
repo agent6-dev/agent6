@@ -100,6 +100,11 @@ def _write_fake_run(
     elif status == "stale":
         # Died without a session.end (OOM/SIGKILL): a recorded pid that is gone.
         (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
+    elif status == "gated_fail":
+        # A deliberate finish whose OWN verify ran this leg and failed (unlike
+        # "finished", which never ran one): the compare must never crown it.
+        events.append({"type": "verify.end", "exit_code": 1})
+        events.append({"type": "session.end", "reason": "finish_session", "all_passed": False})
     else:  # "finished": a deliberate finish without all-passed
         events.append({"type": "session.end", "reason": "finish_session", "all_passed": False})
     (session_dir / "logs.jsonl").write_text(
@@ -1911,6 +1916,45 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
     ]
     failures = [item.body for item in fold_transcript(events) if "no result" in item.body]
     assert failures and "provider error" in failures[0]
+
+
+def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """Both lanes finished deliberately, but each one's own verify gate ran
+    and failed this leg: mechanical ranking still orders them by cost, and the
+    cheaper one was stamped compare.winner=true even though nobody's gate
+    passed -- the fan-out's own exit code (4) says the opposite."""
+    from agent6.paths import state_dir
+
+    origin_state = state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "gf", "2")
+    spawner = _FakeSpawner(
+        origin,
+        origin_state,
+        tmp_path / "lane-state",
+        status_by_lane={1: "gated_fail", 2: "gated_fail"},
+        cost_by_lane={1: 0.01, 2: 0.02},
+    )
+
+    rc = run_parallel(
+        "t",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="gf",
+    )
+
+    assert rc == 4  # EXIT_VERIFY_FAILED: a gate ran on every lane, none passed
+    for lane_id in ("gf-l1", "gf-l2"):
+        m = json.loads(
+            (origin_state / "sessions" / "runs" / lane_id / "manifest.json").read_text("utf-8")
+        )
+        assert m["compare"]["winner"] is False
 
 
 def test_fanout_exit_reflects_the_gate_verdicts() -> None:
