@@ -27,7 +27,7 @@ A tool call arrives twice, as ACP models it.
 
 - `tool_call` (`in_progress`) when the run dispatches it, `tool_call_update` (`completed` or `failed`, with the output) when its result lands
 - a call waiting on an approval or an `ask_user` answer is updated to `pending` while its prompt is open, and back to `in_progress` once answered
-- a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.end` is written (a worker killed without one leaves it in progress)
+- a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.end` is written, or when the tail ends without one (a worker killed mid-call)
 - `toolCallId` is `<run id>:<turn>:<call>`, unique for the life of the session: each turn is one leg of the run, and a leg's call numbers start at 1
 
 Everything the lifecycle prints (the `agent6 run` footer: where the changes are, the auto-stash notice and how to restore it, a refusal's reason) arrives as an `[agent6]` agent message as it is printed, whatever state the journal is in.

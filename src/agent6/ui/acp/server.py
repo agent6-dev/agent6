@@ -220,6 +220,8 @@ class ACPServer:
         holding (polled every 0.2 s): the question was answered by another
         route, and the editor's reply, if one comes, answers nothing.
         """
+        if until is not None and until():
+            return {}
         with self._pending_lock:
             self._next_id += 1
             req_id = f"agent6-{self._next_id}"
@@ -314,16 +316,17 @@ class ACPServer:
         gone = False
         with self._write_lock:
             if self._gone:
-                return
-            try:
-                self.stdout.write(line.encode("utf-8", "replace"))
-                self.stdout.flush()
-            except BrokenPipeError:
-                # The editor closed the connection. There is nobody left to
-                # tell, and a live run's tail would otherwise raise once per
-                # event; the run itself keeps going to its next boundary.
-                self._gone = True
                 gone = True
+            else:
+                try:
+                    self.stdout.write(line.encode("utf-8", "replace"))
+                    self.stdout.flush()
+                except BrokenPipeError:
+                    # The editor closed the connection. There is nobody left to
+                    # tell, and a live run's tail would otherwise raise once per
+                    # event; the run itself keeps going to its next boundary.
+                    self._gone = True
+                    gone = True
         if gone:
             # Nothing this server asked can be answered now either.
             self.abandon_pending()

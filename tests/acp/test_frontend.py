@@ -16,7 +16,7 @@ import pytest
 
 from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.events import EventSink
-from agent6.tools.operator_prompts import OperatorPrompts
+from agent6.tools.operator_prompts import OperatorPrompts, unanswered_note
 from agent6.tools.schema import UserQuestion
 from agent6.ui.acp.frontend import acp_frontend
 
@@ -94,6 +94,23 @@ def test_a_question_carries_its_options_and_an_unanswered_one_is_empty(tmp_path:
     silent = _prompts(mute, tmp_path, "silent.jsonl").ask
     assert silent((UserQuestion(question="Theme?"),)).answers == ("",)
     assert _journal(tmp_path / "silent.jsonl")[-1]["source"] == "headless"
+
+
+def test_a_free_form_question_says_that_no_editor_could_answer_it(tmp_path: Path) -> None:
+    """ACP v1 has no free-form answer control; silently returning an ordinary
+    blank told the model an operator saw the question and chose to say nothing."""
+    front, asked = _frontend()
+    answer = _prompts(front, tmp_path).ask((UserQuestion(question="Which port?"),))
+    assert asked == []
+    assert answer.answers == ("",)
+    assert unanswered_note(answer)
+    # A batch with one free-form question reached nobody either: `unseen` is
+    # per request, and a blank beside an answered button read as deliberate.
+    mixed = (UserQuestion(question="Proxy?", options=("yes", "no")), UserQuestion(question="Port?"))
+    answer = _prompts(front, tmp_path).ask(mixed)
+    assert asked == []
+    assert answer.answers == ("", "")
+    assert unanswered_note(answer)
 
 
 def test_the_unsandboxed_prompt_fires_only_when_it_is_true() -> None:
@@ -271,7 +288,10 @@ def test_a_multi_question_ask_shares_one_deadline(
     answer = front.build_questioner(tmp_path)(
         QuestionRequest(
             id="question-1",
-            questions=(UserQuestion(question="a?"), UserQuestion(question="b?")),
+            questions=(
+                UserQuestion(question="a?", options=("yes", "no")),
+                UserQuestion(question="b?", options=("yes", "no")),
+            ),
             call_id=1,
         )
     )

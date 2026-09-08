@@ -133,6 +133,14 @@ def acp_frontend(
         def ask_questions(request: QuestionRequest, /) -> QuestionAnswer:
             if not capabilities.can_ask:
                 return QuestionAnswer(tuple("" for _ in request.questions), "headless", unseen=True)
+            if not all(question.options for question in request.questions):
+                filed = read_question_answers(session_dir, request.id, timeout_s=0.0)
+                if filed is not None:
+                    return QuestionAnswer(filed, "frontend")
+                # ACP v1's permission request can only render option buttons.
+                # A free-form question, alone or in a batch, therefore reached
+                # nobody, rather than an operator who submitted a blank answer.
+                return QuestionAnswer(tuple("" for _ in request.questions), "headless", unseen=True)
             # An unanswered question becomes an empty string, which the loop
             # already treats as "the operator said nothing", not as a value.
             # One deadline for the request: a timeout per question would make

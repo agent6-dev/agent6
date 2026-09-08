@@ -51,6 +51,7 @@ from agent6.ui.acp.updates import (
     wire_call_id,
 )
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
+from agent6.viewmodel.listing import scan_session_log
 from agent6.viewmodel.tail import journal_size, tail_events
 from agent6.viewmodel.transcript import TranscriptFold
 
@@ -149,7 +150,7 @@ def option_kind(text: str, standing: bool | None) -> str:
     return "allow_always" if standing else "allow_once"
 
 
-def stop_reason(code: int) -> StopReason:
+def stop_reason(code: int, *, end_reason: str = "") -> StopReason:
     """ACP's vocabulary, from the lifecycle's exit code.
 
     A deliberate finish is `end_turn` even when the verify gate stayed red
@@ -160,6 +161,8 @@ def stop_reason(code: int) -> StopReason:
     """
     if code == 130:
         return "cancelled"
+    if end_reason == "max_iterations":
+        return "max_turn_requests"
     return "end_turn" if code in (0, EXIT_VERIFY_FAILED, EXIT_NO_COMMIT_LANDED) else "refusal"
 
 
@@ -174,10 +177,10 @@ def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
     if not isinstance(outcome, dict) or outcome.get("outcome") != "selected":
         return None
     chosen = outcome.get("optionId")
-    if not isinstance(chosen, str) or not chosen.isdigit():
+    if not isinstance(chosen, str):
         return None
-    index = int(chosen)
-    return options[index] if index < len(options) else None
+    offered = {str(index): option for index, option in enumerate(options)}
+    return offered.get(chosen)
 
 
 class Announced:
@@ -232,6 +235,10 @@ class RunBridge:
     _asks: threading.Lock = field(default_factory=threading.Lock)
     _asked: int = 0
 
+    def __post_init__(self) -> None:
+        if self.config_path is not None:
+            self.config_path = self.config_path.resolve()
+
     def sessions(self) -> Sessions:
         return Sessions(run=self.run, state_dir_for=state_dir)
 
@@ -273,6 +280,8 @@ class RunBridge:
         if call_id is not None:
             gated = wire_call_id(session.session_id, announced.turn, str(call_id))
             announced.wait_for(gated, abandoned=lambda: session.cancelled)
+            if session.cancelled or gated not in announced:
+                return None
             tool_call: dict[str, Any] = {
                 "toolCallId": gated,
                 "title": printable(prompt),
@@ -288,6 +297,10 @@ class RunBridge:
                 "kind": "other",
                 "status": "pending",
             }
+
+        def _done() -> bool:
+            return session.cancelled or (until is not None and until())
+
         answer = self.server.request(
             "session/request_permission",
             {
@@ -308,7 +321,7 @@ class RunBridge:
                 ],
             },
             timeout_s=PERMISSION_TIMEOUT_S,
-            until=until,
+            until=_done,
         )
         chosen = _selected(answer, options)
         if call_id is None:
@@ -399,40 +412,31 @@ class RunBridge:
                 # Cancelled while queued. The marker is for a run in flight;
                 # one that has not started is stopped by not starting it.
                 return "cancelled"
-            # Set by this turn's tail when it tells the editor how the turn
-            # ended: the one fact the bare-refusal guard reads. The turn's own,
-            # since a journal's last session.end may be the previous turn's on
-            # a resumed run, and a previous turn's tail may outlive its drain.
-            told = threading.Event()
             try:
-                return self._run(session, text, resuming=resuming, told=told)
+                return self._run(session, text, resuming=resuming)
             except Exception as exc:
-                # A fault before the tail spoke has no other voice.
-                if not told.is_set():
-                    self._could_not_finish(session, exc)
+                self._could_not_finish(session, exc)
                 return "refusal"
         finally:
             self._running = None
             self._runs.release()
 
     def _could_not_finish(self, session: Session, exc: Exception) -> None:
-        """A run that dies before its tail told the editor how the turn ended
-        has no other way to say so, and the turn still ends with a stop reason.
+        """A run that dies says why before the turn returns its stop reason.
         A broken config is the ordinary case (the CLI prints it; here the
-        editor would have seen a turn end with no words at all). A fault that
-        is not an operator error is a bug: its traceback goes to stderr, the
-        way the CLI's crash path saves one to a file and names it."""
+        editor would otherwise see a turn end with no words). This also follows
+        a journal ending when later finalization fails: that failure is part of
+        the run too. A non-operator fault's traceback goes to stderr."""
         what = "could not start" if not self.had_journal(session) else "failed"
         self.server.notify_raw(message_update(session.acp_id, f"the run {what}: {exc}"))
         if not isinstance(exc, OperatorError):
             _stderr(f"[agent6] run {session.session_id}: {traceback.format_exc()}")
 
-    def _run(
-        self, session: Session, text: str, *, resuming: bool, told: threading.Event
-    ) -> StopReason:
+    def _run(self, session: Session, text: str, *, resuming: bool) -> StopReason:
         layout = session.layout(state_dir(session.cwd))
         os.chdir(session.cwd)
         session.turn += 1
+        journal_before = journal_size(layout.logs_path)
 
         said: list[str] = []
         announced = Announced(turn=session.turn)
@@ -457,7 +461,7 @@ class RunBridge:
         order = ProseOrder(self.server, session.acp_id, layout.logs_path)
         tail = threading.Thread(
             target=self._stream,
-            args=(session, layout.logs_path, _stop, resuming, announced, order, told),
+            args=(session, layout.logs_path, _stop, resuming, announced, order),
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
@@ -494,7 +498,12 @@ class RunBridge:
         if code != 0 and not said and not self.had_journal(session):
             # A stop before the run had anything to say for itself.
             self.server.notify_raw(message_update(session.acp_id, f"the run stopped (exit {code})"))
-        return stop_reason(code)
+        # A refusal that returns before journaling its own session.end leaves
+        # the previous turn's reason in the journal: only a journal that grew
+        # ended this turn.
+        grown = journal_size(layout.logs_path) > journal_before
+        end_reason = scan_session_log(layout.logs_path).end_reason if grown else ""
+        return stop_reason(code, end_reason=end_reason)
 
     def _stream(
         self,
@@ -504,7 +513,6 @@ class RunBridge:
         resuming: bool,
         announced: Announced,
         order: ProseOrder | None = None,
-        told: threading.Event | None = None,
     ) -> None:
         """Project the run's journal into `session/update` as it is written,
         the lifecycle's own lines taking their place between events.
@@ -544,13 +552,20 @@ class RunBridge:
                     if item.kind == "tool":
                         announced.add(wire_id)
                     elif item.kind == "done":
-                        if told is not None:
-                            told.set()
                         _stderr(ending(item))
                 if order is not None:
                     order.flush(consumed[0])
         finally:
             announced.close()
+            for item in fold.settle_open_calls("the run died"):
+                wire_id = tool_call_id(item, session.session_id, announced.turn)
+                for body in updates_for(
+                    item,
+                    acp_session_id=session.acp_id,
+                    wire_id=wire_id,
+                    announced=wire_id in announced,
+                ):
+                    self.server.notify_raw(body)
             if order is not None:
                 order.flush(None)
 

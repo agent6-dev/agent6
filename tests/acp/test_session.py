@@ -65,6 +65,28 @@ def test_a_new_session_refuses_editor_supplied_mcp_servers(tmp_path: Path) -> No
     assert "sessionId" in reply["result"]
 
 
+def test_a_new_session_refuses_unsupported_additional_directories(tmp_path: Path) -> None:
+    """Ignoring an additional workspace root made the editor say it was in
+    scope while the sandbox and tools could not reach it."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    extra = tmp_path.parent / "other-root"
+    sessions = _sessions(_ends)
+    (reply,) = _drive(
+        _msg(
+            1,
+            "session/new",
+            cwd=str(tmp_path),
+            mcpServers=[],
+            additionalDirectories=[str(extra)],
+        )
+        + b"\n",
+        sessions,
+    )
+    assert "additionalDirectories" in reply["error"]["message"]
+
+
 def test_a_resource_link_rides_as_its_uri() -> None:
     """`resource_link` is ACP's baseline attach-a-file shape; it was dropped,
     so a link-only prompt refused as empty. The uri rides verbatim as text --
@@ -178,6 +200,27 @@ def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
     if session.thread is not None:
         session.thread.join(timeout=5)
     assert seen == ["end_turn"]
+
+
+def test_a_cancel_while_idle_does_not_poison_the_next_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An idle cancel wrote a stop marker after the prior leg ended, so the
+    next resume inherited it and stopped without doing the requested work."""
+    stopped: list[Path] = []
+
+    def _stop(path: Path) -> bool:
+        stopped.append(path)
+        return True
+
+    monkeypatch.setattr("agent6.ui.acp.session.request_stop", _stop)
+    sessions = _sessions(_ends)
+    session = Session(acp_id="s1", cwd=tmp_path, session_id="run-1")
+
+    sessions.cancel(session)
+
+    assert stopped == []
+    assert session.cancelled is False
 
 
 def test_a_run_that_dies_still_ends_the_turn() -> None:

@@ -263,6 +263,34 @@ def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
     assert "RuntimeError: the provider client exploded" in capsys.readouterr().err
 
 
+def test_a_fault_after_session_end_still_keeps_its_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finalizer fault after session.end was hidden because the transcript
+    had already announced the journal's verdict."""
+    from agent6.events import EventSink
+
+    monkeypatch.chdir(tmp_path)
+
+    def _dies_after_end(*_a: object, **kw: Any) -> int:
+        layout = SessionLayout(runner.state_dir(tmp_path), str(kw["session_id"]))
+        layout.ensure()
+        events = EventSink(layout.logs_path)
+        events.emit("session.start", mode="run", user_task="t")
+        events.emit("session.end", reason="finish_session", all_passed=True)
+        raise RuntimeError("the finalizer exploded")
+
+    monkeypatch.setattr(runner, "run_task", _dies_after_end)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    out = io.BytesIO()
+    bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=out))
+    session = session_mod.Session(acp_id="s", cwd=tmp_path)
+    assert bridge.run(session, "task") == "refusal"
+    text = out.getvalue().decode()
+    assert "Session passed" in text
+    assert "the run failed: the finalizer exploded" in text
+
+
 def test_a_run_that_cannot_start_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A broken config is the ordinary case, and it raises before the run has a
     journal to carry the reason. The editor would otherwise see a turn end with
@@ -355,6 +383,24 @@ def test_only_an_option_we_offered_is_an_answer(answer: dict[str, Any]) -> None:
     )
 
 
+def test_an_option_id_has_to_match_the_offered_id_exactly() -> None:
+    """`00` was accepted as option `0`, so an id the server never issued could
+    grant a permission."""
+    bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "00"}})
+    session = session_mod.Session(acp_id="s", cwd=Path("/x"))
+    assert (
+        bridge.ask(
+            session,
+            Announced(turn=1),
+            "Allow run_command: rm -rf /",
+            ("allow", "deny"),
+            True,
+            None,
+        )
+        is None
+    )
+
+
 def test_the_option_kinds_carry_what_the_editor_may_remember() -> None:
     """`allow once` is the fetch tool's off-list host, where an editor that
     remembers the answer would silently cover a different host."""
@@ -372,6 +418,12 @@ def test_the_stop_reason_is_one_acp_defines() -> None:
     assert stop_reason(1) == "refusal"
     assert stop_reason(2) == "refusal"
     assert stop_reason(130) == "cancelled"
+
+
+def test_the_iteration_cap_uses_acps_specific_stop_reason() -> None:
+    """Agent6's iteration cap is ACP's maximum agent requests between user
+    turns, not a refusal by the agent."""
+    assert stop_reason(1, end_reason="max_iterations") == "max_turn_requests"
 
 
 def test_a_deliberate_finish_over_a_red_gate_is_end_turn() -> None:
@@ -525,6 +577,53 @@ def test_a_closed_editor_stops_waiting_for_answers_it_will_never_get() -> None:
     server.abandon_pending()
     asking.join(timeout=5.0)
     assert answered == [{}], "the worker was left waiting"
+
+
+def test_a_request_started_after_the_editor_left_returns_at_once() -> None:
+    """Once the first broken write marked the editor gone, a later permission
+    request registered a waiter but no path woke it."""
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server._gone = True  # pyright: ignore[reportPrivateUsage]
+    answered: list[dict[str, Any]] = []
+    asking = threading.Thread(
+        target=lambda: answered.append(
+            server.request("session/request_permission", {}, timeout_s=30.0)
+        ),
+        daemon=True,
+    )
+    asking.start()
+    asking.join(timeout=1.0)
+    assert answered == [{}], "the request waited for an editor already known to be gone"
+
+
+def test_cancelling_while_permission_is_open_releases_the_turn() -> None:
+    """A cancel marker could not release the ACP permission wait, so a cancelled
+    turn stayed parked for the five-minute permission timeout."""
+    bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
+    waiting = threading.Event()
+
+    def _wait(_method: str, _params: dict[str, Any], **kw: Any) -> dict[str, Any]:
+        until = kw["until"]
+        waiting.set()
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not until():
+            time.sleep(0.01)
+        return {}
+
+    bridge.server.request = _wait  # pyright: ignore[reportAttributeAccessIssue]
+    session = session_mod.Session(acp_id="s", cwd=Path("/x"), turn_live=True)
+    answered: list[str | None] = []
+    asker = threading.Thread(
+        target=lambda: answered.append(
+            bridge.ask(session, Announced(turn=1), "Theme?", ("dark", "light"), None, None)
+        ),
+        daemon=True,
+    )
+    asker.start()
+    assert waiting.wait(timeout=1.0)
+    session.cancelled = True
+    asker.join(timeout=1.0)
+    assert answered == [None]
 
 
 def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
@@ -688,13 +787,52 @@ def test_a_second_prompt_resumes_the_same_run(
     assert calls[1] == ("resume", "run-AAAA11", "and now this")
 
 
+def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume refused before it journals its own session.end leaves the
+    first turn's end in the journal; read as this turn's, an iteration-capped
+    first turn made a refused second turn report max_turn_requests."""
+    from agent6.events import EventSink
+
+    monkeypatch.chdir(tmp_path)
+
+    def _state_dir(_cwd: Path) -> Path:
+        return tmp_path / "state"
+
+    def _minted(*_a: object, **_k: object) -> str:
+        return "run-AAAA11"
+
+    monkeypatch.setattr(runner, "state_dir", _state_dir)
+    monkeypatch.setattr(runner, "unused_session_id", _minted)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+
+    def _capped_run(*_a: object, **kw: Any) -> int:
+        layout = SessionLayout(runner.state_dir(tmp_path), str(kw["session_id"]))
+        layout.ensure()
+        events = EventSink(layout.logs_path)
+        events.emit("session.start", mode="run", user_task="t")
+        events.emit("session.end", reason="max_iterations", all_passed=False)
+        (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
+        return 1
+
+    def _refused_resume(*_a: object, **_k: object) -> int:
+        return 2
+
+    monkeypatch.setattr(runner, "run_task", _capped_run)
+    monkeypatch.setattr(runner, "resume_task", _refused_resume)
+    bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
+    session = session_mod.Session(acp_id="s", cwd=tmp_path)
+
+    assert bridge.run(session, "first task") == "max_turn_requests"
+    assert bridge.run(session, "and now this") == "refusal"
+
+
 def test_a_fault_on_a_resumed_turn_still_reaches_the_editor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The bare-refusal guard read the journal's `finished`, which the
-    previous turn's session.end leaves True on every resumed turn, so a fault
-    in a resume's preflight ended the turn as a bare refusal again. The guard
-    reads whether the tail told the editor THIS turn's ending."""
+    """The previous turn's session.end must not hide a fault in the resumed
+    turn's preflight."""
     monkeypatch.chdir(tmp_path)
 
     def _state_dir(_cwd: Path) -> Path:
@@ -938,6 +1076,56 @@ def test_a_late_tail_keeps_its_own_turn(tmp_path: Path) -> None:
     done.set()
     tail.join(timeout=5.0)
     assert sent and sent[0]["params"]["update"]["toolCallId"] == "run-x:1:1", sent
+
+
+def test_a_dead_workers_open_tool_call_is_settled(tmp_path: Path) -> None:
+    """When a worker died between tool.call and tool.result, ACP left the call
+    in progress even though every dir-aware surface read the worker as dead."""
+    from agent6.events import EventSink
+
+    sent: list[dict[str, Any]] = []
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    bridge = RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
+    log = tmp_path / "logs.jsonl"
+    EventSink(log).emit("tool.call", name="run_command", args={"argv": ["false"]}, call_id=1)
+
+    bridge._stream(  # pyright: ignore[reportPrivateUsage]
+        session, log, lambda: True, False, Announced(turn=1)
+    )
+
+    statuses = [message["params"]["update"]["status"] for message in sent]
+    assert statuses == ["in_progress", "failed"]
+    assert "run died" in json.dumps(sent[-1])
+
+
+def test_a_relative_config_path_keeps_the_launch_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bridge chdirs to the editor's workspace, so a relative --config
+    otherwise resolves in that workspace instead of where agent6 was launched."""
+    launch = tmp_path / "launch"
+    workspace = tmp_path / "workspace"
+    launch.mkdir()
+    workspace.mkdir()
+    config = launch / "overlay.toml"
+    config.write_text("", encoding="utf-8")
+    monkeypatch.chdir(launch)
+    bridge = RunBridge(
+        server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()),
+        config_path=Path("overlay.toml"),
+    )
+    assert bridge.config_path == config
+
+
+def test_an_already_answered_permission_is_not_sent_to_the_editor() -> None:
+    """The file bridge could answer before request() registered its slot, but
+    ACP still opened a stale dialog for an answer the run had already used."""
+    out = io.BytesIO()
+    server = ACPServer(stdin=io.BytesIO(), stdout=out)
+    assert server.request("session/request_permission", {}, timeout_s=1.0, until=lambda: True) == {}
+    assert out.getvalue() == b""
 
 
 def test_the_runs_notices_reach_the_editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1241,10 +1429,9 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: Path) 
     done.set()
     tail.join(timeout=5.0)
     kinds = [s["params"]["update"].get("sessionUpdate") for s in sent]
-    assert kinds[-1] == "agent_message_chunk" and "no changes were committed" in json.dumps(
-        sent[-1]
-    )
-    assert all(k == "tool_call" for k in kinds[:2]), kinds
+    assert kinds[2] == "agent_message_chunk" and "no changes were committed" in json.dumps(sent[2])
+    assert kinds[:2] == ["tool_call", "tool_call"], kinds
+    assert all(s["params"]["update"].get("status") == "failed" for s in sent[3:])
 
 
 def test_a_turn_that_cannot_choose_its_run_says_why(

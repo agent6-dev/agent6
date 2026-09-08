@@ -102,6 +102,12 @@ class Sessions:
                 "agent6's own config ([mcp.servers], `agent6 mcp connect`) and remove "
                 "them from this agent's entry.",
             )
+        additional = params.get("additionalDirectories")
+        if isinstance(additional, list) and additional:
+            raise RpcError(
+                INVALID_PARAMS,
+                "agent6 does not support additionalDirectories; remove them from this session",
+            )
         session = Session(acp_id=friendly_token(), cwd=cwd)
         self._by_id[session.acp_id] = session
         return {"sessionId": session.acp_id}
@@ -168,6 +174,8 @@ class Sessions:
         land first, so a cancelled turn leaves the workspace in a state the
         operator can read rather than halfway through one.
         """
+        if not session.is_running():
+            return
         session.cancelled = True
         if session.session_id and not request_stop(
             session.layout(self.state_dir_for(session.cwd)).session_dir
