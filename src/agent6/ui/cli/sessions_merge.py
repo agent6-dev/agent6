@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.app.fork_worktrees import sweep_fork_worktrees
-from agent6.app.merge import execute_merge, left_behind_line, noop_merge_line
+from agent6.app.merge import NO_BASE_SHA, execute_merge, left_behind_line, noop_merge_line
 from agent6.app.parallel import adopt_orphan_lane, sweep_fanout_clones
 from agent6.commit_message import render_commit_trailer
 from agent6.config import Config, ConfigError
@@ -101,8 +101,17 @@ def _plan_merge(  # noqa: PLR0911
         )
         return 2
     ref = _commits_ref(cwd, manifest)
-    if ref.reason:
-        error(f"this session has no branch to merge ({ref.reason}).")
+    # execute_merge refuses a missing base_sha too (auto_merge relies on
+    # that); here both are refusals, exit 2, before anything moves.
+    unmergeable = (
+        NO_BASE_SHA
+        if not manifest.base_sha
+        else f"this session has no branch to merge ({ref.reason})."
+        if ref.reason
+        else ""
+    )
+    if unmergeable:
+        refuse(unmergeable)
         return 2
     run_branch = ref.head_ref
     target = into or manifest.base_branch
@@ -203,7 +212,7 @@ def _cmd_merge(
     plan = _plan_merge(cwd, session_id, into, strategy, config_path=config_path)
     if isinstance(plan, int):
         return plan
-    if plan.base_sha and not list_run_commits(cwd, plan.base_sha, plan.run_branch):
+    if not list_run_commits(cwd, plan.base_sha, plan.run_branch):
         # A success line here would be indistinguishable from a real merge.
         print(f"[agent6] nothing to merge: run branch {plan.run_branch} has no commits.")
         return 0

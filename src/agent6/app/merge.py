@@ -308,6 +308,9 @@ def _model_squash_message(
     return msg or None
 
 
+NO_BASE_SHA = "the manifest records no base_sha; nothing to merge from"
+
+
 def execute_merge(
     cwd: Path,
     *,
@@ -329,11 +332,20 @@ def execute_merge(
     never switched and the worktree is never required clean. The caller
     validates first; this mutates."""
     apply_git_ops_policy(cfg)
-    if not branch_exists(cwd, target):
-        # The merge target must already exist; never fabricate it. sessions merge
-        # pre-checks this for a nicer message; auto_merge relies on this guard
-        # if the base was deleted mid-run.
-        return MergeOutcome("error", error=f"target branch {target!r} does not exist")
+    # The squash message and the conventional summary read the run's commits
+    # from base_sha (without it `git log ..<branch>` counts from HEAD, a wrong
+    # list with a clean exit); the target must exist (auto_merge relies on
+    # this guard when the base was deleted mid-run; sessions merge pre-checks
+    # it for a nicer message).
+    refusal = (
+        NO_BASE_SHA
+        if not base_sha
+        else f"target branch {target!r} does not exist"
+        if not branch_exists(cwd, target)
+        else None
+    )
+    if refusal is not None:
+        return MergeOutcome("error", error=refusal)
     if (
         strategy == "ff"
         and not is_ancestor(cwd, target, run_branch)

@@ -97,6 +97,31 @@ def test_auto_merge_squashes_and_lands_on_base(
     assert m["merged"]["sha"]
 
 
+def test_auto_merge_refuses_a_manifest_with_no_base_sha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The squash message reads the run's commits from base_sha; without it
+    `git log ..<branch>` counts from HEAD and lands a wrong list with a clean
+    exit. execute_merge refuses first, so the guard covers auto_merge too."""
+    monkeypatch.chdir(tmp_path)
+    base = _setup_run_on_branch(
+        tmp_path,
+        "run-NB1111",
+        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        run_branch="agent6/run-NB1111",
+    )
+    layout = SessionLayout(state_dir(tmp_path), "run-NB1111")
+    manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    manifest["base_sha"] = ""
+    layout.manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    cfg = load_effective(tmp_path, None).config
+    finmod.finalize_auto_merge(tmp_path, layout=layout, cfg=cfg, reporter=STDIO_REPORTER)
+    assert _git(tmp_path, "rev-parse", "main") == base
+    captured = capsys.readouterr()
+    assert "no base_sha" in captured.out + captured.err
+    assert "merged" not in json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+
+
 def test_auto_merge_lands_the_hidden_chain_ref(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

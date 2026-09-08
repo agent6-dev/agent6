@@ -803,6 +803,20 @@ def test_commits_of_a_branch_per_run_off_run_lists_the_chain_like_diff(
     assert chain_ref_for("run-HEADF2") in captured.err
 
 
+def test_merge_with_a_branch_but_no_base_sha_refuses_before_mutating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-NOBASE2", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _set_manifest_field(tmp_path, "run-NOBASE2", base_sha="")
+    before = _git(tmp_path, "rev-parse", "main")
+
+    assert main(["sessions", "merge", "run-NOBASE2"]) == 2
+    err = capsys.readouterr().err
+    assert "records no base_sha" in err
+    assert _git(tmp_path, "rev-parse", "main") == before
+
+
 def test_commits_with_a_branch_but_no_base_sha_does_not_blame_branch_per_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
