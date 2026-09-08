@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable, Iterator
 from http.client import HTTPConnection
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -1262,6 +1263,63 @@ def test_negative_content_length_is_rejected(server: tuple[WebServer, int]) -> N
     assert "Content-Length" in str(body["error"])
 
 
+def test_conflicting_content_lengths_are_rejected(server: tuple[WebServer, int]) -> None:
+    """Two lengths leave request framing ambiguous; the server must refuse
+    before one value makes bytes from the body parse as another request."""
+    _srv, port = server
+    sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+    try:
+        sock.sendall(
+            b"POST /api/sessions/prune HTTP/1.1\r\n"
+            b"Host: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 2\r\n"
+            b"Content-Length: 20\r\n\r\n"
+            b"{}GET /api/meta"
+        )
+        raw = sock.recv(4096)
+    finally:
+        sock.close()
+    assert b"HTTP/1.1 400 " in raw, raw
+    assert b"Connection: close" in raw, raw
+
+
+def test_a_non_canonical_content_length_is_rejected(server: tuple[WebServer, int]) -> None:
+    """`int()` accepts `1_0`, `+2` and non-ASCII digits; a front proxy does
+    not, so the two would frame the body differently."""
+    _srv, port = server
+    sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+    try:
+        sock.sendall(
+            b"POST /api/sessions/prune HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\nContent-Length: 1_0\r\n\r\n"
+            b'{"a": 12345}GET /api/meta'
+        )
+        raw = sock.recv(4096)
+    finally:
+        sock.close()
+    assert b"HTTP/1.1 400 " in raw, raw
+    assert b"Connection: close" in raw, raw
+
+
+def test_a_get_with_a_body_is_refused(server: tuple[WebServer, int]) -> None:
+    """A GET body is never read, so on a keep-alive connection it would parse
+    as the next request."""
+    _srv, port = server
+    sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+    try:
+        sock.sendall(
+            b"GET /api/meta HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 30\r\n\r\n"
+            b"GET /api/sessions HTTP/1.1\r\n\r\n"
+        )
+        raw = sock.recv(4096)
+    finally:
+        sock.close()
+    assert b"HTTP/1.1 400 " in raw, raw
+    assert b"Connection: close" in raw, raw
+    assert raw.count(b"HTTP/1.1 ") == 1, raw
+
+
 def test_chunked_post_body_is_refused(server: tuple[WebServer, int]) -> None:
     # Only Content-Length bodies are read; a chunked body would sit unread on
     # the connection exactly like an undrained early-error body.
@@ -1438,6 +1496,35 @@ def test_steer_compact_directive_routes_to_compact_request(
     ) == "keep the auth decisions"
     assert not (session_dir / "steer.answer").exists()
     assert not (session_dir / "steer.request").exists()
+
+
+def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed claim-file write must leave the viewer count untouched so the
+    next connection retries registration instead of silently skipping it."""
+    import agent6.ui.web.server as server_mod
+
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    attempts = 0
+
+    def register(_session_dir: Path, _pid: int) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("disk was briefly read-only")
+
+    monkeypatch.setattr(server_mod, "register_frontend", register)
+    srv = WebServer(("127.0.0.1", 0), tmp_path, "")
+    try:
+        with pytest.raises(OSError, match="read-only"):
+            srv.claim_session(session_dir)
+        srv.claim_session(session_dir)
+        assert attempts == 2
+    finally:
+        srv.release_session(session_dir)
+        srv.server_close()
 
 
 def test_client_disconnects_are_quiet(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1737,6 +1824,39 @@ def test_a_content_length_that_is_not_a_number_closes_the_connection(
         sock.close()
     assert raw.count(b"HTTP/1.1 ") == 1 and b" 400 " in raw, raw
     assert b"501" not in raw, raw
+
+
+def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fallible manifest read must finish before the background log tailer
+    starts, or a header error leaves that daemon following the file forever."""
+    from agent6.ui.web import _sse
+
+    started: list[bool] = []
+
+    class FakeThread:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def start(self) -> None:
+            started.append(True)
+
+    def boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("bad manifest")
+
+    # The module's own binding, never the stdlib's: patching `threading.Thread`
+    # would replace every thread another component starts meanwhile.
+    monkeypatch.setattr(
+        _sse, "threading", SimpleNamespace(Thread=FakeThread, Event=threading.Event)
+    )
+    monkeypatch.setattr(_sse, "manifest_header", boom)
+    channel = _sse.SseChannel(send=lambda _frame: True, ping=lambda: True)
+
+    with pytest.raises(RuntimeError, match="bad manifest"):
+        _sse.stream_session(channel, tmp_path, repo=tmp_path)
+
+    assert not started
 
 
 def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(

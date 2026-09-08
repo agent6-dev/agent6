@@ -92,12 +92,12 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None:
             # it the response loop would block on heartbeats forever.
             events.put(None)  # run ended (or tail cancelled/failed), tailer done
 
-    threading.Thread(target=tail, daemon=True).start()
-
     # Manifest-derived header fields (branch facts + the fan-out compare
     # outcome), read once per connection: they are fixed for the run's life
     # (merged_into lands after the run ends; a reopen/reconnect re-reads).
     header = manifest_header(session_dir, repo=repo)
+
+    threading.Thread(target=tail, daemon=True).start()
 
     def frame(*, dead: bool = False) -> dict[str, Any]:
         # session_dir per frame, not once at connect: a parked run the operator

@@ -188,10 +188,10 @@ class WebServer(ThreadingHTTPServer):
         front-ends (TUI, attach) are never displaced."""
         key = str(session_dir)
         with self._pid_lock:
-            n = self._watch_counts.get(key, 0) + 1
-            self._watch_counts[key] = n
-            if n == 1:
+            n = self._watch_counts.get(key, 0)
+            if n == 0:
                 register_frontend(session_dir, os.getpid())
+            self._watch_counts[key] = n + 1
 
     def release_session(self, session_dir: Path) -> None:
         """The last browser watching this run went away: drop our own claim so
@@ -245,7 +245,7 @@ def _create_web_server(
 
 class _Handler(BaseHTTPRequestHandler):
     _streaming = False  # the SSE headers went out; an error is a frame now
-    _body_length = 0  # this request's Content-Length, parsed once in do_POST
+    _body_length = 0  # this request's Content-Length, parsed once per request
     protocol_version = "HTTP/1.1"
     server: WebServer  # type: ignore[assignment]
 
@@ -262,8 +262,31 @@ class _Handler(BaseHTTPRequestHandler):
 
     # -- routing --------------------------------------------------------------
 
+    def _parse_body_length(self) -> bool:
+        """Parse this request's one Content-Length into `_body_length`, or send
+        400 and close the connection. Two values, or one that is not a plain
+        decimal (`1_0`, `+2`, non-ASCII digits all pass `int()`), leave the
+        framing ambiguous: a body read under one reading parses under another
+        as the next request."""
+        lengths = self.headers.get_all("Content-Length", [])
+        raw = "0" if not lengths else (lengths[0].strip() if len(lengths) == 1 else "")
+        if not (raw.isascii() and raw.isdigit()):
+            self.close_connection = True
+            self._send_json({"error": "bad Content-Length"}, status=400)
+            return False
+        self._body_length = int(raw)
+        return True
+
     def do_GET(self) -> None:  # BaseHTTPRequestHandler dispatch contract (method name fixed)
         path = unquote(urlsplit(self.path).path)
+        if not self._parse_body_length():
+            return
+        if self._body_length:
+            # A GET body is never read, so on a keep-alive connection it would
+            # parse as the next request.
+            self.close_connection = True
+            self._send_json({"error": "a GET carries no body"}, status=400)
+            return
         try:
             self._route(path)
         except (BrokenPipeError, ConnectionResetError):
@@ -278,16 +301,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # BaseHTTPRequestHandler dispatch contract (method name fixed)
         path = unquote(urlsplit(self.path).path)
+        # Parsed first: the CSRF check and the body reader read this value, so
+        # a bad header meets one refusal before anything is read.
+        if not self._parse_body_length():
+            return
         try:
-            try:
-                # Parsed once, here: the CSRF check and the body reader read
-                # this value, so a bad header meets one refusal (nothing was
-                # read, and the body would parse as the next request).
-                self._body_length = int(self.headers.get("Content-Length", "0") or "0")
-            except ValueError:
-                self.close_connection = True
-                self._send_json({"error": "bad Content-Length"}, status=400)
-                return
             csrf_err = self._csrf_refusal()
             if csrf_err is not None:
                 # Close the connection rather than drain an unread body under
@@ -301,15 +319,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 self._send_json({"error": "chunked bodies are not supported"}, status=411)
                 return
-            content_length = self._body_length
-            if content_length < 0:
-                # A negative length would make rfile.read(n) read to EOF, buffering
-                # arbitrary bytes and parking the worker thread; the > cap check
-                # alone (n < cap) lets it through.
-                self.close_connection = True
-                self._send_json({"error": "negative Content-Length"}, status=400)
-                return
-            if content_length > _MAX_BODY_BYTES:
+            if self._body_length > _MAX_BODY_BYTES:
                 self.close_connection = True
                 self._send_json({"error": f"body larger than {_MAX_BODY_BYTES} bytes"}, status=413)
                 return
