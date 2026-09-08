@@ -45,7 +45,7 @@ def test_agent6_style_is_the_default_and_unchanged(tmp_path: Path) -> None:
 def test_conventional_style_derives_from_the_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _one_added(_p: Path) -> tuple[tuple[str, str], ...]:
+    def _one_added(_p: Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("A", "src/agent6/config/write.py"),)
 
     monkeypatch.setattr(loopmod, "worktree_name_status", _one_added)
@@ -59,7 +59,7 @@ def test_conventional_style_derives_from_the_worktree(
 def test_model_style_uses_the_provider_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _one_modified(_p: Path) -> tuple[tuple[str, str], ...]:
+    def _one_modified(_p: Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("M", "a.py"),)
 
     monkeypatch.setattr(loopmod, "worktree_name_status", _one_modified)
@@ -73,7 +73,7 @@ def test_model_style_uses_the_provider_text(
 def test_model_style_degrades_to_agent6_with_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _one_modified(_p: Path) -> tuple[tuple[str, str], ...]:
+    def _one_modified(_p: Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("M", "a.py"),)
 
     monkeypatch.setattr(loopmod, "worktree_name_status", _one_modified)

@@ -44,6 +44,7 @@ from agent6.git_ops import (
     unignored,
     untracked_paths,
     verify_git_identity,
+    worktree_name_status,
     worktree_tree,
 )
 
@@ -87,6 +88,22 @@ def test_modified_and_untracked_paths_split_the_operators_work(tmp_path: Path) -
     scoped = status(tmp_path, exclude={"new.txt", "odd name:here.txt"})
     assert (scoped.modified_count, scoped.untracked_count, scoped.is_clean) == (0, 0, True)
     assert status(tmp_path, exclude={"new.txt"}).untracked_count == 1
+
+
+def test_worktree_name_status_leaves_out_the_operators_untracked_files(tmp_path: Path) -> None:
+    """`worktree_name_status` feeds the conventional-subject deriver at
+    checkpoint time; every other status/diff call in the loop excludes
+    `untracked_at_start` (the operator's own files), and this one must too,
+    or a bystander untracked file skews every checkpoint's derived type and
+    scope for the whole run."""
+    _init_repo(tmp_path)
+    (tmp_path / "notes.txt").write_text("mine\n", encoding="utf-8")  # the operator's
+    mine = untracked_paths(tmp_path)
+    (tmp_path / "feature.py").write_text("x = 1\n", encoding="utf-8")  # the run's
+
+    changes = worktree_name_status(tmp_path, exclude=mine)
+    assert ("A", "feature.py") in changes
+    assert not any(path == "notes.txt" for _status, path in changes)
 
 
 def test_stash_tracked_changes_leaves_untracked_files_in_place(tmp_path: Path) -> None:

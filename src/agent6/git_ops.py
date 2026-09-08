@@ -1447,17 +1447,24 @@ def list_run_commits(path: Path, base_sha: str, run_branch: str) -> tuple[Commit
     return tuple(rows)
 
 
-def worktree_name_status(path: Path) -> tuple[tuple[str, str], ...]:
+def worktree_name_status(
+    path: Path, *, exclude: Collection[str] = ()
+) -> tuple[tuple[str, str], ...]:
     """`(status, path)` pairs for every pending change (`status
     --porcelain`), untracked reported as `A`: the conventional-subject
-    deriver's input at checkpoint time."""
+    deriver's input at checkpoint time. *exclude* (the run's
+    `untracked_at_start`) is left out, as every other status and diff call of
+    the chain leaves it out."""
     res = _run(path, "status", "--porcelain", check=False)
     pairs: list[tuple[str, str]] = []
     for line in res.stdout.splitlines():
         if len(line) < 4:
             continue
+        rel = line[3:].strip()
+        if rel in exclude:
+            continue
         code = line[:2].strip() or "M"
-        pairs.append(("A" if code in ("??", "A", "AM") else code[:1], line[3:].strip()))
+        pairs.append(("A" if code in ("??", "A", "AM") else code[:1], rel))
     return tuple(pairs)
 
 

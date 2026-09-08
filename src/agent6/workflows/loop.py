@@ -5016,7 +5016,7 @@ class Workflow:
         if style == "agent6":
             return agent6_subject
         summary = _first_prose_line(turn.resp.text or "", fallback=fallback)
-        changes = worktree_name_status(self.root)
+        changes = worktree_name_status(self.root, exclude=self.untracked_at_start)
         if style == "conventional":
             return conventional_commit_subject(changes, summary=summary)
         msg = self._model_commit_message(changes, hint=summary)
