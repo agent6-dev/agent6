@@ -765,7 +765,7 @@ def test_invalid_arguments_read_as_one_line(tmp_path: Path) -> None:
     # until the tool-error streak stops the run (seen live in `machine create`).
     assert "kind='create'" in message
     assert "\n" not in str(caught.value)
-    with pytest.raises(ToolError, match=r"^invalid arguments: edits: Field required$"):
+    with pytest.raises(ToolError, match=r"^invalid arguments: arguments: give old_string and new"):
         d.dispatch("apply_edit", {"path": "f.py"})
 
 
@@ -1800,7 +1800,7 @@ def test_non_json_string_still_fails_validation(tmp_path: Path) -> None:
     d = ToolDispatcher(root=tmp_path, config=cfg)
     with pytest.raises(ToolError, match="edits: expected an array"):
         d.dispatch("apply_edit", {"path": "a.txt", "edits": "not json at all"})
-    with pytest.raises(ToolError, match="edits: expected a non-empty array"):
+    with pytest.raises(ToolError, match="one edit, or `edits`"):
         d.dispatch("apply_edit", {"path": "a.txt", "edits": []})
 
 
@@ -2546,3 +2546,35 @@ def test_a_too_long_array_is_named_in_json_words() -> None:
     assert invalid_arguments(info.value) == (
         "invalid arguments: questions: expected at most 8 items in the array"
     )
+
+
+def test_apply_edit_takes_one_edit_flat_the_way_the_claude_code_edit_tool_does(
+    tmp_path: Path,
+) -> None:
+    """Sonnet on the Claude Code backend sent `edits` as a JSON string three
+    times in one run, its own Edit tool being flat: the flat pair is one edit
+    (an omitted old_string creates), `edits` carries several, and both at once
+    or neither is refused naming the two forms. Only `path` stays required."""
+    from agent6.tools.schema import ApplyEditInput, wire_schema
+
+    cfg = _config(tmp_path)
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch("apply_edit", {"path": "a.txt", "old_string": "x", "new_string": "y"})
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "y\n"
+    d.dispatch("apply_edit", {"path": "b.txt", "new_string": "fresh\n"})
+    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "fresh\n"
+    with pytest.raises(ToolError, match="not both"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "a.txt",
+                "old_string": "y",
+                "new_string": "z",
+                "edits": [{"old_string": "y", "new_string": "q"}],
+            },
+        )
+    with pytest.raises(ToolError, match="one edit, or `edits`"):
+        d.dispatch("apply_edit", {"path": "a.txt"})
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "y\n"
+    assert wire_schema(ApplyEditInput)["required"] == ["path"]

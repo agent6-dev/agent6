@@ -47,11 +47,13 @@
   {
     "name": "apply_edit",
     "required": [
-      "edits",
       "path"
     ],
     "properties": {
       "edits": "array[EditPair]",
+      "kind": "string",
+      "new_string": "string",
+      "old_string": "string",
       "path": "string",
       "preview": "boolean"
     },

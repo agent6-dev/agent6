@@ -74,11 +74,12 @@ class ListDirInput(_ToolInput):
 class ApplyEditInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "apply_edit"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Edit one file. `edits` is an array of {old_string, new_string, kind?}."
-        " Each old_string occurs exactly once in the file, byte for byte."
-        ' kind="create" makes a new file and kind="overwrite" writes the whole'
-        " file, existing or not: for both, empty old_string, the full content in"
-        " new_string, the only edit in the array. An omitted kind follows the"
+        "Edit one file. One edit: old_string and new_string (kind optional) at the"
+        " top level. Several: `edits`, an array of {old_string, new_string, kind?},"
+        " applied in order, all or none. Each old_string occurs exactly once in the"
+        ' file, byte for byte. kind="create" makes a new file and kind="overwrite"'
+        " writes the whole file, existing or not: for both, empty old_string, the"
+        " full content in new_string, the only edit. An omitted kind follows the"
         ' pair: an empty old_string means "create", any other means "replace".'
         " A miss that matches exactly one region up to a uniform indent shift"
         " is healed and reported as `replace~indent`. A file whose lines end"
@@ -87,11 +88,36 @@ class ApplyEditInput(_ToolInput):
     )
 
     path: str = Field(min_length=1)
-    edits: tuple[EditPair, ...] = Field(min_length=1)
+    # The Claude Code Edit shape, one edit at the top level; several ride `edits`.
+    old_string: str = ""
+    new_string: str = ""
+    kind: str = Field(default="", pattern="^(|replace|create|overwrite)$")
+    edits: tuple[EditPair, ...] = ()
     preview: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _one_edit_at_the_top(cls, data: Any) -> Any:
+        """Fold a flat pair into `edits` as its one edit; both forms at once
+        is a refusal, since one would silently win."""
+        if not isinstance(data, dict):
+            return data
+        flat = {k: data[k] for k in ("old_string", "new_string", "kind") if k in data}
+        if not flat:
+            return data
+        if data.get("edits"):
+            raise ValueError(
+                "give old_string and new_string for one edit, or `edits` for several, not both"
+            )
+        return {**{k: v for k, v in data.items() if k not in flat}, "edits": [flat]}
 
     @model_validator(mode="after")
     def _check_whole_file_edit_is_sole(self) -> ApplyEditInput:
+        if not self.edits:
+            raise ValueError(
+                "give old_string and new_string for one edit, or `edits`, an array of"
+                " {old_string, new_string, kind?}, for several"
+            )
         # `create` and `overwrite` write the whole file from `new_string`, so
         # combining either with other edits is nonsensical: the dispatcher's
         # create branch only guards "file already exists" for the FIRST edit,
