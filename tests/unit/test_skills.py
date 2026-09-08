@@ -4,7 +4,11 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
+
+import pytest
 
 from agent6 import skills
 
@@ -175,6 +179,42 @@ class TestResolveStates:
         assert any("ghost" in w for w in r.warnings)
 
 
+def test_unreadable_skill_dir_warns_instead_of_crashing_every_run(tmp_path: Path) -> None:
+    """A dir listed in extra_dirs (or the installed dir) that exists but cannot
+    be listed (permission denied) crashed discovery via a bare `iterdir()`,
+    same failure class as an unreadable SKILL.md: every run dies before a
+    healthy sibling skill ever loads. It must degrade to a warning instead."""
+    if os.geteuid() == 0:
+        pytest.skip("root lists through a 000 mode")
+    base = tmp_path / "extra"
+    base.mkdir()
+    base.chmod(0o000)
+    good = tmp_path / "healthy"
+    good.mkdir()
+    (good / "SKILL.md").write_text(
+        "---\nname: healthy\ndescription: works\n---\nbody\n", encoding="utf-8"
+    )
+    try:
+        found, warnings = skills.discover_skills([base, good])
+    finally:
+        base.chmod(0o700)
+    assert [s.name for s in found] == ["healthy"]
+    assert any("extra" in w for w in warnings)
+    # A dir whose PARENT denies search fails one step earlier, at the stat
+    # that decides whether it is a dir: the same class, and it sat one line
+    # outside the guard (and `Path.is_dir()` hides it on Python 3.13+).
+    outer = tmp_path / "outer"
+    inner = outer / "myskill"
+    inner.mkdir(parents=True)
+    outer.chmod(0o000)
+    try:
+        found, warnings = skills.discover_skills([inner, good])
+    finally:
+        outer.chmod(0o700)
+    assert [s.name for s in found] == ["healthy"]
+    assert any("myskill" in w for w in warnings)
+
+
 def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: Path) -> None:
     """A SKILL.md with one non-UTF-8 byte (or an unreadable file) crashed
     discovery, and discovery runs at startup: every `agent6 run` then died with
@@ -193,3 +233,28 @@ def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: Path) ->
     found, warnings = skills.discover_skills([tmp_path])
     assert [s.name for s in found] == ["healthy"]
     assert any("broken" in w for w in warnings)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 13), reason="3.12's Path.is_dir raises here itself")
+def test_a_skill_dir_the_operator_cannot_search_warns_instead_of_vanishing(
+    tmp_path: Path,
+) -> None:
+    """A candidate under an extra dir with mode 0600 (readable, not
+    searchable): `Path.is_dir()` and `is_file()` report it absent from Python
+    3.13 on, so discovery dropped it with no warning; the explicit stats raise
+    into the same warning as an unlistable dir."""
+    if os.geteuid() == 0:
+        pytest.skip("root searches through a 0600 dir")
+    base = tmp_path / "extra"
+    inner = base / "myskill"
+    inner.mkdir(parents=True)
+    (inner / "SKILL.md").write_text(
+        "---\nname: myskill\ndescription: x\n---\nbody\n", encoding="utf-8"
+    )
+    inner.chmod(0o600)
+    try:
+        found, warnings = skills.discover_skills([base])
+    finally:
+        inner.chmod(0o700)
+    assert not found
+    assert any("myskill" in w for w in warnings)

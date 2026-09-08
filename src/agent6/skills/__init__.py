@@ -18,6 +18,7 @@ warning, never a crash.
 from __future__ import annotations
 
 import re
+import stat
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -130,6 +131,24 @@ def _load_skill(skill_dir: Path) -> tuple[Skill | None, list[str]]:
     return Skill(name=name, description=description, dir=skill_dir, text=text), prefixed
 
 
+def _mode(path: Path) -> int | None:
+    """*path*'s mode, None when it does not exist. A path the process may not
+    reach raises, where `Path.is_dir()` and `is_file()` report it absent from
+    Python 3.13 on, and discovery would skip a skill it cannot read silently."""
+    try:
+        return path.stat().st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+
+
+def _is_dir(path: Path) -> bool:
+    return (mode := _mode(path)) is not None and stat.S_ISDIR(mode)
+
+
+def _is_file(path: Path) -> bool:
+    return (mode := _mode(path)) is not None and stat.S_ISREG(mode)
+
+
 def discover_skills(dirs: Sequence[Path]) -> tuple[tuple[Skill, ...], tuple[str, ...]]:
     """Scan directories for skills, in precedence order (first dir wins dupes).
 
@@ -140,16 +159,23 @@ def discover_skills(dirs: Sequence[Path]) -> tuple[tuple[Skill, ...], tuple[str,
     found: dict[str, Skill] = {}
     warnings: list[str] = []
     for base in dirs:
-        if not base.is_dir():
+        try:
+            if not _is_dir(base):
+                continue
+            if _is_file(base / "SKILL.md"):
+                candidates = [base]
+            else:
+                candidates = sorted(
+                    p
+                    for p in base.iterdir()
+                    if not p.name.startswith(".") and _is_dir(p) and _is_file(p / "SKILL.md")
+                )
+        except OSError as exc:
+            # A dir that exists but cannot be listed (permission denied) is the
+            # same failure class as an unreadable SKILL.md: discovery runs at
+            # startup, so a bare crash here would take down every run.
+            warnings.append(f"{base}: unreadable ({exc})")
             continue
-        if (base / "SKILL.md").is_file():
-            candidates = [base]
-        else:
-            candidates = sorted(
-                p
-                for p in base.iterdir()
-                if p.is_dir() and not p.name.startswith(".") and (p / "SKILL.md").is_file()
-            )
         for skill_dir in candidates:
             skill, warns = _load_skill(skill_dir)
             warnings.extend(warns)
