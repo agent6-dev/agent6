@@ -102,8 +102,11 @@ def build_repl_hook(
         while True:
             try:
                 raw = input("agent6> ").strip()
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 print("[agent6] EOF - stopping interactively.", file=sys.stderr)
+                return "stop"
+            except KeyboardInterrupt:
+                print("\n[agent6] Ctrl-C - stopping interactively.", file=sys.stderr)
                 return "stop"
             cmd = raw.lower()
             if cmd in {"", "/continue", "/c"}:
@@ -209,10 +212,7 @@ def repl_list_mcp(mcp_manager: MCPManager | None) -> None:
         )
         return
     descriptors = mcp_manager.descriptors()
-    if not descriptors:
-        print("[agent6] /mcp: 0 tools (servers started but exposed nothing)", file=sys.stderr)
-        return
-    by_server: dict[str, list[str]] = {}
+    by_server: dict[str, list[str]] = {server: [] for server in mcp_manager.networks}
     for d in descriptors:
         by_server.setdefault(d.server_name, []).append(d.tool_name)
     print(f"[agent6] /mcp: {len(descriptors)} tools across {len(by_server)} server(s)")
@@ -220,6 +220,8 @@ def repl_list_mcp(mcp_manager: MCPManager | None) -> None:
         print(f"  {server}: {len(tools)} tool(s)")
         for t in sorted(tools):
             print(f"    - {t}")
+    for failure in mcp_manager.failures:
+        print(f"  {failure.name}: failed to start ({failure.error})")
 
 
 def repl_run_init(root: Path) -> None:

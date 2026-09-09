@@ -15,6 +15,7 @@ import pytest
 from agent6.ui.cli._menu_input import (
     _read_key,  # pyright: ignore[reportPrivateUsage]
     menu_input,
+    read_line_until,
 )
 from agent6.ui.cli._steer_menu import MENU_COMMANDS
 from agent6.ui.cli._terminal_guard import ScrubbedStream
@@ -169,6 +170,14 @@ def test_interrupt_raises_keyboard_interrupt() -> None:
         _run([*_chars("half typed"), "interrupt"])
 
 
+def test_byte_decoded_ctrl_c_cleans_the_terminal_once() -> None:
+    out: list[str] = []
+    keys = iter([*_chars("half typed"), "interrupt"])
+    with pytest.raises(KeyboardInterrupt):
+        menu_input("P> ", MENU_COMMANDS, [], read_key=lambda: next(keys), write=out.append)
+    assert "".join(out).count("\r\n\x1b[J") == 1
+
+
 def test_menu_rows_clamp_to_narrow_terminals(monkeypatch: pytest.MonkeyPatch) -> None:
     """Rows stay one terminal row wide (wrapping breaks the cursor-up math):
     descriptions truncate, the command labels survive."""
@@ -201,6 +210,49 @@ def test_input_row_never_exceeds_the_terminal_width(monkeypatch: pytest.MonkeyPa
         assert len(printable) <= width - 1, (width, len(printable), printable)
 
 
+def test_a_completed_piped_line_wins_when_the_prompt_is_superseded() -> None:
+    r, w = os.pipe()
+    try:
+        os.write(w, b"typed here\n")
+        assert read_line_until(r, lambda: True) == "typed here"
+    finally:
+        os.close(r)
+        os.close(w)
+
+
+def test_a_partial_line_is_dropped_once_the_prompt_is_over() -> None:
+    """Reading through the stream's own buffer blocked on a partial line the
+    moment the descriptor read as ready, so a prompt answered from another
+    surface hung until the operator finished typing."""
+    import threading
+
+    r, w = os.pipe()
+    got: list[str | None] = []
+    try:
+        os.write(w, b"parti")
+        thread = threading.Thread(target=lambda: got.append(read_line_until(r, lambda: True)))
+        thread.daemon = True
+        thread.start()
+        thread.join(2.0)
+        assert not thread.is_alive() and got == [None]
+    finally:
+        os.close(r)
+        os.close(w)
+
+
+def test_a_pasted_second_line_is_the_next_prompts() -> None:
+    """The stream's buffer swallowed a paste's later lines past the poll, so
+    the next prompt read nothing was typed."""
+    r, w = os.pipe()
+    try:
+        os.write(w, b"one\ntwo\n")
+        assert read_line_until(r, lambda: False) == "one"
+        assert read_line_until(r, lambda: False) == "two"
+    finally:
+        os.close(r)
+        os.close(w)
+
+
 def test_read_key_decodes_bytes_from_a_pipe() -> None:
     """The raw decoder: control keys, CSI sequences, bare Esc, UTF-8 text."""
     r, w = os.pipe()
@@ -222,6 +274,51 @@ def test_read_key_decodes_bytes_from_a_pipe() -> None:
             assert _read_key(r) == expected, raw
         os.write(w, b"\x1b")  # bare Esc: resolved by the 30ms poll timing out
         assert _read_key(r) == "esc"
+    finally:
+        os.close(r)
+        os.close(w)
+
+
+def test_unknown_escape_sequence_does_not_leak_bytes_into_the_line() -> None:
+    r, w = os.pipe()
+    try:
+        os.write(w, b"\x1b[123456789~q")
+        assert _read_key(r) == ""
+        assert _read_key(r) == "char:q"
+    finally:
+        os.close(r)
+        os.close(w)
+
+
+def test_multibyte_alt_chord_does_not_leak_continuation_bytes() -> None:
+    r, w = os.pipe()
+    try:
+        os.write(w, b"\x1b" + "éq".encode())
+        assert _read_key(r) == "esc"
+        assert _read_key(r) == "char:q"
+    finally:
+        os.close(r)
+        os.close(w)
+
+
+def test_a_character_split_across_reads_decodes_whole() -> None:
+    """One `os.read` returns what has arrived, not the count asked: a
+    character whose bytes came in two pieces left its tail to be decoded as a
+    key of its own."""
+    import threading
+    import time
+
+    r, w = os.pipe()
+
+    def _slowly() -> None:
+        for piece in (b"\xe2", b"\x82", b"\xacq"):
+            os.write(w, piece)
+            time.sleep(0.05)
+
+    try:
+        threading.Thread(target=_slowly, daemon=True).start()
+        assert _read_key(r) == "char:\u20ac"
+        assert _read_key(r) == "char:q"
     finally:
         os.close(r)
         os.close(w)

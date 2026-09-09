@@ -213,13 +213,13 @@ def tty_prompt(
                 return input(text if plain is None else plain)
             sys.stdout.write(text if plain is None else plain)
             sys.stdout.flush()
-            return read_line_until(sys.stdin, sys.stdin.fileno(), until)
+            return read_line_until(sys.stdin.fileno(), until)
         except (EOFError, KeyboardInterrupt, OSError, ValueError):
             return None
     try:
         with tty:
             tty.write(scrub_terminal_output(text))
-            line = read_line_until(tty, fd, until)
+            line = read_line_until(fd, until)
             if line is None and until is not None:
                 # Whatever was typed was aimed at a prompt that is over.
                 with contextlib.suppress(Exception):

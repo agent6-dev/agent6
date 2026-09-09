@@ -162,6 +162,20 @@ def test_hook_eof_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     assert hook(1, "abc") == "stop"
 
 
+def test_hook_ctrl_c_stops_without_calling_it_eof(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _raise(_p: str = "") -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", _raise)
+    hook = build_repl_hook(tmp_path, _budget())
+    assert hook(1, "abc") == "stop"
+    err = capsys.readouterr().err
+    assert "Ctrl-C - stopping interactively" in err
+    assert "EOF" not in err
+
+
 def test_hook_cost_reprompts_then_continues(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -306,6 +320,31 @@ def test_steer_prompt_keeps_marker_on_real_answer(
         assert not steer_request_pending(session_dir)
     finally:
         state.restore()
+
+
+def test_mcp_lists_a_running_server_that_exposes_no_tools(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent6.tools.mcp_client import MCPManager
+    from agent6.ui.cli._repl import repl_list_mcp
+
+    repl_list_mcp(MCPManager(networks={"empty-server": "strict"}))
+
+    out = capsys.readouterr()
+    assert "1 server(s)" in out.out
+    assert "empty-server: 0 tool(s)" in out.out
+    assert not out.err
+
+
+def test_mcp_lists_a_server_that_failed_to_start(capsys: pytest.CaptureFixture[str]) -> None:
+    """The listing read the started servers alone, so a configured server
+    that failed to start was absent from a list titled with every server."""
+    from agent6.tools.mcp_client import MCPManager, MCPStartFailure
+    from agent6.ui.cli._repl import repl_list_mcp
+
+    repl_list_mcp(MCPManager(failures=(MCPStartFailure(name="browser", error="no such binary"),)))
+
+    assert "browser: failed to start (no such binary)" in capsys.readouterr().out
 
 
 def test_watch_shows_audit_events_not_streaming_fragments(

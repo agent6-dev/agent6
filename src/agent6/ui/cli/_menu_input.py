@@ -30,7 +30,6 @@ import os
 import select
 import sys
 from collections.abc import Callable
-from typing import TextIO
 
 from agent6.ui.cli._terminal_guard import raw_stream
 from agent6.viewmodel.transcript import scrub_terminal_controls
@@ -85,18 +84,25 @@ class LineSuperseded(Exception):
     *until* held while it waited for a key."""
 
 
-def read_line_until(stream: TextIO, fd: int, until: Callable[[], bool] | None) -> str | None:
-    """One line from *stream*, or None at EOF or once *until* holds (polled
-    every 0.2 s while nothing is typed; a line already complete wins)."""
-    if until is not None:
-        while not until():
-            ready, _, _ = select.select([fd], [], [], 0.2)
-            if ready:
-                break
-        else:
+def read_line_until(fd: int, until: Callable[[], bool] | None) -> str | None:
+    """One line from *fd*, or None at EOF or once *until* holds (polled every
+    0.2 s while nothing is typed). Bytes are taken one at a time as they wait,
+    so a line already complete wins, a paste's later lines stay in the
+    descriptor for the next prompt, and a partial line is dropped once *until*
+    holds (it was aimed at a prompt that is over)."""
+    line = b""
+    while True:
+        if select.select([fd], [], [], 0)[0]:
+            byte = os.read(fd, 1)
+            if not byte:  # EOF: what was typed, or nothing
+                return line.decode("utf-8", errors="replace") if line else None
+            if byte == b"\n":
+                return line.decode("utf-8", errors="replace").rstrip("\r")
+            line += byte
+            continue
+        if until is not None and until():
             return None
-    line = stream.readline()
-    return line.rstrip("\n") if line else None
+        select.select([fd], [], [], 0.2 if until is not None else None)
 
 
 def _read_key_until(fd: int, until: Callable[[], bool]) -> str:
@@ -117,9 +123,11 @@ def _read_escape(fd: int) -> str:
         return "esc"
     lead = os.read(fd, 1)
     if lead not in (b"[", b"O"):
+        if lead and lead[0] >= 0xC0:  # an Alt-chord on a multibyte character
+            _read_exactly(fd, _continuation_bytes(lead[0]))
         return "esc"
     seq = b""
-    while len(seq) < 8:
+    while True:
         ch = os.read(fd, 1)
         if not ch:
             break
@@ -144,10 +152,26 @@ def _read_key(fd: int) -> str:
         return _read_escape(fd)
     if b < 0x20:
         return ""  # other control keys: ignore
-    if b >= 0xC0:  # UTF-8 lead byte: read the continuation bytes
-        n = 1 if b < 0xE0 else 2 if b < 0xF0 else 3
-        data += os.read(fd, n)
+    if b >= 0xC0:  # a UTF-8 lead byte: the rest of the character
+        data += _read_exactly(fd, _continuation_bytes(b))
     return "char:" + data.decode("utf-8", errors="replace")
+
+
+def _continuation_bytes(lead: int) -> int:
+    return 1 if lead < 0xE0 else 2 if lead < 0xF0 else 3
+
+
+def _read_exactly(fd: int, n: int) -> bytes:
+    """*n* bytes from *fd*, however they arrive: a character split across
+    reads (a slow link, a paste) leaves no continuation byte behind to be
+    decoded as a key of its own. Short only at EOF."""
+    data = b""
+    while len(data) < n:
+        chunk = os.read(fd, n - len(data))
+        if not chunk:
+            break
+        data += chunk
+    return data
 
 
 def _width() -> int:
@@ -376,7 +400,6 @@ class _Reader:
         """Apply one key. True when Enter accepted the line (in `self.line`);
         raises KeyboardInterrupt/EOFError for Ctrl-C / Ctrl-D-on-empty."""
         if key == "interrupt":
-            write("\r\n\x1b[J")
             raise KeyboardInterrupt
         if self.searching:
             self._search_key(key)
@@ -479,9 +502,9 @@ def menu_input(
                 return r.line
             r.render(write)
     except (KeyboardInterrupt, LineSuperseded):
-        # A signal-delivered Ctrl-C (cbreak keeps ISIG) and a superseded line
-        # both raise from inside the read, skipping handle_key's cleanup:
-        # erase the menu rows so they don't linger under whatever prints next.
+        # Ctrl-C (a signal under cbreak's ISIG, or the byte the decoder names)
+        # and a superseded line raise out of the loop: erase the menu rows once
+        # so they don't linger under whatever prints next.
         write("\r\n\x1b[J")
         raise
     finally:
