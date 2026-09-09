@@ -101,7 +101,8 @@ function machineNotify(ctx, m) {
     // or fire a spurious "ended" banner/OS-notify. Only events that happen while
     // watching fire.
     ctx.seen = new Set(notes.map(keyOf));
-    if (m.ended || m.worker_lost) ctx.endedNotified = true;
+    ctx.endedNotified = !!m.ended;
+    ctx.lostNotified = !!m.worker_lost; // a stop the page opened on is history, not news
     return;
   }
   for (const n of notes) {

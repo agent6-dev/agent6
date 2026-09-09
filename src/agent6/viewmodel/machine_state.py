@@ -746,6 +746,12 @@ def machine_state_as_dict(
         probes = probe_instance(machine_dir, ms, leg=leg)
         d["status"] = probes.status_word(ms)
         d["level"] = status_level(d["status"])  # the hub row's level, for the page's pill
+        if d["status"] == "stopped":
+            # No worker and no armed wait (an operator stop or a death
+            # mid-state, the same dir): resumable, and the wire says so. A
+            # fabricated `ended` (a status the journal vocabulary does not
+            # hold) would style it terminal; `ended` stays a durable MachineEnd.
+            d["worker_lost"] = {"reason": "no worker running", "state": ms.current}
         # Every verb's refusal, so a front-end gates and labels its buttons from
         # the one decision the CLI and the TUI already use instead of deriving
         # its own from the status word (which conflates parked, an open agent

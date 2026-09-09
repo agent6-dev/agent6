@@ -201,17 +201,8 @@ def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
         except MachineError as exc:
             chan.send({"type": "error", "error": "; ".join(exc.problems)})
             return
-        if payload["machine"].get("status") == "stopped":
-            # No worker and no armed wait (an operator stop or a death
-            # mid-state, the same dir: the worker clears its pid on every
-            # unwound exit): resumable, so the frame says so and the stream
-            # stays open for `machine run`. A fabricated `ended` (a status the
-            # journal vocabulary does not hold) would style it terminal;
-            # `ended` stays reserved for a durable MachineEnd.
-            payload["machine"]["worker_lost"] = {
-                "reason": "no worker running",
-                "state": payload["machine"].get("current", ""),
-            }
+        # A stopped machine's frame carries `worker_lost` (the wire form's), and
+        # the stream stays open for `machine run`.
         blob = json.dumps(payload, sort_keys=True)
         if blob != prev:
             # The age is derived at send time and deliberately outside the

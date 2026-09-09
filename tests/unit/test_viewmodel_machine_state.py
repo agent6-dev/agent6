@@ -549,3 +549,20 @@ def test_the_newest_leg_fold_reads_only_what_the_log_gained(tmp_path: Path) -> N
         assert fold.leg() == AgentLeg(open=False, blocked_in="")
     finally:
         mod.tail_events = tail_events
+
+
+def test_the_wire_form_names_a_stopped_machine_as_resumable(tmp_path: Path) -> None:
+    """The web stream alone added `worker_lost` to a stopped machine's frame,
+    so the page's first paint (the one-shot snapshot) lacked it and the next
+    frame announced a stop that had happened hours before as news; the wire
+    form carries it wherever it is read."""
+    spec = _spec(tmp_path)
+    live = fold_machine(spec, [])
+    d = tmp_path / "inst"
+    d.mkdir()
+    (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    stopped = machine_state_as_dict(live, d)
+    assert stopped["status"] == "stopped"
+    assert stopped["worker_lost"] == {"reason": "no worker running", "state": "route"}
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert "worker_lost" not in machine_state_as_dict(live, d)

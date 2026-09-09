@@ -72,6 +72,10 @@ def test_a_stop_and_an_end_each_notify_once_across_a_resume() -> None:
     assert "m.worker_lost && !ctx.lostNotified" in body
     assert "m.ended && !ctx.endedNotified" in body
     assert "ctx.lostNotified = false" in body
+    # The first paint seeds the flag: a stop the page opened on is not news.
+    start = js.index("function machineNotify(")
+    seed = js[start : js.index("\nfunction ", start + 1)]
+    assert "ctx.lostNotified = !!m.worker_lost" in seed
 
 
 def test_the_machine_composer_hint_names_enter() -> None:
