@@ -130,7 +130,7 @@ Beside it, `DECISIONS.md` holds the operator's rulings: the harness appends ever
 
 ## The run lifecycle
 
-`app/run.py`'s `run_task` composes one stage per step, drawn in the order it calls them: refusals and clamps, isolation, git preflight, manifest, provider and tool assembly, gate inference, the loop, then auto-merge and the end report.
+`app/run.py`'s `run_task` composes one stage per step, drawn in the order it calls them: refusals and clamps, the route preflight, isolation, git preflight, manifest, provider and tool assembly, gate inference, the loop, then auto-merge and the end report.
 The stash finalize is last because it runs from `finally`, on every exit path, refusals included.
 
 <!-- diagram: run-lifecycle -->

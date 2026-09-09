@@ -42,10 +42,18 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    # No provider key here: the lifecycle's route preflight passes.
+    from agent6.app import preflight as preflight_mod
+
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_keys)
     repo = tmp_path / "repo"
     _init_repo(repo)
     monkeypatch.chdir(repo)
     return repo
+
+
+def _no_keys(_cfg: Config) -> None:
+    return None
 
 
 def _load_cfg() -> Config:

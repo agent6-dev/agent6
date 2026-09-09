@@ -16,6 +16,7 @@ import pytest
 
 import agent6.app._session as session_mod
 import agent6.app._setup as setup_mod
+import agent6.app.preflight as preflight_mod
 import agent6.app.resume as resume_mod
 from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout
@@ -109,7 +110,7 @@ def _stub_start_of_run(
 ) -> dict[str, object]:
     """Let a parked resume reach `run_task`; capture the kwargs it hands over."""
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)  # no key in a unit test
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
     captured: dict[str, object] = {}
 
     def _capture_run_task(*_a: object, **k: object) -> int:
@@ -283,6 +284,7 @@ def test_plan_resume_requires_the_planner_role(
     # Reaching detect_env means the readiness gate accepted the planner-only
     # config; the old hard-coded require_runnable("worker") returned 2 first.
     monkeypatch.setattr(session_mod, "detect_env", _stop)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
     with pytest.raises(_Stop):
         _cmd_resume(None, "plan-AAAA11", force=False)
 
@@ -307,6 +309,7 @@ def test_resume_preset_flag_is_recorded_for_later_legs(
         raise _Stop()
 
     monkeypatch.setattr(session_mod, "detect_env", _stop)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
     with pytest.raises(_Stop):
         _cmd_resume(None, "plan-PRESET1", force=False, preset="quick")
     stamp = read_manifest(session_dir).workflow
@@ -349,6 +352,7 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
         raise SessionRefused(2)
 
     monkeypatch.setattr(resume_mod, "select_isolation", _refuse)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
     assert _cmd_resume(None, "plan-PIDORDER", force=False) == 2
     assert order == ["isolation"]
     assert not (session_dir / "worker.pid").exists()
@@ -367,7 +371,7 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
 
     order.clear()
     monkeypatch.setattr(resume_mod, "select_isolation", _select)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)  # no key in a unit test
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)  # no key in a unit test
     monkeypatch.setattr(resume_mod, "run_leg", _leg)
     assert _cmd_resume(None, "plan-PIDORDER", force=False) == 0
     assert order == ["isolation", "pid", "leg"]
@@ -396,7 +400,7 @@ def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
     marker = state_dir(repo) / "sessions" / "runs" / "plan-CRASHMARK" / TURN_IN_FLIGHT_NAME
     write_turn_marker(marker, 1, ("run_command",))
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _nothing)
 
     def _fail_startup(*_a: object, **_k: object) -> object:
@@ -450,7 +454,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
         return LegEnd(rc=0)
 
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
     monkeypatch.setattr(resume_mod, "run_leg", _leg)
     frontend = MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
@@ -478,7 +482,7 @@ def test_a_misspelled_away_mode_refuses_a_resume(
     _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "denny")
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
 
     def _leg(*_a: object, **_k: object) -> LegEnd:
         raise AssertionError("the resume started")
@@ -511,7 +515,7 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     session_dir = state_dir(repo) / "sessions" / "runs" / "parked-DETACH"
     _park_manifest(session_dir, preset="", from_flag=False)
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)  # no key in a unit test
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
     child = subprocess.Popen(["sleep", "60"])
     try:
 
@@ -565,7 +569,7 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
         return EffectiveConfig(config=cfg, sources={"workflow.max_iterations": "global"}, layers=())
 
     monkeypatch.setattr(setup_mod, "load_effective", _load)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)  # no key in a unit test
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
     seen: dict[str, object] = {}
 
     def _run_task(*_a: object, **kw: object) -> int:
@@ -637,7 +641,7 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     (repo / "seed.txt").write_text("edited between legs\n", encoding="utf-8")
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
     monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
     assert (
         resume_mod.resume_task(
@@ -708,7 +712,7 @@ def test_the_resume_note_names_the_files_it_hands_to_the_operator(
     (repo / "build.log").write_text("written by a command between legs\n", encoding="utf-8")
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
     monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
     assert (
         resume_mod.resume_task(
@@ -759,7 +763,7 @@ def test_plan_resume_builds_the_planner_provider(
     monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
     monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(session_mod, "check_network_support", _none)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
     monkeypatch.setattr(session_mod, "budget_preflight", _none)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
 
@@ -982,3 +986,71 @@ def test_a_declined_unconfined_confirm_is_the_operators_refusal(
             reporter=Reporter(out=lambda _m: None, err=err.append),
         )
     assert refusal.value.rc == 2 and "[agent6] aborted." in err
+
+
+def test_a_parked_resume_with_no_provider_key_refuses_and_stays_parked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """resume_task checked the key itself before handing a parked run to
+    run_task, which owns that preflight for every run it starts: the one
+    check refuses, names `agent6 connect`, and the run stays parked."""
+    from unittest.mock import MagicMock
+
+    from agent6.app import run as run_mod
+    from agent6.sessions.manifest import read_manifest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    session_dir = state_dir(repo) / "sessions" / "runs" / "parked-NOKEY"
+    _park_manifest(session_dir, preset="", from_flag=False)
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    monkeypatch.setattr(run_mod, "select_isolation", _unconfined)
+
+    rc = resume_mod.resume_task(
+        None, "parked-NOKEY", frontend=MagicMock(), force=False, started_at=time.time()
+    )
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "agent6 connect" in err
+    assert "starting it now" not in err  # it did not
+    assert read_manifest(session_dir).parked_task == "queued work"
+
+
+def test_a_parked_resume_says_it_is_starting_once_it_starts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """resume_task announced "starting it now" before handing the run over,
+    so a refused start (no key) read as started; the lifecycle that starts
+    the leg says so, after its refusals."""
+    from unittest.mock import MagicMock
+
+    from agent6.app import run as run_mod
+    from agent6.app._leg import LegEnd
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    session_dir = state_dir(repo) / "sessions" / "runs" / "parked-STARTS"
+    _park_manifest(session_dir, preset="", from_flag=False)
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(run_mod, "select_isolation", _unconfined)
+
+    def _leg(*_a: object, **_k: object) -> LegEnd:
+        return LegEnd(0)
+
+    monkeypatch.setattr(run_mod, "run_leg", _leg)
+    rc = resume_mod.resume_task(
+        None, "parked-STARTS", started_at=time.time(), frontend=MagicMock(), force=False
+    )
+
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert err.count("was parked at submission; starting it now.") == 1

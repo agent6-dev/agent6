@@ -20,7 +20,6 @@ from agent6.app._session import (
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
-    check_provider_keys,
     load_session_config,
     override_flags,
 )
@@ -35,6 +34,7 @@ from agent6.app.preflight import (
     headless_approval_refusal,
     headless_parking_note,
     require_git_repo,
+    route_preflight,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.run import run_task
@@ -409,12 +409,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             except ConfigError as exc:
                 reporter.error(str(exc))
                 return 2
-            missing = check_provider_keys(cfg)
-            if missing is not None:
-                reporter.err(missing)
-                return 2
-            why = f" ({manifest.parked_reason})" if manifest.parked_reason else ""
-            reporter.note(f"run {session_id!r} was parked at submission{why}; starting it now.")
             saved_task = manifest.parked_task
             release_single_writer(worker_lock_fd)
             worker_lock_fd = None
@@ -551,6 +545,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # scope, and the scopes in play include one per configured MCP server.
         settle_away_mode(layout.session_dir, cfg)
 
+        if not route_preflight(cfg, role, reporter=reporter):
+            return 2
+
         try:
             isolation = select_isolation(
                 cfg,
@@ -562,11 +559,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             )
         except SessionRefused as refusal:
             return refusal.rc
-
-        missing = check_provider_keys(cfg)
-        if missing is not None:
-            reporter.err(missing)
-            return 2
 
         identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
         # (no-repo guard already ran above, before the resume head guard)

@@ -164,3 +164,49 @@ def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> N
     assert headless_parking_note(yes, tui_enabled=False, away="deny", can_ask=False) is None
     assert headless_parking_note(yes, tui_enabled=False, away="", can_ask=True) is None
     assert headless_parking_note(yes, tui_enabled=True, away="", can_ask=False) is None
+
+
+def test_the_route_preflight_precedes_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`select_isolation` runs `budget_preflight`, which prices the configured
+    model from the cache the route preflight's key check refreshes: with the
+    key check after it, a cold cache made a first run refuse (max_tokens_fallback
+    0) or print a price notice a second run never sees."""
+    from agent6.app import run as lifecycle
+    from agent6.app.frontend import FrontendCapabilities
+    from agent6.app.reporter import Reporter
+    from agent6.ui.acp.frontend import acp_frontend
+
+    seen: list[str] = []
+
+    class _Stop(Exception):
+        pass
+
+    def _route(*_a: object, **_k: object) -> bool:
+        seen.append("route_preflight")
+        return True
+
+    def _isolation(*_a: object, **_k: object) -> str:
+        seen.append("select_isolation")
+        raise _Stop
+
+    monkeypatch.setattr(lifecycle, "route_preflight", _route)
+    monkeypatch.setattr(lifecycle, "select_isolation", _isolation)
+    monkeypatch.chdir(tmp_path)
+    front = acp_frontend(
+        ask=lambda _p, _o, _s, _c, _u=None: None,
+        capabilities=FrontendCapabilities(),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _rid, _flags: "",
+    )
+    said: list[str] = []
+    with pytest.raises(_Stop):
+        lifecycle.run_task(
+            Config(),
+            "t",
+            started_at=time.time(),
+            frontend=front,
+            reporter=Reporter(out=said.append, err=said.append),
+        )
+    assert seen == ["route_preflight", "select_isolation"], said

@@ -25,6 +25,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import agent6.app.preflight as preflight_mod
 from agent6.app._setup import SandboxOverrides
 from agent6.git_ops import chain_ref_for
 from agent6.graph.storage import list_checkpoint_turns, load_graph
@@ -1240,7 +1241,7 @@ def test_resume_of_a_fork_runs_its_leg_in_the_worktree(
         return "strict"
 
     monkeypatch.setattr(resume_mod, "run_leg", _fake_leg)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _no_missing)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing)
     monkeypatch.setattr(resume_mod, "select_isolation", _strict)
     rc = resume_mod.resume_task(
         None, "child-BBBB22", started_at=time.time(), frontend=MagicMock(), force=False

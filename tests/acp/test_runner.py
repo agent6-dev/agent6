@@ -1690,11 +1690,16 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
     stops the run at its first step. Keyed on the lifecycle's own clock, the
     sweep dropped it, and the run ran on while the editor was told
     "cancelled"."""
+    from agent6.app import preflight as preflight_mod
     from agent6.app import run as run_mod
     from agent6.app._leg import LegEnd
     from agent6.paths import state_dir
     from agent6.sessions.ipc import TIMESTAMP_SLACK_S, request_stop, stop_request_pending
 
+    def _no_keys(_cfg: Config) -> None:
+        return None
+
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_keys)  # no key here
     repo = _repo(tmp_path / "repo")
     subprocess.run(
         ["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "seed"], check=True
@@ -1727,3 +1732,39 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
 
     assert bridge.run(session, "do the thing") == "end_turn"
     assert seen == [True]
+
+
+def test_a_missing_provider_key_refuses_the_turn_before_any_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The key preflight was the CLI's alone, so an ACP turn whose provider had
+    no key built the run's state and died at its first provider call. The
+    lifecycle owns the preflight: the turn is refused before any state
+    exists, and the refusal names `agent6 connect`."""
+    from agent6.paths import state_dir
+
+    repo = _repo(tmp_path / "repo")
+    config_dir = Path(os.environ["XDG_CONFIG_HOME"]) / "agent6"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.chdir(repo)
+    sent: list[dict[str, Any]] = []
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    bridge = RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=repo)
+
+    assert bridge.run(session, "do the thing") == "refusal"
+
+    told = [
+        m["params"]["update"]["content"]["text"]
+        for m in sent
+        if m["params"]["update"].get("sessionUpdate") == "agent_message_chunk"
+    ]
+    assert any("agent6 connect" in t for t in told), told
+    assert not session.layout(state_dir(repo)).session_dir.exists()

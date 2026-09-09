@@ -50,6 +50,7 @@ from agent6.app.preflight import (
     headless_approval_refusal,
     headless_parking_note,
     infer_verify_if_unset,
+    route_preflight,
     unmerged_run_holding_the_tree,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
@@ -144,9 +145,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     *started_at* is the instant this leg began: the clear keeps what was
     written since (an ACP turn's start precedes this call by its queue wait).
 
-    The caller (`ui/cli/run.py`) has already built *cfg* (config + overrides),
-    resolved the task text, checked the git-repo wall / runnable roles /
-    provider keys, and routed `--parallel` away. *budget_overrides* /
+    The CLI (`ui/cli/run.py`) has already built *cfg* (config + overrides),
+    resolved the task text, checked the git-repo wall and the runnable roles,
+    and routed `--parallel` away. The ACP bridge hands its prompt here whole. *budget_overrides* /
     *sandbox_overrides* are passed through for the flags the lifecycle re-reads
     (`--max-usd` enforcement, lane dispatch).
 
@@ -205,6 +206,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     )
     if parking is not None:
         reporter.note(parking)
+    # Before isolation: its budget preflight prices the model from the listing
+    # the key check refreshes.
+    if not route_preflight(cfg, role, reporter=reporter):
+        return 2
     try:
         isolation = select_isolation(
             cfg,
@@ -482,6 +487,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             )
             return cfg
 
+        if parked is not None:
+            why = f" ({parked[1]})" if parked[1] else ""
+            reporter.note(
+                f"run {effective_session_id!r} was parked at submission{why}; starting it now."
+            )
         end = run_leg(
             cfg,
             layout,

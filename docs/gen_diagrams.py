@@ -195,6 +195,7 @@ def _calls_in_order(
 _RUN_LIFECYCLE_TIER = (
     "session_config",
     "headless_approval_refusal",
+    "route_preflight",
     "select_isolation",
     "git_preflight",
     "infer_verify_if_unset",

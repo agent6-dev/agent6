@@ -142,7 +142,7 @@ Beside it, `DECISIONS.md` holds the operator's rulings: the harness appends ever
 
 ## The run lifecycle
 
-`app/run.py`'s `run_task` composes one stage per step, drawn in the order it calls them: refusals and clamps, isolation, git preflight, manifest, provider and tool assembly, gate inference, the loop, then auto-merge and the end report.
+`app/run.py`'s `run_task` composes one stage per step, drawn in the order it calls them: refusals and clamps, the route preflight, isolation, git preflight, manifest, provider and tool assembly, gate inference, the loop, then auto-merge and the end report.
 The stash finalize is last because it runs from `finally`, on every exit path, refusals included.
 
 ```mermaid
@@ -150,6 +150,7 @@ graph TD
     n_run_task["run_task"]
     n_session_config["session_config"]
     n_headless_approval_refusal["headless_approval_refusal"]
+    n_route_preflight["route_preflight"]
     n_select_isolation["select_isolation"]
     n_git_preflight["git_preflight"]
     n_write_session_manifest["write_session_manifest"]
@@ -165,7 +166,8 @@ graph TD
     n_finalize_auto_stash["finalize_auto_stash"]
     n_run_task --> n_session_config
     n_session_config --> n_headless_approval_refusal
-    n_headless_approval_refusal --> n_select_isolation
+    n_headless_approval_refusal --> n_route_preflight
+    n_route_preflight --> n_select_isolation
     n_select_isolation --> n_git_preflight
     n_git_preflight --> n_write_session_manifest
     n_write_session_manifest --> n_build_session_providers

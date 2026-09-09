@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from agent6.app._setup import apply_git_ops_policy
+from agent6.app._setup import apply_git_ops_policy, check_provider_keys
 from agent6.app.providers import (
     InstrumentedProvider,
     build_role_provider,
@@ -36,10 +36,16 @@ from agent6.git_ops import (
     status as git_status,
 )
 from agent6.models.pricing import lookup_price
+from agent6.models.validate import (
+    configured_model_refusal,
+    validate_configured_model,
+    warning_message,
+)
 from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import AWAY_MODES, effective_run_commands
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.schema import UserQuestion
+from agent6.types import RoleName
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command, read_agents_md
 from agent6.viewmodel.listing import session_dirs
 
@@ -421,6 +427,29 @@ def headless_parking_note(
         " MCP call parks the run at its approval until `agent6 attach` answers it"
         " (AGENT6_DETACHED_AWAY=deny auto-denies, =approve grants every scope)."
     )
+
+
+def route_preflight(cfg: Config, role: RoleName, *, reporter: Reporter) -> bool:
+    """Whether the run's model route can run, decided before any state exists:
+    every provider the run can reach has its key or sign-in (each refreshes
+    its model listing on the way), then the configured model against that
+    listing, so a typo refuses here with a did-you-mean instead of echoing
+    the first provider call's 400. A model the cached listing lacks whose
+    live re-check failed (offline) warns and proceeds: the first call is the
+    arbiter. False = refused, said through *reporter*."""
+    missing = check_provider_keys(cfg)
+    if missing is not None:
+        reporter.err(missing)
+        return False
+    verdict = validate_configured_model(cfg, role)
+    if verdict.refused:
+        # Name the entry the operator wrote: a plan whose planner fell back to
+        # the worker model says models.worker.model.
+        reporter.refuse(configured_model_refusal(verdict, cfg.models.source_role(role)))
+        return False
+    if verdict.warned:
+        reporter.warn(warning_message(verdict))
+    return True
 
 
 def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:

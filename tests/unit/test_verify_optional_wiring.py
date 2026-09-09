@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import agent6.app.preflight as preflight_mod
 from agent6.config import Config
 from agent6.config.layer import EffectiveConfig
 from agent6.paths import state_dir
@@ -333,7 +334,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
 
     monkeypatch.setattr(setup_mod, "load_effective", _effective)
     monkeypatch.setattr(resume_mod, "select_isolation", _strict)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
     used: list[tuple[str, ...]] = []
 
@@ -422,7 +423,7 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
     monkeypatch.setattr(session_mod, "check_network_support", _none)
     monkeypatch.setattr(session_mod, "budget_preflight", _none)
     monkeypatch.setattr(session_mod, "build_role_provider", _provider)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
     monkeypatch.setattr(resume_mod, "pin_gate", _capture_pin(pinned))
 
@@ -778,3 +779,64 @@ def test_the_stale_gate_sentence_is_run_mode_only(tmp_path: Path) -> None:
     assert "stale_gate" in build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
     assert "stale_gate" not in build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)
     assert "stale_gate" not in build_system_prompt(config=cfg, repo=repo, mode="ask", skills=None)
+
+
+def test_a_resumes_key_check_precedes_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same preflight as a fresh run, in the same place: `select_isolation`
+    prices the model from the cache the key check refreshes."""
+    import agent6.app._setup as setup_mod
+    import agent6.app.resume as resume_mod
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    session_dir = state_dir(repo) / "sessions" / "runs" / "order-AAAA11"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps({"version": 3, "session_id": "order-AAAA11", "mode": "run", "user_task": "t"}),
+        encoding="utf-8",
+    )
+    (session_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": SNAPSHOT_VERSION,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 2,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    effective = EffectiveConfig(config=_role_cfg({}), sources={}, layers=())
+    seen: list[str] = []
+
+    class _Stop(Exception):
+        pass
+
+    def _effective(*_a: object, **_k: object) -> EffectiveConfig:
+        return effective
+
+    def _route(*_a: object, **_k: object) -> bool:
+        seen.append("route_preflight")
+        return True
+
+    def _isolation(*_a: object, **_k: object) -> str:
+        seen.append("select_isolation")
+        raise _Stop
+
+    monkeypatch.setattr(setup_mod, "load_effective", _effective)
+    monkeypatch.setattr(resume_mod, "route_preflight", _route)
+    monkeypatch.setattr(resume_mod, "select_isolation", _isolation)
+    with pytest.raises(_Stop):
+        resume_mod.resume_task(
+            None, "order-AAAA11", started_at=time.time(), frontend=MagicMock(), force=False
+        )
+    assert seen == ["route_preflight", "select_isolation"]
+

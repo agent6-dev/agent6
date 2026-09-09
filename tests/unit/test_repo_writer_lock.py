@@ -20,6 +20,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agent6.app import preflight as preflight_mod
 from agent6.config import Config
 from agent6.git_ops import GitError, chain_commit, chain_ref_for
 from agent6.paths import state_dir
@@ -117,6 +118,10 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    # No provider key here: the lifecycle's route preflight passes.
+    from agent6.app import preflight as preflight_mod
+
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing_keys)
     repo = tmp_path / "repo"
     _init_repo(repo)
     monkeypatch.chdir(repo)
@@ -207,7 +212,7 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
         return 0
 
     monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _no_missing_keys)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
         None, "run-PARKED2", started_at=time.time(), frontend=MagicMock(), force=False
     )
@@ -403,7 +408,7 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
         return 0
 
     monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _no_missing_keys)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
         None,
         "run-PSTEER",
@@ -527,7 +532,7 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     def _leg(*_a: object, **_k: object) -> LegEnd:
         return LegEnd(0)
 
-    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
     monkeypatch.setattr(resume_mod, "select_isolation", _strict)
     monkeypatch.setattr(resume_mod, "run_leg", _leg)
     frontend = MagicMock()

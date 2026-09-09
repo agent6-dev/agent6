@@ -88,7 +88,7 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
         return None
 
     # The fake worker model ("kimi") isn't in the real on-disk model cache, so
-    # the configured-model preflight would refuse it before the tree policy
+    # the lifecycle's route preflight would refuse it before the tree policy
     # under test. Bypass it here (its own validation is covered separately).
     def _model_ok(*a: object, **k: object) -> object:
         from agent6.models.validate import ModelValidation
@@ -101,7 +101,7 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
 
     monkeypatch.setattr(setup_mod, "load_effective", _load_effective)
     monkeypatch.setattr(preflight_mod, "apply_git_ops_policy", _noop)
-    monkeypatch.setattr(run_mod, "validate_configured_model", _model_ok)
+    monkeypatch.setattr(preflight_mod, "validate_configured_model", _model_ok)
     monkeypatch.setattr(preflight_mod, "verify_git_identity", _noop)
     if stop_after_policy:
         # The first step after the tree policy and the untracked snapshot: the

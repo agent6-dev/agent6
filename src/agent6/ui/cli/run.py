@@ -13,25 +13,20 @@ from pathlib import Path
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
-    check_provider_keys,
     load_session_config,
 )
 from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.parallel import build_coordinator_spawner
 from agent6.app.preflight import (
     require_git_repo,
+    route_preflight,
 )
+from agent6.app.reporter import STDIO_REPORTER
 from agent6.app.run import run_task
 from agent6.config import (
     Config,
-    RoleName,
 )
 from agent6.events import EventSink
-from agent6.models.validate import (
-    configured_model_refusal,
-    validate_configured_model,
-    warning_message,
-)
 from agent6.paths import data_dir
 from agent6.skills import operator_skills
 from agent6.types import ResumableMode, session_kind
@@ -41,7 +36,7 @@ from agent6.ui.cli._ask import (
     run_ask_repl,
     save_ask_transcript,
 )
-from agent6.ui.cli._common import error, refuse, warn
+from agent6.ui.cli._common import error, refuse
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import (
     build_approver,
@@ -220,29 +215,6 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
     )
 
 
-def _configured_model_ok(cfg: Config, role: RoleName) -> bool:
-    """The configured-model wall: validate models.<role>.model against its
-    provider's listing so a typo refuses cleanly here (with a did-you-mean, like
-    the `/parallel` path) instead of dying at the first provider call and
-    echoing the raw upstream 400. A miss re-checks the live listing before
-    refusing (models.validate); a failed re-check warns and proceeds. False =
-    refused (the caller exits 2)."""
-    verdict = validate_configured_model(cfg, role)
-    if verdict.refused:
-        # Name the entry the user actually wrote: a plan whose planner fell
-        # back to the worker model must say models.worker.model, not point at
-        # a models.planner section absent from their config.
-        source = cfg.models.source_role(role)
-        refuse(f"{configured_model_refusal(verdict, source)}")
-        return False
-    if verdict.warned:
-        # The cached listing lacks the model and the live re-check failed
-        # (offline, provider down): proceed (the first provider call is the
-        # final arbiter) but say why a bad id would die there.
-        warn(f"{warning_message(verdict)}")
-    return True
-
-
 def _compose_task(
     task: str, cfg: Config, *, skills: tuple[str, ...], seed_from: str
 ) -> tuple[str, str]:
@@ -266,7 +238,7 @@ def _compose_task(
     return task, ""
 
 
-def _cmd_run(  # noqa: PLR0911
+def _cmd_run(
     config_path: Path | None,
     task: str,
     *,
@@ -315,29 +287,21 @@ def _cmd_run(  # noqa: PLR0911
     # described in @notes.md" and have those files inlined verbatim.
     task = expand_task_file_refs(task, Path.cwd())
 
-    # Provider key + models-cache preflight, shared by the single run and the
-    # --parallel fan-out: resolves each referenced provider's key and refreshes
-    # its models cache, which carries the pricing explicit_usd_flag_error reads.
-    # Runs before the --parallel route so dispatch_parallel's own --max-usd check
-    # sees the same refreshed cache a plain --max-usd run does.
-    missing = check_provider_keys(cfg)
-    if missing is not None:
-        print(missing, file=sys.stderr)
-        return 2
-
-    if not _configured_model_ok(cfg, role):
-        return 2
-
     # `--parallel`: fan out isolated lanes instead of a single run. Routed here,
-    # after config/skills/require_runnable and the key preflight, but before the
-    # single-run sandbox preflight (no branch cut, no run dir on the origin); the
-    # orchestrator clones each lane and runs its own `agent6 run`. run mode only.
+    # after config/skills/require_runnable, but before the single-run preflight
+    # (no branch cut, no run dir on the origin); the orchestrator clones each
+    # lane and runs its own `agent6 run`. run mode only.
     if parallel_spec and mode == "run":
         # Depth 1: a subordinate lane (AGENT6_SUBRUN) must never itself fan out.
         if os.environ.get("AGENT6_SUBRUN"):
             refuse(
                 "--parallel is unavailable inside a subordinate run (parallel dispatch is depth 1)."
             )
+            return 2
+        # The route preflight run_task owns, here so the fan-out refuses before
+        # cloning and its --max-usd check reads the listing the key check
+        # refreshed; each lane's own `agent6 run` repeats it (a TTL-cache hit).
+        if not route_preflight(cfg, role, reporter=STDIO_REPORTER):
             return 2
         return dispatch_parallel(
             cfg,
