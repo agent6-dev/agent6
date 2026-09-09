@@ -320,12 +320,12 @@ def test_watch_screen_disables_steer_and_message_when_ended(
             screen = app.screen
             assert isinstance(screen, MachineWatchScreen)
             assert screen._ended  # pyright: ignore[reportPrivateUsage]
-            assert screen.check_action("steer", ()) is False
-            assert screen.check_action("poke", ()) is False
+            assert screen.check_action("steer", ()) is None
+            assert screen.check_action("poke", ()) is None
             screen.action_steer()  # no-op when ended
             await pilot.pause()
             assert not (state / "steer.request").exists()  # nothing dropped in the dead dir
-            screen.action_poke()  # the palette still reaches it
+            screen.action_poke()  # a direct call: the action itself answers
             await pilot.pause()
             toasts = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
             # The CLI's refusal, word for word.
@@ -725,7 +725,7 @@ def test_watch_screen_refuses_a_steer_no_state_would_read(
             screen = app.screen
             assert isinstance(screen, MachineWatchScreen)
             assert not screen._ended  # pyright: ignore[reportPrivateUsage]
-            assert screen.check_action("steer", ()) is False
+            assert screen.check_action("steer", ()) is None
             screen.action_steer()
             await pilot.pause()
             assert not (state / "steer.request").exists()
@@ -807,8 +807,7 @@ def test_watch_footer_steer_key_follows_liveness(tmp_path: Path) -> None:
             (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
             for _ in range(4):  # let the 0.5s poll observe the flip
                 await pilot.pause(0.3)
-            assert screen.check_action("steer", ()) is False
-            assert screen._was_steerable is False  # pyright: ignore[reportPrivateUsage]
+            assert all(screen.check_action(a, ()) is None for a in ("steer", "poke", "stop"))
 
     asyncio.run(scenario())
 
@@ -1161,3 +1160,251 @@ reason = "done"
 
     asyncio.run(scenario())
     assert out[0].count("thinking…") == 1, out[0]
+
+
+def test_watch_footer_keeps_every_machine_verb_visible_and_gates_it(tmp_path: Path) -> None:
+    """An ended machine takes no verb, but the footer hid Steer and Message and
+    left Stop enabled instead of showing all three controls as unavailable."""
+    from textual.widgets._footer import FooterKey
+
+    from agent6.machine import load_machine
+    from agent6.machine.journal import MachineEnd, MachineJournal
+
+    f = _write(tmp_path / "tiny.asm.toml", TINY)
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    instance.mkdir(parents=True)
+    (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    journal = MachineJournal(instance)
+    journal.begin(machine="tiny", version=1)
+    journal.append(MachineEnd(ts="t", status="ok", reason="done", state="done", transitions=1))
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            keys = {key.description: key for key in app.screen.query(FooterKey)}
+            assert {"Steer", "Message", "Stop"} <= keys.keys()
+            assert all(keys[label].has_class("-disabled") for label in ("Steer", "Message", "Stop"))
+
+    asyncio.run(scenario())
+
+
+def test_watch_footer_refreshes_when_only_poke_availability_changes(tmp_path: Path) -> None:
+    """Consuming an armed wait disables Message even though steerability stays
+    false; the footer refreshed only on a steerability edge and stayed lit."""
+    from textual.widgets._footer import FooterKey
+
+    from agent6.machine import load_machine
+    from agent6.machine.journal import MachineJournal, PendingWait
+
+    f = _write(tmp_path / "tiny.asm.toml", TINY)
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    instance.mkdir(parents=True)
+    (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    journal = MachineJournal(instance)
+    journal.begin(machine="tiny", version=1)
+    journal.write_pending_wait(PendingWait(state="route", wake_epoch=None))
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            message = next(k for k in app.screen.query(FooterKey) if k.description == "Message")
+            assert not message.has_class("-disabled")
+            journal.clear_pending_wait()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            screen._poll()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            message = next(k for k in app.screen.query(FooterKey) if k.description == "Message")
+            assert message.has_class("-disabled")
+
+    asyncio.run(scenario())
+
+
+def test_a_steer_refused_while_its_modal_is_open_writes_nothing(tmp_path: Path) -> None:
+    """A worker can die after `s` opens the steer modal; submitting then must
+    re-check the shared gate, show its exact refusal, and not write to the dead state."""
+    import json
+    import os
+
+    from textual.widgets import TextArea
+
+    from agent6.machine import load_machine
+    from agent6.machine.journal import MachineJournal
+    from agent6.ui.tui.modals import SteerModal
+
+    f = _write(tmp_path / "tiny.asm.toml", TINY)
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    state = instance / "states" / "0000-route"
+    state.mkdir(parents=True)
+    (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    MachineJournal(instance).begin(machine="tiny", version=1)
+    (instance / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    (state / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "role.call", "role": "worker", "model": "m"})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("s")
+            await pilot.pause()
+            assert isinstance(app.screen, SteerModal)
+            app.screen.query_one(TextArea).insert("turn left")
+            (instance / "worker.pid").write_text("999999999", encoding="utf-8")
+            refusal = machine_verb_refusal(instance, "tiny", "steer")
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            assert not (state / "steer.answer").exists()
+            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert (refusal, "warning") in notes
+
+    asyncio.run(scenario())
+
+
+def test_a_poke_refused_while_its_modal_is_open_writes_nothing(tmp_path: Path) -> None:
+    """An armed wait can close after `m` opens the message modal; submitting
+    then must re-check the shared gate instead of leaving an unconsumable signal."""
+    from agent6.machine import load_machine
+    from agent6.machine.journal import MachineJournal, PendingWait
+    from agent6.ui.tui.modals import TextInputModal
+
+    f = _write(tmp_path / "tiny.asm.toml", TINY)
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    instance.mkdir(parents=True)
+    (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    journal = MachineJournal(instance)
+    journal.begin(machine="tiny", version=1)
+    journal.write_pending_wait(PendingWait(state="route", wake_epoch=None))
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, TextInputModal)
+            journal.clear_pending_wait()
+            refusal = machine_verb_refusal(instance, "tiny", "poke")
+            app.screen.query_one(Input).value = "wake up"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert not journal.signal_path.exists()
+            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert (refusal, "warning") in notes
+
+    asyncio.run(scenario())
+
+
+def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path) -> None:
+    """The answer gate read the poll's cached refusals, so an approval submitted
+    in the tick after the worker died landed in a dead state dir with no word;
+    the gate is re-read at submit, as a steer's and a poke's are."""
+    from agent6.ui.tui.machines import _ANSWER_LOST  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.tui.modals import ApprovalModal
+
+    instance, spec = _blocked_machine(tmp_path, alive=True)
+    state = instance / "states" / "0000-route"
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            deadline = 0
+            while not isinstance(app.screen, ApprovalModal) and deadline < 80:
+                await pilot.pause(0.05)
+                deadline += 1
+            assert isinstance(app.screen, ApprovalModal)
+            (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
+            await pilot.press("y")
+            await pilot.pause()
+            assert not (state / "approvals").exists()
+            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert (_ANSWER_LOST, "warning") in notes
+
+    asyncio.run(scenario())
+
+
+def test_the_watch_poll_folds_the_machine_and_its_leg_once(tmp_path: Path) -> None:
+    """One poll read and folded the journal twice (the refusals, then the
+    render) and folded the newest state log twice; the render's fold feeds the
+    refusals."""
+    import os
+
+    import agent6.ui.tui.machines as tui_mod
+    import agent6.viewmodel.machine_state as vm_mod
+    from agent6.machine import load_machine
+
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    instance.mkdir(parents=True)
+    (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (instance / "journal.jsonl").write_text("", encoding="utf-8")  # started, not ended
+    log = instance / "states" / "0000-route" / "logs.jsonl"
+    log.parent.mkdir(parents=True)
+    log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
+    (instance / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
+    counts = {"fold": 0, "leg": 0}
+    real_fold, real_leg = vm_mod.fold_machine, vm_mod.newest_agent_leg
+
+    def counting_fold(*args: object, **kwargs: object) -> object:
+        counts["fold"] += 1
+        return real_fold(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    def counting_leg(*args: object, **kwargs: object) -> object:
+        counts["leg"] += 1
+        return real_leg(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            tui_mod.fold_machine = counting_fold  # type: ignore[assignment]
+            vm_mod.fold_machine = counting_fold  # type: ignore[assignment]
+            vm_mod.newest_agent_leg = counting_leg  # type: ignore[assignment]
+            try:
+                screen._poll()  # pyright: ignore[reportPrivateUsage]
+            finally:
+                tui_mod.fold_machine = real_fold
+                vm_mod.fold_machine = real_fold
+                vm_mod.newest_agent_leg = real_leg
+            assert counts == {"fold": 1, "leg": 1}
+
+    asyncio.run(scenario())

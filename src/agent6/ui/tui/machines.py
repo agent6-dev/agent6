@@ -20,7 +20,7 @@ from typing import ClassVar
 
 try:
     from rich.text import Text
-    from textual import work
+    from textual import events, work
     from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.containers import Container, Horizontal, VerticalScroll
@@ -79,8 +79,9 @@ from agent6.viewmodel import (
     fold_session,
     machine_spend,
     machine_verb_refusal,
-    machine_word_for_dir,
+    machine_verb_refusals,
     newest_state_log,
+    probe_instance,
     tail_events,
     verb_answer,
 )
@@ -90,6 +91,9 @@ from agent6.viewmodel.format import (
     format_when,
     status_label,
 )
+from agent6.viewmodel.machine_state import MachineVerb
+
+_VERB_ACTIONS: dict[str, MachineVerb] = {"steer": "steer", "poke": "poke", "stop": "stop"}
 
 
 def _list_drafts(agent6_dir: Path) -> list[Path]:
@@ -192,7 +196,9 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         self._cursor = MachineWatchCursor()
         self._pending = ""  # accumulated thinking/answer text, flushed in readable chunks
         self._ended = False
-        self._was_steerable = True  # the footer's Steer key tracks _steerable() flips
+        # Every verb's refusal, read once per poll: the footer, the keys and
+        # the prompt gate paint from the same reading.
+        self._refusals = machine_verb_refusals(self._root, self._root.name)
         self._prompts = PromptDispatcher(self.app, answerable=self._answerable, lost=_ANSWER_LOST)
         self._end_notified = False
         self._steer_open = False
@@ -250,23 +256,47 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             self.app.exit()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        # An ended machine takes no input: dim Steer/Message so the footer never
-        # offers a control that would drop into a dead instance dir (matches the
-        # web, which disables both buttons once the machine has ended). Stop
-        # keeps its key: on a machine with nothing to stop, the action shows
-        # the note the CLI prints (Help lists the key either way).
+        # Every machine verb stays named in the footer, dimmed where the one
+        # viewmodel gate refuses it (the web disables the same buttons); a
+        # dimmed key still shows its refusal (on_key).
         del parameters
-        if action in ("steer", "poke"):
-            return not machine_verb_refusal(self._root, self._root.name, action)
-        return True
+        verb = _VERB_ACTIONS.get(action)
+        if verb is None or not self._refusals[verb]:
+            return True
+        return None
+
+    def on_key(self, event: events.Key) -> None:
+        """A dimmed verb's key shows its refusal; a stop's is the CLI's note."""
+        verb = self._verb_for_key(event.key)
+        if verb is None or not self._refusals[verb]:
+            return
+        event.prevent_default()
+        event.stop()
+        severity: SeverityLevel = "information" if verb == "stop" else "warning"
+        self.app.notify(self._refusals[verb], severity=severity, timeout=6.0)
+
+    def _verb_for_key(self, key: str) -> MachineVerb | None:
+        """The machine verb *key* is bound to, from BINDINGS, the one owner."""
+        for binding in self.BINDINGS:
+            if isinstance(binding, Binding) and binding.key == key:
+                return _VERB_ACTIONS.get(binding.action)
+        return None
+
+    def _set_refusals(self, refusals: dict[MachineVerb, str]) -> None:
+        """Take the poll's reading; the footer repaints on any verb's edge."""
+        changed = any(bool(refusals[v]) != bool(self._refusals[v]) for v in _VERB_ACTIONS.values())
+        self._refusals = refusals
+        if changed:
+            self.refresh_bindings()
 
     def _steerable(self) -> bool:
-        """A steer only reaches an agent state the worker is actively running
-        (`machine_verb_refusal`): the footer's Steer key and the answer gate
-        read this."""
-        return not machine_verb_refusal(self._root, self._root.name, "steer")
+        """A steer only reaches an open agent state (the poll's refusals): the
+        render's liveness and the prompt dispatch read this."""
+        return not self._refusals["steer"]
 
     def _answerable(self) -> bool:
+        """Read fresh at submit, as a steer's and a poke's gates are: the worker
+        can die while a prompt's modal is open."""
         return not machine_verb_refusal(self._root, self._root.name, "answer")
 
     def action_steer(self) -> None:
@@ -290,6 +320,12 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
     def _on_steer(self, state_dir: Path) -> Callable[[str | None], None]:
         def cb(answer: str | None) -> None:
             self._steer_open = False
+            # The worker can die while the modal is open: the gate is re-read
+            # at submit, so nothing lands in a dead state dir.
+            refusal = machine_verb_refusal(self._root, self._root.name, "steer")
+            if refusal:
+                self.app.notify(refusal, severity="warning", timeout=6.0)
+                return
             write_steer_answer(state_dir, answer or "")
 
         return cb
@@ -321,6 +357,12 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
     def _on_poke(self, message: str | None) -> None:
         if message is None:
             return
+        # The wait can close while the modal is open: re-read the gate at
+        # submit, so no signal is left for a wait that is not there.
+        refusal = machine_verb_refusal(self._root, self._root.name, "poke")
+        if refusal:
+            self.app.notify(refusal, severity="warning", timeout=6.0)
+            return
         try:
             self._journal.poke(message or None)
         except OSError as exc:
@@ -337,13 +379,6 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
     def _poll(self) -> None:
         if self._ended:
             return
-        # The footer's Steer key follows liveness, not just the _ended edge: a
-        # --exit-on-wait park or a killed worker flips _steerable() with no
-        # MachineEnd, and the lit key otherwise offers a steer nobody reads.
-        steerable = self._steerable()
-        if steerable != self._was_steerable:
-            self._was_steerable = steerable
-            self.refresh_bindings()
         try:
             events = self._journal.read()
             ms = fold_machine(self._spec, events)
@@ -353,12 +388,19 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             self.query_one("#mw-head", Static).update(Text(f"journal unreadable: {exc}"))
             return
 
+        # One probe of the dir per poll feeds the header, the footer and the
+        # keys. The footer follows every verb's edge, not just the _ended one:
+        # a park or a worker death flips a verb with no MachineEnd, a wait can
+        # close while steer stays refused, and a lit key otherwise offers a
+        # verb nothing reads.
+        probes = probe_instance(self._root, ms)
+        self._set_refusals(probes.refusals(self._root.name, ms))
         # Header + state-table markers. A parked (--exit-on-wait) instance reads
         # "waiting", not "running", so a paused machine never looks busy.
         if ms.ended is not None:
             status = f"ended: {ms.ended.status} ({ms.ended.reason})"
         else:
-            status = f"{machine_word_for_dir(ms, self._root)} · {ms.current}"
+            status = f"{probes.status_word(ms)} · {ms.current}"
         # A machine runs unattended against the USD ceiling, so the header
         # carries its spend.
         spend, _in_flight = machine_spend(events, self._root, alive=worker_is_alive(self._root))
@@ -377,12 +419,9 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         # Mark ended before rendering the log so a terminal instance's final
         # agent state doesn't render a live "thinking…" line.
         if ms.ended is not None and not self._ended:
-            self._ended = True
-            self.refresh_bindings()  # dim Steer/Message: a dead machine takes no input
-        # Liveness for the render + prompt gate, recomputed after the _ended
-        # flip above (the earlier `steerable` is for the footer edge and is
-        # stale-True on the poll that first observes the end).
-        live = self._steerable()
+            self._ended = True  # the refusals above already dim every verb
+        # Liveness for the render + prompt gate.
+        live = not self._ended and self._steerable()
 
         log = self.query_one("#mw-log", RichLog)
         # New transitions.
