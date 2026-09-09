@@ -23,8 +23,8 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Attach to a session or machine and drive it live: follow the conversation"
             " (the same render as `agent6 run`) and, on a terminal, answer its"
-            " run_command approvals and ask_user questions. --raw is the no-deps"
-            " event-line tail, --tui the full-screen TUI, --json a one-shot"
+            " run_command approvals and ask_user questions. For a run, --raw is"
+            " the no-deps event-line tail; --tui is the full-screen TUI and --json a one-shot"
             " snapshot of the folded state. Omit the target for the most recent"
             " session."
         ),
@@ -52,12 +52,15 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     watch_mode.add_argument(
         "--raw",
         action="store_true",
-        help="Follow the no-deps event-line tail (type + key fields) instead of the conversation.",
+        help=(
+            "For a run, follow the no-deps event-line tail (type + key fields)"
+            " instead of the conversation; machines have no raw mode."
+        ),
     )
     watch_p.add_argument(
         "--since",
         type=int,
-        default=0,
+        default=None,
         metavar="N",
         help="--raw only: replay the last N events before following (0 = from end).",
     )

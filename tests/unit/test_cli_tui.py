@@ -738,3 +738,49 @@ def test_tui_session_degrades_when_console_log_cannot_open(
     assert ran, "the run must continue TUI-less, not abort"
     assert spawned == [], "the log opens before the spawn, so there is nothing to orphan"
     assert "could not start TUI" in capsys.readouterr().err
+
+
+def test_ctrl_c_kills_a_dashboard_that_ignores_graceful_shutdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A TUI that ignored SIGINT and SIGTERM was left alive after Ctrl-C while
+    the parent restored the terminal and returned as if teardown had finished."""
+    import subprocess
+
+    session_dir = tmp_path / "sess"
+    session_dir.mkdir()
+    actions: list[str] = []
+
+    class _Wedged:
+        returncode = None
+        waits = 0
+
+        def poll(self) -> None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.waits += 1
+            if self.waits == 1:
+                raise KeyboardInterrupt
+            if self.waits < 4:
+                raise subprocess.TimeoutExpired("tui", timeout or 0)
+            return 0
+
+        def send_signal(self, sig: int) -> None:
+            actions.append(f"signal:{sig}")
+
+        def terminate(self) -> None:
+            actions.append("terminate")
+
+        def kill(self) -> None:
+            actions.append("kill")
+
+    def spawn_wedged(_argv: list[str], **_kwargs: Any) -> _Wedged:
+        return _Wedged()
+
+    monkeypatch.setattr(livemod.subprocess, "Popen", spawn_wedged)
+
+    with livemod.tui_session(session_dir, enabled=True):
+        pass
+
+    assert actions == [f"signal:{livemod.signal.SIGINT}", "terminate", "kill"]

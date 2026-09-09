@@ -85,6 +85,82 @@ def test_watch_machine_json_snapshot(
     assert out["ended"]["status"] == "ok"
 
 
+def test_attach_refuses_raw_event_tail_for_a_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--raw promises run event lines; a machine silently opened its ordinary
+    state-overview follower and ignored both --raw and --since."""
+    monkeypatch.chdir(tmp_path)
+    machine_dir = state_dir(tmp_path) / "machines" / "tiny"
+    machine_dir.mkdir(parents=True)
+    (machine_dir / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (machine_dir / "journal.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "machine.begin",
+                "ts": "2026-01-01T00:00:00+00:00",
+                "machine": "tiny",
+                "version": 1,
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "machine.end",
+                "ts": "2026-01-01T00:00:01+00:00",
+                "status": "ok",
+                "reason": "routed",
+                "state": "done",
+                "transitions": 0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["attach", "tiny", "--raw", "--since", "1"]) == 2
+    err = capsys.readouterr().err
+    assert err == "ERROR: --raw applies to run sessions, not machines.\n"
+
+
+def test_attach_since_zero_still_needs_raw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An explicit --since 0 was indistinguishable from the default and was
+    silently ignored by the conversation and TUI modes."""
+    monkeypatch.chdir(tmp_path)
+    _make_run(
+        tmp_path,
+        "done-run",
+        [
+            {"type": "session.start", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+
+    assert main(["attach", "done-run", "--since", "0"]) == 2
+    assert capsys.readouterr().err == "ERROR: --since applies to --raw only.\n"
+
+
+def test_attach_refuses_a_negative_since_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A negative --since silently acted like zero even though it asks for a
+    count of prior events."""
+    monkeypatch.chdir(tmp_path)
+    _make_run(
+        tmp_path,
+        "done-run",
+        [
+            {"type": "session.start", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+
+    assert main(["attach", "done-run", "--raw", "--since", "-1"]) == 2
+    assert capsys.readouterr().err == "ERROR: --since must be non-negative.\n"
+
+
 def test_watch_unknown_target_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

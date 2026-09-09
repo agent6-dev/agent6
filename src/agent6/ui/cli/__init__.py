@@ -480,7 +480,7 @@ def _dispatch_tui(args: argparse.Namespace) -> int:
 
     if args.target:
         return _cmd_watch_target(
-            args.target, tui=True, json_out=False, since=0, raw=False, config_path=args.config
+            args.target, tui=True, json_out=False, since=None, raw=False, config_path=args.config
         )
     return _cmd_tui(args.config)
 

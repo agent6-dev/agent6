@@ -171,7 +171,7 @@ def _cmd_watch(
     except ImportError as e:
         error(f"{e}")
         print(
-            "HINT: drop --tui for a no-deps text tail of logs.jsonl.",
+            "HINT: drop --tui for the conversation view, or pass --raw for the line tail.",
             file=sys.stderr,
         )
         return 3

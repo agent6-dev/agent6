@@ -3,9 +3,9 @@
 """The unified `agent6 attach <target>`: follow a run or a machine, live.
 
 Resolves <target> to a run (id or unique prefix) or a machine (by name) and
-dispatches to the right viewer. Both default to a plain CLI stream (a run is a
-no-deps line tail of logs.jsonl; a machine streams its state overview +
-reasoning); `--tui` opens the full-screen dashboard instead. `--json` prints a
+dispatches to the right viewer. A run renders its conversation, or with `--raw`
+the no-deps line tail of logs.jsonl; a machine streams its state overview and
+reasoning; `--tui` opens the full-screen dashboard instead. `--json` prints a
 one-shot snapshot of the folded state, the same wire form a web client reads. An
 empty target watches the most recent run. A target that is both a run prefix and
 a machine name resolves as the run.
@@ -83,15 +83,19 @@ def _cmd_watch_target(  # noqa: PLR0911
     *,
     tui: bool,
     json_out: bool,
-    since: int,
+    since: int | None,
     raw: bool,
     config_path: Path | None = None,
 ) -> int:
     """Resolve *target* to a run or machine and follow it (or snapshot it)."""
-    if since and not raw:
+    if since is not None and since < 0:
+        error("--since must be non-negative.")
+        return 2
+    if since is not None and not raw:
         # --since replays event lines, which only the --raw tail renders.
         error("--since applies to --raw only.")
         return 2
+    since = since or 0
     cwd = Path.cwd()
 
     # An ambiguous run prefix or a husk is a run-intent error: surface it
@@ -116,6 +120,9 @@ def _cmd_watch_target(  # noqa: PLR0911
     # Else a machine by name.
     machine_dir = machine_instance_root(target, cwd)
     if machine_dir is not None and machine_dir.is_dir():
+        if raw:
+            error("--raw applies to run sessions, not machines.")
+            return 2
         if json_out:
             return _machine_json_snapshot(machine_dir)
         return _machine_watch_tui(machine_dir) if tui else _cmd_machine_watch(target)

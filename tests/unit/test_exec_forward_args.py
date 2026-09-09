@@ -512,7 +512,6 @@ def test_forward_drops_a_connection_it_cannot_fork_for(
     probe.bind(("127.0.0.1", 0))
     port = probe.getsockname()[1]
     probe.close()
-
     forks = 0
 
     def _no_fork() -> int:
@@ -572,3 +571,35 @@ def test_forward_closes_its_listener_when_the_bind_fails(tmp_path: Path) -> None
             gc.collect()
     assert "Address already in use" in out.getvalue()
     assert [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)] == []
+
+
+def test_exec_module_imports_without_linux_namespace_constants() -> None:
+    """Importing the exec verb crashed on non-Linux hosts before a host-network
+    command could take the unconfined path."""
+    import subprocess
+    import sys
+
+    code = "import os\ndel os.CLONE_NEWUSER\ndel os.CLONE_NEWNET\nimport agent6.ui.cli.net_cmds\n"
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("local_port", [-1, 65536])
+def test_forward_refuses_an_out_of_range_local_port(tmp_path: Path, local_port: int) -> None:
+    """An integer outside TCP's port range escaped the bind refusal as an
+    unexpected OverflowError and a crash report."""
+    import io
+
+    from agent6.sessions.ipc import write_session_netns_pid
+    from agent6.ui.cli import net_cmds
+
+    layout = SessionLayout(state_dir=tmp_path, session_id="serving-run-AAAAAA")
+    layout.ensure()
+    write_session_netns_pid(layout.session_dir, os.getpid())
+    out = io.StringIO()
+    rc = net_cmds.forward(layout, 3000, local_port, out=out)
+
+    assert rc == 2
+    assert f"cannot listen on 127.0.0.1:{local_port}" in out.getvalue()

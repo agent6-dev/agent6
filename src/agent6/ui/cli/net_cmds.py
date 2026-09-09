@@ -39,7 +39,9 @@ from agent6.types import NetworkMode
 from agent6.ui.cli._common import error, refuse
 from agent6.viewmodel import session_is_live, summarize_session_dir
 
-_JOIN_ORDER = (("user", os.CLONE_NEWUSER), ("net", os.CLONE_NEWNET))
+# The namespaces to enter and the `os` flag naming each; both are Linux's,
+# looked up when a join runs so the module imports on any host.
+_JOIN_ORDER = (("user", "CLONE_NEWUSER"), ("net", "CLONE_NEWNET"))
 
 
 class SessionNetworkUnavailable(Exception):
@@ -56,13 +58,17 @@ def join_session_network(session_dir: Path) -> None:
             " under the strict isolation with sandbox.network = auto|session;"
             " with network = host its commands are already on this machine's."
         )
-    for kind, flag in _JOIN_ORDER:
+    setns = getattr(os, "setns", None)
+    if setns is None:
+        raise SessionNetworkUnavailable("joining a session's network needs Linux")
+    for kind, flag_name in _JOIN_ORDER:
+        flag: int = getattr(os, flag_name)
         try:
             fd = os.open(f"/proc/{pid}/ns/{kind}", os.O_RDONLY)
         except OSError as exc:
             raise SessionNetworkUnavailable(f"the session's network is gone: {exc}") from exc
         try:
-            os.setns(fd, flag)
+            setns(fd, flag)
         except OSError as exc:
             raise SessionNetworkUnavailable(
                 f"could not join the session's {kind} namespace: {exc}"
@@ -130,7 +136,7 @@ def forward(
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             listener.bind(("127.0.0.1", local_port))
-        except OSError as exc:
+        except (OSError, OverflowError) as exc:
             print(
                 f"ERROR: cannot listen on 127.0.0.1:{local_port}: {exc}."
                 " Pick another with --local-port.",

@@ -77,7 +77,7 @@ The config page shows every setting, its effective value, and the layer that set
 - `/exit` in the menu, the fallback prompt, or the `run -i` REPL stops the run and leaves without the follow-up prompt (`agent6 resume` continues it)
 - `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
 - a viewer opened with `agent6 attach --tui` just closes
-- TUI/web-hub runs start detached; `agent6 attach` covers both kinds: conversation by default, `--raw` line tail, `--tui` full screen, `--json` one-shot snapshot
+- TUI/web-hub runs start detached; `agent6 attach` covers both kinds: conversation by default, `--tui` full screen, `--json` one-shot snapshot, and `--raw` line tail for runs
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/temps-demo.webm" type="video/webm">

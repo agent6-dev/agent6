@@ -200,8 +200,11 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
                 proc.wait(timeout=4)
             except subprocess.TimeoutExpired:
                 proc.terminate()
-                with contextlib.suppress(subprocess.TimeoutExpired):
+                try:
                     proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
         sys.stdout, sys.stderr = orig_out, orig_err
         with contextlib.suppress(Exception):
             log_fh.close()
