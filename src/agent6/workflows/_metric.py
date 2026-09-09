@@ -214,9 +214,9 @@ def format_metric_feedback(
     else:
         assert previous_best.score is not None
         verdict = (
-            "new best; continue from this commit"
+            "new best"
             if metric_is_better(latest.score, previous_best.score, goal)
-            else "not a new best; revert this edit or pivot unless it was purely enabling"
+            else "not a new best"
         )
 
     lines = [
@@ -232,29 +232,20 @@ def format_metric_feedback(
     if next_target is not None and latest.score is not None:
         direction = "below" if goal == "minimize" else "above"
         lines.append(
-            f"next target: drive the metric {direction} {next_target:g}"
-            f" (current {latest.score:g}): the nearest threshold you have not"
-            f" cleared yet; aim edits at crossing it."
+            f"next target: {direction} {next_target:g} (current {latest.score:g}), the"
+            " nearest threshold not yet cleared"
         )
     if latest.score is None:
         if latest.stdout_tail:
             lines.append(f"stdout tail: {latest.stdout_tail[-500:]}")
         if latest.stderr_tail:
             lines.append(f"stderr tail: {latest.stderr_tail[-500:]}")
-    lines.append(
-        "next: keep verify-passing edits that improve the metric; for flat/worse results, "
-        "restore the prior best or change strategy instead of polishing the same approach."
-    )
     return "\n".join(lines)
 
 
-# How many times a detected metric plateau is met with a "pivot strategy"
-# nudge before the loop actually stops. The plateau detector is eager (it
-# fires the first time a verified metric merely ties the prior best), and on
-# optimisation tasks the remaining budget often still hides large gains that
-# only a fundamentally different approach unlocks. Rather than quit at the
-# first stall, nudge the worker to change strategy a few times; only stop if
-# it still cannot beat its best after that.
+# How many plateau notices a run in its final budget slice gets before the
+# loop ends it. The detector fires the first time a verified metric ties the
+# prior best, and a tie with budget to spare is not an end.
 METRIC_PLATEAU_PATIENCE = 3
 
 # A metric plateau only becomes a terminal condition once the run has
@@ -266,80 +257,34 @@ METRIC_PLATEAU_PATIENCE = 3
 # signal the loop falls back to the fixed `METRIC_PLATEAU_PATIENCE`.
 METRIC_PLATEAU_STOP_BELOW_BUDGET = 0.25
 
-# Plateau nudges escalate with budget pressure. A stall means the worker has
-# hit a local optimum; how aggressively we push it off that optimum scales
-# with how much runway is left. With most of the budget intact a plateau is
-# cheap to explore around, so we invite a bold experiment we can afford to
-# throw away. As the budget drains the ask narrows from "try another angle"
-# to "spend your remaining budget on the single highest-value structural bet
-# you can make". Selected by `metric_plateau_nudge`; the shared
-# "[harness plateau]" prefix keeps the signal greppable across tiers.
-METRIC_PLATEAU_NUDGE_EXPLORE = (
-    "[harness plateau] Your recent verified edits have stopped improving the"
-    " metric: you have hit a local optimum. You still have most of your"
-    " budget left, so you can afford to explore boldly. Do NOT call finish_session"
-    " yet. Keep the current best commit, then run an experiment you have not"
-    " tried: a structurally different algorithm, a different data layout, or a"
-    " property of the problem you have not exploited. A failed experiment is"
-    " cheap right now; a wasted budget is not. Be ambitious."
-)
-METRIC_PLATEAU_NUDGE_PIVOT = (
-    "[harness plateau] Your recent verified edits have stopped improving the"
-    " metric: you are polishing the same approach and have hit a local"
-    " optimum. About half your budget is gone and micro-tuning is no longer"
-    " paying off. Do NOT call finish_session yet. Pivot decisively to a"
-    " fundamentally different strategy: re-read the problem for a structurally"
-    " better algorithm (vectorise/batch the hot loop, change the data layout,"
-    " eliminate redundant work) rather than nibbling at what you already have."
-    " Keep the current best commit, then commit to a genuinely new direction."
-)
-METRIC_PLATEAU_NUDGE_FINAL = (
-    "[harness plateau] Your recent verified edits have stopped improving the"
-    " metric and your budget is nearly spent: this is your last chance to"
-    " move the number. Do NOT fritter the remainder on micro-tuning. Identify"
-    " the single change with the highest expected payoff (the biggest"
-    " structural rewrite you are confident you can land and verify) and spend"
-    " what is left on landing it. Keep the current best commit as a floor, then"
-    " make your one best bet count."
+# The plateau notice states the fact and the budget; the loop ends a run on
+# a plateau only below METRIC_PLATEAU_STOP_BELOW_BUDGET.
+METRIC_PLATEAU_NUDGE = (
+    "[harness plateau] The recent verified edits did not improve the metric;"
+    " {budget}. The best commit stands."
 )
 
-# Budget fraction above which a plateau is treated as cheap to explore.
-METRIC_PLATEAU_NUDGE_EXPLORE_ABOVE = 0.5
 
-# Nudge injected when the worker calls finish_session on an optimisation run while
-# real budget still remains. On metric runs the task explicitly asks the worker
-# to keep optimising up to the cap, but workers routinely call finish_session with
-# most of the budget unspent, leaving measurable gains (and money) on the
-# table. This is a worker-initiated early stop, distinct from a metric plateau,
-# so it carries its own "[harness budget]" prefix to stay greppable.
-METRIC_FINISH_NUDGE = (
-    "[harness budget] You called finish_session, but this is an optimisation run"
-    " and a large share of your budget is still unspent. Stopping now leaves"
-    " measurable gains on the table: the task asks you to keep optimising"
-    " right up to the budget cap. Do NOT finish yet. Keep your current best"
-    " commit as a floor, then make another concrete attempt to move the metric:"
-    " profile the hot path again, try a structurally different approach, or"
-    " exploit a property of the problem you have not used. You may call"
-    " finish_session once your budget is nearly spent."
-)
-
-# How many times an early finish_session on a metric run is rejected (with a
-# keep-going nudge) before the loop honours it. Bounds the nudging so a worker
-# that genuinely has nothing left to try can still stop cleanly.
+# An early finish_session on an optimisation run is deferred, a bounded
+# number of times, so the notice states the deferral and its bound.
 METRIC_EARLY_FINISH_PATIENCE = 3
+METRIC_FINISH_NUDGE = (
+    "[harness budget] finish_session deferred: this is an optimisation run with"
+    " most of its budget unspent, and the metric's best commit stands. The call"
+    f" is honoured after {METRIC_EARLY_FINISH_PATIENCE} deferrals, or once the"
+    " budget is nearly spent."
+)
 
 
 def metric_plateau_nudge(budget_remaining: float | None) -> str:
-    """Select a plateau nudge whose intensity scales with budget pressure.
-
-    With no budget signal (tests / MCP) we default to the explore tier so the
-    worker is encouraged to keep trying new directions rather than quit.
-    """
-    if budget_remaining is None or budget_remaining > METRIC_PLATEAU_NUDGE_EXPLORE_ABOVE:
-        return METRIC_PLATEAU_NUDGE_EXPLORE
-    if budget_remaining > METRIC_PLATEAU_STOP_BELOW_BUDGET:
-        return METRIC_PLATEAU_NUDGE_PIVOT
-    return METRIC_PLATEAU_NUDGE_FINAL
+    """The plateau notice with the run's remaining budget (unknown with no
+    tracker wired in)."""
+    budget = (
+        f"{budget_remaining:.0%} of the budget remains"
+        if budget_remaining is not None
+        else "the remaining budget is unknown"
+    )
+    return METRIC_PLATEAU_NUDGE.format(budget=budget)
 
 
 def metric_plateau_summary(

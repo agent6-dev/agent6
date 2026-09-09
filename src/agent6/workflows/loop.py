@@ -2296,10 +2296,9 @@ class Workflow:
 
     def _turn_metric_plateau(self, state: LoopState, turn: TurnState) -> SessionResult | None:
         """Metric-plateau handling. When a verified metric merely ties the
-        prior best, the plateau detector fires. Rather than quit at the first
-        stall (often with most of the budget unspent), nudge the worker to
-        pivot to a different approach; only stop once we are in the final
-        budget slice and have still failed to beat the best after a few pivot
+        prior best, the plateau detector fires. With budget to spare the run
+        gets the plateau notice and goes on; it ends only once it is in the
+        final budget slice and has still failed to beat the best after a few
         nudges. With no budget signal (tests / MCP) the fixed
         `METRIC_PLATEAU_PATIENCE` bounds the nudging. Sets
         `turn.plateau_should_stop`; the stop itself happens in the stop
@@ -2327,15 +2326,15 @@ class Workflow:
             # early-finish guard only counts rejections while it has runway.
             # Counting runway ties here would exhaust METRIC_PLATEAU_PATIENCE
             # before the final slice, so the run would stop the instant the
-            # budget crossed the threshold and the escalating FINAL
-            # ("make your one best bet") nudge would never fire.
+            # budget crossed the threshold and the final-slice notice would
+            # never fire.
             if in_final_slice:
                 state.plateau_nudges_used += 1
             nudge_text = metric_plateau_nudge(budget_remaining)
             turn.tool_results.append(Notice(nudge_text))
             budget_note = "n/a" if budget_remaining is None else f"{budget_remaining:.0%} left"
             self._log(
-                f"  metric_plateau pivot-nudge at iter {turn.iteration} (budget"
+                f"  metric_plateau notice at iter {turn.iteration} (budget"
                 f" {budget_note}; final-slice patience"
                 f" {state.plateau_nudges_used}/{METRIC_PLATEAU_PATIENCE})"
             )
@@ -4272,11 +4271,10 @@ class Workflow:
         state.task_finish_nudges_used += 1
         listing = "\n".join(f"- {tid}: {title}" for tid, title in open_subtasks)
         return (
-            "[harness] You still have open tasks; finish the work before stopping. "
-            f"{len(open_subtasks)} task(s) are pending/in_progress:\n{listing}\n"
-            "Continue with the next one. If a task is genuinely not needed or you"
-            " cannot do it, call update_task to mark it skipped or obsolete -- do"
-            " not just abandon it. Then finish_session once the list is clear."
+            f"[harness] finish_session deferred: {len(open_subtasks)} task(s) are"
+            f" pending or in_progress:\n{listing}\n"
+            "update_task marks one skipped or obsolete; the run ends once the"
+            f" list is clear, or on the {TASK_FINISH_PATIENCE + 1}th call."
         )
 
     # ---- prompt revision and provider retry ------------------------------------
@@ -4703,9 +4701,7 @@ class Workflow:
         if question := ending_question(asked):
             self._record_decision(state, question, steer_text)
         conversation.notice(
-            "OPERATOR STEERING (mid-run instruction; "
-            "incorporate this into your next step):\n"
-            f"{steer_text}"
+            f"OPERATOR STEERING (a mid-run instruction from the operator):\n{steer_text}"
         )
         return None
 
@@ -4723,7 +4719,7 @@ class Workflow:
         self._log(f"  skill steer: {skill.name}")
         self._emit("loop.steer.skill", name=skill.name, args=args)
         conversation.notice(
-            "OPERATOR STEERING (mid-run instruction; incorporate this into your next step):\n"
+            "OPERATOR STEERING (a mid-run instruction from the operator):\n"
             + skill_steer_payload(skill.name, skill.text, args)
         )
         return True
@@ -4748,9 +4744,8 @@ class Workflow:
             self._log(f"  /pin over cap (> {PINS_MAX_CHARS}); delivered as an ordinary steer")
             self._emit("loop.pin.refused", chars=len(instruction), limit=PINS_MAX_CHARS)
             conversation.notice(
-                f"OPERATOR STEERING (pin refused: the {PINS_MAX_CHARS}-char pin cap "
-                "is full, so this is an ordinary instruction that will NOT survive "
-                "context compaction; incorporate it into your next step):\n"
+                f"OPERATOR STEERING (not pinned: the {PINS_MAX_CHARS}-char pin cap is"
+                " full, so this instruction does not survive context compaction):\n"
                 f"{instruction}"
             )
             return True
@@ -4759,8 +4754,8 @@ class Workflow:
             "loop.pin.added", text=instruction, chars=len(instruction), count=len(state.pins)
         )
         conversation.notice(
-            "OPERATOR STEERING (PINNED: this instruction survives context "
-            "compaction; it stays binding for the rest of the run):\n"
+            "OPERATOR STEERING (pinned: this instruction survives context compaction"
+            " and binds for the rest of the run):\n"
             f"{instruction}"
         )
         return True

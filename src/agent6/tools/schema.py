@@ -35,8 +35,7 @@ class ReadFileInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read a UTF-8 text file. `path` is repo-root-relative (absolute only"
         " inside granted directories). start_line (1-based) and limit select a"
-        " range; very large files truncate (truncated: true). The `outline`"
-        " tool shows a file's structure without its content."
+        " range; very large files truncate (truncated: true)."
     )
 
     path: str = Field(min_length=1)
@@ -47,11 +46,9 @@ class ReadFileInput(_ToolInput):
 class Agent6DocsInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "agent6_docs"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read agent6's OWN documentation to answer questions about how to USE "
-        "agent6 (configuring providers/models, sandbox isolation, machines, the "
-        "CLI, budgets, etc.). Call with an empty `name` to list the available "
-        "docs, or set `name` to one of them (e.g. README, USAGE, "
-        "CONFIG, SECURITY, STATE-MACHINES, ARCHITECTURE) to read its markdown."
+        "agent6's own documentation (README, USAGE, CONFIG, SECURITY,"
+        " STATE-MACHINES, ARCHITECTURE and the rest): an empty `name` lists the"
+        " docs; a name reads that one's markdown."
     )
 
     name: str = Field(default="")
@@ -64,8 +61,7 @@ class ListDirInput(_ToolInput):
         "repo-root-relative; defaults to '.'. Dot-prefixed entries are listed;"
         " `hidden` counts entries the workspace boundary withholds. Returns"
         " names with a trailing '/' for directories, at most 1,000 (`truncated`"
-        " says so). For a recursive view, use `run_command` (e.g. `rg --files`,"
-        " `find`)."
+        " says so)."
     )
 
     path: str = Field(default=".")
@@ -330,19 +326,10 @@ class FinishSessionInput(_ToolInput):
 class FinishPlanningInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "finish_planning"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Signal that the planning pass is complete and the workflow should "
-        "exit. Available ONLY in plan mode (`agent6 plan`); in execution "
-        "mode use `finish_session` instead. `plan_markdown` is the full plan "
-        "document (markdown) that gets saved to the run directory as "
-        "`plan.md`. Include: a one-line `# Plan: <title>`, the original "
-        "task, context discovered, an ordered task list with acceptance "
-        "criteria, any open questions for the user as `**Q:** ...` blocks "
-        "with blank `**A:**` lines, and the verification approach. The "
-        "operator can edit this file (`agent6 plan edit <run-id>`) to "
-        "fill in answers, then hand it to `agent6 run --from "
-        "<run-id>` to start execution. `summary` is a one-paragraph "
-        "description surfaced to the operator at exit. Do not call any "
-        "other tools after finish_planning."
+        "End the planning pass. `plan_markdown` is the plan document, in the"
+        " skeleton the system prompt gives, written to the run directory as"
+        " plan.md for `agent6 run --from <run-id>`; `summary` is a paragraph"
+        " for the operator. Tool calls after it are not executed."
     )
 
     # Per-field descriptions so the disambiguation lives IN the JSON schema the
@@ -408,7 +395,7 @@ class DagUpdateTaskInput(_ToolInput):
         " depends_on (task ULIDs that must be settled first); a note rides"
         " along with a status change. Fields omitted stay unchanged. An end is"
         " final: a passed task takes only obsolete, and a skipped or obsolete"
-        " one stays retired -- add_task if the work is needed after all."
+        " one stays retired; add_task records work needed after all."
     )
 
     id: str = Field(min_length=26, max_length=26)
@@ -445,8 +432,7 @@ class OutlineInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "outline"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Structural outline of a source file: top-level and nested defs,"
-        " classes, and their line numbers. Cheaper than reading the file when"
-        " you need shape, not content."
+        " classes, and their line numbers, without the content."
     )
 
     path: str = Field(min_length=1)
@@ -456,8 +442,7 @@ class FindDefinitionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "find_definition"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Find where a symbol is defined (tree-sitter; excludes strings and"
-        " comments). Returns name, kind, and file:line rows. Cheaper than"
-        " grep for symbols."
+        " comments). Returns name, kind, and file:line rows."
     )
 
     symbol: str = Field(min_length=1)
@@ -489,9 +474,8 @@ class UserQuestion(BaseModel):
 class AskUserInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "ask_user"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Ask the operator and wait. Use for decisions the repo and task cannot"
-        " settle, or when the task says to check with the operator; a question"
-        " written as plain text is never seen. `questions` is an array of"
+        "Ask the operator and wait; a question written as plain text reaches"
+        " nobody. `questions` is an array of"
         " {question, options?}; give 2-4 options for a choice (the CLI, TUI and"
         " web also take typed text; an editor over ACP answers only with an"
         " option, and skips a question that offers none); batch related"

@@ -55,29 +55,19 @@ TOOL_DENIED_NUDGE = (
 # The empty turn (no text, no tool_use). A starved reasoner gets its own
 # nudge: the generic one gives it nothing actionable, so it repeats the loop.
 WENT_QUIET_NUDGE = (
-    "[harness] Your previous turn was empty: no text"
-    " content and no tool_use. This is a synthetic"
-    " prompt from the agent6 harness. Either call a"
-    " tool to make progress, or call `finish_session`"
-    " with a summary if the task is complete. Do"
-    " not reply with another empty turn."
+    "[harness] Your previous turn was empty (no text, no tool call); this"
+    " message is the harness's. A tool call continues the run; finish_session"
+    " ends it."
 )
 
 
 def reasoning_starved_nudge(output_tokens: int) -> str:
     """The nudge after a turn that spent its whole output cap on reasoning."""
     return (
-        "[harness] Your previous turn spent its entire"
-        f" output budget ({output_tokens} tokens) on"
-        " reasoning_content with no visible content and"
-        " no tool_use. STOP REASONING. On this next turn,"
-        " emit a tool_use IMMEDIATELY; do not think"
-        " further. If you genuinely don't know what to do"
-        " next, call `read_file` on the most relevant"
-        " source file to ground your next decision, or"
-        " call `finish_session` if the task is complete. Any"
-        " response that is not a tool_use will waste the"
-        " entire run."
+        f"[harness] Your previous turn spent its whole output budget ({output_tokens}"
+        " tokens) on reasoning, with no visible content and no tool call; this"
+        " message is the harness's. A tool call continues the run; finish_session"
+        " ends it."
     )
 
 
@@ -210,17 +200,13 @@ VERIFY_SETTLED_NUDGE = (
 # and no verify. The gateless variant drops the verify step: there is no gate
 # to run, and naming one sends the model after a tool it does not have.
 STAGNATION_NUDGE = (
-    "[stagnation] {minutes} minutes in, no edit and no verify yet. The budget"
-    " is finite: stop researching, derive the best fix you can from this"
-    " checkout, apply it, and run the verify. If truly blocked, call"
-    " `finish_session` and say why."
+    "[stagnation] {minutes} minutes in, no edit and no verify yet; the budget"
+    " is finite, and finish_session ends the run with its summary."
 )
 
 STAGNATION_NUDGE_GATELESS = (
-    "[stagnation] {minutes} minutes in and nothing edited yet. The budget is"
-    " finite: stop researching, derive the best fix you can from this"
-    " checkout, and apply it. If truly blocked, call `finish_session` and say"
-    " why."
+    "[stagnation] {minutes} minutes in and nothing edited yet; the budget is"
+    " finite, and finish_session ends the run with its summary."
 )
 
 # A non-metric `run` injects a one-shot wrap-up directive when the budget gets

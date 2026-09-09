@@ -15,7 +15,7 @@ from agent6.config import Config
 from agent6.sessions.layout import SessionLayout
 from agent6.workflows._session_state import SessionSnapshot
 
-_WRAP = "OPERATOR STEERING (mid-run instruction; incorporate this into your next step):\n"
+_WRAP = "OPERATOR STEERING (a mid-run instruction from the operator):\n"
 
 
 def _task(text: str) -> dict[str, Any]:

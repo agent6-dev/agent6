@@ -355,13 +355,13 @@ def test_restart_notice_is_dag_aware() -> None:
         # cursor, so the notice must not send the worker after it there.
         assert "cursor" not in notice
         # Still tells the worker not to start over.
-        assert "Do NOT start over" in notice
+        assert "the task continues from it" in notice
     # ask/machine/agent have no DAG tools: instructing list_tasks there burns a
     # turn on an unknown-tool error, so the DAG paragraph must be absent.
     for mode in ("ask", "agent"):
         notice = context_restart_notice(mode)
         assert "list_tasks" not in notice
-        assert "Do NOT start over" in notice
+        assert "the task continues from it" in notice
         assert notice.endswith("PROGRESS SUMMARY:\n")
 
 
@@ -376,7 +376,7 @@ def test_restart_notice_omits_dag_recovery_without_a_curator() -> None:
     notice = context_restart_notice("run", dag_available=False)
     assert "list_tasks" not in notice
     assert "DAG" not in notice
-    assert "Do NOT start over" in notice
+    assert "the task continues from it" in notice
 
 
 def test_elision_placeholder_names_the_call() -> None:

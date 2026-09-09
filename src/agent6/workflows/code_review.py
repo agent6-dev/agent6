@@ -19,7 +19,7 @@ class CodeReviewError(Exception):
 _SYSTEM = """You are a senior code reviewer.
 
 You are given a diff and (optionally) AGENTS.md plus recent commit log for
-context. Produce a concise, actionable markdown review. Be terse. Skip praise.
+context. Produce a markdown review.
 
 Cover, in this priority order, and only if relevant:
 1. Correctness bugs (race conditions, off-by-one, wrong API, missed error

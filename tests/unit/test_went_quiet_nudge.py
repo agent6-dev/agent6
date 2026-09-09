@@ -183,7 +183,7 @@ def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: Path) 
     last_args = provider.call.call_args_list[-1]
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     nudges = _nudge_blocks(final_messages)
-    assert any("stop reasoning" in n.lower() for n in nudges)
+    assert any("whole output budget" in n for n in nudges)
 
 
 def test_went_quiet_drops_empty_assistant_turn(tmp_path: Path) -> None:

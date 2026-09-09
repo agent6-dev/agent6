@@ -24,14 +24,14 @@ concrete, test-independent defect you can NAME and CITE at a line in the diff:
   - data-loss: destroys user data or irreversibly drops state
   - verify-uncovered-correctness: a correctness bug the verify command provably
     does NOT exercise (only meaningful when verify passed)
-Everything else -- style, naming, missing tests, "could be cleaner",
-over-engineering, speculation -- is at most a "warn" or "nit", NEVER a block.
+Everything else (style, naming, missing tests, "could be cleaner",
+over-engineering, speculation) is at most a "warn" or "nit", never a block.
 
 Rules:
   - Cite every finding at a `path:line` that appears in the DIFF. Uncited or
     out-of-diff findings are ignored by the aggregator.
-  - Do not block on taste, and do not invent problems to look useful. If the
-    diff is fine, return verdict "pass" with an empty findings list.
+  - A diff with nothing to report is verdict "pass" with an empty findings
+    list; a "pass" still carries its warn and nit findings.
 
 Categories: the five block-eligible ones above, or one of
 test-gap / style / over-eng / other (these can only be warn/nit).
@@ -60,11 +60,11 @@ callers/usages and check they still work.
 
 A diff that BREAKS an existing caller or usage you find elsewhere (e.g. it
 changed `f(x)` to `f(x, y)` but `f(a)` is still called in another file) is a
-real `verify-uncovered-correctness` defect of THIS diff -- the verify command
-passed only because it didn't exercise that path. Report it as a BLOCK, but cite
-it at the `path:line` IN THE DIFF that caused the break (the changed signature),
-and name the broken caller (file:line) in the `detail`. Do NOT cite the finding
-at the other file's line -- only diff lines gate.
+real `verify-uncovered-correctness` defect of THIS diff: the verify command
+passed only because it did not exercise that path. Report it as a BLOCK, cited
+at the `path:line` IN THE DIFF that caused the break (the changed signature),
+with the broken caller (file:line) in the `detail`; only diff lines gate, so a
+finding cited at the other file's line is ignored.
 
 Investigate first; when done, reply with ONLY the JSON verdict and no tool calls."""
 )

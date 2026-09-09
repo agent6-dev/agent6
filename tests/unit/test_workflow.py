@@ -1865,13 +1865,10 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
 
 def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Path) -> None:
     """On a REAL-budget run, ties while budget is high must not exhaust the
-    plateau patience: the escalating FINAL ("make your one best bet") nudge has
-    to still fire once the budget enters the final slice. Pins the bug where
-    `plateau_nudges_used` accrued on high-budget ties, so the run stopped the
-    instant the budget crossed the threshold and the FINAL nudge never showed."""
-    from agent6.workflows._metric import (
-        METRIC_PLATEAU_NUDGE_FINAL as _METRIC_PLATEAU_NUDGE_FINAL,
-    )
+    plateau patience: the plateau nudge has to still fire once the budget
+    enters the final slice. Pins the bug where `plateau_nudges_used` accrued
+    on high-budget ties, so the run stopped the instant the budget crossed the
+    threshold and the final-slice nudge never showed."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -1880,7 +1877,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _METRIC_PLATEAU_NUDGE_FINAL in str(kwargs["messages"][-1]):
+            if "[harness plateau]" in str(kwargs["messages"][-1]):
                 self.saw_final_nudge = True
             # Vary the call signature each turn so the repeat-loop-guard (which
             # kills at 10 identical back-to-back calls) does not fire; a real
@@ -2429,37 +2426,14 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
     assert result.reason != "verify_settled"
 
 
-def test_metric_plateau_nudge_escalates_with_budget_pressure() -> None:
-    from agent6.workflows._metric import (
-        METRIC_PLATEAU_NUDGE_EXPLORE as _METRIC_PLATEAU_NUDGE_EXPLORE,
-    )
-    from agent6.workflows._metric import (
-        METRIC_PLATEAU_NUDGE_FINAL as _METRIC_PLATEAU_NUDGE_FINAL,
-    )
-    from agent6.workflows._metric import (
-        METRIC_PLATEAU_NUDGE_PIVOT as _METRIC_PLATEAU_NUDGE_PIVOT,
-    )
-    from agent6.workflows._metric import (
-        metric_plateau_nudge as _metric_plateau_nudge,
-    )
+def test_metric_plateau_nudge_states_the_remaining_budget() -> None:
+    """The plateau notice is one fact with the run's remaining budget; three
+    coaching tiers keyed on budget pressure were what it replaced."""
+    from agent6.workflows._metric import metric_plateau_nudge as _metric_plateau_nudge
 
-    # No budget signal -> explore tier (keep trying new directions).
-    assert _metric_plateau_nudge(None) is _METRIC_PLATEAU_NUDGE_EXPLORE
-    # Plenty of runway -> explore.
-    assert _metric_plateau_nudge(0.80) is _METRIC_PLATEAU_NUDGE_EXPLORE
-    # Boundary at 0.5 is still "more than half" only when strictly above.
-    assert _metric_plateau_nudge(0.50) is _METRIC_PLATEAU_NUDGE_PIVOT
-    # Mid budget -> decisive pivot.
-    assert _metric_plateau_nudge(0.40) is _METRIC_PLATEAU_NUDGE_PIVOT
-    # Final slice -> single best bet.
-    assert _metric_plateau_nudge(0.20) is _METRIC_PLATEAU_NUDGE_FINAL
-    # Every tier keeps the greppable marker.
-    for tier in (
-        _METRIC_PLATEAU_NUDGE_EXPLORE,
-        _METRIC_PLATEAU_NUDGE_PIVOT,
-        _METRIC_PLATEAU_NUDGE_FINAL,
-    ):
-        assert tier.startswith("[harness plateau]")
+    assert "the remaining budget is unknown" in _metric_plateau_nudge(None)
+    assert "80% of the budget remains" in _metric_plateau_nudge(0.80)
+    assert _metric_plateau_nudge(0.20).startswith("[harness plateau]")
 
 
 def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> None:
@@ -2960,7 +2934,7 @@ def test_format_metric_feedback_shows_next_target() -> None:
         ),
     ]
     text = _format_metric_feedback(history, goal="minimize")
-    assert "next target: drive the metric below 1579" in text
+    assert "next target: below 1579" in text
     assert "current 8256" in text
 
 
@@ -3222,7 +3196,7 @@ def test_summarise_and_restart_reinjects_pins_verbatim() -> None:
     assert "1. never touch schema files" in text
     assert "2. goal:\nship X" in text
     assert text.index("PINNED operator") < text.index("PROGRESS SUMMARY:")
-    assert "do NOT restate" in str(summariser.call.call_args)
+    assert "does not restate" in str(summariser.call.call_args)
 
 
 def test_summarise_and_restart_replaces_history() -> None:
@@ -4278,7 +4252,7 @@ def test_steer_pin_records_and_injects_marked_notice() -> None:
     assert _steer_via_wire(wf, messages, iteration=3, state=st) is None
     assert st.pins == ["never touch the schema files"]
     block = messages[0]["content"][0]["text"]
-    assert "PINNED" in block and "survives context compaction" in block
+    assert "pinned:" in block and "survives context compaction" in block
     assert "never touch the schema files" in block
     added = [e for e in ev.events if e["type"] == "loop.pin.added"]
     assert added and added[-1]["text"] == "never touch the schema files"
@@ -4303,7 +4277,7 @@ def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
     assert len(st.pins) == 1  # the oversized pin was NOT recorded
     text = messages[0]["content"][0]["text"]
     assert "OPERATOR STEERING" in text and "y" * 100 in text
-    assert "pin refused" in text  # the refusal is visible on every surface
+    assert "not pinned" in text  # the refusal is visible on every surface
     assert "PINNED" not in text
     refused = [e for e in ev.events if e["type"] == "loop.pin.refused"]
     assert refused and refused[-1]["limit"] == PINS_MAX_CHARS

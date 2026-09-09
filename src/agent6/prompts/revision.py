@@ -41,14 +41,14 @@ CONTEXT_SUMMARY_SYSTEM_PROMPT = (
     " progress summary that lets the agent resume WITHOUT re-reading the"
     " elided history. Cover, in order:\n"
     "1. The goal, in one line.\n"
-    "2. What has been tried and the outcome of each attempt — which edits were"
+    "2. What has been tried and the outcome of each attempt: which edits were"
     " kept, which were reverted, and which directions turned out to be dead"
-    " ends (so the agent does not repeat them).\n"
+    " ends.\n"
     "3. The current state: files changed so far, the best result/score"
     " achieved, and the latest verified commit sha.\n"
     "4. The concrete next steps the agent intended to take.\n"
-    "Be specific about file paths, function names, numbers, and commit shas."
-    " Do not include pleasantries or meta-commentary. Output only the summary."
+    "Name file paths, function names, numbers, and commit shas exactly."
+    " Output only the summary."
 )
 
 GIST_DISTILL_SYSTEM_PROMPT = (
@@ -68,16 +68,13 @@ GIST_DISTILL_SYSTEM_PROMPT = (
 # history was summarised rather than lost, and continues rather than restarting.
 _CONTEXT_RESTART_HEAD = (
     "[harness context restart] The earlier conversation was compacted to free"
-    " up context. Everything you had done up to this point is captured in the"
-    " progress summary below — trust it for prior results and continue the task"
-    " from here. Do NOT start over."
+    " context; the progress summary below records what was done up to this"
+    " point, and the task continues from it."
 )
 _CONTEXT_RESTART_DAG = (
-    "Your task DAG is durable curator-owned state and was NOT compacted: call"
-    " `list_tasks` to recover the full task breakdown and each task's status,"
-    " then resume from the first unfinished task."
-    " Treat the DAG as the authoritative record of what is done vs. pending —"
-    " the summary below is only a narrative supplement."
+    "The task DAG was not compacted: `list_tasks` returns every task and its"
+    " status, the record of what is done and what is pending; the summary"
+    " below is prose."
 )
 
 
@@ -94,8 +91,8 @@ def pinned_block(pins: Sequence[str]) -> str:
 # Appended to the summariser's request when pins exist: the restart re-shows
 # them verbatim, so a summary that restates them would double-spend the chars.
 PINS_NO_RESTATE_CLAUSE = (
-    "\n\nThe operator PINNED these instructions; they are re-shown verbatim"
-    " after the restart — do NOT restate them in the summary:\n"
+    "\n\nThe operator pinned these instructions; they are re-shown verbatim"
+    " after the restart, so the summary does not restate them:\n"
 )
 
 
