@@ -230,6 +230,7 @@ class SessionState:
     all_passed: bool | None = None
     verify_scoped: bool = False  # session.end scoped: the judging gate ran scoped
     end_reason: str = ""  # session.end reason: finish_session | steer_abort | provider_error | ...
+    unattended_questions: int = 0  # answered empty by the harness: nobody was attached (all legs)
     undone_to: str = ""  # /undo's fork: the child session id surfaces follow
     undone_text: str = ""  # the message /undo took back (composer refill)
     finish_summary: str = ""  # the finish tool's summary: the agent's closing statement
@@ -560,12 +561,19 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             )
             return replace(state, pending_questions=(*state.pending_questions, qp))
 
-        case events.QuestionAnswer(id=wanted, answers=answers):
+        case events.QuestionAnswer(id=wanted, answers=answers, unseen=unseen):
             new_q = tuple(
                 replace(q, answered=True, answers=answers) if q.id == wanted else q
                 for q in state.pending_questions
             )
-            return replace(state, pending_questions=new_q)
+            # Counted per event, as the listing scan counts: prompt ids restart
+            # on every leg, so a per-prompt flag would be overwritten by the
+            # next leg's answer to the same id.
+            return replace(
+                state,
+                pending_questions=new_q,
+                unattended_questions=state.unattended_questions + (1 if unseen else 0),
+            )
 
         case events.PinAdded(text=text):
             return replace(state, pins=(*state.pins, text))
@@ -724,6 +732,7 @@ def status_facts(state: SessionState) -> StatusFacts:
         operator_blocked=bool(pending),
         blocked_kind=oldest[0] if oldest else "",
         blocked_since_ep=oldest[1] if oldest else None,
+        unattended_questions=state.unattended_questions,
     )
 
 

@@ -390,6 +390,7 @@ class StatusFacts:
     operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
     blocked_kind: str = ""  # "approval" | "question" | "" (oldest unanswered prompt)
     blocked_since_ep: float | None = None  # that prompt's asked-at epoch
+    unattended_questions: int = 0  # questions the harness answered empty: nobody was attached
 
 
 def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, str]:
@@ -410,13 +411,17 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
     (silence would read "running" until its window elapsed).
     """
     if facts.finished:
-        return status_word(
+        word, reason = status_word(
             finished=True,
             all_passed=facts.all_passed,
             end_reason=facts.end_reason,
             scoped=facts.verify_scoped,
             gate_red=facts.gate_red,
         )
+        if not reason and (n := facts.unattended_questions):
+            # The questions wait in the transcript; a steer on resume answers them.
+            reason = f"{n} question{'s' if n != 1 else ''} unanswered"
+        return word, reason
     if facts.operator_blocked and worker_is_alive(session_dir):
         # Before session.start too: a run asks about the working tree's
         # uncommitted changes before it starts. The detail names what it
@@ -551,6 +556,7 @@ class LogScan:
     blocked_since_ep: float | None = None  # its asked-at epoch
     last_verify_rc: int | None = None  # this leg's last verify.end exit code
     pins: tuple[str, ...] = ()  # the operator's pinned instructions in force
+    unattended_questions: int = 0  # questions answered empty because nobody was attached
 
     def verify_verdict(self) -> bool | None:
         """The gate verdict from the gate facts, for judging candidates: True =
@@ -581,6 +587,7 @@ class LogScan:
             operator_blocked=self.operator_blocked,
             blocked_kind=self.blocked_kind,
             blocked_since_ep=self.blocked_since_ep,
+            unattended_questions=self.unattended_questions,
         )
 
 
@@ -672,6 +679,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     # Prompt ids still awaiting their answer. A later event must not clear the
     # bit: Ctrl-C emits session.steer_requested while an approval still waits.
     pending_prompts: dict[str, tuple[str, float | None]] = {}
+    unattended_questions = 0
     last_verify_rc: int | None = None
     pins: list[str] = []
     try:
@@ -702,6 +710,8 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         pending_prompts[str(pid)] = (kind, ep)
                 elif etype in OPERATOR_ANSWER_EVENTS:
                     pending_prompts.pop(str(ev.get("id")), None)
+                    if etype == "question.answer" and ev.get("unseen") is True:
+                        unattended_questions += 1
                 if etype == "session.start":
                     saw_start = True
                     finished = False  # a leg is starting (ask REPL re-runs in place)
@@ -793,6 +803,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         cache_creation_tokens=cache_creation_tokens,
         plan_consumed=plan_consumed,
         plan_cap=plan_cap,
+        unattended_questions=unattended_questions,
         iteration=iteration,
         start_ep=start_ep if start_ep is not None else first_ep,
         last_ep=last_ep,

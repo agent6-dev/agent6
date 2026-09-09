@@ -255,6 +255,14 @@ def test_an_unseen_question_says_so_in_its_result(tmp_path: Path) -> None:
     unseen = _prompts(session_dir, events, questioner=_nobody).ask(questions)
     assert unanswered_note(unseen) == UNANSWERED_NOTE
     assert unanswered_note(_prompts(session_dir, events, questioner=_blank).ask(questions)) == ""
+    # The journal says which it was, so a listing can count the questions
+    # nobody saw without knowing every answerer's name.
+    answers = [
+        json.loads(line)
+        for line in (session_dir / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+        if '"question.answer"' in line
+    ]
+    assert [a["unseen"] for a in answers] == [True, False]
     d = _dispatcher(session_dir, events, _prompts(session_dir, events, questioner=_nobody))
     wire = d.dispatch("ask_user", {"questions": [{"question": "which?"}]}).to_wire()
     assert wire == {"answers": [""], "note": UNANSWERED_NOTE}

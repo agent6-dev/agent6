@@ -1323,3 +1323,40 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: Path) -> No
     aggregate = scan_session_log(logs)
     assert (aggregate.input_tokens, aggregate.output_tokens) == (250, 50)
     assert (aggregate.cache_read_tokens, aggregate.cache_creation_tokens) == (None, None)
+
+
+def test_summary_names_the_questions_nobody_answered(tmp_path: Path) -> None:
+    """A run that asked while no operator was attached got empty answers and
+    went on; the row read a bare "passed", so the operator never learned a
+    question was waiting for them in the transcript."""
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r9",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]},
+            {
+                "type": "question.answer",
+                "id": "q1",
+                "answers": [""],
+                "source": "headless-default",
+                "unseen": True,
+            },
+            {"type": "question.prompt", "id": "q2", "questions": [{"question": "And?"}]},
+            {
+                "type": "question.answer",
+                "id": "q2",
+                "answers": ["b"],
+                "source": "frontend",
+                "unseen": False,
+            },
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    from agent6.viewmodel.listing import scan_session_log
+
+    (rd / "worker.pid").unlink()
+    assert scan_session_log(rd / "logs.jsonl").unattended_questions == 1
+    s = summarize_session_dir(rd)
+    assert (s.status, s.reason) == ("passed", "1 question unanswered")

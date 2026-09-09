@@ -165,6 +165,7 @@
   "all_passed": true,
   "verify_scoped": false,
   "end_reason": "finish_session",
+  "unattended_questions": 0,
   "undone_to": "",
   "undone_text": "",
   "finish_summary": "all green",

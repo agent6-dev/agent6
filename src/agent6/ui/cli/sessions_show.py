@@ -279,6 +279,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "cost_usd": scan.cost_usd,
                     "plan_consumed": scan.plan_consumed,
                     "plan_cap": scan.plan_cap,
+                    "unattended_questions": scan.unattended_questions,
                     # cost_usd is an under-estimate when some spend was
                     # unpriced; the text render marks it, so the JSON must too.
                     "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
@@ -320,6 +321,13 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     print(f"elapsed:    {_fmt_dur(elapsed)}")
     if scan.input_tokens is not None or scan.cost_usd is not None:
         print(f"usage:      {_usage_line(scan)}")
+    if n := scan.unattended_questions:
+        # Answered empty by the harness; the operator reads them in the
+        # transcript and answers with a steer on resume.
+        print(
+            f"questions:  {n} unanswered (nobody was attached):"
+            f" agent6 sessions transcript {target.name}"
+        )
     if changes.line:
         print(f"changes:    {changes.line}")
     if mode_display == "plan":

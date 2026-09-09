@@ -232,6 +232,7 @@ class QuestionPrompt:
 class QuestionAnswer:
     id: str
     answers: tuple[str, ...]
+    unseen: bool = False  # nobody was attached: the harness answered empty
 
 
 @dataclass(frozen=True, slots=True)
@@ -483,7 +484,9 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
         case "question.answer":
             raw_ans = raw.get("answers", ()) or ()
             answers = tuple(str(a) for a in raw_ans) if isinstance(raw_ans, (list, tuple)) else ()
-            return QuestionAnswer(id=str(raw.get("id", "")), answers=answers)
+            return QuestionAnswer(
+                id=str(raw.get("id", "")), answers=answers, unseen=raw.get("unseen") is True
+            )
         case "loop.pin.added":
             return PinAdded(text=str(raw.get("text", "")))
         case "loop.pin.restored":

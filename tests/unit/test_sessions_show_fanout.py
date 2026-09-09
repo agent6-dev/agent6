@@ -189,3 +189,39 @@ def test_show_usage_and_json_carry_the_plan_points(
     assert main(["sessions", "show", "capped"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
     assert "plan" not in usage
+
+
+def test_show_names_the_questions_nobody_answered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A question asked while no operator was attached got empty answers and
+    the run went on; `sessions show` said nothing, so the operator never knew
+    a question waited in the transcript to be answered with a steer."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "asked", {})
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="asked")
+    lines = layout.logs_path.read_text(encoding="utf-8").splitlines()
+    asked = [
+        {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]},
+        {
+            "type": "question.answer",
+            "id": "q1",
+            "answers": [""],
+            "source": "headless-default",
+            "unseen": True,
+        },
+    ]
+    layout.logs_path.write_text(
+        "\n".join([lines[0], *(json.dumps(e) for e in asked), *lines[1:]]) + "\n", encoding="utf-8"
+    )
+    assert main(["sessions", "show", "asked"]) == 0
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("questions:"))
+    assert (
+        line.split(None, 1)[1]
+        == "1 unanswered (nobody was attached): agent6 sessions transcript asked"
+    )
+    assert main(["sessions", "show", "asked", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["unattended_questions"] == 1

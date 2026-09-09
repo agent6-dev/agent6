@@ -133,6 +133,29 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
         _START,
         {"ts": "2026-07-14T10:00:30+00:00", "type": "question.prompt", "id": "question-1"},
     ],
+    "asked_unseen_then_seen": [
+        _START,
+        {"ts": "2026-07-14T10:00:30+00:00", "type": "question.prompt", "id": "question-1"},
+        {
+            "ts": "2026-07-14T10:00:31+00:00",
+            "type": "question.answer",
+            "id": "question-1",
+            "answers": [""],
+            "source": "headless-default",
+            "unseen": True,
+        },
+        {"ts": "2026-07-14T10:01:00+00:00", "type": "loop.resume.start"},
+        {"ts": "2026-07-14T10:01:30+00:00", "type": "question.prompt", "id": "question-1"},
+        {
+            "ts": "2026-07-14T10:01:40+00:00",
+            "type": "question.answer",
+            "id": "question-1",
+            "answers": ["b"],
+            "source": "frontend",
+            "unseen": False,
+        },
+        {**_END_PASSED, "ts": "2026-07-14T10:02:00+00:00"},
+    ],
     "answered": [
         _START,
         {"ts": "2026-07-14T10:00:30+00:00", "type": "approval.prompt", "id": "approval-1"},
@@ -170,6 +193,7 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
         "plan": (scan.plan_consumed, scan.plan_cap),
         "pins": scan.pins,
         "blocked": scan.operator_blocked,
+        "unattended": scan.unattended_questions,
     }
     viewer: dict[str, Any] = {
         "task": state.user_task,
@@ -191,6 +215,7 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
         "blocked": any(
             not p.answered for p in (*state.pending_approvals, *state.pending_questions)
         ),
+        "unattended": state.unattended_questions,
     }
     return listing, viewer
 

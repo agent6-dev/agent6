@@ -41,8 +41,7 @@ Source = Literal[
 ]
 
 UNANSWERED_NOTE = (
-    "no operator is attached to this run, so the questions went unanswered;"
-    " decide on your own judgment and go on"
+    "no operator was attached to answer these questions; decide on your own judgement and go on"
 )
 
 
@@ -217,7 +216,13 @@ class OperatorPrompts:
                 f" with {len(answer.answers)} answers"
             )
         answers = answer.answers + ("",) * (len(questions) - len(answer.answers))
-        self._journal("question.answer", id=request.id, answers=list(answers), source=answer.source)
+        self._journal(
+            "question.answer",
+            id=request.id,
+            answers=list(answers),
+            source=answer.source,
+            unseen=answer.unseen,
+        )
         return QuestionAnswer(answers, answer.source, answer.unseen)
 
 
