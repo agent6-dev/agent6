@@ -170,7 +170,7 @@ def _directories_epilog() -> str:
             "directories (XDG):",
             *lines,
             "",
-            "`agent6 config path` adds this repo's own state dir and the config files.",
+            "`agent6 config path` shows this repo's own state dir and the config files.",
         ]
     )
 
