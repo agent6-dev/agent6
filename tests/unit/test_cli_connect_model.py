@@ -284,7 +284,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     assert main(["model"]) == 0  # config still loads (not bricked)
 
 
-def test_connect_config_rollback_uses_the_shared_refusal(
+def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
@@ -297,6 +297,30 @@ def test_connect_config_rollback_uses_the_shared_refusal(
     assert main(["connect", "anthropic", "--no-verify"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("REFUSING:") and "bad combination" in err
+    assert secrets.resolve_api_key("anthropic", None) is None
+
+
+def test_connect_config_rollback_precedes_the_chatgpt_sign_in(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The pasted-key branch stored nothing on a refused edit, but the ChatGPT
+    sign-in still ran (and stored its tokens) before the provider block was
+    validated: the block is written first, on every branch."""
+    signed_in: list[str] = []
+
+    def bad_combination(*_args: object, **_kwargs: object) -> str:
+        return "bad combination"
+
+    def _sign_in(name: str) -> int:
+        signed_in.append(name)
+        return 0
+
+    monkeypatch.setattr("agent6.ui.cli.connect.set_config_leaves", bad_combination)
+    monkeypatch.setattr("agent6.ui.cli.connect._chatgpt_sign_in", _sign_in)
+
+    assert main(["connect", "chatgpt"]) == 2
+    assert "bad combination" in capsys.readouterr().err
+    assert signed_in == []
 
 
 def test_model_rejects_unknown_role(iso: Path) -> None:

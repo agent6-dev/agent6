@@ -433,8 +433,8 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
 
     Security: this command never executes anything supplied by a remote. It
     only prompts locally (key via getpass, hidden, or masked with `*` on
-    Python 3.14+), stores the key in the 0600 secrets file, writes a minimal
-    `[providers.<name>]` block, and (unless `verify` is False) makes one
+    Python 3.14+), writes a minimal `[providers.<name>]` block, stores the
+    key in the 0600 secrets file, and (unless `verify` is False) makes one
     read-only GET to the provider's `/models` endpoint to confirm the key
     authenticates.
     """
@@ -457,14 +457,27 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
             error(f"{exc}")
             return 2
 
+    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
+    fields: dict[str, ConfigLeafValue] = {"api_format": api_format}
+    if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
+        fields["base_url"] = base_url
+    # Leaf surgery, not a whole-block replace: connect is the documented
+    # add/update path, and a re-run (key rotation, base_url fix) must preserve
+    # hand-added sibling keys and comments. Revalidated before any credential
+    # is asked for or stored, so a refused provider edit changes nothing else.
+    err = set_config_leaves(Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
+    if err is not None:
+        refuse(f"that would make the config invalid:\n{err}")
+        return 2
+    print(f"Wrote [providers.{name}] to {target}.")
+
+    api_key = ""
     if api_format == "claude_code":
         _claude_code_check(name)
-        api_key = ""
     elif api_format == "chatgpt":
         rc = _chatgpt_sign_in(name)
         if rc != 0:
             return rc
-        api_key = ""
     else:
         try:
             api_key = _prompt_api_key(name)
@@ -491,20 +504,6 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
     elif api_format == "openai":
         print("No key entered; assuming an unauthenticated/local endpoint.")
 
-    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
-    fields: dict[str, ConfigLeafValue] = {"api_format": api_format}
-    if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
-        fields["base_url"] = base_url
-    # Leaf surgery, not a whole-block replace: connect is the documented
-    # add/update path, and a re-run (key rotation, base_url fix) must preserve
-    # hand-added sibling keys and comments. Revalidates the merged config and
-    # rolls the file back on failure so a bad endpoint never leaves config.toml
-    # broken (the key, saved above, is a harmless orphan until a valid retry).
-    err = set_config_leaves(Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
-    if err is not None:
-        refuse(f"that would make the config invalid:\n{err}")
-        return 2
-    print(f"Wrote [providers.{name}] to {target}.")
     print(
         "\nNext: `agent6 model worker "
         f"{name} <model>` to route a role here, then `agent6 config show`."

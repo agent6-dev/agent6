@@ -124,7 +124,7 @@ Runs the worker inside the installed, signed-in Claude Code binary: a Claude sub
 
 ```bash
 claude auth login                        # once, in Claude Code itself
-agent6 connect claude                    # checks the sign-in, writes [providers.claude]
+agent6 connect claude                    # writes [providers.claude], checks the sign-in
 agent6 model worker claude claude-sonnet-4-5
 ```
 
