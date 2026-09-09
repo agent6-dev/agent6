@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from agent6.app._setup import (
@@ -34,6 +35,7 @@ def _cmd_resume(
         session_id,
         frontend=session_frontend(config_path),
         force=force,
+        started_at=time.time(),
         tui=tui,
         budget_overrides=budget_overrides,
         sandbox_overrides=sandbox_overrides,

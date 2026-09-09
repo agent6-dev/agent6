@@ -97,25 +97,32 @@ def _answer_path(directory: Path, answer_id: str) -> Path:
     return _contained(directory, f"{answer_id}.answer", untrusted=answer_id, what="answer id")
 
 
-def clear_pending_answers(session_dir: Path, *, before: float) -> None:
-    """Drop the previous leg's bridge state at a leg's START: its `*.answer`
-    files (tidiness: a prompt clears its own slot before asking, so a stale
-    answer is never read), its steer answer and marker (a phantom steer
-    prompt no live front-end answers), its stop and compact markers (an
-    instant re-stop or re-compact). Only files older than *before* (a
-    timestamp) go: a marker written since belongs to the leg that is
-    starting (an editor's cancel that landed while the run was coming up).
-    A run passes its journal's last write (`SessionLayout.previous_leg_end`);
-    a machine's crash recovery passes now, its per-state dir being this
-    execution's own. Best-effort. Front-end claims need no sweep:
-    `frontend_is_live` prunes dead ones on every probe, and a live watcher's
-    must survive so its modals stay wired up."""
+# File timestamps come from the kernel's tick clock, up to one tick behind
+# `time.time()` (4 ms at HZ=250): a bridge file within this slack of a leg's
+# start was written for it.
+TIMESTAMP_SLACK_S = 0.01
+
+
+def clear_pending_answers(session_dir: Path, *, started_at: float) -> None:
+    """Drop the bridge state a leg inherits, at its START: `*.answer` files
+    (tidiness: a prompt clears its own slot before asking, so a stale answer
+    is never read), the steer answer and marker (a phantom steer prompt no
+    live front-end answers), the stop and compact markers (an instant re-stop
+    or re-compact). Only files older than *started_at* (this leg's start, less
+    `TIMESTAMP_SLACK_S`) go: one written between legs was never honored, and
+    one written since belongs to the leg that is starting (an editor's cancel
+    that landed while the run was coming up). ACP passes its turn's start,
+    which precedes the lifecycle by the queue wait; a machine's crash recovery
+    passes now, its per-state dir being this execution's own. Best-effort.
+    Front-end claims need no sweep: `frontend_is_live` prunes dead ones on
+    every probe, and a live watcher's must survive so its modals stay wired
+    up."""
     answer_dirs = (session_dir / APPROVAL_DIR_NAME, session_dir / QUESTION_DIR_NAME)
     markers = (STEER_ANSWER_FILE, STEER_REQUEST_FILE, STOP_REQUEST_FILE, COMPACT_REQUEST_FILE)
     answers = (f for d in answer_dirs for f in d.glob("*.answer"))
     for path in (*answers, *(session_dir / name for name in markers)):
         with contextlib.suppress(OSError):
-            if path.stat().st_mtime < before:
+            if path.stat().st_mtime < started_at - TIMESTAMP_SLACK_S:
                 path.unlink()
 
 

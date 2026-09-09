@@ -256,7 +256,7 @@ def _build_machine_bridges(
     # counters restart at 1, so an answer file left by the aborted attempt would
     # satisfy this execution's first prompt unseen. Drop the stale bridge state
     # first (front-end claims live on the instance dir, so this touches none).
-    clear_pending_answers(agent_state, before=time.time())
+    clear_pending_answers(agent_state, started_at=time.time())
 
     def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
         if frontend_is_live(instance_dir):

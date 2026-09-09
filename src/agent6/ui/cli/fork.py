@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 from agent6.app._setup import BudgetOverrides, SandboxOverrides
@@ -102,6 +103,7 @@ def _cmd_fork(
         child_id,
         frontend=frontend,
         force=False,
+        started_at=time.time(),
         tui=tui,
         budget_overrides=budget_overrides,
         sandbox_overrides=sandbox_overrides,

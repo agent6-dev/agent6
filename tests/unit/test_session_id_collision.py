@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -65,7 +66,14 @@ def test_run_refuses_an_explicit_id_held_by_another_bucket(
     state = state_dir(repo)
     (state / "sessions" / "plans" / "demo").mkdir(parents=True)
 
-    rc = run_task(_load_cfg(), "do a thing", frontend=MagicMock(), session_id="demo", mode="run")
+    rc = run_task(
+        _load_cfg(),
+        "do a thing",
+        started_at=time.time(),
+        frontend=MagicMock(),
+        session_id="demo",
+        mode="run",
+    )
 
     assert rc == 2
     err = capsys.readouterr().err
@@ -88,7 +96,12 @@ def test_run_refuses_an_invalid_id_before_sandbox_and_git_preflight(
     monkeypatch.setattr(run_mod, "git_preflight", _must_not_preflight)
 
     rc = run_mod.run_task(
-        _load_cfg(), "do a thing", frontend=MagicMock(), session_id="bad id", mode="run"
+        _load_cfg(),
+        "do a thing",
+        started_at=time.time(),
+        frontend=MagicMock(),
+        session_id="bad id",
+        mode="run",
     )
 
     assert rc == 2
@@ -115,7 +128,12 @@ def test_an_existing_finished_id_names_a_runnable_resume_command(
     monkeypatch.setattr(run_mod, "select_isolation", _strict)
 
     rc = run_mod.run_task(
-        _load_cfg(), "do a thing", frontend=MagicMock(), session_id="done-run", mode="run"
+        _load_cfg(),
+        "do a thing",
+        started_at=time.time(),
+        frontend=MagicMock(),
+        session_id="done-run",
+        mode="run",
     )
 
     assert rc == 2
@@ -135,7 +153,12 @@ def test_a_damaged_existing_id_does_not_name_an_unusable_resume_command(
     monkeypatch.setattr(run_mod, "select_isolation", _strict)
 
     rc = run_mod.run_task(
-        _load_cfg(), "do a thing", frontend=MagicMock(), session_id="damaged-run", mode="run"
+        _load_cfg(),
+        "do a thing",
+        started_at=time.time(),
+        frontend=MagicMock(),
+        session_id="damaged-run",
+        mode="run",
     )
 
     assert rc == 2

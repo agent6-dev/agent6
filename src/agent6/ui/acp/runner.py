@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -395,6 +396,9 @@ class RunBridge:
         return session.layout(state_dir(session.cwd)).logs_path.exists()
 
     def run(self, session: Session, text: str) -> StopReason:
+        # The turn's start: a cancel written from here on (during the queue
+        # wait, or the lifecycle's own startup) is this turn's to honor.
+        started_at = time.time()
         # Before the queue, not after. `_runs` is held for a whole run, so a
         # second session's turn can wait here for many minutes, and deciding
         # the id inside would leave that whole window with no run to address:
@@ -447,7 +451,7 @@ class RunBridge:
             if session.cancelled:
                 return self._cancelled_unstarted(session)
             try:
-                return self._run(session, text, resuming=resuming)
+                return self._run(session, text, resuming=resuming, started_at=started_at)
             except Exception as exc:
                 self._could_not_finish(session, exc)
                 return "refusal"
@@ -466,7 +470,7 @@ class RunBridge:
         if not isinstance(exc, OperatorError):
             _stderr(f"[agent6] run {session.session_id}: {traceback.format_exc()}")
 
-    def _run(self, session: Session, text: str, *, resuming: bool) -> StopReason:
+    def _run(self, session: Session, text: str, *, resuming: bool, started_at: float) -> StopReason:
         layout = session.layout(state_dir(session.cwd))
         os.chdir(session.cwd)
         session.turn += 1
@@ -513,6 +517,7 @@ class RunBridge:
                     session.session_id,
                     frontend=self._frontend(session, announced),
                     force=False,
+                    started_at=started_at,
                     steer=text,
                     reporter=reporter,
                 )
@@ -522,6 +527,7 @@ class RunBridge:
                     effective.config,
                     text,
                     frontend=self._frontend(session, announced),
+                    started_at=started_at,
                     session_id=session.session_id,
                     explicit_leaves=effective.explicit_leaves,
                     reporter=reporter,

@@ -114,6 +114,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     task: str,
     *,
     frontend: SessionFrontend,
+    started_at: float,
     session_id: str = "",
     interactive: bool = False,
     tui: bool = False,
@@ -140,6 +141,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     boundary, seeded AFTER this function's own stale-state clear: the
     parked-resume delegation passes `resume --steer` through it, and a
     pre-seeded bridge file would be wiped by that clear and silently lost.
+    *started_at* is the instant this leg began: the clear keeps what was
+    written since (an ACP turn's start precedes this call by its queue wait).
 
     The caller (`ui/cli/run.py`) has already built *cfg* (config + overrides),
     resolved the task text, checked the git-repo wall / runnable roles /
@@ -295,9 +298,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
     try:
         # A reused dir (an ask under its id again, a parked run) carries the
-        # previous leg's bridge state; a marker written since that leg's last
-        # journal line is this run's (an editor's cancel while it came up).
-        clear_pending_answers(layout.session_dir, before=layout.previous_leg_end())
+        # previous leg's bridge state; a marker written since this leg began
+        # is this run's (an editor's cancel while it came up).
+        clear_pending_answers(layout.session_dir, started_at=started_at)
         if initial_steer.strip() and not submit_steer(layout.session_dir, initial_steer.strip()):
             reporter.error("could not write the initial steer request")
             return 2

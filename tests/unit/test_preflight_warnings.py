@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -90,7 +91,11 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     )
     said: list[str] = []
     lifecycle.run_task(
-        cfg, "t", frontend=front, reporter=Reporter(out=said.append, err=said.append)
+        cfg,
+        "t",
+        started_at=time.time(),
+        frontend=front,
+        reporter=Reporter(out=said.append, err=said.append),
     )
     assert seen == [True], said
 

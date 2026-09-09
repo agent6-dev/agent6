@@ -250,6 +250,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     *,
     frontend: SessionFrontend,
     force: bool,
+    started_at: float,
     tui: bool = False,
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
@@ -276,6 +277,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     the cwd a detached continuation spawns in). A fork's leg drives the
     fork's own worktree instead (`manifest.worktree`), handed to every step
     as *cwd*; the process cwd stays the repository.
+
+    *started_at* is the instant this leg began: the bridge-state clear keeps
+    what was written since (an ACP turn's start precedes this call by its
+    queue wait).
     """
     repo = Path.cwd()
     state = state_dir(repo)
@@ -340,11 +345,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.refuse(needs_new_work_refusal(session_id))
         release_single_writer(worker_lock_fd)
         return 2
-    # Drop the previous leg's stale bridge state (its answer files: the id
-    # counters reset on resume, an old answer must not be read instead of
-    # re-prompting). A marker written after that leg's last journal line is
-    # this leg's (an editor's cancel during startup) and stays.
-    clear_pending_answers(layout.session_dir, before=layout.previous_leg_end())
+    # Drop the stale bridge state (its answer files: the id counters reset on
+    # resume, an old answer must not be read instead of re-prompting; a stop
+    # that landed between legs was never honored). A marker written since
+    # this leg began is this leg's (an editor's cancel during startup).
+    clear_pending_answers(layout.session_dir, started_at=started_at)
     if steer.strip():
         # --steer: queue the operator's follow-up as the first steering
         # instruction. Seeded AFTER the stale-state clear (which drops steer
@@ -418,6 +423,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg,
                 saved_task,
                 frontend=frontend,
+                started_at=started_at,
                 session_id=session_id,
                 mode=mode,
                 budget_overrides=budget_overrides,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess as sp
+import time
 from pathlib import Path
 
 import pytest
@@ -406,7 +407,9 @@ def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
     frontend.confirm_replay_after_crash.return_value = True
 
     with pytest.raises(_Stop):
-        resume_mod.resume_task(None, "plan-CRASHMARK", frontend=frontend, force=False)
+        resume_mod.resume_task(
+            None, "plan-CRASHMARK", started_at=time.time(), frontend=frontend, force=False
+        )
 
     assert read_turn_marker(marker) == (1, ("run_command",))
 
@@ -453,7 +456,9 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
     frontend.close_console_view.side_effect = OSError("console teardown failed")
 
     with pytest.raises(OSError, match="console teardown failed"):
-        resume_mod.resume_task(None, "plan-TEARDOWN", frontend=frontend, force=False)
+        resume_mod.resume_task(
+            None, "plan-TEARDOWN", started_at=time.time(), frontend=frontend, force=False
+        )
 
     assert not (session_dir / "worker.pid").exists()
 
@@ -523,7 +528,12 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
             return ""
 
         frontend.spawn_detached_resume.side_effect = _spawn
-        assert resume_mod.resume_task(None, "parked-DETACH", frontend=frontend, force=False) == 0
+        assert (
+            resume_mod.resume_task(
+                None, "parked-DETACH", started_at=time.time(), frontend=frontend, force=False
+            )
+            == 0
+        )
         assert read_worker_pid(session_dir) == child.pid
     finally:
         child.kill()
@@ -564,7 +574,12 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
 
     monkeypatch.setattr(resume_mod, "run_task", _run_task)
 
-    assert resume_mod.resume_task(None, "parked-LEAVES", frontend=MagicMock(), force=False) == 0
+    assert (
+        resume_mod.resume_task(
+            None, "parked-LEAVES", started_at=time.time(), frontend=MagicMock(), force=False
+        )
+        == 0
+    )
     assert seen["explicit_leaves"] == frozenset({"workflow.max_iterations"})
 
 
@@ -624,7 +639,12 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
     monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
-    assert resume_mod.resume_task(None, "note-UNTRACKED", frontend=MagicMock(), force=False) == 0
+    assert (
+        resume_mod.resume_task(
+            None, "note-UNTRACKED", started_at=time.time(), frontend=MagicMock(), force=False
+        )
+        == 0
+    )
     notes = [line for line in capsys.readouterr().err.splitlines() if "no commit has" in line]
     assert notes == [
         "[agent6] the tree holds changes no commit has (seed.txt);"
@@ -690,7 +710,12 @@ def test_the_resume_note_names_the_files_it_hands_to_the_operator(
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
     monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
-    assert resume_mod.resume_task(None, "note-ARRIVED", frontend=MagicMock(), force=False) == 0
+    assert (
+        resume_mod.resume_task(
+            None, "note-ARRIVED", started_at=time.time(), frontend=MagicMock(), force=False
+        )
+        == 0
+    )
     err = capsys.readouterr().err
     assert "[agent6] left out of this run's commits as yours: build.log" in err
     assert "no commit has" not in err  # build.log is not dirt the next commit takes

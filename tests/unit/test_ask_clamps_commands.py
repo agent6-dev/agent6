@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Literal
 from unittest.mock import MagicMock
@@ -63,7 +64,7 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
     )
     for mode, expected in modes:
         seen.clear()
-        run_mod.run_task(_cfg("yes"), "q", frontend=MagicMock(), mode=mode)
+        run_mod.run_task(_cfg("yes"), "q", started_at=time.time(), frontend=MagicMock(), mode=mode)
         assert seen == [expected], f"{mode} saw {seen}"
 
 
@@ -113,6 +114,7 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
     run_mod.run_task(
         _cfg("ask"),
         "q",
+        started_at=time.time(),
         frontend=MagicMock(),
         mode="ask",
         sandbox_overrides=SandboxOverrides(auto_approve=True),

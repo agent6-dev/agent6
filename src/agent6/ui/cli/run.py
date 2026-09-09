@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 from agent6.app._setup import (
@@ -352,6 +353,7 @@ def _cmd_run(  # noqa: PLR0911
         cfg,
         task,
         frontend=session_frontend(config_path),
+        started_at=time.time(),
         session_id=session_id,
         interactive=interactive,
         tui=tui,

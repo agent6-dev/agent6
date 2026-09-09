@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import subprocess as sp
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -1241,7 +1242,9 @@ def test_resume_of_a_fork_runs_its_leg_in_the_worktree(
     monkeypatch.setattr(resume_mod, "run_leg", _fake_leg)
     monkeypatch.setattr(resume_mod, "check_provider_keys", _no_missing)
     monkeypatch.setattr(resume_mod, "select_isolation", _strict)
-    rc = resume_mod.resume_task(None, "child-BBBB22", frontend=MagicMock(), force=False)
+    rc = resume_mod.resume_task(
+        None, "child-BBBB22", started_at=time.time(), frontend=MagicMock(), force=False
+    )
     assert rc == 0
     assert seen["cwd"] == worktree and seen["process_cwd"] == repo
     assert seen["state_dir"] == state
@@ -1267,7 +1270,9 @@ def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
     )
     shutil.rmtree(manifest["worktree"])
 
-    rc = resume_mod.resume_task(None, "child-BBBB22", frontend=MagicMock(), force=False)
+    rc = resume_mod.resume_task(
+        None, "child-BBBB22", started_at=time.time(), frontend=MagicMock(), force=False
+    )
     assert rc == 2
     err = capsys.readouterr().err
     assert manifest["worktree"] in err and "agent6 fork child-BBBB22" in err
@@ -1296,7 +1301,12 @@ def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
     shutil.rmtree(manifest["worktree"])
     capsys.readouterr()
 
-    assert resume_mod.resume_task(None, "child-BBBB22", frontend=MagicMock(), force=False) == 2
+    assert (
+        resume_mod.resume_task(
+            None, "child-BBBB22", started_at=time.time(), frontend=MagicMock(), force=False
+        )
+        == 2
+    )
     err = capsys.readouterr().err
     assert f"merged into main as {head[:12]}" in err
     assert "agent6/child-BBBB22" not in err and "refs/agent6" not in err
@@ -1332,7 +1342,12 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
     shutil.rmtree(manifest["worktree"])
     capsys.readouterr()
 
-    assert resume_mod.resume_task(None, "child-BBBB22", frontend=MagicMock(), force=False) == 2
+    assert (
+        resume_mod.resume_task(
+            None, "child-BBBB22", started_at=time.time(), frontend=MagicMock(), force=False
+        )
+        == 2
+    )
     err = capsys.readouterr().err
     assert f"its commits are on {chain_ref_for('child-BBBB22')}" in err
     assert "merged into main" not in err

@@ -8,6 +8,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import subprocess as sp
+import time
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -341,7 +342,12 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
         return LegEnd(0)
 
     monkeypatch.setattr(resume_mod, "run_leg", _leg)
-    assert resume_mod.resume_task(None, "crashed-AAAA11", frontend=MagicMock(), force=False) == 0
+    assert (
+        resume_mod.resume_task(
+            None, "crashed-AAAA11", started_at=time.time(), frontend=MagicMock(), force=False
+        )
+        == 0
+    )
     assert used == [manifest_gate]
     persisted = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     assert tuple(persisted["workflow"]["verify_command"]) == manifest_gate
@@ -426,6 +432,7 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
         resume_mod.resume_task(
             None,
             "withheld-AAAA11",
+            started_at=time.time(),
             frontend=frontend,
             force=False,
             reporter=Reporter(out=said.append, err=said.append),
@@ -486,6 +493,7 @@ def test_a_withheld_fresh_leg_is_not_regated_by_inference(
         run_mod.run_task(
             cfg,
             "t",
+            started_at=time.time(),
             frontend=frontend,
             mode="run",
             reporter=Reporter(out=said.append, err=said.append),

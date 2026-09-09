@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -146,6 +147,7 @@ def test_second_run_parks_with_the_verbatim_task(repo: Path) -> None:
         rc = run_task(
             _load_cfg(),
             long_task,
+            started_at=time.time(),
             frontend=MagicMock(),
             session_id="run-PARKED",
             mode="run",
@@ -206,7 +208,9 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
 
     monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
     monkeypatch.setattr(resume_mod, "check_provider_keys", _no_missing_keys)
-    rc = resume_mod.resume_task(None, "run-PARKED2", frontend=MagicMock(), force=False)
+    rc = resume_mod.resume_task(
+        None, "run-PARKED2", started_at=time.time(), frontend=MagicMock(), force=False
+    )
     assert rc == 0
     assert called == {"task": "do the saved thing", "session_id": "run-PARKED2", "mode": "run"}
     # The delegation released the run-dir lock before handing off, so a real
@@ -245,7 +249,9 @@ def test_resume_refuses_while_another_run_drives_the_checkout(
     )
     holder_fd = acquire_repo_writer(state, repo, "run-A")
     try:
-        rc = resume_mod.resume_task(None, "run-B", frontend=MagicMock(), force=False)
+        rc = resume_mod.resume_task(
+            None, "run-B", started_at=time.time(), frontend=MagicMock(), force=False
+        )
     finally:
         release_single_writer(holder_fd)
     assert rc == 2
@@ -323,6 +329,7 @@ def test_runs_show_reports_a_parked_run_as_parked(
         rc = run_task(
             _load_cfg(),
             "add a retry to the fetch helper",
+            started_at=time.time(),
             frontend=MagicMock(),
             session_id="run-PARKED",
             mode="run",
@@ -352,6 +359,7 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Pa
         rc = run_task(
             _load_cfg(),
             "do the thing",
+            started_at=time.time(),
             frontend=MagicMock(),
             session_id="run-PROF",
             mode="run",
@@ -397,7 +405,12 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
     monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
     monkeypatch.setattr(resume_mod, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
-        None, "run-PSTEER", frontend=MagicMock(), force=False, steer="also update the docs"
+        None,
+        "run-PSTEER",
+        started_at=time.time(),
+        frontend=MagicMock(),
+        force=False,
+        steer="also update the docs",
     )
     assert rc == 0
     assert called["initial_steer"] == "also update the docs"
@@ -415,6 +428,7 @@ def test_run_task_seeds_initial_steer_on_the_bridge(repo: Path) -> None:
         rc = run_task(
             _load_cfg(),
             "do the thing",
+            started_at=time.time(),
             frontend=MagicMock(),
             session_id="run-STEERSEED",
             mode="run",
@@ -447,7 +461,12 @@ def test_teardown_raise_still_releases_both_writer_locks(
     frontend.close_console_view.side_effect = OSError("teardown raise")
     with pytest.raises(OSError, match="teardown raise"):
         run_mod.run_task(
-            _load_cfg(), "do a thing", frontend=frontend, session_id="run-TD", mode="run"
+            _load_cfg(),
+            "do a thing",
+            started_at=time.time(),
+            frontend=frontend,
+            session_id="run-TD",
+            mode="run",
         )
     # Both flocks are free for the next in-process run: the checkout's...
     state = state_dir(repo)
@@ -514,7 +533,9 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     frontend = MagicMock()
     frontend.close_console_view.side_effect = OSError("resume teardown raise")
     with pytest.raises(OSError, match="resume teardown raise"):
-        resume_mod.resume_task(None, "run-RTD", frontend=frontend, force=False)
+        resume_mod.resume_task(
+            None, "run-RTD", started_at=time.time(), frontend=frontend, force=False
+        )
 
     repo_fd = acquire_repo_writer(state, repo, "run-NEXT")
     assert repo_fd is not None
@@ -524,12 +545,13 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     release_single_writer(session_fd)
 
 
-def test_resume_keeps_a_stop_request_pending_after_the_previous_leg_ended(
+def test_resume_drops_a_stop_written_between_legs(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """resume_task's sweep of the previous leg's bridge state dropped a stop
-    marker written after that leg ended (an editor's cancel while this leg was
-    coming up); a marker older than the journal's last line is the stale one."""
+    """The sweep kept every marker younger than the journal's last line, so a
+    stop that landed after the previous leg ended (nobody honored it) stopped
+    the next leg at its first step. This leg's start is the threshold: a
+    marker older than it is stale, whatever the journal says."""
     import os
 
     from agent6.app import resume as resume_mod
@@ -558,19 +580,22 @@ def test_resume_keeps_a_stop_request_pending_after_the_previous_leg_ended(
         '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
         encoding="utf-8",
     )
-    leg_end = layout.logs_path.stat().st_mtime
+    leg_end = time.time() - 20
+    os.utime(layout.logs_path, (leg_end, leg_end))
     (layout.session_dir / "steer.request").write_text("", encoding="utf-8")
     os.utime(layout.session_dir / "steer.request", (leg_end - 10, leg_end - 10))
     request_stop(layout.session_dir)
-    os.utime(layout.session_dir / "stop.request", (leg_end + 1, leg_end + 1))
+    os.utime(layout.session_dir / "stop.request", (leg_end + 10, leg_end + 10))
     holder_fd = acquire_repo_writer(state, repo, "run-A")
     try:
-        rc = resume_mod.resume_task(None, "run-C", frontend=MagicMock(), force=False)
+        rc = resume_mod.resume_task(
+            None, "run-C", started_at=time.time(), frontend=MagicMock(), force=False
+        )
     finally:
         release_single_writer(holder_fd)
     assert rc == 2  # the checkout is busy: refused after the sweep
     assert "run-A" in capsys.readouterr().err
-    assert stop_request_pending(layout.session_dir)
+    assert not stop_request_pending(layout.session_dir)
     assert not (layout.session_dir / "steer.request").exists()
 
 
@@ -579,9 +604,9 @@ def test_a_reused_ask_dir_drops_the_previous_legs_markers_and_keeps_this_legs(
 ) -> None:
     """An ask session reuses its dir under the same id (transient Q&A), so a
     run_task that sweeps nothing starts the second leg on the first leg's
-    leftover stop marker and ends at its first boundary. A bridge file older
-    than the journal's last write is the previous leg's; a younger one was
-    written for this leg."""
+    leftover markers. A marker older than this leg's start is stale, even one
+    younger than the journal (a steer typed after the leg ended); one written
+    since the leg began (an editor's cancel while it came up) is this leg's."""
     import os
 
     from agent6.app import run as run_mod
@@ -596,11 +621,12 @@ def test_a_reused_ask_dir_drops_the_previous_legs_markers_and_keeps_this_legs(
         '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
         encoding="utf-8",
     )
-    leg_end = layout.logs_path.stat().st_mtime
+    leg_end = time.time() - 20
+    os.utime(layout.logs_path, (leg_end, leg_end))
     (layout.session_dir / "steer.request").write_text("", encoding="utf-8")
-    os.utime(layout.session_dir / "steer.request", (leg_end - 10, leg_end - 10))
-    request_stop(layout.session_dir)
-    os.utime(layout.session_dir / "stop.request", (leg_end + 1, leg_end + 1))
+    os.utime(layout.session_dir / "steer.request", (leg_end + 10, leg_end + 10))
+    started_at = time.time() - 5
+    request_stop(layout.session_dir)  # the cancel, after the leg began
     seen: list[tuple[bool, bool]] = []
 
     def _leg(*_a: object, **_k: object) -> LegEnd:
@@ -610,7 +636,12 @@ def test_a_reused_ask_dir_drops_the_previous_legs_markers_and_keeps_this_legs(
 
     monkeypatch.setattr(run_mod, "run_leg", _leg)
     rc = run_mod.run_task(
-        _load_cfg(), "again?", frontend=MagicMock(), session_id="chat", mode="ask"
+        _load_cfg(),
+        "again?",
+        started_at=started_at,
+        frontend=MagicMock(),
+        session_id="chat",
+        mode="ask",
     )
     assert rc == 0
     assert seen == [(False, True)]
@@ -683,7 +714,9 @@ def test_resume_treats_a_file_that_arrived_between_legs_as_the_operators(
 
     monkeypatch.setattr(resume_mod, "run_leg", _leg)
     monkeypatch.setattr(leg_mod, "run_leg", _leg)
-    rc = resume_mod.resume_task(None, "run-U", frontend=MagicMock(), force=False)
+    rc = resume_mod.resume_task(
+        None, "run-U", started_at=time.time(), frontend=MagicMock(), force=False
+    )
     assert rc == 0
     assert seen == [frozenset({"note.md"})]
     assert read_untracked_at_start(layout.session_dir) == frozenset({"note.md"})
@@ -701,7 +734,9 @@ def test_resume_treats_a_file_that_arrived_between_legs_as_the_operators(
 
     monkeypatch.setattr(resume_mod, "untracked_paths", _broken)
     seen.clear()
-    rc = resume_mod.resume_task(None, "run-U", frontend=MagicMock(), force=False)
+    rc = resume_mod.resume_task(
+        None, "run-U", started_at=time.time(), frontend=MagicMock(), force=False
+    )
     assert rc == 2 and seen == []
 
 

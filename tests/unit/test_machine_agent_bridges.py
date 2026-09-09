@@ -59,6 +59,11 @@ def test_stale_answers_cleared_before_state_reexecution(tmp_path: Path) -> None:
     register_frontend(instance, os.getpid())
     write_answer(state, "approval-1", "yes")  # stale: from the aborted attempt
     write_question_answers(state, "question-1", ["stale"])
+    for stale in (
+        state / "approvals" / "approval-1.answer",
+        state / "questions" / "question-1.answer",
+    ):
+        os.utime(stale, (time.time() - 60, time.time() - 60))  # the attempt died a minute ago
     _build_machine_bridges(instance, state, events)
     assert not (state / "approvals" / "approval-1.answer").exists()
     assert not (state / "questions" / "question-1.answer").exists()

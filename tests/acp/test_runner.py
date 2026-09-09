@@ -1679,3 +1679,51 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: Path) 
         u for u in updates if u.get("sessionUpdate") == "tool_call_update" and "locations" in u
     ]
     assert located and located[0]["locations"] == [{"path": str((tmp_path / "src/x.py").resolve())}]
+
+
+def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lifecycle sweeps bridge files older than the leg's start, and the
+    bridge passes its turn's start: a cancel written after the turn began and
+    before that sweep (during the lifecycle's own startup) survives it and
+    stops the run at its first step. Keyed on the lifecycle's own clock, the
+    sweep dropped it, and the run ran on while the editor was told
+    "cancelled"."""
+    from agent6.app import run as run_mod
+    from agent6.app._leg import LegEnd
+    from agent6.paths import state_dir
+    from agent6.sessions.ipc import TIMESTAMP_SLACK_S, request_stop, stop_request_pending
+
+    repo = _repo(tmp_path / "repo")
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "seed"], check=True
+    )
+    config_dir = Path(os.environ["XDG_CONFIG_HOME"]) / "agent6"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+    session = session_mod.Session(acp_id="s", cwd=repo)
+    seen: list[bool] = []
+    real_run_task = runner.run_task
+
+    def _cancelled_while_starting(cfg: Config, text: str, **kw: Any) -> int:
+        session_dir = session.layout(state_dir(repo)).session_dir
+        assert request_stop(session_dir)  # what Sessions.cancel writes, the turn begun
+        time.sleep(2 * TIMESTAMP_SLACK_S)  # the lifecycle's entry is not the turn's start
+        return real_run_task(cfg, text, **kw)
+
+    def _leg(*_a: object, **_k: object) -> LegEnd:
+        seen.append(stop_request_pending(session.layout(state_dir(repo)).session_dir))
+        return LegEnd(rc=0)
+
+    monkeypatch.setattr(run_mod, "run_leg", _leg)
+    monkeypatch.setattr(runner, "run_task", _cancelled_while_starting)
+    bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
+
+    assert bridge.run(session, "do the thing") == "end_turn"
+    assert seen == [True]

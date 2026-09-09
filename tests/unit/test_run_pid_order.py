@@ -12,6 +12,7 @@ none, and the teardown clears it on every exit path.
 from __future__ import annotations
 
 import subprocess as sp
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -68,7 +69,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     # The pid lands BEFORE the question: while a run waits on it, `agent6
     # answer` and the listings must read it as the live worker it is.
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
-    assert run_mod.run_task(cfg, "t", frontend=frontend, mode="run") == 2
+    assert run_mod.run_task(cfg, "t", started_at=time.time(), frontend=frontend, mode="run") == 2
     assert order == ["pid", "ask"]
     # A passing preflight writes the pid, then runs the leg -- in every mode:
     # an ask blocks on questions too, and `agent6 ps` and `steer` gate on the
@@ -77,7 +78,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     for mode in ("run", "plan", "ask"):
         order.clear()
         with pytest.raises(RuntimeError, match="stop here"):
-            run_mod.run_task(cfg, "t", frontend=frontend, mode=mode)
+            run_mod.run_task(cfg, "t", started_at=time.time(), frontend=frontend, mode=mode)
         assert order == ["pid", "leg"], mode
 
 
@@ -107,6 +108,7 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
         run_mod.run_task(
             Config.model_validate({"sandbox": {"run_commands": "yes"}}),
             "t",
+            started_at=time.time(),
             frontend=frontend,
             mode="run",
         )
@@ -147,6 +149,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
         run_mod.run_task(
             Config.model_validate({"sandbox": {"run_commands": "yes"}}),
             "t",
+            started_at=time.time(),
             frontend=frontend,
             session_id="pid-teardown",
             mode="run",
@@ -188,7 +191,14 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     )
 
     with pytest.raises(OSError, match="console teardown failed"):
-        run_mod.run_task(cfg, "t", frontend=frontend, session_id="stash-teardown", mode="run")
+        run_mod.run_task(
+            cfg,
+            "t",
+            started_at=time.time(),
+            frontend=frontend,
+            session_id="stash-teardown",
+            mode="run",
+        )
 
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2\n"
     stashes = sp.run(
