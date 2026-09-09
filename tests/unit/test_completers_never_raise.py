@@ -28,11 +28,12 @@ def test_there_are_completers_to_check() -> None:
 
 
 # The completers that consult the per-repo state dir when called with a bare
-# prefix. The other nine never reach `state_dir` (they return early or read
-# config only), so parametrizing them here forced nothing; the decorator test
-# below carries their never-raise promise.
+# prefix. The others never reach `state_dir` (they return early or read config
+# only), so parametrizing them here forced nothing; the decorator test below
+# carries their never-raise promise.
 _STATE_DIR_CONSUMERS = [
     "_complete_session_ids",
+    "_complete_session_ports",
     "_complete_resumable_ids",
     "_complete_plan_session_ids",
     "_complete_machine_ids",

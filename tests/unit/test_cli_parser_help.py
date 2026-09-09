@@ -236,7 +236,7 @@ def test_config_show_keys_complete_like_config_get() -> None:
     completer = getattr(action, "completer", None)
     assert completer is not None
     assert completer.func is _complete_config_keys
-    assert completer.keywords == {"settable": False}
+    assert completer.keywords == {"settable": False, "sections": True}
 
 
 def test_option_metavars() -> None:

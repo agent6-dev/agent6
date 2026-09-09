@@ -177,6 +177,176 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
     assert completers._complete_live_session_ids("") == []  # pyright: ignore[reportPrivateUsage]
 
 
+def test_config_list_edit_completion_offers_only_list_leaves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`config add/remove` reject scalar leaves, so their shared key completer
+    must be narrowed to the list fields those verbs edit."""
+    import argparse
+
+    monkeypatch.chdir(tmp_path)
+    for verb in ("add", "remove"):
+        offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+            prefix="sandbox.",
+            parsed_args=argparse.Namespace(config_command=verb, config=None, machine_file=None),
+            action=object(),
+        )
+        assert "sandbox.extra_read_paths" in offered
+        assert "sandbox.network" not in offered
+
+
+def test_config_list_edit_value_completion_omits_scalar_choices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scalar key typed by hand on `config add/remove` must not get enum
+    suggestions that those list-only verbs reject."""
+    import argparse
+
+    monkeypatch.chdir(tmp_path)
+    offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
+        prefix="",
+        parsed_args=argparse.Namespace(
+            config_command="add", key="sandbox.network", config=None, machine_file=None
+        ),
+        action=object(),
+    )
+
+    assert offered == []
+
+
+def test_config_show_completion_offers_accepted_section_prefixes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`config show KEY...` accepts a whole section, so TAB must not force an
+    operator typing `sand` past the valid `sandbox` candidate to `sandbox.`."""
+    import argparse
+
+    monkeypatch.chdir(tmp_path)
+    offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+        prefix="sand",
+        parsed_args=argparse.Namespace(config_command="show", config=None),
+        action=object(),
+        settable=False,
+        sections=True,
+    )
+
+    assert "sandbox" in offered
+
+
+def test_machine_overlay_key_completion_omits_operator_only_leaves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`config set --machine-file` refuses sandbox leaves, so its key
+    completer must not offer them as writable machine-overlay inputs; `config
+    get --machine-file` reads them, so its completer keeps every key."""
+    import argparse
+
+    monkeypatch.chdir(tmp_path)
+    machine = tmp_path / "m.asm.toml"
+    offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+        prefix="sandbox.",
+        parsed_args=argparse.Namespace(config=None, machine_file=machine, config_command="set"),
+        action=object(),
+    )
+    assert offered == []
+
+    readable = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+        prefix="sandbox.",
+        parsed_args=argparse.Namespace(config=None, machine_file=machine, config_command="get"),
+        action=object(),
+        settable=False,
+    )
+    assert "sandbox.network" in readable
+
+
+def test_machine_overlay_value_completion_omits_operator_only_leaves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A manually typed protected machine-overlay key must not get a suggested
+    value that the write command will reject on Enter."""
+    import argparse
+
+    monkeypatch.chdir(tmp_path)
+    offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
+        prefix="",
+        parsed_args=argparse.Namespace(
+            key="sandbox.network", config=None, machine_file=tmp_path / "m.asm.toml"
+        ),
+        action=object(),
+    )
+
+    assert offered == []
+
+
+def test_config_key_completion_reads_user_presets_from_the_typed_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A preset declared only by `--config FILE` is a writable key namespace
+    for that invocation and must be completed from the same layer stack."""
+    import argparse
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    explicit = tmp_path / "explicit.toml"
+    explicit.write_text('[presets.team.review]\ntrigger = "before_finish"\n', encoding="utf-8")
+
+    offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
+        prefix="presets.",
+        parsed_args=argparse.Namespace(config=explicit),
+        action=object(),
+    )
+
+    assert "presets.team.review.trigger" in offered
+
+
+def test_config_value_completion_under_a_preset_uses_the_leafs_choices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A generated `presets.<name>.<leaf>` key accepts the same closed values
+    as that schema leaf, rather than losing completion at the preset prefix."""
+    import argparse
+
+    monkeypatch.chdir(tmp_path)
+    offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
+        prefix="s",
+        parsed_args=argparse.Namespace(key="presets.team.sandbox.network", config=None),
+        action=object(),
+    )
+
+    assert offered == ["session"]
+
+
+def test_mcp_remove_offers_only_servers_in_the_selected_layer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`mcp remove` edits one layer, so its completion must not offer a server
+    that the effective config inherits only from the other layer."""
+    import argparse
+
+    from agent6.paths import global_config_path, repo_config_path
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    global_path = global_config_path()
+    global_path.parent.mkdir(parents=True)
+    global_path.write_text('[mcp.servers.global_only]\ncommand = ["true"]\n', encoding="utf-8")
+    repo_path = repo_config_path(tmp_path)
+    repo_path.parent.mkdir(parents=True)
+    repo_path.write_text('[mcp.servers.repo_only]\ncommand = ["true"]\n', encoding="utf-8")
+
+    global_names = completers._complete_mcp_servers(  # pyright: ignore[reportPrivateUsage]
+        prefix="", parsed_args=argparse.Namespace(to_repo=False, config=None), action=object()
+    )
+    repo_names = completers._complete_mcp_servers(  # pyright: ignore[reportPrivateUsage]
+        prefix="", parsed_args=argparse.Namespace(to_repo=True, config=None), action=object()
+    )
+
+    assert global_names == ["global_only"]
+    assert repo_names == ["repo_only"]
+
+
 def test_model_provider_completion_reads_the_typed_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -223,6 +393,32 @@ def test_model_completion_reads_the_typed_config(
         "from-", parsed_args=argparse.Namespace(provider="anthropic", config=custom)
     )
     assert offered == ["from-typed-config"], seen
+
+
+def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bare number means that port on the newest session, so the second
+    optional positional's completer must offer those ports in the first slot."""
+    import argparse
+
+    monkeypatch.chdir(tmp_path)
+    session = bucket_dir(state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
+    session.mkdir(parents=True)
+    (session / "logs.jsonl").write_text("{}\n", encoding="utf-8")
+
+    def _ports(_path: Path) -> list[int]:
+        return [8000, 9000]
+
+    monkeypatch.setattr("agent6.sessions.ipc.listening_ports", _ports)
+
+    offered = completers._complete_session_ports(  # pyright: ignore[reportPrivateUsage]
+        prefix="8",
+        parsed_args=argparse.Namespace(target=""),
+        action=object(),
+    )
+
+    assert offered == ["8000"]
 
 
 def test_state_restricted_machine_verbs_offer_only_machines_they_accept(

@@ -65,7 +65,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Show just these leaves (or section prefixes, e.g. 'sandbox') untruncated.",
     )
     show_keys.completer = partial(  # type: ignore[attr-defined]
-        _complete_config_keys, settable=False
+        _complete_config_keys, settable=False, sections=True
     )
     config_show.add_argument(
         "--json", action="store_true", dest="as_json", help="Emit JSON instead of a table."

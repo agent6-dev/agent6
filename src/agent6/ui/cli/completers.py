@@ -26,6 +26,7 @@ from agent6.paths import state_dir
 from agent6.ui.cli._common import (
     _plans_dir,
     all_session_dirs,
+    resolve_or_newest_layout,
 )
 from agent6.viewmodel.listing import session_is_live
 from agent6.viewmodel.machine_state import MachineVerb, machine_verb_refusal
@@ -87,8 +88,15 @@ def _complete_skills(prefix: str, **_kw: object) -> list[str]:
 @_never_raises
 def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
     """argcomplete: the configured MCP server names."""
-    cfg = load_effective(Path.cwd(), _explicit_config(kw)).config
-    return sorted(n for n in cfg.mcp.servers if n.startswith(prefix))
+    effective = load_effective(Path.cwd(), _explicit_config(kw))
+    target = "repo" if getattr(kw.get("parsed_args"), "to_repo", False) else "global"
+    from agent6.ui.cli.mcp_connect import _layers_holding  # noqa: PLC0415
+
+    return sorted(
+        name
+        for name in effective.config.mcp.servers
+        if name.startswith(prefix) and target in _layers_holding(effective, name)
+    )
 
 
 @_never_raises
@@ -171,27 +179,48 @@ def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str
     return out
 
 
-def _user_preset_names() -> list[str]:
+def _config_list_keys(config_path: Path | None = None) -> set[str]:
+    """The effective schema leaves accepted by `config add/remove`."""
+    from agent6.viewmodel.config_view import build_config_view  # noqa: PLC0415
+
+    effective = load_effective(Path.cwd(), config_path)
+    return {
+        setting.key
+        for setting in build_config_view(effective).settings
+        if setting.py_type == "list"
+    }
+
+
+def _user_preset_names(config_path: Path | None = None) -> list[str]:
     """User-defined [presets.*] names only, for key completion. Built-in names
     are absent: writing presets.ultra.* creates a user table that replaces the
     built-in wholesale, a footgun TAB should not put one keystroke away (the
     same rule keeps `none` out of sandbox.isolation completion)."""
     try:
-        return [p.name for p in preset_catalog(Path.cwd()).presets if p.origin != "built-in"]
+        return [
+            p.name
+            for p in preset_catalog(Path.cwd(), config_path).presets
+            if p.origin != "built-in"
+        ]
     except ConfigError:
         return []
 
 
 @_never_raises
-def _complete_config_keys(prefix: str, *, settable: bool = True, **kw: object) -> list[str]:
+def _complete_config_keys(
+    prefix: str, *, settable: bool = True, sections: bool = False, **kw: object
+) -> list[str]:
     """argcomplete: known dotted config leaf paths (effective + enum keys).
     From `preset` onward, also the user's presets.<name>.<leaf> paths (kept
     out of the bare-TAB listing, which is crowded enough already).
 
-    `settable=False` for `config get`, which reads effective leaves only:
-    both the enum keys (offered so `config set` can reach a leaf no layer has
-    set yet) and `[presets.*]` paths (stripped before validation) are inputs
-    `get` rejects, and a completer must offer what its command accepts.
+    A completer offers what its command accepts. `settable=False` for
+    `config get`, which reads effective leaves only: both the enum keys
+    (offered so `config set` can reach a leaf no layer has set yet) and
+    `[presets.*]` paths (stripped before validation) are inputs `get`
+    rejects. `sections=True` for `config show`, which takes a section prefix
+    too. `config add/remove` edit list leaves alone, and a write to a machine
+    overlay (`--machine-file`) cannot reach an operator-only leaf.
     """
     explicit = _explicit_config(kw)
     try:
@@ -200,9 +229,25 @@ def _complete_config_keys(prefix: str, *, settable: bool = True, **kw: object) -
         keys = set()
     if settable:
         keys |= set(_config_enum_choices(explicit))
+    command = getattr(kw.get("parsed_args"), "config_command", "")
+    if command in ("add", "remove"):
+        keys &= _config_list_keys(explicit)
+    if sections:
+        keys |= {
+            ".".join(parts[:i])
+            for key in keys
+            for parts in (key.split("."),)
+            for i in range(1, len(parts))
+        }
     if settable and prefix.startswith("preset"):
         pool = {k for k in keys if k != "preset"}
-        keys |= {f"presets.{name}.{k}" for name in _user_preset_names() for k in pool}
+        keys |= {f"presets.{name}.{k}" for name in _user_preset_names(explicit) for k in pool}
+    if command in ("set", "unset", "add", "remove") and isinstance(
+        getattr(kw.get("parsed_args"), "machine_file", None), Path
+    ):
+        from agent6.machine import protected_overlay_key_error  # noqa: PLC0415
+
+        keys = {key for key in keys if protected_overlay_key_error(key) is None}
     return sorted(k for k in keys if k.startswith(prefix))
 
 
@@ -225,16 +270,28 @@ def _complete_config_values(
     configured providers), a role's provider's model ids, the extra_body
     recipes."""
     key = getattr(parsed_args, "key", "") or ""
+    if isinstance(getattr(parsed_args, "machine_file", None), Path):
+        from agent6.machine import protected_overlay_key_error  # noqa: PLC0415
+
+        if protected_overlay_key_error(key) is not None:
+            return []
+    parts = key.split(".", 2)
+    schema_key = parts[2] if len(parts) == 3 and parts[0] == "presets" else key
     raw = getattr(parsed_args, "config", None)
     config_path = raw if isinstance(raw, Path) else None
-    choices = list(_config_enum_choices(config_path).get(key, ()))
+    if getattr(parsed_args, "config_command", "") in (
+        "add",
+        "remove",
+    ) and schema_key not in _config_list_keys(config_path):
+        return []
+    choices = list(_config_enum_choices(config_path).get(schema_key, ()))
     if key.endswith(".extra_body"):
         choices += list(_EXTRA_BODY_RECIPES)
     if not choices:
         with contextlib.suppress(ConfigError):
             from agent6.models.choices import config_value_choices  # noqa: PLC0415
 
-            choices = config_value_choices(load_effective(Path.cwd(), config_path), key)
+            choices = config_value_choices(load_effective(Path.cwd(), config_path), schema_key)
     return [v for v in choices if v.startswith(prefix)]
 
 
@@ -272,9 +329,8 @@ def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: obje
     """
     target = str(getattr(parsed_args, "target", "") or "")
     from agent6.sessions.ipc import listening_ports  # noqa: PLC0415
-    from agent6.sessions.layout import session_layout  # noqa: PLC0415
 
-    layout = session_layout(state_dir(Path.cwd()), target) if target else None
+    layout = resolve_or_newest_layout(Path.cwd(), target)
     if layout is None:
         return []
     return [str(p) for p in listening_ports(layout.session_dir) if str(p).startswith(prefix)]
