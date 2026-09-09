@@ -438,8 +438,9 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
     .q-text { margin-top: 1; text-style: bold; }
     /* Options are chips: clicking one fills that question's answer field below.
        A visible border + panel fill reads as pressable (a borderless full-width
-       label read as a heading); auto width so short options sit compact, and
-       they wrap across rows rather than one tall column. Keep the default height
+       label read as a heading); auto width so short options sit compact in
+       one row, which a narrow terminal cuts (the answer field below still
+       takes an answer). Keep the default height
        (a borderless height:1 button collapses its label to nothing). */
     .q-opts { height: auto; }
     .q-opts Button {
@@ -486,8 +487,7 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
                     yield Static(body, classes="q-text")
                     if q.options:
                         # Buttons carry Text so an option with '[...]' can't crash
-                        # markup parsing; pressing one fills that answer field. A
-                        # Horizontal row of auto-width chips wraps compactly.
+                        # markup parsing; pressing one fills that answer field.
                         with Horizontal(classes="q-opts"):
                             for oi, opt in enumerate(q.options):
                                 yield Button(Text(opt), id=f"opt-{qi}-{oi}")

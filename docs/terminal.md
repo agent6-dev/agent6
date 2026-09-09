@@ -27,6 +27,7 @@ A live run keeps a steer bar at the bottom; above it, a live pane streams the tu
 An approval shows inline at the conversation's tail (the command, fixed-width) with a key row docked above the bar: `a` allow, `s` allow all this session, `d` deny, `x` deny all; answered, it collapses to one dim line.
 The composer keeps focus and owns the keys: they answer only while it is empty and focused (a typed message never answers); a click on a label answers from anywhere.
 Away from the conversation (the dashboard, a machine screen) an approval opens a modal instead: `y` allow, `a` allow session, `n` deny, `x` deny all.
+A modal's buttons sit in one row; on a terminal narrower than the row the later buttons are off screen, and the approval keys, the question modal's answer fields and Ctrl+S still answer.
 
 - `Ctrl+T` cycles the thinking and tool detail: hidden, collapsed, expanded
 - `Ctrl+C` copies the selection, or the whole transcript when nothing is selected
