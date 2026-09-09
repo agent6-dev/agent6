@@ -205,9 +205,13 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait()
-        sys.stdout, sys.stderr = orig_out, orig_err
-        with contextlib.suppress(Exception):
-            log_fh.close()
+        finally:
+            # Whatever the teardown does, this process gets its console back: a
+            # second Ctrl-C lands in the wait above and leaves every later line
+            # in the log file.
+            sys.stdout, sys.stderr = orig_out, orig_err
+            with contextlib.suppress(Exception):
+                log_fh.close()
         if gone_early:
             how = "closed" if proc.returncode == 0 else f"exited with code {proc.returncode}"
             print(

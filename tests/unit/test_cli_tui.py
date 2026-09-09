@@ -784,3 +784,43 @@ def test_ctrl_c_kills_a_dashboard_that_ignores_graceful_shutdown(
         pass
 
     assert actions == [f"signal:{livemod.signal.SIGINT}", "terminate", "kill"]
+
+
+def test_tui_session_restores_the_console_when_a_second_ctrl_c_lands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C twice: the first asks the dashboard to go, the second lands in
+    the wait for it. That second one escaped the teardown, leaving this
+    process's stdout pointing at tui_console.log for everything after it."""
+    import subprocess
+    import sys
+    import types
+
+    session_dir = tmp_path / "sess"
+    session_dir.mkdir()
+
+    class _Stubborn:
+        returncode = 0
+
+        def poll(self) -> int | None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            raise KeyboardInterrupt  # the operator's Ctrl-C, and again in the teardown
+
+        def send_signal(self, sig: int) -> None:
+            return None
+
+    def spawn(argv: list[str], **kwargs: Any) -> _Stubborn:
+        return _Stubborn()
+
+    monkeypatch.setattr(
+        livemod,
+        "subprocess",
+        types.SimpleNamespace(Popen=spawn, TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    before = (sys.stdout, sys.stderr)
+    with pytest.raises(KeyboardInterrupt), livemod.tui_session(session_dir, enabled=True):
+        pass
+
+    assert (sys.stdout, sys.stderr) == before
