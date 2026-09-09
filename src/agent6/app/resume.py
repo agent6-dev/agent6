@@ -352,27 +352,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     # that landed between legs was never honored). A marker written since
     # this leg began is this leg's (an editor's cancel during startup).
     clear_pending_answers(layout.session_dir, started_at=started_at)
-    if steer.strip():
-        # --steer: queue the operator's follow-up as the first steering
-        # instruction. Seeded AFTER the stale-state clear (which drops steer
-        # files), so the loop's steer poll injects it at its first boundary.
-        if not submit_steer(layout.session_dir, steer.strip()):
-            reporter.error("could not write the initial steer request")
-            release_single_writer(worker_lock_fd)
-            return 2
-        # A steer that IS the work names the run: the row and the next squash
-        # of a run the agent finished (the only resume a finished run allows),
-        # or of a fork still carrying its source's task, otherwise read as work
-        # already landed. Stamped with the steer, before the refusals below, as
-        # the fork rule has been.
-        if new_work:
-            stamp_task(layout.session_dir, steer.strip())
-        elif manifest.parent_session_id:
-            stamp_fork_task(
-                layout.session_dir,
-                steer.strip(),
-                source_dir=layout.session_dir.parent / manifest.parent_session_id,
-            )
+    # --steer: queue the operator's follow-up as the first steering
+    # instruction. Seeded AFTER the stale-state clear (which drops steer
+    # files), so the loop's steer poll injects it at its first boundary.
+    if steer.strip() and not submit_steer(layout.session_dir, steer.strip()):
+        reporter.error("could not write the initial steer request")
+        release_single_writer(worker_lock_fd)
+        return 2
 
     detach_requested = False
     handed_to_run_task = False  # a parked submission: run_task owns its whole lifecycle
@@ -705,6 +691,21 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             except (GitError, OSError) as exc:
                 reporter.error(f"cannot tell the run's files from the operator's: {exc}")
                 return 2
+        if steer.strip():
+            # A steer that IS the work names the run: the row and the next
+            # squash of a run the agent finished (the only resume a finished
+            # run allows), or of a fork still carrying its source's task,
+            # otherwise read as work already landed. Stamped past every
+            # refusal above: a resume that did not run renames nothing (its
+            # queued steer is swept at the next leg's start too).
+            if new_work:
+                stamp_task(layout.session_dir, steer.strip())
+            elif manifest.parent_session_id:
+                stamp_fork_task(
+                    layout.session_dir,
+                    steer.strip(),
+                    source_dir=layout.session_dir.parent / manifest.parent_session_id,
+                )
         # The worker's pid, written once the preflight passed: a resume that
         # refused never had a live worker, and a hub's spawn reads this pid as
         # the child owning the run (`spawn_and_confirm`). `sessions show`

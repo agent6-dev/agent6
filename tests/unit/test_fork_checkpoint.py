@@ -1354,6 +1354,35 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
     assert "merged into main" not in err
 
 
+def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worker route in the global config and a leg that ends at once, so a
+    resume runs past every refusal without a provider call."""
+    import agent6.app.resume as resume_mod
+    from agent6.app._leg import LegEnd
+
+    gdir = global_config_dir()
+    gdir.mkdir(parents=True, exist_ok=True)
+    (gdir / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[models.worker]\nprovider = "anthropic"\nmodel = "m"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")  # headless under run_commands=ask
+
+    def _unconfined(*_a: object, **_k: object) -> str:
+        return "none"
+
+    def _nothing(*_a: object, **_k: object) -> None:
+        return None
+
+    def _finished_leg(*_a: object, **_k: object) -> LegEnd:
+        return LegEnd(0)
+
+    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+
+
 def test_a_steered_fork_takes_the_steer_as_its_own_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1371,13 +1400,32 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
     dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
 
-    # No providers configured, so the leg never starts; the steer is queued and
-    # the task stamped before that refusal, as they are for a normal resume.
-    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 2
+    _resumable_worker(monkeypatch)
+    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 0
 
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["user_task"] == "create README.md only"
     assert manifest["parent_session_id"] == "sunny-otter-AAAA11", "lineage still names the source"
+
+
+def test_a_refused_resume_leaves_the_forks_task_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The steer was stamped as the fork's task before the resume's refusals,
+    so a resume refused at its providers titled the fork with work no leg ever
+    read (the queued steer itself is swept at the next leg's start)."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = state_dir(repo)
+    _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
+
+    # No providers configured: refused before any leg.
+    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 2
+
+    assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
 
 
 def test_only_the_first_steer_names_a_fork(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1393,8 +1441,9 @@ def test_only_the_first_steer_names_a_fork(tmp_path: Path, monkeypatch: pytest.M
     assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
     dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
 
-    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 2
-    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="also fix the typo") == 2
+    _resumable_worker(monkeypatch)
+    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 0
+    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="also fix the typo") == 0
 
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["user_task"] == "create README.md only"

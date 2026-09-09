@@ -936,7 +936,8 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
     listing row and the squash merge of the new leg were titled with work an
     earlier merge had already landed. The steer IS the work (the fork rule,
     `stamp_fork_task`, for the only resume a finished run allows); a run that
-    had not finished keeps its task, the steer being a follow-up."""
+    had not finished keeps its task, the steer being a follow-up. Stamped past
+    every refusal: a resume with no snapshot renames nothing."""
     from unittest.mock import MagicMock
 
     from agent6.app.manifest import read_manifest
@@ -976,6 +977,14 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
     monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+
+    # No snapshot: refused, and the task stays.
+    rc = resume_mod.resume_task(
+        None, sid, started_at=time.time(), frontend=MagicMock(), force=False, steer="do more"
+    )
+    assert rc == 2
+    assert read_manifest(session_dir).user_task == "t"
+
     (session_dir / "loop_state.json").write_text(
         json.dumps(
             {
