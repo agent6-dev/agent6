@@ -16,6 +16,7 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.viewmodel.format import format_branch, format_compare, format_lineage, format_usd
 from agent6.viewmodel.machine_state import (
+    AgentLeg,
     fold_machine,
     machine_spend,
     machine_state_as_dict,
@@ -154,7 +155,7 @@ def session_snapshot(
     return snap
 
 
-def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
+def machine_snapshot(machine_dir: Path, *, leg: AgentLeg | None = None) -> dict[str, Any]:
     """A machine instance's folded MachineState as the wire dict. Raises
     MachineError for an unloadable source and JournalError for a corrupt
     journal; the callers word those.
@@ -165,7 +166,7 @@ def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
     spec = load_machine(machine_dir / "machine.asm.toml")
     events = MachineJournal(machine_dir).read()
     ms = fold_machine(spec, events)
-    d = machine_state_as_dict(ms, machine_dir)
+    d = machine_state_as_dict(ms, machine_dir, leg=leg)
     spend, in_flight = machine_spend(events, machine_dir, alive=worker_is_alive(machine_dir))
     d["spend"] = {
         "usd": spend.usd,

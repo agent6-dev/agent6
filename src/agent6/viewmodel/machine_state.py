@@ -40,8 +40,8 @@ from agent6.machine.model import MachineSpec
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, machines_root
 from agent6.viewmodel.format import format_transition, machine_state_mark, status_level
-from agent6.viewmodel.state import fold_session
-from agent6.viewmodel.tail import tail_events
+from agent6.viewmodel.state import SessionState, apply_event, fold_session, initial_state
+from agent6.viewmodel.tail import LogTail, tail_events
 
 # How many recent machine.notify events a MachineState carries. Front-ends render
 # them as ephemeral surfaces, so only the tail matters; the journal keeps them all.
@@ -209,17 +209,59 @@ class AgentLeg:
     blocked_in: str = ""
 
 
-def newest_agent_leg(machine_dir: Path) -> AgentLeg:
-    """The :class:`AgentLeg` of the newest state log (one fold of that log)."""
-    log = newest_state_log(machine_dir)
-    if log is None:
-        return AgentLeg()
-    state = fold_session(tail_events(log, follow=False))
+def leg_of(state: SessionState, log: Path) -> AgentLeg:
+    """The :class:`AgentLeg` a folded state log *log* describes."""
     open_prompts = [*state.pending_approvals, *state.pending_questions]
     return AgentLeg(
         open=state.started and not state.finished,
         blocked_in=log.parent.name if any(not p.answered for p in open_prompts) else "",
     )
+
+
+def newest_agent_leg(machine_dir: Path) -> AgentLeg:
+    """The :class:`AgentLeg` of the newest state log (one fold of that log); a
+    poll loop holds a :class:`NewestLegFold` instead."""
+    log = newest_state_log(machine_dir)
+    if log is None:
+        return AgentLeg()
+    return leg_of(fold_session(tail_events(log, follow=False)), log)
+
+
+class NewestLegFold:
+    """The newest state log folded across a poll loop: each `refresh` reads the
+    bytes appended since the last one and folds them into the held state, and
+    starts a fresh fold when the machine has entered a newer agent state or
+    the log was rewritten. The TUI poll and the web frame each read the log
+    once per tick through this, where a fold from scratch per reader cost a
+    whole read of the log per reader per tick."""
+
+    def __init__(self) -> None:
+        self._log: Path | None = None
+        self._tail: LogTail | None = None
+        self.state: SessionState = initial_state()
+
+    def refresh(self, machine_dir: Path) -> Path | None:
+        """Fold what the newest state log gained; returns that log, None when
+        no agent state has one yet."""
+        log = newest_state_log(machine_dir)
+        if log != self._log:
+            self._log, self._tail, self.state = log, LogTail(log) if log else None, initial_state()
+        if self._tail is not None:
+            events = self._tail.read()
+            if self._tail.rewound:
+                self.state = initial_state()
+            for event in events:
+                self.state = apply_event(self.state, event)
+        return log
+
+    @property
+    def log(self) -> Path | None:
+        """The state log the held fold describes, None before any exists."""
+        return self._log
+
+    def leg(self) -> AgentLeg:
+        """The :class:`AgentLeg` of the held fold."""
+        return leg_of(self.state, self._log) if self._log is not None else AgentLeg()
 
 
 def armed_wait(machine_dir: Path, ms: MachineState) -> PendingWait | None:
@@ -269,10 +311,15 @@ class InstanceProbes:
         )
 
 
-def probe_instance(machine_dir: Path, ms: MachineState) -> InstanceProbes:
-    """The :class:`InstanceProbes` of *machine_dir* for its fold *ms*."""
+def probe_instance(
+    machine_dir: Path, ms: MachineState, *, leg: AgentLeg | None = None
+) -> InstanceProbes:
+    """The :class:`InstanceProbes` of *machine_dir* for its fold *ms*. A caller
+    holding the newest leg's fold (:class:`NewestLegFold`) passes its *leg*;
+    else the log is folded here, for a live, unended machine."""
     alive = worker_is_alive(machine_dir)
-    leg = newest_agent_leg(machine_dir) if ms.ended is None and alive else AgentLeg()
+    if leg is None:
+        leg = newest_agent_leg(machine_dir) if ms.ended is None and alive else AgentLeg()
     try:
         parked = armed_wait(machine_dir, ms) is not None
     except JournalError as exc:
@@ -684,7 +731,9 @@ class MachineWatchCursor:
         return lines
 
 
-def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> dict[str, Any]:
+def machine_state_as_dict(
+    ms: MachineState, machine_dir: Path | None = None, *, leg: AgentLeg | None = None
+) -> dict[str, Any]:
     """The JSON-able wire form of a MachineState, stable field names: what
     `agent6 attach --json` and a web client serialize.
 
@@ -694,7 +743,7 @@ def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> 
     liveness signal is `ended`, and Steer on a parked machine reads as live."""
     d = asdict(ms)
     if machine_dir is not None:
-        probes = probe_instance(machine_dir, ms)
+        probes = probe_instance(machine_dir, ms, leg=leg)
         d["status"] = probes.status_word(ms)
         d["level"] = status_level(d["status"])  # the hub row's level, for the page's pill
         # Every verb's refusal, so a front-end gates and labels its buttons from

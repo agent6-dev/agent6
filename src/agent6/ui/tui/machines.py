@@ -54,7 +54,7 @@ from agent6.sessions.ipc import (
     worker_is_alive,
     write_steer_answer,
 )
-from agent6.sessions.layout import LOGS_NAME, bucket_dir, machines_root
+from agent6.sessions.layout import bucket_dir, machines_root
 from agent6.ui.notify import desktop_notify
 from agent6.ui.spawn import agent6_argv, spawn_and_confirm, spawn_and_locate
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
@@ -75,14 +75,13 @@ from agent6.ui.tui.theme import (
 from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
+    NewestLegFold,
     fold_machine,
-    fold_session,
     machine_spend,
     machine_verb_refusal,
     machine_verb_refusals,
     newest_state_log,
     probe_instance,
-    tail_events,
     verb_answer,
 )
 from agent6.viewmodel.events import tool_result_ok
@@ -199,6 +198,9 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         # Every verb's refusal, read once per poll: the footer, the keys and
         # the prompt gate paint from the same reading.
         self._refusals = machine_verb_refusals(self._root, self._root.name)
+        # The newest state log, folded incrementally: the refusals and the
+        # prompt dispatch read one fold per poll.
+        self._leg_fold = NewestLegFold()
         self._prompts = PromptDispatcher(self.app, answerable=self._answerable, lost=_ANSWER_LOST)
         self._end_notified = False
         self._steer_open = False
@@ -393,7 +395,8 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         # a park or a worker death flips a verb with no MachineEnd, a wait can
         # close while steer stays refused, and a lit key otherwise offers a
         # verb nothing reads.
-        probes = probe_instance(self._root, ms)
+        self._leg_fold.refresh(self._root)
+        probes = probe_instance(self._root, ms, leg=self._leg_fold.leg())
         self._set_refusals(probes.refusals(self._root.name, ms))
         # Header + state-table markers. A parked (--exit-on-wait) instance reads
         # "waiting", not "running", so a paused machine never looks busy.
@@ -471,14 +474,10 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         prompt but nothing would poll the answer. Popping live-looking
         Allow/Deny (a destructive-command approval among them) over a dead
         machine is the machine twin of the run-modal gate."""
-        if not live:
+        state_log = self._leg_fold.log
+        if not live or state_log is None:
             return
-        state_dir = self._current_state_dir()
-        if state_dir is None:
-            return
-        self._prompts.dispatch(
-            state_dir, fold_session(tail_events(state_dir / LOGS_NAME, follow=False))
-        )
+        self._prompts.dispatch(state_log.parent, self._leg_fold.state)
 
     def _render_log_lines(self, log: RichLog, *, live: bool) -> None:
         """Render new complete lines of the current state log: accumulate

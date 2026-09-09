@@ -506,3 +506,46 @@ def test_the_wire_form_carries_the_status_level(tmp_path: Path) -> None:
     )
     ended = machine_state_as_dict(failed, d)
     assert (ended["status"], ended["level"]) == ("failed", status_level("failed"))
+
+
+def test_the_newest_leg_fold_reads_only_what_the_log_gained(tmp_path: Path) -> None:
+    """A poll loop folded the newest state log from scratch on every tick, once
+    for the refusals and once for the prompts or the reasoning; the held fold
+    reads the appended bytes only, follows the machine into a newer agent
+    state, and starts over when a log was rewritten."""
+    import agent6.viewmodel.machine_state as mod
+    from agent6.viewmodel.machine_state import AgentLeg, NewestLegFold
+    from agent6.viewmodel.tail import tail_events
+
+    d = tmp_path / "inst"
+    log = d / "states" / "0000-route" / "logs.jsonl"
+    log.parent.mkdir(parents=True)
+    log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
+    fold = NewestLegFold()
+    assert fold.refresh(d) == log
+    assert fold.leg() == AgentLeg(open=True, blocked_in="")
+
+    def no_full_read(*_a: object, **_k: object) -> Any:
+        raise AssertionError("the whole log was read again")
+
+    mod.tail_events = no_full_read  # type: ignore[assignment]
+    try:
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write('{"type":"question.prompt","id":"q1","questions":[{"question":"?"}]}\n')
+        fold.refresh(d)
+        assert fold.leg() == AgentLeg(open=True, blocked_in="0000-route")
+        # A newer agent state: the fold moves to its log.
+        newer = d / "states" / "0001-work" / "logs.jsonl"
+        newer.parent.mkdir(parents=True)
+        newer.write_text(
+            '{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8"
+        )
+        assert fold.refresh(d) == newer
+        assert fold.leg() == AgentLeg(open=True, blocked_in="")
+        # A rewritten (shorter) log: the fold starts over rather than folding
+        # the new bytes onto the old state.
+        newer.write_text('{"type":"session.end","reason":"finish_session"}\n', encoding="utf-8")
+        fold.refresh(d)
+        assert fold.leg() == AgentLeg(open=False, blocked_in="")
+    finally:
+        mod.tail_events = tail_events

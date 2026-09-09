@@ -1357,7 +1357,8 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path
 def test_the_watch_poll_folds_the_machine_and_its_leg_once(tmp_path: Path) -> None:
     """One poll read and folded the journal twice (the refusals, then the
     render) and folded the newest state log twice; the render's fold feeds the
-    refusals."""
+    refusals, and the newest state log is read incrementally (no fold from
+    scratch on a poll)."""
     import os
 
     import agent6.ui.tui.machines as tui_mod
@@ -1405,6 +1406,6 @@ def test_the_watch_poll_folds_the_machine_and_its_leg_once(tmp_path: Path) -> No
                 tui_mod.fold_machine = real_fold
                 vm_mod.fold_machine = real_fold
                 vm_mod.newest_agent_leg = real_leg
-            assert counts == {"fold": 1, "leg": 1}
+            assert counts == {"fold": 1, "leg": 0}
 
     asyncio.run(scenario())

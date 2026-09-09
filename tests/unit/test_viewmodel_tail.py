@@ -305,3 +305,22 @@ def test_tail_reports_an_events_offset_before_yielding_it(tmp_path: Path) -> Non
     for evt in tail_events(path, follow=False, on_position=positions.append):
         seen.append((evt["type"], positions[-1] if positions else None))
     assert seen == [("a", len(first)), ("b", len(first) + len(last))]
+
+
+def test_log_tail_starts_over_when_the_file_shrinks(tmp_path: Path) -> None:
+    """A rewritten log (shorter than the last read position) made the reader
+    seek past its end and return nothing until the file grew back past the
+    old offset; it starts over from the head and says so."""
+    from agent6.viewmodel.tail import LogTail
+
+    log = tmp_path / "logs.jsonl"
+    log.write_text('{"type":"a"}\n{"type":"b"}\n', encoding="utf-8")
+    tail = LogTail(log)
+    assert [e["type"] for e in tail.read()] == ["a", "b"]
+    log.write_text('{"type":"c"}\n', encoding="utf-8")
+    assert [e["type"] for e in tail.read()] == ["c"]
+    assert tail.rewound is True
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write('{"type":"d"}\n')
+    assert [e["type"] for e in tail.read()] == ["d"]
+    assert tail.rewound is False

@@ -137,16 +137,22 @@ class LogTail:
     """Incremental logs.jsonl reader for a UI poll loop. Each `read` returns the
     events appended since the last call (byte-offset based, tolerant of a partial
     line at EOF). One reader follows a run and its same-dir resume; cheaper than
-    re-reading the whole file every tick."""
+    re-reading the whole file every tick. A file shorter than the last position
+    was rewritten: the read starts over from its head and `rewound` says so,
+    for a holder folding the events to start its fold over too."""
 
     def __init__(self, path: Path) -> None:
         self._path = path
         self._pos = 0
         self._pending = b""
+        self.rewound = False
 
     def read(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
+        self.rewound = False
         try:
+            if self._path.stat().st_size < self._pos:
+                self._pos, self._pending, self.rewound = 0, b"", True
             with self._path.open("rb") as fh:
                 fh.seek(self._pos)
                 chunk = fh.read()

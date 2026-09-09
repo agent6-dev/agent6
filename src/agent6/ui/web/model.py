@@ -34,6 +34,7 @@ from agent6.sessions.layout import (
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
     MachineSummary,
+    NewestLegFold,
     fold_session,
     fold_transcript,
     is_session_husk,
@@ -263,7 +264,9 @@ def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
 # --- machine snapshot (structure + watch + reasoning) -----------------------
 
 
-def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:
+def machine_reasoning_snapshot(
+    machine_dir: Path, *, fold: NewestLegFold | None = None
+) -> dict[str, Any]:
     """The SessionState of the machine's most recent agent-state execution: the live
     reasoning + tool calls inside the state the machine is running. Empty when no
     agent state has produced a log yet.
@@ -280,10 +283,13 @@ def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:
     differ on every poll and send one every time, while the epoch moves only
     when something actually happened.
     """
-    log = newest_state_log(machine_dir)
-    if log is None:
+    if fold is not None:
+        log, state = fold.refresh(machine_dir), fold.state
+    else:
+        log = newest_state_log(machine_dir)
+        state = fold_session(tail_events(log, follow=False)) if log is not None else None
+    if log is None or state is None:
         return {}
-    state = fold_session(tail_events(log, follow=False))
     snap = session_state_as_dict(state)
     snap["state_dir"] = log.parent.name
     if state.last_event_ep is not None:

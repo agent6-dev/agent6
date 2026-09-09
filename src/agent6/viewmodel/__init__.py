@@ -52,14 +52,17 @@ from agent6.viewmodel.listing import (
 )
 from agent6.viewmodel.log_line import format_log_line
 from agent6.viewmodel.machine_state import (
+    AgentLeg,
     InstanceProbes,
     MachineState,
     MachineSummary,
     MachineWatchCursor,
+    NewestLegFold,
     NotificationView,
     TransitionView,
     armed_wait,
     fold_machine,
+    leg_of,
     machine_files,
     machine_instance_dirs,
     machine_spend,
@@ -118,6 +121,7 @@ from agent6.viewmodel.transcript import (
 __all__ = [
     "LIVE_STATUS_WORDS",
     "MAX_LOG_TAIL",
+    "AgentLeg",
     "ApprovalPrompt",
     "BudgetView",
     "InstanceProbes",
@@ -126,6 +130,7 @@ __all__ = [
     "MachineState",
     "MachineSummary",
     "MachineWatchCursor",
+    "NewestLegFold",
     "NotificationView",
     "QuestionPrompt",
     "RoleCall",
@@ -151,6 +156,7 @@ __all__ = [
     "initial_state",
     "is_session_husk",
     "is_winner",
+    "leg_of",
     "machine_files",
     "machine_instance_dirs",
     "machine_snapshot",

@@ -23,6 +23,7 @@ from agent6.machine import MachineError
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.web import model
 from agent6.viewmodel import (
+    NewestLegFold,
     apply_event,
     died_without_end,
     initial_state,
@@ -189,11 +190,13 @@ def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
     on a journaled end or a dead worker."""
     prev = ""
     idle = 0.0
+    fold = NewestLegFold()  # the newest state log, read once per poll for both halves
     while True:
         try:
+            reasoning = model.machine_reasoning_snapshot(machine_dir, fold=fold)
             payload = {
-                "machine": machine_snapshot(machine_dir),
-                "reasoning": model.machine_reasoning_snapshot(machine_dir),
+                "machine": machine_snapshot(machine_dir, leg=fold.leg()),
+                "reasoning": reasoning,
             }
         except MachineError as exc:
             chan.send({"type": "error", "error": "; ".join(exc.problems)})
