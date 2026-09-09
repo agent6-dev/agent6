@@ -21,6 +21,7 @@ from typing import Any, cast
 
 import pytest
 
+from agent6.machine.journal import MachineJournal, PendingWait
 from agent6.paths import state_dir
 from agent6.sessions.ipc import register_frontend, write_worker_pid
 from agent6.ui.cli import main
@@ -541,6 +542,7 @@ def _make_machine_with_state(
 def test_machine_poke_writes_signal(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "pokable", "0000-review")
+    MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
     status, body = _post(port, "/api/machine/pokable/poke", {"message": "reload"})
     assert status == 200 and body["ok"] is True
     assert json.loads((inst / "signal").read_text(encoding="utf-8")) == "reload"
@@ -549,6 +551,7 @@ def test_machine_poke_writes_signal(server: tuple[WebServer, int], tmp_path: Pat
 def test_machine_poke_json_data_payload(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "datapoke", "0000-review")
+    MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
     status, body = _post(port, "/api/machine/datapoke/poke", {"data": {"cmd": "go", "n": 2}})
     assert status == 200 and body["ok"] is True
     assert json.loads((inst / "signal").read_text(encoding="utf-8")) == {"cmd": "go", "n": 2}
@@ -839,11 +842,9 @@ def test_corrupt_journal_hub_shows_unreadable(
 def test_hub_parked_instance_reads_waiting(server: tuple[WebServer, int], tmp_path: Path) -> None:
     # A parked --exit-on-wait instance (an armed wait, no live worker) must read
     # "waiting" on the hub, not "running": a paused machine never looks busy.
-    from agent6.machine.journal import MachineJournal, PendingWait
-
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "parked", "0000-poll")
-    MachineJournal(inst).write_pending_wait(PendingWait(state="poll", wake_epoch=None))
+    MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
     status, body, _ = _get(port, "/api/hub")
     assert status == 200
     (entry,) = [m for m in json.loads(body)["machines"] if m["name"] == "parked"]
@@ -1160,17 +1161,22 @@ def test_sse_machine_frame_carries_the_idle_age(
     assert isinstance(age, (int, float)) and age >= 880, f"age reads as fresh: {age}"
 
 
+@pytest.mark.parametrize("stale_pid", [True, False])
 def test_sse_machine_dead_worker_frame_is_terminal(
     server: tuple[WebServer, int],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    *,
+    stale_pid: bool,
 ) -> None:
     """A machine that died mid-state (no MachineEnd) must close its SSE stream
     with a DISTINCT worker_lost frame: supervisor loss is not a journaled end
     (the instance is resumable), so a fabricated `ended` styled it terminal;
     `ended` stays reserved for a durable MachineEnd, and a bare return left
-    the tab reconnecting forever over a "running" machine."""
+    the tab reconnecting forever over a "running" machine. The worker clears
+    its pid on every exit, so a crash usually leaves no pid file at all: the
+    stream closed only on a stale one and pinned the tab otherwise."""
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
@@ -1185,7 +1191,10 @@ def test_sse_machine_dead_worker_frame_is_terminal(
     lines = journal.read_text(encoding="utf-8").splitlines()
     assert "end" in lines[-1]
     journal.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
-    (inst / "worker.pid").write_text("999999999", encoding="utf-8")
+    if stale_pid:
+        (inst / "worker.pid").write_text("999999999", encoding="utf-8")
+    else:
+        assert not (inst / "worker.pid").exists()
     _srv, port = server
     conn = HTTPConnection("127.0.0.1", port, timeout=5)
     try:
@@ -1198,7 +1207,7 @@ def test_sse_machine_dead_worker_frame_is_terminal(
     frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
     last = json.loads(frames[-1][len(b"data:") :])
     assert last["machine"]["ended"] is None  # no journaled end was invented
-    assert "died" in last["machine"]["worker_lost"]["reason"]
+    assert last["machine"]["worker_lost"]["reason"] == "no worker running"
 
 
 # --- POST hardening -----------------------------------------------------------
@@ -1407,6 +1416,7 @@ def test_non_json_content_type_post_refused(server: tuple[WebServer, int], tmp_p
 def test_same_origin_post_allowed(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "csrf3", "0000-review")
+    MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
     status, body = _post_raw(
         port,
         "/api/machine/csrf3/poke",
@@ -1424,25 +1434,30 @@ def test_same_origin_post_allowed(server: tuple[WebServer, int], tmp_path: Path)
 # --- machine answers route to the rendered state, not the newest -------------
 
 
-def test_machine_answer_routes_to_named_state_not_newest(
+def test_machine_answer_for_a_state_the_machine_left_is_refused(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
+    """The client names the state it rendered the prompt from. Once the machine
+    has advanced, that leg reads no answer: the POST was allowed on the newest
+    leg's open prompt and the answer landed in the old dir, unread, while the
+    page read it as answered. A prompt id repeats across legs, so routing to
+    the newest instead would answer a different prompt."""
     _srv, port = server
-    # Two agent states, each with its own approval-1. The operator was shown the
-    # OLDER state's prompt; the machine has since advanced to a newer state.
     inst, old_state = _make_machine_with_state(tmp_path, "adv", "0001-work", running=True)
     new_state = inst / "states" / "0002-review"
     new_state.mkdir(parents=True)
-    (new_state / "logs.jsonl").write_text("", encoding="utf-8")
+    (new_state / "logs.jsonl").write_text(
+        '{"type":"approval.prompt","id":"approval-1","prompt":"Allow it?"}\n', encoding="utf-8"
+    )
     status, body = _post(
         port,
         "/api/machine/adv/approve",
         {"id": "approval-1", "answer": "yes", "state": "0001-work"},
     )
-    assert status == 200 and body["ok"] is True
-    # The answer landed in the state the prompt was rendered from, NOT the newest.
-    assert (old_state / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "yes"
-    assert not (new_state / "approvals" / "approval-1.answer").exists()
+    assert status != 200 and body["ok"] is False
+    assert "0001-work" in str(body["error"]) and "0002-review" in str(body["error"])
+    assert not (old_state / "approvals").exists()
+    assert not (new_state / "approvals").exists()
 
 
 def test_machine_answer_defaults_to_newest_state_without_hint(

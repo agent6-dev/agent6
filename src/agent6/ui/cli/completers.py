@@ -406,8 +406,8 @@ def _machine_ids_taking(prefix: str, verb: MachineVerb) -> list[str]:
 
 @_never_raises
 def _complete_pokable_machine_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: the instances `machine poke` accepts, every one that has
-    not ended (an ended machine consumes no signal)."""
+    """argcomplete: the instances `machine poke` accepts, those with an open
+    wait (a signal is a wake, never a queue)."""
     return _machine_ids_taking(prefix, "poke")
 
 

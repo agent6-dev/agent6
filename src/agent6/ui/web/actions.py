@@ -371,13 +371,23 @@ def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -
 def _state_dir_for_verb(
     cwd: Path, name: str, verb: MachineVerb, state: str
 ) -> Path | tuple[bool, str]:
-    """The agent-state dir a prompt answer or a steer lands in, or the refusal."""
-    ok, refusal = verb_answer(_machine_dir_or_missing(cwd, name), name, verb)
+    """The agent-state dir a prompt answer or a steer lands in, or the refusal.
+    *state* names the leg the client rendered; a leg the machine has left reads
+    nothing, and its prompt ids repeat in the next leg, so it is refused rather
+    than rerouted."""
+    machine_dir = _machine_dir_or_missing(cwd, name)
+    ok, refusal = verb_answer(machine_dir, name, verb)
     if not ok or refusal:
         return False, refusal
     agent_state = _machine_state_dir(cwd, name, state)
     if agent_state is None:
         return False, f"no active agent state for machine {name!r}"
+    newest = newest_state_log(machine_dir)
+    if newest is not None and agent_state != newest.parent:
+        return False, (
+            f"machine {name!r} has moved on from {agent_state.name} to {newest.parent.name}:"
+            " the prompt shown is closed"
+        )
     return agent_state
 
 

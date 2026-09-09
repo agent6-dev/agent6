@@ -32,13 +32,14 @@ from agent6.machine.journal import (
     MachineEnd,
     MachineJournal,
     MachineNotify,
+    PendingWait,
     StepEvent,
     ToolFact,
 )
 from agent6.machine.model import MachineSpec
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, machines_root
-from agent6.viewmodel.format import format_transition, machine_state_mark
+from agent6.viewmodel.format import format_transition, machine_state_mark, status_level
 from agent6.viewmodel.state import fold_session
 from agent6.viewmodel.tail import tail_events
 
@@ -196,27 +197,87 @@ def machine_status_word(
     return "stopped"
 
 
-def machine_operator_blocked(machine_dir: Path) -> str:
-    """The state dir (`0001-attempt`) whose agent leg holds an unanswered
-    approval or question, else "": the machine waits on the operator there."""
+@dataclass(frozen=True, slots=True)
+class AgentLeg:
+    """The newest agent state's leg as the operator verbs see it.
+
+    `open`: the leg has begun and not ended, so a steer has a reader.
+    `blocked_in`: the state dir (`0001-attempt`) holding an unanswered approval
+    or question, else "" (the machine waits on the operator there)."""
+
+    open: bool = False
+    blocked_in: str = ""
+
+
+def newest_agent_leg(machine_dir: Path) -> AgentLeg:
+    """The :class:`AgentLeg` of the newest state log (one fold of that log)."""
     log = newest_state_log(machine_dir)
     if log is None:
-        return ""
+        return AgentLeg()
     state = fold_session(tail_events(log, follow=False))
     open_prompts = [*state.pending_approvals, *state.pending_questions]
-    return log.parent.name if any(not p.answered for p in open_prompts) else ""
+    return AgentLeg(
+        open=state.started and not state.finished,
+        blocked_in=log.parent.name if any(not p.answered for p in open_prompts) else "",
+    )
 
 
-def machine_is_parked(machine_dir: Path) -> bool:
-    """True when the instance is parked in an armed wait (a PendingWait is
-    persisted). Under --exit-on-wait scheduling a parked machine legitimately
-    has no live process, so liveness probes must not read "dead pid" as
-    "crashed" while this holds. A corrupt wait file counts as parked: better
-    to keep streaming than to close on a guess."""
+def armed_wait(machine_dir: Path, ms: MachineState) -> PendingWait | None:
+    """The persisted wait record when it is this occurrence of the current
+    state, the engine's own test (the record names `ms.current` and its
+    transition count); None otherwise, a record a death left behind an earlier
+    visit included. Raises JournalError on a corrupt record."""
+    pending = MachineJournal(machine_dir).read_pending_wait()
+    if pending is None or pending.state != ms.current or pending.seq != len(ms.transitions):
+        return None
+    return pending
+
+
+@dataclass(frozen=True, slots=True)
+class InstanceProbes:
+    """What an instance dir says beside its fold: the worker, the armed wait
+    and the newest agent leg (folded only for a live, unended machine, the one
+    whose leg could read a steer or an answer). Under --exit-on-wait
+    scheduling a parked machine legitimately has no live process, so a dead
+    pid reads as parked, never as crashed, while a wait is armed. A corrupt
+    wait record reads as parked (keep streaming) and names itself in
+    `wait_error`."""
+
+    alive: bool
+    parked: bool
+    leg: AgentLeg
+    wait_error: str = ""
+
+    def status_word(self, ms: MachineState) -> str:
+        """:func:`machine_status_word` fed these probes."""
+        return machine_status_word(
+            ms, parked=self.parked, alive=self.alive, blocked=bool(self.leg.blocked_in)
+        )
+
+    def refusals(self, name: str, ms: MachineState) -> dict[MachineVerb, str]:
+        """:func:`verb_refusals` fed these probes; a corrupt wait record names
+        itself on every verb."""
+        if self.wait_error:
+            return dict.fromkeys(MACHINE_VERBS, f"machine {name!r}: {self.wait_error}")
+        return verb_refusals(
+            name,
+            ended=ms.ended,
+            alive=self.alive,
+            open_wait=self.parked,
+            agent_open=self.leg.open,
+            prompt_open=bool(self.leg.blocked_in),
+        )
+
+
+def probe_instance(machine_dir: Path, ms: MachineState) -> InstanceProbes:
+    """The :class:`InstanceProbes` of *machine_dir* for its fold *ms*."""
+    alive = worker_is_alive(machine_dir)
+    leg = newest_agent_leg(machine_dir) if ms.ended is None and alive else AgentLeg()
     try:
-        return MachineJournal(machine_dir).read_pending_wait() is not None
-    except JournalError:
-        return True
+        parked = armed_wait(machine_dir, ms) is not None
+    except JournalError as exc:
+        return InstanceProbes(alive=alive, parked=True, leg=leg, wait_error=str(exc))
+    return InstanceProbes(alive=alive, parked=parked, leg=leg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,16 +438,19 @@ def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
     try:
         spec = load_machine(machine_dir / "machine.asm.toml")
         ms = fold_machine(spec, MachineJournal(machine_dir).read())
-    except (MachineError, OSError):
-        return MachineSummary(machine_dir.name, "", "", "unreadable", "", mtime)
+    except (MachineError, OSError) as exc:
+        # One line: the row is a table cell, and a spec's problems come one per line.
+        first_line = str(exc).split("\n", 1)[0]
+        return MachineSummary(machine_dir.name, "", "", "unreadable", first_line, mtime)
+    probes = probe_instance(machine_dir, ms)
     reason = ms.ended.reason if ms.ended is not None and ms.ended.status == "failed" else ""
-    if ms.ended is None and (blocked_in := machine_operator_blocked(machine_dir)):
-        reason = f"waiting on an answer in {blocked_in}"
+    if probes.leg.blocked_in:
+        reason = f"waiting on an answer in {probes.leg.blocked_in}"
     return MachineSummary(
         name=machine_dir.name,
         machine=ms.machine,
         current=ms.current,
-        status=machine_word_for_dir(ms, machine_dir),
+        status=probes.status_word(ms),
         reason=reason,
         mtime=mtime,
     )
@@ -404,6 +468,7 @@ def machine_files(cwd: Path) -> list[Path]:
 
 
 MachineVerb = Literal["stop", "poke", "steer", "answer"]
+MACHINE_VERBS: tuple[MachineVerb, ...] = ("stop", "poke", "steer", "answer")
 
 
 def verb_refusals(
@@ -411,13 +476,15 @@ def verb_refusals(
     *,
     ended: MachineResult | None,
     alive: bool,
-    waiting: bool,
+    open_wait: bool,
+    agent_open: bool,
+    prompt_open: bool,
 ) -> dict[MachineVerb, str]:
-    """Why each verb cannot reach machine *name*, "" where it can. The decision,
-    pure like :func:`machine_status_word`: an unknown machine is named as
-    unknown (not as stopped); an ended one consumes no signal; a stopped one has
-    no state polling a marker (a poke still wakes it); a live one in a wait
-    state reads no steer (a poke wakes it) but takes a stop and an answer.
+    """Why each verb cannot reach machine *name*, "" where it can. Pure, like
+    :func:`machine_status_word`: an unknown machine is named as unknown (not as
+    stopped); an ended one consumes no input; a poke reaches only an open wait
+    (a signal is a wake, never a queue), a steer only an open agent state, an
+    answer only an open prompt, and a stop any live worker.
 
     The probes are the caller's, so a caller holding the fold does not read the
     journal a second time to reach the same answer.
@@ -430,6 +497,7 @@ def verb_refusals(
             "steer": f"{done}; there is no state to steer",
             "answer": f"{done}; the prompt is closed",
         }
+    no_wait = f"machine {name!r} has no open wait to poke"
     if not alive:
         return {
             "stop": (
@@ -441,38 +509,36 @@ def verb_refusals(
                 " (poke it to wake a waiting machine)"
             ),
             "answer": f"machine {name!r} is not running; poke it to wake a waiting machine",
-            "poke": "",  # waking a waiting machine is what a poke is for
+            "poke": "" if open_wait else no_wait,
         }
-    steer = (
-        f"machine {name!r} is waiting; a wait state reads no steer (poke it to wake it)"
-        if waiting
-        else ""
-    )
-    return {"stop": "", "poke": "", "answer": "", "steer": steer}
+    if open_wait:
+        steer = f"machine {name!r} is waiting; a wait state reads no steer (poke it to wake it)"
+    elif agent_open:
+        steer = ""
+    else:
+        steer = f"machine {name!r} has no open agent state to steer"
+    return {
+        "stop": "",
+        "poke": "" if open_wait else no_wait,
+        "answer": "" if prompt_open else f"machine {name!r} has no open prompt to answer",
+        "steer": steer,
+    }
 
 
 def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str]:
     """:func:`verb_refusals` over an instance dir, reading the journal itself.
     A front-end paints every verb at once, so it asks once; the CLI asks for the
-    one verb it is about to run through :func:`machine_verb_refusal`."""
-    verbs: tuple[MachineVerb, ...] = ("stop", "poke", "steer", "answer")
+    one verb it is about to run through :func:`machine_verb_refusal`. The
+    newest state log is folded only for a live, unended machine, the one whose
+    leg could read a steer or an answer (every instance dir is asked on a TAB)."""
     if not machine_dir.is_dir():
-        return dict.fromkeys(verbs, f"no machine {name!r}")
-    journal = MachineJournal(machine_dir)
-    alive = worker_is_alive(machine_dir)
+        return dict.fromkeys(MACHINE_VERBS, f"no machine {name!r}")
     try:
-        end = journal.end_event()
-        # The tail answers "ended"; only a live, unended instance is worth the
-        # full read that answers "waiting" (every instance dir is asked on a TAB).
-        waiting = end is None and alive and _in_wait_state(machine_dir, journal.read())
-    except JournalError as exc:
-        return dict.fromkeys(verbs, f"machine {name!r}: {exc}")
-    return verb_refusals(
-        name,
-        ended=MachineResult.from_end(end) if end is not None else None,
-        alive=alive,
-        waiting=waiting,
-    )
+        spec = load_machine(machine_dir / "machine.asm.toml")
+        ms = fold_machine(spec, MachineJournal(machine_dir).read())
+    except (MachineError, JournalError) as exc:
+        return dict.fromkeys(MACHINE_VERBS, f"machine {name!r}: {exc}")
+    return probe_instance(machine_dir, ms).refusals(name, ms)
 
 
 def wait_line(machine_id: str, state: str, wake_at: str) -> str:
@@ -509,30 +575,11 @@ def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str
     return machine_verb_refusals(machine_dir, name)[verb]
 
 
-def _in_wait_state(machine_dir: Path, events: Sequence[object]) -> bool:
-    """A live machine's current state is a wait: an armed `--exit-on-wait`
-    wait, or the fold's current state of kind `wait`. An unloadable source
-    reads as not waiting; the operation's own error then says what is wrong."""
-    if machine_is_parked(machine_dir):
-        return True
-    try:
-        spec = load_machine(machine_dir / "machine.asm.toml")
-    except MachineError:
-        return False
-    ms = fold_machine(spec, events)
-    return ms.current_kind == "wait"
-
-
 def machine_word_for_dir(ms: MachineState, machine_dir: Path) -> str:
     """The status word for a machine instance with a dir on disk:
     :func:`machine_status_word` fed the two dir probes (armed wait, worker
     pid), so surfaces cannot pair the probes differently."""
-    return machine_status_word(
-        ms,
-        parked=machine_is_parked(machine_dir),
-        alive=worker_is_alive(machine_dir),
-        blocked=bool(machine_operator_blocked(machine_dir)),
-    )
+    return probe_instance(machine_dir, ms).status_word(ms)
 
 
 def notification_key(n: NotificationView) -> tuple[str, str, str]:
@@ -647,24 +694,14 @@ def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> 
     liveness signal is `ended`, and Steer on a parked machine reads as live."""
     d = asdict(ms)
     if machine_dir is not None:
-        parked = machine_is_parked(machine_dir)
-        alive = worker_is_alive(machine_dir)
-        d["status"] = machine_status_word(
-            ms,
-            parked=parked,
-            alive=alive,
-            blocked=bool(machine_operator_blocked(machine_dir)),
-        )
+        probes = probe_instance(machine_dir, ms)
+        d["status"] = probes.status_word(ms)
+        d["level"] = status_level(d["status"])  # the hub row's level, for the page's pill
         # Every verb's refusal, so a front-end gates and labels its buttons from
         # the one decision the CLI and the TUI already use instead of deriving
-        # its own from the status word (which conflates parked, in-a-wait-state
-        # and live-but-blocked). Fed from this fold and these probes: asking
-        # `machine_verb_refusals` would read the journal and fold it again,
-        # doubling the work of every SSE frame.
-        d["refusals"] = verb_refusals(
-            machine_dir.name,
-            ended=ms.ended,
-            alive=alive,
-            waiting=parked or ms.current_kind == "wait",
-        )
+        # its own from the status word (which conflates parked, an open agent
+        # state and live-but-blocked). Fed from this fold and these probes:
+        # asking `machine_verb_refusals` would read the journal and fold it
+        # again, doubling the work of every SSE frame.
+        d["refusals"] = probes.refusals(machine_dir.name, ms)
     return d

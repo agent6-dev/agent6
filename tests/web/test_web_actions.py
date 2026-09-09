@@ -464,7 +464,7 @@ def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: P
 
     inst = state_dir(tmp_path) / "machines" / "dead"
     (inst / "states" / "0001-work").mkdir(parents=True)
-    (inst / "machine.asm.toml").write_text("machine = 'x'\n", encoding="utf-8")
+    (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "journal.jsonl").write_text("", encoding="utf-8")
     (inst / "states" / "0001-work" / "logs.jsonl").write_text("", encoding="utf-8")
     (inst / "worker.pid").write_text("999999999", encoding="utf-8")  # dead

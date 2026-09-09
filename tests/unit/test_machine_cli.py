@@ -163,6 +163,27 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     assert "a poke wakes it now: agent6 machine poke waiter_delayed" in out
 
 
+def test_status_names_a_poke_only_for_an_armed_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The poke line fell back to the fold (a live worker in a wait-kind state)
+    when no record was armed, and named a poke `machine poke` refused; the line
+    comes from the record, the poke's own fact."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
+    MachineJournal(root).clear_pending_wait()
+    write_worker_pid(root, os.getpid())
+
+    assert main(["machine", "status", "waiter_delayed"]) == 0
+
+    out = capsys.readouterr().out
+    assert "machine poke" not in out
+    assert "waiting in" not in out
+
+
 def test_status_shows_a_pending_poke_until_it_is_acked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -484,6 +505,26 @@ def test_watch_exits_on_a_crashed_machine(
     assert "STOPPED" in capsys.readouterr().err
 
 
+def test_watch_exits_on_a_stopped_machine_without_a_pid_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worker that cleared its pid while unwinding has no possible writer."""
+    monkeypatch.chdir(tmp_path)
+    _stalled_instance(tmp_path, parked=False)
+    root = state_dir(tmp_path) / "machines" / "tiny"
+    (root / "worker.pid").unlink()
+
+    result, still_running = _watch_in_thread(5.0)
+
+    assert not still_running, "watch followed a stopped machine with no worker"
+    assert result == [1]
+    err = capsys.readouterr().err
+    # An operator's `machine stop` leaves the same dir as a crash: the line
+    # states what is known and asserts no cause.
+    assert "STOPPED in 'route': no worker is running" in err
+    assert "exited" not in err
+
+
 def test_replay_pluralizes_the_transition_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -737,6 +778,29 @@ def test_poke_refuses_ended_machine(
     assert err.startswith("REFUSING:") and "already ended" in err
     root = state_dir(tmp_path) / "machines" / "tiny"
     assert not (root / "signal").exists()  # no signal was dropped
+
+
+@pytest.mark.parametrize("alive", [False, True])
+def test_poke_refuses_an_instance_without_an_open_wait(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    alive: bool,
+) -> None:
+    """A poke only wakes the wait that is open now, never a future wait."""
+    monkeypatch.chdir(tmp_path)
+    root = state_dir(tmp_path) / "machines" / "tiny"
+    root.mkdir(parents=True)
+    (root / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    MachineJournal(root).begin(machine="tiny", version=1)
+    if alive:
+        write_worker_pid(root, os.getpid())
+
+    assert main(["machine", "poke", "tiny"]) == 2
+
+    assert "machine 'tiny' has no open wait to poke" in capsys.readouterr().err
+    assert not (root / "signal").exists()
 
 
 def test_poke_missing_instance_errors(
@@ -1404,6 +1468,22 @@ def test_list_joins_instances_with_their_files_and_names_the_rest(
     assert broken.split() == ["-", "-", "-", "invalid", "broken.asm.toml"]
     # Two unparsable files (both named "-") keep two rows.
     assert any("broken2.asm.toml" in line for line in lines)
+
+
+def test_list_names_a_corrupt_machine_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The listing keeps the shared unreadable word and says what is corrupt."""
+    monkeypatch.chdir(tmp_path)
+    root = state_dir(tmp_path) / "machines" / "tiny"
+    root.mkdir(parents=True)
+    (root / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (root / "journal.jsonl").write_text("{not json\n", encoding="utf-8")
+
+    assert main(["machine", "list"]) == 0
+
+    row = next(line for line in capsys.readouterr().out.splitlines() if "tiny" in line)
+    assert "unreadable · corrupt journal line 1" in row
 
 
 def test_status_and_list_name_a_parked_approval(

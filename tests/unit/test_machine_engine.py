@@ -1561,14 +1561,15 @@ def test_poke_atomic_write_leaves_no_temp_and_keeps_payload(tmp_path: Path) -> N
 
 
 def test_machine_is_parked_reflects_pending_wait(tmp_path: Path) -> None:
-    from agent6.viewmodel import machine_is_parked
+    from agent6.viewmodel import fold_machine, probe_instance
 
     journal, f = _load(tmp_path, FOREVER)
     spec = load_machine(f)
-    assert machine_is_parked(journal.root) is False
+    assert probe_instance(journal.root, fold_machine(spec, journal.read())).parked is False
     result = drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
     assert result.status == "waiting"
-    assert machine_is_parked(journal.root) is True
+    # The engine's own record (state and seq) reads as the armed wait.
+    assert probe_instance(journal.root, fold_machine(spec, journal.read())).parked is True
 
 
 def test_live_world_run_tool_uses_the_shared_jail_tool_paths(

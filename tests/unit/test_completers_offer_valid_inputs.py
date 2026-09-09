@@ -18,6 +18,30 @@ from agent6.paths import state_dir
 from agent6.sessions.layout import bucket_dir
 from agent6.ui.cli import completers
 
+_TINY_MACHINE = """
+machine = "tiny"
+version = 1
+initial = "route"
+
+[budget]
+max_transitions = 10
+
+[vars.code]
+n = { type = "int", default = 0 }
+
+[states.route]
+kind = "branch"
+when = [
+  { if = "n == 0", goto = "done" },
+  { else = true, goto = "done" },
+]
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "routed"
+"""
+
 
 def _seed(tmp_path: Path) -> None:
     state = state_dir(tmp_path)
@@ -424,19 +448,23 @@ def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(
 def test_state_restricted_machine_verbs_offer_only_machines_they_accept(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`machine poke` refuses an ended machine and `machine stop` refuses one
-    that is not running, so offering every instance dir put two suggestions
-    that fail on Enter one TAB away. `status` and `replay` still take any."""
+    """`machine poke` takes only an open wait and `machine stop` takes only a
+    running instance, so every suggestion works on Enter. `status` and `replay`
+    still take any instance."""
     import argparse
     from collections.abc import Callable
     from typing import cast
 
-    from agent6.machine.journal import MachineEnd, MachineJournal
+    from agent6.machine.journal import MachineEnd, MachineJournal, PendingWait
     from agent6.sessions.layout import machines_root
     from agent6.ui.cli.parser import build_parser
 
     monkeypatch.chdir(tmp_path)
-    _seed(tmp_path)  # leaves `live-machine`: an instance dir with no worker
+    _seed(tmp_path)
+    waiting = machines_root(state_dir(tmp_path)) / "live-machine"
+    (waiting / "machine.asm.toml").write_text(_TINY_MACHINE, encoding="utf-8")
+    MachineJournal(waiting).begin(machine="tiny", version=1)
+    MachineJournal(waiting).write_pending_wait(PendingWait(state="route", wake_epoch=None))
     ended = machines_root(state_dir(tmp_path)) / "ended-machine-FFFFF"
     ended.mkdir(parents=True)
     journal = MachineJournal(ended)

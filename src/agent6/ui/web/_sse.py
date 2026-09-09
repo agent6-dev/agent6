@@ -20,14 +20,12 @@ from pathlib import Path
 from typing import Any
 
 from agent6.machine import MachineError
-from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.web import model
 from agent6.viewmodel import (
     apply_event,
     died_without_end,
     initial_state,
-    machine_is_parked,
     machine_snapshot,
     manifest_header,
     session_state_as_dict,
@@ -217,15 +215,12 @@ def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
                 idle = 0.0
         if payload["machine"].get("ended") is not None:
             return  # machine terminated: final snapshot sent, close the stream
-        # A machine that died mid-state (no MachineEnd) would pin this
-        # stream forever: its worker.pid points at a dead process and no
-        # armed wait explains the absence (a parked --exit-on-wait machine
+        # A machine with no worker and no armed wait (an operator stop or a
+        # death mid-state, the same dir: the worker clears its pid on every
+        # unwound exit) would pin this stream forever; the status word is the
+        # one owner of that reading (a parked --exit-on-wait machine
         # legitimately has no live process between scheduler ticks).
-        if (
-            read_worker_pid(machine_dir) is not None
-            and not worker_is_alive(machine_dir)
-            and not machine_is_parked(machine_dir)
-        ):
+        if payload["machine"].get("status") == "stopped":
             # Supervisor loss is not a journaled end: the instance is
             # resumable, and a fabricated `ended` (a status the journal
             # vocabulary does not even hold) would style it terminal. A
@@ -233,7 +228,7 @@ def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
             # reserved for a durable MachineEnd. A bare return would
             # leave the tab reconnecting forever over a "running" machine.
             payload["machine"]["worker_lost"] = {
-                "reason": "worker died",
+                "reason": "no worker running",
                 "state": payload["machine"].get("current", ""),
             }
             chan.send(_with_idle_age(payload))

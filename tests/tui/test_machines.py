@@ -786,7 +786,11 @@ def test_watch_footer_steer_key_follows_liveness(tmp_path: Path) -> None:
     spec = load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     instance.mkdir(parents=True)
+    (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (instance / "journal.jsonl").write_text("", encoding="utf-8")  # started, not ended
+    log = instance / "states" / "0000-route" / "logs.jsonl"
+    log.parent.mkdir(parents=True)
+    log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
     (instance / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
 
     class _LiveHost(App[None]):
@@ -823,6 +827,7 @@ def _blocked_machine(tmp_path: Path, *, alive: bool) -> tuple[Path, MachineSpec]
     instance = tmp_path / "machines" / "tiny"
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
+    instance.joinpath("machine.asm.toml").write_text(TINY, encoding="utf-8")
     instance.joinpath("journal.jsonl").write_text("", encoding="utf-8")  # started, not ended
     instance.joinpath("worker.pid").write_text(
         str(os.getpid()) if alive else "999999999", encoding="utf-8"
@@ -1119,7 +1124,7 @@ reason = "done"
     j.begin(machine="hunt", version=1)
     sd = root / "states" / "0000-work"
     sd.mkdir(parents=True)
-    evs: list[dict[str, Any]] = []
+    evs: list[dict[str, Any]] = [{"type": "session.start", "mode": "run", "user_task": "t"}]
     for i in (1, 2, 3):  # three COMPLETED turns
         evs += [
             {"type": "role.call", "role": "worker", "model": "m1"},

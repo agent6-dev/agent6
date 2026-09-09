@@ -59,10 +59,11 @@ from agent6.ui.notify import desktop_notify
 from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
+    armed_wait,
     event_epoch,
     fold_machine,
-    machine_operator_blocked,
     machine_word_for_dir,
+    newest_agent_leg,
 )
 from agent6.viewmodel.format import (
     format_transition,
@@ -251,12 +252,12 @@ def _cmd_machine_replay(machine_id: str) -> int:
     return 0 if result.status in ("ok", "incomplete") else 1
 
 
-def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | None, str]:
-    """(pending wait, note): a corrupt wait.json yields `(None, reason)` so the
-    caller keeps its readout going (mirroring `machine_is_parked` tolerating it)
-    rather than the JournalError aborting the whole command."""
+def _armed_wait_tolerant(root: Path, ms: MachineState) -> tuple[PendingWait | None, str]:
+    """(armed wait, note): a corrupt wait.json yields `(None, reason)` so the
+    readout goes on, as the shared dir word tolerates it (machine_is_parked:
+    parked, keep streaming), instead of the JournalError aborting the command."""
     try:
-        return journal.read_pending_wait(), ""
+        return armed_wait(root, ms), ""
     except JournalError as exc:
         return None, str(exc)
 
@@ -279,11 +280,8 @@ def _cmd_machine_status(machine_id: str) -> int:
     except (JournalError, EngineError) as exc:
         error(f"{exc}")
         return 1
-    # A corrupt wait.json must not hide the whole readout: the shared dir word
-    # (machine_word_for_dir -> machine_is_parked) tolerates it as "parked, keep
-    # streaming", so status mirrors that: drop the wait detail, note it, and
-    # still print the state / transitions / spend / steps below.
-    pending, pending_note = _read_pending_wait_tolerant(journal)
+    ms = fold_machine(spec, events)
+    pending, pending_note = _armed_wait_tolerant(root, ms)
 
     alive = worker_is_alive(root)
     spend, inflight_state = machine_spend(events, root, alive=alive)
@@ -293,7 +291,7 @@ def _cmd_machine_status(machine_id: str) -> int:
     # while the worker is still live, a teardown race) reads "waiting" here too,
     # not a bare "running". A terminal end shows its ok/failed, a crashed instance
     # "stopped", never the engine's raw "incomplete".
-    word = machine_word_for_dir(fold_machine(spec, events), root)
+    word = machine_word_for_dir(ms, root)
 
     print(f"machine: {spec.machine} (v{spec.version})")
     if alive and word == "running":
@@ -307,7 +305,7 @@ def _cmd_machine_status(machine_id: str) -> int:
             + (
                 f" (an approval open in {blocked_in}: answer it in the TUI machine view"
                 " or the web page)"
-                if alive and (blocked_in := machine_operator_blocked(root))
+                if alive and (blocked_in := newest_agent_leg(root).blocked_in)
                 else ""
             )
         )
@@ -322,16 +320,10 @@ def _cmd_machine_status(machine_id: str) -> int:
         f"  spend: {format_usd(spend.usd, partial=spend.partial)}"
         f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok{cached})"
     )
-    state_spec = spec.states.get(result.state)
-    # Every wait a poke wakes: a parked one (the persisted record, which a
-    # foreground wait writes before it sleeps too) and a live worker in a
-    # wait state. The signal is consumed at the next check, or the next run.
-    in_wait = alive and state_spec is not None and state_spec.kind == "wait"
-    waiting_in = pending.state if pending is not None else (result.state if in_wait else "")
-    if waiting_in:
-        # A timed wait wakes on its own; the poke is the way to wake it now.
-        wake_at = pending.wake_at if pending is not None else ""
-        print("  " + wait_line(machine_id, waiting_in, wake_at))
+    if pending is not None:
+        # The armed record is the wait a poke wakes (a foreground wait writes
+        # it before it sleeps); a timed one wakes on its own too.
+        print("  " + wait_line(machine_id, pending.state, pending.wake_at))
     if pending_note:
         print(f"  pending wait: unreadable ({pending_note})")
     poked, poke_payload = journal.read_pending_poke()
@@ -418,11 +410,12 @@ def _render_overview(ms: MachineState) -> str:
 
 def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int | None:
     """Watch's exit code when nothing will ever append to the journal: parked
-    (an armed --exit-on-wait wait, no worker) or crashed (stale worker.pid, no
-    end, no wait). None while a live worker may still write, a worker blocked
-    in a foreground wait included. Routed through machine_word_for_dir, the
-    one owner of the running/waiting/stopped distinction, so watch agrees
-    with status/TUI/web."""
+    (an armed --exit-on-wait wait, no worker) or stopped (no live worker, no
+    end, no wait: an operator stop and a crash leave the same dir, since the
+    worker clears its pid on every unwound exit). None while a live worker may
+    still write, a worker blocked in a foreground wait included. Routed through
+    machine_word_for_dir, the one owner of the running/waiting/stopped
+    distinction, so watch agrees with status/TUI/web."""
     word = machine_word_for_dir(ms, root)
     current = next((st.name for st in ms.states if st.is_current), "?")
     if word == "waiting" and not worker_is_alive(root):
@@ -431,10 +424,12 @@ def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int |
             f" agent6 machine poke {machine_id} [--message TEXT]"
         )
         return 0
-    if word == "stopped" and read_worker_pid(root) is not None:
-        # The pid guard keeps a valid instance that never started from
-        # reading as crashed (same guard as the web machine loop).
-        print(f"\nSTOPPED: worker exited in {current!r} without ending", file=sys.stderr)
+    if word == "stopped":
+        print(
+            f"\nSTOPPED in {current!r}: no worker is running and the machine has not ended;"
+            " resume with `agent6 machine run`",
+            file=sys.stderr,
+        )
         return 1
     return None
 
