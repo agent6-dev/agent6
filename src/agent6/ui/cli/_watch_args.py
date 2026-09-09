@@ -226,6 +226,9 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     fwd_p.add_argument(
         "--local-port",
         type=int,
-        default=0,
-        help="The port on this machine (default: the same number, as kubectl/docker/ssh mean it).",
+        default=None,
+        help=(
+            "The port on this machine (default: the same number, as kubectl/docker/ssh"
+            " mean it; 0 picks a free one, named when the bridge starts)."
+        ),
     )

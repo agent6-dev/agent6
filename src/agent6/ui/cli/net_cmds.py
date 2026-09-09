@@ -113,7 +113,7 @@ def no_session_network_reason(layout: SessionLayout) -> str:
 
 
 def forward(
-    layout: SessionLayout, remote_port: int, local_port: int, out: TextIO = sys.stderr
+    layout: SessionLayout, remote_port: int, local_port: int | None, out: TextIO = sys.stderr
 ) -> int:
     """Bridge `remote_port` inside the run to `local_port` on this machine.
 
@@ -130,8 +130,10 @@ def forward(
         return 2
     # Same number on both sides unless told otherwise: that is what `kubectl
     # port-forward 3000`, `docker -p 3000:3000` and `ssh -L` all mean, and it is
-    # the number you are about to type into a browser.
-    local_port = local_port or remote_port
+    # the number you are about to type into a browser. An explicit 0 asks the
+    # host for a free port, named below.
+    if local_port is None:
+        local_port = remote_port
     with socket.socket() as listener:
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:

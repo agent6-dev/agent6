@@ -36,7 +36,7 @@ def seen(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         calls.update(target=layout.session_id, argv=argv)
         return 0
 
-    def _forward(layout: SessionLayout, port: int, local_port: int) -> int:
+    def _forward(layout: SessionLayout, port: int, local_port: int | None) -> int:
         calls.update(target=layout.session_id, port=port)
         return 0
 
@@ -603,3 +603,28 @@ def test_forward_refuses_an_out_of_range_local_port(tmp_path: Path, local_port: 
 
     assert rc == 2
     assert f"cannot listen on 127.0.0.1:{local_port}" in out.getvalue()
+
+
+def test_forward_local_port_zero_picks_a_free_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--local-port 0` read as "unset" and bound the remote number; 0 asks the
+    host for a free port and the start line names the one it got."""
+    import io
+
+    from agent6.sessions.layout import SessionLayout
+    from agent6.ui.cli import net_cmds
+
+    layout = SessionLayout(state_dir=tmp_path, session_id="free-port-run", subdir="runs")
+    layout.session_dir.mkdir(parents=True)
+    probes = iter([4242])  # alive at the preflight; gone at the first accept timeout
+
+    def _probe(_dir: Path) -> int | None:
+        return next(probes, None)
+
+    monkeypatch.setattr(net_cmds, "read_session_netns_pid", _probe)
+    out = io.StringIO()
+    assert net_cmds.forward(layout, 8080, 0, out=out) == 0
+    line = next(ln for ln in out.getvalue().splitlines() if "forwarding http://127.0.0.1:" in ln)
+    bound = int(line.split("127.0.0.1:", 1)[1].split()[0])
+    assert bound not in (0, 8080)
