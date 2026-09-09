@@ -88,8 +88,10 @@ def _watch(session: BtwSession, events: EventSink) -> None:
     console view to hand it to. Every surface folds the same log, and a parent
     that exits first leaves the answer on disk to read afterwards.
 
-    Daemon thread: a btw must never hold the run open, and an unanswered one at
-    exit is an ask the operator can resume.
+    Daemon thread: a btw must never hold the run open. One that is still
+    thinking (or parked on a question nobody answers) after `_GIVE_UP_S` gets
+    a block saying so, where silence would read as a btw still coming; an
+    unanswered one at exit is an ask the operator can resume.
     """
     deadline = time.monotonic() + _GIVE_UP_S
     while time.monotonic() < deadline:
@@ -98,6 +100,11 @@ def _watch(session: BtwSession, events: EventSink) -> None:
             events.emit("btw.answered", btw_id=session.id, block=render_btw(session, answer))
             return
         time.sleep(_POLL_S)
+    late = (
+        f"(no answer after {_GIVE_UP_S / 60:g} minutes; `agent6 sessions show {session.id}`"
+        " reads it once it ends)"
+    )
+    events.emit("btw.answered", btw_id=session.id, block=render_btw(session, late))
 
 
 def asks_dir(session_dir: Path) -> Path:

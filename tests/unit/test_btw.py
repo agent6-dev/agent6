@@ -162,3 +162,27 @@ def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: Path) -> 
     (d / "worker.pid").write_text("1\n", encoding="utf-8")  # foreign pid: the worker died
     answer = btw_answer(session)
     assert answer is not None and "died launching" in answer
+
+
+def test_a_btw_still_thinking_when_the_watcher_gives_up_is_said_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The watcher stopped polling at its deadline and said nothing, so a btw
+    parked on a question nobody answers (or a slow one) read as still coming
+    for the rest of the run. The give-up lands on the journal as its own
+    block, naming how to read the answer later."""
+    from agent6.events import EventSink
+    from agent6.ui import btw as ui_btw
+
+    d = _ask_dir(tmp_path, "quiet-fox-AAAAAA", events=[{"type": "session.start"}])
+    monkeypatch.setattr(ui_btw, "_GIVE_UP_S", 0.05)
+    monkeypatch.setattr(ui_btw, "_POLL_S", 0.01)
+    logs = tmp_path / "run" / "logs.jsonl"
+    logs.parent.mkdir()
+
+    ui_btw._watch(BtwSession(id=d.name, dir=d, question="q"), EventSink(logs))  # pyright: ignore[reportPrivateUsage]
+
+    events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
+    (answered,) = [e for e in events if e["type"] == "btw.answered"]
+    assert "no answer after" in answered["block"]
+    assert "agent6 sessions show quiet-fox-AAAAAA" in answered["block"]
