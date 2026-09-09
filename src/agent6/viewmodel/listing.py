@@ -536,6 +536,10 @@ class LogScan:
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
+    # The plan points this leg consumed and [budget].max_percent (the typed
+    # fold's BudgetView rule: 0.0 until a percent-metered call runs).
+    plan_consumed: float = 0.0
+    plan_cap: float = 0.0
     iteration: int | None = None  # last event carrying an int iteration
     # session.start's ts (epoch seconds), else the first event's: a fork's log
     # opens with loop.resume.start and never carries a session.start.
@@ -580,9 +584,17 @@ class LogScan:
         )
 
 
-def _tolerant_usd(raw: object, last_good: float) -> float:
+def _figure(ev: Mapping[str, object], key: str, last_good: float) -> float:
+    """A budget.update figure as the typed fold reads it: absent is 0.0 (an
+    event summing a machine's attempts or a judge's seats carries only what
+    it summed, and a kept value would be another leg's); present, the
+    tolerant read below."""
+    return _tolerant_float(ev[key], last_good) if key in ev else 0.0
+
+
+def _tolerant_float(raw: object, last_good: float) -> float:
     """*raw* as a float when it is a real number or numeric string; else the
-    last good figure. A torn/adversarial usd_total degrades like a torn line,
+    last good figure. A torn/adversarial figure degrades like a torn line,
     never aborts the scan (the typed fold makes the same call in parse_event),
     and falsy junk (`""`, `False`) keeps the figure; an `or 0.0` fallback would
     silently reset it."""
@@ -651,6 +663,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
+    plan_consumed = plan_cap = 0.0
     iteration: int | None = None
     start_ep: float | None = None
     first_ep: float | None = None
@@ -727,6 +740,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         usd_leg = 0.0
                         input_tokens = output_tokens = None
                         cache_read_tokens = cache_creation_tokens = None
+                        plan_consumed = plan_cap = 0.0
                         last_verify_rc = None  # leg-scoped, like the token counters
                         legs += 1
                     saw_start = True  # a leg has begun; a fork's log has only this
@@ -745,7 +759,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     pins = [str(p) for p in raw_pins] if isinstance(raw_pins, list) else []
                 elif etype == "budget.update":
                     saw_budget = True
-                    usd_leg = _tolerant_usd(ev.get("usd_total"), usd_leg)
+                    usd_leg = _figure(ev, "usd_total", usd_leg)
                     usd_partial = bool(ev.get("usd_partial")) or usd_partial
                     ti, to = ev.get("input_total"), ev.get("output_total")
                     if isinstance(ti, int):
@@ -758,6 +772,8 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         cache_read_tokens = cr if isinstance(cr, int) else None
                         cache_creation_tokens = cc if isinstance(cc, int) else None
                     output_tokens = to if isinstance(to, int) else output_tokens
+                    plan_consumed = _figure(ev, "plan_consumed", plan_consumed)
+                    plan_cap = _figure(ev, "plan_cap", plan_cap)
     except OSError:
         pass
     return LogScan(
@@ -775,6 +791,8 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         output_tokens=output_tokens,
         cache_read_tokens=cache_read_tokens,
         cache_creation_tokens=cache_creation_tokens,
+        plan_consumed=plan_consumed,
+        plan_cap=plan_cap,
         iteration=iteration,
         start_ep=start_ep if start_ep is not None else first_ep,
         last_ep=last_ep,

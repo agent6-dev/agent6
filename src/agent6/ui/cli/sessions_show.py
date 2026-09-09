@@ -183,13 +183,16 @@ def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
 def _usage_line(scan: LogScan) -> str:
     """The run's tokens and cost: `in`/`out`, the cached side when the journal
     recorded it (the bulk of a long run's input, the run summary's columns),
-    then the cost as the listing's cell spells it (blank for a clean $0, so
-    the two surfaces agree). Token counters are per leg and the cost is banked
-    across legs, so a resumed run says which is which."""
+    the plan points a percent-metered leg consumed against its cap, then the
+    cost as the listing's cell spells it (blank for a clean $0, so the two
+    surfaces agree). Token counters and plan points are per leg and the cost
+    is banked across legs, so a resumed run says which is which."""
     tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
     if scan.cache_read_tokens is not None or scan.cache_creation_tokens is not None:
         tokens += f" cache_r={scan.cache_read_tokens or 0}"
         tokens += f" cache_c={scan.cache_creation_tokens or 0}"
+    if scan.plan_cap > 0:
+        tokens += f" plan={scan.plan_consumed:g}/{scan.plan_cap:g}pt"
     leg_s = " (latest leg)" if scan.legs > 1 else ""
     cell = (
         format_cost_cell(scan.cost_usd, partial=scan.usd_partial)
@@ -274,6 +277,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "cache_read_tokens": scan.cache_read_tokens,
                     "cache_creation_tokens": scan.cache_creation_tokens,
                     "cost_usd": scan.cost_usd,
+                    "plan_consumed": scan.plan_consumed,
+                    "plan_cap": scan.plan_cap,
                     # cost_usd is an under-estimate when some spend was
                     # unpriced; the text render marks it, so the JSON must too.
                     "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,

@@ -149,3 +149,43 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
     assert main(["sessions", "show", "cached"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
     assert usage.endswith("cache_c=22617  cost $0.50")
+
+
+def test_show_usage_and_json_carry_the_plan_points(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run its plan cap ended showed no number for it outside the live views:
+    the usage line and the JSON carry the points this leg consumed against
+    [budget].max_percent; a dollar-metered run shows none."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "capped", {})
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="capped")
+    budget = {
+        "type": "budget.update",
+        "input_total": 18,
+        "output_total": 2194,
+        "usd_total": 0.0,
+        "plan_used_percent": 13.0,
+        "plan_consumed": 2.5,
+        "plan_cap": 6.0,
+    }
+    lines = layout.logs_path.read_text(encoding="utf-8").splitlines()
+    layout.logs_path.write_text(
+        "\n".join([lines[0], json.dumps(budget), *lines[1:]]) + "\n", encoding="utf-8"
+    )
+    assert main(["sessions", "show", "capped"]) == 0
+    usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
+    assert usage.split(None, 1)[1] == "in=18 out=2194 plan=2.5/6pt"
+    assert main(["sessions", "show", "capped", "--json"]) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert (obj["plan_consumed"], obj["plan_cap"]) == (2.5, 6.0)
+    layout.logs_path.write_text(
+        "\n".join([lines[0], json.dumps({**budget, "plan_cap": 0.0}), *lines[1:]]) + "\n",
+        encoding="utf-8",
+    )
+    assert main(["sessions", "show", "capped"]) == 0
+    usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
+    assert "plan" not in usage

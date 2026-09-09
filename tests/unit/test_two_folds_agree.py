@@ -55,10 +55,58 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
             "all_passed": False,
         },
     ],
+    "usd_then_tokens_only": [
+        _START,
+        {"ts": "2026-07-14T10:00:30+00:00", "type": "budget.update", "usd_total": 0.25},
+        {
+            "ts": "2026-07-14T10:00:40+00:00",
+            "type": "budget.update",
+            "input_total": 18,
+            "output_total": 2194,
+        },
+        _END_PASSED,
+    ],
+    "plan_then_usd_only": [
+        _START,
+        {
+            "ts": "2026-07-14T10:00:30+00:00",
+            "type": "budget.update",
+            "usd_total": 0.0,
+            "plan_consumed": 2.5,
+            "plan_cap": 6.0,
+        },
+        {"ts": "2026-07-14T10:00:40+00:00", "type": "budget.update", "usd_total": 0.1},
+        _END_PASSED,
+    ],
+    "plan_capped": [
+        _START,
+        {
+            "ts": "2026-07-14T10:00:30+00:00",
+            "type": "budget.update",
+            "input_total": 18,
+            "output_total": 2194,
+            "usd_total": 0.0,
+            "plan_used_percent": 13.0,
+            "plan_consumed": 2.5,
+            "plan_cap": 6.0,
+        },
+        {
+            "ts": "2026-07-14T10:01:00+00:00",
+            "type": "session.end",
+            "reason": "budget_exhausted",
+            "all_passed": False,
+        },
+    ],
     "ungated": [_START, {**_END_PASSED, "all_passed": None}],
     "resumed": [
         _START,
-        {"ts": "2026-07-14T10:00:30+00:00", "type": "budget.update", "usd_total": 0.25},
+        {
+            "ts": "2026-07-14T10:00:30+00:00",
+            "type": "budget.update",
+            "usd_total": 0.25,
+            "plan_consumed": 2.5,
+            "plan_cap": 6.0,
+        },
         _END_PASSED,
         {"ts": "2026-07-14T10:02:00+00:00", "type": "loop.resume.start", "iteration": 3},
         {
@@ -119,6 +167,7 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
             scan.cache_read_tokens or 0,
             scan.cache_creation_tokens or 0,
         ),
+        "plan": (scan.plan_consumed, scan.plan_cap),
         "pins": scan.pins,
         "blocked": scan.operator_blocked,
     }
@@ -137,6 +186,7 @@ def _shared_facts(events: list[dict[str, Any]], tmp_path: Path) -> tuple[dict[st
             state.budget.cache_read_total,
             state.budget.cache_creation_total,
         ),
+        "plan": (state.budget.plan_consumed, state.budget.plan_cap),
         "pins": state.pins,
         "blocked": any(
             not p.answered for p in (*state.pending_approvals, *state.pending_questions)
