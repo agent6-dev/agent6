@@ -274,6 +274,22 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             return
         event.prevent_default()
         event.stop()
+        self._explain_refusal(verb)
+
+    def on_click(self, event: events.Click) -> None:
+        """A dimmed footer key's click shows its refusal; the footer answers a
+        disabled key with the bell alone. A key the footer still paints as lit
+        (it skips its rebuild while the terminal is unfocused) is its own
+        simulated keypress, which on_key answers."""
+        widget = event.widget
+        action = getattr(widget, "action", None)
+        if widget is None or not widget.has_class("-disabled") or not isinstance(action, str):
+            return
+        verb = _VERB_ACTIONS.get(action)
+        if verb is not None and self._refusals[verb]:
+            self._explain_refusal(verb)
+
+    def _explain_refusal(self, verb: MachineVerb) -> None:
         severity: SeverityLevel = "information" if verb == "stop" else "warning"
         self.app.notify(self._refusals[verb], severity=severity, timeout=6.0)
 

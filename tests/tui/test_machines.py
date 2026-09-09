@@ -1190,6 +1190,12 @@ def test_watch_footer_keeps_every_machine_verb_visible_and_gates_it(tmp_path: Pa
             keys = {key.description: key for key in app.screen.query(FooterKey)}
             assert {"Steer", "Message", "Stop"} <= keys.keys()
             assert all(keys[label].has_class("-disabled") for label in ("Steer", "Message", "Stop"))
+            # A click on a dimmed key only rang the bell; it shows the refusal
+            # the key shows.
+            await pilot.click(keys["Steer"])
+            await pilot.pause()
+            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert (machine_verb_refusal(instance, "tiny", "steer"), "warning") in notes
 
     asyncio.run(scenario())
 
@@ -1407,5 +1413,54 @@ def test_the_watch_poll_folds_the_machine_and_its_leg_once(tmp_path: Path) -> No
                 vm_mod.fold_machine = real_fold
                 vm_mod.newest_agent_leg = real_leg
             assert counts == {"fold": 1, "leg": 0}
+
+    asyncio.run(scenario())
+
+
+def test_a_click_on_a_stale_lit_verb_explains_itself_once(tmp_path: Path) -> None:
+    """An unfocused terminal keeps the footer as it was painted (textual's
+    Footer skips its rebuild while the app is blurred), so a click can land on
+    a key the screen already refuses. The footer simulates that key, which
+    on_key explains; the click explained it a second time."""
+    import os
+
+    from textual.widgets._footer import FooterKey
+
+    from agent6.machine import load_machine
+    from agent6.machine.journal import MachineJournal
+    from agent6.sessions.ipc import write_worker_pid
+
+    f = _write(tmp_path / "tiny.asm.toml", TINY)
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    instance.mkdir(parents=True)
+    (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    MachineJournal(instance).begin(machine="tiny", version=1)
+    write_worker_pid(instance, os.getpid())
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            app.app_focus = False  # the operator clicked away to another window
+            await pilot.pause()
+            (instance / "worker.pid").unlink()  # the worker exits
+            for _ in range(8):
+                await pilot.pause(0.3)
+                if screen.check_action("stop", ()) is None:
+                    break
+            stop = next(k for k in screen.query(FooterKey) if k.description == "Stop")
+            assert not stop.has_class("-disabled"), "the blurred footer keeps its paint"
+            app._notifications.clear()  # pyright: ignore[reportPrivateUsage]
+            await pilot.click(stop)
+            await pilot.pause()
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert notes == [machine_verb_refusal(instance, "tiny", "stop")]
 
     asyncio.run(scenario())
