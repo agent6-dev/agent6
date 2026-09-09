@@ -656,7 +656,7 @@ class ToolDispatcher:
                     " into several small calls."
                 )
             raise ToolError(
-                "the arguments were not valid JSON. Resend the call with a"
+                "the arguments were not a JSON object. Resend the call with a"
                 " single valid JSON object of arguments."
             )
         try:

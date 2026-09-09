@@ -30,13 +30,17 @@ from typing import Any
 # Without recovery the run loop sees text + no tool_use and stalls
 # ("went quiet" / "silent_finish"), which kills an entire family of
 # open-weight coding models (qwen3-coder, hermes, devstral, ...). We
-# recover these into real tool_uses, but ONLY as a fallback: see
-# `parse_response` for the guards (no native tool_calls present AND the
-# recovered name matches a tool that was actually offered). Flagship
-# models that emit native tool_calls, and any model that legitimately
-# answers with JSON, never hit this path.
-_TOOL_CALL_TAG_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+# recover these into real tool_uses only when no native call exists and at
+# least one tool was offered. Every form must name an offered tool except the
+# explicit `<tool_call>` tag, which keeps an unknown name so the dispatcher
+# returns that call's error. The text is read once, left to right: a call
+# quoted inside a closed Markdown fence stays text, and a call restated in a
+# second form is that call.
+_OPENER_RE = re.compile(r"(?m)^ {0,3}(?:`{3,}|~{3,})|<tool_call>|<function\s*=")
+_FENCE_OPEN_RE = re.compile(
+    r"(?m)^ {0,3}(?P<marker>`{3,}|~{3,})[ \t]*(?P<lang>[^\s`~]*)[^\n]*(?:\n|$)"
+)
+_TOOL_CALL_CLOSE = "</tool_call>"
 # Qwen-Coder XML tool form. The closing `</function>` is sometimes
 # missing (truncation) or mis-spelled `</tool_call>`; capture the name
 # and a lenient body, then mine `<parameter=...>` pairs out of it.
@@ -53,18 +57,13 @@ _PARAMETER_RE = re.compile(
     r"<parameter\s*=\s*([^>\s]+?)\s*>(.*?)(?:</parameter>|(?=<parameter\s*=)|\Z)",
     re.DOTALL,
 )
+_PARAMETER_CLOSE = "</parameter>"
 # Leftover scaffolding to scrub from the visible text once calls are mined.
 # Orphan closers Qwen's template leaves right after a </function> block (a
 # stray </tool_call> most commonly); swallowed into the recovered call's span.
 _TRAILING_SCAFFOLD_RE = re.compile(r"(?:\s*(?:</tool_call>|</function>|</parameter>))+")
 
-# Gemini / Gemma `tool_code` form: a fenced block of Python-call syntax, e.g.
-#   ```tool_code
-#   [read_file(path='spec.md'), apply_edit(path='x', ...)]
-#   ```
-# Gemma-family models on OpenRouter emit calls this way in `content` with empty
-# native `tool_calls`, so without recovery the loop sees no tool_use and stops.
-_TOOL_CODE_FENCE_RE = re.compile(r"```tool_code\s*\n?(.*?)```", re.DOTALL)
+type _Call = dict[str, Any]
 
 
 def lenient_json_object(raw: object) -> dict[str, Any] | None:
@@ -89,12 +88,15 @@ def lenient_json_object(raw: object) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _tool_code_call_to_dict(node: ast.Call, tool_names: frozenset[str]) -> dict[str, Any] | None:
+def _tool_code_call_to_dict(
+    node: ast.Call, source: str, tool_names: frozenset[str]
+) -> dict[str, Any] | None:
     """Turn one `ast.Call` into `{"name", "input"}` if it (or, unwrapping a
     non-tool wrapper such as `print(tool(...))`, an inner call) targets an
     offered tool. Keyword args are read with `ast.literal_eval` (already typed),
-    so no coercion; non-literal or positional args are skipped. Returns None for a
-    non-tool call -- we do NOT recurse into kwarg VALUES, so a tool nested as an
+    so no coercion; a non-literal, positional or splatted argument marks the
+    whole input malformed rather than silently dropping it. Returns None for a non-tool call;
+    we do NOT recurse into kwarg VALUES, so a tool nested as an
     argument (`apply_edit(path=read_file(...))`) is not separately mined."""
     if not isinstance(node.func, ast.Name):
         return None
@@ -102,57 +104,48 @@ def _tool_code_call_to_dict(node: ast.Call, tool_names: frozenset[str]) -> dict[
         # One-level unwrap: a non-tool wrapper around a single tool call.
         for arg in node.args:
             if isinstance(arg, ast.Call):
-                inner = _tool_code_call_to_dict(arg, tool_names)
+                inner = _tool_code_call_to_dict(arg, source, tool_names)
                 if inner is not None:
                     return inner
         return None
+    raw = ast.get_source_segment(source, node) or ast.unparse(node)
+    if node.args or any(kw.arg is None for kw in node.keywords):
+        return {"name": node.func.id, "input": {"_raw_arguments": raw}}
     args: dict[str, Any] = {}
     for kw in node.keywords:
-        if kw.arg is None:  # **kwargs splat -- not a named arg
-            continue
+        assert kw.arg is not None
         try:
             args[kw.arg] = ast.literal_eval(kw.value)
         except (ValueError, SyntaxError):
-            continue  # a non-literal value (a name/expr); skip it
+            return {"name": node.func.id, "input": {"_raw_arguments": raw}}
     return {"name": node.func.id, "input": args}
 
 
-def _extract_tool_code_calls(
-    text: str,
-    tool_names: frozenset[str],
-) -> tuple[list[dict[str, Any]], list[tuple[int, int]]]:
-    """Mine Gemini/Gemma ```tool_code Python-call blocks from leaked content.
+def _tool_code_calls(code: str, tool_names: frozenset[str]) -> list[_Call]:
+    """The offered-tool calls in one Gemini/Gemma ```tool_code block.
 
-    Parses each fenced block with `ast` (never executes it) and returns
-    `([{"name", "input"}, ...], spans)` for every offered-tool call, in SOURCE
-    ORDER; spans cover only fences that yielded calls. It walks only the TOP-LEVEL
-    expressions (a bare call, or the elements of a list / tuple), unwrapping one
-    `print(...)`-style wrapper -- not `ast.walk` (whose breadth-first order would
-    reorder a tool call nested at a different depth)."""
-    out: list[dict[str, Any]] = []
-    spans: list[tuple[int, int]] = []
-    for block in _TOOL_CODE_FENCE_RE.finditer(text):
-        code = block.group(1).strip()
-        if not code:
+    Parses the block with `ast` (never executes it). Top-level calls and
+    list/tuple elements keep source order; a `print(...)` wrapper around one
+    call is unwrapped."""
+    code = code.strip()
+    if not code:
+        return []
+    try:
+        tree = ast.parse(code, mode="exec")
+    except SyntaxError:
+        return []
+    out: list[_Call] = []
+    for stmt in tree.body:
+        if not isinstance(stmt, ast.Expr):
             continue
-        try:
-            tree = ast.parse(code, mode="exec")
-        except SyntaxError:
-            continue
-        calls_before = len(out)
-        for stmt in tree.body:
-            if not isinstance(stmt, ast.Expr):
-                continue
-            value = stmt.value
-            elements = value.elts if isinstance(value, (ast.List, ast.Tuple)) else [value]
-            for el in elements:
-                if isinstance(el, ast.Call):
-                    call = _tool_code_call_to_dict(el, tool_names)
-                    if call is not None:
-                        out.append(call)
-        if len(out) > calls_before:
-            spans.append(block.span())
-    return out, spans
+        value = stmt.value
+        elements = value.elts if isinstance(value, (ast.List, ast.Tuple)) else [value]
+        for el in elements:
+            if isinstance(el, ast.Call):
+                call = _tool_code_call_to_dict(el, code, tool_names)
+                if call is not None:
+                    out.append(call)
+    return out
 
 
 def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: PLR0911, PLR0912
@@ -208,48 +201,48 @@ def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: 
     return v
 
 
-def _extract_function_xml_calls(
+def _xml(
     text: str,
+    start: int,
     tool_names: frozenset[str],
     tool_schemas: dict[str, dict[str, Any]] | None,
-) -> tuple[list[dict[str, Any]], list[tuple[int, int]]]:
-    """Mine Qwen-Coder `<function=NAME><parameter=KEY>VALUE</parameter>`
-    calls from leaked content text. Returns ``([{"name", "input"}, ...],
-    spans)`` for every block whose name matches an offered tool (spans cover
-    each recovered block plus its trailing orphan scaffold closers); empty
-    if none match."""
-    out: list[dict[str, Any]] = []
-    spans: list[tuple[int, int]] = []
-    for fmatch in _FUNCTION_CALL_RE.finditer(text):
-        name = fmatch.group(1).strip()
-        if name not in tool_names:
-            continue
-        body = fmatch.group(2)
-        schema = (tool_schemas or {}).get(name) or {}
-        props = schema.get("properties") or {}
-        args: dict[str, Any] = {}
-        for pmatch in _PARAMETER_RE.finditer(body):
-            key = pmatch.group(1).strip()
-            decl = props.get(key) or {}
-            decl_type = decl.get("type") if isinstance(decl, dict) else None
-            args[key] = _coerce_param_value(pmatch.group(2), decl_type)
-        out.append({"name": name, "input": args})
-        # Extend the span over immediately-trailing orphan scaffold closers
-        # (the template's stray </tool_call> etc.), so removing the recovered
-        # call leaves no dangling tag behind.
-        end = fmatch.end()
-        trail = _TRAILING_SCAFFOLD_RE.match(text, end)
-        if trail is not None:
-            end = trail.end()
-        spans.append((fmatch.start(), end))
-    return out, spans
+) -> tuple[int, list[_Call]] | None:
+    """The Qwen-Coder `<function=NAME><parameter=KEY>VALUE</parameter>` call
+    opening at *start*: its end and the call. None when NAME is not an offered
+    tool. A block missing its closer ends at its last closed parameter, or at
+    the end of the text while a parameter is still open (a truncated call)."""
+    fmatch = _FUNCTION_CALL_RE.match(text, start)
+    if fmatch is None:
+        return None
+    name = fmatch.group(1).strip()
+    if name not in tool_names:
+        return None
+    body = fmatch.group(2)
+    end = fmatch.end()
+    if fmatch.end(2) == end:
+        last = body.rfind(_PARAMETER_CLOSE)
+        if last != -1 and "<parameter" not in body[last:]:
+            body = body[: last + len(_PARAMETER_CLOSE)]
+            end = fmatch.start(2) + len(body)
+    schema = (tool_schemas or {}).get(name) or {}
+    props = schema.get("properties") or {}
+    args: dict[str, Any] = {}
+    for pmatch in _PARAMETER_RE.finditer(body):
+        key = pmatch.group(1).strip()
+        decl = props.get(key) or {}
+        decl_type = decl.get("type") if isinstance(decl, dict) else None
+        args[key] = _coerce_param_value(pmatch.group(2), decl_type)
+    # The template's stray closers right after the block go with the call.
+    trail = _TRAILING_SCAFFOLD_RE.match(text, end)
+    if trail is not None:
+        end = trail.end()
+    return end, [{"name": name, "input": args}]
 
 
-def _extract_tool_call_obj(  # noqa: PLR0911
-    candidate: str, tool_names: frozenset[str]
+def _extract_tool_call_obj(
+    candidate: str, tool_names: frozenset[str], *, allow_unknown: bool = False
 ) -> dict[str, Any] | None:
-    """Parse a single `{"name", "arguments"}` tool call from a text
-    candidate, or return None if it isn't a tool call for an offered tool."""
+    """Parse one JSON tool-call object, optionally accepting an unknown name."""
     candidate = candidate.strip()
     if not candidate:
         return None
@@ -260,107 +253,120 @@ def _extract_tool_call_obj(  # noqa: PLR0911
     if not isinstance(obj, dict):
         return None
     name = obj.get("name")
-    if not isinstance(name, str) or name not in tool_names:
+    if not isinstance(name, str) or not name or (not allow_unknown and name not in tool_names):
         return None
     # Accept the common spellings local templates use for the args object.
-    raw_args = obj.get("arguments")
-    if raw_args is None:
-        raw_args = obj.get("parameters")
-    if raw_args is None:
-        raw_args = obj.get("input")
-    if raw_args is None:
+    for key in ("arguments", "parameters", "input"):
+        if key in obj:
+            raw_args = obj[key]
+            break
+    else:
         raw_args = {}
     # A few templates double-encode the args as a JSON string.
     if isinstance(raw_args, str):
         try:
             raw_args = json.loads(raw_args)
         except (json.JSONDecodeError, TypeError):
-            return None
+            repaired = lenient_json_object(raw_args)
+            raw_args = repaired if repaired is not None else {"_raw_arguments": raw_args}
     if not isinstance(raw_args, dict):
-        return None
+        raw_args = {"_raw_arguments": json.dumps(raw_args)}
     return {"name": name, "input": raw_args}
 
 
-def _recover_regex_calls(
-    matches: list[re.Match[str]], tool_names: frozenset[str]
-) -> tuple[list[dict[str, Any]], list[tuple[int, int]]]:
-    """Parse each match's captured group 1 as a `{"name", "arguments"}` tool
-    call. Returns the ones that named an offered tool, in match order, with
-    their spans; a match that didn't parse or named no offered tool is
-    skipped (kept visible so the model can see its failed call)."""
-    recovered: list[dict[str, Any]] = []
-    spans: list[tuple[int, int]] = []
-    for match in matches:
-        obj = _extract_tool_call_obj(match.group(1), tool_names)
-        if obj is not None:
-            recovered.append(obj)
-            spans.append(match.span())
-    return recovered, spans
+def _fence(text: str, start: int, tool_names: frozenset[str]) -> tuple[int, list[_Call]] | None:
+    """The Markdown fence opening at *start*: its end and the calls it holds.
+    A ```tool_code block holds Python calls; a ```json or bare fence holding
+    one JSON call is that call; any other fence quotes its content. None for
+    an opener with no closer, which quotes nothing."""
+    opener = _FENCE_OPEN_RE.match(text, start)
+    assert opener is not None
+    marker = opener.group("marker")
+    closer = re.compile(rf"(?m){re.escape(marker[0])}{{{len(marker)},}}[ \t]*$").search(
+        text, opener.end()
+    )
+    if closer is None:
+        return None
+    content = text[opener.end() : closer.start()]
+    lang = opener.group("lang")
+    if lang == "tool_code":
+        return closer.end(), _tool_code_calls(content, tool_names)
+    if lang in ("", "json"):
+        call = _extract_tool_call_obj(content, tool_names)
+        return closer.end(), [call] if call is not None else []
+    return closer.end(), []
 
 
-def _remove_spans(text: str, spans: list[tuple[int, int]]) -> str:
-    """`text` with the given non-overlapping `(start, end)` spans cut out."""
-    parts: list[str] = []
-    prev = 0
-    for start, end in spans:
-        parts.append(text[prev:start])
-        prev = end
-    parts.append(text[prev:])
-    return "".join(parts).strip()
+def _tag(
+    text: str,
+    start: int,
+    tool_names: frozenset[str],
+    tool_schemas: dict[str, dict[str, Any]] | None,
+) -> tuple[int, list[_Call]] | None:
+    """The `<tool_call>` tag opening at *start*: its end and the calls it
+    holds, one JSON call of any name or the forms nested in it. None for a
+    tag with no closer or no call, which stays text."""
+    content_start = start + len("<tool_call>")
+    close = text.find(_TOOL_CALL_CLOSE, content_start)
+    if close == -1:
+        return None
+    content = text[content_start:close]
+    call = _extract_tool_call_obj(content, tool_names, allow_unknown=True)
+    calls = [call] if call is not None else _scan(content, tool_names, tool_schemas)[0]
+    if not calls:
+        return None
+    return close + len(_TOOL_CALL_CLOSE), calls
 
 
-def coerce_text_tool_calls(  # noqa: PLR0911
+def _scan(
+    text: str,
+    tool_names: frozenset[str],
+    tool_schemas: dict[str, dict[str, Any]] | None,
+) -> tuple[list[_Call], str]:
+    """Read *text* once, left to right: at each form opener the form is parsed
+    and its markup consumed; a call restated in a second form is that call.
+    Returns the calls in source order and the text they leave."""
+    calls: list[_Call] = []
+    kept: list[str] = []
+    pos = 0
+    while (opener := _OPENER_RE.search(text, pos)) is not None:
+        opened = opener.group()
+        if opened == "<tool_call>":
+            form = _tag(text, opener.start(), tool_names, tool_schemas)
+        elif opened.startswith("<function"):
+            form = _xml(text, opener.start(), tool_names, tool_schemas)
+        else:
+            form = _fence(text, opener.start(), tool_names)
+        if form is None:
+            kept.append(text[pos : opener.end()])
+            pos = opener.end()
+            continue
+        end, found = form
+        if found:
+            kept.append(text[pos : opener.start()])
+            for call in found:
+                if call not in calls:
+                    calls.append(call)
+        else:
+            kept.append(text[pos:end])
+        pos = end
+    kept.append(text[pos:])
+    return calls, "".join(kept)
+
+
+def coerce_text_tool_calls(
     text: str,
     tool_names: frozenset[str],
     tool_schemas: dict[str, dict[str, Any]] | None = None,
-) -> tuple[list[dict[str, Any]], str]:
-    """Best-effort recovery of tool calls a local model emitted as text.
-
-    Returns `(tool_uses, remaining_text)`. `tool_uses` is empty when
-    nothing tool-call-shaped is found, in which case `remaining_text`
-    equals the original `text`. The parsing is deliberately strict
-    (exact JSON, a single fenced JSON object, `<tool_call>` tags, the
-    `<function=...>` XML form, or a `tool_code` fence) so prose that
-    merely mentions a tool name is never misread as a call.
-    """
+) -> tuple[list[_Call], str]:
+    """Recover the tool calls a model wrote into its text, in source order,
+    and return the unconsumed text."""
     if not text or not tool_names:
         return [], text
-    # 0) Qwen-Coder `<function=NAME><parameter=KEY>VALUE</parameter></function>`
-    # XML. Checked first: it is self-delimiting and unambiguous, and the
-    # inner body is NOT JSON so the JSON-shaped branches below cannot parse it.
-    xml_calls, xml_spans = _extract_function_xml_calls(text, tool_names, tool_schemas)
-    if xml_calls:
-        # Remove ONLY the calls that were recovered (same rule as the
-        # <tool_call> branch below): a block whose name matched no offered
-        # tool stays visible, so the model can see its failed call instead
-        # of assuming it happened.
-        return xml_calls, _remove_spans(text, xml_spans)
-    # 0.5) Gemini / Gemma ```tool_code Python-call block. Self-delimiting like the
-    # XML form, and parsed with ast (not JSON), so check it before the JSON
-    # branches below.
-    if "```tool_code" in text:
-        code_calls, code_spans = _extract_tool_code_calls(text, tool_names)
-        if code_calls:
-            return code_calls, _remove_spans(text, code_spans)
-    # 1) Hermes / Qwen `<tool_call>...</tool_call>` wrappers (≥1).
-    tag_matches = list(_TOOL_CALL_TAG_RE.finditer(text))
-    if tag_matches:
-        recovered, drop_spans = _recover_regex_calls(tag_matches, tool_names)
-        if recovered:
-            # Remove ONLY the tags that parsed. A malformed sibling tag stays
-            # in the remaining text so the model can see its failed call.
-            return recovered, _remove_spans(text, drop_spans)
-    # 2) One or more fenced JSON objects that are themselves tool calls.
-    fence_matches = list(_JSON_FENCE_RE.finditer(text))
-    if fence_matches:
-        recovered, drop_spans = _recover_regex_calls(fence_matches, tool_names)
-        if recovered:
-            # Remove ONLY the fences that parsed as calls; other ```json
-            # fences may be legitimate content (a config sample, a reference
-            # block) and stay visible.
-            return recovered, _remove_spans(text, drop_spans)
-    # 3) The whole content is exactly one bare JSON tool-call object.
-    obj = _extract_tool_call_obj(text, tool_names)
-    if obj is not None:
-        return [obj], ""
-    return [], text
+    # An exact bare JSON call is already self-delimiting. Parse it before
+    # looking for markup so call-shaped text inside a string argument stays data.
+    bare = _extract_tool_call_obj(text, tool_names)
+    if bare is not None:
+        return [bare], ""
+    calls, remaining = _scan(text, tool_names, tool_schemas)
+    return (calls, remaining.strip()) if calls else ([], text)

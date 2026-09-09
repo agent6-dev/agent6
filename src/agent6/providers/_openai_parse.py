@@ -187,9 +187,10 @@ def parse_response(  # noqa: PLR0912, PLR0915
         tool_uses = tuple(parsed_calls)
         # Fallback: no NATIVE tool_calls but the model leaked a tool call
         # into its text content (small local models via Ollama/llama.cpp).
-        # Guarded by `tool_names` so this only fires for tools actually
-        # offered and never for flagship models (which populate
-        # tool_calls) or models legitimately answering with JSON.
+        # Guarded by `tool_names` so this only fires when tools were offered.
+        # Every form must name one of them except the explicit `<tool_call>`
+        # tag, which keeps an unknown name for the dispatcher's error. Native
+        # calls take precedence.
         if not tool_uses and tool_names:
             recovered, remaining_text = coerce_text_tool_calls(text, tool_names, tool_schemas)
             if recovered:

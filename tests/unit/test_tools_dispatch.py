@@ -169,7 +169,7 @@ def test_raw_arguments_sentinel_gives_a_clear_json_error(tmp_path: Path) -> None
     # the JSON was malformed (not a confusing "extra fields" schema error) so it
     # resends in one shot.
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with pytest.raises(ToolError, match="not valid JSON"):
+    with pytest.raises(ToolError, match="not a JSON object"):
         d.dispatch("read_file", {"_raw_arguments": '{"path": "a.py"'})
 
 

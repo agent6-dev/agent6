@@ -28,7 +28,7 @@ NO_PROGRESS_STOP_AFTER = 10
 # Tool-error spiral guard (run mode). Distinct from the verify streak: this
 # counts consecutive tool calls that raise the SAME error (name + error text
 # with digits stripped, so a runaway that varies its args but trips the same
-# "arguments not valid JSON" / "pattern too long" error still accumulates).
+# "not a JSON object" / "pattern too long" error still accumulates).
 # Any successful tool call, or a different error, resets it.
 TOOL_ERROR_NUDGE_AFTER = 3
 TOOL_ERROR_ESCALATE_AFTER = 5
