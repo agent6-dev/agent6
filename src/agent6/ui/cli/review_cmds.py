@@ -15,6 +15,7 @@ from agent6.app.providers import build_review_seats, build_role_provider
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import (
     Config,
+    parse_seat_spec,
 )
 from agent6.config.layer import load_effective
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, chain_tip, git_hardening_flags
@@ -74,9 +75,9 @@ def _collect_review_diff(
             subprocess.run([git, *hardening, "add", "-N", "--", *untracked], cwd=root, check=False)
     try:
         rev = f"{base}..{head}" if base else "HEAD"
-        diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, rev]
-        if paths:
-            diff_args.extend(["--", *paths])
+        # `--end-of-options` and `--` keep a rev that is also a path a rev.
+        diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, "--end-of-options", rev]
+        diff_args.extend(["--", *paths])
         # errors="replace" (implies text mode): git diff emits raw file bytes,
         # so a changed non-UTF-8 file must not crash the review with a strict
         # decode. Mirrors git_ops._run.
@@ -130,9 +131,8 @@ def _run_review_panel(
     The exit code carries the verdict, on `agent6 run`'s scale: 0 = PASS
     (clean or with non-blocking findings), 1 = INCONCLUSIVE (every seat
     abstained: the review broke), 3 = budget, 4 = BLOCK (a grounded gating
-    finding: the diff is not green). 2 stays the refusal before any seat ran
-    (a missing key, no diff), so a script tells "blocked" from "not reviewed"
-    from "could not start"."""
+    finding: the diff is not green). 2 stays the refusal before any seat ran,
+    so a script tells "blocked" from "not reviewed" from "could not start"."""
     persona_tuple = tuple(p.strip() for p in personas.split(",") if p.strip())
     try:
         seats = build_review_seats(
@@ -145,6 +145,13 @@ def _run_review_panel(
         )
     except ProviderError as exc:
         error(f"provider init failed: {exc}")
+        return 2
+    # check_provider_keys reads a configured roster itself; --personas is
+    # the roster only without one.
+    pinned = [] if cfg.review.seats else [parse_seat_spec(spec)[1] for spec in persona_tuple]
+    err = check_provider_keys(cfg, extra_providers=pinned)
+    if err is not None:
+        error(f"{err}")
         return 2
     ctx = ReviewContext(task=f"code review: {label}", agents_md=agents_md, diff=diff)
     # explore-tier seats need a read-only tool surface over the repo.
@@ -214,7 +221,32 @@ def _run_review_panel(
     return rc
 
 
-def _cmd_review(  # noqa: PLR0911, PLR0912
+def _reviewed_diff(
+    base: str, head: str, paths: tuple[str, ...]
+) -> tuple[str, Path, str, str] | int:
+    """The git binary, the repo root, the diff a review reads and its label;
+    else the exit code: 2 when git is missing or failed, 0 when there is
+    nothing to review (said on stderr, naming the range)."""
+    root = Path.cwd()
+    git = shutil.which("git")
+    if git is None:
+        error("git not found on PATH.")
+        return 2
+    label = ("working tree vs HEAD" if not base else f"{base}..{head}") + (
+        f" -- {' '.join(paths)}" if paths else ""
+    )
+    diff_proc = _collect_review_diff(git, root, base=base, head=head, paths=paths)
+    if diff_proc.returncode != 0:
+        error(f"git diff failed: {diff_proc.stderr.strip()}")
+        return 2
+    diff = diff_proc.stdout
+    if not diff.strip():
+        print(f"(no diff to review: {label})", file=sys.stderr)
+        return 0
+    return git, root, diff, label
+
+
+def _cmd_review(  # noqa: PLR0911
     config_path: Path | None,
     *,
     base: str,
@@ -238,30 +270,31 @@ def _cmd_review(  # noqa: PLR0911, PLR0912
     cfg = load_effective(Path.cwd(), config_path).config
     if personas.strip() and reviewers >= 1 and cfg.review.seats:
         print("note: --personas ignored ([review].seats names the roster).", file=sys.stderr)
-    cfg.require_runnable("reviewer")
 
-    err = check_provider_keys(cfg)
-    if err is not None:
-        error(f"{err}")
-        return 2
+    reviewed = _reviewed_diff(base, head, paths)
+    if isinstance(reviewed, int):
+        return reviewed
+    git, root, diff, label = reviewed
 
-    root = Path.cwd()
-    git = shutil.which("git")
-    if git is None:
-        error("git not found on PATH.")
-        return 2
-
-    diff_proc = _collect_review_diff(git, root, base=base, head=head, paths=paths)
-    if diff_proc.returncode != 0:
-        error(f"git diff failed: {diff_proc.stderr.strip()}")
-        return 2
-    diff = diff_proc.stdout
-    if not diff.strip():
-        print("(no diff to review)", file=sys.stderr)
-        return 0
+    if reviewers < 1:
+        cfg.require_runnable("reviewer")
+        err = check_provider_keys(cfg)
+        if err is not None:
+            error(f"{err}")
+            return 2
 
     log_proc = subprocess.run(
-        [git, *git_hardening_flags(root), "log", "-n", "10", "--oneline"],
+        [
+            git,
+            *git_hardening_flags(root),
+            "log",
+            "-n",
+            "10",
+            "--oneline",
+            "--end-of-options",
+            head or "HEAD",  # a ref that is also a path stays a ref
+            "--",
+        ],
         cwd=root,
         capture_output=True,
         errors="replace",
@@ -284,9 +317,6 @@ def _cmd_review(  # noqa: PLR0911, PLR0912
     budget = budget_tracker(cfg)
     layout_root = state_dir(root) / "reviews"
     transcript_sink = TranscriptSink(layout_root)
-    label = ("working tree vs HEAD" if not base else f"{base}..{head}") + (
-        f" -- {' '.join(paths)}" if paths else ""
-    )
 
     if reviewers >= 1:
         return _run_review_panel(

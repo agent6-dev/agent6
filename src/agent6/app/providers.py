@@ -485,21 +485,29 @@ def build_review_seats(
     else:
         pool = list(personas) if personas else list(_DEFAULT_PERSONAS)
         specs = [pool[i % len(pool)] for i in range(max(1, n))]
-    rm = cfg.models.resolve("reviewer")
-    seats: list[ReviewSeat] = []
+    parsed_specs: list[tuple[str, str, str]] = []
     for spec in specs:
         try:
             persona, provider_name, model = parse_seat_spec(spec)
         except ValueError as exc:
             raise ProviderError(f"review seat: {exc}") from exc
         persona = persona or "general"
+        if provider_name and provider_name not in cfg.providers:
+            raise ProviderError(
+                f"review seat {spec!r} names provider {provider_name!r} but"
+                f" [providers.{provider_name}] is missing"
+            )
+        parsed_specs.append((persona, provider_name, model))
+
+    # The reviewer route serves the seats that pin no model; a fully pinned
+    # panel needs none.
+    if any(not (provider_name and model) for _, provider_name, model in parsed_specs):
+        cfg.require_runnable("reviewer")
+    rm = cfg.models.resolve("reviewer")
+    seats: list[ReviewSeat] = []
+    for persona, provider_name, model in parsed_specs:
         if provider_name and model:
-            entry = cfg.providers.get(provider_name)
-            if entry is None:
-                raise ProviderError(
-                    f"review seat {spec!r} names provider {provider_name!r} but"
-                    f" [providers.{provider_name}] is missing"
-                )
+            entry = cfg.providers[provider_name]
             seat_model = model_override or model
             provider = _provider_from_entry(
                 provider_name,
