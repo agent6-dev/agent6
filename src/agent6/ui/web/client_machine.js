@@ -3,7 +3,7 @@ async function renderMachine(name, gen) {
   const base = '/api/machine/' + encodeURIComponent(name);
   // Existence + readability probe: a bad name or a corrupt machine throws here
   // and route() shows the error (the SSE error frame alone leaves a hollow view).
-  await getJSON(base);
+  const initial = await getJSON(base);
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   setCrumb(name);
   view.innerHTML = '';
@@ -52,6 +52,13 @@ async function renderMachine(name, gen) {
   msgBtn.onclick = async () => {
     try { await postJSON(base + '/poke', { message: din.value }); toast('message sent'); din.value = ''; } catch (e) { toast(e.message, true); }
   };
+  din.onkeydown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!steerBtn.disabled) steerBtn.click();
+      else if (!msgBtn.disabled) msgBtn.click();
+    }
+  };
   // Stop, as the CLI (`agent6 machine stop`) and the TUI (x) have: the machine
   // parks at its next transition and `machine run` resumes it.
   const stopBtn = el('button', 'danger', 'Stop');
@@ -63,14 +70,15 @@ async function renderMachine(name, gen) {
   drow.appendChild(din); drow.appendChild(steerBtn); drow.appendChild(msgBtn); drow.appendChild(stopBtn);
   dock.appendChild(growGrip(din));
   dock.appendChild(drow);
-  dock.appendChild(el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it)'));
+  dock.appendChild(el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it) · Enter sends, Shift+Enter newline'));
   view.appendChild(dock);
-  cards._steer_btn = steerBtn; cards._msg_btn = msgBtn; cards._stop_btn = stopBtn; // paintMachine gates these
+  cards._input = din; cards._steer_btn = steerBtn; cards._msg_btn = msgBtn; cards._stop_btn = stopBtn;
 
   // Notification de-dup across repaints: seed with history on the first frame so
   // opening a machine does not replay every past notification; banner + OS-notify
   // only genuinely new ones.
-  const ctx = { notifsHost: notifs, seen: null, endedNotified: false };
+  const ctx = { notifsHost: notifs, seen: null, lostNotified: false, endedNotified: false };
+  paintMachine(structBody, pathBody, cards, ctx, { machine: initial, reasoning: {} });
 
   live = new EventSource(base + '/events');
   live.onmessage = ev => {
@@ -78,7 +86,8 @@ async function renderMachine(name, gen) {
     if (data.type === 'error') { closeLive(); toast('stream error: ' + data.error, true); return; }
     paintMachine(structBody, pathBody, cards, ctx, data);
     hbState.spin++;
-    if (data.machine && (data.machine.ended || data.machine.worker_lost)) closeLive(); // machine done or worker lost; stop the stream
+    // A stopped machine is resumable and its stream stays open; a journaled end closes it.
+    if (data.machine && data.machine.ended) closeLive();
   };
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
 }
@@ -125,15 +134,13 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // from the page that claimed the instance.
   const refusals = m.refusals || {};
   const canAnswer = !refusals.answer;
-  // A stop is refused exactly when the instance has ended or its worker is
-  // gone, so "" there is this machine's liveness.
-  const current = (m.states || []).filter((s) => s.is_current)[0];
-  const agentLive = !refusals.stop && (!current || current.kind !== 'wait');
+  const agentLive = !refusals.steer;
   paintPrompts(cards, canAnswer ? (data.reasoning || {}) : {});
   machineNotify(ctx, m);
-  if (m.worker_lost && !ctx.endedNotified) {
+  if (!m.worker_lost) ctx.lostNotified = false; // a resume re-arms the stop banner
+  if (m.worker_lost && !ctx.lostNotified) {
     // Supervisor loss, not a journaled end: the instance is resumable.
-    ctx.endedNotified = true;
+    ctx.lostNotified = true;
     const banner = el('div', 'notif-banner error');
     banner.appendChild(el('div', 'grow',
       `${esc(m.machine || '')} stopped: ${esc(m.worker_lost.reason)}; resumable with agent6 machine run`));
@@ -150,12 +157,14 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     osNotify('agent6: ' + (m.machine || 'machine') + ' ' + m.ended.status, m.ended.reason || '');
   }
   structBody.innerHTML = '';
-  const word = m.worker_lost ? 'stopped' : (m.status || (m.ended ? m.ended.status : ''));
   // `spend` is the instance total, as `machine status` reports it, rendered server-side.
   const sp = m.spend || {};
   const cost = sp.text ? ' · ' + sp.text : '';
-  structBody.appendChild(el('div', 'sub muted',
-    `${esc(m.machine)} v${esc(m.version)}${word ? ' · ' + esc(word) : ''} · current: ${esc(m.current)}${cost}`));
+  const summary = el('div', 'row wrap');
+  summary.appendChild(el('div', 'sub muted',
+    `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}${cost}`));
+  summary.appendChild(pill(m.level, m.status));
+  structBody.appendChild(summary);
   const tree = el('div', 'tree');
   for (const st of m.states || []) {
     const line = el('div', 'node' + (st.is_current ? ' cursor' : ''));
@@ -172,17 +181,13 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
   if (m.worker_lost) pathBody.appendChild(el('div', 'sub muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
 
-  // An ended machine takes no input: poking or steering it would only pretend
-  // to work (nothing reads the signal), and its final state's log often has no
-  // session.end, which would leave a live "thinking..." marker up forever. Steer
-  // additionally needs a running worker (a parked or stopped machine's newest
-  // state is finished; nothing polls the marker) and an agent state to inject
-  // into. A poke is the exception: waking a waiting machine is its purpose.
+  // Every control is gated and labelled from the wire refusals, the one
+  // decision the CLI and the TUI run: a steer needs an open agent state, a
+  // poke an open wait, a stop a live worker; the input follows steer and poke.
   if (cards._steer_btn) {
-    cards._steer_btn.disabled = !!refusals.steer || !cards._state;
+    cards._steer_btn.disabled = !!refusals.steer;
     cards._steer_btn.title = refusals.steer
-      || (!cards._state ? 'no agent state is active to steer'
-        : 'inject into the current agent state at its next safe boundary');
+      || 'inject into the current agent state at its next safe boundary';
   }
   if (cards._msg_btn) {
     cards._msg_btn.disabled = !!refusals.poke;
@@ -191,6 +196,11 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   if (cards._stop_btn) {
     cards._stop_btn.disabled = !!refusals.stop;
     cards._stop_btn.title = refusals.stop || 'park the machine at its next transition';
+  }
+  if (cards._input) {
+    cards._input.disabled = !!refusals.steer && !!refusals.poke;
+    cards._input.title = cards._input.disabled
+      ? [refusals.steer, refusals.poke].filter(Boolean).join(' · ') : '';
   }
 
   // The current state's conversation: live turn from this frame, completed

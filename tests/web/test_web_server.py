@@ -1162,7 +1162,7 @@ def test_sse_machine_frame_carries_the_idle_age(
 
 
 @pytest.mark.parametrize("stale_pid", [True, False])
-def test_sse_machine_dead_worker_frame_is_terminal(
+def test_sse_machine_stream_spans_a_stop_and_its_resume(
     server: tuple[WebServer, int],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1170,13 +1170,13 @@ def test_sse_machine_dead_worker_frame_is_terminal(
     *,
     stale_pid: bool,
 ) -> None:
-    """A machine that died mid-state (no MachineEnd) must close its SSE stream
-    with a DISTINCT worker_lost frame: supervisor loss is not a journaled end
-    (the instance is resumable), so a fabricated `ended` styled it terminal;
-    `ended` stays reserved for a durable MachineEnd, and a bare return left
-    the tab reconnecting forever over a "running" machine. The worker clears
-    its pid on every exit, so a crash usually leaves no pid file at all: the
-    stream closed only on a stale one and pinned the tab otherwise."""
+    """A machine with no worker and no armed wait (an operator stop or a
+    death mid-state; the worker clears its pid on every unwound exit, a kill
+    leaves a stale one) is resumable, so its stream carries a `worker_lost`
+    frame and stays open: closing it made the tab reconnect every few
+    seconds, each retry a fresh fold and a flap of the answer front-end
+    claim, and `ended` stays reserved for a durable MachineEnd. The same
+    connection then follows `machine run`."""
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
@@ -1185,8 +1185,8 @@ def test_sse_machine_dead_worker_frame_is_terminal(
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
     inst = state_dir(tmp_path) / "machines" / "tiny"
-    # Un-end the journal (drop the MachineEnd line): the machine now reads as
-    # mid-state, and its recorded worker pid points at a dead process.
+    # Un-end the journal (drop the MachineEnd line): the machine reads as
+    # mid-state with no worker.
     journal = inst / "journal.jsonl"
     lines = journal.read_text(encoding="utf-8").splitlines()
     assert "end" in lines[-1]
@@ -1201,13 +1201,21 @@ def test_sse_machine_dead_worker_frame_is_terminal(
         conn.request("GET", "/api/machine/tiny/events")
         resp = conn.getresponse()
         assert resp.status == 200
-        seen = resp.read()  # must reach EOF, not hang
+        lost = _read_until(
+            resp,
+            lambda f: cast("dict[str, Any]", f.get("machine", {})).get("worker_lost") is not None,
+        )
+        machine = cast("dict[str, Any]", lost["machine"])
+        assert machine["ended"] is None  # no journaled end was invented
+        assert machine["status"] == "stopped"
+        assert machine["worker_lost"]["reason"] == "no worker running"
+        write_worker_pid(inst, os.getpid())  # `machine run` resumes it
+        resumed = _read_until(
+            resp, lambda f: cast("dict[str, Any]", f.get("machine", {})).get("status") != "stopped"
+        )
+        assert cast("dict[str, Any]", resumed["machine"]).get("worker_lost") is None
     finally:
         conn.close()
-    frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
-    last = json.loads(frames[-1][len(b"data:") :])
-    assert last["machine"]["ended"] is None  # no journaled end was invented
-    assert last["machine"]["worker_lost"]["reason"] == "no worker running"
 
 
 # --- POST hardening -----------------------------------------------------------

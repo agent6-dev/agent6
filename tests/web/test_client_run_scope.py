@@ -35,9 +35,7 @@ def test_the_step_picker_fetches_with_the_cards_own_id() -> None:
 
 
 def test_the_machine_watch_gates_on_the_shared_refusals() -> None:
-    """A live machine blocked on an approval reads status "waiting", so gating
-    the prompt boxes on the status word hid the box the machine was blocked on
-    from the page that had claimed it as answer front-end."""
+    """Every machine input consumes the wire refusals, without a second gate."""
     from agent6.ui.web.page import CLIENT_JS as js
 
     start = js.index("function paintMachine(")
@@ -45,6 +43,82 @@ def test_the_machine_watch_gates_on_the_shared_refusals() -> None:
     assert "m.refusals" in body, "the machine watch derives its own gating"
     assert "notRunning" not in body
     assert "canAnswer ? (data.reasoning || {}) : {}" in body
+    assert "!!refusals.steer || !cards._state" not in body
+    assert "cards._steer_btn.disabled = !!refusals.steer" in body
+    assert "cards._msg_btn.disabled = !!refusals.poke" in body
+    assert "cards._stop_btn.disabled = !!refusals.stop" in body
+    assert "cards._input.disabled = !!refusals.steer && !!refusals.poke" in body
+
+
+def test_the_machine_header_paints_the_wire_status_as_a_pill() -> None:
+    """The detail view renders `machine_state_as_dict.status` and its level
+    without rebuilding either: a failed machine read plain on its own page
+    while the hub row carried the error level."""
+    from agent6.ui.web.page import CLIENT_JS as js
+
+    start = js.index("function paintMachine(")
+    body = js[start : js.index("\nfunction ", start + 1)]
+    assert "pill(m.level, m.status)" in body
+    assert "const word =" not in body
+
+
+def test_a_stop_and_an_end_each_notify_once_across_a_resume() -> None:
+    """One flag served both the worker_lost banner and the ended banner, so a
+    tab that followed a stop and a resume never announced the machine's end."""
+    from agent6.ui.web.page import CLIENT_JS as js
+
+    start = js.index("function paintMachine(")
+    body = js[start : js.index("\nfunction ", start + 1)]
+    assert "m.worker_lost && !ctx.lostNotified" in body
+    assert "m.ended && !ctx.endedNotified" in body
+    assert "ctx.lostNotified = false" in body
+
+
+def test_the_machine_composer_hint_names_enter() -> None:
+    """Every docked entry's hint says what Enter does (docs/web.md); the
+    machine composer's did not."""
+    from agent6.ui.web.page import CLIENT_JS as js
+
+    start = js.index("async function renderMachine")
+    body = js[start : js.index("function paintMachine(", start)]
+    hint = next(line for line in body.splitlines() if "el('div', 'hint'" in line)
+    assert "Enter sends" in hint and "Shift+Enter" in hint
+
+
+def test_the_machine_snapshot_gates_controls_before_the_stream_arrives() -> None:
+    """The one-shot wire payload is painted before any EventSource frame."""
+    from agent6.ui.web.page import CLIENT_JS as js
+
+    start = js.index("async function renderMachine")
+    body = js[start : js.index("function paintMachine(", start)]
+    assert "const initial = await getJSON(base)" in body
+    assert body.index("paintMachine(") < body.index("new EventSource(")
+
+
+def test_worker_loss_leaves_the_machine_event_source_ready_for_a_resume() -> None:
+    """EOF reconnects to a resumed machine; only a journaled end closes EventSource."""
+    from agent6.ui.web.page import CLIENT_JS as js
+
+    start = js.index("live.onmessage = ev =>", js.index("async function renderMachine"))
+    body = js[start : js.index("if (!hbTimer)", start)]
+    close_line = next(line for line in body.splitlines() if "data.machine &&" in line)
+    assert ".ended" in close_line
+    assert "worker_lost" not in close_line
+
+
+def test_enter_submits_the_available_machine_composer_verb() -> None:
+    """Enter sends the one enabled verb; Shift+Enter remains a textarea newline."""
+    from agent6.ui.web.page import CLIENT_JS as js
+
+    start = js.index("async function renderMachine")
+    body = js[start : js.index("function machineNotify(", start)]
+    handler_start = body.index("din.onkeydown")
+    key_handler = body[handler_start : body.index("\n  };", handler_start)]
+    assert "e.key === 'Enter'" in key_handler
+    assert "!e.shiftKey" in key_handler
+    assert "e.preventDefault()" in key_handler
+    assert "!steerBtn.disabled" in key_handler and "steerBtn.click()" in key_handler
+    assert "!msgBtn.disabled" in key_handler and "msgBtn.click()" in key_handler
 
 
 def test_the_web_approval_box_offers_every_answer() -> None:
