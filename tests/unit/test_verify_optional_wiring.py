@@ -840,3 +840,91 @@ def test_a_resumes_key_check_precedes_isolation(
         )
     assert seen == ["route_preflight", "select_isolation"]
 
+
+@pytest.mark.parametrize("configured", [True, False])
+def test_a_gate_withheld_on_resume_is_one_clipped_line(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    configured: bool,
+) -> None:
+    """A resume under withheld commands printed the withheld note, then "this
+    run's verify gate changed: was <the whole argv>, now none", and for a gate
+    reused from the snapshot "reusing this run's verify command: <the whole
+    argv>" before both: one cause reported up to three times, kilobytes of
+    argv each time. One line, the argv clipped."""
+    import agent6.app._setup as setup_mod
+    import agent6.app.resume as resume_mod
+    from agent6.app._leg import LegEnd, LegInputs
+    from agent6.app.preflight import GATE_TEXT_WIDTH
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    gate = ("pytest", "-q", *(f"--deselect=tests/test_{i}.py::test_case" for i in range(40)))
+    assert len(" ".join(gate)) > 4 * GATE_TEXT_WIDTH
+    session_dir = state_dir(repo) / "sessions" / "runs" / "withheld-AAAA11"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "withheld-AAAA11",
+                "mode": "run",
+                "user_task": "t",
+                "workflow": {"verify_command": list(gate), "verify_origin": "configured"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": SNAPSHOT_VERSION,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 2,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": list(gate),
+            }
+        ),
+        encoding="utf-8",
+    )
+    workflow = {"verify_command": list(gate)} if configured else {}
+    cfg = _role_cfg({"sandbox": {"run_commands": "no"}, "workflow": workflow})
+    effective = EffectiveConfig(config=cfg, sources={}, layers=())
+
+    def _effective(*_a: object, **_k: object) -> EffectiveConfig:
+        return effective
+
+    def _strict(*_a: object, **_k: object) -> str:
+        return "strict"
+
+    def _none(*_a: object, **_k: object) -> None:
+        return None
+
+    monkeypatch.setattr(setup_mod, "load_effective", _effective)
+    monkeypatch.setattr(resume_mod, "select_isolation", _strict)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
+    monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
+
+    def _leg(_cfg: Config, _layout: object, inputs: LegInputs, **_kw: object) -> LegEnd:
+        inputs.gate(_cfg, MagicMock())
+        return LegEnd(0)
+
+    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    rc = resume_mod.resume_task(
+        None, "withheld-AAAA11", started_at=time.time(), frontend=MagicMock(), force=False
+    )
+    assert rc == 0
+
+    err = capsys.readouterr().err
+    gate_lines = [ln for ln in err.splitlines() if "verify gate" in ln or "verify command" in ln]
+    assert len(gate_lines) == 1, gate_lines
+    (line,) = gate_lines
+    assert "commands are withheld" in line and "(pytest -q --deselect" in line
+    argv_text = line[line.index("(") + 1 : line.rindex("):")]
+    assert argv_text.endswith("\u2026") and len(argv_text) == GATE_TEXT_WIDTH

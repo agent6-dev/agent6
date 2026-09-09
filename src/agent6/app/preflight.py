@@ -47,6 +47,7 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.types import RoleName
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command, read_agents_md
+from agent6.viewmodel.format import clip_cell
 from agent6.viewmodel.listing import session_dirs
 
 
@@ -452,6 +453,15 @@ def route_preflight(cfg: Config, role: RoleName, *, reporter: Reporter) -> bool:
     return True
 
 
+# A verify argv on one console line: an operator's gate can run to kilobytes.
+GATE_TEXT_WIDTH = 120
+
+
+def gate_text(argv: tuple[str, ...]) -> str:
+    """A verify command for one console line, clipped; "none" for no gate."""
+    return clip_cell(" ".join(argv), GATE_TEXT_WIDTH) or "none"
+
+
 def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:
     """Empty the verify command when this LEG cannot run one.
 
@@ -471,8 +481,9 @@ def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporte
         return cfg
     if cfg.workflow.verify_command:
         reporter.note(
-            "commands are withheld, and the verify gate is a command:"
-            " running gateless (per-step commits, no green gate)."
+            "commands are withheld, and the verify gate is a command"
+            f" ({gate_text(cfg.workflow.verify_command)}): running gateless"
+            " (per-step commits, no green gate)."
         )
     return cfg.with_verify_command(())
 

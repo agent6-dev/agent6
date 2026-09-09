@@ -1219,3 +1219,73 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
 
     assert state.verify.last_ok is True
     assert state.verify.green_and_untouched is True
+
+
+def test_a_gate_withheld_between_legs_is_no_swap_for_the_worker(tmp_path: Path) -> None:
+    """A leg that cannot run commands drops its gate before the loop sees the
+    config, and the resume told the worker the gate "changed between legs ...
+    now `none`" over a gate the leg withheld, not swapped. No notice and no
+    swap event: no command can run, that one included."""
+    from agent6.workflows._session_state import SessionSnapshot as _Snap
+
+    session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
+    session_dir.mkdir(parents=True)
+    snap_path = session_dir / "loop_state.json"
+    snap_path.write_text(
+        _Snap(
+            system="s",
+            messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
+            tool_calls=0,
+            next_iteration=3,
+            root_task_id=None,
+            original_task="go",
+            verify_command=("pytest", "-q"),
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            verify_when="never",
+            verify_retries=2,
+            verify_command=(),  # dropped at leg start: commands are withheld
+            metric=SimpleNamespace(goal="maximize"),
+        ),
+    )
+    provider = MagicMock()
+    provider.call.return_value = SimpleNamespace(
+        text="",
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
+        refused={},
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        raw={
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "finish_session",
+                    "input": {"summary": "done"},
+                }
+            ]
+        },
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    dispatcher.command_policy.return_value = "no"
+    ev = _EventCapture(path=session_dir / "logs.jsonl")
+    wf = _wf(
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+        events=ev,
+        resume_state_path=snap_path,
+    )
+    wf.resume()
+
+    assert not [e for e in ev.events if e["type"] == "loop.verify_swapped"]
+    told = json.dumps(provider.call.call_args.kwargs["messages"])
+    assert "changed between legs" not in told

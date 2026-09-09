@@ -31,6 +31,7 @@ from agent6.app.manifest import pin_gate, stamp_fork_task, stamp_leg, stamp_pres
 from agent6.app.preflight import (
     SessionRefused,
     drop_gate_if_unrunnable,
+    gate_text,
     headless_approval_refusal,
     headless_parking_note,
     require_git_repo,
@@ -623,23 +624,31 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 else snapshot.verify_command
             )
             leg_configured = bool(cfg.workflow.verify_command)
-            if not leg_configured and replay_gate:
+            reused = not leg_configured and bool(replay_gate)
+            if reused:
                 cfg = cfg.with_verify_command(replay_gate)
-                reporter.note(f"reusing this run's verify command: {' '.join(replay_gate)}")
             # The same leg-start decision a fresh run makes, LAST so nothing
             # hands the gate back: a leg that cannot run a command cannot run
             # its gate, so it is gateless rather than unwinnable. Frozen here,
             # with the system prompt.
+            gate_before = cfg.workflow.verify_command
             cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
+            # A withheld gate is the line above: neither a reuse nor a change,
+            # since nothing can run.
+            withheld = bool(gate_before) and not cfg.workflow.verify_command
+            if reused and not withheld:
+                reporter.note(f"reusing this run's verify command: {gate_text(replay_gate)}")
             # Re-pin for this leg: config outranks the pin, the pin outranks a
             # re-inference, and the manifest has to say which one this leg used.
-            if tuple(pinned_gate) != cfg.workflow.verify_command:
+            if tuple(pinned_gate) != cfg.workflow.verify_command and not withheld:
                 # Both directions, including none -> gate: the frozen system
                 # prompt names the OLD gate either way, so the operator has to
                 # know which command is now judging the run.
-                was = " ".join(pinned_gate) or "none"
-                now = " ".join(cfg.workflow.verify_command) or "none"
-                reporter.note(f"this run's verify gate changed: was {was}, now {now}")
+                reporter.note(
+                    "this run's verify gate changed:"
+                    f" was {gate_text(tuple(pinned_gate))},"
+                    f" now {gate_text(cfg.workflow.verify_command)}"
+                )
             pin_gate(
                 layout.session_dir,
                 cfg.workflow.verify_command,

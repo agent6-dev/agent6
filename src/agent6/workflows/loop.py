@@ -773,9 +773,14 @@ class Workflow:
         # The system prompt is the run's, frozen: config that gained (or lost) a
         # verify command between legs swaps what judges the work while the
         # instructions still name the old gate. Say so rather than let the
-        # worker run a command nothing checks.
+        # worker run a command nothing checks. A gate the leg dropped because
+        # commands are withheld is no swap: no command can run, that one
+        # included.
         gate = tuple(self.config.workflow.verify_command)
-        if gate != snapshot.verify_command:
+        withheld = (
+            not gate and bool(snapshot.verify_command) and self.dispatcher.command_policy() == "no"
+        )
+        if gate != snapshot.verify_command and not withheld:
             was = " ".join(snapshot.verify_command) or "none"
             now = " ".join(gate) or "none"
             conversation.notice(
