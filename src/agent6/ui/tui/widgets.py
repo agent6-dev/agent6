@@ -63,6 +63,15 @@ def _selection_bar(primary: str) -> str:
     return f"bold {ink} on {primary}"
 
 
+def _window(text: str, cursor: int, width: int) -> tuple[str, int]:
+    """The slice of *text* a row *width* cells wide shows with *cursor* in
+    view, and the cursor's column in it: the caret takes a cell, and a value
+    longer than the row scrolls under it rather than clipping the caret away."""
+    room = max(width - 1, 1)
+    start = max(0, cursor - room + 1)
+    return text[start : start + room], cursor - start
+
+
 class ChoiceField(Widget, can_focus=True):
     """A natural terminal chooser: a vertical `[x]`/`[ ]` list. ↑↓ move a
     highlight (the selection does not follow, so arrowing through to the next
@@ -160,10 +169,12 @@ class ChoiceField(Widget, can_focus=True):
             is_option = i < len(self._options)
             mark = "[x]" if i == self._sel else "[ ]"
             label = self._options[i] if is_option else (self._custom_text or "custom…")
+            if (not is_option) and focused and i == self._cursor:
+                pos = self._pos if self._custom_text else len(label)
+                shown, col = _window(label, pos, width - len(mark) - 1)
+                label = f"{shown[:col]}▌{shown[col:]}"
             line = Text(f"{mark} ")
             line.append(label, style="" if (is_option or self._custom_text) else "dim")
-            if (not is_option) and focused and i == self._cursor:
-                line.append("▌")  # caret on the (highlighted) custom row
             line.pad_right(max(0, width - line.cell_len))
             if focused and i == self._cursor:
                 line.stylize(bar)  # the moving highlight (keyboard)
@@ -229,10 +240,14 @@ class ChoiceField(Widget, can_focus=True):
             self.refresh()
 
     def _select(self) -> None:
+        changed = self._sel != self._cursor
         self._sel = self._cursor
         if self._sel == self._custom_row:
             self._pos = len(self._custom_text)
-        self._changed()
+        if changed:
+            self._changed()
+        else:
+            self.refresh()
 
     def _changed(self) -> None:
         self.refresh(layout=True)
@@ -277,7 +292,10 @@ class TypeaheadField(Widget, can_focus=True):
 
     MAX_SHOWN = 8
     DEFAULT_CSS = """
-    TypeaheadField { height: auto; width: 1fr; background: $panel; }
+    TypeaheadField {
+        height: auto; width: 1fr; background: $panel;
+        text-wrap: nowrap; text-overflow: ellipsis;
+    }
     """
 
     class Changed(Message):
@@ -348,9 +366,15 @@ class TypeaheadField(Widget, can_focus=True):
         # The editable text line (the field's $panel background, set in CSS,
         # gives it the input affordance; rich can't parse $-vars here).
         editing = focused and self._index < 0
-        text = Text(self._text) if self._text else Text("type to search…", style="dim")
-        if editing:
-            text.append("▌")
+        if self._text and editing:
+            shown, col = _window(self._text, self._cursor, width)
+            text = Text(f"{shown[:col]}▌{shown[col:]}")
+        elif self._text:
+            text = Text(self._text)
+        else:
+            text = Text("type to search…", style="dim")
+            if editing:
+                text.append("▌")
         out.append_text(text)
         if focused:
             matches = self._matches

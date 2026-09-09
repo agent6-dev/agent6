@@ -20,6 +20,7 @@ from typing import Any
 
 from rich.text import Text
 from textual.app import App, ScreenStackError
+from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
 from agent6.sessions.ipc import clear_answer
@@ -27,7 +28,9 @@ from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow
 from agent6.ui.tui.modals import (
     ApprovalModal,
+    ConfirmModal,
     QuestionModal,
+    SteerModal,
     ToolCallDetailModal,
 )
 from agent6.viewmodel.state import Question
@@ -72,6 +75,16 @@ async def _show_dashboard(pilot: Any) -> None:
 async def _settle_focus(pilot: Any, widget: Any) -> None:
     """Wait for a deferred focus() (Widget.focus defers via call_later) to land."""
     await _wait_for(pilot, lambda: pilot.app.focused is widget, f"focus on {widget}")
+
+
+class _ModalHost(App[None]):
+    def __init__(self, modal: ModalScreen[Any]) -> None:
+        super().__init__()
+        self.modal = modal
+        self.results: list[object] = []
+
+    def on_mount(self) -> None:
+        self.push_screen(self.modal, self.results.append)
 
 
 def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
@@ -160,6 +173,76 @@ def test_modal_arrow_keys_move_focus() -> None:
             await pilot.press("left")  # and back
             await pilot.pause()
             assert modal.focused is first
+
+    asyncio.run(scenario())
+
+
+def test_consequential_modal_buttons_name_their_answers() -> None:
+    async def labels(modal: ModalScreen[Any]) -> list[str]:
+        app = _ModalHost(modal)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            return [str(button.label) for button in modal.query(Button)]
+
+    async def scenario() -> None:
+        assert await labels(ApprovalModal("a", "allow?")) == [
+            "Allow (y)",
+            "Allow session (a)",
+            "Deny (n)",
+            "Deny all (x)",
+        ]
+        assert await labels(ConfirmModal("Confirm", "Proceed?", confirm_label="Delete")) == [
+            "Delete (y)",
+            "Cancel (n)",
+        ]
+        assert await labels(SteerModal()) == ["Send (Ctrl+S)", "Continue"]
+        assert await labels(
+            QuestionModal(
+                "q",
+                (Question(question="Choose one", options=("literal [one]", "two")),),
+            )
+        ) == ["literal [one]", "two", "Submit (ctrl+s)"]
+
+    asyncio.run(scenario())
+
+
+def test_each_consequential_modal_delivers_one_result() -> None:
+    async def scenario() -> None:
+        approval = _ModalHost(ApprovalModal("a", "allow?"))
+        async with approval.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("a")
+            await pilot.pause()
+            assert approval.results == ["session"]
+
+        confirmation = _ModalHost(ConfirmModal("Confirm", "Proceed?"))
+        async with confirmation.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert confirmation.results == [False]
+
+        steer_modal = SteerModal()
+        steer = _ModalHost(steer_modal)
+        async with steer.run_test() as pilot:
+            await pilot.pause()
+            steer_modal.query_one(TextArea).insert("go")
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            assert steer.results == ["go"]
+
+        question_modal = QuestionModal(
+            "q",
+            (Question(question="Choose one", options=("literal [one]", "two")),),
+        )
+        question = _ModalHost(question_modal)
+        async with question.run_test() as pilot:
+            await pilot.pause()
+            question_modal.query_one("#opt-0-0", Button).press()
+            await pilot.pause()
+            question_modal.query_one("#question-submit", Button).press()
+            await pilot.pause()
+            assert question.results == [("literal [one]",)]
 
     asyncio.run(scenario())
 

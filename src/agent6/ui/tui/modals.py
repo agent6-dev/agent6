@@ -221,7 +221,7 @@ class SteerModal(ModalScreen[str]):
             yield Static(body)
             yield TextArea(id="steer-input", soft_wrap=True)
             with Horizontal(id="steer-buttons"):
-                yield Button("Send  (Ctrl+S)", id="send", variant="primary")
+                yield Button("Send (Ctrl+S)", id="send", variant="primary")
                 yield Button("Continue", id="continue", variant="success")
 
     def on_mount(self) -> None:
