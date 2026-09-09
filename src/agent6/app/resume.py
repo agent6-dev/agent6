@@ -27,7 +27,7 @@ from agent6.app.frontend import (
     SessionFrontend,
     settle_away_mode,
 )
-from agent6.app.manifest import pin_gate, stamp_fork_task, stamp_leg, stamp_preset
+from agent6.app.manifest import pin_gate, stamp_fork_task, stamp_leg, stamp_preset, stamp_task
 from agent6.app.preflight import (
     SessionRefused,
     drop_gate_if_unrunnable,
@@ -342,7 +342,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     # (budget_exhausted, provider_error, steer_abort, a red verify) is exactly
     # what resume exists for. Read through the same fold the listing uses, so
     # the refusal and the status can never disagree.
-    if not steer.strip() and finished_needs_new_work(layout.session_dir):
+    new_work = finished_needs_new_work(layout.session_dir)
+    if not steer.strip() and new_work:
         reporter.refuse(needs_new_work_refusal(session_id))
         release_single_writer(worker_lock_fd)
         return 2
@@ -359,10 +360,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.error("could not write the initial steer request")
             release_single_writer(worker_lock_fd)
             return 2
-        # On a fork still carrying its source's task, that instruction IS the
-        # work: it names the fork's row and titles its squashed merge, which
-        # otherwise read as the source's task.
-        if manifest.parent_session_id:
+        # A steer that IS the work names the run: the row and the next squash
+        # of a run the agent finished (the only resume a finished run allows),
+        # or of a fork still carrying its source's task, otherwise read as work
+        # already landed. Stamped with the steer, before the refusals below, as
+        # the fork rule has been.
+        if new_work:
+            stamp_task(layout.session_dir, steer.strip())
+        elif manifest.parent_session_id:
             stamp_fork_task(
                 layout.session_dir,
                 steer.strip(),

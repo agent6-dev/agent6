@@ -276,10 +276,22 @@ def stamp_fork_task(session_dir: Path, steer: str, *, source_dir: Path) -> None:
     if m.user_task != source_task:
         return  # already sent somewhere; this steer is a follow-up
     with contextlib.suppress(ManifestError, OSError):
-        write_manifest(
-            session_dir / MANIFEST_NAME,
-            m.model_copy(update={"user_task": operator_task_text(steer)[:4000]}),
-        )
+        _write_task(session_dir, m, steer)
+
+
+def stamp_task(session_dir: Path, steer: str) -> None:
+    """Record *steer* as the run's task: what its listing row shows and what
+    its squashed merge is titled. A manifest this binary may not rewrite (a
+    newer version) keeps the task it has rather than failing the resume."""
+    with contextlib.suppress(ManifestError, OSError):
+        _write_task(session_dir, read_manifest(session_dir), steer)
+
+
+def _write_task(session_dir: Path, m: SessionManifest, steer: str) -> None:
+    write_manifest(
+        session_dir / MANIFEST_NAME,
+        m.model_copy(update={"user_task": operator_task_text(steer)[:4000]}),
+    )
 
 
 def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> None:

@@ -928,6 +928,76 @@ def test_a_finished_run_still_resumes_with_a_steer(
     assert "no resume snapshot" in err
 
 
+@pytest.mark.parametrize("ended", [True, False])
+def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, ended: bool
+) -> None:
+    """A finished run resumed with `--steer` kept its original task, so its
+    listing row and the squash merge of the new leg were titled with work an
+    earlier merge had already landed. The steer IS the work (the fork rule,
+    `stamp_fork_task`, for the only resume a finished run allows); a run that
+    had not finished keeps its task, the steer being a follow-up."""
+    from unittest.mock import MagicMock
+
+    from agent6.app.manifest import read_manifest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    base = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    sid = "steer-STAMP01"
+    session_dir = state_dir(repo) / "sessions" / "runs" / sid
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": sid,
+                "mode": "run",
+                "user_task": "t",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": f"agent6/{sid}",
+            }
+        ),
+        encoding="utf-8",
+    )
+    events: list[dict[str, object]] = [{"type": "session.start", "mode": "run", "user_task": "t"}]
+    if ended:
+        events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
+    (session_dir / "logs.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+    )
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    (session_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": SNAPSHOT_VERSION,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 1,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    rc = resume_mod.resume_task(
+        None, sid, started_at=time.time(), frontend=MagicMock(), force=False, steer="do more"
+    )
+    assert rc == 0
+    assert read_manifest(session_dir).user_task == ("do more" if ended else "t")
+
+
 def test_resume_refuses_a_fan_out_coordinator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
