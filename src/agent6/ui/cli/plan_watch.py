@@ -51,8 +51,8 @@ from agent6.viewmodel.format import dead_run_note, status_label
 def _resolve_plan_session_id(session_id: str) -> str | None:
     """Resolve a (possibly prefix) plan id under the per-repo state dir.
 
-    Prints an error and returns None on failure. Used by `run --from`,
-    `plan show`, and `plan edit`. An empty *session_id* resolves the most recent
+    Prints an error and returns None on failure. Used by `plan show` and
+    `plan edit`. An empty *session_id* resolves the most recent
     plan, matching the omit-for-latest convention of the sessions commands.
     """
     plans_dir = _plans_dir(Path.cwd())
@@ -62,9 +62,19 @@ def _resolve_plan_session_id(session_id: str) -> str | None:
             error("no plans yet (start one with `agent6 plan`).")
             return None
         session_id = latest
+    state = state_dir(Path.cwd())
     try:
-        resolved = resolve_session(state_dir(Path.cwd()), session_id, buckets=("plans",)).session_id
+        resolved = resolve_session(state, session_id, buckets=("plans",)).session_id
     except SessionIdError as exc:
+        # An existing run or ask is named as such.
+        if exc.no_match:
+            try:
+                other = resolve_session(state, session_id)
+            except SessionIdError as other_exc:
+                exc = other_exc
+            else:
+                error(f"{other.session_id} is a session under {other.subdir}/, not a plan")
+                return None
         error(f"{exc}")
         return None
     plan = plans_dir / resolved / "plan.md"

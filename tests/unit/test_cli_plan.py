@@ -331,3 +331,21 @@ def test_a_bare_run_names_the_plan_the_way_its_execution_does(
     err = capsys.readouterr().err
     assert "happy-tree-qrst (Do the thing)" in err
     assert "Plan: Do the thing" not in err
+
+
+@pytest.mark.parametrize("bucket", ["asks", "runs"])
+def test_plan_show_names_a_session_that_is_not_a_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], bucket: str
+) -> None:
+    """An existing ask or run given to a plan verb read "no session matches";
+    it is named as what it is, so the operator knows which id they typed."""
+    monkeypatch.chdir(tmp_path)
+    session_id = f"existing-{bucket}-abcd"
+    session_dir = state_dir(tmp_path) / "sessions" / bucket / session_id
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
+
+    assert main(["plan", "show", session_id]) == 2
+    err = capsys.readouterr().err
+    assert f"{session_id} is a session under {bucket}/, not a plan" in err
+    assert "no session matches" not in err
