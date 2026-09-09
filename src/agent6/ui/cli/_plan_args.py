@@ -49,6 +49,11 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     plan_run.add_argument(
         "--session-id", default="", help="Explicit session id (default: generate one)."
     )
+    plan_profile = plan_run.add_argument(
+        "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
+    )
+    plan_profile.completer = _complete_presets  # type: ignore[attr-defined]
+    _add_config_flag(plan_run)
     plan_run.add_argument(
         "--tui",
         action="store_true",
@@ -58,11 +63,6 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " TTY. (Or run `agent6 tui` and start the plan from there.)"
         ),
     )
-    plan_profile = plan_run.add_argument(
-        "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
-    )
-    plan_profile.completer = _complete_presets  # type: ignore[attr-defined]
-    _add_config_flag(plan_run)
     _add_budget_flags(plan_run)
     _add_sandbox_flags(plan_run)
     plan_show = _sub(plan_sub, "show", help="Print the plan.md for a prior plan run and exit.")
@@ -101,17 +101,12 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     # `ask "why ..."` == `ask query "why ..."`.
     ask_sub = ask_p.add_subparsers(dest="ask_command", required=True, metavar="<subcommand>")
     ask_query = _sub(ask_sub, "query", help="Ask a question (the default verb).")
-    ask_profile = ask_query.add_argument(
-        "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
-    )
-    ask_profile.completer = _complete_presets  # type: ignore[attr-defined]
     ask_query.add_argument(
         "task",
         nargs="?",
         default="",
         help='Question (in quotes), e.g. "why does the retry loop double the timeout?".',
     )
-    _add_config_flag(ask_query)
     seed = ask_query.add_mutually_exclusive_group()
     ask_session = seed.add_argument(
         "--from",
@@ -139,6 +134,11 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         metavar="PATH",
         help="Seed a file's contents into the question (repeatable; like an inline @path).",
     )
+    ask_profile = ask_query.add_argument(
+        "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
+    )
+    ask_profile.completer = _complete_presets  # type: ignore[attr-defined]
+    _add_config_flag(ask_query)
     ask_query.add_argument(
         "-i",
         "--interactive",

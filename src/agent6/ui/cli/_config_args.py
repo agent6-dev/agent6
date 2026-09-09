@@ -169,11 +169,6 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     )
     connect_provider.completer = _complete_providers  # type: ignore[attr-defined]
     connect_p.add_argument(
-        "--repo",
-        action="store_true",
-        help=REPO_FLAG_HELP,
-    )
-    connect_p.add_argument(
         "--logout",
         action="store_true",
         help="Sign out instead: remove the provider's stored credentials from secrets.toml"
@@ -185,6 +180,11 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         action="store_false",
         help="Skip the post-save read-only key check (a GET to the provider's /models)."
         " Use for offline/local endpoints (Ollama, llama.cpp) that have no models listing.",
+    )
+    connect_p.add_argument(
+        "--repo",
+        action="store_true",
+        help=REPO_FLAG_HELP,
     )
 
 

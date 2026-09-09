@@ -68,15 +68,16 @@ def _add_config_flag(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
-    """Add per-run budget override flags (override `[budget]` config)."""
-    parser.add_argument(
+    """The per-run budget overrides (`[budget]`)."""
+    group = parser.add_argument_group("budget")
+    group.add_argument(
         "--max-usd",
         type=float,
         default=None,
         metavar="USD",
         help="Override [budget].max_usd for this run (-1 unlimited, 0 refuses metered calls).",
     )
-    parser.add_argument(
+    group.add_argument(
         "--max-percent",
         type=float,
         default=None,
@@ -86,7 +87,7 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
             " subscription run may consume (-1 unlimited, 0 refuses plan-metered calls)."
         ),
     )
-    parser.add_argument(
+    group.add_argument(
         "--max-tokens-fallback",
         type=int,
         default=None,
@@ -110,7 +111,8 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
     `sandbox.run_commands` from ask to yes and never resurrects a withheld
     no. Approval is skipped; confinement still depends on `sandbox.isolation`.
     """
-    parser.add_argument(
+    group = parser.add_argument_group("sandbox")
+    group.add_argument(
         "--dangerously-disable-sandbox",
         action="store_true",
         help=(
@@ -119,7 +121,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
             " machine; the host becomes the only boundary."
         ),
     )
-    approval = parser.add_mutually_exclusive_group()
+    approval = group.add_mutually_exclusive_group()
     approval.add_argument(
         "--auto-approve",
         action="store_true",

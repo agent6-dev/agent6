@@ -208,9 +208,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_run_parser(sub)
 
+    _add_resume_parser(sub)
+
+    _add_fork_parser(sub)
+
     _add_plan_parser(sub)
 
     _add_ask_parser(sub)
+
+    _add_review_parser(sub)
 
     _add_attach_parser(sub)
     _add_steer_parser(sub)
@@ -218,110 +224,6 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _add_net_parsers(sub)
 
     _add_sessions_parser(sub)
-
-    _add_tui_parser(sub)
-
-    completions_p = _sub(
-        sub,
-        "completions",
-        help=(
-            "Install shell tab-completion for agent6 (detects the shell you"
-            " are running; bash/zsh get a guarded source line in their rc, fish and"
-            " xonsh a native auto-loaded file). --print emits the script"
-            " instead, for `eval` or manual setup."
-        ),
-    )
-    completions_p.add_argument(
-        "shell",
-        nargs="?",
-        # None (not ""): argparse validates a *string* default against choices,
-        # and an empty-string choice leaks into completion output as a bogus
-        # description-only candidate.
-        default=None,
-        choices=["bash", "zsh", "fish", "xonsh"],
-        metavar="{bash,zsh,fish,xonsh}",
-        help=_shell_default_help(),
-    )
-    completions_p.add_argument(
-        "--print",
-        dest="print_only",
-        action="store_true",
-        help="Print the completion script to stdout instead of installing it.",
-    )
-
-    _add_web_parser(sub)
-
-    prompt_p = _sub(
-        sub,
-        "prompt",
-        help="Inspect the assembled system prompt for this repo + config.",
-    )
-    prompt_sub = prompt_p.add_subparsers(
-        dest="prompt_command", required=True, metavar="<subcommand>"
-    )
-    prompt_show = _sub(
-        prompt_sub,
-        "show",
-        help=(
-            "Print everything the model receives on a run's first call here: the"
-            " system prompt (static blocks + the per-repo <repo-priors> block), the"
-            " tool definitions this config exposes (the API's `tools` field), and"
-            " the first user message around the task."
-        ),
-    )
-    prompt_show.add_argument(
-        "--mode",
-        choices=("run", "plan", "ask", "agent"),
-        default="run",
-        help="Which mode's exchange to assemble (default: run).",
-    )
-    prompt_show.add_argument(
-        "--json",
-        action="store_true",
-        help=(
-            "One JSON object (mode, system, tools, first_message, mcp_tools_pending)"
-            " instead of text."
-        ),
-    )
-
-    _add_resume_parser(sub)
-
-    _add_fork_parser(sub)
-
-    _add_config_parser(sub)
-
-    _add_check_parser(sub)
-
-    _add_connect_parser(sub)
-
-    _add_system_parser(sub)
-
-    _add_model_parser(sub)
-
-    mem_p = _sub(
-        sub,
-        "memory",
-        help=(
-            "Manage the repo's agent memory (one fact per file + index); a bare"
-            " `agent6 memory` lists it."
-        ),
-    )
-    mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
-    mem_add = _sub(mem_sub, "add", help="Write <name>.md and its index line.")
-    mem_add.add_argument("name", help="Memory name (lowercase letters, digits, dashes).")
-    mem_add.add_argument("body", help="The fact (in quotes; first line becomes the index hook).")
-    _sub(mem_sub, "list", help="Print the MEMORY.md index.")
-    mem_show = _sub(mem_sub, "show", help="Print one memory file.")
-    mem_show.add_argument("name", help="Memory name.")
-    mem_rm = _sub(mem_sub, "rm", help="Delete a memory file and its index line.")
-    mem_rm.add_argument("name", help="Memory name.")
-    _sub(
-        mem_sub,
-        "decisions",
-        help="Print the operator rulings the harness recorded (memory/DECISIONS.md).",
-    )
-
-    _add_skills_parser(sub)
 
     ps_p = _sub(
         sub,
@@ -371,6 +273,21 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     hist_search_session.completer = _complete_session_ids  # type: ignore[attr-defined]
 
+    _add_tui_parser(sub)
+
+    _add_web_parser(sub)
+
+    _sub(
+        sub,
+        "acp",
+        help=(
+            "Run agent6 as an ACP (Agent Client Protocol) agent, driven by an"
+            " editor. Speaks line-delimited JSON-RPC on stdin/stdout; the"
+            " editor spawns this, so nothing else may write to stdout. Config"
+            " comes from each session's own directory."
+        ),
+    )
+
     init_p = _sub(
         sub,
         "init",
@@ -395,7 +312,78 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    _add_review_parser(sub)
+    _add_connect_parser(sub)
+
+    _add_model_parser(sub)
+
+    _add_config_parser(sub)
+
+    _add_check_parser(sub)
+
+    prompt_p = _sub(
+        sub,
+        "prompt",
+        help="Inspect the assembled system prompt for this repo + config.",
+    )
+    prompt_sub = prompt_p.add_subparsers(
+        dest="prompt_command", required=True, metavar="<subcommand>"
+    )
+    prompt_show = _sub(
+        prompt_sub,
+        "show",
+        help=(
+            "Print everything the model receives on a run's first call here: the"
+            " system prompt (static blocks + the per-repo <repo-priors> block), the"
+            " tool definitions this config exposes (the API's `tools` field), and"
+            " the first user message around the task."
+        ),
+    )
+    prompt_show.add_argument(
+        "--mode",
+        choices=("run", "plan", "ask", "agent"),
+        default="run",
+        help="Which mode's exchange to assemble (default: run).",
+    )
+    prompt_show.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "One JSON object (mode, system, tools, first_message, mcp_tools_pending)"
+            " instead of text."
+        ),
+    )
+
+    completions_p = _sub(
+        sub,
+        "completions",
+        help=(
+            "Install shell tab-completion for agent6 (detects the shell you"
+            " are running; bash/zsh get a guarded source line in their rc, fish and"
+            " xonsh a native auto-loaded file). --print emits the script"
+            " instead, for `eval` or manual setup."
+        ),
+    )
+    completions_p.add_argument(
+        "shell",
+        nargs="?",
+        # None (not ""): argparse validates a *string* default against choices,
+        # and an empty-string choice leaks into completion output as a bogus
+        # description-only candidate.
+        default=None,
+        choices=["bash", "zsh", "fish", "xonsh"],
+        metavar="{bash,zsh,fish,xonsh}",
+        help=_shell_default_help(),
+    )
+    completions_p.add_argument(
+        "--print",
+        dest="print_only",
+        action="store_true",
+        help="Print the completion script to stdout instead of installing it.",
+    )
+
+    _add_system_parser(sub)
+
+    _add_skills_parser(sub)
 
     mcp_p = _sub(
         sub,
@@ -422,15 +410,27 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     _add_config_flag(mcp_serve)
 
-    _sub(
+    mem_p = _sub(
         sub,
-        "acp",
+        "memory",
         help=(
-            "Run agent6 as an ACP (Agent Client Protocol) agent, driven by an"
-            " editor. Speaks line-delimited JSON-RPC on stdin/stdout; the"
-            " editor spawns this, so nothing else may write to stdout. Config"
-            " comes from each session's own directory."
+            "Manage the repo's agent memory (one fact per file + index); a bare"
+            " `agent6 memory` lists it."
         ),
+    )
+    mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
+    mem_add = _sub(mem_sub, "add", help="Write <name>.md and its index line.")
+    mem_add.add_argument("name", help="Memory name (lowercase letters, digits, dashes).")
+    mem_add.add_argument("body", help="The fact (in quotes; first line becomes the index hook).")
+    _sub(mem_sub, "list", help="Print the MEMORY.md index.")
+    mem_show = _sub(mem_sub, "show", help="Print one memory file.")
+    mem_show.add_argument("name", help="Memory name.")
+    mem_rm = _sub(mem_sub, "rm", help="Delete a memory file and its index line.")
+    mem_rm.add_argument("name", help="Memory name.")
+    _sub(
+        mem_sub,
+        "decisions",
+        help="Print the operator rulings the harness recorded (memory/DECISIONS.md).",
     )
 
     _add_machine_parser(sub)
