@@ -123,6 +123,8 @@ The shortest version that still carries the point wins.
 - **A new runtime dependency is discussed first.**
   Current: `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair, `textual`, and `ruff` + `ty` (they validate `machine create` output).
   `hatchling` builds; `pyright` stays dev-only.
+- **Order-free lists stay sorted**, by Python's string order: pyproject.toml's dependencies, includes and rule lists, tach.toml's lists.
+  A list whose order carries meaning (a nav, a pipeline, the CI steps) keeps it.
 - **Touch only what the task needs**: the code you change, and nothing around it.
   Scope creep is a review blocker.
 - **Scratch experiments run in their own directory**, entered with `cd`: under `uv run --directory <elsewhere>` the cwd-derived config and git still point here.
