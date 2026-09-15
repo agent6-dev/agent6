@@ -391,9 +391,14 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 commit_identity = CommitIdentity(name=name, email=email)
             root = machines_root(state_dir(cwd)) / spec.machine
             # The engine is a host-netns supervisor; each agent state runs in
-            # its own subprocess.
+            # its own subprocess. Carry the complete effective config because
+            # that child cannot rediscover the invocation's --config layer.
+            # Omitting values equal to defaults would also lose an explicit
+            # reset when the child reloads a non-default global layer.
+            agent_overlay = cfg.model_dump(mode="json")
+            agent_overlay.pop("preset", None)  # an overlay cannot select a preset
             agent_runner = build_machine_agent_runner(
-                spec.config,
+                agent_overlay,
                 cwd,
                 isolation,
                 root / "agent_transcripts",
