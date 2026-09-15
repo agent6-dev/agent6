@@ -230,6 +230,9 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
     `agent6 exec` joins the recorded policy's jail and `sessions show` reads
     the recorded model, so both must describe the leg that is live."""
     m = read_manifest(session_dir)
+    workflow = m.workflow
+    if not workflow.preset_from_flag:
+        workflow = workflow.model_copy(update={"preset": cfg.preset})
     write_manifest(
         session_dir / MANIFEST_NAME,
         m.model_copy(
@@ -239,6 +242,7 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
                     reviewer=_model_brief(cfg.models.resolve("reviewer")),
                     driver_from_flag=m.models.driver_from_flag,
                 ),
+                "workflow": workflow,
                 "policy": _policy_stamp(cfg, isolation),
             }
         ),

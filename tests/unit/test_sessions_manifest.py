@@ -433,6 +433,29 @@ def test_each_mode_gets_its_own_tool_surface() -> None:
         mode_tools("wat")
 
 
+def test_a_leg_restamps_a_config_selected_preset(tmp_path: Path) -> None:
+    """A plain resume re-resolves a config-selected preset, so the manifest
+    must replace the prior leg's name with the preset this leg uses."""
+    from agent6.app.manifest import stamp_leg
+    from agent6.config import Config
+
+    _write(
+        tmp_path,
+        {
+            "version": MANIFEST_VERSION,
+            "session_id": "legs-preset-A1",
+            "mode": "run",
+            "workflow": {"preset": "old-config", "preset_from_flag": False},
+        },
+    )
+
+    stamp_leg(tmp_path, Config(preset="new-config"), "run", "strict")
+
+    workflow = read_manifest(tmp_path).workflow
+    assert workflow.preset == "new-config"
+    assert workflow.preset_from_flag is False
+
+
 def test_a_leg_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> None:
     """Written once at run start, they described leg 1 forever: `agent6 exec`
     joins the RECORDED policy, so a run started unsandboxed and resumed under
