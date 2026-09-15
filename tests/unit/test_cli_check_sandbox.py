@@ -171,6 +171,7 @@ def test_check_sandbox_degraded_names_why(
     # exposure is a Landlock read grant and the words must say so.
     assert "granted read-only (Landlock path rules)" in out
     assert "mounted read-only into the jail" not in out
+    assert "1 tool on the PATH" in out
 
 
 def test_check_sandbox_probes_the_isolation_the_config_selects(

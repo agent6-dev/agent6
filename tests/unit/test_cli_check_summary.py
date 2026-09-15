@@ -74,7 +74,7 @@ def test_check_verify_says_what_this_repo_infers(
     (tmp_path / "verify.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     (tmp_path / "verify.sh").chmod(0o755)
     assert main(["check", "verify"]) == 0
-    assert "unset; a run here infers ./verify.sh (from verify.sh)" in capsys.readouterr().out
+    assert "unset; a run here infers ./verify.sh from verify.sh" in capsys.readouterr().out
 
 
 def test_boundaries_reports_spawned_mcp_as_unconfined_without_a_jail(

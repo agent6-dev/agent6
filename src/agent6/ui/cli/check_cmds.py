@@ -124,7 +124,7 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
             SandboxReport(
                 name="landlock_abi",
                 ok=abi > 0,
-                detail=f"abi={abi}",
+                detail=f"ABI {abi}",
             )
         )
     except LandlockError as exc:
@@ -167,9 +167,9 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
             else "granted read-only (Landlock path rules) and readable by"
         )
         print(
-            f"  {len(notes.exposes_home_dir)} tool(s) resolve out of their bin dir, so those"
-            f" target directories are\n  {how}"
-            " jailed commands:"
+            f"  {len(notes.exposes_home_dir)}"
+            f" tool{'s' if len(notes.exposes_home_dir) != 1 else ''} on the PATH link into"
+            f" other directories, which are {how} jailed commands:"
         )
         for tool in notes.exposes_home_dir:
             print(f"    {tool}")
@@ -189,7 +189,11 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
     # Try running `/usr/bin/true` in the jail.
     try:
         res = _jail("/usr/bin/true")
-        reports.append(SandboxReport(name="jail_true", ok=res.ok, detail=f"rc={res.returncode}"))
+        reports.append(
+            SandboxReport(
+                name="jail_true", ok=res.ok, detail=f"/usr/bin/true exited {res.returncode}"
+            )
+        )
     except JailUnavailableError as exc:
         reports.append(SandboxReport(name="jail_true", ok=False, detail=str(exc)))
 
@@ -206,7 +210,11 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
                 SandboxReport(
                     name="jail_blocks_network",
                     ok=ok,
-                    detail=f"rc={res.returncode} (nonzero = blocked, as expected)",
+                    detail=(
+                        f"a DNS lookup failed (exit {res.returncode}): blocked"
+                        if ok
+                        else "a DNS lookup succeeded: the network is reachable"
+                    ),
                 )
             )
         except JailUnavailableError as exc:
@@ -234,7 +242,11 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
             SandboxReport(
                 name="jail_blocks_etc_write",
                 ok=ok,
-                detail=f"rc={res.returncode}; host /etc/agent6-escape exists: {not ok}",
+                detail=(
+                    "/etc/agent6-escape was not created"
+                    if ok
+                    else "/etc/agent6-escape was created on the host"
+                ),
             )
         )
     except JailUnavailableError as exc:
@@ -276,7 +288,7 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
 
     Returns 0 when every selected check passes, 1 otherwise.
     """
-    print(f"agent6 check: section={section}")
+    print(f"agent6 check: {'all sections' if section == 'all' else section}")
     print()
 
     checks: list[_DoctorCheck] = []
@@ -387,7 +399,9 @@ def _check_config_section(
         # leaving the operator to infer it from the level.
         ws = workspace_for(cfg, Path.cwd())
         grants = len({*ws.read_roots, *ws.write_roots})
-        print(f"  -> tools' files: {ws.root}  (+{grants} granted, -{len(ws.denied)} hidden)")
+        print(
+            f"  -> tools' files: {ws.root}  ({grants} extra paths granted, {len(ws.denied)} hidden)"
+        )
         out.append(
             _DoctorCheck(name="config.isolation", status="PASS", detail=f"selected {selected}")
         )
@@ -404,7 +418,7 @@ def _check_config_section(
                 _DoctorCheck(
                     name="config.refusal",
                     status="PASS",
-                    detail=f"every explicit knob is honoured on {selected}",
+                    detail=f"every explicit setting works on {selected}",
                 )
             )
     except IsolationUnavailableError as exc:
@@ -657,14 +671,9 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
     returns a single skip-style PASS so the doctor doesn't fail an
     unconfigured-by-design feature."""
     if not cfg.mcp.enabled or not cfg.mcp.servers:
-        print("(MCP disabled or no servers configured; skipping)")
-        return [
-            _DoctorCheck(
-                name="mcp",
-                status="PASS",
-                detail="not configured (cfg.mcp.enabled=False or empty servers)",
-            )
-        ]
+        cause = "[mcp].enabled = false" if not cfg.mcp.enabled else "no servers configured"
+        print(f"  (no MCP servers to check: {cause})")
+        return [_DoctorCheck(name="mcp", status="PASS", detail=f"not configured ({cause})")]
     try:
         env = detect_env()
         isolation = resolve_isolation(cfg.sandbox.isolation, env)
@@ -751,8 +760,9 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
         # deterministic tiers (the LLM tier is a run's own call). Advisory.
         cwd = Path.cwd()
         inferred = infer_verify_command(cwd, read_agents_md(cwd), llm_call=None)
+        origin = "AGENTS.md" if inferred and inferred.source == "agents_md" else ""
         detail = (
-            f"unset; a run here infers {shlex.join(inferred.argv)} (from {inferred.source})"
+            f"unset; a run here infers {shlex.join(inferred.argv)} from {origin or inferred.source}"
             if inferred is not None
             else "unset; nothing here to infer from (a run asks the reviewer model over the"
             " manifests, else goes gateless)"
@@ -791,6 +801,6 @@ def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
             )
         )
 
-    detail_git = "push/--force/history rewrites are refused unconditionally (git_ops, no override)"
+    detail_git = "push, --force and history rewrites are always refused; no setting enables them"
     out.append(_DoctorCheck(name="config.git_policy", status="PASS", detail=detail_git))
     return out

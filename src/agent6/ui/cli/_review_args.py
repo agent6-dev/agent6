@@ -23,8 +23,9 @@ def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         sub,
         "check",
         help=(
-            "Pre-flight checks: sandbox, config (provider keys included), boundaries,"
-            " MCP, verify_command. Read-only; safe on any clean repo."
+            "Check this host and repo before a run: the sandbox, the config and its"
+            " provider keys, the file and network boundaries, the MCP servers, the verify"
+            " command. Reads only; changes nothing."
         ),
     )
     check_p.add_argument(
@@ -32,10 +33,7 @@ def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         nargs="?",
         default="all",
         choices=("all", "sandbox", "config", "boundaries", "mcp", "verify"),
-        help=(
-            "Limit the report to one section. 'all' (default) runs every check"
-            " and prints a single PASS/FAIL summary."
-        ),
+        help="One section, or all (the default) with a PASS/FAIL summary at the end.",
     )
     _add_config_flag(check_p)
 
