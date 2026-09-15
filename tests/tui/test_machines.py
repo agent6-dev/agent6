@@ -170,6 +170,26 @@ def test_row_actions_are_dimmed_on_an_empty_machines_page(tmp_path: Path) -> Non
     asyncio.run(scenario())
 
 
+def test_watch_is_dimmed_for_an_authored_machine_that_has_not_run(tmp_path: Path) -> None:
+    """Watch attaches to an instance; offering it for a file-only row created
+    an empty instance directory and showed a synthetic stopped machine."""
+    _write(tmp_path / "tiny.asm.toml", TINY)
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachinesScreen)
+            assert screen.check_action("watch", ()) is None
+            await pilot.press("w")
+            await pilot.pause()
+            assert isinstance(app.screen, MachinesScreen)
+            assert not (tmp_path / ".agent6" / "machines" / "tiny").exists()
+
+    asyncio.run(scenario())
+
+
 def test_watch_screen_carries_the_menu_bar_and_its_items_resolve(
     tmp_path: Path, monkeypatch: object
 ) -> None:

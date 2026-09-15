@@ -742,17 +742,21 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         )
         self.app.sub_title = f"machines · {self.repo_cwd.name} · {tally}"
 
+    def _selected_row(self) -> MachineRow | None:
+        table = self.query_one("#machines", DataTable)
+        if self._machines and 0 <= table.cursor_row < len(self._machines):
+            return self._machines[table.cursor_row]
+        return None
+
     def _selected(self) -> Path | None:
         """The selected row's authored file; None for a row without one (an
         instance whose file is gone: watchable, not viewable or runnable)."""
-        table = self.query_one("#machines", DataTable)
-        if self._machines and 0 <= table.cursor_row < len(self._machines):
-            return self._machines[table.cursor_row].file
-        return None
+        row = self._selected_row()
+        return row.file if row is not None else None
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Grey out the row actions on a page with no selectable row: View and
-        Run need an authored file, Watch needs a row of any kind, and all three
+        Run need an authored file, Watch a row with an instance, and all three
         were silent no-ops the footer still offered. None, not False: False
         also HIDES the key, and a key missing from the footer reads as a
         capability this page does not have."""
@@ -760,7 +764,8 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         if action in ("view", "run"):
             return True if self._selected() is not None else None
         if action == "watch":
-            return True if self._machines else None
+            row = self._selected_row()
+            return True if row is not None and row.status else None
         return True
 
     def on_data_table_row_highlighted(self, _event: DataTable.RowHighlighted) -> None:
@@ -834,14 +839,14 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         """Open the live watch view for the selected machine's instance (whether it
         is currently running or has finished); an instance whose authored file
         is gone is watched from the source it recorded."""
-        path = self._selected()
-        if path is not None:
-            self._open_watch(path)
+        row = self._selected_row()
+        if row is None or not row.status:
             return
-        table = self.query_one("#machines", DataTable)
-        if self._machines and 0 <= table.cursor_row < len(self._machines):
-            instance = machines_root(self.agent6_dir) / self._machines[table.cursor_row].name
-            self._open_watch(instance / "machine.asm.toml")
+        if row.file is not None:
+            self._open_watch(row.file)
+            return
+        instance = machines_root(self.agent6_dir) / row.name
+        self._open_watch(instance / "machine.asm.toml")
 
     def _open_watch(self, path: Path) -> None:
         try:
