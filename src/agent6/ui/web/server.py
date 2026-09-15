@@ -37,6 +37,7 @@ from agent6.sessions.ipc import (
     register_frontend,
     unregister_frontend,
 )
+from agent6.types import OPERATOR_MODES
 from agent6.ui.spawn import spawn_new_work
 from agent6.ui.web import actions, model
 from agent6.ui.web._sse import SseChannel, stream_machine, stream_session
@@ -70,6 +71,7 @@ class NewWorkBody(_Body):
     mode: str
     task: str
     preset: str = ""
+    model: str = ""
 
 
 class SteerBody(_Body):
@@ -390,7 +392,12 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())
             session_dir, err = spawn_new_work(
-                self.cwd, body.mode, body.task, preset=body.preset, config_path=self.config_path
+                self.cwd,
+                body.mode,
+                body.task,
+                preset=body.preset,
+                model=body.model,
+                config_path=self.config_path,
             )
             session_id = session_dir.name if session_dir is not None else None
             self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
@@ -539,7 +546,21 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send_json({"ok": False, "error": err}, status=422)
 
-    def _route(self, path: str) -> None:  # noqa: PLR0911
+    def _send_routes(self) -> None:
+        """`/api/routes?mode=&preset=`: the composer's model box (see
+        `model.routes_payload`); a mode no operator starts is refused."""
+        q = parse_qs(urlsplit(self.path).query)
+        mode = (q.get("mode") or ["run"])[0]
+        if mode not in OPERATOR_MODES:
+            self._send_json({"error": f"unknown mode {mode!r}"}, status=422)
+            return
+        self._send_json(
+            model.routes_payload(
+                self.cwd, self.config_path, mode=mode, preset=(q.get("preset") or [""])[0]
+            )
+        )
+
+    def _route(self, path: str) -> None:  # noqa: PLR0911, PLR0912
         if path == "/":
             self._send_bytes(PAGE_HTML.encode("utf-8"), "text/html; charset=utf-8")
             return
@@ -566,6 +587,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/hub":
             self._send_json(model.hub_payload(self.cwd, self.config_path))
+            return
+        if path == "/api/routes":
+            self._send_routes()
             return
         if path in ("/api/config", "/api/config/provider_choices"):
             # The add-provider form's fixed choices and name presets come from

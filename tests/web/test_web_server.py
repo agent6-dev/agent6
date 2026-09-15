@@ -2071,3 +2071,61 @@ def test_re_adding_a_provider_keeps_its_other_keys(server: tuple[WebServer, int]
     cfg = json.loads(body)
     assert cfg["providers.openrouter.base_url"]["value"] == "https://openrouter.ai/api/v1"
     assert cfg["providers.openrouter.api_key_env"]["value"] == "OPENROUTER_KEY"
+
+
+def test_routes_payload_lists_every_route_and_the_modes_default(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/api/routes?mode=&preset=` feeds the composer's model box: every
+    provider/model the config can run and the one the mode runs under the
+    preset (a preset that swaps the worker model moves the default); an
+    unknown mode is refused."""
+    _srv, port = server
+    xdg = tmp_path / "xdg-config"
+    (xdg / "agent6").mkdir(parents=True)
+    (xdg / "agent6" / "config.toml").write_text(
+        '[providers.o]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nprovider = "o"\nmodel = "m"\n'
+        '[models.planner]\nprovider = "o"\nmodel = "p"\n'
+        '[presets.fast.models.worker]\nmodel = "f"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    status, body, _ = _get(port, "/api/routes?mode=run&preset=")
+    assert status == 200
+    assert json.loads(body) == {"routes": ["o/m", "o/p"], "default": "o/m"}
+    status, body, _ = _get(port, "/api/routes?mode=plan&preset=fast")
+    assert json.loads(body)["default"] == "o/p"
+    status, body, _ = _get(port, "/api/routes?mode=run&preset=fast")
+    assert json.loads(body)["default"] == "o/f"
+    status, body, _ = _get(port, "/api/routes?mode=machine")
+    assert (status, json.loads(body)["error"]) == (422, "unknown mode 'machine'")
+
+
+def test_new_work_carries_the_picked_model(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The composer's model pick reaches the one spawn every hub makes."""
+    import agent6.ui.web.server as server_mod
+
+    _srv, port = server
+    seen: list[tuple[str, str, str, str]] = []
+
+    def _spawn(
+        cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
+    ) -> tuple[Path | None, str]:
+        seen.append((mode, task, preset, model))
+        return tmp_path / "sid", ""
+
+    monkeypatch.setattr(server_mod, "spawn_new_work", _spawn)
+    status, body = _post(
+        port, "/api/new", {"mode": "plan", "task": "t", "preset": "fast", "model": "o/f"}
+    )
+    assert (status, body["session_id"]) == (200, "sid")
+    assert seen == [("plan", "t", "fast", "o/f")]

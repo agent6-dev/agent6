@@ -21,7 +21,7 @@ from agent6.app.parallel import subordinate_workdir_root
 from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective
 from agent6.git_ops import EMPTY_TREE, commit_diff, diff_range, run_ref_tips
-from agent6.models.choices import config_value_choices
+from agent6.models.choices import available_routes, config_value_choices, default_route
 from agent6.paths import state_dir
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import (
@@ -190,6 +190,18 @@ def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
 def list_machine_files(cwd: Path) -> list[dict[str, str]]:
     """The hub's machine-file rows (`viewmodel.machine_files`)."""
     return [{"path": str(p), "name": p.name} for p in machine_files(cwd)]
+
+
+def routes_payload(
+    cwd: Path, config_path: Path | None, *, mode: str, preset: str
+) -> dict[str, Any]:
+    """The new-work composer's model picker: every `provider/model` the
+    config can run, and the one a session of *mode* under *preset* runs by
+    default (the lists the TUI picker shows)."""
+    return {
+        "routes": available_routes(cwd, config_path),
+        "default": default_route(cwd, config_path, mode, preset),
+    }
 
 
 def hub_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:

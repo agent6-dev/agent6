@@ -17,7 +17,7 @@ from agent6.ui.web.page import PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "4777be28a17c4da6868aee06a5b3d591d26283c538402054e5759554288ab93d"
+PAGE_SHA256 = "c88db1025f7e548ec3896041249871c20c2e6114a81c89307e356f709677b717"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -47,6 +47,20 @@ def test_the_sessions_card_folds_a_fan_outs_lanes() -> None:
     # and a lane row is a keyboard-reachable button like every other row.
     assert "toggle.onkeydown = (e) => e.stopPropagation();" in client
     assert "actionable(li, " in client
+
+
+def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
+    """A mode or preset change cannot submit the previous pair's model while
+    its route request is pending, and late older responses cannot replace the
+    newest pair's choices."""
+    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    refresh = client[client.index("function newWorkDock") : client.index("// The create-machine")]
+    request = refresh.index("const request = ++routeRequest;")
+    cleared = refresh.index("model.value = '';")
+    awaited = refresh.index("await getJSON('/api/routes")
+    stale_guard = refresh.index("if (request !== routeRequest) return;")
+    populated = refresh.index("model.value = d.default || '';")
+    assert request < cleared < awaited < stale_guard < populated
 
 
 def test_the_config_editor_sends_a_string_leaf_as_a_toml_string() -> None:

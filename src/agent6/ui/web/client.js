@@ -230,8 +230,13 @@ function attachParallelSuggest(task, root) {
 }
 
 // The new-work composer, docked at the bottom of the Sessions page: task text +
-// mode + preset + Start (Enter starts, Shift+Enter newline). `presets` is the
-// hub payload's list; the first option keeps the config's own preset.
+// mode + preset + model + Start (Enter starts, Shift+Enter newline). `presets`
+// is the hub payload's list; the first option keeps the config's own preset.
+// The model box lists every provider/model the config can run (/api/routes)
+// and shows the one the config resolves for the mode and preset, re-resolved
+// on every change of either; a pick rides as --model, the last layer over the
+// config, and "config default" (no route resolved, or chosen) leaves the
+// model to the config.
 function newWorkDock(presets) {
   const root = el('div', 'composer dock dock-fixed');
   const row = el('div', 'row');
@@ -242,12 +247,36 @@ function newWorkDock(presets) {
   preset.title = 'config preset for this run (a preset cannot change mid-run)';
   const dflt = el('option', null, 'preset: config default'); dflt.value = ''; preset.appendChild(dflt);
   for (const p of (presets || [])) { const o = el('option', null, p); o.value = p; preset.appendChild(o); }
+  const model = el('select', 'field'); model.style.flex = '0 0 auto'; model.style.width = 'auto';
+  model.title = 'the model for this run, over every config layer; re-resolved whenever the mode or preset changes';
+  let routeRequest = 0;
+  const fillRoutes = async () => {
+    const request = ++routeRequest;
+    model.value = '';
+    model.disabled = true;
+    let d;
+    try {
+      d = await getJSON('/api/routes?mode=' + encodeURIComponent(mode.value) + '&preset=' + encodeURIComponent(preset.value));
+    } catch (e) {
+      if (request === routeRequest) { model.disabled = false; toast(e.message, true); }
+      return;
+    }
+    if (request !== routeRequest) return;
+    const routes = (d.routes || []).slice();
+    if (d.default && !routes.includes(d.default)) routes.unshift(d.default);
+    model.textContent = '';
+    const none = el('option', null, 'model: config default'); none.value = ''; model.appendChild(none);
+    for (const r of routes) { const o = el('option', null, r); o.value = r; model.appendChild(o); }
+    model.value = d.default || '';
+    model.disabled = false;
+  };
+  mode.onchange = fillRoutes; preset.onchange = fillRoutes; fillRoutes();
   const go = el('button', 'primary', 'Start');
   const start = async () => {
     if (!task.value.trim()) return;
     go.disabled = true;
     try {
-      const d = await postJSON('/api/new', { mode: mode.value, task: task.value, preset: preset.value });
+      const d = await postJSON('/api/new', { mode: mode.value, task: task.value, preset: preset.value, model: model.value });
       if (d.session_id) location.hash = '#/session/' + encodeURIComponent(d.session_id);
     } catch (e) { toast(e.message, true); go.disabled = false; }
   };
@@ -257,7 +286,7 @@ function newWorkDock(presets) {
     if (ac.onKeyDown(e)) return;   // the /parallel suggestion popup took the key
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); }
   };
-  row.appendChild(task); row.appendChild(mode); row.appendChild(preset); row.appendChild(go);
+  row.appendChild(task); row.appendChild(mode); row.appendChild(preset); row.appendChild(model); row.appendChild(go);
   root.appendChild(growGrip(task));
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask · Shift+Enter newline · '
