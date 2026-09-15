@@ -1235,3 +1235,28 @@ def test_both_run_views_word_a_dead_state_the_same(tmp_path: Path, make: Any) ->
     assert word in ("created", "parked", "stale")
     first = out[0].split("\n")[0].strip()
     assert first and first in empty_conversation_note(word, detail, ended=True)
+
+
+def test_a_session_that_never_commits_shows_no_commit_pane(tmp_path: Path) -> None:
+    """An ask (and a plan) never commits, and the dashboard still gave a pane
+    to "(no diffs yet)"; the log pane takes the width instead. A run keeps it."""
+    for mode, name in (("ask", "asks"), ("run", "runs")):
+        d = tmp_path / name / f"{mode}-one-AAAAAA"
+        d.mkdir(parents=True)
+        (d / "manifest.json").write_text(
+            json.dumps({"version": 3, "session_id": d.name, "mode": mode, "user_task": "t"}),
+            encoding="utf-8",
+        )
+        evs = [
+            {"type": "session.start", "session_id": d.name, "mode": mode, "user_task": "t"},
+            {"type": "session.end", "reason": "answered", "iterations": 1, "all_passed": None},
+        ]
+        (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+
+        async def scenario(d: Path = d, mode: str = mode) -> None:
+            app = Agent6TUI(d)
+            async with app.run_test(size=(140, 40)) as pilot:
+                await _open_dash(app, pilot)
+                assert app._dash.query_one("#diff").display is (mode == "run")
+
+        asyncio.run(scenario())

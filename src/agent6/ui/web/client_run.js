@@ -516,6 +516,8 @@ function paintRun(cards, s) {
   // chain (newest first) with a cumulative toggle, hidden truthfully when the
   // model owns git (no chain) or nothing is committed yet.
   cards.diff.innerHTML = '';
+  // An ask or a plan never commits: no card, as the shells card goes without a shell.
+  cards.diff.parentElement.style.display = s.mode === 'ask' || s.mode === 'plan' ? 'none' : '';
   const steps = (s.steps || []).slice().reverse();
   if (s.git_control === 'model') {
     cards.diff.appendChild(el('div', 'muted', 'the model owns git in this run: no step chain'));

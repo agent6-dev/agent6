@@ -96,3 +96,10 @@ def test_the_run_card_shows_the_task_line_the_hub_rows_show() -> None:
     assert "add('task', s.task_line || '(none)')" in client
     assert "s.user_task || '').split(" not in client
     assert "add('task', s.user_task || '(none)')" not in client
+
+
+def test_a_session_that_never_commits_shows_no_commit_card() -> None:
+    """An ask or a plan never commits; the run page still gave "Latest commit"
+    a card saying "no commit yet". Hidden by mode, as the shells card is by count."""
+    hidden = "cards.diff.parentElement.style.display = "
+    assert hidden + "s.mode === 'ask' || s.mode === 'plan' ? 'none' : '';" in CLIENT_JS

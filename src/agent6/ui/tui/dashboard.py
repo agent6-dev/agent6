@@ -411,6 +411,8 @@ class DashboardScreen(ScreenChrome, Screen[None]):
 
     def on_mount(self) -> None:
         self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
+        # An ask or a plan never commits: the log pane takes the diff pane's width.
+        self.query_one("#diff", _ScrollPane).display = self._tui.mode not in ("ask", "plan")
         self.render_state()  # initial paint; later paints are coalesced in the app's tick
         # Like the conversation: open ready to type (Tab moves out to the panes).
         self.query_one("#dash-input", SteerInput).focus()
