@@ -27,7 +27,51 @@ from agent6.types import NetworkMode
 
 pytestmark = pytest.mark.needs_namespaces
 
-_PORT = 47901
+# Below the kernel's ephemeral range (32768 and up by default): a probe whose
+# kernel-chosen source port equals its destination completes a TCP simultaneous
+# open with itself and reads as a reach with no listener at all.
+_PORT = 27901
+
+
+def _reach_line(ok: str) -> str:
+    """The probe line that prints *ok* only for a peer other than the socket
+    itself: a client whose source port equals its destination completes a TCP
+    simultaneous open with itself, which a bare connect() cannot tell from a
+    listener. A self-connect prints `REFUSED self-connect`."""
+    return f"print({ok!r} if s.getsockname() != s.getpeername() else 'REFUSED self-connect')\n"
+
+
+def _connect_probe(port: int, ok: str) -> str:
+    """A probe script: connect to 127.0.0.1:*port* and print *ok* for a real
+    peer, else `REFUSED <reason>`."""
+    return (
+        "import socket\n"
+        "try:\n"
+        f"    s = socket.create_connection(('127.0.0.1',{port}),timeout=4)\n"
+        + "    "
+        + _reach_line(ok)
+        + "except OSError as e:\n"
+        "    print('REFUSED',type(e).__name__)\n"
+    )
+
+
+def test_a_self_connect_reads_as_refused() -> None:
+    """A client bound to its own destination port connects to itself; the
+    probe must not call that a reach."""
+    port = _PORT + 9
+    forced = (
+        "import socket\n"
+        "s = socket.socket()\n"
+        "s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n"
+        f"s.bind(('127.0.0.1',{port}))\n"
+        f"s.connect(('127.0.0.1',{port}))\n" + _reach_line("REACHED")
+    )
+    run = subprocess.run(
+        ["/usr/bin/python3", "-c", forced], capture_output=True, text=True, timeout=30, check=False
+    )
+    assert "REACHED" not in run.stdout and "REFUSED self-connect" in run.stdout, (
+        run.stdout + run.stderr
+    )
 
 
 def _net_of(cwd: Path, network: NetworkMode, session_net: SessionNetwork | None) -> str:
@@ -89,7 +133,8 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: Path
         probe = (
             "import socket\n"
             "try:\n"
-            f"    socket.create_connection(('127.0.0.1',{_PORT}),timeout=5);print('SIBLING OK')\n"
+            f"    s = socket.create_connection(('127.0.0.1',{_PORT}),timeout=5)\n"
+            "    print('SIBLING OK' if s.getsockname() != s.getpeername() else 'SELF')\n"
             "except OSError as e:\n"
             "    print('SIBLING FAIL',type(e).__name__)\n"
             "try:\n"
@@ -138,13 +183,7 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: Path) -> N
         assert listener.stdout is not None
         assert b"UP" in listener.stdout.readline()
 
-        probe = (
-            "import socket\n"
-            "try:\n"
-            f"    socket.create_connection(('127.0.0.1',{_PORT + 1}),timeout=4);print('REACHED')\n"
-            "except OSError as e:\n"
-            "    print('REFUSED',type(e).__name__)\n"
-        )
+        probe = _connect_probe(_PORT + 1, "REACHED")
         argv = ("/usr/bin/python3", "-c", probe)
         outsider = spawn_in_jail(
             jail_policy(tmp_path, Config(), "strict", argv, network="none"),
@@ -669,13 +708,7 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: Path) -> None:
         assert listener.stdout is not None
         assert b"UP" in listener.stdout.readline()
 
-        probe = (
-            "import socket\n"
-            "try:\n"
-            f"    socket.create_connection(('127.0.0.1',{port}),timeout=4);print('REACHED')\n"
-            "except OSError as exc:\n"
-            "    print('REFUSED',type(exc).__name__)\n"
-        )
+        probe = _connect_probe(port, "REACHED")
         intruder = spawn_in_jail(
             jail_policy(
                 tmp_path, Config(), "strict", ("/usr/bin/python3", "-c", probe), network="session"

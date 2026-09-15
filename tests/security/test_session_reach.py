@@ -32,7 +32,7 @@ from agent6.ui.cli.net_cmds import (
 
 pytestmark = pytest.mark.needs_namespaces
 
-_PORT = 48411
+_PORT = 28411  # below the ephemeral range, like test_session_network's
 
 
 def _serving(
