@@ -28,6 +28,7 @@ adding another tool there takes a security review note.
 
 from __future__ import annotations
 
+import os
 import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -491,14 +492,15 @@ class SymbolIndex:
         self._dirty.clear()
 
     def _scan_all(self) -> None:
-        for path in self._root.rglob("*"):
-            if not path.is_file():
-                continue
-            if self._included_rel(path) is None:
-                continue
-            if self._lang_for(path) is None:
-                continue
-            self._reparse(path)
+        """Parse every file of a known language under the root, pruning the
+        excluded directories before descending (a `.venv` or `node_modules`
+        is most of a tree's entries) and skipping other suffixes before any
+        path work; `_reparse` applies the boundary to what remains."""
+        for dirpath, dirnames, filenames in os.walk(self._root):
+            dirnames[:] = [d for d in dirnames if d not in self._excludes]
+            for name in filenames:
+                if Path(name).suffix in _LANG_TABLE:
+                    self._reparse(Path(dirpath, name))
 
     def _reparse(self, path: Path) -> None:
         p = path.resolve()
