@@ -468,7 +468,17 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
         fh.write('{"type": "session.end", "reason": "finish_session", "all_passed": true}\n')
 
     assert main(["sessions", "rm", "live-run"]) == 2
-    assert "still live" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "still live" in err and "sessions stop live-run-AAAA11" in err
+    assert live.is_dir()
+
+    # session.end precedes the worker's finalizer. The pid remains the deletion
+    # gate until teardown finishes using the session directory.
+    with (live / "logs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write('{"type": "session.end", "reason": "finish_session", "all_passed": true}\n')
+    assert main(["sessions", "rm", "live-run"]) == 2
+    err = capsys.readouterr().err
+    assert "still live" in err and "sessions stop live-run-AAAA11" in err
     assert live.is_dir()
 
     assert main(["sessions", "rm", "dead-run"]) == 0

@@ -33,7 +33,7 @@ from agent6.git_ops import (
 )
 from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.ipc import request_stop
+from agent6.sessions.ipc import request_stop, worker_is_alive
 from agent6.sessions.layout import (
     SESSION_BUCKETS,
     SessionLayout,
@@ -514,7 +514,7 @@ def _rm_refusal(layout: SessionLayout, worktree: Path | None, tips: tuple[str, .
 
     The record is the only thing that names a fork's worktree, so deleting one
     that still holds work no commit has would leave nothing to find it by."""
-    if session_is_live(layout.session_dir):
+    if worker_is_alive(layout.session_dir):
         return (
             f"{layout.session_id} is still live; stop it first"
             f" (agent6 sessions stop {layout.session_id})."
