@@ -159,47 +159,14 @@ def skills_block(resolved: ResolvedSkills) -> str:
 
 
 def repo_priors_block(repo: RepoSummary) -> str:
-    """Render the <repo-priors> block: the repo header line plus the structural
-    priors (co-change pairs, hot symbols, repo map, symbol outline) that are
-    present on this summary. Outside a git repository (`agent6 ask` runs
-    anywhere) the header names the situation so the model doesn't reach for
-    git history or a tracked-file map that isn't there."""
-    co_change_block = ""
-    if repo.co_change_pairs:
-        lines = "\n".join(
-            f"  {p.file_a} <-> {p.file_b}  (changed together {p.count} times)"
-            for p in repo.co_change_pairs[:20]
-        )
-        co_change_block = (
-            "Git co-change pairs (files that historically change together;"
-            " consider when editing one of these):\n"
-            f"{lines}\n\n"
-        )
-
-    hot_symbols_block = ""
-    if repo.hot_symbols:
-        lines = "\n".join(
-            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line},"
-            f" referenced across {s.files_referenced} files"
-            for s in repo.hot_symbols[:15]
-        )
-        hot_symbols_block = (
-            "Hot symbols (identifier occurrences span the listed file count;"
-            " inspect before changing one):\n"
-            f"{lines}\n\n"
-        )
-
+    """Render the <repo-priors> block: the repo header line, the top-level
+    listing, the repo map, AGENTS.md and the recent commits. Outside a git
+    repository (`agent6 ask` runs anywhere) the header names the situation
+    so the model doesn't reach for git history or a tracked-file map that
+    isn't there."""
     repo_map_block = ""
     if repo.repo_map:
         repo_map_block = f"Repo map (tracked files grouped by directory):\n{repo.repo_map}\n\n"
-
-    symbol_outline_block = ""
-    if repo.symbol_outline:
-        symbol_outline_block = (
-            "Symbol outline (definitions (nested included) per file from the tree-sitter index;"
-            " line numbers are 1-based):\n"
-            f"{repo.symbol_outline}\n\n"
-        )
 
     if repo.is_git:
         repo_line = (
@@ -218,9 +185,6 @@ def repo_priors_block(repo: RepoSummary) -> str:
         top_level=", ".join(repo.top_level),
         agents_block=agents_block,
         repo_map_block=repo_map_block,
-        symbol_outline_block=symbol_outline_block,
-        co_change_block=co_change_block,
-        hot_symbols_block=hot_symbols_block,
         recent=f"Recent commits:\n{repo.recent_log or '(none)'}",
     )
 
@@ -277,11 +241,10 @@ def build_system_prompt(
     Anthropic prompt-caching machinery. Per-turn cost after the first call is
     ~10% of full input rate for the cached prefix.
 
-    `mode="plan"` swaps the base block for the planning-mode
-    prompt; the verify/repo/co-change/hot-symbols blocks below are
-    appended unchanged so the planner sees the same project context an
-    executor would. The metric block is run-mode only (the other modes
-    do not expose `run_metric_command`).
+    `mode="plan"` swaps the base block for the planning-mode prompt; the
+    verify, budget and repository blocks below are appended unchanged so the
+    planner sees the same project context an executor would. The metric block
+    is run-mode only (the other modes do not expose `run_metric_command`).
     """
     base = (
         ASK_SYSTEM_PROMPT_BASE

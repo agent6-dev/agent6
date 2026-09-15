@@ -316,8 +316,8 @@ class ContextConfig(BaseModel):
 
 
 class PromptConfig(BaseModel):
-    """`[prompt]` section: system-prompt override, structural priors, and
-    one-shot task-prompt revision."""
+    """`[prompt]` section: system-prompt override, task-prompt revision, and
+    decomposition."""
 
     model_config = MODEL_CONFIG
 
@@ -335,19 +335,6 @@ class PromptConfig(BaseModel):
             "blocks still append). The tool contracts become yours to state; a file missing the "
             "core tool names is warned about at startup. Empty: the built-in base. `agent6 prompt "
             "show` prints the assembled prompt, the tool definitions, and the first message."
-        ),
-    )
-    # Include the structural-prior blocks in the run-mode <repo-priors>: hot
-    # symbols (cross-file reference ranking), git co-change pairs, and the
-    # tree-sitter symbol outline. Default on. Set false for a leaner/cheaper
-    # prompt that relies purely on on-demand exploration (outline/find_definition)
-    # (the base repo map and AGENTS.md still ship).
-    structural_priors: bool = Field(
-        default=True,
-        description=(
-            "Include the `<repo-priors>` block in the system prompt: the repo map, the symbol "
-            "outline, co-change and hot-symbol hints, recent commits. `false` for a leaner, "
-            "cheaper prompt."
         ),
     )
     # one-shot task prompt revision before the worker loop starts.

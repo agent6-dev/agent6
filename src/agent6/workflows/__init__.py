@@ -39,10 +39,8 @@ def system_prompt_for(
     state_dir: Path | None = None,
 ) -> str:
     """Assemble the exact system prompt agent6 would send for *root* + *config*
-    in *mode*. Public entry point for `agent6 prompt show` and tooling. Builds a
-    ToolDispatcher so the `<repo-priors>` block is FULLY enriched (repo map +
-    AGENTS.md + recent commits + hot symbols + co-change + symbol outline) -- the
-    same view the run loop sees, so prompt show matches reality.
+    in *mode*. Public entry point for `agent6 prompt show` and tooling; the
+    `<repo-priors>` block is the run loop's own (`load_repo_summary`).
 
     The memory index and installed skills are loaded on
     the loop's own rules (none of the first two in machine/agent modes, skills
@@ -50,10 +48,7 @@ def system_prompt_for(
     an operator checking what future runs actually receive. *state_dir* is
     the per-repo state dir those live under, injected by the caller exactly as
     the loop's is."""
-    dispatcher = (
-        ToolDispatcher(root=root, config=config) if config.prompt.structural_priors else None
-    )
-    repo = load_repo_summary(root, dispatcher=dispatcher)
+    repo = load_repo_summary(root)
     # Machine and agent modes assemble without repo context, so neither half of
     # per-repo recall applies: one gate, not one per block.
     recall = None if mode == "agent" else state_dir

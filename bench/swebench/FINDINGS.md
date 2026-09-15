@@ -192,8 +192,8 @@ What moved resolve rate: working verify (+2/18, recovered django wins) and
 model choice (opus 4/6 at 12-20 turns vs glm ~39% at ~49 turns). The
 structural-prior A/B supplies more repo context than aider (ranked hot
 symbols, tree-sitter outline, git co-change) and does not help SWE-bench;
-upfront context is not the bottleneck. `prompt.structural_priors=false`
-gives a leaner prompt with no measured resolve cost.
+upfront context is not the bottleneck. The structural block is removed
+(the dev-slice section below).
 
 **Conclusion:** spend on the model and on verify quality, not on
 prompt/review/context scaffolding. Escalation (cheap worker, auto-bump to a
@@ -1221,3 +1221,22 @@ without editing the named file. The trigger is too tight in the field
 notice did not move the model where it fired; the arm is parked, not
 shipped. Spend today: 1.0 (batch-10 rerun) + 0.2 (staging smoke) + 13
 (full-110) + 0.3 (layer smokes) + 1.3 (pilot) = 15.8 of 25 points.
+
+### Repo priors on the dev slice: the block cost every start and moved one instance (2026-09-14)
+
+Arms: the structural `<repo-priors>` block (symbol outline, hot symbols, co-change pairs) on and off; the dev slice (`dev_slice_25.json`, n=25 each, never a headline number); gpt-5.6-sol at effort medium on the ChatGPT plan; verify on; 1 plan point per instance; the same wheel; the official scorer.
+
+| arm | resolved | empty | mean iterations | mean uncached input tokens | session.start to first model call |
+|---|--:|--:|--:|--:|--:|
+| priors on | 22/25 | 1 | 21.3 | 38,376 | 19.9 s (2.8 to 40.1) |
+| priors off | 20/25 | 2 | 21.2 | 35,326 | 0.3 s (0.1 to 0.7) |
+
+- 20 instances resolved in both arms; none only without the priors; two only with them.
+- sympy-13877 without the priors ended `budget_exhausted` at iteration 3: the 1-point cap read as spent when the plan's whole-percent meter ticked over mid-run, not a capability result.
+- django-16950: both arms patched it; the patch without the priors fails the tests.
+- Identical patch bytes on 12 of 25 instances; the same end reason on 19.
+- Replicates of the two disagreeing instances, three per arm: with the priors 6/6, without them 5/6 (sympy-13877 3/3; django-16950 2/3, so 4/4 with the priors and 2/4 without over every run).
+
+Mechanism: the block needed the tree-sitter index of the whole tree before the first call, 20 s on django and 40 s on sympy in the container and minutes on larger trees, and added up to 8k characters to every call's system prompt, which the plan wire does not cache.
+
+State: the structural block is removed. `<repo-priors>` keeps the repo map, AGENTS.md and the recent commits; the nav tools (`outline`, `find_definition`, `find_references`) build the index on their first call.

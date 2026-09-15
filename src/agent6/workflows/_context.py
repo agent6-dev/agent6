@@ -1,20 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Repo context for the system prompt: AGENTS.md discovery and the
-structural repo summary (file map + priors)."""
+"""Repo context for the system prompt: AGENTS.md discovery and the repo
+summary (the header line, the top-level listing, the file map, recent
+commits)."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from agent6.budget import BudgetExceeded
-from agent6.git_ops import co_change_pairs, is_git_repo, recent_log, status, toplevel, tracked_files
-from agent6.types import CoChangePair, HotSymbol, RepoSummary
-from agent6.workflows._symbol_outline import build_symbol_outline_block
-
-if TYPE_CHECKING:
-    from agent6.tools.dispatch import ToolDispatcher
+from agent6.git_ops import is_git_repo, recent_log, status, toplevel, tracked_files
+from agent6.types import RepoSummary
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6
@@ -139,16 +134,9 @@ def _build_repo_map(tracked: tuple[str, ...]) -> str:
     return "\n".join(rows)
 
 
-def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -> RepoSummary:
-    """Build a `RepoSummary` for the workspace rooted at `root`.
-
-    Base view (layout, AGENTS.md, recent commits, repo map) is shared by the
-    implement and plan-mode workflows. When *dispatcher* is given (the run loop,
-    and `agent6 prompt show`), ALSO enrich with structural priors: hot symbols
-    (cross-file reference hot spots), git co-change pairs, and the tree-sitter
-    symbol outline. Enrichment is best-effort -- a parser or git-history hiccup
-    must not block the run -- but BudgetExceeded / KeyboardInterrupt propagate so
-    the loop's budget guarantee and abort path stay intact.
+def load_repo_summary(root: Path) -> RepoSummary:
+    """Build a `RepoSummary` for the workspace rooted at `root`: the layout,
+    AGENTS.md, recent commits and the repo map, shared by every mode.
 
     Outside a git repository (`agent6 ask` runs anywhere; run/plan refuse up
     front) the git-derived fields stay empty: the top-level listing is the
@@ -169,49 +157,14 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
     # junk (a misleading number to the model) and traverse the whole tree every
     # startup.
     tracked = tracked_files(root) if in_git else ()
-    file_count = len(tracked)
-    agents_md = agents_md_text(root)
-    hot: tuple[HotSymbol, ...] = ()
-    co_change: tuple[CoChangePair, ...] = ()
-    symbol_outline = ""
-    if dispatcher is not None:
-        try:
-            hot = tuple(
-                HotSymbol(*t)
-                for t in dispatcher.symbol_index().hot_symbols(
-                    max_symbols=20, min_files_referenced=2
-                )
-            )
-        except (BudgetExceeded, KeyboardInterrupt):
-            raise
-        except Exception:
-            hot = ()
-        if in_git:
-            try:
-                co_change = tuple(CoChangePair(*t) for t in co_change_pairs(root, n_commits=200))
-            except (BudgetExceeded, KeyboardInterrupt):
-                raise
-            except Exception:
-                co_change = ()
-        try:
-            symbol_outline = build_symbol_outline_block(
-                dispatcher.symbol_index().file_outlines(), root=root
-            )
-        except (BudgetExceeded, KeyboardInterrupt):
-            raise
-        except Exception:
-            symbol_outline = ""
     return RepoSummary(
         root=root,
         branch=st.branch if st is not None else "",
         head_sha=st.head_sha if st is not None else "",
-        file_count=file_count,
+        file_count=len(tracked),
         top_level=top,
-        agents_md=agents_md,
+        agents_md=agents_md_text(root),
         recent_log=recent_log(root, n=20) if in_git else "",
         repo_map=_build_repo_map(tracked),
-        co_change_pairs=co_change,
-        hot_symbols=hot,
-        symbol_outline=symbol_outline,
         is_git=in_git,
     )

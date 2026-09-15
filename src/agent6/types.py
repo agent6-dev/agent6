@@ -260,26 +260,6 @@ class JailPolicy:
 
 
 @dataclass(frozen=True, slots=True)
-class CoChangePair:
-    """Two files that changed together, and how many commits they co-changed in."""
-
-    file_a: str
-    file_b: str
-    count: int
-
-
-@dataclass(frozen=True, slots=True)
-class HotSymbol:
-    """A symbol whose rename/signature change would ripple across files."""
-
-    name: str
-    kind: str
-    def_path: str
-    def_line: int
-    files_referenced: int
-
-
-@dataclass(frozen=True, slots=True)
 class RepoSummary:
     """Compact view of a repository handed to the planner."""
 
@@ -290,30 +270,10 @@ class RepoSummary:
     top_level: tuple[str, ...]
     agents_md: str
     recent_log: str
-    # Top co-change pairs mined from `git log --name-only`. Tuple
-    # of (file_a, file_b, count) sorted by count desc. Empty when the
-    # repo has insufficient history (a fresh `--depth=1` clone, say) or when no
-    # pair co-changed at least 2 commits.
-    co_change_pairs: tuple[CoChangePair, ...] = ()
-    # Top "hot" symbols mined from the tree-sitter index. Tuple
-    # of (name, kind, def_path, def_line, files_referenced) sorted by
-    # cross-file reference count desc. Complements co_change_pairs:
-    # works on fresh repos (no history needed). Empty when the index
-    # is disabled or no symbol crosses the min_files_referenced
-    # threshold.
-    hot_symbols: tuple[HotSymbol, ...] = ()
     # Compact directory map built from `git ls-files`. Multi-line
     # string of `path/  (N files: a, b, ...)` rows, capped so it stays
     # within a few KB. Empty outside a git repo or when ls-files fails.
     repo_map: str = ""
-    # per-file symbol outline mined from the tree-sitter index.
-    # Multi-line string of `PATH:` headers followed by `  KIND NAME:LINE`
-    # rows, ordered by source position. Capped so the block never exceeds
-    # a few KB of system-prompt space; oversized files are truncated with
-    # a `... (+N more)` row, and overflow at the file level is summarised
-    # as `... (N more files)`. Empty when no parser is available or the
-    # index is disabled.
-    symbol_outline: str = ""
     # False when root is not a git repository (`agent6 ask` runs anywhere;
     # run/plan require git up front). branch/head_sha/recent_log/repo_map
     # are then empty and the prompt names the situation instead of

@@ -7,8 +7,6 @@ Provides a `SymbolIndex` over a project root:
     outline(path)            -> symbol declarations in one file (nested too)
     find_definition(name)    -> every declaration of `name` across the project
     find_references(name)    -> every identifier occurrence of `name` (incl. def)
-    hot_symbols()            -> cross-file reference ranking (repo priors)
-    file_outlines()          -> per-file symbol lists across the index
 
 The index is built lazily on the first query, then updated incrementally when
 the caller marks files changed via `mark_changed(path)` / `mark_deleted(path)`.
@@ -30,7 +28,6 @@ from __future__ import annotations
 
 import os
 import threading
-from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -44,8 +41,7 @@ from agent6.tools._path_safety import Workspace, contain, read_bytes_contained
 @dataclass(frozen=True, slots=True)
 class Symbol:
     """A definition site. `path` is absolute; `line`/`col` are 1-based,
-    the convention every emitting surface shares (the LSP twins and the
-    system-prompt repo map)."""
+    the convention shared by the navigation tools and their LSP twins."""
 
     name: str
     kind: str  # 'function' | 'class' | 'method' | 'struct' | 'enum' | ...
@@ -386,77 +382,6 @@ class SymbolIndex:
                     if r.name == name:
                         out.append(r)
             out.sort(key=lambda r: (str(r.path), r.line, r.col))
-            return out
-
-    def hot_symbols(
-        self,
-        *,
-        max_symbols: int = 20,
-        min_files_referenced: int = 2,
-    ) -> list[tuple[str, str, str, int, int]]:
-        """Top symbols by cross-file reference count.
-
-        Returns a list of (name, kind, def_path, def_line, files_referenced)
-        tuples, sorted by `files_referenced` descending. Only symbols whose
-        identifier appears in at least `min_files_referenced` distinct
-        files are included, which filters out file-local helpers; the
-        occurrences are pooled by name, unresolved, so two unrelated
-        definitions of one name count as one. Definition site is taken as the first symbol's
-        path:line; ambiguous names with multiple definitions return the
-        alphabetically-first def.
-
-        Cheap planner prior: knowing that "build_kernel" is referenced
-        across 4 files lets the planner enumerate those files in
-        relevant_paths up-front, the same payoff shape as co-change
-        pairs but driven by static analysis instead of git history.
-        Works on fresh repos (no history needed).
-        """
-        with self._lock:
-            self._ensure_fresh()
-            files_per_name: defaultdict[str, set[Path]] = defaultdict(set)
-            ref_count: Counter[str] = Counter()
-            for refs in self._refs.values():
-                for r in refs:
-                    files_per_name[r.name].add(r.path)
-                    ref_count[r.name] += 1
-            defs_by_name: dict[str, list[Symbol]] = defaultdict(list)
-            for syms in self._symbols.values():
-                for s in syms:
-                    defs_by_name[s.name].append(s)
-        qualifying: list[tuple[str, str, str, int, int]] = []
-        for name, files in files_per_name.items():
-            n_files = len(files)
-            if n_files < min_files_referenced:
-                continue
-            defs = defs_by_name.get(name) or []
-            # Some references have no def in the index (e.g. stdlib /
-            # third-party names); skip those - the planner can't action
-            # them.
-            if not defs:
-                continue
-            d = sorted(defs, key=lambda s: (str(s.path), s.line))[0]
-            try:
-                rel = d.path.resolve().relative_to(self._root.resolve())
-                rel_str = str(rel)
-            except ValueError:
-                rel_str = str(d.path)
-            qualifying.append((name, d.kind, rel_str, d.line, n_files))
-        qualifying.sort(key=lambda t: (-t[4], t[0]))
-        return qualifying[:max_symbols]
-
-    def file_outlines(self) -> dict[Path, list[Symbol]]:
-        """Per-file symbol lists (nested included) across the whole index.
-
-        Returns a fresh dict mapping absolute file path -> in-source-order
-        list of Symbol records. Used by the system-prompt repo map to
-        give the agent a one-line-per-symbol outline of the codebase
-        without round-tripping `outline` for every file.
-        """
-        with self._lock:
-            self._ensure_fresh()
-            out: dict[Path, list[Symbol]] = {}
-            for path, syms in self._symbols.items():
-                out[path] = sorted(syms, key=lambda s: (s.line, s.col))
             return out
 
     # ------------------------------------------------------------------

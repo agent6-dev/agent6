@@ -60,7 +60,7 @@ def test_index_evicts_deleted_file(tmp_path: Path) -> None:
 
     assert idx.find_definition("doomed") == []
     # The phantom path must not survive in any reader.
-    assert all(p != src.resolve() for p in idx.file_outlines())
+    assert idx.find_references("doomed") == []
 
 
 def test_index_concurrent_readers_do_not_raise(tmp_path: Path) -> None:
@@ -78,8 +78,6 @@ def test_index_concurrent_readers_do_not_raise(tmp_path: Path) -> None:
             while not stop.is_set():
                 idx.find_definition("helper")
                 idx.find_references("helper")
-                idx.hot_symbols()
-                idx.file_outlines()
                 # outline() adds new keys on demand -> mutates while others read
                 idx.outline(tmp_path / "f0.py")
         except BaseException as exc:

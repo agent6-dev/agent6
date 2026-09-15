@@ -129,10 +129,8 @@ dir.mkdir(parents=True)
 if "repo_url" in task:
     # Shallow clone at the pinned tag/commit. --branch accepts both tags and branch names.
     subprocess.run(
-        # Depth 200 so co_change_pairs can mine ~200 commits of
-        # history for cross-file edit-group priors. The historical depth=1
-        # gave the planner nothing to work with; --depth 200 adds <2MB to
-        # the clone for click-class repos.
+        # Depth 200 so the run's recent-commit context has history to show
+        # (a depth-1 clone shows none); it adds <2MB for click-class repos.
         ["git", "clone", "--depth", "200", "--branch", task["commit"], "--quiet",
          task["repo_url"], str(dir)],
         check=True,

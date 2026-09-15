@@ -160,7 +160,6 @@ verify_timeout_s = 240
 
 [prompt]
 revise_prompt = "off"
-structural_priors = ${AGENT6_SB_STRUCTURAL_PRIORS:-true}
 $PROMPT_FILE_LINE
 
 $REVIEW_LINES

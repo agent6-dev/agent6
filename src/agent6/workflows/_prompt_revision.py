@@ -84,19 +84,6 @@ def format_prompt_revision_context(repo: RepoSummary) -> str:
         parts.append("AGENTS.md:\n" + clip_text(repo.agents_md, 5000))
     if repo.repo_map:
         parts.append("Repo map:\n" + clip_text(repo.repo_map, 4000))
-    if repo.symbol_outline:
-        parts.append("Symbol outline:\n" + clip_text(repo.symbol_outline, 5000))
-    if repo.co_change_pairs:
-        lines = "\n".join(
-            f"  {p.file_a} <-> {p.file_b} ({p.count})" for p in repo.co_change_pairs[:15]
-        )
-        parts.append("Git co-change pairs:\n" + lines)
-    if repo.hot_symbols:
-        lines = "\n".join(
-            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line}, {s.files_referenced} files"
-            for s in repo.hot_symbols[:12]
-        )
-        parts.append("Hot symbols:\n" + lines)
     if repo.recent_log:
         parts.append("Recent commits:\n" + clip_text(repo.recent_log, 2000))
     return clip_text("\n\n".join(parts), 20_000)

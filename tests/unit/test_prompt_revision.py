@@ -62,7 +62,6 @@ def _repo(tmp_path: Path) -> RepoSummary:
         agents_md="Use ruff and pytest.",
         recent_log="abc123 feat: add thing",
         repo_map="src/  (1 files: foo.py)",
-        symbol_outline="src/foo.py:\n  function frob:12",
     )
 
 
@@ -189,7 +188,7 @@ def test_workflow_auto_revises_task_before_worker_call(tmp_path: Path) -> None:
         revise_prompt="auto",
     )
 
-    with patch.object(Workflow, "_load_repo_summary", return_value=_repo(tmp_path)):
+    with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.reason == "finish_session"
@@ -213,7 +212,7 @@ def test_workflow_prompt_revision_empty_response_fails_before_worker(tmp_path: P
         revise_prompt="auto",
     )
 
-    with patch.object(Workflow, "_load_repo_summary", return_value=_repo(tmp_path)):
+    with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.completed is False
@@ -237,7 +236,7 @@ def test_workflow_interactive_selector_can_use_original(tmp_path: Path) -> None:
         prompt_revision_selector=select_original,
     )
 
-    with patch.object(Workflow, "_load_repo_summary", return_value=_repo(tmp_path)):
+    with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("keep this exact task")
 
     assert result.reason == "finish_session"
@@ -264,7 +263,7 @@ def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: Path) -> 
         revise_prompt="interactive",
         prompt_revision_selector=quit_at_the_choice,
     )
-    with patch.object(Workflow, "_load_repo_summary", return_value=_repo(tmp_path)):
+    with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix the bug in src/foo.py")
     assert result.reason == "steer_abort"
     word, _ = status_word(finished=True, all_passed=False, end_reason=result.reason)

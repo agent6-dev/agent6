@@ -654,7 +654,7 @@ class Workflow:
             mode=self.mode,
         )
         self._log("LOOP: LOAD_CONTEXT")
-        repo = self._load_repo_summary()
+        repo = load_repo_summary(self.root)
         system = build_system_prompt(
             config=self.config,
             repo=repo,
@@ -3573,14 +3573,6 @@ class Workflow:
             for nid, n in self.curator.nodes().items()
         }
         self._emit("graph.update", nodes=nodes, cursor=cursor)
-
-    def _load_repo_summary(self) -> RepoSummary:
-        """Base summary plus structural priors when `prompt.structural_priors`
-        is on; see `load_repo_summary`."""
-        # prompt.structural_priors=false -> base summary only (no hot symbols /
-        # co-change / symbol outline), a leaner prompt that leans on on-demand tools.
-        disp = self.dispatcher if self.config.prompt.structural_priors else None
-        return load_repo_summary(self.root, dispatcher=disp)
 
     def _load_memory_index(self) -> str:
         """The repo memory index for the system prompt.

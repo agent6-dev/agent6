@@ -19,7 +19,7 @@ def test_prompt_show_carries_the_recorded_decisions(tmp_path: Path) -> None:
     sp.run(["git", "init", "-q"], cwd=root, check=True)
     state_dir = tmp_path / "state"
     record_decision(state_dir, question="Which greeting?", answer="Hi NAME", session="s1")
-    cfg = Config.model_validate({"prompt": {"structural_priors": False}})
+    cfg = Config()
     prompt = system_prompt_for(cfg, root, "run", state_dir=state_dir)
     assert "<decisions>" in prompt
     assert "A: Hi NAME" in prompt

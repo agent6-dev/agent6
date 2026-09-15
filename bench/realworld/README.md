@@ -8,8 +8,8 @@ implementation. Scoring is automatic: the project's own test suite
 gives ground truth.
 
 We pin commits and use `--depth 200` clones (enough git
-history for the co-change-pairs planner prior to surface; ~2MB extra
-per click-class repo). Nothing in this directory is committed beyond
+history for the run's recent-commit context; ~2MB extra per
+click-class repo). Nothing in this directory is committed beyond
 the task definitions; the actual checkouts land under `$BENCH_ROOT`
 (default `/tmp/agent6-realworld`).
 
@@ -59,8 +59,7 @@ AGENT6_REALWORLD_TASK_FILTER=click-rename-split-opt \
 
 # Enable worker_loop (multi-turn architect + editor fusion path). When
 # unset (default false), routing uses single-shot architect_decide +
-# editor_translate per step - the cheapest path when the planner's
-# co-change priors already enumerate all relevant files.
+# editor_translate per step, the cheapest path.
 AGENT6_WORKER_LOOP_ENABLED=true \
   bash bench/realworld/run_realworld.sh
 

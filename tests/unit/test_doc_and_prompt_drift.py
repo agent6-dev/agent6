@@ -157,7 +157,6 @@ def test_bench_container_config_template_validates() -> None:
         "MAX_USD": "1.0",
         "CONDA_PY": "python3",
         "PROMPT_FILE_LINE": "",
-        "AGENT6_SB_STRUCTURAL_PRIORS": "",
     }
 
     def _render(env: dict[str, str]) -> str:

@@ -17,7 +17,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-from collections import Counter
 from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
@@ -1491,56 +1490,6 @@ def tracked_files(path: Path) -> tuple[str, ...]:
     if not res.ok:
         return ()
     return tuple(p for p in res.stdout.split("\x00") if p)
-
-
-def co_change_pairs(
-    path: Path,
-    *,
-    n_commits: int = 200,
-    min_pair_count: int = 2,
-    max_pairs: int = 30,
-) -> list[tuple[str, str, int]]:
-    """Mine git history for co-change file pairs.
-
-    Walks the last *n_commits* commits, groups changed files per commit,
-    and returns the top *max_pairs* most-frequent unordered (fileA, fileB)
-    pairs that co-changed in at least *min_pair_count* commits. Each
-    tuple is (file_a, file_b, count). Sorted by count descending, ties
-    broken alphabetically.
-
-    A cheap prior for the planner: files that repeatedly change together
-    hint that an edit to one implicates the other. Returns an empty list if git history is too
-    shallow to find any qualifying pairs (e.g. the fresh-clone bench
-    case with --depth=1).
-
-    Skips merge commits (--no-merges) so multi-parent diffs don't
-    artificially inflate co-change frequencies.
-    """
-    res = _run(
-        path,
-        "log",
-        f"-n{n_commits}",
-        "--no-merges",
-        "--name-only",
-        "--pretty=format:%x00",
-        check=False,
-    )
-    if not res.ok:
-        return []
-    # Output is groups of (NUL-separator, blank line, file paths...) per
-    # commit. Split on NUL to get per-commit file lists.
-    pair_counter: Counter[tuple[str, str]] = Counter()
-    for chunk in res.stdout.split("\x00"):
-        # --name-only emits only paths and blank lines; blanks are gone above.
-        files = sorted({line.strip() for line in chunk.strip().splitlines() if line.strip()})
-        if len(files) < 2:
-            continue
-        for i in range(len(files)):
-            for j in range(i + 1, len(files)):
-                pair_counter[(files[i], files[j])] += 1
-    qualifying = [(a, b, c) for (a, b), c in pair_counter.items() if c >= min_pair_count]
-    qualifying.sort(key=lambda t: (-t[2], t[0], t[1]))
-    return qualifying[:max_pairs]
 
 
 def diff_since(path: Path, base_sha: str, *, exclude: Collection[str] = ()) -> str:

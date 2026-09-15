@@ -4552,7 +4552,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
     """
     import subprocess as _sp
 
-    # Real git repo so _load_repo_summary() succeeds.
+    # Real git repo so load_repo_summary() succeeds.
     repo = tmp_path / "repo"
     repo.mkdir()
     _sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)

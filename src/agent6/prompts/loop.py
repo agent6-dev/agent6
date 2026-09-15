@@ -323,7 +323,7 @@ V2_REPO_BLOCK_TEMPLATE = """<repo-priors>
 {repo_line}
 Top-level (dot-prefixed entries omitted): {top_level}
 
-{repo_map_block}{symbol_outline_block}{agents_block}{co_change_block}{hot_symbols_block}{recent}
+{repo_map_block}{agents_block}{recent}
 </repo-priors>
 """
 

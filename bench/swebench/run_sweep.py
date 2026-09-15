@@ -124,7 +124,6 @@ def run_one(
             "AGENT6_SB_DEADLINE_STEER",
             "AGENT6_SB_EFFORT",
             "AGENT6_SB_MAX_PERCENT",
-            "AGENT6_SB_STRUCTURAL_PRIORS",
             "AGENT6_SB_REVIEW_SEATS",
             "AGENT6_SB_REVIEW_DECISION",
             "AGENT6_SB_REVIEW_QUORUM",

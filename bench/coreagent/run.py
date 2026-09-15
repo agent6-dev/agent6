@@ -133,8 +133,6 @@ CONDITIONS: dict[str, str] = {
     # H4: superpowers systematic-debugging SKILL.md injected whole (the
     # `always`-skill delivery shape); pair with the `bugs` task only.
     "skill_debug": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/skill_debug.md"\n',
-    # H5: existing knob, never measured per-dollar on small models.
-    "priors_off": "[prompt]\nstructural_priors = false\n",
     # H2 delivery mechanism (needs an agent6 with the skills feature): the
     # same systematic-debugging content as skill_debug, delivered as an
     # always-skill vs an indexed on-demand skill (does the model call
