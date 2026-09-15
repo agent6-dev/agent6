@@ -21,6 +21,7 @@ from typing import Any
 from agent6.app.preflight import git_repo_refusal
 from agent6.app.stop import stop_session
 from agent6.sessions.id import friendly_token
+from agent6.sessions.ipc import request_stop
 from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
 from agent6.ui.acp.rpc import INVALID_PARAMS, RpcError
@@ -183,10 +184,13 @@ class Sessions:
         session.cancelled = True
         if not session.session_id:
             return
-        out = stop_session(
-            session.layout(self.state_dir_for(session.cwd)).session_dir, after_step=True
-        )
+        session_dir = session.layout(self.state_dir_for(session.cwd)).session_dir
+        out = stop_session(session_dir, after_step=True)
         if not out.ok:
+            # The turn becomes live before the lifecycle records its worker.
+            # Its timestamped marker survives startup's stale-file sweep.
+            if out.how == "not_live" and session.is_running() and request_stop(session_dir):
+                return
             # A notification has no reply: stderr is the one channel left.
             print(f"[agent6] {out.message}", file=sys.stderr)
 

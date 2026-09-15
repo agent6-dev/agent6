@@ -228,6 +228,19 @@ def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
     assert seen == ["end_turn"]
 
 
+def test_a_cancel_while_the_run_starts_reaches_its_first_boundary(tmp_path: Path) -> None:
+    """A turn is live before its worker pid exists, so cancellation must leave
+    the marker that the lifecycle preserves through startup."""
+    from agent6.sessions.ipc import stop_request_pending
+
+    sessions = _sessions(_ends)
+    session = Session(acp_id="s1", cwd=tmp_path, session_id="run-1", turn_live=True)
+
+    sessions.cancel(session)
+
+    assert stop_request_pending(session.layout(tmp_path / ".state").session_dir)
+
+
 def test_a_cancel_while_idle_does_not_poison_the_next_turn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
