@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ from textual.widgets import Static
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow, SteerInput
 from agent6.ui.tui.modals import ApprovalModal
-from agent6.viewmodel.state import apply_event
+from agent6.viewmodel.state import status_facts
 
 
 def _mk_parked(d: Path) -> None:
@@ -759,32 +760,65 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) 
     asyncio.run(scenario())
 
 
-def test_a_finished_log_is_read_before_the_first_tick(tmp_path: Path) -> None:
-    """A finished run takes its status from the log, not from the fold the
-    reader thread has not filled yet: in between it reads as killed (no worker,
-    no end), and the exit_on_end hold stamped "stale" over a run that passed."""
+def test_a_finished_log_is_folded_before_the_first_paint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finished run opens with its last role and end story. Seeding only the
+    status left the dashboard's first paint on an empty fold, so it called the
+    role idle and promised a model was still coming until the reader replayed
+    the journal."""
+    from agent6.ui.tui import app as app_mod
+
     d = tmp_path / "seeded"
     d.mkdir(parents=True)
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {
+                "mode": "run",
+                "session_id": d.name,
+                "user_task": "t",
+                "models": {"driver": {"provider": "p", "model": "manifest-model"}},
+            }
+        ),
+        encoding="utf-8",
+    )
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker", "model": "last-model", "provider": "p"},
+        {"type": "role.result", "role": "worker", "ok": True, "text": "done"},
+        {"type": "tool.call", "name": "finish_session", "args": {"summary": "All done."}},
+        {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "ok"},
         {"type": "session.end", "reason": "finish_session", "iterations": 1, "all_passed": True},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
-    app = Agent6TUI(d, exit_on_end=True)
-    app._seed_from_disk()
-    assert app.dir_status[0] == "passed"
-    # Mid-catch-up: the reader has delivered session.start and nothing else, so
-    # the status turns "stale" (started, no worker, no end folded yet). The run
-    # is not lost, it is unread.
-    app.state = apply_event(app.state, evs[0])
-    app._refresh_dir_status()
-    assert app.dir_status[0] == "stale"
-    assert not app.worker_lost, "the fold has not reached the end the log already holds"
-    app.state = apply_event(app.state, evs[1])
-    app._refresh_dir_status()
-    assert app.dir_status[0] == "passed"
-    assert not app.worker_lost
+    reader_go = threading.Event()
+    real_tail_events = app_mod.tail_events
+
+    def held_reader(path: Path, **kwargs: Any) -> Any:
+        if kwargs.get("follow"):
+            reader_go.wait(timeout=5)
+        yield from real_tail_events(path, **kwargs)
+
+    monkeypatch.setattr(app_mod, "tail_events", held_reader)
+
+    async def scenario() -> None:
+        app = Agent6TUI(d, exit_on_end=True)
+        try:
+            async with app.run_test(size=(140, 40)) as pilot:
+                await _open_dash(app, pilot)
+                assert status_facts(app.state).finished
+                top = str(app._dash.query_one("#top", Static).render())
+                body = str(app._dash.query_one("#stream-body", Static).render())
+                assert "role: worker / last-model" in top
+                assert "passed" in top
+                assert "passed" in body and "All done." in body
+                assert "waiting for the model" not in body
+                reader_go.set()
+        finally:
+            reader_go.set()
+
+    asyncio.run(scenario())
 
 
 def test_a_resumed_leg_drops_the_prior_legs_role_and_finish_story(tmp_path: Path) -> None:

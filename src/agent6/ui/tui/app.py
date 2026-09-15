@@ -209,8 +209,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self.dir_status: tuple[str, str] = status_for_session_dir(
             session_dir, status_facts(self.state)
         )
-        # Lines the log held at open; worker_lost waits for the fold to reach it.
+        # The journal prefix folded at open; the reader starts after it, and
+        # worker_lost knows the fold already covers it.
         self._seed_log_count = 0
+        self._reader_start_at = 0
         # Header task line for a run with no session.start yet (parked/created):
         # the fold has no user_task, but the manifest knows the work.
         self.fallback_task = ""
@@ -281,6 +283,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self.push_screen(self._dash)
         self.install_screen(self._conv, "conversation")
         self.push_screen(self._conv)
+        if self.state.undone_to:
+            # An /undo already folded at open: the message it took back is the
+            # operator's to edit here, as it is when the event arrives live.
+            self.call_after_refresh(self._fill_composers, self.state.undone_text)
         # Auto-spawn close: the exit condition (run over, prompts answered) is
         # polled from a timer in the app's own loop and exits there. Exit()
         # scheduled from inside a call_from_thread callback does not take effect,
@@ -293,14 +299,23 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
     def _seed_from_disk(self) -> None:
         """Fold the log already on disk, before the reader thread starts.
 
-        It seeds the status this viewer opens on, the line the fold must reach
-        for an absent `session.end` to mean anything (`worker_lost`), and the
-        steer baseline, so a request already in the log does not prompt.
+        The first paint and the status read one complete state; the reader
+        starts at the folded prefix's byte boundary and handles only the
+        events appended after it. The seed also fixes the steer baseline, so
+        a request already in the log does not prompt.
         """
+        position = 0
+
+        def heard(end: int) -> None:
+            nonlocal position
+            position = end
+
         with contextlib.suppress(OSError):
-            seeded = fold_session(tail_events(self.logs_path, follow=False))
+            seeded = fold_session(tail_events(self.logs_path, follow=False, on_position=heard))
+            self.state = seeded
             self._seen_steer = seeded.steer_requests
             self._seed_log_count = seeded.log_count
+            self._reader_start_at = position
             self.dir_status = status_for_session_dir(self.session_dir, status_facts(seeded))
 
     def on_unmount(self) -> None:
@@ -318,6 +333,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             # (finished + exit_on_end=False, or crashed) leaks this thread in
             # the idle poll forever: one per run the hub session opens.
             should_stop=self._stop.is_set,
+            start_at=self._reader_start_at,
         ):
             if self._stop.is_set():
                 return
