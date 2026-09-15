@@ -13,7 +13,7 @@ command-palette entries.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -110,9 +110,17 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
 )
 
 
-# Fixed (label, width) columns shared by the single pinned header and every
-# section table, so all the section tables align under that one header.
-_COLUMNS: tuple[tuple[str, int], ...] = (("setting", 26), ("value", 28), ("source", 12))
+def _columns(settings: Iterable[ConfigSetting]) -> tuple[tuple[str, int], ...]:
+    """The (label, width) columns the single pinned header and every section
+    table share, so the sections align under that one header; the setting
+    column fits the longest key."""
+    setting = max((len(_leaf(s)) for s in settings), default=7)
+    return (("setting", setting), ("value", 28), ("source", 12))
+
+
+def _leaf(s: ConfigSetting) -> str:
+    """The key under its section, as a row shows it."""
+    return s.key.split(".", 1)[1] if "." in s.key else s.key
 
 
 class _NavTable(DataTable[str]):
@@ -665,13 +673,14 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         header = self.query_one("#col-header", DataTable)
         header.show_cursor = False
         header.can_focus = False
-        for label, width in _COLUMNS:
+        columns = _columns(self._view.settings if self._view is not None else ())
+        for label, width in columns:
             header.add_column(label, width=width)
         for section in self._sections():
             table = self.query_one(f"#tbl-{section}", DataTable)
             table.cursor_type = "row"
             table.show_header = False
-            for label, width in _COLUMNS:
+            for label, width in columns:
                 table.add_column(label, width=width)
         self._refresh()
         # Show "agent6 — config · <repo>" in the menu-bar title for this screen.
@@ -710,7 +719,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             table = self.query_one(f"#tbl-{section}", DataTable)
             table.clear()
             for s in rows:
-                leaf = s.key.split(".", 1)[1] if "." in s.key else s.key
+                leaf = _leaf(s)
                 src = s.source + (" *" if s.modified else "")
                 # Values/keys may carry brackets (lists, regexes) -> render as
                 # Text so they are never parsed as Rich markup.

@@ -1468,3 +1468,23 @@ def test_setting_description_lives_in_the_edit_modal_only(repo: Path) -> None:
             assert "run_command" in shown and "**" not in shown
 
     asyncio.run(scenario())
+
+
+def test_the_setting_column_fits_the_longest_key(repo: Path) -> None:
+    """A fixed 26-cell column cut `token_command_ttl_s` and its siblings short
+    while the source column sat on spare width."""
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            view = screen._view  # pyright: ignore[reportPrivateUsage]
+            assert view is not None
+            longest = max(len(s.key.split(".", 1)[1]) for s in view.settings if "." in s.key)
+            assert longest > 26  # the fixture's provider keys make the old width bite
+            header = screen.query_one("#col-header", DataTable)
+            assert header.ordered_columns[0].width >= longest
+
+    asyncio.run(scenario())
