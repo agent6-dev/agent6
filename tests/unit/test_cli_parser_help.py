@@ -48,6 +48,34 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
     raise AssertionError(f"no positional {dest!r}")
 
 
+def test_the_command_list_is_grouped_and_complete() -> None:
+    """`agent6 --help` listed its commands flat, 29 of them, setup verbs between
+    the work verbs. The list is titled groups in a fixed order, leading with
+    the work verbs, and every command sits in exactly one."""
+    from agent6.ui.cli.parser import COMMAND_GROUPS
+
+    parser = build_parser()
+    action = next(
+        a
+        for a in parser._actions  # pyright: ignore[reportPrivateUsage]
+        if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
+    )
+    grouped = [name for _, names in COMMAND_GROUPS for name in names]
+    assert sorted(grouped) == sorted(action.choices)
+    assert len(grouped) == len(set(grouped))
+    text = parser.format_help()
+    assert "\ncommands:\n" in text and "positional arguments" not in text
+    assert text.index("\ncommands:\n") < text.index("\noptions:\n")  # the commands lead
+    starts = [text.index(f"\n  {title}:\n") for title, _ in COMMAND_GROUPS]
+    assert starts == sorted(starts)
+    for (_, names), start, end in zip(
+        COMMAND_GROUPS, starts, [*starts[1:], len(text)], strict=True
+    ):
+        block = text[start:end]
+        for name in names:
+            assert f"\n    {name} " in block, name
+
+
 def test_every_subparser_has_a_description() -> None:
     # Leaf --help used to open with no summary at all; each add_parser carries
     # its whole help string as the description.

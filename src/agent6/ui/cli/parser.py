@@ -175,12 +175,44 @@ def _directories_epilog() -> str:
     )
 
 
+# `agent6 --help` lists the commands in these groups, in this order: the verbs
+# that start work, then those that act on a live run, the front-ends, the
+# session records, the agent's context and tools, setup.
+COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("work", ("run", "plan", "ask", "resume", "fork", "review", "machine")),
+    ("control", ("attach", "steer", "answer", "exec", "forward")),
+    ("front-ends", ("tui", "web", "acp")),
+    ("sessions", ("sessions", "ps", "history")),
+    ("context", ("prompt", "skills", "memory")),
+    ("tools", ("mcp",)),
+    ("setup", ("init", "connect", "model", "config", "check", "completions", "system")),
+)
+
+
+class _GroupedCommandsHelp(argparse.RawDescriptionHelpFormatter):
+    """The top-level command list rendered by COMMAND_GROUPS, each group a
+    titled block; every other action renders as argparse does."""
+
+    def _format_action(self, action: argparse.Action) -> str:
+        if not isinstance(action, argparse._SubParsersAction) or action.dest != "command":  # pyright: ignore[reportPrivateUsage]
+            return super()._format_action(action)
+        entries = {a.dest: a for a in action._choices_actions}  # pyright: ignore[reportPrivateUsage]
+        parts: list[str] = []
+        for title, names in COMMAND_GROUPS:
+            parts.append(f"{'':{self._current_indent}}{title}:\n")
+            self._indent()
+            for name in names:
+                parts.append(super()._format_action(entries[name]))
+            self._dedent()
+        return "".join(parts)
+
+
 def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(
         prog="agent6",
         description="Sandboxed coding agent.",
         epilog=_directories_epilog(),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=_GroupedCommandsHelp,
     )
     parser.add_argument("--version", action="version", version=f"agent6 {__version__}")
     parser.add_argument(
@@ -203,7 +235,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " agent6 reads your config/secrets and chowns new files back to you."
         ),
     )
-    sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
+    sub = parser.add_subparsers(
+        dest="command", required=True, metavar="<command>", title="commands"
+    )
+    # The commands lead the help page; the options follow them.
+    groups = parser._action_groups  # pyright: ignore[reportPrivateUsage]
+    groups.insert(0, groups.pop())
 
     _add_run_parser(sub)
 
