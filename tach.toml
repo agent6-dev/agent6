@@ -355,7 +355,7 @@ depends_on = ["agent6.graph.models", "agent6.types"]
 [[modules]]
 # Commit message composition: pure string work, no git.
 path = "agent6.commit_message"
-depends_on = []
+depends_on = ["agent6.task_text"]  # the squash headline is the task's headline
 
 [[modules]]
 path = "agent6.git_ops"

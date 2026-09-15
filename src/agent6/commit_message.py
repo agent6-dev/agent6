@@ -12,6 +12,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+from agent6.task_text import task_headline
+
 
 def render_commit_trailer(fmt: str, *, models: Sequence[str]) -> str | None:
     """The `[git.commit].trailer` format string as a concrete trailer line, or
@@ -53,8 +55,7 @@ def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str
             continue
         seen.add(s.lower())
         bullets.append(s)
-    task = _ITER_SUBJECT_RE.sub("", subject).strip()
-    headline = _headline_subject(task) or (bullets[0] if bullets else "agent6 run")
+    headline = _headline_subject(subject) or (bullets[0] if bullets else "agent6 run")
     parts = [headline]
     if bullets:
         parts.append("")
@@ -124,7 +125,7 @@ def _headline_subject(task: str, *, limit: int = _SUBJECT_LIMIT) -> str:
     (an ellipsis marks a truncation). A run's whole task text as the subject
     reads as one unwrapped 180-char line that every git tool clips; the full
     task is wrapped into the body by the caller when this truncates it."""
-    first_line = next((ln for ln in task.splitlines() if ln.strip()), "")
+    first_line = _ITER_SUBJECT_RE.sub("", task_headline(task)).strip()
     match = re.search(r"[.!?](?:\s|$)", first_line)
     clause = first_line[: match.start()] if match else first_line
     clause = " ".join(clause.split())

@@ -1253,6 +1253,17 @@ def test_condense_subject_truncates_a_clauseless_run_on_with_ellipsis(tmp_path: 
     assert len(subject) <= 72 and subject.endswith("…")
 
 
+def test_condense_subject_drops_only_a_markdown_heading_mark() -> None:
+    """A TASK.md task opens with `# Title`; the squash headline showed the marks
+    (every listing drops them). A `#` with no space after it stays."""
+    assert (
+        condense_commit_message((), subject="# Fix the parser\n\nMore detail") == "Fix the parser"
+    )
+    assert condense_commit_message((), subject="#include <stdio.h> fails") == (
+        "#include <stdio.h> fails"
+    )
+
+
 def test_commit_all_appends_the_identity_trailer_once(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     (tmp_path / "f.txt").write_text("x", encoding="utf-8")
