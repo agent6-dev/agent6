@@ -11,8 +11,11 @@ and the small text helpers they use. The loop owns running the reviser call.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
+from agent6.providers import Provider
 from agent6.types import RepoSummary
 
 # One leading list marker ("- ", "* ", "1. ", "2) "). A charset lstrip would
@@ -20,6 +23,21 @@ from agent6.types import RepoSummary
 # The numeric marker requires trailing whitespace so a bare decimal that opens a
 # question keeps it ("0.5s latency budget OK?" must not become "5s ...").
 _LIST_MARKER_RE = re.compile(r"^\s*(?:[-*]|\d+[.)]\s)\s*")
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionSettings:
+    """The one-shot prompt revision before the first worker call
+    (`prompt.revise_prompt`): `reviser` (the reviewer role) rewrites the
+    task once, with no tools and no iteration, at `temperature` and within
+    `max_tokens`; `interactive` hands the original, the revision and the
+    reviser's questions to `selector` for the operator to choose."""
+
+    reviser: Provider | None = None
+    mode: Literal["off", "auto", "interactive"] = "off"
+    temperature: float | None = 0.0
+    max_tokens: int = 2048
+    selector: Callable[[str, str, tuple[str, ...]], str | None] | None = None
 
 
 @dataclass(frozen=True, slots=True)

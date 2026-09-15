@@ -490,5 +490,5 @@ def test_a_surface_without_the_revise_choice_skips_revision(
     )
 
     assert end.rc == 0
-    assert built["revise_prompt"] == "off"
+    assert built["revision"].mode == "off"
     assert any("this surface has none" in s for s in said)

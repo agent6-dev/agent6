@@ -30,6 +30,7 @@ from agent6.ui.cli.parallel import lane_runtime
 from agent6.viewmodel.transcript import fold_transcript
 from agent6.workflows import _chain as chain_mod
 from agent6.workflows._chain import RunChain
+from agent6.workflows._provider_call import CallSettings
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask
@@ -278,8 +279,7 @@ def _build_wf(
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
         ),
-        provider_retry_count=0,
-        provider_retry_delay_s=0.0,
+        call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=max_iterations,
     )
 

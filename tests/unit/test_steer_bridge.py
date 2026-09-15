@@ -25,6 +25,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.ui.cli._steer import file_bridge_steer, install_steer_sigint, make_steer_state
 from agent6.workflows._chain import RunChain
+from agent6.workflows._provider_call import CallSettings
 from agent6.workflows._steer import OperatorBridge
 
 
@@ -340,8 +341,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
         provider=provider,
         dispatcher=dispatcher,
         logger=lambda _msg: None,
-        provider_retry_count=0,
-        provider_retry_delay_s=0.0,
+        call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=3,
     )
     wf.run("do something")

@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.workflows._chain import RunChain
+from agent6.workflows._provider_call import CallSettings
 from agent6.workflows.loop import Workflow
 
 
@@ -83,8 +84,7 @@ def _build_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock) -> Workflo
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        provider_retry_count=0,
-        provider_retry_delay_s=0.0,
+        call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=10,
     )
 
@@ -269,8 +269,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> No
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        provider_retry_count=0,
-        provider_retry_delay_s=0.0,
+        call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=20,
         loop_guard_kill_threshold=5,
     )
@@ -305,8 +304,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        provider_retry_count=0,
-        provider_retry_delay_s=0.0,
+        call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=20,
         loop_guard_kill_threshold=0,
     )
@@ -336,8 +334,7 @@ def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any)
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        provider_retry_count=0,
-        provider_retry_delay_s=0.0,
+        call=CallSettings(retry_count=0, retry_delay_s=0.0),
         **kw,
     )
 

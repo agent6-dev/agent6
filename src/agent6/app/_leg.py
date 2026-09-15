@@ -69,6 +69,10 @@ from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import AutoCommitDirective, IsolationLevel, ResumableMode
 from agent6.workflows._chain import RunChain, commit_identity
+from agent6.workflows._compaction import CompactionSettings
+from agent6.workflows._prompt_revision import RevisionSettings
+from agent6.workflows._provider_call import CallSettings
+from agent6.workflows._review import ReviewSettings
 from agent6.workflows._session_state import SessionEndReason
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import ResumeError, SessionResult, Workflow
@@ -325,7 +329,6 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             standing_goal=inputs.standing_goal,
             interactive=inputs.interactive and mode == "run",
             initial_pins=inputs.pins,
-            tool_result_cap_bytes=tool_result_cap_bytes(cfg, role),
             max_iterations=cfg.workflow.max_iterations,
             provider=session.provider,
             dispatcher=dispatcher,
@@ -369,28 +372,37 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             resume_state_path=inputs.resume_state_path,
             mode=mode,
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
-            review_trigger=cfg.review.trigger,
-            review_period=cfg.review.period,
-            review_seats=session.review_seats,
-            review_decision=cfg.review.decision,
-            review_quorum=cfg.review.quorum,
-            review_max_total_rejections=cfg.review.max_total_rejections,
-            review_budget_fraction=cfg.review.budget_fraction,
-            review_concurrency=cfg.review.concurrency,
-            prompt_reviser_provider=prompt_reviser_provider,
-            revise_prompt=effective_revise_prompt,
-            temperature=role_temperature(cfg, role),
-            prompt_reviser_temperature=role_temperature(cfg, "reviewer"),
-            prompt_revision_selector=(
-                frontend.select_revised_prompt if effective_revise_prompt == "interactive" else None
+            review=ReviewSettings(
+                trigger=cfg.review.trigger,
+                period=cfg.review.period,
+                seats=session.review_seats,
+                decision=cfg.review.decision,
+                quorum=cfg.review.quorum,
+                max_total_rejections=cfg.review.max_total_rejections,
+                budget_fraction=cfg.review.budget_fraction,
+                concurrency=cfg.review.concurrency,
             ),
-            summariser_provider=session.summariser_provider,
-            compact_drop_at_chars=tools.compact_drop_at_chars,
-            compact_summarise_at_chars=tools.compact_summarise_at_chars,
-            context_summary_max_tokens=cfg.context.summary_max_tokens,
-            keep_recent_chars=tools.keep_recent_chars,
-            keep_thinking_turns=cfg.context.keep_thinking_turns,
-            compact_elision_gists=cfg.context.elision_gists,
+            revision=RevisionSettings(
+                reviser=prompt_reviser_provider,
+                mode=effective_revise_prompt,
+                temperature=role_temperature(cfg, "reviewer"),
+                selector=(
+                    frontend.select_revised_prompt
+                    if effective_revise_prompt == "interactive"
+                    else None
+                ),
+            ),
+            call=CallSettings(temperature=role_temperature(cfg, role)),
+            compaction=CompactionSettings(
+                drop_at_chars=tools.compact_drop_at_chars,
+                summarise_at_chars=tools.compact_summarise_at_chars,
+                tool_result_cap_bytes=tool_result_cap_bytes(cfg, role),
+                keep_recent_chars=tools.keep_recent_chars,
+                keep_thinking_turns=cfg.context.keep_thinking_turns,
+                elision_gists=cfg.context.elision_gists,
+                summary_max_tokens=cfg.context.summary_max_tokens,
+                summariser=session.summariser_provider,
+            ),
         )
         if inputs.task is not None:
             # The leg begins: a parked submission is a run from here.

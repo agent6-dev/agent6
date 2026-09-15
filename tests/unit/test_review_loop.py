@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 from agent6.tools.results import RawResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation
-from agent6.workflows._review import ReviewSeat
+from agent6.workflows._review import ReviewSeat, ReviewSettings
 from agent6.workflows.loop import Workflow
 from tests.unit.test_review_gate import (
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
@@ -72,9 +72,9 @@ def _drive(wf: Workflow, messages: list[dict[str, Any]]) -> Any:
 
 
 def test_has_reviewer_true_with_seats() -> None:
-    wf = _wf(review_seats=[_seat(MagicMock())])
+    wf = _wf(review=ReviewSettings(seats=[_seat(MagicMock())]))
     assert wf._has_reviewer() is True  # pyright: ignore[reportPrivateUsage]
-    assert _wf(review_seats=[])._has_reviewer() is False  # pyright: ignore[reportPrivateUsage]
+    assert _wf(review=ReviewSettings(seats=[]))._has_reviewer() is False  # pyright: ignore[reportPrivateUsage]
 
 
 def test_panel_blocks_finish_under_veto_then_accepts() -> None:
@@ -90,9 +90,9 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review_seats=[_seat(seat_provider)],
-        review_decision="veto",
-        review_trigger="before_finish",
+        review=ReviewSettings(
+            seats=[_seat(seat_provider)], decision="veto", trigger="before_finish"
+        ),
         base_sha="b",
     )
     messages = _begin()
@@ -118,9 +118,9 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review_seats=[_seat(seat_provider)],
-        review_decision="veto",
-        review_trigger="before_finish",
+        review=ReviewSettings(
+            seats=[_seat(seat_provider)], decision="veto", trigger="before_finish"
+        ),
         base_sha="b",
     )  # review_budget_fraction defaults to 0.25
     with patch.object(Workflow, "_budget_fraction_remaining", return_value=0.10):
@@ -138,9 +138,9 @@ def test_panel_advisory_does_not_block_finish() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review_seats=[_seat(seat_provider)],
-        review_decision="advisory",
-        review_trigger="before_finish",
+        review=ReviewSettings(
+            seats=[_seat(seat_provider)], decision="advisory", trigger="before_finish"
+        ),
         base_sha="b",
     )
     result = _drive(wf, _begin())
@@ -158,9 +158,9 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review_seats=[_seat(seat_provider)],
-        review_decision="veto",
-        review_trigger="before_finish",
+        review=ReviewSettings(
+            seats=[_seat(seat_provider)], decision="veto", trigger="before_finish"
+        ),
         base_sha="b",
     )
     result = _drive(wf, _begin())
@@ -180,11 +180,13 @@ def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review_seats=[_seat(seat_provider)],
-        review_decision="veto",
-        review_trigger="before_finish",
-        max_consecutive_review_rejections=0,  # isolate the per-run total disarm
-        review_max_total_rejections=2,
+        review=ReviewSettings(
+            seats=[_seat(seat_provider)],
+            decision="veto",
+            trigger="before_finish",
+            max_consecutive_rejections=0,  # isolate the per-run total disarm
+            max_total_rejections=2,
+        ),
         base_sha="b",
     )
     result = _drive(wf, _begin())
@@ -215,8 +217,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     wf = _wf(
         provider=MagicMock(),
         dispatcher=_disp(),
-        review_seats=[_seat(MagicMock())],
-        review_decision="advisory",
+        review=ReviewSettings(seats=[_seat(MagicMock())], decision="advisory"),
         base_sha="b",
     )
     state = LoopState(original_task="t", tool_calls=0)

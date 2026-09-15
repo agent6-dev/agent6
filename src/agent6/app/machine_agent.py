@@ -94,6 +94,7 @@ from agent6.tools.operator_prompts import (
 from agent6.types import IsolationLevel
 from agent6.viewmodel.machine_state import Spend, read_budget_totals
 from agent6.workflows._chain import RunChain, commit_identity
+from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import SubrunError, clone_workspace
@@ -468,19 +469,21 @@ def run_one(
         ),
         config=cfg,
         max_iterations=cfg.workflow.max_iterations,
-        tool_result_cap_bytes=tool_result_cap_bytes(cfg, "worker"),
         provider=provider,
-        summariser_provider=summariser_provider,
         dispatcher=dispatcher,
         logger=reporter.err,
         mode="agent" if mode == "agent" else "run",
         state_dir=state_dir(req.cwd),
-        compact_drop_at_chars=compact_drop,
-        compact_summarise_at_chars=compact_summarise,
-        context_summary_max_tokens=cfg.context.summary_max_tokens,
-        keep_recent_chars=keep_recent,
-        keep_thinking_turns=cfg.context.keep_thinking_turns,
-        compact_elision_gists=cfg.context.elision_gists,
+        compaction=CompactionSettings(
+            drop_at_chars=compact_drop,
+            summarise_at_chars=compact_summarise,
+            tool_result_cap_bytes=tool_result_cap_bytes(cfg, "worker"),
+            keep_recent_chars=keep_recent,
+            keep_thinking_turns=cfg.context.keep_thinking_turns,
+            elision_gists=cfg.context.elision_gists,
+            summary_max_tokens=cfg.context.summary_max_tokens,
+            summariser=summariser_provider,
+        ),
         bridge=OperatorBridge(
             steer_requested=bridges.steer_requested,
             steer_clear=bridges.steer_clear,

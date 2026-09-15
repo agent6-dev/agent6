@@ -27,7 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
+from agent6.providers import CLAUDE_CODE_PERSIST_BYTES, Provider
 from agent6.providers.types import ToolDefinition
 from agent6.tools.schema import AskUserInput
 from agent6.workflows._conversation import (
@@ -395,6 +395,29 @@ def turn_chars(turn: Turn) -> int:
 # keepRecentTokens default (20k tokens ~= 80k chars). `[context]
 # keep_recent_chars` overrides.
 KEEP_RECENT_CHARS = 80_000
+
+
+@dataclass(frozen=True, slots=True)
+class CompactionSettings:
+    """Context compaction as the run configures it. Tier 1 at `drop_at_chars`
+    turns the oldest tool results into placeholders, a large read decaying
+    through a model-written gist first when `elision_gists` is on; tier 2 at
+    `summarise_at_chars` has `summariser` (the reviewer role; the worker
+    when None) summarise the elided history into `summary_max_tokens` and
+    restarts the conversation from the task, the summary and the last
+    `keep_recent_chars` verbatim. `keep_thinking_turns` drops thinking
+    blocks from assistant turns older than that many at tier-1 moments (0
+    keeps all). `tool_result_cap_bytes` bounds one result before it enters
+    the conversation."""
+
+    drop_at_chars: int = DROP_BLOCKS_AT_CHARS
+    summarise_at_chars: int = SUMMARISE_AT_CHARS
+    tool_result_cap_bytes: int = TOOL_RESULT_CAP_BYTES
+    keep_recent_chars: int = KEEP_RECENT_CHARS
+    keep_thinking_turns: int = 0
+    elision_gists: bool = True
+    summary_max_tokens: int = 2048
+    summariser: Provider | None = None
 
 
 def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[int, int]:

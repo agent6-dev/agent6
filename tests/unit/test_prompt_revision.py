@@ -14,6 +14,8 @@ from agent6.tools.results import ExecResult, RawResult
 from agent6.types import RepoSummary
 from agent6.workflows import loop as loopmod
 from agent6.workflows._chain import RunChain
+from agent6.workflows._prompt_revision import RevisionSettings
+from agent6.workflows._provider_call import CallSettings
 from agent6.workflows.loop import Workflow
 
 _VALID_TOML = """
@@ -112,7 +114,7 @@ def _wf(tmp_path: Path, **kw: Any) -> Workflow:
         "provider": MagicMock(),
         "dispatcher": dispatcher,
         "logger": _silent,
-        "provider_retry_delay_s": 0.01,
+        "call": CallSettings(retry_delay_s=0.01),
     }
     defaults.update(kw)
     return Workflow(**defaults)
@@ -185,8 +187,7 @@ def test_workflow_auto_revises_task_before_worker_call(tmp_path: Path) -> None:
     wf = _wf(
         tmp_path,
         provider=worker,
-        prompt_reviser_provider=reviser,
-        revise_prompt="auto",
+        revision=RevisionSettings(reviser=reviser, mode="auto"),
     )
 
     with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
@@ -209,8 +210,7 @@ def test_workflow_prompt_revision_empty_response_fails_before_worker(tmp_path: P
     wf = _wf(
         tmp_path,
         provider=worker,
-        prompt_reviser_provider=reviser,
-        revise_prompt="auto",
+        revision=RevisionSettings(reviser=reviser, mode="auto"),
     )
 
     with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
@@ -232,9 +232,7 @@ def test_workflow_interactive_selector_can_use_original(tmp_path: Path) -> None:
     wf = _wf(
         tmp_path,
         provider=worker,
-        prompt_reviser_provider=reviser,
-        revise_prompt="interactive",
-        prompt_revision_selector=select_original,
+        revision=RevisionSettings(reviser=reviser, mode="interactive", selector=select_original),
     )
 
     with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
@@ -260,9 +258,7 @@ def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: Path) -> 
     reviser.call.return_value = _text_resp("<revised_task>Rewrite everything.</revised_task>")
     wf = _wf(
         tmp_path,
-        prompt_reviser_provider=reviser,
-        revise_prompt="interactive",
-        prompt_revision_selector=quit_at_the_choice,
+        revision=RevisionSettings(reviser=reviser, mode="interactive", selector=quit_at_the_choice),
     )
     with patch("agent6.workflows.loop.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix the bug in src/foo.py")

@@ -93,6 +93,26 @@ def reasoning_starvation(resp: ProviderResponse) -> int:
 
 
 @dataclass(frozen=True, slots=True)
+class CallSettings:
+    """The worker call's knobs. A transient ProviderError (an overload, a
+    dropped connection, a gateway 502) is retried `retry_count` times with
+    full-jittered exponential backoff from `retry_delay_s`, capped at
+    `retry_max_delay_s`; permanent statuses and a spent budget fail fast; 0
+    disables retrying. `temperature` pins sampling for every call (None
+    leaves each provider its default). `per_call_max_tokens` caps one turn's
+    output, sized for reasoning plus a tool call on a reasoning model;
+    `metric_task_max_tokens` replaces it on a metric-optimisation run, whose
+    large single-turn edits a tight cap truncates mid-apply."""
+
+    retry_count: int = 4
+    retry_delay_s: float = 2.0
+    retry_max_delay_s: float = 30.0
+    temperature: float | None = 0.0
+    per_call_max_tokens: int = 16384
+    metric_task_max_tokens: int = 65536
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderCaller:
     """`provider.call` under a bounded retry: `retry_count + 1` attempts at most.
 

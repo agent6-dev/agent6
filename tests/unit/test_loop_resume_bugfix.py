@@ -22,6 +22,7 @@ from agent6.tools.results import ExecResult, RawResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation
 from agent6.workflows._metric import MetricSample as _MetricSample
+from agent6.workflows._provider_call import CallSettings
 from agent6.workflows._session_state import (
     SNAPSHOT_VERSION,
     SessionSnapshot,
@@ -195,8 +196,7 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path)
         root=repo,
         provider=provider,
         resume_state_path=snap_path,
-        provider_retry_count=0,
-        provider_retry_delay_s=0.0,
+        call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=5,
     )
     stopped = SessionResult(

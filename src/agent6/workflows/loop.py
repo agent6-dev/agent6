@@ -83,10 +83,7 @@ from agent6.types import RepoSummary
 from agent6.verify_infer import infer_verify_command, read_agents_md
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import (
-    DROP_BLOCKS_AT_CHARS,
-    KEEP_RECENT_CHARS,
-    SUMMARISE_AT_CHARS,
-    TOOL_RESULT_CAP_BYTES,
+    CompactionSettings,
     GistRequest,
     cap_tool_result,
     compact_old_tool_results,
@@ -214,17 +211,24 @@ from agent6.workflows._prompt_revision import (
     PromptRevision,
     PromptRevisionDeclined,
     PromptRevisionError,
+    RevisionSettings,
     clip_text,
     format_effective_task,
     format_prompt_revision_context,
     parse_prompt_revision,
 )
 from agent6.workflows._provider_call import (
+    CallSettings,
     ProviderCaller,
     provider_error_hint,
     reasoning_starvation,
 )
-from agent6.workflows._review import CritiqueResult, ReviewDispatch, ReviewSeat, run_panel
+from agent6.workflows._review import (
+    CritiqueResult,
+    ReviewDispatch,
+    ReviewSettings,
+    run_panel,
+)
 from agent6.workflows._session_state import (
     TURN_IN_FLIGHT_NAME,
     ResumeError,
@@ -386,52 +390,6 @@ class Workflow:
     # allowance: the cap is relative to its start_iteration, so a standing
     # run is bounded per leg, never by the sum of its history.
     max_iterations: int = 200
-    # Per-call max_tokens for the LLM response. NOT the bench's total
-    # output budget (that's BudgetTracker's job). Sized for ONE turn:
-    # enough for reasoning + tool-call args + content on a reasoning
-    # model, small enough to fit alongside the input in a 262k-context
-    # model like Kimi 2.6. Sonnet (no reasoning) uses ~600 of this;
-    # Kimi-k2.6 reasoning needs ~5-15k.
-    per_call_max_tokens: int = 16384
-    # Per-call output cap for the worker on metric-optimization runs (mode
-    # "run" with a configured continuous metric). Those tasks reward large
-    # single-turn edits, so a tight cap truncates mid-apply_patch and wastes the
-    # turn; ordinary feature/bugfix runs stay on the tighter default, where a
-    # giant turn mostly means a confused model. At 32k a heavy reasoner still
-    # hit stop_reason="length" on ~30% of turns before emitting a tool call
-    # (measured: bench/perf/README.md).
-    metric_task_max_tokens: int = 65536
-    # Sampling temperature pinned for every provider call (worker and
-    # review seats); unset, each provider routes to its own default, and OpenRouter's
-    # per-model defaults are high enough to produce degenerate output. Pinning
-    # 0.0 makes the tool-use loop reproducible. CLI wires these from
-    # `cfg.models.<role>.temperature`.
-    temperature: float | None = 0.0
-    # Tiered context compaction thresholds (chars).
-    compact_drop_at_chars: int = DROP_BLOCKS_AT_CHARS
-    compact_summarise_at_chars: int = SUMMARISE_AT_CHARS
-    # One tool result's size bound before it enters the conversation; a
-    # provider that hands the model less than the default gets a tighter one.
-    tool_result_cap_bytes: int = TOOL_RESULT_CAP_BYTES
-    # Verbatim recent-history tail kept through a tier-2 restart (chars; 0
-    # keeps none). Sized to pi's keepRecentTokens default.
-    keep_recent_chars: int = KEEP_RECENT_CHARS
-    # Thinking blocks are dropped from assistant turns older than this many
-    # assistant turns, at tier-1 moments. 0 (default) keeps all thinking, like
-    # pi; Claude Code clears old thinking.
-    keep_thinking_turns: int = 0
-    # Retry the provider call on transient ProviderError before aborting the
-    # run. Common cases: Anthropic 529 overload, Anthropic "Server disconnected
-    # without sending a response" (httpx2 RemoteProtocolError, no HTTP status),
-    # OpenRouter 502, brief socket timeouts. Such a disconnect can flap for a
-    # few seconds, and a long, expensive run must not abort on one blip.
-    # With exponential backoff (2s/4s/8s/16s, full-jittered, capped
-    # at provider_retry_max_delay_s) four retries ride out a multi-second flap;
-    # permanent statuses (401/402/403/404/422) and BudgetExceeded still fail
-    # fast. Set to 0 to disable retrying.
-    provider_retry_count: int = 4
-    provider_retry_delay_s: float = 2.0
-    provider_retry_max_delay_s: float = 30.0
     # A machine agent state's finish contract: called on each finish_session
     # payload, returning the problems (empty = conforms). Injected by the
     # machine leg builder from the state's output_schema; None (every plain
@@ -440,58 +398,19 @@ class Workflow:
     finish_validator: Callable[[dict[str, Any] | None], list[str]] | None = None
     # What the operator can do to the run, as the front-end injects it.
     bridge: OperatorBridge = field(default_factory=OperatorBridge)
-    # In-loop review panel. When `review_trigger != "off"` and `review_seats`
-    # is non-empty, the panel runs at the configured trigger (verify-failure /
-    # before finish_session / every review_period iters) over the run diff and
-    # injects its findings back into the conversation on the next user turn.
-    review_trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
-    review_period: int = 10
-    # Optional one-shot prompt revision before the first worker call.
-    # The CLI wires this to the reviewer model when prompt.revise_prompt !=
-    # "off". It never receives tools and never iterates.
-    prompt_reviser_provider: Provider | None = None
-    revise_prompt: Literal["off", "auto", "interactive"] = "off"
-    prompt_reviser_temperature: float | None = 0.0
-    prompt_revision_max_tokens: int = 2048
-    prompt_revision_selector: Callable[[str, str, tuple[str, ...]], str | None] | None = None
-    # Tier-2 context compaction (summarise-and-restart). When the
-    # cumulative tool_result size crosses `compact_summarise_at_chars`,
-    # the loop asks this provider to summarise the elided history into a
-    # compact progress block and restarts the message list from (original
-    # task + summary). Wired by the CLI to the reviewer role (cheaper than
-    # the worker). When None the loop falls back to `provider` so the
-    # feature still works without explicit wiring.
-    summariser_provider: Provider | None = None
+    # The worker call's knobs: retries, temperature, output caps.
+    call: CallSettings = field(default_factory=CallSettings)
+    # Context compaction: the tiers' thresholds, the tail kept, the summariser.
+    compaction: CompactionSettings = field(default_factory=CompactionSettings)
+    # The in-loop review panel: its trigger, seats and decision rule.
+    review: ReviewSettings = field(default_factory=ReviewSettings)
+    # The one-shot prompt revision before the first worker call.
+    revision: RevisionSettings = field(default_factory=RevisionSettings)
     # Pins seeded before the first turn (a /parallel lane inherits the
     # coordinator's standing instructions via the spawner's --pin channel,
     # out-of-band of user_task). Fresh runs only; resume/fork restore pins
     # from the snapshot instead.
     initial_pins: Sequence[str] = ()
-    context_summary_max_tokens: int = 2048
-    # Tier-1 gist elision (`context.elision_gists`): large read_file results
-    # decay to a distilled-gist placeholder (summariser model, one batched call
-    # per drop event) before the bare marker. Off = the bare marker only.
-    compact_elision_gists: bool = True
-    # Cap on consecutive `before_finish` rejections.
-    # When the worker repeatedly calls finish_session and the panel keeps
-    # rejecting, the loop would otherwise burn budget bouncing.
-    # After this many back-to-back rejections, the next finish_session is
-    # accepted (with a `[review]` warning still injected so the
-    # transcript records the disagreement). 0 disables the cap.
-    max_consecutive_review_rejections: int = 2
-    # The in-loop review panel: every trigger runs the grounded panel
-    # (run_panel over the run diff + verify result). `review_decision` gates
-    # only for veto/quorum; "advisory" just injects findings as a [review]
-    # message.
-    # The panel reviews `git diff base_sha` (the run's cumulative change). The
-    # per-run rejection counter auto-disarms the gate after
-    # `review_max_total_rejections` blocks so it can never stall the run.
-    review_seats: list[ReviewSeat] = field(default_factory=list)
-    review_decision: ReviewDecision = "advisory"
-    review_quorum: int = 2
-    review_max_total_rejections: int = 4
-    review_budget_fraction: float = 0.25
-    review_concurrency: int = 1
     # When set, Workflow writes a JSON snapshot of (system, messages,
     # tool_calls, next_iteration, root_task_id) before every LLM call. The
     # snapshot is provider-agnostic (it holds the anthropic-shaped message
@@ -1165,7 +1084,7 @@ class Workflow:
                     content=cap_tool_result(
                         served if served is not None else content,
                         tool_name=name,
-                        cap=self.tool_result_cap_bytes,
+                        cap=self.compaction.tool_result_cap_bytes,
                     ),
                     for_call=tu,
                 )
@@ -1800,10 +1719,10 @@ class Workflow:
           on_verify_fail - the verify just failed; surface a critique
                            alongside the failure so the worker has a second
                            opinion before its next edit.
-          periodic       - every review_period iterations.
+          periodic       - every ReviewSettings.period iterations.
         """
         if (
-            self.review_trigger == "on_verify_fail"
+            self.review.trigger == "on_verify_fail"
             and turn.verify_just_failed
             and self._has_reviewer()
         ):
@@ -1813,9 +1732,9 @@ class Workflow:
             if critique is not None:
                 turn.review_text = critique.text
         elif (
-            self.review_trigger == "periodic"
+            self.review.trigger == "periodic"
             and self._has_reviewer()
-            and turn.iteration % max(1, self.review_period) == 0
+            and turn.iteration % max(1, self.review.period) == 0
         ):
             critique = self._run_review_panel(state, trigger="periodic", iteration=turn.iteration)
             if critique is not None:
@@ -1862,7 +1781,7 @@ class Workflow:
         finish, or the settled stop or metric plateau the harness declares):
         True when the panel rejected it
         and the run carries on with the findings injected. After
-        `max_consecutive_review_rejections` back-to-back rejections the end
+        `ReviewSettings.max_consecutive_rejections` back-to-back rejections the end
         goes through (findings still injected) so the worker can't bounce
         indefinitely. False when there is no panel or it approved. One turn
         can declare two ends (a finish a gate revokes, then the plateau or
@@ -1872,12 +1791,12 @@ class Workflow:
         return turn.end_reviewed
 
     def _review_end(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
-        if not (self.review_trigger == "before_finish" and self._has_reviewer()):
+        if not (self.review.trigger == "before_finish" and self._has_reviewer()):
             return False
         critique = self._run_review_panel(state, trigger="before_finish", iteration=turn.iteration)
         if critique is None:
             return False
-        cap = self.max_consecutive_review_rejections
+        cap = self.review.max_consecutive_rejections
         cap_reached = cap > 0 and state.consecutive_review_rejections >= cap
         if not critique.satisfied and not cap_reached:
             self._log(f"  review rejected {ending} at iter {turn.iteration}")
@@ -3644,8 +3563,8 @@ class Workflow:
         """
         metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is not None
         if metric_run and state.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS:
-            return max(self.per_call_max_tokens, self.metric_task_max_tokens)
-        return self.per_call_max_tokens
+            return max(self.call.per_call_max_tokens, self.call.metric_task_max_tokens)
+        return self.call.per_call_max_tokens
 
     # ---- context compaction drivers --------------------------------------------
 
@@ -3657,11 +3576,11 @@ class Workflow:
         current-task banner the restart wiped); False otherwise.
 
         Tier 1 (cheap): drop old tool_result blocks once cumulative content
-        exceeds `compact_drop_at_chars`.
+        exceeds `CompactionSettings.drop_at_chars`.
 
         Tier 2 (expensive): once the WHOLE post-elision context (text +
         tool_use inputs + surviving tool_results, via `context_chars`)
-        crosses `compact_summarise_at_chars`, summarise the elided history
+        crosses `CompactionSettings.summarise_at_chars`, summarise the elided history
         into a compact progress block and restart the conversation from
         (original task + summary). Fail-safe: if
         summarisation errors or returns nothing, the conversation is left
@@ -3679,21 +3598,23 @@ class Workflow:
             self._emit("loop.compact.requested", focus=forced)
         stats = compact_old_tool_results(
             conversation,
-            max_total_bytes=self.compact_drop_at_chars,
+            max_total_bytes=self.compaction.drop_at_chars,
             keep_recent=2,
             protect_paths=recently_edited_paths(conversation),
-            gister=self._distill_gists if self.compact_elision_gists else None,
+            gister=self._distill_gists if self.compaction.elision_gists else None,
         )
         n_deduped = len(stats.deduped_calls)
         n_elided = len(stats.elided_calls)
         n_gisted = len(stats.gist_paths)
         n_demoted = len(stats.demoted_paths)
-        if self.keep_thinking_turns > 0 and (
-            n_deduped or n_elided or context_chars(conversation) > self.compact_drop_at_chars
+        if self.compaction.keep_thinking_turns > 0 and (
+            n_deduped or n_elided or context_chars(conversation) > self.compaction.drop_at_chars
         ):
             # Same cache-bundling rule as dedup: only at tier-1 pressure
             # moments, never as a rolling per-iteration rewrite.
-            n_turns, n_chars = strip_old_thinking(conversation, keep_turns=self.keep_thinking_turns)
+            n_turns, n_chars = strip_old_thinking(
+                conversation, keep_turns=self.compaction.keep_thinking_turns
+            )
             if n_turns:
                 self._log(
                     f"LOOP: compaction dropped thinking from {n_turns} old turns ({n_chars} chars)"
@@ -3727,7 +3648,7 @@ class Workflow:
         # it saves. The growth floor (see LoopState.tier2_floor_chars) keeps
         # a restart that lands near the threshold from summarising every
         # other iteration; a forced (operator) compaction bypasses it.
-        over = total > self.compact_summarise_at_chars and total >= state.tier2_floor_chars
+        over = total > self.compaction.summarise_at_chars and total >= state.tier2_floor_chars
         if (forced is not None or over) and len(conversation) > 3:
             return self._summarise_and_restart(
                 conversation, state, focus=forced or "", prefix_chars=prefix_chars
@@ -3746,7 +3667,7 @@ class Workflow:
         summariser model (same seat as tier-2). Fail-safe: any provider error
         returns {} and every victim gets the bare placeholder, so gisting can
         slow a drop event but never break one."""
-        provider = self.summariser_provider or self.provider
+        provider = self.compaction.summariser or self.provider
         files = "\n\n".join(f"=== FILE {r.path} ===\n{r.content}" for r in requests)
         self._emit("loop.compact.gist.call", files=len(requests))
         try:
@@ -3754,7 +3675,7 @@ class Workflow:
                 system=GIST_DISTILL_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": files}],
                 tools=[],
-                max_tokens=self.context_summary_max_tokens,
+                max_tokens=self.compaction.summary_max_tokens,
                 temperature=0.0,
             )
         except (ProviderError, BudgetExceeded) as exc:
@@ -3779,11 +3700,11 @@ class Workflow:
         actually replaced; False on every fail-safe path (the tier-1-elided
         context is kept and the run continues).
         """
-        provider = self.summariser_provider or self.provider
+        provider = self.compaction.summariser or self.provider
         turns = conversation.turns
         # The verbatim tail survives the restart, so the summary covers only
         # what is actually dropped (pi's keepRecentTokens shape).
-        tail_start = recent_tail_start(turns, self.keep_recent_chars)
+        tail_start = recent_tail_start(turns, self.compaction.keep_recent_chars)
         if tail_start <= 1:
             # A cap that swallows the whole history would make the restart
             # grow the context instead of shrinking it; keep nothing.
@@ -3846,7 +3767,7 @@ class Workflow:
                 system=CONTEXT_SUMMARY_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
                 tools=[],
-                max_tokens=self.context_summary_max_tokens,
+                max_tokens=self.compaction.summary_max_tokens,
                 temperature=0.0,
             )
         except (ProviderError, BudgetExceeded) as exc:
@@ -4007,9 +3928,9 @@ class Workflow:
     # ---- prompt revision and provider retry ------------------------------------
 
     def _maybe_revise_prompt(self, user_task: str, repo: RepoSummary) -> str:
-        if self.revise_prompt == "off":
+        if self.revision.mode == "off":
             return user_task
-        if self.prompt_reviser_provider is None:
+        if self.revision.reviser is None:
             raise PromptRevisionError(
                 "prompt.revise_prompt is enabled but no reviser provider is wired"
             )
@@ -4018,15 +3939,15 @@ class Workflow:
         user_msg = (
             f"RAW_TASK:\n{user_task}\n\nREPO_CONTEXT:\n{context}\n\nRewrite the raw task now."
         )
-        self._log(f"LOOP: prompt revision ({self.revise_prompt})")
-        self._emit("loop.prompt_revision.call", mode=self.revise_prompt)
+        self._log(f"LOOP: prompt revision ({self.revision.mode})")
+        self._emit("loop.prompt_revision.call", mode=self.revision.mode)
         try:
-            resp = self.prompt_reviser_provider.call(
+            resp = self.revision.reviser.call(
                 system=PROMPT_REVISION_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
                 tools=[],
-                max_tokens=self.prompt_revision_max_tokens,
-                temperature=self.prompt_reviser_temperature,
+                max_tokens=self.revision.max_tokens,
+                temperature=self.revision.temperature,
             )
         except (ProviderError, BudgetExceeded) as exc:
             self._emit("loop.prompt_revision.failed", error=str(exc)[:200])
@@ -4056,12 +3977,12 @@ class Workflow:
                 + "\n".join(f"- {q}" for q in revision.clarifying_questions)
             )
 
-        if self.revise_prompt == "interactive":
-            if self.prompt_revision_selector is None:
+        if self.revision.mode == "interactive":
+            if self.revision.selector is None:
                 raise PromptRevisionError(
                     "prompt.revise_prompt='interactive' needs an interactive selector"
                 )
-            selected = self.prompt_revision_selector(
+            selected = self.revision.selector(
                 user_task,
                 revision.revised_task,
                 revision.clarifying_questions,
@@ -4086,10 +4007,10 @@ class Workflow:
         """The worker's provider under the run's retry knobs and steer callables."""
         return ProviderCaller(
             provider=self.provider,
-            retry_count=self.provider_retry_count,
-            retry_delay_s=self.provider_retry_delay_s,
-            retry_max_delay_s=self.provider_retry_max_delay_s,
-            temperature=self.temperature,
+            retry_count=self.call.retry_count,
+            retry_delay_s=self.call.retry_delay_s,
+            retry_max_delay_s=self.call.retry_max_delay_s,
+            temperature=self.call.temperature,
             should_abort=self.bridge.should_abort,
             should_interrupt=self.bridge.should_interrupt,
             log=self._log,
@@ -4101,7 +4022,7 @@ class Workflow:
     def _has_reviewer(self) -> bool:
         """A second opinion is available: the review panel has seats. Gates
         every in-loop review trigger."""
-        return bool(self.review_seats)
+        return bool(self.review.seats)
 
     def _run_review_panel(
         self, state: LoopState, *, trigger: str, iteration: int
@@ -4121,13 +4042,13 @@ class Workflow:
             )
             return None
         # Skip the panel once the run's remaining token budget falls below
-        # review_budget_fraction: reviewing is most expensive (esp. explore-tier
+        # ReviewSettings.budget_fraction: reviewing is most expensive (esp. explore-tier
         # seats) exactly when budget is scarcest, and a skipped panel is
         # approve-and-proceed (the before_finish gate only blocks on an explicit
         # unsatisfied critique, so returning None here lets finish through). This
-        # is the sole read site for review_budget_fraction.
+        # is the sole read site for ReviewSettings.budget_fraction.
         remaining = self._budget_fraction_remaining()
-        if remaining is not None and remaining < self.review_budget_fraction:
+        if remaining is not None and remaining < self.review.budget_fraction:
             self._emit(
                 "loop.review.skipped",
                 iteration=iteration,
@@ -4139,7 +4060,7 @@ class Workflow:
         # on_verify_fail/periodic never gate (advisory text only); only
         # before_finish consumes .satisfied + the rejection counter.
         decision: ReviewDecision = (
-            self.review_decision if trigger == "before_finish" else "advisory"
+            self.review.decision if trigger == "before_finish" else "advisory"
         )
         ctx = ReviewContext(
             task=state.original_task,
@@ -4151,20 +4072,20 @@ class Workflow:
             verify_output=state.verify.last_tail,
         )
         self._emit(
-            "loop.review.start", iteration=iteration, trigger=trigger, seats=len(self.review_seats)
+            "loop.review.start", iteration=iteration, trigger=trigger, seats=len(self.review.seats)
         )
         tools: list[ToolDefinition] | None = None
         dispatch: ReviewDispatch | None = None
-        if any(s.tier == "explore" for s in self.review_seats):
+        if any(s.tier == "explore" for s in self.review.seats):
             tools, dispatch = build_readonly_review_tools(self.dispatcher)
         try:
             result = run_panel(
-                self.review_seats,
+                self.review.seats,
                 ctx,
                 decision=decision,
-                quorum=self.review_quorum,
+                quorum=self.review.quorum,
                 panel_id=f"{trigger}-{iteration}",
-                concurrency=self.review_concurrency,
+                concurrency=self.review.concurrency,
                 tools=tools,
                 dispatch=dispatch,
             )
@@ -4180,7 +4101,7 @@ class Workflow:
                 verdict="abstain" if v.error else v.verdict,
                 findings=len(v.findings),
             )
-        disarmed = state.review_rejections_total >= self.review_max_total_rejections
+        disarmed = state.review_rejections_total >= self.review.max_total_rejections
         effective_blocked = result.blocked and not disarmed
         self._emit(
             "loop.review.panel",

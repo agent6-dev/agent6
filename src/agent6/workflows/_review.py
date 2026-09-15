@@ -17,9 +17,9 @@ from __future__ import annotations
 import json
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Literal
 
 from agent6.config import ReviewTier
 from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT
@@ -69,6 +69,29 @@ class ReviewSeat:
     model: str
     provider: Provider
     tier: ReviewTier = "diff"
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewSettings:
+    """The in-loop review panel, as the run configures it (`[review]`). The
+    panel runs at `trigger` (on a verify failure, before a finish, or every
+    `period` iterations; `off` never) over the run diff, with one call per
+    seat, and its findings return to the model on the next user turn.
+    `decision` gates only for veto/quorum; `advisory` just injects the
+    findings. `max_total_rejections` blocks disarm the gate to advisory for
+    the rest of the run, and after `max_consecutive_rejections` back-to-back
+    before-finish rejections the next finish is accepted (with the review
+    still injected), so neither can stall the run; 0 disables the latter."""
+
+    trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
+    period: int = 10
+    seats: Sequence[ReviewSeat] = ()
+    decision: ReviewDecision = "advisory"
+    quorum: int = 2
+    max_total_rejections: int = 4
+    budget_fraction: float = 0.25
+    concurrency: int = 1
+    max_consecutive_rejections: int = 2
 
 
 def _build_user_message(ctx: ReviewContext) -> str:
@@ -249,7 +272,7 @@ def explore_review(
 
 
 def run_panel(
-    seats: list[ReviewSeat],
+    seats: Sequence[ReviewSeat],
     ctx: ReviewContext,
     *,
     decision: ReviewDecision,
@@ -281,7 +304,7 @@ def run_panel(
 
 
 def _run_seats_concurrently(
-    seats: list[ReviewSeat],
+    seats: Sequence[ReviewSeat],
     run_seat: Callable[[ReviewSeat], ReviewVerdict],
     concurrency: int,
 ) -> list[ReviewVerdict]:

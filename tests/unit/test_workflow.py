@@ -22,13 +22,16 @@ from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._chain import RunChain
+from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
 from agent6.workflows._loop_state import End
 from agent6.workflows._provider_call import (
+    CallSettings,
     ProviderCaller,
     is_empty_tool_call_response,
     reasoning_starvation,
 )
+from agent6.workflows._review import ReviewSettings
 from agent6.workflows._session_state import SNAPSHOT_VERSION
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows._verify_verdict import VerifyVerdict
@@ -135,7 +138,7 @@ def _wf(
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
         "logger": _silent,
-        "provider_retry_delay_s": 0.01,  # keep tests fast
+        "call": CallSettings(retry_delay_s=0.01),  # keep tests fast
     }
     defaults.update(kw)
     return Workflow(**defaults)
@@ -562,7 +565,7 @@ def test_call_with_retry_zero_retries_no_retry() -> None:
     """provider_retry_count=0 -> single attempt, no retry on error."""
     provider = MagicMock()
     provider.call.side_effect = [ProviderError("nope")]
-    wf = _wf(provider=provider, provider_retry_count=0)
+    wf = _wf(provider=provider, call=CallSettings(retry_count=0, retry_delay_s=0.01))
     with pytest.raises(ProviderError, match="nope"):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
@@ -572,7 +575,7 @@ def test_call_with_retry_does_not_swallow_non_provider_errors() -> None:
     """RuntimeError (etc.) must propagate without retry."""
     provider = MagicMock()
     provider.call.side_effect = [RuntimeError("not a provider error")]
-    wf = _wf(provider=provider, provider_retry_count=3)
+    wf = _wf(provider=provider, call=CallSettings(retry_count=3, retry_delay_s=0.01))
     with pytest.raises(RuntimeError, match="not a provider error"):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
@@ -587,7 +590,7 @@ def test_call_with_retry_skips_retry_on_permanent_status() -> None:
         ProviderError("OpenAI API error 402: Insufficient credits", status_code=402),
         _resp("should-never-be-reached"),
     ]
-    wf = _wf(provider=provider, provider_retry_count=3)
+    wf = _wf(provider=provider, call=CallSettings(retry_count=3, retry_delay_s=0.01))
     with pytest.raises(ProviderError, match="402"):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
@@ -602,7 +605,7 @@ def test_call_with_retry_never_retries_a_fatal_error() -> None:
         ProviderError("claude not signed in", fatal=True),
         _resp("should-never-be-reached"),
     ]
-    wf = _wf(provider=provider, provider_retry_count=3)
+    wf = _wf(provider=provider, call=CallSettings(retry_count=3, retry_delay_s=0.01))
     with pytest.raises(ProviderError, match="not signed in"):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
@@ -620,7 +623,7 @@ def test_call_with_retry_skips_retry_on_all_permanent_statuses(status: int) -> N
         ProviderError(f"provider error {status}", status_code=status),
         _resp("should-never-be-reached"),
     ]
-    wf = _wf(provider=provider, provider_retry_count=3)
+    wf = _wf(provider=provider, call=CallSettings(retry_count=3, retry_delay_s=0.01))
     with pytest.raises(ProviderError, match=str(status)):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
@@ -635,7 +638,7 @@ def test_call_with_retry_keeps_anthropic_transient_client_statuses(status: int) 
         ProviderError(f"provider error {status}", status_code=status),
         _resp("recovered"),
     ]
-    wf = _wf(provider=provider, provider_retry_count=1)
+    wf = _wf(provider=provider, call=CallSettings(retry_count=1, retry_delay_s=0.01))
     assert wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384).text == "recovered"
     assert provider.call.call_count == 2
 
@@ -648,7 +651,7 @@ def test_call_with_retry_still_retries_transient_5xx() -> None:
         ProviderError("OpenAI API error 503: upstream", status_code=503),
         _resp("recovered"),
     ]
-    wf = _wf(provider=provider, provider_retry_count=1)
+    wf = _wf(provider=provider, call=CallSettings(retry_count=1, retry_delay_s=0.01))
     out = wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert out.text == "recovered"
     assert provider.call.call_count == 2
@@ -669,9 +672,7 @@ def test_call_with_retry_exponential_backoff() -> None:
     ]
     wf = _wf(
         provider=provider,
-        provider_retry_count=3,
-        provider_retry_delay_s=2.0,
-        provider_retry_max_delay_s=30.0,
+        call=CallSettings(retry_count=3, retry_delay_s=2.0, retry_max_delay_s=30.0),
     )
     sleep_calls: list[float] = []
     with (
@@ -698,9 +699,7 @@ def test_call_with_retry_backoff_capped_at_max_delay() -> None:
     ]
     wf = _wf(
         provider=provider,
-        provider_retry_count=4,
-        provider_retry_delay_s=2.0,
-        provider_retry_max_delay_s=5.0,
+        call=CallSettings(retry_count=4, retry_delay_s=2.0, retry_max_delay_s=5.0),
     )
     sleep_calls: list[float] = []
     with (
@@ -723,7 +722,7 @@ def test_call_with_retry_backoff_skips_sleep_on_permanent_status() -> None:
     provider.call.side_effect = [
         ProviderError("Insufficient credits", status_code=402),
     ]
-    wf = _wf(provider=provider, provider_retry_count=3, provider_retry_delay_s=10.0)
+    wf = _wf(provider=provider, call=CallSettings(retry_count=3, retry_delay_s=10.0))
     sleep_calls: list[float] = []
     with (
         patch("time.sleep", side_effect=sleep_calls.append),
@@ -754,7 +753,7 @@ def test_call_with_retry_honours_overridden_temperature() -> None:
     threaded through verbatim."""
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
-    wf = _wf(provider=provider, temperature=0.7)
+    wf = _wf(provider=provider, call=CallSettings(temperature=0.7, retry_delay_s=0.01))
     wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_args.kwargs["temperature"] == 0.7
 
@@ -764,7 +763,7 @@ def test_call_with_retry_passes_through_none_temperature() -> None:
     (let the provider pick), for operators who specifically want it."""
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
-    wf = _wf(provider=provider, temperature=None)
+    wf = _wf(provider=provider, call=CallSettings(temperature=None, retry_delay_s=0.01))
     wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_args.kwargs["temperature"] is None
 
@@ -1138,7 +1137,7 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: Path) -> None
         provider=provider,
         dispatcher=MagicMock(),
         max_iterations=3,
-        provider_retry_count=3,
+        call=CallSettings(retry_count=3, retry_delay_s=0.01),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1166,8 +1165,7 @@ def test_exhausted_provider_retries_keep_the_attempt_count_and_reason(tmp_path: 
         provider=provider,
         dispatcher=MagicMock(),
         logger=logs.append,
-        provider_retry_count=2,
-        provider_retry_delay_s=0,
+        call=CallSettings(retry_count=2, retry_delay_s=0),
     )
 
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1625,11 +1623,11 @@ def test_worker_max_tokens_starvation_backoff() -> None:
     )
     wf = _wf(config=metric_cfg)
     wmt = wf._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
-    full = max(wf.per_call_max_tokens, wf.metric_task_max_tokens)
+    full = max(wf.call.per_call_max_tokens, wf.call.metric_task_max_tokens)
     assert wmt(_state(went_quiet_nudges_used=0)) == full
     assert wmt(_state(went_quiet_nudges_used=1)) == full  # one-off quiet: full room
-    assert wmt(_state(went_quiet_nudges_used=2)) == wf.per_call_max_tokens  # spiral: back off
-    assert wmt(_state(went_quiet_nudges_used=3)) == wf.per_call_max_tokens
+    assert wmt(_state(went_quiet_nudges_used=2)) == wf.call.per_call_max_tokens  # spiral: back off
+    assert wmt(_state(went_quiet_nudges_used=3)) == wf.call.per_call_max_tokens
 
     # Non-metric run: always per_call, regardless of the quiet streak.
     plain = _wf(
@@ -1645,8 +1643,8 @@ def test_worker_max_tokens_starvation_backoff() -> None:
         )
     )
     pwmt = plain._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
-    assert pwmt(_state(went_quiet_nudges_used=0)) == plain.per_call_max_tokens
-    assert pwmt(_state(went_quiet_nudges_used=2)) == plain.per_call_max_tokens
+    assert pwmt(_state(went_quiet_nudges_used=0)) == plain.call.per_call_max_tokens
+    assert pwmt(_state(went_quiet_nudges_used=2)) == plain.call.per_call_max_tokens
 
 
 def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None:
@@ -1704,8 +1702,9 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
         provider=provider,
         dispatcher=DispatcherStub(),
         max_iterations=10,
-        per_call_max_tokens=16384,
-        metric_task_max_tokens=65536,
+        call=CallSettings(
+            per_call_max_tokens=16384, metric_task_max_tokens=65536, retry_delay_s=0.01
+        ),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2973,8 +2972,9 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
     wf = _wf(
         config=config,
         mode="run",
-        per_call_max_tokens=16384,
-        metric_task_max_tokens=32768,
+        call=CallSettings(
+            per_call_max_tokens=16384, metric_task_max_tokens=32768, retry_delay_s=0.01
+        ),
     )
     assert wf._worker_max_tokens(_state()) == 32768  # pyright: ignore[reportPrivateUsage]
 
@@ -2993,8 +2993,9 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
     wf = _wf(
         config=config,
         mode="run",
-        per_call_max_tokens=16384,
-        metric_task_max_tokens=32768,
+        call=CallSettings(
+            per_call_max_tokens=16384, metric_task_max_tokens=32768, retry_delay_s=0.01
+        ),
     )
     assert wf._worker_max_tokens(_state()) == 16384  # pyright: ignore[reportPrivateUsage]
 
@@ -3013,8 +3014,9 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
     wf = _wf(
         config=config,
         mode="plan",
-        per_call_max_tokens=16384,
-        metric_task_max_tokens=32768,
+        call=CallSettings(
+            per_call_max_tokens=16384, metric_task_max_tokens=32768, retry_delay_s=0.01
+        ),
     )
     assert wf._worker_max_tokens(_state()) == 16384  # pyright: ignore[reportPrivateUsage]
 
@@ -3096,9 +3098,9 @@ def test_tier1_compact_event_names_what_was_elided() -> None:
     ev = _EventCapture()
     wf = _wf(
         events=ev,
-        compact_drop_at_chars=1500,
-        compact_summarise_at_chars=10**9,
-        compact_elision_gists=False,
+        compaction=CompactionSettings(
+            drop_at_chars=1500, summarise_at_chars=10**9, elision_gists=False
+        ),
     )
     msgs = _read_history(("a.py", "X" * 1000), ("b.py", "X" * 1000), ("c.py", "X" * 1000))
     _compact_via_wire(wf, msgs)
@@ -3114,10 +3116,9 @@ def test_tier1_gist_event_carries_paths() -> None:
     summariser.call.return_value = _resp("docs/spec.md: spec facts distilled")
     wf = _wf(
         events=ev,
-        summariser_provider=summariser,
-        compact_drop_at_chars=1800,
-        compact_summarise_at_chars=10**9,
-        compact_elision_gists=True,
+        compaction=CompactionSettings(
+            summariser=summariser, drop_at_chars=1800, summarise_at_chars=10**9, elision_gists=True
+        ),
     )
     doc = json.dumps({"content": "authoritative spec. " * 300})
     msgs = _read_history(("docs/spec.md", doc), ("b.py", "x" * 500), ("c.py", "y" * 500))
@@ -3134,7 +3135,7 @@ def test_summarise_done_event_carries_summary_text() -> None:
     ev = _EventCapture()
     summariser = MagicMock()
     summariser.call.return_value = _resp("done: tried A; best=42 at sha9")
-    wf = _wf(events=ev, summariser_provider=summariser)
+    wf = _wf(events=ev, compaction=CompactionSettings(summariser=summariser))
     _restart_via_wire(wf, _long_history(6))
     done = [e for e in ev.events if e["type"] == "loop.compact.summarise.done"]
     assert done and done[-1]["summary"] == "done: tried A; best=42 at sha9"
@@ -3149,13 +3150,13 @@ def test_forced_compact_threads_focus_to_summariser() -> None:
     cleared: list[bool] = []
     wf = _wf(
         events=ev,
-        summariser_provider=summariser,
+        compaction=CompactionSettings(
+            summariser=summariser, drop_at_chars=10**9, summarise_at_chars=10**9
+        ),
         bridge=OperatorBridge(
             compact_requested=lambda: "weigh the auth decisions",
             compact_clear=lambda: cleared.append(True),
         ),
-        compact_drop_at_chars=10**9,
-        compact_summarise_at_chars=10**9,
     )
     assert _compact_via_wire(wf, _long_history(3)) is True
     assert cleared == [True]
@@ -3176,13 +3177,13 @@ def test_forced_compact_below_the_floor_says_it_was_refused() -> None:
     cleared: list[bool] = []
     wf = _wf(
         events=ev,
-        summariser_provider=summariser,
+        compaction=CompactionSettings(
+            summariser=summariser, drop_at_chars=10**9, summarise_at_chars=10**9
+        ),
         bridge=OperatorBridge(
             compact_requested=lambda: "keep the auth work",
             compact_clear=lambda: cleared.append(True),
         ),
-        compact_drop_at_chars=10**9,
-        compact_summarise_at_chars=10**9,
     )
     assert _compact_via_wire(wf, _long_history(1)) is False
     assert cleared == [True]
@@ -3198,10 +3199,10 @@ def test_forced_compact_plain_keeps_prompt_unfocused() -> None:
     summariser = MagicMock()
     summariser.call.return_value = _resp("s")
     wf = _wf(
-        summariser_provider=summariser,
+        compaction=CompactionSettings(
+            summariser=summariser, drop_at_chars=10**9, summarise_at_chars=10**9
+        ),
         bridge=OperatorBridge(compact_requested=lambda: ""),
-        compact_drop_at_chars=10**9,
-        compact_summarise_at_chars=10**9,
     )
     assert _compact_via_wire(wf, _long_history(3)) is True
     assert "Operator focus" not in str(summariser.call.call_args)
@@ -3212,7 +3213,7 @@ def test_summarise_and_restart_reinjects_pins_verbatim() -> None:
     label, as standing orders), and the summariser is told not to restate them."""
     summariser = MagicMock()
     summariser.call.return_value = _resp("progress summary text")
-    wf = _wf(summariser_provider=summariser)
+    wf = _wf(compaction=CompactionSettings(summariser=summariser))
     st = _state(pins=["never touch schema files", "goal:\nship X"])
     messages = _long_history(6)
     _restart_via_wire(wf, messages, state=st)
@@ -3227,7 +3228,7 @@ def test_summarise_and_restart_reinjects_pins_verbatim() -> None:
 def test_summarise_and_restart_replaces_history() -> None:
     summariser = MagicMock()
     summariser.call.return_value = _resp("done: tried A (kept), B (reverted); best=42 at sha9")
-    wf = _wf(summariser_provider=summariser)
+    wf = _wf(compaction=CompactionSettings(summariser=summariser))
     messages = _long_history(6)
     original = messages[0]
 
@@ -3280,7 +3281,9 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
         '"new_tasks": ["fix the budget rounding bug"]}\n```'
     )
     logged: list[str] = []
-    wf = _wf(summariser_provider=summariser, curator=fake, logger=logged.append)
+    wf = _wf(
+        compaction=CompactionSettings(summariser=summariser), curator=fake, logger=logged.append
+    )
     messages = _long_history(6)
     _restart_via_wire(wf, messages)
 
@@ -3869,7 +3872,7 @@ def test_maybe_compact_returns_restart_signal() -> None:
     the history (the loop's cue to re-surface the focus banner)."""
     summariser = MagicMock()
     summariser.call.return_value = _resp("progress summary")
-    wf = _wf(summariser_provider=summariser, compact_summarise_at_chars=500_000)
+    wf = _wf(compaction=CompactionSettings(summariser=summariser, summarise_at_chars=500_000))
     # Below the tier-2 threshold -> no restart, returns False.
     short = [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]
     assert _compact_via_wire(wf, short) is False
@@ -3885,7 +3888,7 @@ def test_tier2_summariser_is_told_the_task() -> None:
     transcript that starts mid-work."""
     summariser = MagicMock()
     summariser.call.return_value = _resp("progress summary")
-    wf = _wf(summariser_provider=summariser, compact_summarise_at_chars=500_000)
+    wf = _wf(compaction=CompactionSettings(summariser=summariser, summarise_at_chars=500_000))
     big = _big_text_history("TASK: x", blocks=8, block_chars=100_000)
     st = _state()
     st.original_task = "make the tests pass"
@@ -3905,7 +3908,7 @@ def test_a_restart_does_not_re_fire_on_the_next_iteration() -> None:
     # A small-window model against a big AGENTS.md: the prefix alone clears the
     # threshold, so every iteration is "over" and the floor is the only thing
     # between the run and a summariser call per turn.
-    wf = _wf(summariser_provider=summariser, compact_summarise_at_chars=60_000)
+    wf = _wf(compaction=CompactionSettings(summariser=summariser, summarise_at_chars=60_000))
     msgs = _big_text_history("TASK: x", blocks=8, block_chars=20_000)
     st = _state()
     prefix = 100_000
@@ -3933,8 +3936,7 @@ def test_compact_request_forces_a_tier2_restart() -> None:
     summariser.call.return_value = _resp("progress summary")
     pending = {"req": True}
     wf = _wf(
-        summariser_provider=summariser,
-        compact_summarise_at_chars=500_000,
+        compaction=CompactionSettings(summariser=summariser, summarise_at_chars=500_000),
         bridge=OperatorBridge(
             compact_requested=lambda: "" if pending["req"] else None,
             compact_clear=lambda: pending.__setitem__("req", False),
@@ -4097,11 +4099,11 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
         config=config,
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        summariser_provider=SummariserStub(),
+        compaction=CompactionSettings(
+            summariser=SummariserStub(), drop_at_chars=256_000, summarise_at_chars=5_000
+        ),
         events=events,
-        curator=cur,
-        compact_drop_at_chars=256_000,
-        compact_summarise_at_chars=5_000,  # low so tier-2 fires mid-run
+        curator=cur,  # low so tier-2 fires mid-run
         budget=None,
         max_iterations=30,
         loop_guard_kill_threshold=0,
@@ -4130,7 +4132,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
 def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
     worker = MagicMock()
     worker.call.return_value = _resp("summary text")
-    wf = _wf(provider=worker, summariser_provider=None)
+    wf = _wf(provider=worker, compaction=CompactionSettings(summariser=None))
     messages = _long_history(4)
 
     _restart_via_wire(wf, messages)
@@ -4142,7 +4144,7 @@ def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
 def test_summarise_and_restart_keeps_history_on_empty_summary() -> None:
     summariser = MagicMock()
     summariser.call.return_value = _resp("   ")
-    wf = _wf(summariser_provider=summariser)
+    wf = _wf(compaction=CompactionSettings(summariser=summariser))
     messages = _long_history(5)
     before = list(messages)
 
@@ -4168,7 +4170,7 @@ def test_summarise_and_restart_rejects_checkoff_without_a_summary() -> None:
             },
         }
     )
-    wf = _wf(summariser_provider=summariser, curator=curator)
+    wf = _wf(compaction=CompactionSettings(summariser=summariser), curator=curator)
     conversation = Conversation.from_wire(_long_history(5))
     before = conversation.to_wire()
 
@@ -4184,7 +4186,7 @@ def test_summarise_and_restart_rejects_checkoff_without_a_summary() -> None:
 def test_summarise_and_restart_keeps_history_on_provider_error() -> None:
     summariser = MagicMock()
     summariser.call.side_effect = ProviderError("boom")
-    wf = _wf(summariser_provider=summariser)
+    wf = _wf(compaction=CompactionSettings(summariser=summariser))
     messages = _long_history(5)
     before = list(messages)
 
@@ -4617,7 +4619,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
         provider=crashing_provider,
         dispatcher=dispatcher,
         resume_state_path=snap_path,
-        provider_retry_count=0,  # don't mask the crash with a retry
+        call=CallSettings(retry_count=0, retry_delay_s=0.01),  # don't mask the crash with a retry
     )
     # The first .run() ends with provider_error (v2's clean-shutdown path
     # for provider crashes). The snapshot was written BEFORE the call, so
@@ -4691,9 +4693,9 @@ def test_tier2_summarise_fires_and_restarts_past_threshold(tmp_path: Path) -> No
     summ = SummariserStub()
     wf = _wf(
         root=tmp_path,
-        summariser_provider=summ,
-        compact_drop_at_chars=256_000,
-        compact_summarise_at_chars=500_000,
+        compaction=CompactionSettings(
+            summariser=summ, drop_at_chars=256_000, summarise_at_chars=500_000
+        ),
     )
     messages = _big_text_history("TASK: optimize the kernel", blocks=8, block_chars=100_000)
     assert _ctx_chars(messages) > 500_000  # over the tier-2 threshold
@@ -4718,8 +4720,7 @@ def test_tier2_summarise_failsafe_keeps_context_on_empty_summary(tmp_path: Path)
 
     wf = _wf(
         root=tmp_path,
-        summariser_provider=EmptySummariser(),
-        compact_summarise_at_chars=500_000,
+        compaction=CompactionSettings(summariser=EmptySummariser(), summarise_at_chars=500_000),
     )
     messages = _big_text_history("TASK", blocks=8, block_chars=100_000)
     n_before = len(messages)
@@ -4795,10 +4796,10 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
         config=config,
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        summariser_provider=summ,
-        events=events,
-        compact_drop_at_chars=256_000,
-        compact_summarise_at_chars=5_000,  # low so it fires mid-run
+        compaction=CompactionSettings(
+            summariser=summ, drop_at_chars=256_000, summarise_at_chars=5_000
+        ),
+        events=events,  # low so it fires mid-run
         budget=None,
         max_iterations=30,
         loop_guard_kill_threshold=0,
@@ -6881,9 +6882,9 @@ def test_a_second_restart_carries_the_first_summary_forward() -> None:
     summariser = MagicMock()
     summariser.call.return_value = _resp("second summary")
     wf = _wf(
-        summariser_provider=summariser,
-        compact_drop_at_chars=10**9,
-        compact_summarise_at_chars=10**9,
+        compaction=CompactionSettings(
+            summariser=summariser, drop_at_chars=10**9, summarise_at_chars=10**9
+        ),
         bridge=OperatorBridge(compact_requested=lambda: ""),
     )
     # A conversation that already carries one restart, then plenty of new work
@@ -7173,9 +7174,9 @@ def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: Path) -> None:
     summ = SummariserStub()
     wf = _wf(
         root=tmp_path,
-        summariser_provider=summ,
-        compact_drop_at_chars=2_000,
-        compact_summarise_at_chars=3_000,
+        compaction=CompactionSettings(
+            summariser=summ, drop_at_chars=2_000, summarise_at_chars=3_000
+        ),
     )
     state = _state()
     messages = _big_text_history("TASK: t", blocks=4, block_chars=1_000)
@@ -8104,9 +8105,11 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
         max_iterations=10,
+        review=ReviewSettings(
+            trigger="before_finish",
+            seats=[object()],  # pyright: ignore[reportArgumentType]
+        ),
     )
-    wf.review_trigger = "before_finish"
-    wf.review_seats = [object()]  # type: ignore[assignment]
     panels: list[str] = []
 
     def fake_panel(self: Workflow, state: Any, *, trigger: str, iteration: int) -> CritiqueResult:

@@ -211,7 +211,7 @@ def test_machine_agent_wires_the_summariser_seat(
     )
     out = machine_agent.run_one(req)
     assert out.reason == "finish_session"
-    assert wf_kwargs["summariser_provider"] is summariser
+    assert wf_kwargs["compaction"].summariser is summariser
     assert sinks["worker"] is sinks["summariser"]  # one sink, one seq counter
 
 

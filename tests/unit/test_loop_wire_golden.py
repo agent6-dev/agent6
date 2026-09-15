@@ -35,6 +35,7 @@ from agent6.providers import ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, RawResult, ToolResult
 from agent6.workflows._chain import RunChain
+from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import Conversation
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import Workflow
@@ -260,8 +261,10 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         provider=worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher(compact_flag),  # type: ignore[arg-type]
         logger=lambda _msg: None,
-        summariser_provider=summariser,  # type: ignore[arg-type]
-        compact_drop_at_chars=2_000,
+        compaction=CompactionSettings(
+            summariser=summariser,  # type: ignore[arg-type]
+            drop_at_chars=2_000,
+        ),
         resume_state_path=snap_path,
         bridge=OperatorBridge(
             steer_requested=steer.requested,
@@ -305,7 +308,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         provider=resume_worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher([False]),  # type: ignore[arg-type]
         logger=lambda _msg: None,
-        compact_drop_at_chars=2_000,
+        compaction=CompactionSettings(drop_at_chars=2_000),
         resume_state_path=resume_snap,
     )
     resumed = wf2.resume()

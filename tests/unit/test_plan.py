@@ -34,6 +34,7 @@ from agent6.tools.schema import (
 from agent6.types import RepoSummary
 from agent6.workflows import loop as loopmod
 from agent6.workflows._chain import RunChain
+from agent6.workflows._provider_call import CallSettings
 from agent6.workflows.loop import Workflow
 
 _VALID_TOML = """
@@ -568,7 +569,7 @@ def _wf(
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
         "logger": _silent,
-        "provider_retry_delay_s": 0.01,
+        "call": CallSettings(retry_delay_s=0.01),
     }
     defaults.update(kw)
     return Workflow(**defaults)
@@ -622,8 +623,7 @@ def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Wo
         provider=provider,
         dispatcher=MagicMock(dispatch=MagicMock(return_value=RawResult({"acknowledged": True}))),
         logger=_silent,
-        provider_retry_count=0,
-        provider_retry_delay_s=0.0,
+        call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=5,
         mode="plan",
         plan_output_path=plan_path,

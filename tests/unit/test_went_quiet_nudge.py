@@ -23,6 +23,7 @@ from agent6.events import EventSink
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.workflows._chain import RunChain
+from agent6.workflows._provider_call import CallSettings
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import Workflow
 
@@ -108,8 +109,7 @@ def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        provider_retry_count=0,
-        provider_retry_delay_s=0.0,
+        call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=10,
         **kwargs,
     )
