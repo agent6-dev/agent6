@@ -181,14 +181,22 @@ function attachParallelSuggest(task, root) {
   };
   const frag = () => {          // the comma-fragment under the caret, or null
     const v = task.value, caret = task.selectionStart;
-    const m = /^\/parallel\s+/.exec(v);
-    if (!m) return null;
-    const start = m[0].length;
+    const markers = [...v.matchAll(/(^|\s)\/parallel(?=\s|$)/g)].map(m => ({
+      start: m.index + m[1].length,
+      end: m.index + m[0].length,
+    }));
+    if (!markers.length || v.slice(0, markers[0].start).trim()) return null;
+    const marker = markers.filter(m => m.end < caret).pop();
+    if (!marker || !/\s/.test(v[marker.end])) return null;
+    let start = marker.end;
+    while (start < v.length && /\s/.test(v[start])) start++;
     let end = start;
     while (end < v.length && !/\s/.test(v[end])) end++;
     if (caret < start || caret > end) return null;   // caret outside the spec token
     const fragStart = start + v.slice(start, caret).lastIndexOf(',') + 1;
-    return { fragStart, fragEnd: caret, text: v.slice(fragStart, caret) };
+    let fragEnd = caret;
+    while (fragEnd < end && v[fragEnd] !== ',') fragEnd++;
+    return { fragStart, fragEnd, text: v.slice(fragStart, caret) };
   };
   const close = () => { if (box) { box.remove(); box = null; } items = []; active = -1; };
   const insert = (model) => {
@@ -343,7 +351,7 @@ function paintSession(r, it, g) {
   g.appendChild(el('div', 'title', r.task_line || r.task || '(no task)'));
   const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
   // id_cell carries the winner mark the CLI and TUI id cells carry.
-  g.appendChild(el('div', 'sub', `${esc(r.id_cell || r.session_id)} · ${when(r.mtime)}${cost}`));
+  g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${when(r.mtime)}${cost}`));
   it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   const lanes = r.lanes || [];
   if (!lanes.length) return;

@@ -17,7 +17,7 @@ from agent6.ui.web.page import PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "47216d54703e3c441124076048d6fd9c1454204ae4de7897f5a63bbc36535c77"
+PAGE_SHA256 = "d0bbf3c88f5c180cc22b2546a2a345c94fa6b8d05250b48c68f9856ca5f798f9"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -49,6 +49,13 @@ def test_the_sessions_card_folds_a_fan_outs_lanes() -> None:
     assert "actionable(li, " in client
 
 
+def test_a_session_row_shows_its_mode() -> None:
+    """The Sessions page lists each session's mode, as docs/web.md promises."""
+    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    paint = client[client.index("function paintSession") : client.index("function sessionsCard")]
+    assert "esc(r.mode)" in paint
+
+
 def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
     """A mode or preset change cannot submit the previous pair's model while
     its route request is pending, and late older responses cannot replace the
@@ -61,6 +68,17 @@ def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
     stale_guard = refresh.index("if (request !== routeRequest) return;")
     populated = refresh.index("model.value = d.default || '';")
     assert request < cleared < awaited < stale_guard < populated
+
+
+def test_parallel_model_completion_handles_each_whole_fragment() -> None:
+    """A repeated `/parallel` segment completes too, replacing the whole
+    comma-delimited fragment when the caret sits in its middle."""
+    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    suggest = client[
+        client.index("function attachParallelSuggest") : client.index("// The new-work composer")
+    ]
+    assert "v.matchAll(/(^|\\s)\\/parallel(?=\\s|$)/g)" in suggest
+    assert "while (fragEnd < end && v[fragEnd] !== ',') fragEnd++;" in suggest
 
 
 def test_the_config_editor_sends_a_string_leaf_as_a_toml_string() -> None:
