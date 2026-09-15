@@ -122,10 +122,16 @@ def budget_preflight(
     if plan_models:
         pct = cfg.budget.max_percent
         bound = "the plan itself" if pct == -1 else f"max_percent {pct:g} points per run"
+        tick = (
+            " The account reports whole percents, so a cap this small can end the run on"
+            " its first tick."
+            if 0 < pct < 3
+            else ""
+        )
         reporter.note(
             f"{', '.join(repr(m) for m in plan_models)} draw"
             f"{'s' if len(plan_models) == 1 else ''} on a subscription plan"
-            f" (no dollars; bounded by {bound})."
+            f" (no dollars; bounded by {bound}).{tick}"
         )
     return None
 

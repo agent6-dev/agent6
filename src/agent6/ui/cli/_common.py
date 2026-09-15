@@ -83,8 +83,10 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="PCT",
         help=(
-            "Override [budget].max_percent for this run: the plan percentage points a"
-            " subscription run may consume (-1 unlimited, 0 refuses plan-metered calls)."
+            "The plan percentage points this run may use on a subscription provider. The"
+            " account reports whole percents and a tick counts as a full point, so the cap"
+            " ends the run early, never late. -1: unlimited; 0: refuse plan-metered calls."
+            " Default: [budget].max_percent."
         ),
     )
     group.add_argument(

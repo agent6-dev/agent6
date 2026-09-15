@@ -197,6 +197,30 @@ def test_plan_metered_routes_skip_the_fallback_note(
     assert err is not None and "max_percent is 0" in err
 
 
+def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The plan meter reports whole percents, so a cap of 1 or 2 points can end
+    the run on its first tick; the run-start note says so, and only then."""
+    from agent6.app.preflight import budget_preflight
+
+    def _with_cap(cap: float) -> str:
+        cfg = Config.model_validate(
+            {
+                "providers": {"chatgpt": {"api_format": "chatgpt"}},
+                "models": {"worker": {"provider": "chatgpt", "model": "gpt-5.6-sol"}},
+                "budget": {"max_percent": cap},
+            }
+        )
+        assert budget_preflight(cfg) is None
+        return capsys.readouterr().err
+
+    assert "whole percents" in _with_cap(1)
+    assert "whole percents" in _with_cap(2.5)
+    assert "whole percents" not in _with_cap(3)
+    assert "whole percents" not in _with_cap(-1)
+
+
 def _signed_in(binary: str, *, timeout_s: float = 20.0) -> str | None:
     return None
 

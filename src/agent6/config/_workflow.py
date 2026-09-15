@@ -561,12 +561,14 @@ class BudgetConfig(BaseModel):
     max_percent: float = Field(
         default=-1.0,  # the float the loader validates it to, so `config fill` is idempotent
         description=(
-            "Cap on the plan percentage points one run may consume on a subscription provider "
-            "(the rise in the account's reported used-percent across the run, accumulated across "
-            "window resets, so values above 100 are meaningful; with several windows, the one "
-            "that moved most). The reading is account-global: "
-            "a concurrent run's spend counts toward whichever run observes it next. `-1`: "
-            "unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per run."
+            "Cap on the plan percentage points one run may consume on a subscription provider: "
+            "the rise in the account's reported used-percent across the run, added up across "
+            "window resets (so a value above 100 is meaningful; with several windows, the one "
+            "that moved most). The account reports whole percents and every tick counts as a "
+            "full point, so the cap ends a run early, never late; the call in flight still "
+            "finishes. The reading is account-global: a concurrent run's spend counts toward "
+            "whichever run observes it next. `-1`: unlimited; `0`: refuse plan-metered calls. "
+            "`--max-percent` overrides per run."
         ),
     )
 
