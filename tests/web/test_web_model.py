@@ -49,6 +49,25 @@ def test_run_summary_captures_cost_and_status(tmp_path: Path) -> None:
     assert s["label"] == "passed"  # the one shared human label, rendered verbatim
 
 
+def test_run_summary_uses_plan_points_for_a_plan_metered_run(tmp_path: Path) -> None:
+    _run(
+        tmp_path,
+        "plan-metered",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {
+                "type": "budget.update",
+                "usd_total": 0.0,
+                "plan_consumed": 2.5,
+                "plan_cap": 6.0,
+            },
+            {"type": "session.end", "all_passed": True},
+        ],
+    )
+    (row,) = model.hub_payload(tmp_path)["sessions"]
+    assert (row["plan_consumed"], row["plan_cap"], row["cost"]) == (2.5, 6.0, "2.5pt")
+
+
 def test_run_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
     # The hub row renders the same lower-bound marker as the run page.
     _run(
@@ -62,6 +81,23 @@ def test_run_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
     )
     (s,) = model.hub_payload(tmp_path)["sessions"]
     assert s["usd_partial"] is True
+
+
+def test_driverless_prestart_hub_row_matches_the_cli_status_and_label(tmp_path: Path) -> None:
+    from agent6.sessions.ipc import write_worker_pid
+    from agent6.viewmodel.listing import summarize_session_dir, summary_row
+
+    d = _bucket(tmp_path, "runs") / "starting"
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(
+        json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
+    )
+    write_worker_pid(d, os.getpid())
+
+    cli_row = summary_row(summarize_session_dir(d))
+    (web_row,) = model.hub_payload(tmp_path)["sessions"]
+    assert (web_row["status"], web_row["label"]) == ("starting", "starting")
+    assert (web_row["status"], web_row["label"]) == (cli_row["status"], cli_row["label"])
 
 
 def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:
@@ -812,9 +848,20 @@ def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: Path) -> None:
     )
     lane = _run(tmp_path, "fan-l1", [start, end])
     (lane / "manifest.json").write_text(
-        json.dumps({"mode": "run", "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"}}),
+        json.dumps(
+            {
+                "mode": "run",
+                "models": {
+                    "driver": {"provider": "openrouter", "model": "moonshotai/kimi-k2.6"},
+                    "driver_from_flag": True,
+                },
+                "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"},
+            }
+        ),
         encoding="utf-8",
     )
     (row,) = model.hub_payload(tmp_path)["sessions"]
     assert row["session_id"] == "fan"
     assert [ln["session_id"] for ln in row["lanes"]] == ["fan-l1"]
+    assert row["lanes"][0]["model"] == "openrouter/moonshotai/kimi-k2.6"
+    assert row["lanes"][0]["model_from_flag"] is True

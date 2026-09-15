@@ -43,11 +43,56 @@ def fan_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             repo,
             f"fan-l{lane}",
             {
+                "models": {
+                    "driver": {"provider": "openai", "model": f"lane-{lane}"},
+                    "driver_from_flag": True,
+                },
                 "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"},
                 "compare": {"rank": 3 - lane, "of": 2, "winner": lane == 2, "ranked_by": "judge"},
             },
         )
     return repo
+
+
+def test_show_names_the_driving_route_and_its_model_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(
+        repo,
+        "flagged",
+        {
+            "models": {
+                "driver": {"provider": "openrouter", "model": "moonshotai/kimi-k2.6"},
+                "driver_from_flag": True,
+            }
+        },
+    )
+
+    assert main(["sessions", "show", "flagged"]) == 0
+    assert "model:      openrouter/moonshotai/kimi-k2.6 (from --model)" in capsys.readouterr().out
+    assert main(["sessions", "show", "flagged", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["model"] == "openrouter/moonshotai/kimi-k2.6"
+    assert data["model_from_flag"] is True
+
+
+def test_show_names_the_preset_the_run_continues_under(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "preset", {"workflow": {"preset": "paranoid", "preset_from_flag": True}})
+
+    assert main(["sessions", "show", "preset"]) == 0
+    assert "preset:     paranoid" in capsys.readouterr().out
+    assert main(["sessions", "show", "preset", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["preset"] == "paranoid"
 
 
 def test_show_on_a_coordinator_lists_its_lanes(
@@ -64,6 +109,20 @@ def test_show_on_a_coordinator_lists_its_lanes(
     assert data["fanout"] == {"lanes": 2, "spec": "2"}
     assert [ln["session_id"] for ln in data["lanes"]] == ["fan-l1", "fan-l2"]
     assert data["lanes"][1]["winner"] is True
+
+
+def test_show_on_a_coordinator_lists_each_lanes_route(
+    fan_out: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["sessions", "show", "fan"]) == 0
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if "fan-l" in ln]
+    assert "openai/lane-1" in lines[0]
+    assert "openai/lane-2" in lines[1]
+
+    assert main(["sessions", "show", "fan", "--json"]) == 0
+    lanes = json.loads(capsys.readouterr().out)["lanes"]
+    assert [lane["model"] for lane in lanes] == ["openai/lane-1", "openai/lane-2"]
+    assert all(lane["model_from_flag"] is True for lane in lanes)
 
 
 def test_show_on_a_lane_names_its_coordinator(

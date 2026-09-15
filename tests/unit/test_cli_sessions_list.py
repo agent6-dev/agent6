@@ -85,6 +85,10 @@ def test_runs_list_json_carries_the_row_facts(
         "cost",
         "id_cell",
         "usd_partial",
+        "plan_consumed",
+        "plan_cap",
+        "model",
+        "model_from_flag",
         "mtime",
         "winner",
         "task",
@@ -111,6 +115,35 @@ def test_sessions_dir_names_a_sessions_own_directory(
     assert capsys.readouterr().out.strip() == str(runs / "solo-ABC123")
     assert _cmd_sessions_dir("nope") == 2
     assert "ERROR" in capsys.readouterr().err
+
+
+def test_runs_list_uses_plan_points_for_a_plan_metered_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    runs = _runs_dir(repo)
+    _run(runs, "plan-metered")
+    log = runs / "plan-metered" / "logs.jsonl"
+    lines = log.read_text(encoding="utf-8").splitlines()
+    budget = {
+        "type": "budget.update",
+        "usd_total": 0.0,
+        "plan_consumed": 2.5,
+        "plan_cap": 6.0,
+    }
+    log.write_text("\n".join([lines[0], json.dumps(budget), *lines[1:]]) + "\n", encoding="utf-8")
+
+    assert _cmd_list() == 0
+    row = next(line for line in capsys.readouterr().out.splitlines() if "plan-metered" in line)
+    assert "2.5pt" in row
+    assert "$" not in row
+
+    assert _cmd_list(as_json=True) == 0
+    (data,) = json.loads(capsys.readouterr().out)
+    assert (data["plan_consumed"], data["plan_cap"], data["cost"]) == (2.5, 6.0, "2.5pt")
 
 
 def test_runs_list_marks_a_partial_cost(
@@ -436,6 +469,10 @@ def _fan_out(runs: Path) -> None:
             json.dumps(
                 {
                     "mode": "run",
+                    "models": {
+                        "driver": {"provider": "openai", "model": f"lane-{lane}"},
+                        "driver_from_flag": True,
+                    },
                     "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"},
                     "compare": {"rank": 3 - lane, "of": 2, "winner": lane == 2},
                 }
@@ -467,6 +504,8 @@ def test_runs_list_folds_a_fan_outs_lanes_under_it(
     assert row["session_id"] == "fan"
     assert [ln["session_id"] for ln in row["lanes"]] == ["fan-l1", "fan-l2"]
     assert row["lanes"][1]["winner"] is True
+    assert [lane["model"] for lane in row["lanes"]] == ["openai/lane-1", "openai/lane-2"]
+    assert all(lane["model_from_flag"] is True for lane in row["lanes"])
 
 
 def test_a_folded_fan_out_shows_its_groups_latest_activity(

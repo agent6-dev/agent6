@@ -67,7 +67,6 @@ from agent6.viewmodel import (
     task_snippet,
 )
 from agent6.viewmodel.format import (
-    format_cost_cell,
     format_when,
     lane_count,
     lane_id_cell,
@@ -110,8 +109,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
             color=color,
             label=listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
         )
-        cost = format_cost_cell(s.cost_usd, partial=s.usd_partial)
-        return format_when(row.mtime), styled, plain, cost, id_cell, s.task
+        return format_when(row.mtime), styled, plain, s.cost_cell, id_cell, s.task
 
     rows: list[tuple[str, str, str, str, str, str]] = []
 

@@ -58,7 +58,6 @@ from agent6.viewmodel import (
     task_snippet,
 )
 from agent6.viewmodel.format import (
-    format_cost_cell,
     format_when,
     lane_count,
     lane_id_cell,
@@ -213,7 +212,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
             table.add_row(
                 format_when(row.mtime),
                 _status_cell(s),
-                format_cost_cell(s.cost_usd, partial=s.usd_partial),
+                s.cost_cell,
                 Text(id_cell),
                 Text(task_snippet(s.task, max_chars=60)),
             )

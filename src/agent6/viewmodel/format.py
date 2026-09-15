@@ -15,7 +15,7 @@ import time
 from typing import Literal
 
 from agent6.budget import format_usd  # the surfaces' one import of it
-from agent6.sessions.manifest import CompareStamp
+from agent6.sessions.manifest import CompareStamp, ModelBrief
 
 # Task-node status glyphs. Text characters (not graphics) so every terminal font
 # renders them. ruff's ambiguous-glyph rule (RUF001) flags the en-dash /
@@ -28,6 +28,13 @@ TASK_STATUS_GLYPH = {
     "skipped": "–",  # noqa: RUF001
     "obsolete": "×",  # noqa: RUF001
 }
+
+
+def format_model_route(driver: ModelBrief | None) -> str:
+    """A manifest driver as provider/model, or its legacy model-only value."""
+    if driver is None or not driver.model:
+        return ""
+    return f"{driver.provider}/{driver.model}" if driver.provider else driver.model
 
 
 SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -99,10 +106,11 @@ def format_transition(seq: int, state: str, label: str, goto: str, detail: str =
     return f"{line} -- {detail}" if detail else line
 
 
-def format_cost_cell(usd: float, *, partial: bool = False) -> str:
-    """A listing's cost cell: blank for a genuinely clean $0, else
-    `format_usd` (an all-unpriced run's `~$0.0000` is information: spend
-    happened, price unknown)."""
+def format_cost_cell(usd: float, *, partial: bool = False, plan_points: float | None = None) -> str:
+    """A listing's cost cell: plan points for a subscription-metered leg,
+    otherwise blank for a genuinely clean $0 or `format_usd`."""
+    if plan_points is not None:
+        return f"{plan_points:g}pt"
     if usd <= 0 and not partial:
         return ""
     return format_usd(usd, partial=partial)

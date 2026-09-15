@@ -32,6 +32,7 @@ from agent6.viewmodel.format import (
     clip_cell,
     format_age,
     format_cost_cell,
+    format_model_route,
     listing_status_label,
     status_level,
     winner_id,
@@ -187,6 +188,22 @@ class SessionSummary:
     # `parallel.coordinator`, the row it nests under) and its lane number.
     coordinator: str = ""
     lane: int | None = None
+    # A plan-metered provider charges subscription points rather than USD.
+    # The figures are current-leg, like LogScan's counters.
+    plan_consumed: float = 0.0
+    plan_cap: float = 0.0
+    plan_used_percent: float = 0.0  # the account's reading; 0 unless a plan provider answered
+    model: str = ""  # the manifest's provider/model route for this leg
+    model_from_flag: bool = False
+
+    @property
+    def cost_cell(self) -> str:
+        """The cost unit this run used: plan points once a subscription plan
+        answered a call (the cap alone is config, set for dollar runs too),
+        else USD."""
+        metered = self.plan_used_percent > 0 or self.plan_consumed > 0
+        points = self.plan_consumed if metered else None
+        return format_cost_cell(self.cost_usd, partial=self.usd_partial, plan_points=points)
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,7 +302,11 @@ def summary_row(
         "mtime": s.mtime,
         "cost_usd": s.cost_usd,
         "usd_partial": s.usd_partial,
-        "cost": format_cost_cell(s.cost_usd, partial=s.usd_partial),
+        "plan_consumed": s.plan_consumed,
+        "plan_cap": s.plan_cap,
+        "cost": s.cost_cell,
+        "model": s.model,
+        "model_from_flag": s.model_from_flag,
         "id_cell": winner_id(s.session_id, winner=winner),
         "unmerged": s.unmerged,
         "verify_ok": s.verify_ok,
@@ -545,6 +566,7 @@ class LogScan:
     # fold's BudgetView rule: 0.0 until a percent-metered call runs).
     plan_consumed: float = 0.0
     plan_cap: float = 0.0
+    plan_used_percent: float = 0.0
     iteration: int | None = None  # last event carrying an int iteration
     # session.start's ts (epoch seconds), else the first event's: a fork's log
     # opens with loop.resume.start and never carries a session.start.
@@ -670,7 +692,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
-    plan_consumed = plan_cap = 0.0
+    plan_consumed = plan_cap = plan_used_percent = 0.0
     iteration: int | None = None
     start_ep: float | None = None
     first_ep: float | None = None
@@ -750,7 +772,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         usd_leg = 0.0
                         input_tokens = output_tokens = None
                         cache_read_tokens = cache_creation_tokens = None
-                        plan_consumed = plan_cap = 0.0
+                        plan_consumed = plan_cap = plan_used_percent = 0.0
                         last_verify_rc = None  # leg-scoped, like the token counters
                         legs += 1
                     saw_start = True  # a leg has begun; a fork's log has only this
@@ -784,6 +806,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     output_tokens = to if isinstance(to, int) else output_tokens
                     plan_consumed = _figure(ev, "plan_consumed", plan_consumed)
                     plan_cap = _figure(ev, "plan_cap", plan_cap)
+                    plan_used_percent = _figure(ev, "plan_used_percent", plan_used_percent)
     except OSError:
         pass
     return LogScan(
@@ -803,6 +826,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         cache_creation_tokens=cache_creation_tokens,
         plan_consumed=plan_consumed,
         plan_cap=plan_cap,
+        plan_used_percent=plan_used_percent,
         unattended_questions=unattended_questions,
         iteration=iteration,
         start_ep=start_ep if start_ep is not None else first_ep,
@@ -901,4 +925,9 @@ def summarize_session_dir(
         verify_ok=scan.verify_verdict(),
         coordinator=lineage.coordinator if lineage is not None else "",
         lane=lineage.lane if lineage is not None else None,
+        plan_consumed=scan.plan_consumed,
+        plan_cap=scan.plan_cap,
+        plan_used_percent=scan.plan_used_percent,
+        model=format_model_route(manifest.models.driver) if manifest is not None else "",
+        model_from_flag=manifest.models.driver_from_flag if manifest is not None else False,
     )

@@ -21,7 +21,7 @@ from agent6.git_ops import (
 )
 from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
-from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
+from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import resolve_target
 from agent6.viewmodel import (
     LogScan,
@@ -36,13 +36,13 @@ from agent6.viewmodel.format import (
     format_compare,
     format_cost_cell,
     format_lineage,
+    format_model_route,
     lane_count,
     listing_status_label,
     winner_id,
 )
 from agent6.viewmodel.listing import (
     lanes_of,
-    session_compare,
     summary_row,
 )
 
@@ -97,23 +97,25 @@ def _fanout_lanes(
     return lanes_of(layout.state_dir, layout.session_id, branch_tips=tips)
 
 
-def _won(stamp: CompareStamp | None) -> bool:
-    return stamp is not None and stamp.winner
+def _won(manifest: SessionManifest | None) -> bool:
+    return manifest is not None and manifest.compare is not None and manifest.compare.winner
 
 
-def _lane_stamps(state: Path, lanes: list[SessionSummary]) -> dict[str, CompareStamp | None]:
-    """Each lane's compare stamp (None before the fan-out ranked it)."""
-    stamps: dict[str, CompareStamp | None] = {}
+def _lane_manifests(state: Path, lanes: list[SessionSummary]) -> dict[str, SessionManifest]:
+    """Each readable lane manifest, for its route and compare stamp."""
+    manifests: dict[str, SessionManifest] = {}
     for lane in lanes:
         lane_layout = session_layout(state, lane.session_id)
-        stamps[lane.session_id] = (
-            session_compare(lane_layout.session_dir) if lane_layout is not None else None
-        )
-    return stamps
+        if lane_layout is not None:
+            with contextlib.suppress(ManifestError):
+                manifests[lane.session_id] = read_manifest(lane_layout.session_dir)
+    return manifests
 
 
 def _print_fanout(
-    manifest: SessionManifest, lanes: list[SessionSummary], stamps: dict[str, CompareStamp | None]
+    manifest: SessionManifest,
+    lanes: list[SessionSummary],
+    lane_manifests: Mapping[str, SessionManifest],
 ) -> None:
     """Print a coordinator's fan-out line and one line per lane: its place
     (the compare rank once ranked), id, status and cost."""
@@ -121,16 +123,22 @@ def _print_fanout(
         return
     print(f"fan-out:    {lane_count(manifest.fanout.lanes)} (--parallel {manifest.fanout.spec})")
     idents = {
-        lane.session_id: winner_id(lane.session_id, winner=_won(stamps.get(lane.session_id)))
+        lane.session_id: winner_id(
+            lane.session_id, winner=_won(lane_manifests.get(lane.session_id))
+        )
         for lane in lanes
     }
     width = max((len(ident) for ident in idents.values()), default=0)
     for lane in lanes:
-        stamp = stamps.get(lane.session_id)
+        lane_manifest = lane_manifests.get(lane.session_id)
+        stamp = lane_manifest.compare if lane_manifest is not None else None
         place = f"rank {stamp.rank}/{stamp.of}" if stamp is not None else f"lane {lane.lane}"
-        cost = format_cost_cell(lane.cost_usd, partial=lane.usd_partial)
+        model = lane.model or "?"
+        cost = lane.cost_cell
         label = listing_status_label(lane.mode, lane.status, lane.reason, unmerged=lane.unmerged)
-        print(f"  {place:<10} {idents[lane.session_id]:<{width}}  {label}  {cost}".rstrip())
+        print(
+            f"  {place:<10} {idents[lane.session_id]:<{width}}  {model}  {label}  {cost}".rstrip()
+        )
 
 
 def _status_state(
@@ -240,13 +248,13 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         else None
     )
 
-    driver = manifest.models.driver
-    model = (driver.model if driver else "") or "?"
+    model = format_model_route(manifest.models.driver) or "?"
+    model_from_flag = manifest.models.driver_from_flag
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
     tips = run_ref_tips(Path.cwd())
     lanes = _fanout_lanes(layout, manifest, tips)
-    stamps = _lane_stamps(layout.state_dir, lanes)
+    lane_manifests = _lane_manifests(layout.state_dir, lanes)
     status, status_cell, status_detail = _status_state(
         summarize_session_dir(target, branch_tips=tips),
         scan,
@@ -262,6 +270,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "mode": mode_display,
                     "task": manifest.user_task or scan.task,
                     "model": model,
+                    "model_from_flag": model_from_flag,
+                    "preset": manifest.workflow.preset or None,
                     "status": status,
                     "label": status_cell,
                     "detail": status_detail,
@@ -293,7 +303,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     else None,
                     "fanout": manifest.fanout.model_dump(mode="json") if manifest.fanout else None,
                     "lanes": [
-                        summary_row(ln, winner=_won(stamps.get(ln.session_id))) for ln in lanes
+                        summary_row(ln, winner=_won(lane_manifests.get(ln.session_id)))
+                        for ln in lanes
                     ],
                     "run_branch": existing_run_branch(manifest, Path.cwd()) or None,
                     "base_branch": manifest.base_branch or None,
@@ -310,8 +321,11 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         print(f"task:       {task.splitlines()[0]}")
     _print_fork_lineage(manifest)
     _print_parallel_compare(manifest)
-    _print_fanout(manifest, lanes, stamps)
-    print(f"model:      {model}")
+    _print_fanout(manifest, lanes, lane_manifests)
+    print(
+        f"model:      {model}{' (from --model)' if model_from_flag else ''}\n"
+        f"preset:     {manifest.workflow.preset or '-'}"
+    )
     print(f"state:      {state}{pid_note}")
     print(f"iteration:  {scan.iteration if scan.iteration is not None else '-'}")
     print(

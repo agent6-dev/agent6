@@ -229,6 +229,10 @@ def test_sessions_help_matches_each_commands_target_scope() -> None:
         "session_id",
         "task_line",
         "cost",
+        "plan_consumed",
+        "plan_cap",
+        "model",
+        "model_from_flag",
         "id_cell",
         "lanes",
     ):

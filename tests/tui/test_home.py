@@ -522,6 +522,49 @@ def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from textual.widgets import DataTable
+
+    from agent6.paths import state_dir
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.web.model import hub_payload
+    from agent6.viewmodel.listing import summarize_session_dir, summary_row
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    a6 = state_dir(repo)
+    rd = _write_run(
+        a6,
+        "runs",
+        "failed",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "all_passed": False, "reason": "provider_error"},
+        ],
+    )
+    cli_row = summary_row(summarize_session_dir(rd))
+    (web_row,) = hub_payload(repo)["sessions"]
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, repo)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#sessions", DataTable)
+            tui_label = str(table.get_row_at(0)[1])
+            assert (web_row["status"], web_row["label"]) == (
+                cli_row["status"],
+                cli_row["label"],
+            )
+            assert tui_label == cli_row["label"] == "failed · provider error"
+
+    asyncio.run(scenario())
+
+
 def test_hub_repaints_a_dying_run_without_a_keypress(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -591,6 +634,40 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
             await pilot.pause()
             runs = scr._runs  # pyright: ignore[reportPrivateUsage]
             assert runs[table().cursor_row].name == "r2"
+
+    asyncio.run(scenario())
+
+
+def test_hub_cost_cell_uses_plan_points_for_a_plan_metered_run(tmp_path: Path) -> None:
+    import asyncio
+
+    from textual.widgets import DataTable
+
+    from agent6.ui.tui.home import Agent6HomeApp
+
+    a6 = tmp_path / ".agent6"
+    _write_run(
+        a6,
+        "runs",
+        "plan-metered",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {
+                "type": "budget.update",
+                "usd_total": 0.0,
+                "plan_consumed": 2.5,
+                "plan_cap": 6.0,
+            },
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        ],
+    )
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#sessions", DataTable)
+            assert str(table.get_row_at(0)[2]) == "2.5pt"
 
     asyncio.run(scenario())
 
