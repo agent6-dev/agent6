@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 from rich.text import Text
 from textual.app import App, ScreenStackError
 from textual.screen import ModalScreen
@@ -1710,5 +1711,74 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: Path) -> None:
             screen._reload()
             await pilot.pause()
             assert "hidden at this detail level" not in str(screen._tail_widget().render())
+
+    asyncio.run(scenario())
+
+
+def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: Path) -> None:
+    """Before any role.call the header's role is the manifest's driver (the
+    role the mode runs, its model), not "(idle)": a launching run is a known
+    model warming up. The first role.call takes over."""
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "mode": "plan",
+                "session_id": tmp_path.name,
+                "user_task": "t",
+                "models": {"driver": {"provider": "p", "model": "m0"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(150, 40)) as pilot:
+            await _show_dashboard(pilot)
+            app._handle_event(_ev(type="session.start", user_task="t", mode="plan"))
+            app._tick()
+            await pilot.pause()
+            top = str(app._dash.query_one("#top", Static).render())
+            assert "role: planner / m0" in top
+            app._handle_event(_ev(type="role.call", role="planner", model="m1", provider="p"))
+            app._tick()
+            await pilot.pause()
+            top = str(app._dash.query_one("#top", Static).render())
+            assert "role: planner / m1" in top
+
+    asyncio.run(scenario())
+
+
+def test_dashboard_reads_a_driverless_manifest_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A manifest naming no driver settles the pre-start role line to "(idle)"
+    on its first read; the heartbeat does not re-read manifest.json every
+    second for the life of the view."""
+    from agent6.ui.tui import dashboard as dash_mod
+
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"mode": "run", "session_id": tmp_path.name, "user_task": "t"}),
+        encoding="utf-8",
+    )
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    real = dash_mod.read_manifest
+    reads: list[int] = []
+
+    def _counted(session_dir: Path) -> object:
+        reads.append(1)
+        return real(session_dir)
+
+    monkeypatch.setattr(dash_mod, "read_manifest", _counted)
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(150, 40)) as pilot:
+            await _show_dashboard(pilot)
+            before = len(reads)
+            lines = {app._dash._start_role() for _ in range(4)}  # pyright: ignore[reportPrivateUsage]
+            assert lines == {"(idle)"}
+            assert len(reads) - before <= 1
 
     asyncio.run(scenario())

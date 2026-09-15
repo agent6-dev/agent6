@@ -44,6 +44,7 @@ from agent6.sessions.ipc import (
     listening_ports,
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.types import SESSION_KINDS
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     RUN_MENU,
@@ -279,6 +280,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         self._branch_finished = False  # the run state the cached line was read under
         self._branch_recheck_at = 0.0  # a finished run re-reads every few seconds
         self._lineage_line: str | None = None  # cached fork lineage (never changes)
+        self._start_role_line: str | None = None  # the manifest's driver, before any call
 
     def _compare_top(self) -> str:
         """The fan-out compare outcome for the header's task line (empty for a
@@ -293,6 +295,23 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         rat = f" — {rationale[:100]}" if rationale else ""
         self._compare_line = f"\ncompare: {headline}{rat}"
         return self._compare_line
+
+    def _start_role(self) -> str:
+        """The role line before the first model call: the role and model the
+        manifest says drives the run, read once the manifest exists (a
+        launching run has none for a moment). A manifest naming no driver
+        reads "(idle)", once."""
+        if self._start_role_line is None:
+            try:
+                m = read_manifest(self._tui.session_dir)
+            except ManifestError:
+                return "(idle)"
+            driver = m.models.driver
+            if driver is None or m.mode not in SESSION_KINDS:
+                self._start_role_line = "(idle)"
+            else:
+                self._start_role_line = f"{SESSION_KINDS[m.mode].role} / {driver.model}"
+        return self._start_role_line
 
     def _lineage_top(self) -> str:
         """Where a forked run came from, for the header (the web header's and
@@ -560,7 +579,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         if active and role is not None:
             spinner = spinner_frame(tui.spin)
             beat = f" {spinner} {tui.seconds_since_event()}s"
-        role_line = f"{role.role} / {role.model}{beat}" if role else "(idle)"
+        role_line = f"{role.role} / {role.model}{beat}" if role else self._start_role()
         finished = self._end_label()
         ds, as_of = self._details_state(s)
         # tasks and cost are both as-of the selected step; ctx is live.
