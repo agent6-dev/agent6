@@ -421,7 +421,7 @@ def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() 
         seen.append(turn.finish_signal)
         notices.extend(_notices(turn))
     assert seen == [None, None, "done"]
-    assert state.verify_finish_retries_used == 2
+    assert state.gates.verify_retries_used == 2
     assert wf._tree_is_verify_green(state) is False  # pyright: ignore[reportPrivateUsage]
     assert any("(return 1 of 2); 1 more red finish returns" in n for n in notices)
     assert any("(return 2 of 2); the next red finish ends the run" in n for n in notices)
@@ -510,7 +510,7 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
     ]
     wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
     assert turn.finish_signal == "done"  # no bounce
-    assert state.verify_finish_retries_used == 0
+    assert state.gates.verify_retries_used == 0
     assert wf._verification(state) == "unverified"  # pyright: ignore[reportPrivateUsage]
 
     # A later end never re-asks: the withheld gate stays withheld.
@@ -818,7 +818,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
 
     assert dispatcher.run_verify.call_count == 0, "the standing red covers the tree"
     assert turn.end_returned is True
-    assert state.verify_finish_retries_used == 1
+    assert state.gates.verify_retries_used == 1
 
 
 @pytest.mark.parametrize(("policy", "denied"), [("no", False), ("ask", True)])

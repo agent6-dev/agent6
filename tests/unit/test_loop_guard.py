@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.workflows._chain import RunChain
+from agent6.workflows._guards import GuardSettings
 from agent6.workflows._provider_call import CallSettings
 from agent6.workflows.loop import Workflow
 
@@ -271,7 +272,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> No
         logger=_silent,
         call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=20,
-        loop_guard_kill_threshold=5,
+        guards=GuardSettings(loop_guard_kill_threshold=5),
     )
     result = wf.run("loop forever")
 
@@ -306,7 +307,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
         logger=_silent,
         call=CallSettings(retry_count=0, retry_delay_s=0.0),
         max_iterations=20,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     result = wf.run("loop")
 
@@ -379,7 +380,7 @@ def test_loop_guard_kill_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
         provider,
         _dirtying_dispatcher(repo),
         max_iterations=20,
-        loop_guard_kill_threshold=5,
+        guards=GuardSettings(loop_guard_kill_threshold=5),
     )
     result = wf.run("loop forever")
 
@@ -401,7 +402,7 @@ def test_max_iterations_stop_checkpoints_the_dirty_worktree(tmp_path: Path) -> N
         provider,
         _dirtying_dispatcher(repo),
         max_iterations=3,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     result = wf.run("keep going")
 
@@ -460,7 +461,11 @@ def test_went_quiet_checkpoints_the_dirty_worktree(tmp_path: Path, monkeypatch: 
         _resp_text(""),  # no text, no tool_use -> went_quiet
     ]
     wf = _gated_wf(
-        repo, provider, _dirtying_dispatcher(repo), max_iterations=5, went_quiet_max_nudges=0
+        repo,
+        provider,
+        _dirtying_dispatcher(repo),
+        max_iterations=5,
+        guards=GuardSettings(went_quiet_max_nudges=0),
     )
     result = wf.run("do the thing")
     assert result.reason == "went_quiet"
@@ -538,7 +543,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
-    wf.stagnation_notice_after_s = 1e-9
+    wf.guards = GuardSettings(stagnation_notice_after_s=1e-9)
     result = wf.run("investigate")
     assert result.completed is True
     notices = _stagnation_blocks(_final_messages(provider))
@@ -561,7 +566,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     no_commands.command_policy.return_value = "no"
     wf3 = _build_wf(repo, denied, no_commands)
     wf3.config.workflow.verify_command = ("true",)
-    wf3.stagnation_notice_after_s = 1e-9
+    wf3.guards = GuardSettings(stagnation_notice_after_s=1e-9)
     wf3.run("investigate")
     assert "nothing edited yet" in _stagnation_blocks(_final_messages(denied))[0]
 
@@ -573,7 +578,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     )
     wf2 = _build_wf(repo, gated, dispatcher)
     wf2.config.workflow.verify_command = ("true",)
-    wf2.stagnation_notice_after_s = 1e-9
+    wf2.guards = GuardSettings(stagnation_notice_after_s=1e-9)
     wf2.run("investigate")
     assert "no edit and no verify" in _stagnation_blocks(_final_messages(gated))[0]
 
@@ -593,7 +598,7 @@ def test_stagnation_ignores_time_blocked_on_the_operator(tmp_path: Path) -> None
     dispatcher = MagicMock(operator_wait_s=3600.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
-    wf.stagnation_notice_after_s = 1e-9
+    wf.guards = GuardSettings(stagnation_notice_after_s=1e-9)
     result = wf.run("investigate")
     assert result.completed is True
     assert _stagnation_blocks(_final_messages(provider)) == []
@@ -613,7 +618,7 @@ def test_stagnation_notice_suppressed_by_an_edit(tmp_path: Path) -> None:
     dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
-    wf.stagnation_notice_after_s = 1e-9
+    wf.guards = GuardSettings(stagnation_notice_after_s=1e-9)
     result = wf.run("fix it")
     assert result.completed is True
     assert _stagnation_blocks(_final_messages(provider)) == []
@@ -632,7 +637,7 @@ def test_stagnation_notice_zero_disables(tmp_path: Path) -> None:
     dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
-    wf.stagnation_notice_after_s = 0.0
+    wf.guards = GuardSettings(stagnation_notice_after_s=0.0)
     result = wf.run("look around")
     assert result.completed is True
     assert _stagnation_blocks(_final_messages(provider)) == []

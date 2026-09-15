@@ -15,6 +15,7 @@ from agent6.config import Config
 from agent6.tools.results import EditResult, ExecResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import AssistantTurn, Notice
+from agent6.workflows._guards import MemoryNudges
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
@@ -71,7 +72,7 @@ def test_flip_advisory_fires_once_at_first_red_green_flip() -> None:
     assert flip.verify_flipped_green is True
     wf._turn_notices(state, flip)  # pyright: ignore[reportPrivateUsage]
     assert MEMORY_FLIP_NUDGE in _notice_texts(flip)
-    assert state.memory_flip_nudged is True
+    assert state.memory.flip_nudged is True
 
     # A second recovery does not re-nudge.
     again = _turn(3)
@@ -95,7 +96,7 @@ def test_flip_advisory_needs_a_prior_red_verify() -> None:
 def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
     for wf, state_kw in (
         (_wf(state_dir=None), {}),
-        (_wf(), {"memory_written": True}),
+        (_wf(), {"memory": MemoryNudges(written=True)}),
         (_wf(mode="ask"), {}),
     ):
         state = _state(**state_kw, verify=VerifyVerdict(last_ok=False, ever_failed=True))
@@ -121,7 +122,7 @@ def test_memory_dir_edit_marks_memory_written() -> None:
         EditResult(applied=("create",), path="new-fact.md"),
         {"path": "/tmp/state/memory/new-fact.md", "edits": []},
     )
-    assert state.memory_written is True
+    assert state.memory.written is True
     assert state.ever_edited is False
     assert turn.edited is False
 
@@ -150,16 +151,16 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
 
     memory = "--- /dev/null\n+++ /tmp/state/memory/new-fact.md\n@@ -0,0 +1 @@\n+x\n"
     state, turn = note(memory)
-    assert (state.memory_written, state.ever_edited, turn.edited) == (True, False, False)
+    assert (state.memory.written, state.ever_edited, turn.edited) == (True, False, False)
     v4a = "*** Begin Patch\n*** Add File: /tmp/state/memory/other.md\n+x\n*** End Patch\n"
     state, turn = note(v4a)
-    assert (state.memory_written, state.ever_edited, turn.edited) == (True, False, False)
+    assert (state.memory.written, state.ever_edited, turn.edited) == (True, False, False)
     workspace = "--- a/src/code.py\n+++ b/src/code.py\n@@ -1 +1 @@\n-a\n+b\n"
     state, turn = note(workspace)
-    assert (state.memory_written, state.ever_edited, turn.edited) == (False, True, True)
+    assert (state.memory.written, state.ever_edited, turn.edited) == (False, True, True)
     both = "diff --git a/src/code.py b/src/code.py\n" + workspace + "diff --git a/x b/x\n" + memory
     state, turn = note(both)
-    assert (state.memory_written, state.ever_edited, turn.edited) == (False, True, True)
+    assert (state.memory.written, state.ever_edited, turn.edited) == (False, True, True)
 
 
 def test_a_preview_edit_is_no_edit() -> None:
@@ -183,7 +184,7 @@ def test_a_preview_edit_is_no_edit() -> None:
         wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
             state, turn, name, preview(str(tool_input.get("path", "src/code.py"))), tool_input
         )
-        assert (state.memory_written, state.ever_edited, turn.edited) == (False, False, False)
+        assert (state.memory.written, state.ever_edited, turn.edited) == (False, False, False)
         assert turn.edit_since_verify_pass is False
 
 
@@ -198,7 +199,7 @@ def test_workspace_edit_does_not_mark_memory_written() -> None:
         EditResult(applied=("replace",), path="src/code.py"),
         {"path": "src/code.py", "edits": []},
     )
-    assert state.memory_written is False
+    assert state.memory.written is False
     assert state.ever_edited is True
 
 
@@ -208,15 +209,15 @@ def test_finish_gate_defers_once_then_honours() -> None:
 
     # Five idle turns behind it: the settle guard would have ended the run one
     # turn later, before the memory note and the re-finish the nudge asks for.
-    state.verify_settled_idle = 5
-    state.verify_settled_nudged = True
+    state.settled.idle = 5
+    state.settled.nudged = True
     first = _turn(5, finish_signal="done", finish_payload={"k": "v"})
     wf._turn_finish_gates(state, first)  # pyright: ignore[reportPrivateUsage]
     assert first.finish_signal is None
     assert first.finish_payload is None
     assert MEMORY_FINISH_NUDGE in _notice_texts(first)
-    assert state.memory_finish_nudged is True
-    assert state.verify_settled_idle == 0 and state.verify_settled_nudged is False
+    assert state.memory.finish_nudged is True
+    assert state.settled.idle == 0 and state.settled.nudged is False
 
     second = _turn(6, finish_signal="done")
     wf._gate_memory_finish(state, second)  # pyright: ignore[reportPrivateUsage]
@@ -232,7 +233,13 @@ def test_finish_gate_quiet_without_a_recovery_or_after_a_write() -> None:
         # Still red at finish: nothing proven to record.
         (wf, _state(verify=VerifyVerdict(ever_failed=True, last_ok=False))),
         # The worker already recorded something.
-        (wf, _state(memory_written=True, verify=VerifyVerdict(ever_failed=True, last_ok=True))),
+        (
+            wf,
+            _state(
+                memory=MemoryNudges(written=True),
+                verify=VerifyVerdict(ever_failed=True, last_ok=True),
+            ),
+        ),
         # No memory store wired.
         (_wf(state_dir=None), _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))),
         # Not a run-mode workflow.
@@ -243,4 +250,4 @@ def test_finish_gate_quiet_without_a_recovery_or_after_a_write() -> None:
         gated_wf._gate_memory_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
         assert turn.finish_signal == "done"
         assert _notice_texts(turn) == []
-        assert state.memory_finish_nudged is False
+        assert state.memory.finish_nudged is False

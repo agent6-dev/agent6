@@ -182,7 +182,7 @@ class SessionSnapshot(BaseModel):
     verify_command: tuple[str, ...]
     # Completion-relevant bookkeeping, so the metric / verify-settled stop logic
     # doesn't regress across a resume. A compact metric *summary* (best score +
-    # at-ceiling flag), not the full history: all `_metric_at_ceiling` and the
+    # at-ceiling flag), not the full history: all `MetricGuard.at_ceiling` and the
     # plateau seed need. review_rejections_total keeps the anti-stall gate-disarm.
     review_rejections_total: int = 0
     verify_ever_passed: bool = False

@@ -16,6 +16,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agent6.workflows._guards import Rung, climb
+from agent6.workflows._nudges import (
+    TOOL_ERROR_ESCALATE_AFTER,
+    TOOL_ERROR_NUDGE_AFTER,
+    TOOL_ERROR_STOP_AFTER,
+)
+
 
 @dataclass(slots=True)
 class SpiralGuard:
@@ -76,3 +83,18 @@ class SpiralGuard:
             self.error_sig = sig
             self.error_streak = 1
             self.error_nudges_used = 0
+
+    def climb_error(self) -> Rung | None:
+        """The rung the error streak reaches on the tool-error ladder."""
+        rung = climb(
+            self.error_streak,
+            self.error_nudges_used,
+            nudge_after=TOOL_ERROR_NUDGE_AFTER,
+            escalate_after=TOOL_ERROR_ESCALATE_AFTER,
+            stop_after=TOOL_ERROR_STOP_AFTER,
+        )
+        if rung == "nudge":
+            self.error_nudges_used = 1
+        elif rung == "escalate":
+            self.error_nudges_used = 2
+        return rung

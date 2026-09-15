@@ -461,8 +461,8 @@ def _settled_state() -> Any:
     from agent6.workflows.loop import LoopState
 
     state = LoopState(original_task="t", tool_calls=0)
-    state.gateless_ever_edited = True
-    state.verify_settled_idle = VERIFY_SETTLED_STOP_AFTER
+    state.settled.gateless_ever_edited = True
+    state.settled.idle = VERIFY_SETTLED_STOP_AFTER
     return state
 
 
@@ -491,7 +491,7 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
         turn = _idle_turn()
         assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
         assert turn.verify_settled_stop is False
-        assert state.verify_settled_idle == 0
+        assert state.settled.idle == 0
         # The turn's notices went out before the settled check, so the panel's
         # findings ride the settled path's own notice.
         assert turn.review_text is None
@@ -562,13 +562,13 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     turn = _idle_turn()
     assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
     dispatcher.run_verify.assert_called_once_with(extra_argv=())
-    assert turn.verify_settled_stop is False and state.verify_settled_idle == 0
-    assert state.verify_finish_retries_used == 1
+    assert turn.verify_settled_stop is False and state.settled.idle == 0
+    assert state.gates.verify_retries_used == 1
     notices = [r.text for r in turn.tool_results if hasattr(r, "text")]
     assert any("[harness verify] finish" in n for n in notices)
     assert any("the next red finish ends the run" in n for n in notices)
     # The return is spent: the next settled end stands, red and all.
-    state.verify_settled_idle = 6
+    state.settled.idle = 6
     turn = _idle_turn()
     wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
     assert turn.verify_settled_stop is True

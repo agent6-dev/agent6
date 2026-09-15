@@ -107,14 +107,13 @@ from agent6.workflows._conversation import (
 )
 from agent6.workflows._dag_focus import (
     DAG_MUTATING_TOOLS,
-    STUCK_NUDGE_MAX,
-    STUCK_ON_TASK_AFTER,
     current_task_banner,
     current_task_id,
     initial_dag_hint,
     ready_subtask,
     stuck_on_task_nudge,
 )
+from agent6.workflows._guards import GuardSettings
 from agent6.workflows._loop_state import (
     NEXT_TURN,
     End,
@@ -147,11 +146,8 @@ from agent6.workflows._nudges import (
     BASELINE_RED_NOTICE,
     MEMORY_FINISH_NUDGE,
     MEMORY_FLIP_NUDGE,
-    NO_PROGRESS_ESCALATE_AFTER,
     NO_PROGRESS_ESCALATION,
     NO_PROGRESS_NUDGE,
-    NO_PROGRESS_NUDGE_AFTER,
-    NO_PROGRESS_STOP_AFTER,
     PLAN_BUDGET_NUDGE,
     PLAN_BUDGET_NUDGE_BELOW,
     PLAN_NUDGE_AFTER_ITERS,
@@ -166,15 +162,10 @@ from agent6.workflows._nudges import (
     STAGNATION_NUDGE_GATELESS,
     TASK_FINISH_PATIENCE,
     TOOL_DENIED_NUDGE,
-    TOOL_ERROR_ESCALATE_AFTER,
     TOOL_ERROR_ESCALATION,
     TOOL_ERROR_NUDGE,
-    TOOL_ERROR_NUDGE_AFTER,
-    TOOL_ERROR_STOP_AFTER,
     VERIFY_BROKEN_NUDGE,
     VERIFY_SETTLED_NUDGE,
-    VERIFY_SETTLED_NUDGE_AFTER,
-    VERIFY_SETTLED_STOP_AFTER,
     VERIFY_UNADOPTED_NOTICE,
     WENT_QUIET_NUDGE,
     ending_question,
@@ -435,29 +426,8 @@ class Workflow:
     # `plan_output_path` is required when `mode="plan"`.
     mode: Literal["run", "plan", "ask", "agent"] = "run"
     plan_output_path: Path | None = None
-    # weak-model resilience. Open-weights models sometimes emit an empty turn
-    # mid-run (no text, no tool_use, stop_reason="end_turn" or
-    # equivalent) and would otherwise terminate the run immediately.
-    # When `went_quiet_max_nudges > 0`, the loop instead injects a
-    # short [harness] notice into the conversation and re-asks the
-    # model, up to this many times PER RUN. Reset on any non-empty
-    # turn. Set to 0 to restore the "fail fast on went_quiet"
-    # behaviour. Reasoning-starvation bursts count as went_quiet, so the cap is
-    # sized to survive a few of them.
-    went_quiet_max_nudges: int = 4
-    # loop-guard escalation. The guard injects a notice when the same
-    # (tool, args) signature streak hits `repeat_threshold` (default 3),
-    # every other turn while it lasts. When the worker ignores it and the
-    # streak reaches `loop_guard_kill_threshold`, the loop forcibly
-    # terminates with reason="loop_guard_killed" rather than letting
-    # the worker burn the rest of the budget circling the same call.
-    # Set to 0 to disable forced termination (notice-only behaviour).
-    loop_guard_kill_threshold: int = 10
-    # One factual notice when this much wall clock passes with zero edit and
-    # zero verify calls. Notice-only, never kills; 0 disables. Measured basis:
-    # recall-spiral runs die by timeout with 3-10 total calls, below every
-    # call-count guard's horizon.
-    stagnation_notice_after_s: float = 300.0
+    # The guards' knobs: the quiet-turn cap, the loop-guard kill, the stagnation notice.
+    guards: GuardSettings = field(default_factory=GuardSettings)
     # One-shot guard so a persistently unwritable state dir (full disk, quota,
     # read-only mount) warns once instead of every turn. Snapshot persistence is
     # recovery state; a failure disables resume/fork but must not abort the run.
@@ -678,8 +648,8 @@ class Workflow:
         `baseline_ok` is about the BASE commit, which resume never moves: it
         carries unconditionally."""
         state.verify.baseline_ok = snap.baseline_ok
-        state.standing_tools_mark = snap.standing_tools_mark
-        state.standing_fruitless = snap.standing_fruitless
+        state.standing.tools_mark = snap.standing_tools_mark
+        state.standing.fruitless = snap.standing_fruitless
         state.ok_tool_calls = snap.ok_tool_calls
         if snap.last_verify_ok is None or not snap.head_sha:
             return
@@ -905,7 +875,7 @@ class Workflow:
         if self._maybe_compact(conversation, state, prefix_chars=prefix_chars):
             # A tier-2 restart wiped the surfaced focus banner and the plan
             # block; let the passes below put both back into the fresh context.
-            state.surfaced_task_id = None
+            state.focus.surfaced_task_id = None
             state.plan_injected = ""
         parked = self._maybe_inject_plan(conversation, state, iteration=iteration)
         if parked is not None:
@@ -1004,7 +974,7 @@ class Workflow:
         errors become error tool_results instead."""
         # This iteration produced tool_uses, so the went_quiet
         # nudge budget refills (failures are per-streak, not per-run).
-        state.went_quiet_nudges_used = 0
+        state.quiet.went_quiet_nudges_used = 0
         for tu in turn.assistant.tool_uses:
             name = tu.name
             tool_input = tu.input
@@ -1195,13 +1165,13 @@ class Workflow:
         verdict.last_tail = tail.strip()[-2000:]
         if rc == 0:
             verdict.note_pass()
-            state.no_progress_nudges_used = 0
+            state.no_progress.nudges_used = 0
             return
         verdict.note_fail(verify_failure_signature(result.stdout, result.stderr))
         verdict.red_tree = self.chain.tree_sha()
         if verdict.fail_streak == 1:
             # A NEW stuck point: the nudge allowance starts over with it.
-            state.no_progress_nudges_used = 0
+            state.no_progress.nudges_used = 0
 
     def _tree_before_command(self, name: str) -> str:
         """The worktree's content sha ahead of a child-process tool's call,
@@ -1264,16 +1234,16 @@ class Workflow:
             # The tree this reading covers: without the stamp the auto path
             # samples it again on every turn that reads the tree as changed
             # (all of them, with nothing committing between steps).
-            state.metric_tree = self.chain.tree_sha()
+            state.metric.tree = self.chain.tree_sha()
             turn.metric_feedback = self._record_metric_result(
-                state.metric_history,
+                state.metric.history,
                 result,
                 iteration=turn.iteration,
                 label=f"manual iter {turn.iteration}",
                 sha="",
             )
             if turn.verify_just_passed:
-                turn.metric_plateau_finish = self._plateau_finish(state.metric_history)
+                turn.metric_plateau_finish = self._plateau_finish(state.metric.history)
         if name in ("apply_edit", "apply_patch"):
             if isinstance(result, PreviewResult):
                 return  # a dry run writes nothing: no memory write, no tree edit
@@ -1282,7 +1252,7 @@ class Workflow:
             # none of the tree bookkeeping below applies (the gate's tree is
             # untouched).
             if self._edits_the_memory_store(name, tool_input):
-                state.memory_written = True
+                state.memory.written = True
                 return
             turn.edited = True
             state.ever_edited = True
@@ -1578,7 +1548,7 @@ class Workflow:
         if unjudged_changed:
             # Seed the idle-stop net for runs where no green verify fires per
             # step (see the verify-settled bookkeeping), commits or not.
-            state.gateless_ever_edited = True
+            state.settled.gateless_ever_edited = True
         if not self.chain.per_step:
             # `commit_per_step` governs the COMMIT. The metric is measurement:
             # the prompt promises a [harness metric] block after every verified
@@ -1652,12 +1622,12 @@ class Workflow:
         steps (`commit_per_step = false`) the tree stays dirty for the rest of
         the run, and sampling on dirt alone would re-run the operator's
         benchmark on every turn, read-only ones included."""
-        if turn.metric_sampled or state.metric_denied:
+        if turn.metric_sampled or state.metric.denied:
             return None
         tree = self.chain.tree_sha()
-        if tree and tree == state.metric_tree:
+        if tree and tree == state.metric.tree:
             return None
-        state.metric_tree = tree
+        state.metric.tree = tree
         # The auto path raises OperatorCommandUnexecutable just like a
         # manual run_metric_command would; abort the same way the
         # per-tool handler does (it is a distinct exception, NOT a
@@ -1668,7 +1638,7 @@ class Workflow:
             )
         except OperatorCommandUnexecutable as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
-        turn.metric_plateau_finish = self._plateau_finish(state.metric_history)
+        turn.metric_plateau_finish = self._plateau_finish(state.metric.history)
         return None
 
     def _report_auto_commit_failure(
@@ -1760,7 +1730,7 @@ class Workflow:
         self._gate_memory_finish(state, turn)
         self._gate_standing_finish(state, turn)
         if asked and turn.finish_signal is None:
-            state.restart_settle_streak()
+            state.settled.restart()
 
     def _gate_before_finish_review(self, state: LoopState, turn: TurnState) -> None:
         """Gate the agent's finish_session on panel approval: an unsatisfied
@@ -1797,11 +1767,11 @@ class Workflow:
         if critique is None:
             return False
         cap = self.review.max_consecutive_rejections
-        cap_reached = cap > 0 and state.consecutive_review_rejections >= cap
+        cap_reached = cap > 0 and state.gates.review_consecutive >= cap
         if not critique.satisfied and not cap_reached:
             self._log(f"  review rejected {ending} at iter {turn.iteration}")
             self._emit("loop.review.rejected_finish", iteration=turn.iteration, ending=ending)
-            state.consecutive_review_rejections += 1
+            state.gates.review_consecutive += 1
             turn.review_text = _REVIEW_REJECTED[ending] + critique.text
             return True
         if not critique.satisfied:
@@ -1812,7 +1782,7 @@ class Workflow:
             self._emit(
                 "loop.review.rejection_cap_reached",
                 iteration=turn.iteration,
-                rejections=state.consecutive_review_rejections,
+                rejections=state.gates.review_consecutive,
             )
             turn.review_text = (
                 "The review panel flagged issues but the rejection cap was"
@@ -1820,7 +1790,7 @@ class Workflow:
             )
         else:
             self._log(f"  review approved {ending}")
-        state.consecutive_review_rejections = 0
+        state.gates.review_consecutive = 0
         return False
 
     def _gate_metric_early_finish(self, state: LoopState, turn: TurnState) -> None:
@@ -1852,24 +1822,24 @@ class Workflow:
         if (
             self.mode != "run"
             or metric_goal(self.config.workflow.metric) is None
-            or self._metric_at_ceiling(state.metric_history)
+            or state.metric.at_ceiling()
         ):
             return False
         remaining = self._budget_fraction_remaining()
         if remaining is None or remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET:
             return False
-        if state.metric_finish_nudges_used >= METRIC_EARLY_FINISH_PATIENCE:
+        if state.metric.finish_nudges_used >= METRIC_EARLY_FINISH_PATIENCE:
             return False
-        state.metric_finish_nudges_used += 1
+        state.metric.finish_nudges_used += 1
         self._log(
             f"  metric early-finish{' (silent)' if trigger else ''} rejected"
-            f" #{state.metric_finish_nudges_used} at iter {iteration}"
+            f" #{state.metric.finish_nudges_used} at iter {iteration}"
             f" (budget {remaining:.0%} left)"
         )
         self._emit(
             "loop.metric_early_finish.rejected",
             iteration=iteration,
-            nudges_used=state.metric_finish_nudges_used,
+            nudges_used=state.metric.finish_nudges_used,
             budget_remaining=remaining,
             **({"trigger": trigger} if trigger else {}),
         )
@@ -1892,12 +1862,12 @@ class Workflow:
         turn.tool_results.append(Notice(task_nudge))
         self._log(
             f"  finish_session gated: open subtasks remain (nudge"
-            f" #{state.task_finish_nudges_used}) at iter {turn.iteration}"
+            f" #{state.gates.task_nudges_used}) at iter {turn.iteration}"
         )
         self._emit(
             "loop.task_finish.gated",
             iteration=turn.iteration,
-            nudges_used=state.task_finish_nudges_used,
+            nudges_used=state.gates.task_nudges_used,
         )
 
     def _gate_standing_finish(self, state: LoopState, turn: TurnState) -> None:
@@ -1962,23 +1932,23 @@ class Workflow:
         ):
             return
         wf = self.config.workflow
-        state.verify_finish_retries_used += 1
+        state.gates.verify_retries_used += 1
         turn.finish_signal = None
         turn.finish_payload = None
         turn.tool_results.append(
             Notice(
-                finish_red_notice(used=state.verify_finish_retries_used, retries=wf.verify_retries)
+                finish_red_notice(used=state.gates.verify_retries_used, retries=wf.verify_retries)
             )
         )
         self._log(
             f"  finish_session returned: verify not green (return"
-            f" #{state.verify_finish_retries_used} of {wf.verify_retries}) at iter"
+            f" #{state.gates.verify_retries_used} of {wf.verify_retries}) at iter"
             f" {turn.iteration}"
         )
         self._emit(
             "loop.verify_finish.gated",
             iteration=turn.iteration,
-            nudges_used=state.verify_finish_retries_used,
+            nudges_used=state.gates.verify_retries_used,
         )
 
     def _gate_memory_finish(self, state: LoopState, turn: TurnState) -> None:
@@ -1994,11 +1964,11 @@ class Workflow:
             and self.state_dir is not None
             and state.verify.ever_failed
             and state.verify.last_ok is True
-            and not state.memory_written
-            and not state.memory_finish_nudged
+            and not state.memory.written
+            and not state.memory.finish_nudged
         ):
             return
-        state.memory_finish_nudged = True
+        state.memory.finish_nudged = True
         turn.finish_signal = None
         turn.finish_payload = None
         turn.tool_results.append(Notice(MEMORY_FINISH_NUDGE))
@@ -2032,10 +2002,10 @@ class Workflow:
             turn.verify_flipped_green
             and self.mode == "run"
             and self.state_dir is not None
-            and not state.memory_written
-            and not state.memory_flip_nudged
+            and not state.memory.written
+            and not state.memory.flip_nudged
         ):
-            state.memory_flip_nudged = True
+            state.memory.flip_nudged = True
             turn.tool_results.append(Notice(MEMORY_FLIP_NUDGE))
             self._log("  memory: verify flipped green - injecting memory advisory")
             self._emit("loop.memory_flip.nudged", iteration=turn.iteration)
@@ -2067,18 +2037,18 @@ class Workflow:
             )
             state.spiral.warned_at_iteration = turn.iteration
         attemptless = (
-            self.stagnation_notice_after_s > 0
-            and not state.stagnation_nudged
+            self.guards.stagnation_notice_after_s > 0
+            and not state.stagnation.nudged
             and not state.ever_edited
             and state.verify.last_ok is None
             and self.mode == "run"
         )
-        elapsed = time.monotonic() - state.started_monotonic
-        if attemptless and elapsed >= self.stagnation_notice_after_s:
+        elapsed = time.monotonic() - state.stagnation.started_monotonic
+        if attemptless and elapsed >= self.guards.stagnation_notice_after_s:
             # Time blocked on the operator is not the model's.
             elapsed -= self.dispatcher.operator_wait_s
-        if attemptless and elapsed >= self.stagnation_notice_after_s:
-            state.stagnation_nudged = True
+        if attemptless and elapsed >= self.guards.stagnation_notice_after_s:
+            state.stagnation.nudged = True
             minutes = max(1, int(elapsed // 60))
             gated = self._gate_present(denied=state.verify.denied)
             notice = STAGNATION_NUDGE if gated else STAGNATION_NUDGE_GATELESS
@@ -2101,7 +2071,7 @@ class Workflow:
         in_final_slice = (
             budget_remaining is None or budget_remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET
         )
-        if self._metric_at_ceiling(state.metric_history):
+        if state.metric.at_ceiling():
             # A metric at its provable ceiling (e.g. SCORE: 27/27) cannot
             # improve: stop now rather than nudge the worker to "pivot" toward
             # a number that does not exist. This is the dominant cause of weak
@@ -2109,7 +2079,7 @@ class Workflow:
             # re-deriving a solved task.
             turn.plateau_should_stop = True
             self._emit("loop.metric_ceiling.stop", iteration=turn.iteration)
-        elif in_final_slice and state.plateau_nudges_used >= METRIC_PLATEAU_PATIENCE:
+        elif in_final_slice and state.metric.plateau_nudges_used >= METRIC_PLATEAU_PATIENCE:
             turn.plateau_should_stop = True
         else:
             # Count patience only against final-slice nudges. While the run
@@ -2121,19 +2091,19 @@ class Workflow:
             # budget crossed the threshold and the final-slice notice would
             # never fire.
             if in_final_slice:
-                state.plateau_nudges_used += 1
+                state.metric.plateau_nudges_used += 1
             nudge_text = metric_plateau_nudge(budget_remaining)
             turn.tool_results.append(Notice(nudge_text))
             budget_note = "n/a" if budget_remaining is None else f"{budget_remaining:.0%} left"
             self._log(
                 f"  metric_plateau notice at iter {turn.iteration} (budget"
                 f" {budget_note}; final-slice patience"
-                f" {state.plateau_nudges_used}/{METRIC_PLATEAU_PATIENCE})"
+                f" {state.metric.plateau_nudges_used}/{METRIC_PLATEAU_PATIENCE})"
             )
             self._emit(
                 "loop.metric_plateau.nudge",
                 iteration=turn.iteration,
-                nudges_used=state.plateau_nudges_used,
+                nudges_used=state.metric.plateau_nudges_used,
                 budget_remaining=budget_remaining,
             )
         # A finish signal on the same turn already ran the end gates.
@@ -2177,7 +2147,7 @@ class Workflow:
             wf.verify_when != "never"
             and self._gate_present(denied=state.verify.denied)
             and (state.verify.baseline_ok is not False or state.verify.ever_passed)
-            and state.verify_finish_retries_used < wf.verify_retries
+            and state.gates.verify_retries_used < wf.verify_retries
         )
 
     def _end_gates(self, state: LoopState, turn: TurnState, *, ending: str) -> SessionResult | None:
@@ -2195,18 +2165,18 @@ class Workflow:
         wf = self.config.workflow
         red_returned = state.verify.last_ok is False and self._red_gate_returns(state)
         if red_returned:
-            state.verify_finish_retries_used += 1
+            state.gates.verify_retries_used += 1
             turn.tool_results.append(
                 Notice(
                     finish_red_notice(
-                        used=state.verify_finish_retries_used, retries=wf.verify_retries
+                        used=state.gates.verify_retries_used, retries=wf.verify_retries
                     )
                 )
             )
             self._emit(
                 "loop.verify_finish.gated",
                 iteration=turn.iteration,
-                nudges_used=state.verify_finish_retries_used,
+                nudges_used=state.gates.verify_retries_used,
             )
         # A red gate returns the end before the panel sits.
         reviewed = not red_returned and self._end_is_reviewed(state, turn, ending=ending)
@@ -2221,12 +2191,12 @@ class Workflow:
             turn.end_returned = True
             self._log(
                 f"  {ending} gated: open subtasks remain (nudge"
-                f" #{state.task_finish_nudges_used}) at iter {turn.iteration}"
+                f" #{state.gates.task_nudges_used}) at iter {turn.iteration}"
             )
             self._emit(
                 "loop.task_finish.gated",
                 iteration=turn.iteration,
-                nudges_used=state.task_finish_nudges_used,
+                nudges_used=state.gates.task_nudges_used,
                 trigger=ending,
             )
         return None
@@ -2257,42 +2227,27 @@ class Workflow:
         non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
         # "Settled" once the run reached a good state: a green verify, or (on a
         # gateless run, where verify never fires) an editing step.
-        settled_seeded = state.verify.ever_passed or state.gateless_ever_edited
+        settled_seeded = state.verify.ever_passed or state.settled.gateless_ever_edited
         if non_metric_run and settled_seeded:
             tree = self.chain.tree_sha()
-            made_progress = turn.committed or turn.edited or tree != state.settled_tree
-            state.settled_tree = tree
-            if made_progress:
-                state.restart_settle_streak()
-            elif not (turn.verify_just_passed or turn.verify_just_failed):
-                state.verify_settled_idle += 1
-        turn.verify_settled_stop = (
-            non_metric_run
-            and turn.finish_signal is None
-            and settled_seeded
-            and state.verify_settled_idle >= VERIFY_SETTLED_STOP_AFTER
-        )
+            state.settled.note_turn(
+                tree,
+                progress=turn.committed or turn.edited or tree != state.settled.tree,
+                verify_ran=turn.verify_just_passed or turn.verify_just_failed,
+            )
+        armed = non_metric_run and turn.finish_signal is None and settled_seeded
+        turn.verify_settled_stop = armed and state.settled.stop_due()
         if turn.verify_settled_stop:
             aborted = self._end_gates(state, turn, ending="settled")
             if aborted is not None:
                 return aborted
             if turn.end_returned:
                 turn.verify_settled_stop = False
-                state.restart_settle_streak()
-        if (
-            non_metric_run
-            and turn.finish_signal is None
-            and not turn.verify_settled_stop
-            and settled_seeded
-            and state.verify_settled_idle >= VERIFY_SETTLED_NUDGE_AFTER
-            and not state.verify_settled_nudged
-        ):
-            state.verify_settled_nudged = True
+                state.settled.restart()
+        if armed and not turn.verify_settled_stop and state.settled.nudge_due():
             turn.tool_results.append(Notice(VERIFY_SETTLED_NUDGE))
             self._emit(
-                "loop.verify_settled.nudge",
-                iteration=turn.iteration,
-                idle=state.verify_settled_idle,
+                "loop.verify_settled.nudge", iteration=turn.iteration, idle=state.settled.idle
             )
         return None
 
@@ -2320,22 +2275,23 @@ class Workflow:
         if not non_metric_run:
             return
         streak = state.spiral.error_streak
-        if streak >= TOOL_ERROR_STOP_AFTER and state.spiral.error_nudges_used >= 2:
+        rung = state.spiral.climb_error()
+        if rung == "stop":
             turn.tool_error_stop = True
-            return
-        # A denial streak is a POLICY outcome: "your call is malformed" would
-        # be false, and a refusal says nothing about jail reachability.
-        denial = state.spiral.last_error_was_denial
-        nudge = TOOL_DENIED_NUDGE if denial else TOOL_ERROR_NUDGE
-        escalation = TOOL_DENIED_NUDGE if denial else TOOL_ERROR_ESCALATION
-        if streak >= TOOL_ERROR_ESCALATE_AFTER and state.spiral.error_nudges_used == 1:
-            state.spiral.error_nudges_used = 2
-            turn.tool_results.append(Notice(escalation))
-            self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=2)
-        elif streak >= TOOL_ERROR_NUDGE_AFTER and state.spiral.error_nudges_used == 0:
-            state.spiral.error_nudges_used = 1
-            turn.tool_results.append(Notice(nudge))
-            self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=1)
+        elif rung is not None:
+            # A denial streak is a POLICY outcome: "your call is malformed" would
+            # be false, and a refusal says nothing about jail reachability.
+            if state.spiral.last_error_was_denial:
+                text = TOOL_DENIED_NUDGE
+            else:
+                text = TOOL_ERROR_ESCALATION if rung == "escalate" else TOOL_ERROR_NUDGE
+            turn.tool_results.append(Notice(text))
+            self._emit(
+                "loop.tool_error.nudge",
+                iteration=turn.iteration,
+                streak=streak,
+                level=2 if rung == "escalate" else 1,
+            )
 
     def _note_jail_exec_failure(
         self,
@@ -2356,22 +2312,11 @@ class Workflow:
             return
         argv = tool_input.get("argv") or []
         binary = str(argv[0]) if isinstance(argv, list) and argv else ""
-        if not result.exec_failed or not binary:
-            state.jail_exec_failed_binary = ""
-            state.jail_exec_failed_streak = 0
+        if not state.reach.note(binary, exec_failed=result.exec_failed):
             return
-        if binary == state.jail_exec_failed_binary:
-            state.jail_exec_failed_streak += 1
-        else:
-            state.jail_exec_failed_binary = binary
-            state.jail_exec_failed_streak = 1
-        if (
-            state.jail_exec_failed_streak < 2
-            or state.sandbox_reachability_warned
-            or shutil.which(binary) is None
-        ):
+        if shutil.which(binary) is None:
             return
-        state.sandbox_reachability_warned = True
+        state.reach.warned = True
         self._emit("loop.sandbox_tool_unreachable", binary=binary)
         self._log(f"LOOP: sandbox tool unreachable: {binary} exists on host, fails in jail")
         turn.tool_results.append(
@@ -2398,19 +2343,21 @@ class Workflow:
         if not non_metric_run or not turn.verify_just_failed:
             return
         streak = state.verify.fail_streak
-        if streak >= NO_PROGRESS_STOP_AFTER and state.no_progress_nudges_used >= 2:
+        rung = state.no_progress.climb(streak)
+        if rung == "stop":
             # Both nudges delivered and the identical failure persists: stop in
             # the stop checks rather than burn the rest of the budget.
             turn.no_progress_stop = True
-            return
-        if streak >= NO_PROGRESS_ESCALATE_AFTER and state.no_progress_nudges_used == 1:
-            state.no_progress_nudges_used = 2
-            turn.tool_results.append(Notice(NO_PROGRESS_ESCALATION))
-            self._emit("loop.no_progress.nudge", iteration=turn.iteration, streak=streak, level=2)
-        elif streak >= NO_PROGRESS_NUDGE_AFTER and state.no_progress_nudges_used == 0:
-            state.no_progress_nudges_used = 1
-            turn.tool_results.append(Notice(NO_PROGRESS_NUDGE))
-            self._emit("loop.no_progress.nudge", iteration=turn.iteration, streak=streak, level=1)
+        elif rung is not None:
+            turn.tool_results.append(
+                Notice(NO_PROGRESS_ESCALATION if rung == "escalate" else NO_PROGRESS_NUDGE)
+            )
+            self._emit(
+                "loop.no_progress.nudge",
+                iteration=turn.iteration,
+                streak=streak,
+                level=2 if rung == "escalate" else 1,
+            )
 
     def _standing_task(self) -> tuple[str, str] | None:
         """The ready standing task's (id, title), if this run has one."""
@@ -2439,20 +2386,20 @@ class Workflow:
         if remaining is not None and remaining <= 0.0:
             return None
         nid, title = st
-        if state.ok_tool_calls == state.standing_tools_mark:
-            state.standing_fruitless += 1
+        if state.ok_tool_calls == state.standing.tools_mark:
+            state.standing.fruitless += 1
             patience = self.config.workflow.standing_patience
-            if 0 <= patience < state.standing_fruitless:
+            if 0 <= patience < state.standing.fruitless:
                 self._log(
-                    f"  standing: {state.standing_fruitless} fruitless re-entries >"
+                    f"  standing: {state.standing.fruitless} fruitless re-entries >"
                     f" standing_patience {patience}; honouring {reason}"
                 )
                 return None
-            nudge = standing_fruitless_nudge(reason, nid, title, state.standing_fruitless)
+            nudge = standing_fruitless_nudge(reason, nid, title, state.standing.fruitless)
         else:
-            state.standing_fruitless = 0
+            state.standing.fruitless = 0
             nudge = standing_resume_nudge(reason, nid, title)
-        state.standing_tools_mark = state.ok_tool_calls
+        state.standing.tools_mark = state.ok_tool_calls
         self._log(f"  standing re-entry ({reason}) -> {nid} at iter {iteration}")
         self._emit("loop.standing.resumed", reason=reason, task_id=nid, iteration=iteration)
         return nudge
@@ -2482,10 +2429,10 @@ class Workflow:
         turn.verify_settled_stop = False
         turn.no_progress_stop = False
         turn.plateau_should_stop = False
-        state.restart_settle_streak()
+        state.settled.restart()
         state.verify.fail_streak = 0
-        state.no_progress_nudges_used = 0
-        state.plateau_nudges_used = 0
+        state.no_progress.nudges_used = 0
+        state.metric.plateau_nudges_used = 0
         conversation.notice(nudge)
 
     # ---- stop checks, silent finish, went-quiet --------------------------------
@@ -2531,9 +2478,7 @@ class Workflow:
                 iteration=turn.iteration,
             )
         if turn.verify_settled_stop:
-            self._log(
-                f"LOOP: verify_settled at iter {turn.iteration} (idle {state.verify_settled_idle})"
-            )
+            self._log(f"LOOP: verify_settled at iter {turn.iteration} (idle {state.settled.idle})")
             self._final_checkpoint(turn.iteration)
             # Ground on the TREE, not on verify_ever_passed: a green verify
             # followed by un-reverified edits must not settle as "passed"
@@ -2583,14 +2528,14 @@ class Workflow:
         # reflects exactly what the model produced up to the kill, which is
         # essential when triaging "why did my run die at iter N".
         if (
-            self.loop_guard_kill_threshold > 0
-            and state.spiral.call_streak >= self.loop_guard_kill_threshold
+            self.guards.loop_guard_kill_threshold > 0
+            and state.spiral.call_streak >= self.guards.loop_guard_kill_threshold
         ):
             latched_name = (state.spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
             self._log(
                 f"LOOP: loop_guard_killed at iter {turn.iteration} -"
                 f" {latched_name} called {state.spiral.call_streak}x in a row"
-                f" (threshold={self.loop_guard_kill_threshold})"
+                f" (threshold={self.guards.loop_guard_kill_threshold})"
             )
             return self._finish(
                 state,
@@ -2599,7 +2544,7 @@ class Workflow:
                     f"loop-guard killed run: `{latched_name}`"
                     f" called {state.spiral.call_streak}x in a row with"
                     f" identical arguments (threshold"
-                    f" {self.loop_guard_kill_threshold})",
+                    f" {self.guards.loop_guard_kill_threshold})",
                     fields={"tool": latched_name, "streak": state.spiral.call_streak},
                 ),
                 iteration=turn.iteration,
@@ -2690,12 +2635,12 @@ class Workflow:
         # planner can take many cheap turns, so an iteration cap is the
         # reliable lever for the "reads forever" failure mode. A rough
         # delivered plan beats an exhaustive one that never gets emitted.
-        if self.mode == "plan" and not state.plan_finish_nudged:
+        if self.mode == "plan" and not state.budget_nudges.plan_finish:
             remaining = self._budget_fraction_remaining()
             low_budget = remaining is not None and remaining <= PLAN_BUDGET_NUDGE_BELOW
             too_many_turns = iteration - start_iteration + 1 >= PLAN_NUDGE_AFTER_ITERS
             if low_budget or too_many_turns:
-                state.plan_finish_nudged = True
+                state.budget_nudges.plan_finish = True
                 conversation.notice(PLAN_BUDGET_NUDGE)
                 self._log(
                     f"LOOP: plan finish-nudge at iter {iteration}"
@@ -2709,12 +2654,12 @@ class Workflow:
         # before the budget dies (metric runs have their own end-game).
         if (
             self.mode == "run"
-            and not state.run_budget_nudged
+            and not state.budget_nudges.run_budget
             and metric_goal(self.config.workflow.metric) is None
         ):
             remaining = self._budget_fraction_remaining()
             if remaining is not None and remaining <= RUN_BUDGET_NUDGE_BELOW:
-                state.run_budget_nudged = True
+                state.budget_nudges.run_budget = True
                 nudge = (
                     RUN_BUDGET_NUDGE
                     if self._gate_present(denied=state.verify.denied)
@@ -2750,8 +2695,7 @@ class Workflow:
         nodes = self.curator.nodes()
         current_id = current_task_id(nodes, cursor)
         if current_id is None:
-            state.turns_on_task = 0  # frontier empty: nothing to grind on
-            state.last_focus_id = None
+            state.focus.clear()
             return  # nothing decomposed yet, or the frontier is empty
         if cursor != current_id:
             # Advance the cursor onto the frontier task (auto-advance: a passed
@@ -2765,32 +2709,21 @@ class Workflow:
         # cursor to a new subtask) changes current_id and resets the count; survives
         # compaction (last_focus_id is not reset there). Re-fire every
         # STUCK_ON_TASK_AFTER turns, capped at STUCK_NUDGE_MAX per task.
-        if current_id != state.last_focus_id:
-            state.turns_on_task = 0
-            state.last_focus_id = current_id
-            state.stuck_nudges_fired = 0
-        else:
-            state.turns_on_task += 1
-            if (
-                state.turns_on_task % STUCK_ON_TASK_AFTER == 0
-                and state.stuck_nudges_fired < STUCK_NUDGE_MAX
-                and not nodes[current_id].standing
-            ):
-                state.stuck_nudges_fired += 1
-                conversation.notice(
-                    stuck_on_task_nudge(current_id, nodes[current_id], state.turns_on_task)
-                )
-                self._log(
-                    f"LOOP: stuck-on-task nudge #{state.stuck_nudges_fired} for"
-                    f" {current_id} after {state.turns_on_task} turns"
-                )
-                self._emit(
-                    "loop.task.stuck_nudge",
-                    task_id=current_id,
-                    turns=state.turns_on_task,
-                    n=state.stuck_nudges_fired,
-                )
-        if current_id == state.surfaced_task_id:
+        if state.focus.note(current_id, standing=nodes[current_id].standing):
+            conversation.notice(
+                stuck_on_task_nudge(current_id, nodes[current_id], state.focus.turns_on_task)
+            )
+            self._log(
+                f"LOOP: stuck-on-task nudge #{state.focus.stuck_nudges_fired} for"
+                f" {current_id} after {state.focus.turns_on_task} turns"
+            )
+            self._emit(
+                "loop.task.stuck_nudge",
+                task_id=current_id,
+                turns=state.focus.turns_on_task,
+                n=state.focus.stuck_nudges_fired,
+            )
+        if current_id == state.focus.surfaced_task_id:
             return  # already surfaced; the banner survives tier-1 elision
         node = nodes[current_id]
         if node.status == "pending":
@@ -2806,7 +2739,7 @@ class Workflow:
             current_id, node, decompose=self.config.prompt.decompose == "on"
         )
         conversation.notice(banner)
-        state.surfaced_task_id = current_id
+        state.focus.surfaced_task_id = current_id
         self._log(f"LOOP: surfaced current task {current_id}")
         self._emit("loop.task.surfaced", task_id=current_id)
         # The harness-driven cursor/status writes bypass the tool-dispatch path
@@ -2840,7 +2773,7 @@ class Workflow:
             # gates, question nudges) drain one shared budget and end the run
             # as went_quiet with no streak at the cap, and the starvation
             # output-cap backoff stays reduced.
-            state.went_quiet_nudges_used = 0
+            state.quiet.went_quiet_nudges_used = 0
             turn = TurnState(iteration=iteration, resp=resp, assistant=assistant)
             return self._handle_silent_finish(text, conversation, state, turn)
         return self._handle_went_quiet(resp, conversation, state, iteration=iteration)
@@ -2875,18 +2808,18 @@ class Workflow:
             and iteration <= 3
             and not state.ever_edited
             and not state.verify.ever_passed
-            and state.silent_no_work_nudges_used < SILENT_NO_WORK_PATIENCE
+            and state.quiet.silent_no_work_nudges_used < SILENT_NO_WORK_PATIENCE
         ):
-            state.silent_no_work_nudges_used += 1
+            state.quiet.silent_no_work_nudges_used += 1
             conversation.notice(SILENT_NO_WORK_NUDGE)
             self._log(
                 f"  silent finish rejected: no work yet (nudge"
-                f" #{state.silent_no_work_nudges_used}) at iter {iteration}"
+                f" #{state.quiet.silent_no_work_nudges_used}) at iter {iteration}"
             )
             self._emit(
                 "loop.silent_no_work.nudge",
                 iteration=iteration,
-                nudges_used=state.silent_no_work_nudges_used,
+                nudges_used=state.quiet.silent_no_work_nudges_used,
             )
             return None
         aborted = self._silent_end_gates(state, turn, conversation)
@@ -2904,8 +2837,8 @@ class Workflow:
         # would silently finish with an unanswered question. Nudge once to
         # call ask_user / finish_session; if it asks again, accept the finish
         # (bounded, so a stubborn model cannot loop the run).
-        if self.mode == "run" and not state.question_nudged and ends_with_question(text):
-            state.question_nudged = True
+        if self.mode == "run" and not state.quiet.question_nudged and ends_with_question(text):
+            state.quiet.question_nudged = True
             self._log(f"  silent_finish nudged: ended on a question at iter {iteration}")
             self._emit("loop.question_nudge", iteration=iteration)
             conversation.notice(QUESTION_NUDGE)
@@ -3004,20 +2937,22 @@ class Workflow:
             f"LOOP: went_quiet at iter {iteration} - agent emitted no text and no tool_use{billed}"
         )
         env_max = os.environ.get("AGENT6_WENT_QUIET_MAX_NUDGES", "").strip()
-        effective_max_nudges = int(env_max) if env_max.isdigit() else self.went_quiet_max_nudges
+        effective_max_nudges = (
+            int(env_max) if env_max.isdigit() else self.guards.went_quiet_max_nudges
+        )
         # Drop the dead turn before any exit: a provider rejects an assistant
         # message with empty content, and every path below either calls again
         # (nudge, standing goal, park) or snapshots the conversation for resume.
         conversation.pop_quiet_assistant()
-        if state.went_quiet_nudges_used < effective_max_nudges:
-            state.went_quiet_nudges_used += 1
+        if state.quiet.went_quiet_nudges_used < effective_max_nudges:
+            state.quiet.went_quiet_nudges_used += 1
             conversation.notice(
                 reasoning_starved_nudge(resp.output_tokens) if starved else WENT_QUIET_NUDGE
             )
             self._emit(
                 "loop.went_quiet.nudge",
                 iteration=iteration,
-                nudges_used=state.went_quiet_nudges_used,
+                nudges_used=state.quiet.went_quiet_nudges_used,
                 nudges_max=effective_max_nudges,
                 output_tokens=resp.output_tokens,
             )
@@ -3355,7 +3290,7 @@ class Workflow:
         if self.resume_state_path is None:
             return
         goal = metric_goal(self.config.workflow.metric)
-        best = best_metric_sample(state.metric_history, goal=goal) if goal is not None else None
+        best = best_metric_sample(state.metric.history, goal=goal) if goal is not None else None
         snapshot = SessionSnapshot(
             system=system,
             messages=messages,
@@ -3364,23 +3299,23 @@ class Workflow:
             root_task_id=root_task_id,
             original_task=state.original_task,
             verify_command=self.config.workflow.verify_command,
-            review_rejections_total=state.review_rejections_total,
+            review_rejections_total=state.gates.review_total,
             verify_ever_passed=state.verify.ever_passed,
             verify_ever_failed=state.verify.ever_failed,
-            gateless_ever_edited=state.gateless_ever_edited,
+            gateless_ever_edited=state.settled.gateless_ever_edited,
             parallel_groups_dispatched=state.parallel_groups_dispatched,
             pins=tuple(state.pins),
             metric_best_score=best.score if best is not None else None,
-            metric_at_ceiling=self._metric_at_ceiling(state.metric_history),
+            metric_at_ceiling=state.metric.at_ceiling(),
             last_verify_ok=state.verify.last_ok,
             edited_since_verify=state.verify.edited_since,
             baseline_ok=state.verify.baseline_ok,
             verify_scoped=state.verify.scoped,
-            memory_written=state.memory_written,
-            memory_flip_nudged=state.memory_flip_nudged,
-            memory_finish_nudged=state.memory_finish_nudged,
-            standing_tools_mark=state.standing_tools_mark,
-            standing_fruitless=state.standing_fruitless,
+            memory_written=state.memory.written,
+            memory_flip_nudged=state.memory.flip_nudged,
+            memory_finish_nudged=state.memory.finish_nudged,
+            standing_tools_mark=state.standing.tools_mark,
+            standing_fruitless=state.standing.fruitless,
             ok_tool_calls=state.ok_tool_calls,
             head_sha=self.chain.checkpoint_head_sha(),
             graph_version=self._checkpoint_graph_version(),
@@ -3467,7 +3402,7 @@ class Workflow:
         """The harness's own metric reading after a green verify, as feedback
         text; a failed reading is a sample with its error, and a denied one
         also withholds the automatic metric for the rest of the run."""
-        history = state.metric_history
+        history = state.metric.history
         metric_cfg = self.config.workflow.metric
         goal = metric_goal(metric_cfg)
         if self.mode != "run" or goal is None:
@@ -3479,7 +3414,7 @@ class Workflow:
         except ToolError as exc:
             error = str(exc)
             if isinstance(exc, ToolDenied):
-                state.metric_denied = True
+                state.metric.denied = True
                 error += "; the automatic metric is withheld for the rest of the run"
             sample = MetricSample(
                 label=f"auto iter {iteration}",
@@ -3507,13 +3442,6 @@ class Workflow:
         if self.mode != "run" or goal is None:
             return None
         return metric_plateau_summary(history, goal=goal)
-
-    def _metric_at_ceiling(self, history: list[MetricSample]) -> bool:
-        """True once any verified sample reached the metric's provable
-        ceiling (e.g. `SCORE: 27/27`). Such a metric cannot be improved, so
-        the loop honours an early `finish_session` and stops nudging instead of
-        spending the rest of the budget chasing an unbeatable number."""
-        return any(sample.at_ceiling for sample in history)
 
     def _budget_fraction_remaining(self) -> float | None:
         """Fraction of the token budget still available, or None when no
@@ -3562,7 +3490,7 @@ class Workflow:
         alone twice in a row).
         """
         metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is not None
-        if metric_run and state.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS:
+        if metric_run and state.quiet.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS:
             return max(self.call.per_call_max_tokens, self.call.metric_task_max_tokens)
         return self.call.per_call_max_tokens
 
@@ -3914,9 +3842,9 @@ class Workflow:
         open_subtasks = self._open_subtasks()
         if not open_subtasks:
             return None
-        if state.task_finish_nudges_used >= TASK_FINISH_PATIENCE:
+        if state.gates.task_nudges_used >= TASK_FINISH_PATIENCE:
             return None  # cap reached: the end goes through, the receipt names them
-        state.task_finish_nudges_used += 1
+        state.gates.task_nudges_used += 1
         listing = "\n".join(f"- {tid}: {title}" for tid, title in open_subtasks)
         return (
             f"[harness] finish_session deferred: {len(open_subtasks)} task(s) are"
@@ -4101,7 +4029,7 @@ class Workflow:
                 verdict="abstain" if v.error else v.verdict,
                 findings=len(v.findings),
             )
-        disarmed = state.review_rejections_total >= self.review.max_total_rejections
+        disarmed = state.gates.review_total >= self.review.max_total_rejections
         effective_blocked = result.blocked and not disarmed
         self._emit(
             "loop.review.panel",
@@ -4116,9 +4044,9 @@ class Workflow:
         )
         if trigger == "before_finish":
             if effective_blocked:
-                state.review_rejections_total += 1
+                state.gates.review_total += 1
             else:
-                state.review_rejections_total = max(0, state.review_rejections_total - 1)
+                state.gates.review_total = max(0, state.gates.review_total - 1)
         # An all-abstain panel reviewed nothing: name that in the critique text
         # (the model reads it) instead of "No blocking findings.". The gate still
         # lets the finish through -- a panel must never deadlock a run -- so

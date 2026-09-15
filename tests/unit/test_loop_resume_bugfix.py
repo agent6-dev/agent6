@@ -17,10 +17,13 @@ from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
 
+import pytest
+
 from agent6.config import Config
 from agent6.tools.results import ExecResult, RawResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation
+from agent6.workflows._guards import MetricGuard
 from agent6.workflows._metric import MetricSample as _MetricSample
 from agent6.workflows._provider_call import CallSettings
 from agent6.workflows._session_state import (
@@ -119,8 +122,8 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     state = LoopState(original_task="t", tool_calls=2)
     state.verify.ever_passed = True
     state.verify.scoped = True
-    state.gateless_ever_edited = True
-    state.metric_history.append(_MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True))
+    state.settled.gateless_ever_edited = True
+    state.metric.history.append(_MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True))
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=2, next_iteration=4, root_task_id=None, state=state
     )
@@ -152,9 +155,9 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> 
     wf = _wf(resume_state_path=snap, config=config)
     state = LoopState(original_task="t", tool_calls=0)
     state.verify.ever_failed = True
-    state.memory_written = True
-    state.memory_flip_nudged = True
-    state.memory_finish_nudged = True
+    state.memory.written = True
+    state.memory.flip_nudged = True
+    state.memory.finish_nudged = True
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=3, root_task_id=None, state=state
     )
@@ -164,9 +167,9 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> 
     restore_completion_state(fresh, loaded)
 
     assert fresh.verify.ever_failed is True
-    assert fresh.memory_written is True
-    assert fresh.memory_flip_nudged is True
-    assert fresh.memory_finish_nudged is True
+    assert fresh.memory.written is True
+    assert fresh.memory.flip_nudged is True
+    assert fresh.memory.finish_nudged is True
 
 
 def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path) -> None:
@@ -349,7 +352,7 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
         load_session_snapshot(snap)
 
 
-def test_resume_seeds_state_from_snapshot_scalars() -> None:
+def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatch) -> None:
     """_drive_loop restores verify_ever_passed and a synthetic at-ceiling metric
     sample so the metric/verify-settled stop logic doesn't regress on resume.
 
@@ -391,13 +394,13 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run")
 
     captured: dict[str, Any] = {}
-    orig = wf._metric_at_ceiling  # pyright: ignore[reportPrivateUsage]
+    orig = MetricGuard.at_ceiling
 
-    def _spy(history: list[Any]) -> bool:
-        captured["at_ceiling"] = orig(history)
+    def _spy(guard: MetricGuard) -> bool:
+        captured["at_ceiling"] = orig(guard)
         return captured["at_ceiling"]
 
-    wf._metric_at_ceiling = _spy  # type: ignore[method-assign]
+    monkeypatch.setattr(MetricGuard, "at_ceiling", _spy)
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(

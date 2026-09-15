@@ -191,7 +191,7 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "apply_edit", result, {"path": str(target), "edits": []}
     )
-    assert state.memory_written is True
+    assert state.memory.written is True
     assert state.verify.green_and_untouched  # the green survived
     # A workspace edit still marks the tree.
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]

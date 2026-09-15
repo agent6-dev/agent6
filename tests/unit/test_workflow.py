@@ -24,6 +24,13 @@ from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
+from agent6.workflows._guards import (
+    FinishGates,
+    GuardSettings,
+    MetricGuard,
+    QuietGuard,
+    SettledGuard,
+)
 from agent6.workflows._loop_state import End
 from agent6.workflows._provider_call import (
     CallSettings,
@@ -1043,7 +1050,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
         max_iterations=1 if ending == "iterations" else 3,
-        went_quiet_max_nudges=0,
+        guards=GuardSettings(went_quiet_max_nudges=0),
     )
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
@@ -1624,10 +1631,14 @@ def test_worker_max_tokens_starvation_backoff() -> None:
     wf = _wf(config=metric_cfg)
     wmt = wf._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
     full = max(wf.call.per_call_max_tokens, wf.call.metric_task_max_tokens)
-    assert wmt(_state(went_quiet_nudges_used=0)) == full
-    assert wmt(_state(went_quiet_nudges_used=1)) == full  # one-off quiet: full room
-    assert wmt(_state(went_quiet_nudges_used=2)) == wf.call.per_call_max_tokens  # spiral: back off
-    assert wmt(_state(went_quiet_nudges_used=3)) == wf.call.per_call_max_tokens
+    assert wmt(_state(quiet=QuietGuard(went_quiet_nudges_used=0))) == full
+    assert (
+        wmt(_state(quiet=QuietGuard(went_quiet_nudges_used=1))) == full
+    )  # one-off quiet: full room
+    assert (
+        wmt(_state(quiet=QuietGuard(went_quiet_nudges_used=2))) == wf.call.per_call_max_tokens
+    )  # spiral: back off
+    assert wmt(_state(quiet=QuietGuard(went_quiet_nudges_used=3))) == wf.call.per_call_max_tokens
 
     # Non-metric run: always per_call, regardless of the quiet streak.
     plain = _wf(
@@ -1643,8 +1654,12 @@ def test_worker_max_tokens_starvation_backoff() -> None:
         )
     )
     pwmt = plain._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
-    assert pwmt(_state(went_quiet_nudges_used=0)) == plain.call.per_call_max_tokens
-    assert pwmt(_state(went_quiet_nudges_used=2)) == plain.call.per_call_max_tokens
+    assert (
+        pwmt(_state(quiet=QuietGuard(went_quiet_nudges_used=0))) == plain.call.per_call_max_tokens
+    )
+    assert (
+        pwmt(_state(quiet=QuietGuard(went_quiet_nudges_used=2))) == plain.call.per_call_max_tokens
+    )
 
 
 def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None:
@@ -2522,7 +2537,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
         dispatcher=dispatcher,
         budget=budget,
         max_iterations=max_iters,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
@@ -2592,7 +2607,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
         dispatcher=DispatcherStub(),
         budget=budget,
         max_iterations=20,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
@@ -2650,7 +2665,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
         dispatcher=DispatcherStub(),
         budget=None,
         max_iterations=20,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
@@ -2723,7 +2738,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: Path) -> Non
         dispatcher=dispatcher,
         budget=None,
         max_iterations=20,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2837,7 +2852,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
         dispatcher=DispatcherStub(),
         budget=budget,
         max_iterations=20,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
@@ -3328,7 +3343,7 @@ def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
         nudge = wf._task_finish_gate_nudge(st)  # pyright: ignore[reportPrivateUsage]
         assert nudge is not None and "sub1: audit providers" in nudge
         assert "audit sandbox" not in nudge  # passed subtask not listed
-        assert st.task_finish_nudges_used == i
+        assert st.gates.task_nudges_used == i
     assert wf._task_finish_gate_nudge(st) is None  # pyright: ignore[reportPrivateUsage]
     assert "1 open task(s): audit providers" in wf._with_open_tasks("done")  # pyright: ignore[reportPrivateUsage]
 
@@ -3363,9 +3378,8 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
     wf = _wf(curator=_FakeGraph(nodes))
     state = _state(
         verify=VerifyVerdict(ever_passed=True, last_ok=True),
-        settled_tree="tree",
-        verify_settled_idle=VERIFY_SETTLED_STOP_AFTER - 1,
-        task_finish_nudges_used=TASK_FINISH_PATIENCE,
+        settled=SettledGuard(tree="tree", idle=VERIFY_SETTLED_STOP_AFTER - 1),
+        gates=FinishGates(task_nudges_used=TASK_FINISH_PATIENCE),
     )
     turn = _turn()
     with patch.object(RunChain, "tree_sha", return_value="tree"):
@@ -3387,8 +3401,7 @@ def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
     wf = _wf(events=ev)
     state = _state(
         verify=VerifyVerdict(ever_passed=True, last_ok=True, scoped=True),
-        settled_tree="tree",
-        verify_settled_idle=VERIFY_SETTLED_STOP_AFTER - 1,
+        settled=SettledGuard(tree="tree", idle=VERIFY_SETTLED_STOP_AFTER - 1),
     )
     turn = _turn()
     with patch.object(RunChain, "tree_sha", return_value="tree"):
@@ -3419,8 +3432,7 @@ def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
     wf = _wf(curator=_FakeGraph(nodes))
     state = _state(
         verify=VerifyVerdict(ever_passed=True, last_ok=True),
-        settled_tree="tree",
-        verify_settled_idle=VERIFY_SETTLED_STOP_AFTER - 1,
+        settled=SettledGuard(tree="tree", idle=VERIFY_SETTLED_STOP_AFTER - 1),
     )
     turn = _turn()
     with patch.object(RunChain, "tree_sha", return_value="tree"):
@@ -3447,7 +3459,9 @@ def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
     wf = _wf(curator=_FakeGraph(nodes))
     state = _state(
         verify=VerifyVerdict(ever_passed=True, last_ok=True),
-        metric_history=[MetricSample(label="ceiling", score=10, returncode=0, at_ceiling=True)],
+        metric=MetricGuard(
+            history=[MetricSample(label="ceiling", score=10, returncode=0, at_ceiling=True)]
+        ),
     )
     turn = _turn(metric_plateau_finish="score reached its ceiling")
 
@@ -3689,7 +3703,7 @@ def test_surface_current_task_surfaces_advances_then_quiets() -> None:
     assert "audit providers" in messages[0]["content"][0]["text"]
     assert cur.cursor_sets == ["a"]  # cursor advanced onto the focus task
     assert cur.status_sets == [("a", "in_progress")]  # reflected as being worked
-    assert st.surfaced_task_id == "a"
+    assert st.focus.surfaced_task_id == "a"
 
     # Same focus -> no new banner, no redundant cursor/status writes.
     _surface(wf, st, messages)
@@ -3704,7 +3718,7 @@ def test_surface_current_task_surfaces_advances_then_quiets() -> None:
     assert "audit sandbox" in messages[1]["content"][0]["text"]
     assert cur.cursor_sets == ["a", "b"]
     assert cur.status_sets == [("a", "in_progress"), ("b", "in_progress")]
-    assert st.surfaced_task_id == "b"
+    assert st.focus.surfaced_task_id == "b"
 
 
 def test_surface_current_task_skips_status_write_when_already_in_progress() -> None:
@@ -3738,7 +3752,7 @@ def test_surface_current_task_resurfaces_after_compaction_reset() -> None:
     messages: list[dict[str, Any]] = []
     _surface(wf, st, messages)
     assert len(messages) == 1
-    st.surfaced_task_id = None  # what the loop does on a tier-2 restart
+    st.focus.surfaced_task_id = None  # what the loop does on a tier-2 restart
     _surface(wf, st, messages)
     assert len(messages) == 2  # re-surfaced after the restart wiped the banner
 
@@ -3772,10 +3786,7 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
     """The split/pass/skip nudge re-fires every _STUCK_ON_TASK_AFTER turns on the
     same stuck task (a weak model ignored a single nudge live), but caps at
     _STUCK_NUDGE_MAX so it cannot nag forever."""
-    from agent6.workflows.loop import (
-        STUCK_NUDGE_MAX,  # pyright: ignore[reportPrivateUsage]
-        STUCK_ON_TASK_AFTER,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
 
     cur = _FakeCurator(
         {
@@ -3796,13 +3807,13 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
     for _ in range((STUCK_NUDGE_MAX + 2) * STUCK_ON_TASK_AFTER):
         _surface(wf, st, messages)
     assert _stuck_count(messages) == STUCK_NUDGE_MAX
-    assert st.stuck_nudges_fired == STUCK_NUDGE_MAX
+    assert st.focus.stuck_nudges_fired == STUCK_NUDGE_MAX
 
 
 def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
     """Forward motion (a task marked passed -> focus advances) resets the grind
     counter, so the stuck nudge does not fire."""
-    from agent6.workflows.loop import STUCK_ON_TASK_AFTER  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._dag_focus import STUCK_ON_TASK_AFTER
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -3819,7 +3830,7 @@ def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
     for _ in range(3):
         _surface(wf, st, messages)
     assert _stuck_count(messages) == 0
-    assert st.last_focus_id == "b" and st.turns_on_task < STUCK_ON_TASK_AFTER
+    assert st.focus.last_focus_id == "b" and st.focus.turns_on_task < STUCK_ON_TASK_AFTER
 
 
 def test_surface_current_task_stuck_counter_survives_compaction() -> None:
@@ -3837,11 +3848,11 @@ def test_surface_current_task_stuck_counter_survives_compaction() -> None:
     messages: list[dict[str, Any]] = []
     for _ in range(5):
         _surface(wf, st, messages)
-    assert st.turns_on_task == 4
-    st.surfaced_task_id = None  # what the loop does on a tier-2 restart
+    assert st.focus.turns_on_task == 4
+    st.focus.surfaced_task_id = None  # what the loop does on a tier-2 restart
     _surface(wf, st, messages)
-    assert st.turns_on_task == 5  # kept climbing across the restart
-    assert st.last_focus_id == "a"
+    assert st.focus.turns_on_task == 5  # kept climbing across the restart
+    assert st.focus.last_focus_id == "a"
 
 
 def test_surface_decompose_resets_grind_counter() -> None:
@@ -3857,14 +3868,14 @@ def test_surface_decompose_resets_grind_counter() -> None:
     messages: list[dict[str, Any]] = []
     for _ in range(5):
         _surface(wf, st, messages)
-    assert st.last_focus_id == "a" and st.turns_on_task == 4
+    assert st.focus.last_focus_id == "a" and st.focus.turns_on_task == 4
     # Worker splits 'a' into a child -> 'a' becomes a container, focus moves to a1.
     nodes["a"]["status"] = "in_progress"
     nodes["a"]["children"] = ["a1"]
     nodes["a1"] = {"parent_id": "a", "status": "pending", "title": "a1"}
     _surface(wf, st, messages)
-    assert st.last_focus_id == "a1"  # focus advanced to the new leaf
-    assert st.turns_on_task == 0  # grind counter reset by the decompose
+    assert st.focus.last_focus_id == "a1"  # focus advanced to the new leaf
+    assert st.focus.turns_on_task == 0  # grind counter reset by the decompose
 
 
 def test_maybe_compact_returns_restart_signal() -> None:
@@ -4009,7 +4020,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
             stop_clear=lambda: pending.__setitem__("stop", False),
         ),
         max_iterations=30,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: x"}]}]
     with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
@@ -4029,7 +4040,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
 
 def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> None:
     """Integration: a tier-2 restart mid-run wipes the focus banner, and the loop's
-    `if self._maybe_compact(messages): state.surfaced_task_id = None` edge makes the
+    `if self._maybe_compact(messages): state.focus.surfaced_task_id = None` edge makes the
     next nudge pass RE-SURFACE the current task into the fresh context. Pins that
     edge -- dropping the reset (or inverting the _maybe_compact bool) leaves no
     loop.task.surfaced after the restart, which is exactly the regression the
@@ -4106,7 +4117,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
         curator=cur,  # low so tier-2 fires mid-run
         budget=None,
         max_iterations=30,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: review"}]}]
     with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
@@ -4802,7 +4813,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
         events=events,  # low so it fires mid-run
         budget=None,
         max_iterations=30,
-        loop_guard_kill_threshold=0,
+        guards=GuardSettings(loop_guard_kill_threshold=0),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: optimize"}]}]
 
@@ -6995,7 +7006,7 @@ def test_standing_default_never_self_quits_and_escalates() -> None:
     fourth = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=6))  # pyright: ignore[reportPrivateUsage]
     assert fourth is None
     assert "fruitless" not in conv.to_wire()[-1]["content"][0]["text"]
-    assert state.standing_fruitless == 0
+    assert state.standing.fruitless == 0
 
 
 def test_standing_patience_bounds_fruitless_reentries() -> None:
@@ -7035,11 +7046,11 @@ def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     state.ok_tool_calls += 1
     turn2 = _turn(iteration=3)
     turn2.verify_settled_stop = True
-    state.verify_settled_idle = 9
+    state.settled.idle = 9
     conv = Conversation()
     wf._absorb_soft_stop(state, turn2, conv)  # pyright: ignore[reportPrivateUsage]
     assert turn2.verify_settled_stop is False
-    assert state.verify_settled_idle == 0
+    assert state.settled.idle == 0
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
 
 
@@ -7693,7 +7704,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: Path
     wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
 
     assert dispatched == [], "the harness re-ran the operator's metric over an unchanged tree"
-    assert [s.score for s in state.metric_history] == [42.0]
+    assert [s.score for s in state.metric.history] == [42.0]
     assert "not a new best" not in (turn.metric_feedback or "")
     # The next turn reads the same tree: still one reading per state of it.
     later = TurnState(
@@ -7701,7 +7712,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: Path
     )
     wf._turn_auto_commit_and_metric(state, later)  # pyright: ignore[reportPrivateUsage]
     assert dispatched == []
-    assert [s.score for s in state.metric_history] == [42.0]
+    assert [s.score for s in state.metric.history] == [42.0]
 
 
 def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: Path) -> None:
@@ -7728,7 +7739,7 @@ def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: Path) -> Non
         if turn.metric_plateau_finish is not None:
             plateaus.append(turn.metric_plateau_finish)
 
-    assert [s.score for s in state.metric_history] == [42.0, 43.0, 44.0]
+    assert [s.score for s in state.metric.history] == [42.0, 43.0, 44.0]
     assert plateaus == []
 
 
