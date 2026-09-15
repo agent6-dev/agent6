@@ -23,7 +23,7 @@ Every image is from a recorded run; click to enlarge.
 ## Conversation
 
 Opening a run lands on its conversation (also `agent6 sessions transcript`): the task, the model's reasoning, and every tool call with its input and output (clipped to the salient lines by default; Detail cycles hidden, collapsed, expanded), following live.
-A live run keeps a steer bar at the bottom; above it, a live pane streams the turn in progress and lists the tool calls in flight (`→ run_command  sleep 60  · running`) until their results land in the transcript.
+A live run keeps a steer bar at the bottom; above it, a live pane streams a model call while it is in flight and lists the tool calls in flight (`→ run_command  sleep 60  · running`) until their results land in the transcript.
 An approval shows inline at the conversation's tail (the command, fixed-width) with a key row docked above the bar: `a` allow, `s` allow all this session, `d` deny, `x` deny all; answered, it collapses to one dim line.
 The composer keeps focus and owns the keys: they answer only while it is empty and focused (a typed message never answers); a click on a label answers from anywhere.
 Away from the conversation (the dashboard, a machine screen) an approval opens a modal instead: `y` allow, `a` allow session, `n` deny, `x` deny all.
@@ -39,6 +39,7 @@ A modal's buttons sit in one row; on a terminal narrower than the row the later 
 ## Run dashboard
 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
+Before the first model call, the header names the role and model from the manifest and says `starting`; the spinner runs only while a model call is in flight.
 
 - the diff pane opens on the latest commit; its selector walks the run's per-step commits (newest first), `cumulative` shows the chain up to that step; the task tree and the cost line follow the selected step; a run whose model owns git has no chain and the pane says so
 - the composer bar runs along the foot: type to steer, or to resume a finished run; the row above it picks the preset and model the next leg continues under (blank: as the run recorded)

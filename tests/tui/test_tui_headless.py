@@ -1739,9 +1739,9 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: Path) -> None:
 
 
 def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: Path) -> None:
-    """Before any role.call the header's role is the manifest's driver (the
-    role the mode runs, its model), not "(idle)": a launching run is a known
-    model warming up. The first role.call takes over."""
+    """Before any role.call the header names the manifest's driver and the
+    dashboard says the live worker is starting. The first call then supplies
+    the role and model shown with its in-flight beat."""
     (tmp_path / "manifest.json").write_text(
         json.dumps(
             {
@@ -1753,18 +1753,29 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: Pa
         ),
         encoding="utf-8",
     )
-    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    logs = tmp_path / "logs.jsonl"
+    logs.write_text("", encoding="utf-8")
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
-            app._handle_event(_ev(type="session.start", user_task="t", mode="plan"))
-            app._tick()
-            await pilot.pause()
             top = str(app._dash.query_one("#top", Static).render())
+            body = str(app._dash.query_one("#stream-body", Static).render())
             assert "role: planner / m0" in top
-            app._handle_event(_ev(type="role.call", role="planner", model="m1", provider="p"))
+            assert "starting" in top and "starting" in body
+            with logs.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(_ev(type="session.start", user_task="t", mode="plan")) + "\n")
+                fh.write(
+                    json.dumps(_ev(type="role.call", role="planner", model="m1", provider="p"))
+                    + "\n"
+                )
+            await _wait_for(
+                pilot,
+                lambda: app.state.last_role is not None and app.state.last_role.in_flight,
+                "the first model call",
+            )
             app._tick()
             await pilot.pause()
             top = str(app._dash.query_one("#top", Static).render())
@@ -1773,12 +1784,12 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: Pa
     asyncio.run(scenario())
 
 
-def test_dashboard_reads_a_driverless_manifest_once(
+def test_dashboard_does_not_call_a_dead_driverless_run_idle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A manifest naming no driver settles the pre-start role line to "(idle)"
-    on its first read; the heartbeat does not re-read manifest.json every
-    second for the life of the view."""
+    """A missing driver supplies no role fact, not an idle state. A worker that
+    died launching reads stale, while the unknown role is a dash cached from
+    the manifest rather than a manifest read on every heartbeat."""
     from agent6.ui.tui import dashboard as dash_mod
 
     (tmp_path / "manifest.json").write_text(
@@ -1786,6 +1797,7 @@ def test_dashboard_reads_a_driverless_manifest_once(
         encoding="utf-8",
     )
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "worker.pid").write_text("999999999", encoding="utf-8")
     real = dash_mod.read_manifest
     reads: list[int] = []
 
@@ -1801,7 +1813,10 @@ def test_dashboard_reads_a_driverless_manifest_once(
             await _show_dashboard(pilot)
             before = len(reads)
             lines = {app._dash._start_role() for _ in range(4)}  # pyright: ignore[reportPrivateUsage]
-            assert lines == {"(idle)"}
+            assert lines == {"(unknown)"}
             assert len(reads) - before <= 1
+            top = str(app._dash.query_one("#top", Static).render())
+            assert "stale" in top
+            assert "idle" not in top
 
     asyncio.run(scenario())

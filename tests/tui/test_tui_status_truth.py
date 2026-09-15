@@ -189,6 +189,44 @@ def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: Path) -> N
     asyncio.run(scenario())
 
 
+def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: Path) -> None:
+    """A rejected finish tool carries a proposed summary, not the run's end.
+    When the leg later fails, the stream pane shows the failure without
+    presenting that abandoned summary as its closing story."""
+    d = tmp_path / "failed-finish"
+    d.mkdir()
+    events = [
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "role.result", "role": "worker", "ok": True, "text": "done"},
+        {
+            "type": "tool.call",
+            "name": "finish_session",
+            "args": {"summary": "Everything passed."},
+        },
+        {
+            "type": "tool.result",
+            "name": "finish_session",
+            "ok": False,
+            "summary": "the verify gate failed",
+        },
+        {"type": "session.end", "reason": "provider_error", "all_passed": False},
+    ]
+    (d / "logs.jsonl").write_text(
+        "".join(json.dumps(event) + "\n" for event in events), encoding="utf-8"
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            body = str(app._dash.query_one("#stream-body", Static).render())
+            assert "failed · provider error" in body
+            assert "Everything passed." not in body
+
+    asyncio.run(scenario())
+
+
 def test_the_header_names_the_pins_in_force(tmp_path: Path) -> None:
     """The pinned instructions bind for the whole run; the dashboard header
     lists them (the web header's and `sessions show`'s line), so an operator
@@ -749,6 +787,77 @@ def test_a_finished_log_is_read_before_the_first_tick(tmp_path: Path) -> None:
     assert not app.worker_lost
 
 
+def test_a_resumed_leg_drops_the_prior_legs_role_and_finish_story(tmp_path: Path) -> None:
+    """A leg boundary makes the prior call and finish summary historical. Until
+    the resumed leg calls a model, its header falls back to the manifest; if the
+    new leg then stops, its end story does not repeat the prior leg's summary."""
+    d = tmp_path / "resumed-story"
+    d.mkdir()
+    logs = d / "logs.jsonl"
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {
+                "mode": "run",
+                "session_id": d.name,
+                "user_task": "t",
+                "models": {"driver": {"provider": "p", "model": "next-model"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    first_leg = [
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker", "model": "old-model", "provider": "p"},
+        {"type": "role.result", "role": "worker", "ok": True, "text": "done"},
+        {
+            "type": "tool.call",
+            "name": "finish_session",
+            "args": {"summary": "First leg done."},
+        },
+        {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "ok"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    logs.write_text("".join(json.dumps(event) + "\n" for event in first_leg), encoding="utf-8")
+
+    def append(*events: dict[str, object]) -> None:
+        with logs.open("a", encoding="utf-8") as fh:
+            for event in events:
+                fh.write(json.dumps(event) + "\n")
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            assert "First leg done." in str(app._dash.query_one("#stream-body", Static).render())
+
+            (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+            append({"type": "loop.resume.start", "iteration": 2, "mode": "run"})
+            await _wait_for(pilot, lambda: not app.state.finished, "the resumed leg")
+            app._tick()
+            await pilot.pause()
+            top = str(app._dash.query_one("#top", Static).render())
+            body = str(app._dash.query_one("#stream-body", Static).render())
+            assert "role: worker / next-model" in top
+            assert "old-model" not in top
+            assert "First leg done." not in body
+
+            append(
+                {"type": "role.call", "role": "worker", "model": "new-model", "provider": "p"},
+                {"type": "role.result", "role": "worker", "ok": True, "text": "stopping"},
+                {"type": "session.end", "reason": "steer_abort", "all_passed": None},
+            )
+            await _wait_for(pilot, lambda: app.state.finished, "the resumed leg's end")
+            app._tick()
+            await pilot.pause()
+            top = str(app._dash.query_one("#top", Static).render())
+            body = str(app._dash.query_one("#stream-body", Static).render())
+            assert "role: worker / new-model" in top
+            assert "stopped" in body
+            assert "First leg done." not in body
+
+    asyncio.run(scenario())
+
+
 def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: Path) -> None:
     """The dead/parked/created hints said "press r to resume", but the r
     binding was removed (no plain-letter shortcuts) and the composer holds
@@ -767,6 +876,98 @@ def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: Path) -> None:
             body = str(app._dash.query_one("#stream-body", Static).render())
             assert "press r" not in body
             assert "Enter resumes" in body
+
+    asyncio.run(scenario())
+
+
+def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness(
+    tmp_path: Path,
+) -> None:
+    """A live worker is not proof that a model call is running. Before its
+    first call and after its last result, both views stay still; session.end,
+    not role.result, changes both composers from steer to resume."""
+    d = tmp_path / "call-edges"
+    d.mkdir()
+    logs = d / "logs.jsonl"
+    logs.write_text("", encoding="utf-8")
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {
+                "mode": "run",
+                "session_id": d.name,
+                "user_task": "t",
+                "models": {"driver": {"provider": "p", "model": "m"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def append(*events: dict[str, object]) -> None:
+        with logs.open("a", encoding="utf-8") as fh:
+            for event in events:
+                fh.write(json.dumps(event) + "\n")
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            conv_live = app._conv.query_one("#conv-live", Static)
+            conv_bar = app._conv.query_one("#conv-input", SteerInput)
+            await _wait_for(pilot, lambda: conv_bar.mode == "steer", "the starting steer bar")
+            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            assert not conv_live.display
+            conv_spin = app._conv._spin  # pyright: ignore[reportPrivateUsage]
+            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            assert app._conv._spin == conv_spin  # pyright: ignore[reportPrivateUsage]
+            dash_spin = app.spin
+            app._heartbeat_at = 0.0
+            app._tick()
+            assert app.spin == dash_spin
+
+            append(
+                {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+                {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+            )
+            await _wait_for(
+                pilot,
+                lambda: app.state.last_role is not None and app.state.last_role.in_flight,
+                "the model call",
+            )
+            dash_spin = app.spin
+            app._heartbeat_at = 0.0
+            app._tick()
+            assert app.spin == dash_spin + 1
+            conv_spin = app._conv._spin  # pyright: ignore[reportPrivateUsage]
+            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            assert app._conv._spin == conv_spin + 1  # pyright: ignore[reportPrivateUsage]
+
+            append({"type": "role.result", "role": "worker", "ok": True, "text": "done"})
+            await _wait_for(
+                pilot,
+                lambda: app.state.last_role is not None and not app.state.last_role.in_flight,
+                "the model result",
+            )
+            assert conv_bar.mode == "steer"
+            dash_spin = app.spin
+            app._heartbeat_at = 0.0
+            app._tick()
+            assert app.spin == dash_spin
+            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            assert not conv_live.display
+
+            append(
+                {
+                    "type": "session.end",
+                    "reason": "finish_session",
+                    "iterations": 1,
+                    "all_passed": True,
+                }
+            )
+            await _wait_for(pilot, lambda: app.state.finished, "the session end")
+            assert conv_bar.mode == "resume"
+            await _open_dash(app, pilot)
+            assert app._dash.query_one("#dash-input", SteerInput).mode == "resume"
 
     asyncio.run(scenario())
 

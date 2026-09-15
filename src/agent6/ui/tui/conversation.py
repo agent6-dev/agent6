@@ -560,20 +560,15 @@ class ConversationScreen(ScreenChrome, Screen[None]):
                 )
             )
             return
-        think = "".join(self._live_think).strip()
-        text = "".join(self._live_text).strip()
-        frame = spinner_frame(self._spin)
-        if not think and not text:
-            # Mid-run with nothing streaming: the calls in flight, one line
-            # each, else "working…" (the model is being called); a vanished
-            # pane reads as frozen for the whole stretch, so keep it moving.
-            body = Text()
-            body.append(f"{frame} ", style="bold cyan")
+        call_in_flight = self._host.model_call_in_flight()
+        if not call_in_flight:
             rows = [
                 ln for it in self._pending.values() for ln in item_lines(it, detail=self._detail)
             ]
             if not rows:
-                body.append("working… ", style="bold cyan")
+                live.display = False
+                return
+            body = Text()
             for i, row in enumerate(rows):
                 if i:
                     body.append("\n  ")
@@ -581,11 +576,15 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             live.display = True
             live.update(body)
             return
+        think = "".join(self._live_think).strip()
+        text = "".join(self._live_text).strip()
         body = Text()
+        if not think and not text:
+            body.append(f"{spinner_frame(self._spin)} working… ", style="bold cyan")
         if think:
             # Always show the live "thinking…" indicator (feedback that a turn is
             # working); stream the reasoning itself only when expanded (muted grey).
-            body.append(f"{frame} thinking… ", style="bold cyan")
+            body.append(f"{spinner_frame(self._spin)} thinking… ", style="bold cyan")
             if self._detail == "expanded":
                 body.append(_tail(think, _LIVE_TAIL), style="#6C7086")
         if text:
@@ -659,7 +658,8 @@ class ConversationScreen(ScreenChrome, Screen[None]):
     def _poll(self) -> None:
         """Append newly-completed turns (sticking to the bottom unless scrolled
         up) and refresh the live in-progress pane."""
-        self._spin += 1
+        if self._host.model_call_in_flight():
+            self._spin += 1
         self._render_approval()
         new_events = self._tail.read()
         if not new_events:

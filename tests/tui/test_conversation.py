@@ -258,6 +258,7 @@ def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
             conv_screen._detail = "expanded"
             overflow_before = scroll.max_scroll_y
             with logs.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"type": "role.call", "role": "worker", "model": "m"}) + "\n")
                 fh.write(json.dumps({"type": "role.thinking_delta", "text": "x " * 300}) + "\n")
             # The growing live pane shrinks the viewport, so the overflow grows.
             await _wait_for(
@@ -330,17 +331,12 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> No
             await pilot.pause()
             live = app.screen.query_one("#conv-live", Static)
             assert live.display  # the in-progress turn is shown live
-            # a completed turn (role.result) hands its prose off to the
-            # scrollback; the pane stays up as the animated working line (the
-            # run is still live -- tools execute, the next call is coming).
+            # A completed turn (role.result) hands its prose to the
+            # scrollback and hides the live pane. A live worker does not imply
+            # that its next model call has begun.
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "role.result", "role": "worker"}) + "\n")
-            await _wait_for(
-                pilot,
-                lambda: "working…" in str(live.render()),
-                "the live pane handoff",
-            )
-            assert live.display
+            await _wait_for(pilot, lambda: not live.display, "the live pane handoff")
 
     asyncio.run(scenario())
 
@@ -471,11 +467,10 @@ def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: P
     asyncio.run(scenario())
 
 
-def test_live_pane_keeps_moving_between_events(tmp_path: Path) -> None:
-    """Between a turn's end and the next delta the live pane VANISHED, so the
-    primary view read frozen for the whole model-call/tool-run stretch. Mid-run
-    with empty stream buffers it now shows an animated "working…" line, and
-    the spinner frame advances on data-less polls."""
+def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: Path) -> None:
+    """A live worker between calls is not a model at work. The live pane stays
+    hidden after role.result, then appears and advances when the next role.call
+    enters flight."""
     import os
 
     from agent6.ui.tui.app import Agent6TUI
@@ -487,7 +482,8 @@ def test_live_pane_keeps_moving_between_events(tmp_path: Path) -> None:
         {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
         {"type": "role.result", "ok": True},
     ]
-    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    logs = d / "logs.jsonl"
+    logs.write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     async def scenario() -> None:
@@ -497,10 +493,24 @@ def test_live_pane_keeps_moving_between_events(tmp_path: Path) -> None:
             conv = app._conv
             conv._poll()
             live = conv.query_one("#conv-live", Static)
-            assert live.display, "the live pane hid between events on a live run"
+            assert not live.display
+            with logs.open("a", encoding="utf-8") as fh:
+                fh.write(
+                    json.dumps(
+                        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"}
+                    )
+                    + "\n"
+                )
+            await _wait_for(
+                pilot,
+                lambda: app.state.last_role is not None and app.state.last_role.in_flight,
+                "the next model call",
+            )
+            conv._poll()
+            assert live.display
             first = str(live.render())
             assert "working…" in first
-            conv._poll()  # a data-less poll still turns the spinner
+            conv._poll()
             assert str(live.render()) != first
 
     asyncio.run(scenario())
@@ -527,7 +537,7 @@ def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: Pa
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({**result, "call_id": 1}) + "\n")
             await _wait_for(pilot, lambda: "exit 0" in _body_text(app), "the settled call")
-            assert "running" not in str(live.render())
+            assert not live.display
             assert _body_text(app).count("→ run_command") == 1
 
     asyncio.run(scenario())

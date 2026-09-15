@@ -303,15 +303,15 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         """The role line before the first model call: the role and model the
         manifest says drives the run, read once the manifest exists (a
         launching run has none for a moment). A manifest naming no driver
-        reads "(idle)", once."""
+        reads "(unknown)", once."""
         if self._start_role_line is None:
             try:
                 m = read_manifest(self._tui.session_dir)
             except ManifestError:
-                return "(idle)"
+                return "(unknown)"
             driver = m.models.driver
             if driver is None or m.mode not in SESSION_KINDS:
-                self._start_role_line = "(idle)"
+                self._start_role_line = "(unknown)"
             else:
                 self._start_role_line = f"{SESSION_KINDS[m.mode].role} / {driver.model}"
         return self._start_role_line
@@ -572,12 +572,10 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         )
         self.query_one("#dash-resume", ResumeOptions).show(mode == "resume")
         role = s.last_role
-        # Live heartbeat: a spinner + seconds since the last event, shown while
-        # the run is active: silent thinking and the resume gap tick visibly.
-        # Not while "waiting": a run blocked on an operator prompt is controllable
-        # (steerable) but not working, so the ticking beat would contradict the
-        # same line's "waiting · needs answer", the rule the stream body honors.
-        active = tui.session_controllable() and tui.dir_status[0] != "waiting"
+        # A spinner + seconds since the last event belongs only to a model call
+        # awaiting its result. A live worker before or between calls is not
+        # evidence that a model is working.
+        active = tui.model_call_in_flight()
         beat = ""
         if active and role is not None:
             spinner = spinner_frame(tui.spin)
@@ -638,7 +636,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             # end; the web shows it in its plan.md card).
             word, reason = tui.dir_status
             st.append(status_label(word, reason) + "\n", style=f"bold {status_style(word)}")
-            if s.finish_summary:
+            if s.finish_summary and s.end_reason in ("", "finish_session", "finish_planning"):
                 st.append(s.finish_summary, style="dim")
             if plan := tui.plan_md():
                 st.append("\n\n" + plan)
@@ -652,18 +650,19 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         elif tui.dir_status[0] == "waiting":
             st.append(status_label(*tui.dir_status), style="bold yellow")
         elif active and role is not None:
-            # No live deltas: the model is thinking, or a resume is rebuilding
-            # context. A ticking heartbeat, never a stale "idle" or blank.
+            # No live deltas: the in-flight model is thinking.
             spinner = spinner_frame(tui.spin)
             secs = tui.seconds_since_event()
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
+        elif tui.dir_status[0] == "starting":
+            st.append("starting", style=f"bold {status_style('starting')}")
         elif (dead := dead_run_note(*tui.dir_status))[0]:
             # No model is coming. The composer below has focus and Enter
             # resumes; there is no plain-letter shortcut to point at.
             st.append(dead[0] + "\n", style=f"bold {status_style(tui.dir_status[0])}")
             st.append(dead[1], style="dim")
         else:
-            st.append("(waiting for the model…)", style="dim")
+            st.append("(no model call in flight)", style="dim")
         return st
 
     def render_state(self) -> None:  # noqa: PLR0912, PLR0915

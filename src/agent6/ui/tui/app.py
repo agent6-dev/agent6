@@ -412,13 +412,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self._steer_request_to_bar()
         # Heartbeat: refresh the dir status ~1/s (always: it is how a death,
         # a parked resume, or a revival is noticed with no event to trigger a
-        # paint), and while the run is live advance the spinner so the
-        # "working… Ns" timer visibly ticks (thinking, not hung).
+        # paint), and advance the spinner only while a model call is in flight.
         now = time.monotonic()
         if now - self._heartbeat_at >= 1.0:
             self._heartbeat_at = now
             self._refresh_dir_status()
-            if self.session_controllable():
+            if self.model_call_in_flight():
                 self.spin += 1
                 self._light_dirty = True
         # Coalesced repaint: once per tick, and only when the dashboard is the
@@ -790,6 +789,16 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         (worker gone) and every end word route the composer to resume -- the
         one action that will actually be read."""
         return self.dir_status[0] in LIVE_STATUS_WORDS
+
+    def model_call_in_flight(self) -> bool:
+        """Whether the live run has a model call awaiting its result."""
+        role = self.state.last_role
+        return (
+            self.session_controllable()
+            and self.dir_status[0] != "waiting"
+            and role is not None
+            and role.in_flight
+        )
 
     def action_toggle_dashboard(self) -> None:
         """Flip between the conversation (the primary view) and the dashboard

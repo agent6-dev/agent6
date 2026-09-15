@@ -17,7 +17,7 @@
     "model": "kimi-k2",
     "in_flight": false,
     "provider": "openrouter",
-    "ctx_tokens": 10714,
+    "ctx_tokens": 0,
     "streamed_text": "",
     "streamed_thinking": ""
   },
