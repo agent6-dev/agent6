@@ -42,7 +42,7 @@ Pages that take a task, a steer or a machine message dock their text entry at th
     - the docked composer steers a live run or resumes an ended one, under the preset and model picked in the row above it (blank: as the run recorded); `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages
         - Ctrl+Enter prefixes a live run's steer with `/now`, aborting the call in flight; text already starting with `/` goes as typed
     - the Latest commit widget selects any per-step commit (cumulative toggle); the Budget and Task graph widgets then show that step's state; a model-controlled run has no chain and says so
-    - stop now / stop after step, compact, fork (a new run at the latest checkpoint, unstarted: its composer starts it), merge, delete history, run a finished plan (`run --from`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline
+    - stop now (the one stop `agent6 stop` is: the model call cut, a running command handed back, a worker that does not answer killed, the run resumable) / stop after step, compact, fork (a new run at the latest checkpoint, unstarted: its composer starts it), merge, delete history, run a finished plan (`run --from`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline
       ("Allow session" appears only where it would grant something beyond the one call it is clicked on)
 - **Machine view**: the state overview, the path taken, the current agent state's conversation
     - approve and answer the current state's prompts inline (same controls as a run)
@@ -93,7 +93,7 @@ curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per chang
 - reads: `/api/meta`, `/api/hub`, `/api/config`, `/api/config/suggest/<key>`, `/api/config/provider_choices`, `/api/session/<id>` with `/conversation`, `/restate`, `/diff` and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` (a `machine create` draft) with `/conversation`, `/diff` and `/events`
     - a `/diff` takes `?sha=<sha>` and `&cumulative=1` for the chain up to that step
 - the page and its PWA assets: `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
-- writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/provider`, `/api/machine/{create,run}`)
+- writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/provider`, `/api/machine/{create,run}`)
 - every write drives the typed spawn / answer-file contracts, never arbitrary execution
 - a machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (optional `message`/`data`) on the instance
 - machine names and answer ids validate to a single path component: no traversal out of the instance dir

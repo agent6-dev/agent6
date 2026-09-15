@@ -45,6 +45,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6.app.fork import create_fork
 from agent6.app.reporter import Reporter
+from agent6.app.stop import stop_session
 from agent6.app.undo import undo_fork
 from agent6.config.layer import available_preset_names
 from agent6.directive import parse_btw, parse_compact, parse_now
@@ -53,7 +54,6 @@ from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import (
     register_frontend,
     request_compact,
-    request_stop,
     submit_steer,
     unregister_frontend,
 )
@@ -647,42 +647,38 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self.submit_instruction("/compact")
 
     def action_stop_now(self) -> None:
-        """Stop the run immediately: confirm, then write the abort answer over
-        the file bridge -- the stream watchdog interrupts the in-flight turn and
-        the run ends (resumable)."""
+        """Stop the run now: confirm, then the one stop every surface uses
+        (`stop_session`: the model call is cut, a running command handed back,
+        a worker that does not answer killed; the run stays resumable)."""
         if not self.session_controllable():
             self.notify("nothing to stop: the session is not live", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
-            if yes and not submit_steer(self.session_dir, "abort"):
-                self.notify("could not write the stop request", severity="warning")
+            if yes:
+                self._stop_session(after_step=False)
 
         self.push_screen(
             ConfirmModal(
                 "Stop this session now?",
-                "Interrupts the current step; the run ends at once and can be resumed "
-                "later with `agent6 resume`.",
+                "Its model call is cut and a running command is handed back; the run ends "
+                "at once and can be resumed later with `agent6 resume`. A worker that does "
+                "not answer within 5 s is killed.",
                 confirm_label="Stop now",
             ),
             _confirmed,
         )
 
     def action_stop_step(self) -> None:
-        """Stop after the current step completes: drop the stop.request marker
-        the loop honors at its next completed-iteration boundary, so the step's
-        tool results and auto-commit land before the run ends (resumable)."""
+        """Stop after the current step completes: the step's tool results and
+        auto-commit land before the run ends (resumable)."""
         if not self.session_controllable():
             self.notify("nothing to stop: the session is not live", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
-            if not yes:
-                return
-            if request_stop(self.session_dir):
-                self.notify("stopping after this step…")
-            else:
-                self.notify("could not write the stop request", severity="warning")
+            if yes:
+                self._stop_session(after_step=True)
 
         self.push_screen(
             ConfirmModal(
@@ -692,6 +688,14 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
                 confirm_label="Stop",
             ),
             _confirmed,
+        )
+
+    @work(thread=True)
+    def _stop_session(self, *, after_step: bool) -> None:
+        # A thread: a stop now waits for the run to end, up to its kill.
+        out = stop_session(self.session_dir, after_step=after_step)
+        self.call_from_thread(
+            self.notify, out.message, severity="information" if out.ok else "warning"
         )
 
     def action_delete_session(self) -> None:

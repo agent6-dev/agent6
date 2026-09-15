@@ -1,7 +1,7 @@
 // --- run dashboard -----------------------------------------------------------
 async function stopRun(base, label) {
-  if (!confirm('Stop ' + label + '? It ends now and can be resumed later.')) return;
-  try { await postJSON(base + '/steer', { text: 'abort' }); toast('stopping…'); } catch (e) { toast(e.message, true); }
+  if (!confirm('Stop ' + label + '? Its model call is cut and a running command handed back; it ends now and can be resumed later. A worker that does not answer within 5 s is killed.')) return;
+  try { const d = await postJSON(base + '/stop', {}); toast(d.message || 'stopped'); } catch (e) { toast(e.message, true); }
 }
 
 // opts: { base, readOnly, title }: a draft (machine-create authoring log) is
@@ -79,7 +79,10 @@ async function renderRun(id, opts, gen) {
     const stopBtn = el('button', 'danger', '■ Stop now');
     stopBtn.onclick = () => stopRun('/api/session/' + encodeURIComponent(id), 'this session');
     const stepBtn = el('button', null, 'Stop after step');
-    stepBtn.onclick = post('stop_step', 'stopping after the current step');
+    stepBtn.onclick = async () => {
+      try { const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/stop', { after_step: true }); toast(d.message || 'stopping after the current step'); }
+      catch (e) { toast(e.message, true); }
+    };
     const compactBtn = el('button', null, 'Compact context');
     compactBtn.onclick = post('compact', 'compaction requested');
     const mergeBtn = el('button', null, 'Merge'); // no glyph: U+2443 was tofu in common fonts

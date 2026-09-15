@@ -906,13 +906,23 @@ def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> N
     asyncio.run(scenario())
 
 
-def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
-    """Run > Stop now on a LIVE run confirms, then writes an abort over the
-    file bridge -- the stream watchdog interrupts the in-flight turn."""
+def _no_kill(_session_dir: Path, _grace_s: float) -> int:
+    """The escalation stubbed out: a test's worker pid is its own process."""
+    return 0
+
+
+def test_stop_now_aborts_via_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run > Stop now on a LIVE run confirms, then the one stop every surface
+    uses lands both bridges: the abort steer the stream watchdog reads, and the
+    stop marker a wait reads."""
     import os
 
-    from agent6.sessions.ipc import steer_request_pending, write_worker_pid
+    import agent6.app.stop as stop_mod
+    from agent6.sessions.ipc import steer_request_pending, stop_request_pending, write_worker_pid
     from agent6.ui.tui.modals import ConfirmModal
+
+    monkeypatch.setattr(stop_mod, "STOP_WAIT_S", 0.5)
+    monkeypatch.setattr(stop_mod, "_kill", _no_kill)  # never this process
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -924,9 +934,12 @@ def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
             await pilot.pause()
             assert isinstance(app.screen, ConfirmModal)  # confirms before stopping
             await pilot.press("y")  # confirm
-            await pilot.pause()
+            for _ in range(50):  # the stop runs on a thread
+                await pilot.pause()
+                if steer_request_pending(tmp_path) and stop_request_pending(tmp_path):
+                    break
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "abort"
-            assert steer_request_pending(tmp_path)
+            assert steer_request_pending(tmp_path) and stop_request_pending(tmp_path)
 
     asyncio.run(scenario())
 
@@ -998,7 +1011,10 @@ def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
             await pilot.pause()
             assert isinstance(app.screen, ConfirmModal)  # confirms before stopping
             await pilot.press("y")  # confirm
-            await pilot.pause()
+            for _ in range(50):  # the stop runs on a thread
+                await pilot.pause()
+                if stop_request_pending(tmp_path):
+                    break
             assert stop_request_pending(tmp_path)  # marker for the boundary stop
             assert not (tmp_path / "steer.answer").exists()  # no mid-turn abort
 

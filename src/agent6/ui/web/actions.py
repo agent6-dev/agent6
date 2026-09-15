@@ -20,6 +20,7 @@ from typing import Any
 
 from agent6.app.fork import create_fork
 from agent6.app.reporter import Reporter
+from agent6.app.stop import stop_session
 from agent6.app.undo import undo_fork
 from agent6.config.write import ConfigLeafValue, set_config_leaves
 from agent6.directive import parse_btw, parse_compact, parse_now
@@ -36,7 +37,6 @@ from agent6.sessions.ipc import (
     ANSWERED_ELSEWHERE,
     read_worker_pid,
     request_compact,
-    request_stop,
     submit_steer,
     write_answer,
     write_question_answers,
@@ -297,16 +297,14 @@ def run_plan(
     return {"run_id": new_dir.name}, ""
 
 
-def stop_after_step(cwd: Path, session_id: str) -> tuple[bool, str]:
-    """Ask a live run to end cleanly at its next completed-iteration boundary
-    (the finished step's tool results and auto-commit land first). The immediate
-    stop stays the steer "abort" answer."""
-    session_dir = _live_session_dir(cwd, session_id)
-    if isinstance(session_dir, tuple):
-        return session_dir
-    if not request_stop(session_dir):
-        return False, "could not write the stop request"
-    return True, "stopping after the current step"
+def stop_run(cwd: Path, session_id: str, *, after_step: bool) -> tuple[bool, str]:
+    """The one stop every surface uses (`stop_session`): now by default, after
+    the current step's tool results and auto-commit with *after_step*."""
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return False, f"no session {session_id!r}"
+    out = stop_session(session_dir, after_step=after_step)
+    return out.ok, out.message
 
 
 def compact_run(cwd: Path, session_id: str) -> tuple[bool, str]:

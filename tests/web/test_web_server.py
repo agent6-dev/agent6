@@ -319,7 +319,7 @@ def test_resume_refused_while_the_worker_is_alive(
     assert "still live" in str(data["error"])
 
 
-def test_stop_step_and_compact_drop_markers_on_a_live_run(
+def test_stop_after_step_and_compact_drop_markers_on_a_live_run(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     import os
@@ -328,24 +328,62 @@ def test_stop_step_and_compact_drop_markers_on_a_live_run(
     _make_run(tmp_path, "run-m", [{"type": "session.start"}])
     runs = state_dir(tmp_path) / "sessions" / "runs" / "run-m"
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    status, data = _post(port, "/api/session/run-m/stop_step", {})
+    status, data = _post(port, "/api/session/run-m/stop", {"after_step": True})
     assert status == 200 and data["ok"] is True
-    assert (runs / "stop.request").exists()
+    assert "after its current step" in str(data["message"])
+    assert (runs / "stop.request").exists() and not (runs / "steer.answer").exists()
     status, data = _post(port, "/api/session/run-m/compact", {})
     assert status == 200 and data["ok"] is True
     assert (runs / "compact.request").exists()
 
 
-def test_stop_step_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
+def _no_kill(_session_dir: Path, _grace_s: float) -> int:
+    """The escalation stubbed out: a test's worker pid is its own process."""
+    return 0
+
+
+def test_stop_now_lands_both_bridges_and_reports_the_run_stopped(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Stop now button posted a steer text; it is the one stop `agent6 stop`
+    is. A run that answers (session.end after the abort) reads "stopped"."""
+    import os
+    import threading
+
+    import agent6.app.stop as stop_mod
+
+    monkeypatch.setattr(stop_mod, "STOP_WAIT_S", 3.0)
+    monkeypatch.setattr(stop_mod, "_kill", _no_kill)  # never this process
+    _srv, port = server
+    _make_run(tmp_path, "run-n", [{"type": "session.start"}])
+    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-n"
+    (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    def answer() -> None:
+        deadline = time.monotonic() + 3.0
+        while not (runs / "steer.answer").exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        with (runs / "logs.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "session.end", "reason": "steer_abort"}) + "\n")
+
+    threading.Thread(target=answer, daemon=True).start()
+    status, data = _post(port, "/api/session/run-n/stop", {})
+    assert status == 200 and data["ok"] is True
+    assert str(data["message"]) == "run-n stopped"
+    assert (runs / "steer.answer").read_text(encoding="utf-8").strip() == "abort"
+    assert (runs / "stop.request").exists()
+
+
+def test_stop_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     _make_run(tmp_path, "run-d", [{"type": "session.start"}, {"type": "session.end"}])
-    status, data = _post(port, "/api/session/run-d/stop_step", {})
+    status, data = _post(port, "/api/session/run-d/stop", {})
     assert status == 422
-    assert "not live" in str(data["error"])
+    assert "nothing to stop" in str(data["error"])
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root writes through a read-only dir")
-def test_stop_step_that_cannot_write_the_marker_is_refused(
+def test_stop_that_cannot_write_the_marker_is_refused(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     """The action announced "stopping after the current step" whatever the
@@ -356,11 +394,10 @@ def test_stop_step_that_cannot_write_the_marker_is_refused(
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     runs.chmod(0o555)
     try:
-        status, data = _post(port, "/api/session/run-ro/stop_step", {})
+        status, data = _post(port, "/api/session/run-ro/stop", {"after_step": True})
     finally:
         runs.chmod(0o700)
     assert status == 422 and "could not write the stop request" in str(data["error"])
-    assert not (runs / "stop.request").exists()
 
 
 def test_session_payload_names_the_ref_holding_the_commits(
@@ -548,7 +585,7 @@ def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path
 
 def test_steer_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
     """A crashed run (no session.end, dead worker) folds as unfinished, so the
-    composer offers steer; the action must refuse like stop_step/compact do
+    composer offers steer; the action must refuse like stop/compact do
     instead of toasting "steer sent" for a marker nothing will ever read."""
     _srv, port = server
     _make_run(tmp_path, "run-sd", [{"type": "session.start"}, {"type": "session.end"}])

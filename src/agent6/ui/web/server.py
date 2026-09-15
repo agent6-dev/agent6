@@ -107,6 +107,11 @@ class PruneBody(_Body):
     delete_squashed: bool = False
 
 
+class StopBody(_Body):
+    # True: let the current step finish (its tool results and auto-commit land) first.
+    after_step: bool = False
+
+
 class ResumeBody(_Body):
     # The follow-up instruction a finished run is resumed with; empty = plain resume.
     text: str = ""
@@ -504,9 +509,9 @@ class _Handler(BaseHTTPRequestHandler):
                 route=rb.model,
                 config_path=self.config_path,
             )
-        elif verb == "stop_step":
-            self._read_body()  # drain the `{}` body (keep-alive framing)
-            ok, msg = actions.stop_after_step(self.cwd, session_id)
+        elif verb == "stop":
+            sb = StopBody.model_validate(self._read_body())
+            ok, msg = actions.stop_run(self.cwd, session_id, after_step=sb.after_step)
         elif verb == "compact":
             self._read_body()  # drain the `{}` body (keep-alive framing)
             ok, msg = actions.compact_run(self.cwd, session_id)

@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 
+from agent6.app.stop import StopOutcome
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import Session, Sessions, prompt_text
 
@@ -234,11 +235,11 @@ def test_a_cancel_while_idle_does_not_poison_the_next_turn(
     next resume inherited it and stopped without doing the requested work."""
     stopped: list[Path] = []
 
-    def _stop(path: Path) -> bool:
+    def _stop(path: Path, *, after_step: bool = False) -> StopOutcome:
         stopped.append(path)
-        return True
+        return StopOutcome(path.name, True, "after_step", "")
 
-    monkeypatch.setattr("agent6.ui.acp.session.request_stop", _stop)
+    monkeypatch.setattr("agent6.ui.acp.session.stop_session", _stop)
     sessions = _sessions(_ends)
     session = Session(acp_id="s1", cwd=tmp_path, session_id="run-1")
 

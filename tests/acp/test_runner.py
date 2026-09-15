@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from agent6.app.reporter import Reporter
+from agent6.app.stop import StopOutcome
 from agent6.config import Config
 from agent6.config.layer import EffectiveConfig
 from agent6.config.model import ConfigError
@@ -82,9 +83,9 @@ class _Wire:
         )
 
 
-def _ignore(_path: Path) -> bool:
+def _ignore(path: Path, *, after_step: bool = False) -> StopOutcome:
     """A cancel whose marker landed (nothing here reads the run dir)."""
-    return True
+    return StopOutcome(path.name, True, "after_step", f"{path.name} stops after its current step")
 
 
 def _repo(path: Path) -> Path:
@@ -127,11 +128,12 @@ def test_a_cancel_reaches_the_run_it_names(tmp_path: Path, monkeypatch: pytest.M
     budget and making commits."""
     stopped: list[Path] = []
 
-    def _record(path: Path) -> bool:
+    def _record(path: Path, *, after_step: bool = False) -> StopOutcome:
         stopped.append(path)
-        return True
+        assert after_step  # a cancel lets the step in flight finish and commit
+        return _ignore(path)
 
-    monkeypatch.setattr(session_mod, "request_stop", _record)
+    monkeypatch.setattr(session_mod, "stop_session", _record)
     monkeypatch.chdir(tmp_path)
 
     started, release = threading.Event(), threading.Event()
@@ -163,7 +165,7 @@ def test_a_cancel_reaches_the_run_it_names(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_a_cancelled_turn_says_so(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(session_mod, "request_stop", _ignore)
+    monkeypatch.setattr(session_mod, "stop_session", _ignore)
     monkeypatch.chdir(tmp_path)
     started, release = threading.Event(), threading.Event()
 
@@ -512,7 +514,7 @@ def test_a_turn_cancelled_while_queued_never_starts(
     completion spending budget and making commits, and the editor was told
     "cancelled" the entire time.
     """
-    monkeypatch.setattr(session_mod, "request_stop", _ignore)
+    monkeypatch.setattr(session_mod, "stop_session", _ignore)
     monkeypatch.chdir(tmp_path)
     ran: list[str] = []
     first_started, release = threading.Event(), threading.Event()
@@ -1328,7 +1330,7 @@ def _two_sessions_one_blocked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[_Wire, str, str, threading.Event]:
     """Two sessions on one connection, the first's turn holding the run lock."""
-    monkeypatch.setattr(session_mod, "request_stop", _ignore)
+    monkeypatch.setattr(session_mod, "stop_session", _ignore)
     monkeypatch.chdir(tmp_path)
     first_started, release = threading.Event(), threading.Event()
 
