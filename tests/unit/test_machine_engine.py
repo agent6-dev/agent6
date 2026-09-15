@@ -538,6 +538,84 @@ def test_tool_bad_stdout_fails_clean_without_poisoning_journal(tmp_path: Path) -
     assert replayed.status == "failed"
 
 
+def test_recovery_rejects_a_tool_route_that_disagrees_with_its_fact(tmp_path: Path) -> None:
+    """A successful tool fact determines `ok`; a journal cannot relabel it as
+    `nonzero` and take another declared edge during crash recovery."""
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    journal.ensure_dirs()
+    journal.begin(machine="counter", version=1)
+    journal.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="scan",
+            label="nonzero",
+            goto="stop_fail",
+            fact=ToolFact(exit_code=0, stdout='{"items": []}', timed_out=False),
+        )
+    )
+    journal.append(
+        MachineEnd(ts="t", status="failed", reason="tool failed", state="stop_fail", transitions=1)
+    )
+
+    with pytest.raises(EngineError, match="fact implies label 'ok'"):
+        drive(spec, journal, None, live=False)
+
+
+def test_recovery_rejects_a_branch_choice_that_the_blackboard_did_not_take(
+    tmp_path: Path,
+) -> None:
+    """A branch is pure, so replay recomputes its winning clause instead of
+    trusting a fabricated clause index, label, and destination."""
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    journal.ensure_dirs()
+    journal.begin(machine="counter", version=1)
+    journal.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="scan",
+            label="ok",
+            goto="check",
+            fact=ToolFact(exit_code=0, stdout='{"items": []}', timed_out=False),
+        )
+    )
+    journal.append(
+        StepEvent(
+            ts="t",
+            seq=1,
+            state="check",
+            label="else",
+            goto="record",
+            fact=BranchFact(clause_index=1),
+        )
+    )
+
+    with pytest.raises(EngineError, match=r"branch fact selects clause 1.*clause 0"):
+        drive(spec, journal, None, live=False)
+
+
+def test_recovery_rejects_a_journal_without_its_begin_event(tmp_path: Path) -> None:
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    journal.ensure_dirs()
+    journal.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="scan",
+            label="ok",
+            goto="check",
+            fact=ToolFact(exit_code=0, stdout='{"items": []}', timed_out=False),
+        )
+    )
+
+    with pytest.raises(EngineError, match=r"must start with a machine\.begin"):
+        drive(spec, journal, None, live=False)
+
+
 def test_recovery_rejects_a_goto_the_state_never_declared(tmp_path: Path) -> None:
     # A fabricated or corrupted destination must fail loudly at its own event,
     # not fold a position the machine never reached.
@@ -600,6 +678,22 @@ on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
     spec = load_machine(_load(edited_dir, edited)[1])
     with pytest.raises(EngineError, match=r"no longer declares|not an edge"):
         drive(spec, journal, FakeWorld({}), live=True)
+
+
+def test_recovery_rejects_machine_id_mismatch_after_the_journal_ended(tmp_path: Path) -> None:
+    """A terminal journal still belongs to its recorded machine; the finished
+    fast path must not return its result to a different spec reusing the dir."""
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    drive(spec, journal, FakeWorld({"scan": _ok('{"items": []}')}), live=True)
+    other_path = tmp_path / "other.asm.toml"
+    other_path.write_text(
+        COUNTER.replace('machine = "counter"', 'machine = "other"'), encoding="utf-8"
+    )
+    other = load_machine(other_path)
+
+    with pytest.raises(EngineError, match="started by machine 'counter'"):
+        drive(other, journal, None, live=True)
 
 
 def test_recovery_rejects_machine_id_mismatch(tmp_path: Path) -> None:

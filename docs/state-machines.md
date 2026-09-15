@@ -607,6 +607,7 @@ Sizing for long-running machines:
     - a tool's malformed stdout halts the machine loudly
     - an agent's non-conforming `finish_session` is refused in-run, so the model retries; a leg that never conforms lands outcome `failed` and routes on that edge
 - on restart the engine folds the journal and continues from the last StepEvent
+    - replay holds the journal to its facts: a recorded label or goto its fact does not imply, a branch the replayed blackboard would not take, an agent payload outside its schema, a journal without its begin event, events after its end, or an end that disagrees with the replayed position refuses the instance and names the remedy (archive the directory)
 - the crash window is side-effect-done to StepEvent-on-disk: a kill there loses the fact and the step re-runs on resume
 - the posture is at-least-once: a `tool` with an external side effect must be idempotent (the examples move a file or write `$AGENT6_MACHINE_DATA_DIR`, so a re-run is a no-op)
 - the journal is crash-tolerant: a torn final line drops on read and heals on the next append

@@ -674,6 +674,14 @@ def _fire_persisted_wait(
 # --------------------------------------------------------------------------
 
 
+def _tool_outcome(fact: ToolFact | ToolExecResult) -> Literal["ok", "nonzero", "timeout"]:
+    if fact.timed_out:
+        return "timeout"
+    if fact.exit_code != 0:
+        return "nonzero"
+    return "ok"
+
+
 def _agent_outcome(
     spec: MachineSpec, state: AgentState, result: AgentExecResult
 ) -> Literal["ok", "failed", "budget_exhausted", "timeout"]:
@@ -726,12 +734,7 @@ def _execute(
             network="host" if state.network == "host" else "none",
             pass_env=state.pass_env,
         )
-        if result.timed_out:
-            label = "timeout"
-        elif result.exit_code != 0:
-            label = "nonzero"
-        else:
-            label = "ok"
+        label = _tool_outcome(result)
         fact: Fact = ToolFact(
             exit_code=result.exit_code,
             stdout=result.stdout,
@@ -901,6 +904,44 @@ def _declared_gotos(state: StateSpec) -> frozenset[str]:
     return frozenset()
 
 
+def _validate_recorded_route(
+    state: StateSpec,
+    event: StepEvent,
+    blackboard: Mapping[str, object],
+    remedy: str,
+) -> None:
+    """Hold a replayed event's route to the outcome its fact determines."""
+    if isinstance(state, BranchState) and isinstance(event.fact, BranchFact):
+        clause_index, expected_label, expected_goto = _route_branch(state, blackboard)
+        if event.fact.clause_index != clause_index:
+            raise EngineError(
+                f"journal branch fact selects clause {event.fact.clause_index} at seq"
+                f" {event.seq}, but the replayed blackboard selects clause {clause_index}."
+                f"{remedy}"
+            )
+    elif isinstance(state, ToolState) and isinstance(event.fact, ToolFact):
+        expected_label = _tool_outcome(event.fact)
+        expected_goto = state.on[expected_label]
+    elif isinstance(state, AgentState) and isinstance(event.fact, AgentFact):
+        expected_label = event.fact.outcome
+        expected_goto = state.on[expected_label]
+    elif isinstance(state, WaitState) and isinstance(event.fact, WaitFact):
+        expected_label = event.fact.woke_by
+        expected_goto = state.on[expected_label]
+    else:  # the caller's fact-kind check makes this unreachable
+        raise EngineError(f"journal fact at seq {event.seq} cannot be routed")
+    if event.label != expected_label:
+        raise EngineError(
+            f"journal records label {event.label!r} at seq {event.seq}, but its fact"
+            f" implies label {expected_label!r}.{remedy}"
+        )
+    if event.goto != expected_goto:
+        raise EngineError(
+            f"journal records goto {event.goto!r} at seq {event.seq}, but its fact"
+            f" implies goto {expected_goto!r}.{remedy}"
+        )
+
+
 def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     """Replay recorded StepEvents through the pure reducer to rebuild the
     blackboard and position, advancing *eng* in place. Non-StepEvents
@@ -955,6 +996,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
                 f" state {state!r} declares.{remedy}"
             )
         try:
+            _validate_recorded_route(state_spec, event, blackboard, remedy)
             blackboard = reduce(spec, state_spec, event.fact, blackboard)
         except _STATE_RUNTIME_ERRORS as exc:
             # An old journal can hold a fact that does not reduce. Surface it as
@@ -1158,8 +1200,21 @@ def drive(
     (systemd timer / cron) to re-invoke and resume (§6).
     """
     events = journal.read()
-    if events and isinstance(events[-1], MachineEnd):
-        return MachineResult.from_end(events[-1])
+    if events and not isinstance(events[0], MachineBegin):
+        raise EngineError(
+            "journal must start with a machine.begin event;"
+            f" archive the instance directory to start fresh: {journal.root}"
+        )
+    if any(isinstance(event, MachineBegin) for event in events[1:]):
+        raise EngineError(
+            "journal contains more than one machine.begin event;"
+            f" archive the instance directory to start fresh: {journal.root}"
+        )
+    if any(isinstance(event, MachineEnd) for event in events[:-1]):
+        raise EngineError(
+            "journal contains events after machine.end;"
+            f" archive the instance directory to start fresh: {journal.root}"
+        )
 
     # The instance is keyed only by the `machine` id, so a different file (or an
     # incompatible edit) can land on the same journal. Cross-check the recorded
@@ -1188,6 +1243,17 @@ def drive(
         state=spec.initial,
     )
     _rebuild_from_journal(eng, events)
+
+    end = events[-1] if events and isinstance(events[-1], MachineEnd) else None
+    if end is not None:
+        if end.state != eng.state or end.transitions != eng.transitions:
+            raise EngineError(
+                "journal machine.end disagrees with its replayed position:"
+                f" records state {end.state!r} after {end.transitions} transitions,"
+                f" replay reaches {eng.state!r} after {eng.transitions};"
+                f" archive the instance directory to start fresh: {journal.root}"
+            )
+        return MachineResult.from_end(end)
 
     if not live:
         current = spec.states.get(eng.state)
