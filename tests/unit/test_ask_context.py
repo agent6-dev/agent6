@@ -11,12 +11,16 @@ from pathlib import Path
 import pytest
 
 from agent6.paths import state_dir
-from agent6.ui.cli._ask import (
-    build_ask_session_digest as _build_ask_session_digest,
-)
+from agent6.ui.cli._ask import build_session_seed
 from agent6.ui.cli._ask import (
     seed_files as _seed_files,
 )
+
+
+def _build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str | None:
+    """The seed text for tests concerned with digest contents."""
+    seed = build_session_seed(cwd, session_id, latest=latest)
+    return seed.text if seed is not None else None
 
 
 def _git(cwd: Path, *args: str) -> str:

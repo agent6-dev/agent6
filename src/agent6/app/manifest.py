@@ -82,6 +82,7 @@ def write_session_manifest(
     layout: SessionLayout,
     *,
     session_id: str,
+    source_session_id: str | None = None,
     user_task: str,
     base_sha: str,
     base_branch: str,
@@ -107,7 +108,8 @@ def write_session_manifest(
     *liquid* until 1.0 - bump `SessionManifest.version` only when the new shape
     genuinely improves a downstream consumer.
 
-    `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `gate` are
+    `source_session_id` records the session whose context `--from` seeded into
+    this one. `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `gate` are
     set only for a run created by `agent6 fork`; they record the lineage
     (source run + the turn forked from + the workspace sha at that turn + the
     gate the source was judged by). A non-forked run leaves them null.
@@ -159,6 +161,7 @@ def write_session_manifest(
             verify_origin=verify_origin,
         ),
         policy=_policy_stamp(cfg, isolation),
+        source_session_id=source_session_id,
         parent_session_id=parent_session_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,

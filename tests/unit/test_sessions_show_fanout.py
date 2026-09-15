@@ -250,6 +250,22 @@ def test_show_usage_and_json_carry_the_plan_points(
     assert "plan" not in usage
 
 
+def test_show_names_the_session_that_seeded_a_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run `--from` seeded records its source in the manifest; `sessions
+    show` prints it as `seeded from` and carries it in the JSON."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "seeded", {"source_session_id": "seed-src-AAAAAA"})
+    assert main(["sessions", "show", "seeded"]) == 0
+    assert "seeded from: seed-src-AAAAAA" in capsys.readouterr().out
+    assert main(["sessions", "show", "seeded", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["source_session_id"] == "seed-src-AAAAAA"
+
+
 def test_show_names_the_questions_nobody_answered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

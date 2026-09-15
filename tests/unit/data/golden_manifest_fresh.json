@@ -36,6 +36,7 @@
   },
   "parked_task": "",
   "parked_reason": "",
+  "source_session_id": null,
   "parent_session_id": null,
   "forked_from_turn": null,
   "forked_from_sha": null,

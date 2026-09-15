@@ -245,15 +245,15 @@ def test_seeding_from_a_plan_carries_its_text(
     the digest of a session that wrote no code said nothing about the plan."""
     import json
 
-    from agent6.ui.cli._ask import build_ask_session_digest
+    from agent6.ui.cli._ask import build_session_seed
 
     monkeypatch.chdir(tmp_path)
     plan = _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: do it\n\n1. step\n")
     (plan.parent / "manifest.json").write_text(
         json.dumps({"mode": "plan", "user_task": "plan it"}), encoding="utf-8"
     )
-    digest = build_ask_session_digest(tmp_path, "happy-tree-abcd", latest=False)
-    assert digest is not None and "## Plan" in digest and "1. step" in digest
+    seed = build_session_seed(tmp_path, "happy-tree-abcd", latest=False)
+    assert seed is not None and "## Plan" in seed.text and "1. step" in seed.text
 
 
 def test_an_unreadable_plan_refuses_rather_than_crashing(

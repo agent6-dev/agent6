@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.app._setup import (
@@ -26,13 +27,14 @@ from agent6.app.run import run_task
 from agent6.config import (
     Config,
 )
+from agent6.errors import OperatorError
 from agent6.events import EventSink
 from agent6.paths import data_dir
 from agent6.skills import operator_skills
 from agent6.types import ResumableMode, session_kind
 from agent6.ui.btw import asks_dir, direct_launch, make_btw_runner
 from agent6.ui.cli._ask import (
-    build_ask_session_digest,
+    build_session_seed,
     run_ask_repl,
     save_ask_transcript,
 )
@@ -215,10 +217,20 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ComposedTask:
+    """The prompt a session starts from, and the session `--from` seeded it
+    from ("" when none)."""
+
+    text: str
+    source_session_id: str = ""
+
+
 def _compose_task(
     task: str, cfg: Config, *, skills: tuple[str, ...], seed_from: str
-) -> tuple[str, str]:
-    """The prompt the session actually starts from. Returns (task, error).
+) -> ComposedTask:
+    """The prompt the session starts from; raises OperatorError when a skill
+    or the seed cannot be resolved.
 
     One place assembles it: the skills prefix, then another session's context
     when `--from` seeds this one. `--from` starts a new session and leaves the
@@ -228,14 +240,14 @@ def _compose_task(
     if skills:
         prefix, skills_err = _skills_task_prefix(cfg, skills)
         if skills_err:
-            return task, skills_err
+            raise OperatorError(skills_err)
         task = prefix + task
-    if seed_from:
-        digest = build_ask_session_digest(Path.cwd(), seed_from, latest=False)
-        if digest is None:
-            return task, f"could not seed from {seed_from!r}"
-        task = f"{digest}\n\n{task}" if task else digest
-    return task, ""
+    if not seed_from:
+        return ComposedTask(task)
+    seed = build_session_seed(Path.cwd(), seed_from, latest=False)
+    if seed is None:
+        raise OperatorError(f"could not seed from {seed_from!r}")
+    return ComposedTask(f"{seed.text}\n\n{task}" if task else seed.text, seed.source_session_id)
 
 
 def _cmd_run(
@@ -248,6 +260,7 @@ def _cmd_run(
     decompose: bool = False,
     mode: ResumableMode = "run",
     seed_from: str = "",
+    source_session_id: str = "",
     skills: tuple[str, ...] = (),
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
@@ -278,10 +291,13 @@ def _cmd_run(
     cfg, explicit_leaves = effective.config, effective.explicit_leaves
     if decompose:  # --decompose: plan-first for this run (overrides config)
         cfg = cfg.with_decompose("on")
-    task, compose_err = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
-    if compose_err:
-        error(f"{compose_err}")
+    try:
+        composed = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
+    except OperatorError as exc:
+        error(f"{exc}")
         return 2
+    task = composed.text
+    source_session_id = composed.source_session_id or source_session_id
     role = session_kind(mode).role
 
     # Resolve @path references in the task string before the
@@ -321,6 +337,7 @@ def _cmd_run(
         frontend=session_frontend(config_path),
         started_at=time.time(),
         session_id=session_id,
+        source_session_id=source_session_id or None,
         interactive=interactive,
         tui=tui,
         mode=mode,

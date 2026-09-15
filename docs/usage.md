@@ -164,7 +164,7 @@ agent6 ask "how does the task-graph curator work?"
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
   - new work outranks it; it never passes, and only the operator retires it; budget, stop, and the iteration cap still end the run
 - `--pin "<text>"`: an instruction re-shown verbatim after every compaction restart, so it survives compaction (`/pin` does the same mid-run)
-- `--from <id>`: seed the run from another session (its task, outcome, diff and, for a plan, its text); a plan id with no task runs that plan
+- `--from <id>`: seed the run from another session (its task, outcome, diff and, for a plan, its text); a plan id with no task runs that plan; the run's manifest records the source and `sessions show` prints it as `seeded from`
 - `--decompose`: break the task into a task graph up front (`prompt.decompose`); `--skill NAME` puts a skill in the prompt (`[skills]`)
   - an installed skill whose text gates on a person ("get your partner's approval before ...") drives an unattended run into `ask_user` on every task: `agent6 skills disable NAME` keeps it out of the index
 - `--session-id ID`: name the new session yourself (default: a generated id)

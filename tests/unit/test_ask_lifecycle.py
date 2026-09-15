@@ -96,10 +96,10 @@ def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.Mon
         json.dumps({"type": "session.end", "reason": "answered", "iterations": 1}) + "\n",
         encoding="utf-8",
     )
-    task, err = _compose_task("do it", Config(), skills=(), seed_from="quiet-fox-AAAAAA")
-    assert err == ""
-    assert "how do I convert h264" in task  # the ask's context came across
-    assert task.endswith("do it")  # the operator's new task is what it ends on
+    composed = _compose_task("do it", Config(), skills=(), seed_from="quiet-fox-AAAAAA")
+    assert composed.source_session_id == "quiet-fox-AAAAAA"
+    assert "how do I convert h264" in composed.text  # the ask's context came across
+    assert composed.text.endswith("do it")  # the operator's new task is what it ends on
     assert (ask / "manifest.json").exists()  # the source is untouched
 
 
@@ -107,8 +107,9 @@ def test_seeding_from_an_unknown_session_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from agent6.config import Config
+    from agent6.errors import OperatorError
     from agent6.ui.cli.run import _compose_task  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
-    _task, err = _compose_task("do it", Config(), skills=(), seed_from="nope")
-    assert "could not seed" in err
+    with pytest.raises(OperatorError, match="could not seed"):
+        _compose_task("do it", Config(), skills=(), seed_from="nope")

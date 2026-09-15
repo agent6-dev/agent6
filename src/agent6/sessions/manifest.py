@@ -239,6 +239,9 @@ class SessionManifest(BaseModel):
     # working tree had uncommitted changes and the operator chose to wait.
     parked_task: str = ""
     parked_reason: str = ""
+    # `run --from` lineage. Unlike a fork parent, the source contributes
+    # context but does not determine this session's mode, checkout, or history.
+    source_session_id: str | None = None
     # fork lineage (a non-forked run leaves these null)
     parent_session_id: str | None = None
     forked_from_turn: int | None = None

@@ -58,9 +58,12 @@ def _fmt_dur(seconds: float | None) -> str:
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
 
 
-def _print_fork_lineage(manifest: SessionManifest) -> None:
-    """Print the fork-lineage line for a run created by `agent6 fork` (no-op
-    otherwise)."""
+def _print_lineage(manifest: SessionManifest) -> None:
+    """Print where the session came from: the session `--from` seeded it from,
+    and the fork lineage and worktree of a run `agent6 fork` created (each a
+    no-op otherwise)."""
+    if manifest.source_session_id:
+        print(f"seeded from: {manifest.source_session_id}")
     lineage = format_lineage(
         manifest.parent_session_id, manifest.forked_from_turn, manifest.forked_from_sha
     )
@@ -293,6 +296,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     # cost_usd is an under-estimate when some spend was
                     # unpriced; the text render marks it, so the JSON must too.
                     "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
+                    "source_session_id": manifest.source_session_id,
                     "parent_session_id": manifest.parent_session_id,
                     "forked_from_turn": manifest.forked_from_turn,
                     "forked_from_sha": manifest.forked_from_sha,
@@ -319,7 +323,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     print(f"session:    {target.name}  (mode={mode_display or '?'})")
     if task := (manifest.user_task or scan.task).strip():
         print(f"task:       {task.splitlines()[0]}")
-    _print_fork_lineage(manifest)
+    _print_lineage(manifest)
     _print_parallel_compare(manifest)
     _print_fanout(manifest, lanes, lane_manifests)
     print(

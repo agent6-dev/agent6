@@ -119,6 +119,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     frontend: SessionFrontend,
     started_at: float,
     session_id: str = "",
+    source_session_id: str | None = None,
     interactive: bool = False,
     tui: bool = False,
     mode: ResumableMode = "run",
@@ -368,6 +369,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         write_session_manifest(
             layout,
             session_id=effective_session_id,
+            source_session_id=source_session_id,
             user_task=task,
             base_sha=base_sha,
             base_branch=base_branch,

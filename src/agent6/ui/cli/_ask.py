@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -135,9 +136,17 @@ def _diff_via_merge_stamp(
     return label, *_git_diff_text(cwd, f"{merged_sha}^..{merged_sha}")
 
 
-def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str | None:
-    """Markdown digest of a prior session to seed a new one, or None (after
-    printing an error) when it can't be resolved.
+@dataclass(frozen=True, slots=True)
+class SessionSeed:
+    """A prior session's resolved id and markdown context."""
+
+    source_session_id: str
+    text: str
+
+
+def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSeed | None:
+    """Resolved source and markdown context for a new session, or None after
+    printing an error when the source cannot be resolved.
 
     Any session kind seeds any other: a run, a plan and an ask all record the
     same shape, and the useful direction is whichever way the operator is
@@ -190,16 +199,19 @@ def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str
             diff_body = f"```diff\n{diff[:cap]}{tail}\n```"
     plan_path = layout.session_dir / "plan.md"
     plan_section = f"\n## Plan\n{read_operator_file(plan_path)}\n" if plan_path.is_file() else ""
-    return (
-        f'<prior-run id="{target}">\n'
-        "This question is about a PRIOR agent6 run. Its run state lives outside the"
-        " workspace and is not reachable with read_file, so everything you have"
-        " about it is in this digest.\n\n"
-        f"## Run task\n{manifest.user_task}\n\n"
-        f"## Outcome / key events\n{summarize_session_log(layout.logs_path)}\n\n"
-        f"## Diff {diff_label}\n{diff_body}\n"
-        f"{plan_section}"
-        f"</prior-run>"
+    return SessionSeed(
+        source_session_id=target,
+        text=(
+            f'<prior-run id="{target}">\n'
+            "This question is about a PRIOR agent6 run. Its run state lives outside the"
+            " workspace and is not reachable with read_file, so everything you have"
+            " about it is in this digest.\n\n"
+            f"## Run task\n{manifest.user_task}\n\n"
+            f"## Outcome / key events\n{summarize_session_log(layout.logs_path)}\n\n"
+            f"## Diff {diff_label}\n{diff_body}\n"
+            f"{plan_section}"
+            f"</prior-run>"
+        ),
     )
 
 

@@ -127,7 +127,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
     if parallel and args.standing:
         error("--parallel cannot combine with --standing (the lanes take no standing goal).")
         return 2
-    seed_from = getattr(args, "seed_from", "")
+    seed_from, source_session_id = getattr(args, "seed_from", ""), ""
     if not args.task and seed_from:
         # A plan id alone runs that plan: its text is the task, and digesting
         # the same text as a seed would double it.
@@ -144,7 +144,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         plan_md = _plan_text_for_run(layout.session_dir / "plan.md", layout.session_id)
         if plan_md is None:
             return 2
-        task = _from_plan_task(plan_md, layout.session_id)
+        task, source_session_id = _from_plan_task(plan_md, layout.session_id), layout.session_id
         seed_from = ""
     elif not args.task:
         # No task: fall back to the most recent plan run, the common
@@ -173,7 +173,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         if ans is None or ans.lower() in ("n", "no"):
             print(f"Aborted. Run it later: agent6 run --from {last_plan}")
             return 0
-        task = _from_plan_task(plan_md, last_plan)
+        task, source_session_id = _from_plan_task(plan_md, last_plan), last_plan
     else:
         task = args.task
     session_id = _minted_session_id(args.session_id, "run")
@@ -185,6 +185,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         tui=args.tui,
         decompose=args.decompose,
         seed_from=seed_from,
+        source_session_id=source_session_id,
         skills=tuple(args.skill),
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
@@ -307,7 +308,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
-    from agent6.ui.cli._ask import build_ask_session_digest, seed_files  # noqa: PLC0415
+    from agent6.ui.cli._ask import build_session_seed, seed_files  # noqa: PLC0415
     from agent6.ui.cli._session_prompt import prompting_is_possible  # noqa: PLC0415
     from agent6.ui.cli.run import _cmd_run  # noqa: PLC0415
 
@@ -321,13 +322,13 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         return 2
     question = args.task
     prefix: list[str] = []
+    source_session_id = ""
     if args.ask_session_latest or args.ask_session:
-        digest = build_ask_session_digest(
-            Path.cwd(), args.ask_session, latest=args.ask_session_latest
-        )
-        if digest is None:
+        seed = build_session_seed(Path.cwd(), args.ask_session, latest=args.ask_session_latest)
+        if seed is None:
             return 2
-        prefix.append(digest)
+        prefix.append(seed.text)
+        source_session_id = seed.source_session_id
     if args.ask_files:
         seeds = seed_files(Path.cwd(), args.ask_files)
         if seeds:
@@ -339,6 +340,7 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         question,
         mode="ask",
         interactive=repl,
+        source_session_id=source_session_id,
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
