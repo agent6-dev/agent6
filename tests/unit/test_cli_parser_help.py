@@ -131,30 +131,71 @@ def test_run_tui_help_does_not_claim_an_extra() -> None:
 
 
 def test_plan_task_help_does_not_promise_omission() -> None:
-    # plan always requires a task ("Omit to execute/offer" is `run` behavior).
+    # plan always requires a task (omission is `run` behavior).
     plan = _find(build_parser(), "plan")
     plan_run = _find(plan, "run")
     help_text = _positional(plan_run, "task").help or ""
-    assert "Omit" not in help_text
-    assert "run --from <plan-id>" in (plan.description or "")
+    assert help_text == "Task to plan, usually in quotes. Required."
+    assert "agent6 run --from PLAN_ID" in (plan.description or "")
 
 
 def test_fork_help_covers_read_only_session_modes() -> None:
     # Fork preserves its source mode: run forks get worktrees, while plan and
     # ask forks are read-only and stay in the current checkout.
     fork = _find(build_parser(), "fork")
-    assert "Clone a session" in (fork.description or "")
-    assert "A run fork gets its own git worktree" in (fork.description or "")
+    assert (fork.description or "").startswith("Copy a session at one of its saved turns")
+    assert "A run copy gets its own git worktree" in (fork.description or "")
     session_help = _positional(fork, "session_id").help or ""
-    assert session_help.startswith("Source session id")
-    assert "newest resumable session" in session_help
+    assert session_help == (
+        "Source session id or unambiguous prefix. Default: newest resumable session."
+    )
     assert "worktree" not in (_option(fork, "--no-run").help or "")
 
 
 def test_resume_help_covers_plans_and_asks() -> None:
     # Resume resolves all resumable buckets, including plans and asks.
     resume = _find(build_parser(), "resume")
-    assert resume.description == "Resume a paused session from its snapshot."
+    assert resume.description == "Continue a paused or interrupted session from its saved state."
+
+
+def test_run_family_help_explains_actions_in_user_terms() -> None:
+    parser = build_parser()
+    run = _find(parser, "run")
+    assert run.description == "Work on a coding task in a new session."
+    assert _positional(run, "task").help == (
+        "Task for the agent, usually in quotes. On a terminal, omit it to choose whether to run "
+        "the newest plan."
+    )
+    assert (_option(run, "--model").help or "").startswith("Use MODEL for this session")
+    assert (_option(run, "--decompose").help or "").startswith(
+        "Make the agent split the task into ordered subtasks before editing"
+    )
+    assert (_option(run, "--parallel").help or "").startswith("Fan out isolated lanes")
+    assert (_option(run, "--max-percent").help or "").startswith(
+        "The plan percentage points this run may use"
+    )
+    assert (_option(run, "--dangerously-disable-sandbox").help or "").startswith(
+        "Run the agent's commands directly on the host"
+    )
+    assert (_option(run, "--no-commands").help or "").startswith(
+        "Do not let this session run commands"
+    )
+
+    resume = _find(parser, "resume")
+    assert (_option(resume, "--steer").help or "").startswith(
+        "Give TEXT to the resumed agent before it next starts work"
+    )
+    assert "saved commit" in (_option(resume, "--force").help or "")
+
+    plan_run = _find(_find(parser, "plan"), "run")
+    assert plan_run.description == "Create a plan for a task."
+    ask = _find(parser, "ask")
+    assert (ask.description or "").startswith("Ask for a prose answer")
+    query = _find(ask, "query")
+    assert query.description == "Ask a question."
+    assert (_option(query, "--interactive").help or "").startswith(
+        "Keep accepting follow-up questions in this session"
+    )
 
 
 def test_attach_and_web_say_machine_id() -> None:
@@ -178,18 +219,33 @@ def test_sessions_help_matches_each_commands_target_scope() -> None:
     parser = build_parser()
     sessions = _find(parser, "sessions")
     description = sessions.description or ""
-    assert "A session id is positional" in description
-    assert "positional everywhere" not in description
+    assert description.startswith("List sessions for this repository")
+    assert "Most subcommands take a session id" in description
+    assert "`sessions dir` without an id" in description
+
+    listing = _find(sessions, "list")
+    json_help = _option(listing, "--json").help or ""
+    for field in (
+        "session_id",
+        "task_line",
+        "cost",
+        "id_cell",
+        "lanes",
+    ):
+        assert field in json_help
+
     diff = _find(sessions, "diff")
-    assert "branch or chain ref" in (diff.description or "")
+    assert diff.description == "Print the committed changes a session made."
     commits = _find(sessions, "commits")
-    assert "branch or chain ref" in (commits.description or "")
+    assert commits.description == "List the commits a session made."
     stop = _find(sessions, "stop")
-    assert "detached" not in (stop.description or "")
+    assert stop.description == (
+        "Ask a running session to finish its current step, then stop. It can be resumed."
+    )
     prune = _find(sessions, "prune")
     squashed = _option(prune, "--delete-squashed").help or ""
     assert "recorded target" in squashed
-    assert "their base" not in squashed
+    assert "recovery command" in squashed
     history_search = _find(_find(parser, "history"), "search")
     assert history_search.description == "ripgrep-backed search over all sessions."
 

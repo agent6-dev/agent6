@@ -31,25 +31,28 @@ def _add_model_flag(parser: argparse.ArgumentParser) -> None:
         default="",
         metavar="[PROVIDER/]MODEL",
         help=(
-            "The run's model, over every config layer: provider/model (`agent6 model"
-            " <role> <provider>` lists a provider's ids), or a model id on the role's"
-            " current provider. run and ask set the worker, plan the planner. Recorded"
-            " on the run: a resume keeps it unless it sets its own."
+            "Use MODEL for this session, over every config file. A bare MODEL keeps the"
+            " role's configured provider; PROVIDER/MODEL names another. `agent6 model <role>"
+            " <provider>` lists a provider's ids. run and ask set the worker; plan sets the"
+            " planner. The session records the choice; `resume --model` can change it."
         ),
     )
     arg.completer = _complete_model_routes  # type: ignore[attr-defined]
 
 
 def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    run_p = _sub(sub, "run", help="Run the single-loop agent on a task.")
+    run_p = _sub(sub, "run", help="Work on a coding task in a new session.")
     run_p.add_argument(
         "task",
         nargs="?",
         default="",
-        help="Task description (in quotes). Omit to execute the most recent plan.",
+        help=(
+            "Task for the agent, usually in quotes. On a terminal, omit it to choose whether"
+            " to run the newest plan."
+        ),
     )
     run_p.add_argument(
-        "--session-id", default="", help="Explicit session id (default: generate one)."
+        "--session-id", default="", help="Use this id for the new session. Default: generate one."
     )
     run_from = run_p.add_argument(
         "--from",
@@ -57,10 +60,10 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="SESSION_ID",
         help=(
-            "Seed a new run from another session (a run, a plan or an ask):"
-            " its task, outcome, diff, key events and a plan's own text. With"
-            " no task, a plan id runs that plan. The source is untouched; use"
-            " `fork` to clone a session at a past turn instead."
+            "Start a new run with context from another run, plan, or ask. Context includes its"
+            " task, outcome, diff, key events, and plan text when present. Accepts a session id"
+            " or unambiguous prefix. With no TASK, a plan source becomes the task. The source"
+            " does not change. Use `agent6 fork` to copy an earlier saved turn instead."
         ),
     )
     run_from.completer = _complete_session_ids  # type: ignore[attr-defined]
@@ -70,27 +73,28 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="append",
         default=[],
         metavar="TEXT",
-        help="Pin an instruction before the run starts (repeatable). Like /pin:"
-        " it survives context compaction and is restated to the model for the whole run."
-        " A /parallel lane inherits the coordinator's pins through this.",
+        help=(
+            "Add an instruction that stays in every model call, even after older context is"
+            " shortened. Repeat for more instructions; this is the same as /pin. A /parallel"
+            " lane inherits them."
+        ),
     )
     run_skill = run_p.add_argument(
         "--skill",
         action="append",
         default=[],
         metavar="NAME",
-        help="Prepend an installed skill's instructions to the task (repeatable).",
+        help="Add an installed skill's instructions before the task. Repeat for more skills.",
     )
     run_skill.completer = _complete_skills  # type: ignore[attr-defined]
     run_p.add_argument(
         "--decompose",
         action="store_true",
         help=(
-            "Plan-first: the agent lays the task out as ordered DAG subtasks"
-            " (add_task) before editing, then works them one at a time, with no"
-            " approval step. Same as setting [prompt].decompose for this run."
-            " Helps on multi-part tasks and smaller models; a capable model"
-            " decomposes implicitly, so measure before leaving it on."
+            "Make the agent split the task into ordered subtasks before editing, then work on"
+            " one at a time. It does not ask you to approve the plan. This sets"
+            " prompt.decompose to `on` for this run. It can help smaller models with multi-part"
+            " tasks but adds work for models that already plan well."
         ),
     )
     run_p.add_argument(
@@ -98,11 +102,10 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="GOAL",
         help=(
-            "A standing goal for this run: a never-finishing fallback task the run"
-            " re-enters whenever the ordinary queue drains or the worker tries to"
-            " stop. New work always outranks it. The run still ends on its budget,"
-            " an operator stop, or the iteration cap (workflow.standing_patience"
-            " can additionally end it after N fruitless re-entries; default never)."
+            "Keep returning to GOAL whenever all other tasks are done or the agent tries to"
+            " stop. New tasks take priority. The session can still end when you stop it or it"
+            " reaches its budget or iteration limit. workflow.standing_patience can also end"
+            " it after repeated unproductive returns; by default, it never does."
         ),
     )
     run_parallel_flag = run_p.add_argument(
@@ -123,9 +126,10 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--preset",
         default="",
         help=(
-            f"Strategy preset ({'/'.join(BUILTIN_PRESETS)}, or a custom [presets.<name>])."
-            " Overrides the top-level `preset` key and your config files; an explicit"
-            " --config FILE or individual flags still win."
+            f"Apply a built-in strategy preset ({'/'.join(BUILTIN_PRESETS)}) or a custom"
+            " presets.NAME. This overrides any `preset` selected in a config file and values"
+            " from the global and per-repository configs. Values from --config FILE and other"
+            " command flags still win."
         ),
     )
     run_profile.completer = _complete_presets  # type: ignore[attr-defined]
@@ -136,21 +140,19 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--interactive",
         action="store_true",
         help=(
-            "Interactive: after each auto-commit a prompt takes /continue (the default),"
-            " /diff, /cost, /undo (take back the last message: the tree returns to the"
-            " turn before it and a fork continues from there), /watch, /mcp, /init,"
-            " /help, /quit or /exit (stop and leave without the follow-up prompt). Needs"
-            " a terminal in the foreground."
+            "Pause for input after each automatic commit. The prompt accepts /continue"
+            " (default), /diff, /cost, /undo, /watch, /mcp, /init, /help, /quit, and /exit."
+            " /undo restores the files from before the last message and continues in a fork."
+            " /quit and /exit stop without another prompt. Requires a foreground terminal."
         ),
     )
     run_p.add_argument(
         "--tui",
         action="store_true",
         help=(
-            "Open the full-screen TUI on the run (the conversation view; Ctrl+D"
-            " toggles the dashboard) instead of the default headless CLI stream."
-            " Needs a TTY; not with -i (the REPL wants the terminal too)."
-            " (Or run `agent6 tui` and start the run from there.)"
+            "Show the run in the full-screen terminal interface instead of command-line"
+            " output. Ctrl+D switches between the conversation and dashboard. Requires a"
+            " terminal and cannot be used with -i. You can also start the run from `agent6 tui`."
         ),
     )
     _add_budget_flags(run_p)
@@ -158,33 +160,35 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    resume_p = _sub(sub, "resume", help="Resume a paused session from its snapshot.")
+    resume_p = _sub(
+        sub, "resume", help="Continue a paused or interrupted session from its saved state."
+    )
     _add_session_id(resume_p, _complete_resumable_ids)
     resume_p.add_argument(
         "--steer",
         default="",
         metavar="TEXT",
         help=(
-            "Inject TEXT as an operator steering instruction at the resumed"
-            " session's first safe boundary (the TUI composer bar's follow-up"
-            " uses this)."
+            "Give TEXT to the resumed agent before it next starts work. The TUI follow-up field"
+            " uses this option."
         ),
     )
     resume_p.add_argument(
         "--force",
         action="store_true",
         help=(
-            "Resume even when the run's commits no longer match its last snapshot (its"
-            " agent6/<id> ref was rewritten or replaced); the run's own later commits"
-            " never need this."
+            "Resume even when the saved commit and the session's current commit have diverged."
+            " Use only when its agent6/ID ref was rewritten or replaced; later commits made by"
+            " the same session do not require this."
         ),
     )
     resume_preset = resume_p.add_argument(
         "--preset",
         default="",
         help=(
-            "Continue under another strategy preset (a preset touches any setting, so it"
-            " changes only between legs); recorded on the run, so later resumes keep it."
+            "Use another strategy preset for this continuation. A preset can change any"
+            " setting, so it takes effect only when resuming. The session records it and uses"
+            " it on later resumes."
         ),
     )
     resume_preset.completer = _complete_presets  # type: ignore[attr-defined]
@@ -195,15 +199,15 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "--interactive",
         action="store_true",
         help=(
-            "Interactive resume, like `run -i`: when the model goes quiet the"
-            " run parks for your steer instead of ending. Requires a TTY in the"
-            " foreground process group."
+            "Keep the session open for another instruction when the agent stops replying,"
+            " instead of ending it. This is the same as `run -i`. Requires a foreground"
+            " terminal."
         ),
     )
     resume_p.add_argument(
         "--tui",
         action="store_true",
-        help="Open the full-screen TUI instead of the headless stream (like `run --tui`).",
+        help="Show the resumed session in the full-screen terminal interface.",
     )
     _add_budget_flags(resume_p)
     _add_sandbox_flags(resume_p)
@@ -214,17 +218,15 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "fork",
         help=(
-            "Clone a session, rolled back to a checkpoint, and continue it without"
-            " touching the source. A run fork gets its own git worktree; a plan or ask"
-            " fork stays read-only in the current checkout."
+            "Copy a session at one of its saved turns, then continue the copy without changing"
+            " the source. A run copy gets its own git worktree. A plan or ask copy stays"
+            " read-only in the current checkout."
         ),
     )
     _add_session_id(
         fork_p,
         _complete_resumable_ids,
-        help_text=(
-            "Source session id or unambiguous prefix; omit for the newest resumable session."
-        ),
+        help_text=("Source session id or unambiguous prefix. Default: newest resumable session."),
     )
     fork_p.add_argument(
         "--at-turn",
@@ -232,34 +234,33 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         default=None,
         metavar="N",
         dest="at_turn",
-        help="Checkpoint turn to fork from (default: the latest checkpoint).",
+        help="Use the checkpoint saved for turn N. Default: latest checkpoint.",
     )
     fork_p.add_argument(
         "--session-id",
         default="",
         dest="new_session_id",
-        help="Explicit id for the new (forked) session (default: generate one).",
+        help="Use this id for the new session. Default: generate one.",
     )
     fork_p.add_argument(
         "--steer",
         default="",
         metavar="TEXT",
         help=(
-            "Inject TEXT as an operator steering instruction at the forked"
-            " session's first safe boundary. Not with --no-run; use"
-            " `resume --steer` afterwards."
+            "Give TEXT to the forked agent before it starts work. Cannot be used with --no-run;"
+            " later use `agent6 resume ID --steer TEXT`."
         ),
     )
     fork_p.add_argument(
         "--no-run",
         action="store_true",
-        help="Only create the fork; resume it later.",
+        help="Create the copy without continuing it. Start it later with `agent6 resume`.",
     )
     _add_config_flag(fork_p)
     fork_p.add_argument(
         "--tui",
         action="store_true",
-        help="Open the full-screen TUI instead of the headless stream (like `run --tui`).",
+        help="Show the forked session in the full-screen terminal interface.",
     )
     _add_budget_flags(fork_p)
     # A fork without --no-run continues a run, so it is a paid command like the

@@ -63,7 +63,7 @@ def _add_config_flag(parser: argparse.ArgumentParser) -> None:
         type=Path,
         default=argparse.SUPPRESS,
         metavar="FILE",
-        help="Explicit config file (layered over global + repo configs).",
+        help="Load FILE after the global and per-repository config files.",
     )
 
 
@@ -75,7 +75,10 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         type=float,
         default=None,
         metavar="USD",
-        help="Override [budget].max_usd for this run (-1 unlimited, 0 refuses metered calls).",
+        help=(
+            "Set this command's metered spending limit in US dollars. -1 allows unlimited"
+            " spending; 0 refuses metered calls. Default: [budget].max_usd."
+        ),
     )
     group.add_argument(
         "--max-percent",
@@ -95,9 +98,9 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="N",
         help=(
-            "Override [budget].max_tokens_fallback for this run: the input+output"
-            " token cap for calls with no price data (-1 unlimited, 0 refuses"
-            " unmetered calls)."
+            "Set the combined input and output token limit for calls with no price data."
+            " -1 allows unlimited tokens; 0 refuses calls that cannot be priced. Default:"
+            " [budget].max_tokens_fallback."
         ),
     )
 
@@ -118,9 +121,9 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
         "--dangerously-disable-sandbox",
         action="store_true",
         help=(
-            "Run the agent's commands unconfined on the host (no Landlock/"
-            "seccomp/namespaces). Only for a disposable or already-isolated"
-            " machine; the host becomes the only boundary."
+            "Run the agent's commands directly on the host with no sandbox. This disables"
+            " file limits, system-call filtering, and namespace isolation. Use only on a"
+            " disposable or already-isolated machine; the host becomes the only boundary."
         ),
     )
     approval = group.add_mutually_exclusive_group()
@@ -128,20 +131,19 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
         "--auto-approve",
         action="store_true",
         help=(
-            "Auto-approve every jailed command for this run instead of prompting."
-            " Raises sandbox.run_commands to `yes` unless it is `no`, which the"
-            " flag never overrides. Confinement still depends on"
-            " sandbox.isolation; combined with --dangerously-disable-sandbox it"
-            " hands the agent unprompted host access."
+            "Approve every sandboxed command for this session without prompting. Changes"
+            " sandbox.run_commands from `ask` to `yes`, but never overrides `no` or changes"
+            " sandbox.isolation. With --dangerously-disable-sandbox, this gives the agent"
+            " unprompted host access."
         ),
     )
     approval.add_argument(
         "--no-commands",
         action="store_true",
         help=(
-            "Withhold every jailed command for this session (sets"
-            " sandbox.run_commands = no): no run_command, no verify gate, no"
-            " background commands. What `/btw` asks its side question with."
+            "Do not let this session run commands: no run_command, verify gate, or background"
+            " commands. Sets sandbox.run_commands to `no`. This is also how /btw runs its side"
+            " question."
         ),
     )
 

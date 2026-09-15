@@ -29,10 +29,12 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "plan",
         help=(
-            "Planning pass: same loop, no edit tools, writes plan.md."
-            ' A configured `run_commands = "yes"` clamps to `"ask"`.'
-            " Pair with `agent6 run --from <plan-id>` to execute."
-            " Inspect with `plan show <id>` / `plan edit <id>`."
+            "Write a plan without editing repository files or making commits; save it as plan.md."
+            ' `agent6 plan "TASK"` and `agent6 plan run "TASK"` are the same. A planning'
+            " session asks before running commands even when the config approves them"
+            " automatically; --auto-approve approves them for the session. Execute the plan"
+            " with `agent6 run --from PLAN_ID`. Read or edit it with `agent6 plan show PLAN_ID`"
+            " or `agent6 plan edit PLAN_ID`."
         ),
     )
     # `plan <task>` is the bare planning run; `plan show/edit <id>` inspect a
@@ -40,18 +42,20 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     # `_inject_default_verb` when the first token isn't a known plan verb, so
     # `plan "fix the bug"` and `plan run "fix the bug"` are the same.
     plan_sub = plan_p.add_subparsers(dest="plan_command", required=True, metavar="<subcommand>")
-    plan_run = _sub(plan_sub, "run", help="Run a planning pass on a task.")
+    plan_run = _sub(plan_sub, "run", help="Create a plan for a task.")
     plan_run.add_argument(
         "task",
         nargs="?",
         default="",
-        help="Task to plan (in quotes). Required; `plan show/edit <id>` inspect prior plans.",
+        help="Task to plan, usually in quotes. Required.",
     )
     plan_run.add_argument(
-        "--session-id", default="", help="Explicit session id (default: generate one)."
+        "--session-id", default="", help="Use this id for the new session. Default: generate one."
     )
     plan_profile = plan_run.add_argument(
-        "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
+        "--preset",
+        default="",
+        help="Apply a strategy preset. `agent6 config presets` lists the choices.",
     )
     plan_profile.completer = _complete_presets  # type: ignore[attr-defined]
     _add_model_flag(plan_run)
@@ -60,31 +64,31 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "--tui",
         action="store_true",
         help=(
-            "Open the full-screen TUI on the planning run (the conversation view; Ctrl+D"
-            " toggles the dashboard) instead of the default headless CLI stream. Needs a"
-            " TTY. (Or run `agent6 tui` and start the plan from there.)"
+            "Show the planning session in the full-screen terminal interface instead of"
+            " command-line output. Ctrl+D switches between the conversation and dashboard."
+            " Requires a terminal. You can also start the plan from `agent6 tui`."
         ),
     )
     _add_budget_flags(plan_run)
     _add_sandbox_flags(plan_run)
-    plan_show = _sub(plan_sub, "show", help="Print the plan.md for a prior plan run and exit.")
+    plan_show = _sub(plan_sub, "show", help="Print plan.md from a saved planning session.")
     _add_session_id(
         plan_show,
         _complete_plan_session_ids,
-        help_text="Plan id or unambiguous prefix; omit for the newest plan.",
+        help_text="Planning session id or unambiguous prefix. Default: newest plan.",
     )
     plan_edit = _sub(
         plan_sub,
         "edit",
         help=(
-            "Open the plan.md for a prior plan run in $EDITOR"
-            f" (currently: {os.environ.get('EDITOR', '') or 'vi'}) and exit."
+            "Open plan.md from a saved planning session with $EDITOR."
+            f" Resolved command: {os.environ.get('EDITOR', '') or 'vi'}."
         ),
     )
     _add_session_id(
         plan_edit,
         _complete_plan_session_ids,
-        help_text="Plan id or unambiguous prefix; omit for the newest plan.",
+        help_text="Planning session id or unambiguous prefix. Default: newest plan.",
     )
 
 
@@ -93,21 +97,27 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         sub,
         "ask",
         help=(
-            "Q&A in prose: no edit tools, no commits, no repo required."
-            ' A configured `run_commands = "yes"` clamps to `"ask"`.'
-            " `sessions list` lists saved asks with every session."
+            "Ask for a prose answer without allowing file edits or commits; no repository is"
+            ' required. `agent6 ask "QUESTION"` and `agent6 ask query "QUESTION"` are the'
+            " same. On a foreground terminal, bare `agent6 ask` starts an interactive"
+            " conversation. An ask asks before running commands even when the config"
+            " approves them automatically; --auto-approve approves them for the session."
+            " Saved asks appear in `agent6 sessions list`."
         ),
     )
     # `ask <question>` runs a Q&A. `query` is the implicit default verb injected
     # by `_inject_default_verb` when the first token isn't a known ask verb, so
     # `ask "why ..."` == `ask query "why ..."`.
     ask_sub = ask_p.add_subparsers(dest="ask_command", required=True, metavar="<subcommand>")
-    ask_query = _sub(ask_sub, "query", help="Ask a question (the default verb).")
+    ask_query = _sub(ask_sub, "query", help="Ask a question.")
     ask_query.add_argument(
         "task",
         nargs="?",
         default="",
-        help='Question (in quotes), e.g. "why does the retry loop double the timeout?".',
+        help=(
+            "Question, usually in quotes. On a foreground terminal, omit it to ask"
+            ' interactively. Example: "why does the retry loop double the timeout?"'
+        ),
     )
     seed = ask_query.add_mutually_exclusive_group()
     ask_session = seed.add_argument(
@@ -116,9 +126,8 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="SESSION_ID",
         help=(
-            "Seed this question from another session (a run, a plan or an ask):"
-            " its task, outcome, diff and key events (exact id or unambiguous"
-            " prefix)."
+            "Include context from another run, plan, or ask: its task, outcome, diff, key"
+            " events, and plan text when present. Accepts a session id or unambiguous prefix."
         ),
     )
     ask_session.completer = _complete_session_ids  # type: ignore[attr-defined]
@@ -126,7 +135,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--from-latest",
         dest="ask_session_latest",
         action="store_true",
-        help="Like --from, but seed the most recent run or ask (plans are skipped).",
+        help="Include the same context from the newest run or ask. Planning sessions are excluded.",
     )
     ask_query.add_argument(
         "--file",
@@ -134,10 +143,15 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="append",
         default=[],
         metavar="PATH",
-        help="Seed a file's contents into the question (repeatable; like an inline @path).",
+        help=(
+            "Include PATH's contents in the question. Repeat for more files; this is the same"
+            " as putting @PATH in the question."
+        ),
     )
     ask_profile = ask_query.add_argument(
-        "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
+        "--preset",
+        default="",
+        help="Apply a strategy preset. `agent6 config presets` lists the choices.",
     )
     ask_profile.completer = _complete_presets  # type: ignore[attr-defined]
     _add_model_flag(ask_query)
@@ -147,9 +161,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--interactive",
         action="store_true",
         help=(
-            "Interactive REPL: keep asking follow-ups in one session (the prior"
-            " Q&A is carried as context). /cost, /reset, /quit. Requires a TTY in the"
-            " foreground process group; also the default for a bare `ask` there."
+            "Keep accepting follow-up questions in this session, with earlier questions and"
+            " answers as context. Commands: /cost, /reset, and /quit. Requires a foreground"
+            " terminal. A bare `agent6 ask` uses this mode there."
         ),
     )
     _add_budget_flags(ask_query)
