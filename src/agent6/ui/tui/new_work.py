@@ -4,7 +4,7 @@
 
 `n` on the hub opens it: the same chrome as a run's conversation (menu bar,
 transcript pane, composer bar, footer), with the transcript pane empty and a
-mode + preset row above the composer. Enter starts the run / plan / ask
+mode + preset + model row above the composer. Enter starts the run / plan / ask
 detached and hands the located session to the live view; a start refusal
 renders where the transcript will be, selectable, and the typed text stays in
 the composer to fix and resend.
@@ -28,6 +28,7 @@ from textual.widgets import Footer, Select, Static, TextArea
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective
 from agent6.directive import spec_fragment
+from agent6.models.choices import default_route
 from agent6.models.validate import known_models
 from agent6.types import OPERATOR_MODES
 from agent6.ui.spawn import spawn_new_work
@@ -41,7 +42,7 @@ DEFAULT_PRESET_LABEL = "(config default)"
 
 _INTRO = (
     "Describe the task (or the question, for ask). Enter starts it; Ctrl-J adds a line.\n"
-    "Tab reaches the mode and preset pickers below.\n"
+    "Tab reaches the mode, preset and model pickers below.\n"
     "/parallel [N|models] <task> fans out isolated lanes (repeat to queue more)."
 )
 
@@ -76,9 +77,13 @@ def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> Text |
 
 
 class NewWorkScreen(ScreenChrome, Screen[None]):
-    """Type a task, pick a mode and a preset, Enter starts it (see the module
-    docstring). Lives in the hub app: a located session dir is the hub's
-    return value, and the run view opens on it."""
+    """Type a task, pick a mode, a preset and a model, Enter starts it (see the
+    module docstring). Lives in the hub app: a located session dir is the
+    hub's return value, and the run view opens on it. The model picker
+    shows the route the config resolves for the mode and preset, re-resolved
+    on every change of either; a pick rides as `--model`, the last layer
+    over the config, and a blank pick (no route resolved) leaves the model
+    to the config."""
 
     CSS = """
     NewWorkScreen { background: $surface; }
@@ -87,8 +92,10 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
     #draft-notice { height: auto; padding: 0 1; pointer: text; }
     #draft-options { height: 3; padding: 0 1; }
     .draft-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
-    #draft-mode { width: 14; }
-    #draft-preset { width: 1fr; max-width: 40; }
+    #draft-mode { width: 12; }
+    #draft-preset { width: 1fr; max-width: 24; }
+    #draft-model { width: 1fr; max-width: 44; }
+    #draft-options SelectCurrent Static#label { text-wrap: nowrap; text-overflow: ellipsis; }
     #draft-input { height: auto; max-height: 8; border: round $primary; background: $surface; }
     #draft-input:focus { border: round $accent; }
     """
@@ -114,7 +121,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
     HELP_TITLE: ClassVar = "agent6 — new task"
     HELP_HINTS: ClassVar = (
         "Enter starts the task; Ctrl-J or Shift+Enter inserts a newline",
-        "Tab moves between the text, the mode and the preset",
+        "Tab moves between the text, the mode, the preset and the model",
     )
 
     def __init__(
@@ -124,12 +131,14 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         *,
         presets: list[str] | None = None,
         models: list[str] | None = None,
+        routes: list[str] | None = None,
     ) -> None:
         super().__init__()
         self.repo_cwd = repo_cwd
         self.config_path = config_path
         self._presets = presets if presets is not None else []
         self._models = models if models is not None else []
+        self._routes = routes if routes is not None else []
         self._starting = False
 
     def compose(self) -> ComposeResult:
@@ -151,6 +160,15 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
                 allow_blank=False,
                 id="draft-preset",
             )
+            yield Static("model", classes="draft-label")
+            route = default_route(self.repo_cwd, self.config_path, "run", "")
+            yield Select(
+                self._route_options(route),
+                value=route or Select.NULL,
+                allow_blank=True,
+                prompt="(config default)",
+                id="draft-model",
+            )
         yield SteerInput(id="draft-input")
         yield Footer()
 
@@ -159,6 +177,29 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         bar = self.query_one("#draft-input", SteerInput)
         bar.set_mode(mode="start")
         bar.focus()
+
+    def _route_options(self, route: str) -> list[tuple[str, str]]:
+        """The picker's rows: the config's routes, with *route* first when
+        the listing cache lacks it (a configured model is always a choice)."""
+        routes = [route, *self._routes] if route and route not in self._routes else self._routes
+        return [(r, r) for r in routes]
+
+    @on(Select.Changed, "#draft-mode")
+    @on(Select.Changed, "#draft-preset")
+    def _follow_route(self) -> None:
+        """The model picker follows a mode or preset change: the route the
+        config resolves for the pair replaces whatever was picked, and no
+        route (a config error, an unset role) leaves it blank."""
+        mode = str(self.query_one("#draft-mode", Select).value)
+        preset = str(self.query_one("#draft-preset", Select).value)
+        route = default_route(self.repo_cwd, self.config_path, mode, preset)
+        picker = self.query_one("#draft-model", Select)
+        picker.set_options(self._route_options(route))
+        picker.value = route or Select.NULL
+
+    def _picked_route(self) -> str:
+        value = self.query_one("#draft-model", Select).value
+        return "" if value is Select.NULL else str(value)
 
     def action_close(self) -> None:
         self.dismiss(None)
@@ -179,16 +220,16 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         preset = str(self.query_one("#draft-preset", Select).value)
         self._starting = True
         self._notice(Text(f"starting the {mode}…", style="bold cyan"))
-        self._start(self.app, mode, message.text, preset)
+        self._start(self.app, mode, message.text, preset, self._picked_route())
 
     @work(thread=True, exclusive=True)
-    def _start(self, app: App[object], mode: str, task: str, preset: str) -> None:
+    def _start(self, app: App[object], mode: str, task: str, preset: str, model: str) -> None:
         """Spawn detached and locate the session, off the UI thread: the locate
         waits for the run's first event, which can take seconds. *app* is bound
         on the UI thread: a screen dismissed mid-spawn has no parent to reach it
         through."""
         session_dir, err = spawn_new_work(
-            self.repo_cwd, mode, task, preset=preset, config_path=self.config_path
+            self.repo_cwd, mode, task, preset=preset, model=model, config_path=self.config_path
         )
         app.call_from_thread(self._started, session_dir, err, task)
 

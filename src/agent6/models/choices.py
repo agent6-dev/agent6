@@ -7,8 +7,10 @@ the surfaces offer the same lists."""
 
 from __future__ import annotations
 
-from agent6.config import Config
-from agent6.config.layer import EffectiveConfig
+from pathlib import Path
+
+from agent6.config import Config, ConfigError
+from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
@@ -62,6 +64,27 @@ def route_for(cfg: Config, mode: str) -> str:
     mode's role, worker fallback applied), or "" when the role is unset."""
     rm = cfg.models.resolve(session_kind(mode).role)
     return f"{rm.provider}/{rm.model}" if rm is not None else ""
+
+
+def available_routes(cwd: Path, config_path: Path | None) -> list[str]:
+    """`route_choices` for the config a hub at *cwd* runs under; empty on any
+    config error (the hub's other lists degrade the same way)."""
+    try:
+        cfg = load_effective(cwd, config_path).config
+    except ConfigError:
+        return []
+    return route_choices(cfg)
+
+
+def default_route(cwd: Path, config_path: Path | None, mode: str, preset: str) -> str:
+    """The `provider/model` a session of *mode* under *preset* runs from the
+    config alone: what a hub's model picker shows until the operator picks
+    another. Empty on any config error or an unset role."""
+    try:
+        cfg = load_effective(cwd, config_path, preset=preset).config
+    except ConfigError:
+        return ""
+    return route_for(cfg, mode)
 
 
 def model_role_provider(eff: EffectiveConfig, key: str) -> str | None:

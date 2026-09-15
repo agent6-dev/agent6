@@ -32,6 +32,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective
 from agent6.git_ops import run_ref_tips
+from agent6.models.choices import available_routes
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.spawn import agent6_argv, run_cli_capture
 from agent6.ui.tui.config_page import ConfigScreen
@@ -323,6 +324,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
                 self.config_path,
                 presets=available_preset_names(self.repo_cwd, self.config_path),
                 models=available_models(self.repo_cwd, self.config_path),
+                routes=available_routes(self.repo_cwd, self.config_path),
             )
         )
 

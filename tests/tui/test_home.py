@@ -195,7 +195,15 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
     started: list[tuple[str, str, str]] = []
 
-    def _spawn(cwd: Path, mode: str, task: str, *, preset: str = "", config_path: object = None):
+    def _spawn(
+        cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
+    ):
         started.append((mode, task, preset))
         return tmp_path / "located", ""
 
@@ -243,7 +251,15 @@ def test_a_start_whose_screen_was_left_still_opens_the_session(
     entered = threading.Event()
     gate = threading.Event()
 
-    def _spawn(cwd: Path, mode: str, task: str, *, preset: str = "", config_path: object = None):
+    def _spawn(
+        cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
+    ):
         entered.set()
         if not gate.wait(timeout=5.0):
             return None, "the test never released the spawn"
@@ -292,7 +308,15 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
     entered = threading.Event()
     gate = threading.Event()
 
-    def _spawn(cwd: Path, mode: str, task: str, *, preset: str = "", config_path: object = None):
+    def _spawn(
+        cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
+    ):
         entered.set()
         gate.wait(timeout=5.0)
         return None, "REFUSING: the tree is dirty"
@@ -339,7 +363,15 @@ def test_new_task_view_keeps_the_text_on_a_refusal(
 
     a6 = tmp_path / ".agent6"
 
-    def _spawn(cwd: Path, mode: str, task: str, *, preset: str = "", config_path: object = None):
+    def _spawn(
+        cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
+    ):
         return None, "REFUSING: 1 tracked file has uncommitted changes:\n- [git] seed.txt"
 
     monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
@@ -869,3 +901,153 @@ def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: Path) -
             assert table.row_count == 1
 
     asyncio.run(scenario())
+
+
+def test_new_task_view_model_box_follows_the_mode_and_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The model picker shows the route the config resolves for the mode and
+    preset, re-resolved on either change (a plan's planner, a preset's model;
+    a route the listing cache lacks is still offered), and the pick rides to
+    the spawn as `--model`."""
+    import asyncio
+
+    from textual.widgets import Select
+
+    from agent6.ui.tui import new_work
+    from agent6.ui.tui.composer import SteerInput
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.new_work import NewWorkScreen
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+    resolved = {("run", ""): "o/a", ("plan", ""): "o/b", ("plan", "ultra"): "o/c"}
+
+    def _route(cwd: Path, config_path: object, mode: str, preset: str) -> str:
+        return resolved.get((mode, preset), "")
+
+    monkeypatch.setattr(new_work, "default_route", _route)
+    started: list[tuple[str, str, str, str]] = []
+
+    def _spawn(
+        cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
+    ):
+        started.append((mode, task, preset, model))
+        return tmp_path / "located", ""
+
+    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a", "o/b"]))
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, NewWorkScreen)
+            picker = screen.query_one("#draft-model", Select)
+            assert picker.value == "o/a"
+            screen.query_one("#draft-mode", Select).value = "plan"
+            await pilot.pause()
+            assert picker.value == "o/b"
+            screen.query_one("#draft-preset", Select).value = "ultra"
+            await pilot.pause()
+            assert picker.value == "o/c"
+            picker.value = "o/a"
+            bar = screen.query_one("#draft-input", SteerInput)
+            bar.focus()
+            await pilot.pause()
+            await pilot.press("t", "enter")
+            deadline = time.monotonic() + 10
+            while app.return_value is None and time.monotonic() < deadline:
+                await pilot.pause(0.05)
+            assert started == [("plan", "t", "ultra", "o/a")]
+
+    asyncio.run(scenario())
+
+
+def test_new_task_view_model_box_goes_blank_when_no_route_resolves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No route (a preset that fails validation, a role naming no provider)
+    leaves the picker blank, "(config default)", and the spawn without
+    `--model`: never a crash on an empty list, never the first route of the
+    list passed off as the choice."""
+    import asyncio
+
+    from textual.widgets import Select
+
+    from agent6.ui.tui import new_work
+    from agent6.ui.tui.composer import SteerInput
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.new_work import NewWorkScreen
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+    resolved = {("run", ""): "o/a"}
+
+    def _route(cwd: Path, config_path: object, mode: str, preset: str) -> str:
+        return resolved.get((mode, preset), "")
+
+    monkeypatch.setattr(new_work, "default_route", _route)
+    started: list[tuple[str, str, str, str]] = []
+
+    def _spawn(
+        cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
+    ):
+        started.append((mode, task, preset, model))
+        return tmp_path / "located", ""
+
+    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+
+    async def empty_list() -> None:
+        # No routes and no default (a config naming no provider) opens too.
+        def _no_route(cwd: Path, config_path: object, mode: str, preset: str) -> str:
+            return ""
+
+        monkeypatch.setattr(new_work, "default_route", _no_route)
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(NewWorkScreen(tmp_path, presets=[], routes=[]))
+            await pilot.pause()
+            assert isinstance(app.screen, NewWorkScreen)
+            assert app.screen.query_one("#draft-model", Select).value is Select.NULL
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(NewWorkScreen(tmp_path, presets=["bad"], routes=["o/a", "o/b"]))
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, NewWorkScreen)
+            picker = screen.query_one("#draft-model", Select)
+            assert picker.value == "o/a"
+            screen.query_one("#draft-preset", Select).value = "bad"
+            await pilot.pause()
+            await pilot.pause()
+            assert picker.value is Select.NULL
+            bar = screen.query_one("#draft-input", SteerInput)
+            bar.focus()
+            await pilot.pause()
+            await pilot.press("t", "enter")
+            deadline = time.monotonic() + 10
+            while app.return_value is None and time.monotonic() < deadline:
+                await pilot.pause(0.05)
+            assert started == [("run", "t", "bad", "")]
+
+    asyncio.run(scenario())
+    asyncio.run(empty_list())

@@ -139,7 +139,8 @@ def test_parallel_refuses_unknown_model_before_spawn(
 
     monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
 
-    def _eff(_cwd: object, _cp: object = None) -> _Eff:
+    def _eff(_cwd: object, _cp: object = None, *, preset: str = "") -> _Eff:
+        del preset
         return _Eff(_provider_cfg())
 
     monkeypatch.setattr(models_validate, "load_effective", _eff)
@@ -153,6 +154,51 @@ def test_parallel_refuses_unknown_model_before_spawn(
     assert captured == []  # nothing spawned
 
 
+def test_parallel_validation_uses_the_picked_model_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hub model pick changes the worker provider before a `/parallel`
+    segment's model ids are checked, as it does in the spawned CLI child."""
+    from agent6.config import Config
+    from agent6.models import validate as models_validate
+
+    cache = tmp_path / "cache" / "agent6" / "models"
+    cache.mkdir(parents=True)
+    (cache / "o.json").write_text(json.dumps({"models": ["o-model"]}), encoding="utf-8")
+    (cache / "q.json").write_text(json.dumps({"models": ["q-lane"]}), encoding="utf-8")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "o": {"api_format": "openai", "base_url": "https://o/v1"},
+                "q": {"api_format": "openai", "base_url": "https://q/v1"},
+            },
+            "models": {"worker": {"provider": "o", "model": "o-model"}},
+        }
+    )
+
+    def _eff(_cwd: object, _cp: object = None, *, preset: str = "") -> _Eff:
+        del preset
+        return _Eff(cfg)
+
+    def _listing(*_a: object) -> list[str]:
+        return ["o-model"]
+
+    monkeypatch.setattr(models_validate, "load_effective", _eff)
+    monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
+    captured = _capture_locate(monkeypatch)
+    spawn.spawn_new_work(tmp_path, "run", "/parallel q-lane,q-lane fix it", model="q/q-default")
+    assert captured[-1][1:] == [
+        "run",
+        "--model",
+        "q/q-default",
+        "--parallel",
+        "q-lane,q-lane",
+        "--",
+        "fix it",
+    ]
+
+
 def test_parallel_unknown_model_no_cache_proceeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -162,7 +208,8 @@ def test_parallel_unknown_model_no_cache_proceeds(
 
     from agent6.models import validate as models_validate
 
-    def _eff(_cwd: object, _cp: object = None) -> _Eff:
+    def _eff(_cwd: object, _cp: object = None, *, preset: str = "") -> _Eff:
+        del preset
         return _Eff(_provider_cfg())
 
     monkeypatch.setattr(models_validate, "load_effective", _eff)
@@ -203,7 +250,14 @@ def test_parallel_partial_spawn_failure_surfaces(
     the run XOR show the error, so a swallowed failure must not navigate."""
 
     def fake_spawn(
-        cwd: Path, mode: str, task: str, *, preset: str, spec: str, config_path: object = None
+        cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str,
+        model: str,
+        spec: str,
+        config_path: object = None,
     ) -> tuple[Path | None, str]:
         if "task B" in task:
             return None, "boom"
@@ -211,8 +265,15 @@ def test_parallel_partial_spawn_failure_surfaces(
 
     monkeypatch.setattr(spawn, "_spawn_run", fake_spawn)
 
-    def no_refusal(cwd: Path, segments: object, config_path: object = None) -> None:
-        return None
+    def no_refusal(
+        cwd: Path,
+        segments: object,
+        config_path: object = None,
+        *,
+        preset: str = "",
+        model: str = "",
+    ) -> None:
+        del cwd, segments, config_path, preset, model
 
     monkeypatch.setattr(spawn, "directive_model_refusal", no_refusal)
     session_dir, err = spawn.spawn_new_work(
@@ -283,3 +344,13 @@ def test_a_timeout_says_what_it_knows(tmp_path: Path) -> None:
         ["sleep", "3"], tmp_path, started=lambda pid: False, timeout_s=0.5
     )
     assert "has not reported starting within 0s (`agent6 ps` shows whether it is running)" in err
+
+
+def test_argv_carries_the_model_route(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The picker's route rides as `--model`, after the preset and before the
+    `--`; every /parallel lane gets it too."""
+    captured = _capture_locate(monkeypatch)
+    spawn.spawn_new_work(tmp_path, "plan", "t", preset="quick", model="o/m")
+    assert captured[-1][1:] == ["plan", "--preset", "quick", "--model", "o/m", "--", "t"]
+    spawn.spawn_new_work(tmp_path, "run", "/parallel 2 t", model="o/m")
+    assert captured[-1][1:] == ["run", "--model", "o/m", "--parallel", "2", "--", "t"]

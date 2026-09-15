@@ -64,10 +64,16 @@ DETACHED_RUN_ENV: dict[str, str] = {"AGENT6_STREAM_TO_LOG": "1", **DETACHED_AWAY
 
 
 def spawn_new_work(  # noqa: PLR0911
-    cwd: Path, mode: str, task: str, *, preset: str = "", config_path: Path | None = None
+    cwd: Path,
+    mode: str,
+    task: str,
+    *,
+    preset: str = "",
+    model: str = "",
+    config_path: Path | None = None,
 ) -> tuple[Path | None, str]:
-    """Start `agent6 <mode> [--preset P] -- <task>` detached from a hub and
-    return the new session's dir to open, or `(None, why)`.
+    """Start `agent6 <mode> [--preset P] [--model M] -- <task>` detached from
+    a hub and return the new session's dir to open, or `(None, why)`.
 
     A `/parallel [spec] <task> ...` message (run mode only) fans out one
     detached `agent6 run --parallel <spec>` per segment (omitted spec = one
@@ -94,8 +100,10 @@ def spawn_new_work(  # noqa: PLR0911
                 f"run {holder} is already driving this checkout; steer it with this task"
                 " (or /parallel it) from its run view, or wait for it to finish"
             )
-        return _spawn_run(cwd, mode, task, preset=preset, spec="", config_path=config_path)
-    refusal = directive_model_refusal(cwd, segments, config_path)
+        return _spawn_run(
+            cwd, mode, task, preset=preset, model=model, spec="", config_path=config_path
+        )
+    refusal = directive_model_refusal(cwd, segments, config_path, preset=preset, model=model)
     if refusal is not None:
         return None, refusal
     first: Path | None = None
@@ -103,7 +111,13 @@ def spawn_new_work(  # noqa: PLR0911
     failed = False
     for i, seg in enumerate(segments, 1):
         session_dir, err = _spawn_run(
-            cwd, "run", seg.task, preset=preset, spec=seg.spec or "1", config_path=config_path
+            cwd,
+            "run",
+            seg.task,
+            preset=preset,
+            model=model,
+            spec=seg.spec or "1",
+            config_path=config_path,
         )
         if session_dir is None:
             lines.append(f"lane {i} ({seg.task}): {err}")
@@ -121,14 +135,23 @@ def spawn_new_work(  # noqa: PLR0911
 
 
 def _spawn_run(
-    cwd: Path, mode: str, task: str, *, preset: str, spec: str, config_path: Path | None
+    cwd: Path,
+    mode: str,
+    task: str,
+    *,
+    preset: str,
+    model: str,
+    spec: str,
+    config_path: Path | None,
 ) -> tuple[Path | None, str]:
-    """One detached `agent6 <mode> [--preset P] [--parallel S] -- <task>`,
-    located by its new session dir. `--` ends option parsing: a task starting
-    with `-` is never read as a flag."""
+    """One detached `agent6 <mode> [--preset P] [--model M] [--parallel S] --
+    <task>`, located by its new session dir. `--` ends option parsing: a task
+    starting with `-` is never read as a flag."""
     argv = [*agent6_argv(config_path), mode]
     if preset:
         argv += ["--preset", preset]
+    if model:
+        argv += ["--model", model]
     if spec:
         argv += ["--parallel", spec]
     argv += ["--", task]

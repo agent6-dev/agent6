@@ -297,14 +297,28 @@ def test_hub_new_work_fans_out_while_checkout_busy(
     spawned: list[str] = []
 
     def fake_spawn(
-        cwd: Path, mode: str, task: str, *, preset: str, spec: str, config_path: object = None
+        cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str,
+        model: str,
+        spec: str,
+        config_path: object = None,
     ) -> tuple[Path | None, str]:
         spawned.append(f"{spec}:{task}")
         return repo / "run-P", ""
 
     monkeypatch.setattr(spawn, "_spawn_run", fake_spawn)
 
-    def no_refusal(cwd: Path, segments: object, config_path: object = None) -> None:
+    def no_refusal(
+        cwd: Path,
+        segments: object,
+        config_path: object = None,
+        *,
+        preset: str = "",
+        model: str = "",
+    ) -> None:
         return None
 
     monkeypatch.setattr(spawn, "directive_model_refusal", no_refusal)

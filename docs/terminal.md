@@ -13,7 +13,7 @@ Every image is from a recorded run; click to enlarge.
 `agent6 tui` lists every session for the repository in five columns: updated, status (the mode folded in), cost, id, and task.
 
 - Enter opens a run
-- `n`: an empty conversation to start a run, plan, or ask (mode and preset picked above the composer; a refusal shows there with the text kept)
+- `n`: an empty conversation to start a run, plan, or ask (mode, preset and model picked above the composer; the model box shows the model the config resolves for the mode and preset, re-resolved whenever either changes, and a pick overrides it for this run; a refusal shows there with the text kept)
 - `l`: the selected run's event log; `m`: merge its branch (`sessions merge`); `d`: delete its history (`sessions rm`), both after a confirm
 - Space: expand or fold a fan-out's lanes (one row with its lane count otherwise)
 - `c`: the config page; `M`: the machines screen; `r`: refresh; `?`: the keys; `q`: quit
