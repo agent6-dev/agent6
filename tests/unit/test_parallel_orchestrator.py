@@ -31,12 +31,13 @@ from agent6.app.parallel import (
     run_parallel,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.config import Config
+from agent6.config import Config, ConfigError
 from agent6.directive import DirectiveError
 from agent6.git_ops import branch_exists, commit_all, create_branch
 from agent6.memory import decisions_text, record_decision
 from agent6.paths import state_dir
 from agent6.sessions.manifest import ParallelLineage, read_manifest
+from agent6.types import ModelRoute
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli.parallel import lane_runtime
 from agent6.viewmodel.listing import summarize_session_dir
@@ -208,7 +209,7 @@ def _specs(tmp_path: Path, cfg: Config, fanout_id: str, spec: str) -> list[LaneS
 
 def test_build_lane_specs_int_layout(tmp_path: Path) -> None:
     lanes = _specs(tmp_path, Config(), "fan", "3")
-    assert [(ln.lane, ln.session_id, ln.model) for ln in lanes] == [
+    assert [(ln.lane, ln.session_id, ln.route) for ln in lanes] == [
         (1, "fan-l1", None),
         (2, "fan-l2", None),
         (3, "fan-l3", None),
@@ -217,8 +218,26 @@ def test_build_lane_specs_int_layout(tmp_path: Path) -> None:
 
 
 def test_build_lane_specs_model_list(tmp_path: Path) -> None:
-    lanes = _specs(tmp_path, Config(), "fan", "kimi,glm")
-    assert [(ln.lane, ln.model) for ln in lanes] == [(1, "kimi"), (2, "glm")]
+    """Each entry resolves once: `provider/model` names its provider, a bare
+    id runs on the worker's."""
+    cfg = _provider_cfg().model_copy(
+        update={
+            "providers": {
+                **_provider_cfg().providers,
+                "p": _provider_cfg().providers["o"],
+            }
+        }
+    )
+    lanes = _specs(tmp_path, cfg, "fan", "kimi,p/glm")
+    assert [(ln.lane, ln.route) for ln in lanes] == [
+        (1, ModelRoute("o", "kimi")),
+        (2, ModelRoute("p", "glm")),
+    ]
+
+
+def test_build_lane_specs_refuses_an_entry_naming_no_model(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="no model id"):
+        _specs(tmp_path, _provider_cfg(), "fan", "kimi,o/")
 
 
 def test_build_lane_specs_over_cap_refused(tmp_path: Path) -> None:
@@ -288,8 +307,8 @@ def test_dispatch_parallel_refuses_unknown_model_before_any_clone(
     assert rc == 2
     err = capsys.readouterr().err
     assert "REFUSING" in err
-    assert "unknown model 'moonshotai/kimi-k2.7'" in err
-    assert "closest: moonshotai/kimi-k2.6" in err
+    assert "unknown model 'o/moonshotai/kimi-k2.7'" in err
+    assert "closest: o/moonshotai/kimi-k2.6" in err
 
 
 def test_dispatch_parallel_unknown_model_no_cache_warns_and_proceeds(
@@ -412,7 +431,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
     dispatch = parallel.build_lane_spawner(
         _provider_cfg(), origin, origin_state, coordinator_session_id="coord", runtime=runtime
     )
-    with pytest.raises(ParallelError, match=r"unknown model 'moonshotai/kimi-k2\.7'"):
+    with pytest.raises(ParallelError, match=r"unknown model 'o/moonshotai/kimi-k2\.7'"):
         dispatch([LaneTask(task="do it", model="moonshotai/kimi-k2.7")], "p1")
 
 
@@ -506,7 +525,7 @@ def test_bridge_spawner_argv_ends_options_before_task(
         return workdir, ""
 
     cfg = Config()
-    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None)
     parallel.bridge_spawner(
         spec, "--allow-root pwn", cfg=cfg, origin=origin, max_usd=2.0,
         fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
@@ -533,7 +552,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
     def fake_spawn(_argv: list[str], workdir: Path, **_k: object) -> tuple[Path, str]:
         return workdir, ""
 
-    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None)
     parallel.bridge_spawner(
         spec, "task", cfg=cfg, origin=origin, max_usd=None,
         fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
@@ -558,7 +577,7 @@ def test_bridge_spawner_argv_includes_auto_approve_when_set(
         return workdir, ""
 
     cfg = Config()
-    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None)
     parallel.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None, auto_approve=True,
         fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
@@ -580,7 +599,7 @@ def test_bridge_spawner_argv_omits_auto_approve_by_default(
         return workdir, ""
 
     cfg = Config()
-    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None)
     parallel.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None,
         fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
@@ -607,7 +626,7 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
     monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
     cfg = Config()
     spec = LaneSpec(
-        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
+        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
     )
 
     parallel.run_lane_to_completion(
@@ -706,7 +725,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "question.prompt", "id": "question-1"},
     )
-    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", route=None)
     res = LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
 
     # One poll only: "waiting" prints the hint, and the dead worker makes that
@@ -1346,7 +1365,7 @@ def test_run_lane_to_completion_imports_and_stamps(
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fanout_id="p1")
     spec = LaneSpec(
-        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
+        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
     )
     memory.add(state_dir(spec.workdir), "lane-fact", "The flaky test is test_clock.")
 
@@ -1399,7 +1418,7 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fail={1})
     spec = LaneSpec(
-        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
+        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
     )
 
     res = parallel.run_lane_to_completion(
@@ -1434,7 +1453,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
         origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "failed"}
     )
     spec = LaneSpec(
-        lane=1, session_id="co-pf-l1", workdir=tmp_path / "work" / "co-pf-l1", model=None
+        lane=1, session_id="co-pf-l1", workdir=tmp_path / "work" / "co-pf-l1", route=None
     )
 
     res = parallel.run_lane_to_completion(
@@ -1470,7 +1489,7 @@ def test_a_crashed_lane_never_joins_the_coordinator(
         origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "stale"}
     )
     spec = LaneSpec(
-        lane=1, session_id="co-ps-l1", workdir=tmp_path / "work" / "co-ps-l1", model=None
+        lane=1, session_id="co-ps-l1", workdir=tmp_path / "work" / "co-ps-l1", route=None
     )
 
     res = parallel.run_lane_to_completion(
@@ -1537,7 +1556,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
 
     monkeypatch.setattr(parallel, "import_run", observe)
     spec = LaneSpec(
-        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
+        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
     )
     res = parallel.run_lane_to_completion(
         spec,
@@ -1573,7 +1592,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
     per_repo = parallel.workdir_base(cfg, origin)
     spec = LaneSpec(
-        lane=1, session_id="co-p9-l1", workdir=per_repo / "co" / "grp" / "lane-1", model=None
+        lane=1, session_id="co-p9-l1", workdir=per_repo / "co" / "grp" / "lane-1", route=None
     )
     res = parallel.run_lane_to_completion(
         spec,
@@ -1599,7 +1618,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     create_branch(origin, "main")
     spawner2 = _FakeSpawner(origin, origin_state, tmp_path / "lane-state-2")
     spec2 = LaneSpec(
-        lane=1, session_id="co-p8-l1", workdir=tmp_path / "work" / "grp8" / "lane-1", model=None
+        lane=1, session_id="co-p8-l1", workdir=tmp_path / "work" / "grp8" / "lane-1", route=None
     )
     res2 = parallel.run_lane_to_completion(
         spec2,
@@ -1626,7 +1645,7 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
-    cfg = Config()
+    cfg = _provider_cfg("kimi")
     seen: list[tuple[int, str, str, str, str]] = []
 
     def fake_rltc(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
@@ -1647,7 +1666,7 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     results = dispatch(lanes, "p2")
 
     assert [r.spec.session_id for r in results] == ["co-p2-l1", "co-p2-l2"]
-    assert [r.spec.model for r in results] == ["kimi", None]  # per-lane model threaded through
+    assert [r.spec.route for r in results] == [ModelRoute("o", "kimi"), None]
     assert sorted(s[0] for s in seen) == [1, 2]  # every lane ran once
     # One name for the group: `adopt_orphan_lane` and the clone sweep both
     # derive a lane's clone from the lineage its manifest recorded, so the dir
@@ -1727,7 +1746,7 @@ def test_await_lane_returns_when_should_stop_fires(tmp_path: Path, runtime: Lane
 
     session_dir = lane_dir / "sub"
     write_worker_pid(session_dir, _os.getpid())  # a live lane: never terminal
-    spec = LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", model=None)
+    spec = LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
     res = LaneResult(spec=spec, session_dir=session_dir, branch="agent6/x", ok=True, error="")
     calls = {"n": 0}
 
@@ -1752,7 +1771,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     lane_dir = tmp_path / "lane-run" / "sub"
     _write_fake_run(lane_dir, "t", status="running", cost=0.0)
     write_worker_pid(lane_dir, _os.getpid())  # live forever from the test's view
-    spec = LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", model=None)
+    spec = LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
 
     def fake_spawner(spec: LaneSpec, task: str) -> LaneResult:
         return LaneResult(spec=spec, session_dir=lane_dir, branch="agent6/x", ok=True, error="")
@@ -1853,10 +1872,36 @@ def test_lane_config_forces_a_run_branch(tmp_path: Path) -> None:
 
     base = Config()
     cfg = base.model_copy(update={"git": base.git.model_copy(update={"branch_per_run": False})})
-    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "clone", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "clone", route=None)
     path = _write_lane_config(cfg, spec)
     written = tomllib.loads(path.read_text(encoding="utf-8"))
     assert written["git"]["branch_per_run"] is True
+
+
+def test_lane_config_carries_the_lane_route(tmp_path: Path) -> None:
+    """A lane's route names its provider too, so a lane on another provider
+    than the worker's loads that provider."""
+    import tomllib
+
+    from agent6.app.parallel import _write_lane_config  # pyright: ignore[reportPrivateUsage]
+
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "o": {"api_format": "openai", "base_url": "https://x/v1"},
+                "p": {"api_format": "openai", "base_url": "https://p/v1"},
+            },
+            "models": {"worker": {"provider": "o", "model": "base"}},
+        }
+    )
+    spec = LaneSpec(
+        lane=1, session_id="fan-l1", workdir=tmp_path / "clone", route=ModelRoute("p", "other")
+    )
+    written = tomllib.loads(_write_lane_config(cfg, spec).read_text(encoding="utf-8"))
+    assert (written["models"]["worker"]["provider"], written["models"]["worker"]["model"]) == (
+        "p",
+        "other",
+    )
 
 
 def test_a_fanout_where_every_lane_failed_crowns_nobody(
@@ -2091,7 +2136,7 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
             lane=lane,
             session_id=f"fan-l{lane}",
             workdir=tmp_path / "work" / f"lane-{lane}",
-            model=None,
+            route=None,
         )
         result = parallel.bridge_spawner(
             spec, "do it", cfg=Config(), origin=origin, max_usd=None, lane_away=away,
@@ -2120,7 +2165,7 @@ def test_lane_is_self_describing_from_birth(
         captured.append(env)
         return workdir, ""
 
-    spec = LaneSpec(lane=2, session_id="fan-l2", workdir=tmp_path / "work" / "lane-2", model=None)
+    spec = LaneSpec(lane=2, session_id="fan-l2", workdir=tmp_path / "work" / "lane-2", route=None)
     parallel.bridge_spawner(
         spec, "do it", cfg=Config(), origin=origin, max_usd=None,
         fanout_id="fan", coordinator="co", runtime=replace(runtime, spawn=fake_spawn),
@@ -2375,7 +2420,7 @@ def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
 
     lane = tmp_path / "lane"
     _write_fake_run(lane, "t", status="running", cost=0.0)
-    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", route=None)
     res = LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
 
     def _no_sleep(*_args: object) -> None:
@@ -2493,7 +2538,7 @@ def test_a_fan_out_leaves_no_stop_marker_behind(
     said: list[str] = []
     run_parallel(
         "t",
-        _specs(tmp_path, cfg, "fan", "1,2"),
+        _specs(tmp_path, cfg, "fan", "2"),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,

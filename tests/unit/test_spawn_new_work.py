@@ -86,7 +86,22 @@ def test_parallel_lane_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert captured[-1][1:] == ["run", "--parallel", "2", "--", "add a greeting"]
 
 
+def _configure_worker() -> None:
+    """A worker route in the global config, so a lane's bare model id has a
+    provider to run on."""
+    from agent6.paths import global_config_dir
+
+    cfg_home = global_config_dir()
+    cfg_home.mkdir(parents=True, exist_ok=True)
+    (cfg_home / "config.toml").write_text(
+        '[providers.o]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nprovider = "o"\nmodel = "base"\n',
+        encoding="utf-8",
+    )
+
+
 def test_parallel_model_list_with_preset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_worker()
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus refactor", preset="quick")
     assert captured[-1][1:] == [
@@ -149,8 +164,8 @@ def test_parallel_refuses_unknown_model_before_spawn(
         tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it"
     )
     assert session_dir is None
-    assert "unknown model 'moonshotai/kimi-k2.7'" in err
-    assert "closest: moonshotai/kimi-k2.6" in err
+    assert "unknown model 'o/moonshotai/kimi-k2.7'" in err
+    assert "closest: o/moonshotai/kimi-k2.6" in err
     assert captured == []  # nothing spawned
 
 
@@ -235,6 +250,7 @@ def test_parallel_omitted_spec_is_one_lane(tmp_path: Path, monkeypatch: pytest.M
 def test_parallel_multi_segment_spawns_one_fanout_per_segment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _configure_worker()
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "/parallel 2 task A /parallel gpt-5,opus task B")
     assert [c[1:] for c in captured] == [

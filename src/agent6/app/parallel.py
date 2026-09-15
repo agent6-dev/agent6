@@ -52,7 +52,7 @@ from agent6.app.compare import (
 from agent6.app.finalize import EXIT_VERIFY_FAILED
 from agent6.app.manifest import write_manifest, write_session_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.config import Config
+from agent6.config import Config, ConfigError
 from agent6.config.layer import materialize
 from agent6.directive import parse_spec
 from agent6.events import EventSink, EventWriteError
@@ -90,7 +90,7 @@ from agent6.sessions.manifest import (
     SessionManifest,
     read_manifest,
 )
-from agent6.types import session_bucket
+from agent6.types import ModelRoute, session_bucket
 from agent6.viewmodel import produced_result, summarize_session_dir
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import HUB_BUCKETS
@@ -300,16 +300,23 @@ def build_lane_specs(
     relies on that so it needn't reach the private helper)."""
     if workdir_root is None:
         workdir_root = subordinate_workdir_root(cfg, origin, fanout_id)
-    models = parse_spec(spec, limit=cfg.parallel.max_lanes)
+    routes = _lane_routes(cfg, parse_spec(spec, limit=cfg.parallel.max_lanes))
     return [
         LaneSpec(
             lane=i,
             session_id=f"{fanout_id}-l{i}",
             workdir=workdir_root / f"lane-{i}",
-            model=model,
+            route=route,
         )
-        for i, model in enumerate(models, start=1)
+        for i, route in enumerate(routes, start=1)
     ]
+
+
+def _lane_routes(cfg: Config, models: Sequence[str | None]) -> list[ModelRoute | None]:
+    """Each lane's `[provider/]model` text resolved once against the worker
+    route (`None` stays the worker's own); raises ConfigError for a value
+    that names nothing."""
+    return [cfg.model_route("worker", m) if m else None for m in models]
 
 
 # ---------------------------------------------------------------------------
@@ -318,14 +325,14 @@ def build_lane_specs(
 
 
 def _write_lane_config(cfg: Config, spec: LaneSpec) -> Path:
-    """Materialize the origin's effective config (worker model overridden for a
-    per-lane model) to a file the lane loads with `--config`.
+    """Materialize the origin's effective config (the worker re-routed for a
+    lane with its own route) to a file the lane loads with `--config`.
 
     The clone's path-keyed repo id yields an EMPTY per-repo config, so the lane
     would otherwise lose every origin repo setting; a full materialized config
     layered over the (shared) global config restores them. Global config
     + secrets apply automatically."""
-    lane_cfg = cfg.with_machine_agent_overrides(model=spec.model) if spec.model else cfg
+    lane_cfg = cfg.with_model_route("worker", spec.route) if spec.route else cfg
     # A lane's branch IS how its work comes back (the import fetches
     # agent6/<session_id>), so the origin's branch_per_run=false must not ride
     # along: with it, every lane runs to completion, bills, and then fails the
@@ -584,10 +591,15 @@ def build_lane_spawner(
                 f"/parallel requests {len(lanes)} lanes but [parallel].max_lanes ="
                 f" {cfg.parallel.max_lanes}. Request fewer, or raise [parallel].max_lanes."
             )
-        # Validate the per-lane models before any clone: a refusal raises, and the
-        # loop's group-failure feedback delivers the message to the coordinator
-        # (keeping workflows free of a models dependency); no cache = warn + proceed.
-        verdict = validate_spec_models([lane.model for lane in lanes], cfg)
+        # Resolve and validate the per-lane routes before any clone: a refusal
+        # raises, and the loop's group-failure feedback delivers the message to
+        # the coordinator (keeping workflows free of a models dependency); no
+        # cache = warn + proceed.
+        try:
+            routes = _lane_routes(cfg, [lane.model for lane in lanes])
+        except ConfigError as exc:
+            raise ParallelError(str(exc)) from exc
+        verdict = validate_spec_models(routes, cfg)
         if verdict.refused:
             raise ParallelError(refusal_message(verdict, directive=True))
         if verdict.warned:
@@ -604,9 +616,9 @@ def build_lane_spawner(
                 lane=i,
                 session_id=f"{group_id}-l{i}",
                 workdir=workdir_root / f"lane-{i}",
-                model=lane.model,
+                route=route,
             )
-            for i, lane in enumerate(lanes, start=1)
+            for i, route in enumerate(routes, start=1)
         ]
         mkdir_for_real_user(bucket_dir(origin_state, "runs"))
         import_lock = threading.Lock()

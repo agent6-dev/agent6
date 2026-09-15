@@ -408,8 +408,8 @@ def test_config_suggestions_providers_and_models(
 def test_config_suggestions_parallel_models_pseudo_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The /parallel composer autocomplete: the worker's configured model plus the
-    # worker provider's cached listing, cache-only so it never blocks.
+    # The /parallel composer autocomplete: every provider's routes, the models
+    # the roles name included, cache-only so it never blocks.
     cfg_home = global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
@@ -425,29 +425,35 @@ def test_config_suggestions_parallel_models_pseudo_key(
         json.dumps({"models": ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"]}), encoding="utf-8"
     )
     out = model.config_suggestions(tmp_path, "parallel.models")
-    assert out == ["moonshotai/kimi-k2.6", "role-only-model", "z-ai/glm-4.6"]
+    assert out == [
+        "openrouter/moonshotai/kimi-k2.6",
+        "openrouter/role-only-model",
+        "openrouter/z-ai/glm-4.6",
+    ]
 
 
-def test_parallel_models_suggestions_scoped_to_worker_provider(
+def test_parallel_models_suggestions_span_every_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Lanes inherit the WORKER provider (only the model is overridden per lane),
-    # so the suggestions offer only models the lanes can actually run: a sibling
-    # provider's cached catalog is excluded.
+    # A lane names its provider, so a sibling provider's catalog is offered too.
     cfg_home = global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
         '[providers.w]\napi_format = "openai"\nbase_url = "https://w.example/v1"\n'
         '[providers.s]\napi_format = "openai"\nbase_url = "https://s.example/v1"\n'
-        '[models.worker]\nprovider = "w"\nmodel = "w/base-model"\n',
+        '[models.worker]\nprovider = "w"\nmodel = "base-model"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     cache = tmp_path / "cache" / "agent6" / "models"
     cache.mkdir(parents=True)
-    (cache / "w.json").write_text(json.dumps({"models": ["w/model-a"]}), encoding="utf-8")
-    (cache / "s.json").write_text(json.dumps({"models": ["s/only-model"]}), encoding="utf-8")
-    assert model.config_suggestions(tmp_path, "parallel.models") == ["w/base-model", "w/model-a"]
+    (cache / "w.json").write_text(json.dumps({"models": ["model-a"]}), encoding="utf-8")
+    (cache / "s.json").write_text(json.dumps({"models": ["only-model"]}), encoding="utf-8")
+    assert model.config_suggestions(tmp_path, "parallel.models") == [
+        "s/only-model",
+        "w/base-model",
+        "w/model-a",
+    ]
 
 
 def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:

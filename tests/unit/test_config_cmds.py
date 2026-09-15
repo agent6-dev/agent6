@@ -93,42 +93,30 @@ def test_config_key_completer_offers_user_profile_paths(
 def test_parallel_models_completer_completes_after_last_comma(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # TAB on `run --parallel` completes model ids for the WORKER provider only
-    # (lanes inherit it; only the model is overridden per lane), and completes
-    # only the token AFTER the last comma so a `m1,m2,...` list grows member by
-    # member (the head is preserved on each completion).
+    # TAB on `run --parallel` completes the `provider/model` routes the config
+    # can run, and only the entry AFTER the last comma so a list grows entry by
+    # entry (the head is preserved on each completion).
     from agent6.config import Config
     from agent6.ui.cli import completers
 
-    cfg = Config.model_validate(
-        {
-            "providers": {
-                "w": {"api_format": "openai", "base_url": "https://w.example/v1"},
-                "s": {"api_format": "openai", "base_url": "https://s.example/v1"},
-            },
-            "models": {"worker": {"provider": "w", "model": "gpt-5"}},
-        }
-    )
-
     class _Eff:
-        config = cfg
+        config = Config()
 
     def _eff(*_a: object, **_k: object) -> _Eff:
         return _Eff()
 
-    def _models(_cp: object, provider: object) -> list[str]:
-        # Per-provider catalogs: the sibling's must never be offered.
-        return {"w": ["gpt-5", "gpt-5-mini", "opus"], "s": ["gpt-sibling-only"]}[str(provider)]
+    def _routes(_cfg: object) -> list[str]:
+        return ["s/gpt-sibling", "w/gpt-5", "w/gpt-5-mini", "w/opus"]
 
     monkeypatch.setattr(completers, "load_effective", _eff)
-    monkeypatch.setattr("agent6.ui.cli.model._models_for", _models)
-    assert completers._complete_parallel_models("gpt") == [  # pyright: ignore[reportPrivateUsage]
-        "gpt-5",
-        "gpt-5-mini",
+    monkeypatch.setattr(completers, "route_choices", _routes)
+    assert completers._complete_parallel_models("w/gpt") == [  # pyright: ignore[reportPrivateUsage]
+        "w/gpt-5",
+        "w/gpt-5-mini",
     ]
-    assert completers._complete_parallel_models("opus,gpt") == [  # pyright: ignore[reportPrivateUsage]
-        "opus,gpt-5",
-        "opus,gpt-5-mini",
+    assert completers._complete_parallel_models("w/opus,w/gpt") == [  # pyright: ignore[reportPrivateUsage]
+        "w/opus,w/gpt-5",
+        "w/opus,w/gpt-5-mini",
     ]
 
 

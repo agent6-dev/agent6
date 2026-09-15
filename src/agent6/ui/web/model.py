@@ -326,8 +326,8 @@ def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]
 def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> list[str]:
     """Value suggestions for one open-text config leaf: `preset` offers the
     preset names, everything else what `models.choices.config_value_choices`
-    offers (a role's provider's model ids; the `/parallel` autocomplete's model
-    ids under the pseudo-key `parallel.models`). Enum leaves already carry
+    offers (a role's provider's model ids; the `/parallel` autocomplete's
+    `provider/model` routes under the pseudo-key `parallel.models`). Enum leaves already carry
     their choices in the config payload; any error suggests nothing, since
     suggestions are best-effort, never a failure."""
     if key == "preset":

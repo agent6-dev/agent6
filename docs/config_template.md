@@ -292,7 +292,7 @@ Loopback only by default, no app auth: remote access is expected behind `tailsca
 
 ## `[parallel]`
 
-Fan-out defaults for `run --parallel N|model-a,model-b`.
+Fan-out defaults for `run --parallel N|[provider/]model,...`.
 Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
 `--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
 A live run dispatches lanes the same way via the `/parallel` steer directive (depth 1: a lane never fans out; headless surfaces without a dispatcher answer "not available").

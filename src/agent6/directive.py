@@ -7,13 +7,13 @@ the coordinator steer parser (`workflows/loop.py`) and the web + TUI composers.
     /pin <instruction that must survive context compaction>
     /compact [focus text for the summary]
 
-- `spec` is a positive int (lane count) or a comma-separated model list, and
-  is optional: omitted means one lane on the configured worker model. A
-  segment's first token counts as a spec when it contains a comma or a slash
-  (model ids are provider/model shaped, e.g. `moonshotai/kimi-k2.6`); a bare
-  comma-less slash-less model name (`opus`) intentionally stays task text,
-  being indistinguishable from a task word. Conversely, a task whose first
-  word is a path (`src/foo.py`) parses as a bogus model spec, refused
+- `spec` is a positive int (lane count) or a comma-separated list of
+  `[provider/]model` entries, and is optional: omitted means one lane on the
+  configured worker model. A segment's first token counts as a spec when it
+  contains a comma or a slash (`anthropic/claude-x`, `moonshotai/kimi-k2.6`);
+  a bare comma-less slash-less model name (`opus`) intentionally stays task
+  text, being indistinguishable from a task word. Conversely, a task whose
+  first word is a path (`src/foo.py`) parses as a bogus model spec, refused
   pre-spawn with a did-you-mean (`models.validate`) when a model cache exists
   to check against, else it runs and fails at the provider call; start with a verb.
 - The exact token `/parallel`, whitespace-delimited, separates tasks. A
@@ -58,11 +58,12 @@ class Segment:
 
 def parse_spec(spec: str, *, limit: int) -> list[str | None]:
     """A spec string -> one entry per lane: `None` = the configured worker
-    model, else a per-lane model override. `""` (omitted) is one default lane.
+    model, else the lane's `[provider/]model` text, resolved by the caller
+    against its config. `""` (omitted) is one default lane.
 
     A positive integer `N` is N default lanes; a comma-separated list is one
-    lane per named model (a single model id, e.g. `provider/model`, is a
-    one-lane list). *limit* is the caller's `[parallel].max_lanes`; an
+    lane per entry (a single `provider/model` is a one-lane list). *limit* is
+    the caller's `[parallel].max_lanes`; an
     over-limit count refuses before the lane list is built, so a mistyped huge
     count cannot allocate it. Raises DirectiveError on a non-positive or
     over-limit count or a list that names no models. Single source for the

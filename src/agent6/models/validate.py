@@ -5,11 +5,9 @@ spawns, with a did-you-mean, instead of dying at the first provider call where
 the raw upstream 400 leaks.
 
 `validate_configured_model` checks a configured `models.<role>.model` at run
-start; `validate_spec_models` checks a `/parallel` spec's per-lane models
-(every lane runs on the WORKER provider by construction -- the lane config
-overrides only the model -- so the universe is worker-scoped:
-the worker's configured model unioned with the worker provider's listing. A
-sibling provider's catalog is unrunnable in a lane).
+start; `validate_spec_models` checks a `/parallel` spec's per-lane routes,
+each against its own provider (the models the roles name on it, unioned with
+its listing).
 
 Matching is cache-first: exact id, or the registry's normalization so a
 dated/tagged variant of a listed id (`...-20251001`, `...:free`) passes. A
@@ -39,12 +37,14 @@ from agent6.directive import DirectiveError, Segment, parse_spec
 from agent6.models.cache import cached_models, fetch_models_live
 from agent6.models.registry import normalize_model_id
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
+from agent6.types import ModelRoute
+
+ROLES: tuple[RoleName, ...] = ("worker", "reviewer", "planner")
 
 __all__ = [
     "ModelValidation",
     "configured_model_refusal",
     "directive_model_refusal",
-    "known_models",
     "refusal_message",
     "validate_configured_model",
     "validate_spec_models",
@@ -54,15 +54,16 @@ __all__ = [
 _MAX_SUGGESTIONS = 3
 
 
-def known_models(cfg: Config) -> set[str]:
-    """Every model id a `/parallel` lane can actually run, without touching the
-    network: the worker's configured model unioned with the worker provider's
-    on-disk model-list cache snapshot (lanes inherit the worker provider; only
-    the model is overridden per lane). Empty when no worker role is set."""
-    worker = cfg.models.worker
-    if worker is None:
-        return set()
-    return {worker.model} | set(cached_models(worker.provider))
+def _known_models(cfg: Config, provider: str) -> set[str]:
+    """The model ids *provider* is known to serve, without touching the
+    network: the models the roles name on it, unioned with its on-disk
+    model-list cache snapshot."""
+    named = {
+        rm.model
+        for role in ROLES
+        if (rm := cfg.models.resolve(role)) is not None and rm.provider == provider
+    }
+    return named | set(cached_models(provider))
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,37 +137,48 @@ def _suggest(unknown: list[str], pool: list[str]) -> dict[str, tuple[str, ...]]:
     return {model: _close_ids(model, pool, bare_to_full) for model in unknown}
 
 
-def validate_spec_models(models: list[str | None], cfg: Config) -> ModelValidation:
-    """Check per-lane *models* (a `parse_spec` result; `None` = the worker model,
-    skipped) against `known_models`. A miss against an existing cache re-checks
-    the live listing once before refusing (see module docstring)."""
-    known = known_models(cfg)
-    norm_known = {normalize_model_id(m) for m in known}
-    misses: list[str] = []
-    for model in models:
-        if model is None or model in misses or _matches(model, known, norm_known):
+def validate_spec_models(routes: Sequence[ModelRoute | None], cfg: Config) -> ModelValidation:
+    """Check per-lane *routes* (`None` = the worker's own route, skipped), each
+    against its provider's `_known_models`. A miss against an existing cache
+    re-checks that provider's live listing once before refusing (see module
+    docstring); a miss on a provider with no cache is unvalidated. `unknown`
+    names each route as provider/model. A confirmed miss refuses even when
+    another route stays unvalidated."""
+    misses: list[ModelRoute] = []
+    for route in routes:
+        if route is None or route in misses:
             continue
-        misses.append(model)
-    worker = cfg.models.worker
-    if not misses:
-        can = worker is not None and bool(cached_models(worker.provider))
-        return ModelValidation(unknown=(), suggestions={}, can_validate=can)
-    if worker is None or not cached_models(worker.provider):
-        # No snapshot to judge against: proceed with a warning, never block a
-        # fresh/offline machine (and no fetch attempt -- keyed providers already
-        # got one in check_provider_keys; a fetchable listing would be cached).
-        return ModelValidation(unknown=tuple(misses), suggestions={}, can_validate=False)
-    fresh = _fresh_listing(cfg, worker.provider)
-    if fresh is None:
-        return ModelValidation(unknown=tuple(misses), suggestions={}, can_validate=False)
-    known = {worker.model} | set(fresh)
-    norm_known = {normalize_model_id(m) for m in known}
-    unknown = [m for m in misses if not _matches(m, known, norm_known)]
-    if not unknown:
-        return ModelValidation(unknown=(), suggestions={}, can_validate=True)
-    return ModelValidation(
-        unknown=tuple(unknown), suggestions=_suggest(unknown, sorted(known)), can_validate=True
-    )
+        known = _known_models(cfg, route.provider)
+        if not _matches(route.model, known, {normalize_model_id(m) for m in known}):
+            misses.append(route)
+    unknown: list[str] = []
+    unvalidated: list[str] = []
+    suggestions: dict[str, tuple[str, ...]] = {}
+    fresh_by_provider: dict[str, list[str] | None] = {}
+    for route in misses:
+        if not cached_models(route.provider):
+            # No snapshot to judge against: proceed with a warning, never block
+            # a fresh/offline machine (and no fetch attempt: keyed providers got
+            # one in check_provider_keys; a fetchable listing would be cached).
+            unvalidated.append(route.spec)
+            continue
+        if route.provider not in fresh_by_provider:
+            fresh_by_provider[route.provider] = _fresh_listing(cfg, route.provider)
+        fresh = fresh_by_provider[route.provider]
+        if fresh is None:
+            unvalidated.append(route.spec)
+            continue
+        pool = _known_models(cfg, route.provider) | set(fresh)
+        if _matches(route.model, pool, {normalize_model_id(m) for m in pool}):
+            continue
+        unknown.append(route.spec)
+        specs = sorted(f"{route.provider}/{m}" for m in pool)
+        suggestions.update(_suggest([route.spec], specs))
+    if unknown:
+        return ModelValidation(unknown=tuple(unknown), suggestions=suggestions, can_validate=True)
+    if unvalidated:
+        return ModelValidation(unknown=tuple(unvalidated), suggestions={}, can_validate=False)
+    return ModelValidation(unknown=(), suggestions={}, can_validate=True)
 
 
 def validate_configured_model(cfg: Config, role: RoleName) -> ModelValidation:
@@ -174,7 +186,7 @@ def validate_configured_model(cfg: Config, role: RoleName) -> ModelValidation:
     typo'd `models.<role>.model` is caught at run start.
 
     Unlike `validate_spec_models` the pool EXCLUDES the model itself -- a
-    configured model is trivially in `known_models`, so that check can never
+    configured model is trivially in `_known_models`, so that check can never
     fail. A miss against an existing cache re-checks the live listing once;
     `refused` always rests on a listing fetched by this invocation, `warned`
     means the re-fetch failed (the caller prints it and proceeds). No cache at
@@ -277,10 +289,14 @@ def directive_model_refusal(
         return None  # a broken config is its own separate error; don't mask it here
     try:
         cap = cfg.parallel.max_lanes
-        models = [m for seg in segments for m in parse_spec(seg.spec, limit=cap)]
-    except DirectiveError as exc:
+        routes = [
+            cfg.model_route("worker", m) if m else None
+            for seg in segments
+            for m in parse_spec(seg.spec, limit=cap)
+        ]
+    except (ConfigError, DirectiveError) as exc:
         return str(exc)
-    verdict = validate_spec_models(models, cfg)
+    verdict = validate_spec_models(routes, cfg)
     return refusal_message(verdict, directive=True) if verdict.refused else None
 
 

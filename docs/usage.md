@@ -156,7 +156,7 @@ agent6 ask "how does the task-graph curator work?"
 - `--model [provider/]model`: the run's model over every config layer, for the role the mode runs (worker for `run` and `ask`, planner for `plan`)
   - a bare id keeps the role's provider; `agent6 model <role> <provider>` lists a provider's ids
   - recorded on the run: a resume keeps it unless it sets its own `--model`, which is recorded in turn
-- `--parallel 3` (or `model-a,model-b`): isolated fan-out lanes, auto-compared into a ranked report
+- `--parallel 3` (or `provider/model-a,model-b`, one lane per entry; a bare id runs on the worker's provider): isolated fan-out lanes, auto-compared into a ranked report
   - the fan-out is a session of its own: `attach` follows it, `sessions stop` ends it, `sessions show` lists its lanes with their placement
   - its lanes nest under it in every listing, folded into a count: `sessions list --lanes` and `ps --lanes` list them, Space in the TUI hub and the `lanes` line in the web hub expand them
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))

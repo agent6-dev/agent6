@@ -23,7 +23,7 @@ from agent6.app.parallel import (
     run_parallel,
 )
 from agent6.app.preflight import budget_preflight
-from agent6.config import Config
+from agent6.config import Config, ConfigError
 from agent6.directive import DirectiveError
 from agent6.git_ops import GitError, modified_paths
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
@@ -121,13 +121,13 @@ def dispatch_parallel(
     fanout_id = friendly_token()
     try:
         lanes = build_lane_specs(spec, cfg=cfg, origin=origin, fanout_id=fanout_id)
-    except (DirectiveError, ParallelError) as exc:
+    except (ConfigError, DirectiveError, ParallelError) as exc:
         refuse(f"{exc}")
         return 2
     # Validate the named models before any clone/spawn (lanes are plain specs so
     # far, no workdir touched): refuse a typo when a cache exists to check
     # against, else warn and proceed (a fresh/offline machine is never blocked).
-    verdict = validate_spec_models([ln.model for ln in lanes], cfg)
+    verdict = validate_spec_models([ln.route for ln in lanes], cfg)
     if verdict.refused:
         refuse(f"{refusal_message(verdict, directive=False)}")
         return 2

@@ -25,11 +25,8 @@ from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Footer, Select, Static, TextArea
 
-from agent6.config import ConfigError
-from agent6.config.layer import load_effective
 from agent6.directive import spec_fragment
 from agent6.models.choices import default_route
-from agent6.models.validate import known_models
 from agent6.types import OPERATOR_MODES
 from agent6.ui.spawn import spawn_new_work
 from agent6.ui.tui.composer import SteerInput, SteerSuggest
@@ -47,21 +44,10 @@ _INTRO = (
 )
 
 
-def available_models(repo_cwd: Path, config_path: Path | None) -> list[str]:
-    """Model ids for the `/parallel` autocomplete: the worker's model plus the
-    worker provider's cached listing (cache-only, no network), exactly the set
-    `run --parallel` validation accepts. Empty on any config error."""
-    try:
-        cfg = load_effective(repo_cwd, config_path).config
-    except ConfigError:
-        return []
-    return sorted(known_models(cfg))
-
-
 def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> Text | None:
     """The suggestion line for a `/parallel` spec fragment under the caret:
-    matching model ids (prefix matches first), or None when the caret is not
-    in a spec token or there is nothing to offer."""
+    matching `provider/model` routes (prefix matches first), or None when the
+    caret is not in a spec token or there is nothing to offer."""
     frag = spec_fragment(text)
     if frag is None or not models:
         return None
@@ -130,14 +116,12 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         config_path: Path | None = None,
         *,
         presets: list[str] | None = None,
-        models: list[str] | None = None,
         routes: list[str] | None = None,
     ) -> None:
         super().__init__()
         self.repo_cwd = repo_cwd
         self.config_path = config_path
         self._presets = presets if presets is not None else []
-        self._models = models if models is not None else []
         self._routes = routes if routes is not None else []
         self._starting = False
 
@@ -212,7 +196,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
     @on(TextArea.Changed, "#draft-input")
     def _on_task_changed(self, event: TextArea.Changed) -> None:
         self.query_one("#draft-suggest", SteerSuggest).show_text(
-            model_suggestions(self._models, event.text_area.text)
+            model_suggestions(self._routes, event.text_area.text)
         )
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:

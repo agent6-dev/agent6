@@ -12,11 +12,9 @@ from pathlib import Path
 from agent6.config import Config, ConfigError
 from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.models.cache import cached_models, list_models
-from agent6.models.validate import known_models
+from agent6.models.validate import ROLES
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
-from agent6.types import RoleName, session_kind
-
-ROLES: tuple[RoleName, ...] = ("worker", "reviewer", "planner")
+from agent6.types import session_kind
 
 
 def provider_model_choices(cfg: Config, provider: str) -> list[str]:
@@ -100,11 +98,11 @@ def model_role_provider(eff: EffectiveConfig, key: str) -> str | None:
 def config_value_choices(eff: EffectiveConfig, key: str) -> list[str]:
     """What a chooser offers for an open-text config leaf: `models.<role>.model`
     is that role's provider's model ids; the pseudo-key `parallel.models` (a
-    composer's `/parallel` autocomplete) is every id a lane may run
-    (`known_models`, cache-only, so a keystroke never waits on the network).
-    Enum leaves carry their choices in the config view; anything else offers
-    nothing."""
+    composer's `/parallel` autocomplete) is every `provider/model` a lane may
+    run (`route_choices`, cache-only, so a keystroke never waits on the
+    network). Enum leaves carry their choices in the config view; anything
+    else offers nothing."""
     if key == "parallel.models":
-        return sorted(known_models(eff.config))
+        return route_choices(eff.config)
     provider = model_role_provider(eff, key)
     return provider_model_choices(eff.config, provider) if provider else []

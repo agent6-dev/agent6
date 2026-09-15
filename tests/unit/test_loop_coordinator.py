@@ -203,11 +203,11 @@ class _FakeGroupSpawner:
     ) -> list[LaneResult]:
         self.calls.append((list(lanes), group))
         results: list[LaneResult] = []
-        for i, lane in enumerate(lanes, start=1):
+        for i in range(1, len(lanes) + 1):
             session_id = f"{self.coord_id}-{group}-l{i}"
             branch = f"agent6/{session_id}"
             spec = LaneSpec(
-                lane=i, session_id=session_id, workdir=self.wt_root / session_id, model=lane.model
+                lane=i, session_id=session_id, workdir=self.wt_root / session_id, route=None
             )
             if i in self.fail:
                 results.append(

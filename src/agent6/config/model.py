@@ -329,24 +329,27 @@ class Config(BaseModel):
         a model id on the role's current provider (so an OpenRouter id with
         its own slash stays one id). Parsed once, here; everything after
         carries the pair. Raises ConfigError for a value that names nothing."""
+        raw_spec = spec
         spec = spec.strip()
+        if not spec:
+            raise ConfigError(f"{raw_spec!r}: no model id.")
         provider, slash, model = spec.partition("/")
         known = ", ".join(sorted(self.providers)) or "(none)"
         if slash and not provider:
             raise ConfigError(
-                f"--model {spec!r}: name the provider as provider/model"
+                f"{raw_spec!r}: name the provider as provider/model"
                 f" (configured providers: {known})."
             )
+        if slash and not model:
+            raise ConfigError(f"{raw_spec!r}: no model id after the slash.")
         if not slash or provider not in self.providers:
             current = self.models.resolve(role)
             if current is None:
                 raise ConfigError(
-                    f"--model {spec!r}: name the provider as provider/model"
+                    f"{raw_spec!r}: name the provider as provider/model"
                     f" (configured providers: {known})."
                 )
             provider, model = current.provider, spec
-        if not model:
-            raise ConfigError(f"--model {spec!r}: no model id.")
         return ModelRoute(provider, model)
 
     def with_model_route(self, role: RoleName, route: ModelRoute) -> Config:

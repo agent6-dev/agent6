@@ -1125,6 +1125,8 @@ def test_with_model_route_refuses_what_it_cannot_route(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     with pytest.raises(ConfigError, match="no model id"):
         cfg.model_route("worker", "anthropic/")
+    with pytest.raises(ConfigError, match="no model id"):
+        cfg.model_route("worker", "not-a-provider/")
     roleless = cfg.model_validate({**cfg.model_dump(mode="python"), "models": {}})
     with pytest.raises(ConfigError, match="configured providers: anthropic"):
         roleless.model_route("worker", "claude-y")
@@ -1134,8 +1136,9 @@ def test_with_model_route_refuses_a_blank_and_an_empty_provider(tmp_path: Path) 
     """Whitespace is no model id, and `/model` names no provider: both refuse
     instead of becoming a model id of spaces or of `/model`."""
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    with pytest.raises(ConfigError, match="no model id"):
+    with pytest.raises(ConfigError, match="no model id") as exc:
         cfg.model_route("worker", "   ")
+    assert "'   '" in str(exc.value)
     with pytest.raises(ConfigError, match="name the provider as provider/model"):
         cfg.model_route("worker", "/claude-y")
     assert cfg.model_route("worker", " claude-y ").model == "claude-y"

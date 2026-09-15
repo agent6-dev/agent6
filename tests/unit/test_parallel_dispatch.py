@@ -25,7 +25,7 @@ from agent6.workflows.subrun import LaneResult, LaneSpec
 
 
 def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> LaneResult:
-    spec = LaneSpec(lane=1, session_id="lane-1", workdir=Path("/nowhere"), model=None)
+    spec = LaneSpec(lane=1, session_id="lane-1", workdir=Path("/nowhere"), route=None)
     return LaneResult(spec=spec, session_dir=Path("/nowhere"), branch=branch, ok=ok, error=error)
 
 

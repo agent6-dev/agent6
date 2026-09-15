@@ -213,7 +213,7 @@ def print_lane_status(
     waiting: str = "",
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
-    model = f" ({spec.model})" if spec.model else ""
+    model = f" ({spec.route.spec})" if spec.route else ""
     cost_s = f"  {format_usd(cost)}" if cost > 0 else ""
     state = (
         f"waiting on {waiting} (answer via agent6 attach {spec.session_id}, the web or TUI hub)"

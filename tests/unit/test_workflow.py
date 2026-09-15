@@ -6772,15 +6772,13 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: Pat
         ]
         return [
             LaneResult(
-                spec=LaneSpec(
-                    lane=i, session_id=f"run-{group}-l{i}", workdir=tmp_path, model=lane.model
-                ),
+                spec=LaneSpec(lane=i, session_id=f"run-{group}-l{i}", workdir=tmp_path, route=None),
                 session_dir=tmp_path,
                 branch="b",
                 ok=False,
                 error="lane failed",
             )
-            for i, lane in enumerate(lanes, start=1)
+            for i in range(1, len(lanes) + 1)
         ]
 
     wf = _wf(root=tmp_path, mode="run", lane_spawner=spawner, resume_state_path=snap)

@@ -18,6 +18,7 @@ from typing import Protocol
 from agent6.git_ops import GitError, branch_exists, clone_repo, fetch_branch
 from agent6.paths import mkdir_for_real_user
 from agent6.sessions.layout import bucket_dir
+from agent6.types import ModelRoute
 
 
 class SubrunError(Exception):
@@ -27,12 +28,12 @@ class SubrunError(Exception):
 @dataclass(frozen=True, slots=True)
 class LaneSpec:
     """One subordinate lane to run: its own workspace clone, run id, and
-    model (None = the configured worker model)."""
+    route (None = the worker's own)."""
 
     lane: int
     session_id: str
     workdir: Path
-    model: str | None
+    route: ModelRoute | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,9 +50,10 @@ class LaneResult:
 
 @dataclass(frozen=True, slots=True)
 class LaneTask:
-    """One lane to dispatch: the task text and an optional per-lane model
-    (`None` = the configured worker model). The coordinator expands each
-    `/parallel` segment into these (spec=3 -> three, one per model in a list)."""
+    """One lane to dispatch: the task text and an optional per-lane
+    `[provider/]model` text (`None` = the worker's own route; the dispatcher
+    resolves the text against the config). The coordinator expands each
+    `/parallel` segment into these (spec=3 -> three, one per list entry)."""
 
     task: str
     model: str | None

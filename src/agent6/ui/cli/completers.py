@@ -111,31 +111,14 @@ def _complete_model_routes(prefix: str, **kw: object) -> list[str]:
     return [r for r in route_choices(cfg) if r.startswith(prefix)]
 
 
-def _all_parallel_model_names(config_path: Path | None = None) -> list[str]:
-    """Model ids a `/parallel` lane can actually run: the worker provider's
-    catalog (lanes inherit the worker provider; only the model is overridden per
-    lane), from the same live + configured source `agent6 model` completes from."""
-    try:
-        eff = load_effective(Path.cwd(), config_path)
-    except ConfigError:
-        return []
-    worker = eff.config.models.worker
-    if worker is None:
-        return []
-    from agent6.ui.cli.model import _models_for  # noqa: PLC0415
-
-    return sorted(set(_models_for(config_path, worker.provider)))
-
-
 @_never_raises
 def _complete_parallel_models(prefix: str, **kw: object) -> list[str]:
-    """argcomplete for `run --parallel`: the worker provider's model ids,
-    completing the token after the last comma so a `m1,m2,...` list completes
-    member by member (an integer lane count is typed, not completed)."""
+    """argcomplete for `run --parallel`: every `provider/model` the config can
+    run, completing the entry after the last comma so a list completes entry
+    by entry (an integer lane count is typed, not completed)."""
     head, sep, frag = prefix.rpartition(",")
-    lead = head + sep  # "" for the first/only model, "m1," while extending a list
-    names = _all_parallel_model_names(_explicit_config(kw))
-    return sorted(lead + m for m in names if m.startswith(frag))
+    lead = head + sep  # "" for the first entry, "p/m," while extending a list
+    return [lead + r for r in _complete_model_routes(frag, **kw)]
 
 
 # Values TAB must not offer even though the schema allows them, keyed by leaf.

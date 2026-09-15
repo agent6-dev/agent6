@@ -40,7 +40,7 @@ from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.machines import MachinesScreen
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import ConfirmModal
-from agent6.ui.tui.new_work import NewWorkScreen, available_models
+from agent6.ui.tui.new_work import NewWorkScreen
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.theme import (
     PALETTE_CSS,
@@ -323,7 +323,6 @@ class HomeScreen(ScreenChrome, Screen[None]):
                 self.repo_cwd,
                 self.config_path,
                 presets=available_preset_names(self.repo_cwd, self.config_path),
-                models=available_models(self.repo_cwd, self.config_path),
                 routes=available_routes(self.repo_cwd, self.config_path),
             )
         )
