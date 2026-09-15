@@ -475,7 +475,7 @@ def _apply_capture(
     if capture is None:
         return
     try:
-        result_obj: Any = scrub_lone_surrogates(json.loads(stdout)) if stdout.strip() else None
+        result_obj: Any = scrub_lone_surrogates(json.loads(stdout))
     except json.JSONDecodeError as exc:
         raise StateRuntimeError(f"tool stdout is not valid JSON for capture: {exc}") from exc
     # Validate the parsed stdout against the tool's declared output_schema
@@ -530,6 +530,13 @@ def reduce(
     ):
         _apply_capture(spec, state, fact.stdout, updated)
     elif isinstance(state, AgentState) and isinstance(fact, AgentFact) and fact.outcome == "ok":
+        problems = validate_record_payload(
+            spec.schemas, state.output_schema, fact.payload, where="agent payload"
+        )
+        if problems:
+            raise StateRuntimeError(
+                "agent payload does not match output_schema: " + "; ".join(problems)
+            )
         _apply_agent_capture(state, fact.payload, updated)
     return updated
 

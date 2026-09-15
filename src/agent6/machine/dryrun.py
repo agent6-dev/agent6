@@ -140,7 +140,9 @@ def _check_tool(
     if state.output_schema is not None:
         stdout = json.dumps(synthesize_record(spec, state.output_schema))
     else:
-        stdout = ""
+        # A schema-less whole capture still requires one JSON value. JSON null
+        # is the weakest valid opaque value; an empty stdout is malformed.
+        stdout = "null" if state.capture is not None else ""
     fact = ToolFact(exit_code=0, stdout=stdout, timed_out=False)
     reduce(spec, state, fact, blackboard)  # exercises capture rendering; raises on a bad template
     goto = state.on["ok"]

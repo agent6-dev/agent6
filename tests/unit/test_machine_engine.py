@@ -504,6 +504,21 @@ def test_tool_timeout_routes_to_failure(tmp_path: Path) -> None:
     assert result.state == "stop_fail"
 
 
+def test_empty_tool_stdout_is_not_json_for_an_opaque_capture(tmp_path: Path) -> None:
+    """`stdout_json` means parse one JSON value; an empty successful stdout is
+    malformed output, not an implicit JSON null that may overwrite the var."""
+    journal, f = _load(tmp_path, FOREVER)
+    spec = load_machine(f)
+    world = FakeWorld({"record": _ok("")}, wakes=[WaitWake("signal")])
+
+    result = drive(spec, journal, world, live=True)
+
+    assert result.status == "failed"
+    assert "not valid JSON" in result.reason
+    snapshot = journal.latest_snapshot()
+    assert snapshot is not None and snapshot.blackboard["last"] == {}
+
+
 def test_tool_bad_stdout_fails_clean_without_poisoning_journal(tmp_path: Path) -> None:
     # A tool that exits 0 but prints non-JSON stdout cannot be captured. The
     # machine must halt FAILED cleanly, and -- critically -- never journal the
@@ -1360,6 +1375,32 @@ def test_agent_replay_reproduces_path_without_world(tmp_path: Path) -> None:
     live = drive(spec, journal, world, live=True)
     replayed = drive(spec, journal, None, live=False)
     assert replayed == live
+
+
+def test_agent_recovery_revalidates_the_journaled_payload(tmp_path: Path) -> None:
+    """Pydantic validates the journal envelope, but the machine's record schema
+    must also reject a fabricated `ok` payload before it reaches the board."""
+    journal, f = _load(tmp_path, REVIEWER)
+    spec = load_machine(f)
+    journal.ensure_dirs()
+    journal.begin(machine="reviewer", version=1)
+    journal.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="review",
+            label="ok",
+            goto="route",
+            fact=AgentFact(
+                outcome="ok",
+                reason="finish_session",
+                payload={"approved": True},
+            ),
+        )
+    )
+
+    with pytest.raises(EngineError, match="missing required field 'note'"):
+        drive(spec, journal, None, live=False)
 
 
 def test_agent_crash_recovery_does_not_rerun(tmp_path: Path) -> None:
