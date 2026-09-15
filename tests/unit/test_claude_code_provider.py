@@ -552,15 +552,25 @@ def test_message_start_input_usage_is_combined_with_message_delta_output_usage(
 
 
 def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(tmp_path: Path) -> None:
+    """The flags flip once the child has recorded its spawn: an abort at the
+    first poll can kill it before it has started, and then there is no pid to
+    check."""
     binary, cap = _install(tmp_path, {"hang_s": 30, "turns": [[_round(text="x")]]})
     provider = _provider(binary)
     started = time.monotonic()
     with pytest.raises(ProviderAborted):
-        provider.call(system="s", messages=USER0, tools=TOOLS, should_abort=lambda: True)
+        provider.call(
+            system="s", messages=USER0, tools=TOOLS, should_abort=lambda: len(_spawns(cap)) >= 1
+        )
     assert time.monotonic() - started < 5
     assert not _alive(_spawns(cap)[0]["pid"])
     with pytest.raises(ProviderInterrupted):
-        provider.call(system="s", messages=USER0, tools=TOOLS, should_interrupt=lambda: True)
+        provider.call(
+            system="s",
+            messages=USER0,
+            tools=TOOLS,
+            should_interrupt=lambda: len(_spawns(cap)) >= 2,
+        )
     assert not _alive(_spawns(cap)[1]["pid"])
     _rescenario(tmp_path, {"turns": [[_round(text="x")]]})
     assert provider.call(system="s", messages=USER0, tools=TOOLS).text == "x"
