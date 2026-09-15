@@ -28,6 +28,7 @@ def test_rows_match_the_typed_prefix() -> None:
         "/undo",
         "/btw",
         "/now",
+        "/stop",
         "/shells",
     ]
     assert [c for c, _ in steer_suggestion_rows("/p", mode="steer")] == ["/pin", "/parallel"]

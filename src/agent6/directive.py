@@ -188,11 +188,12 @@ def spec_fragment(text: str) -> str | None:
 
 
 # The steer directives a front-end acts on itself, so none can start a leg:
-# `/compact`, `/btw` and `/now` need a live run (a composer or the pause menu
-# takes them, and a resume composer does not offer them); `/restate` and
-# `/shells` act in the composer that typed them, live or not. The loop parses
-# none of these, so a leg started on one would hand the token to the model.
-LIVE_RUN_COMMANDS: frozenset[str] = frozenset({"/compact", "/btw", "/now"})
+# `/compact`, `/btw`, `/now` and `/stop` need a live run (a composer or the
+# pause menu takes them, and a resume composer does not offer them);
+# `/restate` and `/shells` act in the composer that typed them, live or not.
+# The loop parses none of these, so a leg started on one would hand the token
+# to the model.
+LIVE_RUN_COMMANDS: frozenset[str] = frozenset({"/compact", "/btw", "/now", "/stop"})
 _FRONT_END_COMMANDS: frozenset[str] = LIVE_RUN_COMMANDS | {"/restate", "/shells"}
 _FRONT_END_TOKEN = re.compile(
     r"\A\s*(" + "|".join(map(re.escape, sorted(_FRONT_END_COMMANDS))) + r")(?=\s|\Z)"
@@ -275,5 +276,6 @@ STEER_COMMANDS: dict[str, str] = {
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",
     "/now": "steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)",
+    "/stop": "stop the run now, as `agent6 stop` does (resumable)",
     "/shells": "background commands this run started, and how they ended",
 }

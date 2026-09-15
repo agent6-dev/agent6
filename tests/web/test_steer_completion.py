@@ -26,3 +26,9 @@ def test_compact_is_gated_on_live() -> None:
     for cmd in LIVE_RUN_COMMANDS:
         assert f"c !== '{cmd}'" in gate, cmd
     assert "() => finished === false" in CLIENT_JS  # the composer's live truth feeds the gate
+
+
+def test_a_typed_stop_posts_the_one_stop() -> None:
+    """`/stop` in the web composer calls the stop route, not a steer text."""
+    assert "if (text === '/stop') {" in CLIENT_JS
+    assert "postJSON('/api/session/' + encodeURIComponent(id) + '/stop', {})" in CLIENT_JS

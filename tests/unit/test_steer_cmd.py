@@ -151,6 +151,30 @@ def test_steer_btw_opens_a_side_ask_instead_of_queuing_the_directive(
     assert take_steer_answer(d) is None
 
 
+def test_steer_stop_is_the_one_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 steer ID /stop` is `agent6 stop ID`, not a steer text the loop
+    would hand to the model."""
+    from agent6.app.stop import StopOutcome
+    from agent6.ui.cli import steer_cmd
+
+    calls: list[Path] = []
+
+    def _fake(session_dir: Path, *, after_step: bool = False) -> StopOutcome:
+        calls.append(session_dir)
+        return StopOutcome(session_dir.name, True, "stopped", f"{session_dir.name} stopped")
+
+    monkeypatch.setattr(steer_cmd, "stop_session", _fake)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = _run_session(tmp_path, "tiny-run-BBBB22")
+    write_worker_pid(d, os.getpid())
+    assert main(["steer", "tiny-run", "/stop"]) == 0
+    assert calls == [d] and "tiny-run-BBBB22 stopped" in capsys.readouterr().out
+    assert not steer_request_pending(d)
+
+
 def test_steer_reports_an_unknown_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

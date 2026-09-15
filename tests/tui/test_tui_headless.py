@@ -991,6 +991,39 @@ def test_ctrl_z_on_the_run_spawned_view_detaches_the_run_itself(tmp_path: Path) 
     asyncio.run(hub_viewer())
 
 
+def test_a_typed_stop_is_the_one_stop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`/stop` in the composer, on a live run, is the stop `agent6 stop` is: no
+    confirm (it was typed); on a session that is not live it says so."""
+    import os
+
+    from agent6.app.stop import StopOutcome
+    from agent6.sessions.ipc import write_worker_pid
+    from agent6.ui.tui import app as app_mod
+
+    calls: list[bool] = []
+
+    def _fake(session_dir: Path, *, after_step: bool = False) -> StopOutcome:
+        calls.append(after_step)
+        return StopOutcome(session_dir.name, True, "stopped", f"{session_dir.name} stopped")
+
+    monkeypatch.setattr(app_mod, "stop_session", _fake)
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        write_worker_pid(tmp_path, os.getpid())
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            app.submit_instruction("/stop")
+            for _ in range(50):
+                await pilot.pause()
+                if calls:
+                    break
+            assert calls == [False]
+
+    asyncio.run(scenario())
+
+
 def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
     """Run > Stop after this step on a LIVE run confirms, then drops the
     stop.request marker the loop honors at its next completed-iteration

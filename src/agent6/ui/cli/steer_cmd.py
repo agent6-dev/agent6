@@ -9,8 +9,10 @@ running refuses, naming `resume --steer`.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+from agent6.app.stop import stop_session
 from agent6.directive import parse_btw, parse_compact
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import request_compact, submit_steer
@@ -20,12 +22,18 @@ from agent6.viewmodel import session_is_live
 from agent6.viewmodel.listing import summarize_session_dir
 
 
-def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
+def _cmd_steer(  # noqa: PLR0911, PLR0912 - each refusal names its own reason
+    target: str, text: str, *, now: bool = False
+) -> int:
     try:
         layout = resolve_session_layout(Path.cwd(), target)
     except SessionIdError as exc:
         error(f"{exc}")
         return 2
+    if text.strip() == "/stop":
+        out = stop_session(layout.session_dir)
+        print(f"[agent6] {out.message}.", file=sys.stdout if out.ok else sys.stderr)
+        return 0 if out.ok or out.how == "not_live" else 1
     if not session_is_live(layout.session_dir):
         refuse(
             f"session {layout.session_id} is not running; a steer needs a"

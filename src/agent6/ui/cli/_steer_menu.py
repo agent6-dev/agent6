@@ -79,7 +79,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/restate": "restate the conversation since your last message",
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/continue": "resume the run unchanged (same as Enter)",
-    "/stop": "stop the run now (resume later with `agent6 resume`)",
+    "/stop": STEER_COMMANDS["/stop"],
     "/exit": "stop the run and leave (no follow-up prompt; resume later)",
     "/detach": "keep the run going in the background",
     "/help": "this list",

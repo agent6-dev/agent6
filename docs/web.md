@@ -40,7 +40,7 @@ Pages that take a task, a steer or a machine message dock their text entry at th
     - the run's context (overview, plan.md, task graph, budget, tool calls, background shells, latest commit diff, event log) lives in a resizable details drawer
         - the plan.md card carries a planning run's deliverable, and shows only once there is one
     - the docked composer steers a live run or resumes an ended one, under the preset and model picked in the row above it (blank: as the run recorded); `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages
-        - Ctrl+Enter prefixes a live run's steer with `/now`, aborting the call in flight; text already starting with `/` goes as typed
+        - Ctrl+Enter prefixes a live run's steer with `/now`, aborting the call in flight; text already starting with `/` goes as typed; `/stop` is the one stop `agent6 stop` is
     - the Latest commit widget selects any per-step commit (cumulative toggle); the Budget and Task graph widgets then show that step's state; a model-controlled run has no chain and says so
     - stop now (the one stop `agent6 stop` is: the model call cut, a running command handed back, a worker that does not answer killed, the run resumable) / stop after step, compact, fork (a new run at the latest checkpoint, unstarted: its composer starts it), merge, delete history, run a finished plan (`run --from`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline
       ("Allow session" appears only where it would grant something beyond the one call it is clicked on)

@@ -273,6 +273,7 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
         "/shells",
         "/now hurry up",
         "/now",
+        "/stop",
     ):
         assert "cannot start a leg" in (steer_problem(live_only) or ""), live_only
     assert steer_problem("/pin keep the API stable") is None

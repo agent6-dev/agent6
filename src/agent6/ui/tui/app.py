@@ -491,16 +491,15 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         """A composer-bar line. Live: inject it at the run's next safe boundary
         (after the current step, never mid tool-call), and the run keeps going.
         Finished: resume this run with the instruction as the follow-up."""
-        if text.strip() == "/undo":
-            self._undo_session()
-            return
-        if text.strip() == "/restate":
-            # Local and free: rendered from the journal, nothing reaches the model.
-            rendered = restate(list(tail_events(self.logs_path, follow=False)))
-            self.push_screen(TextModal("since your last message", rendered))
-            return
-        if text.strip() == "/shells":
-            self.push_screen(TextModal("background commands", shells_text(self.session_dir)))
+        # The directives this view acts on itself; the rest go to the run.
+        local = {
+            "/undo": self._undo_session,
+            "/restate": self._restate,
+            "/shells": self._show_shells,
+            "/stop": self._typed_stop,
+        }
+        if (action := local.get(text.strip())) is not None:
+            action()
             return
         if self.session_controllable():
             question = parse_btw(text)
@@ -527,6 +526,21 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
                 self.notify("could not write the steer request", severity="warning")
         else:
             self.resume_with_instruction(text)
+
+    def _restate(self) -> None:
+        # Local and free: rendered from the journal, nothing reaches the model.
+        rendered = restate(list(tail_events(self.logs_path, follow=False)))
+        self.push_screen(TextModal("since your last message", rendered))
+
+    def _show_shells(self) -> None:
+        self.push_screen(TextModal("background commands", shells_text(self.session_dir)))
+
+    def _typed_stop(self) -> None:
+        # Typed, so no confirm; the stop `agent6 stop` does.
+        if self.session_controllable():
+            self._stop_session(after_step=False)
+        else:
+            self.notify("nothing to stop: the session is not live", severity="warning")
 
     def _undo_session(self) -> None:
         """`/undo`: fork this run at the state before its last operator message,
