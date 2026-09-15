@@ -91,6 +91,30 @@ def test_ps_lists_a_linked_lane_once(
     assert capsys.readouterr().out.count("fan-l1") == 1
 
 
+def test_ps_lists_same_named_live_sessions_from_different_repositories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(base))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    repo_ids = ("first-repo-111111", "second-repo-222222")
+    for repo_id in repo_ids:
+        session = base / "agent6" / repo_id / "sessions" / "runs" / "same-run"
+        session.mkdir(parents=True)
+        (session / "logs.jsonl").write_text(
+            json.dumps({"type": "session.start", "mode": "run", "user_task": repo_id}) + "\n",
+            encoding="utf-8",
+        )
+        write_worker_pid(session, os.getpid())
+
+    assert cmd_ps(as_json=True) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert {(row["repo_id"], row["id"]) for row in rows} == {
+        ("first-repo-111111", "same-run"),
+        ("second-repo-222222", "same-run"),
+    }
+
+
 def test_ps_json_carries_the_row_facts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

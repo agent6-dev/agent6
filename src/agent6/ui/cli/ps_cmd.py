@@ -47,21 +47,33 @@ class _Row:
 
 @dataclass(frozen=True, slots=True)
 class _Live:
-    """The live sessions (rows and their summaries, by id) and machine rows."""
+    """The live sessions (rows and summaries, by real dir) and machine rows."""
 
-    rows: dict[str, _Row]
-    summaries: dict[str, SessionSummary]
+    rows: dict[Path, _Row]
+    summaries: dict[Path, SessionSummary]
     machines: list[_Row]
 
     def nested(self) -> list[_Row]:
         """The session rows with a fan-out's live lanes under it (the listing
         fold, `nested_rows`), then the machines."""
 
-        def tree(row: ListingRow) -> _Row:
-            own = self.rows[row.summary.session_id]
-            return replace(own, lanes=tuple(tree(lane) for lane in row.lanes))
+        summaries_by_repo: dict[str, list[SessionSummary]] = {}
+        rows_by_repo: dict[str, dict[str, _Row]] = {}
+        for real, own in self.rows.items():
+            summaries_by_repo.setdefault(own.repo_id, []).append(self.summaries[real])
+            rows_by_repo.setdefault(own.repo_id, {})[own.id] = own
 
-        return [*(tree(r) for r in nested_rows(self.summaries.values())), *self.machines]
+        def tree(row: ListingRow, own_rows: dict[str, _Row]) -> _Row:
+            own = own_rows[row.summary.session_id]
+            return replace(own, lanes=tuple(tree(lane, own_rows) for lane in row.lanes))
+
+        session_rows: list[tuple[float, _Row]] = []
+        for repo_id, summaries in summaries_by_repo.items():
+            own_rows = rows_by_repo[repo_id]
+            session_rows.extend((row.mtime, tree(row, own_rows)) for row in nested_rows(summaries))
+        session_rows.sort(key=lambda item: item[0], reverse=True)
+
+        return [*(row for _mtime, row in session_rows), *self.machines]
 
 
 def _live_rows() -> _Live:
@@ -126,8 +138,8 @@ def _live_rows() -> _Live:
                         )
                     )
     return _Live(
-        rows={r.id: r for r in rows_by_dir.values()},
-        summaries={s.session_id: s for s in summaries_by_dir.values()},
+        rows=rows_by_dir,
+        summaries=summaries_by_dir,
         machines=rows,
     )
 
