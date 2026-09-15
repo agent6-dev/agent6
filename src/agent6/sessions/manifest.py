@@ -82,6 +82,10 @@ class WorkflowStamp(BaseModel):
     review_trigger: str = ""
     revise_prompt: str = ""
     preset: str = ""
+    # The `--model` the run was started or last resumed with ("" = the
+    # config's route): a resume that sets none replays it, as a flag-selected
+    # preset is replayed.
+    model: str = ""
     # The verify gate this run is pinned to, and where it came from:
     # "configured" (a config file, which the model cannot write), "inferred"
     # (repo signals / AGENTS.md, which it can), "adopted" (gained mid-run by a

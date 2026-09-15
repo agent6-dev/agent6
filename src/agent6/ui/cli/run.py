@@ -255,6 +255,7 @@ def _cmd_run(
     parallel_spec: str = "",
     standing_goal: str = "",
     pins: tuple[str, ...] = (),
+    model: str = "",
 ) -> int:
     """Adapt `agent6 run`/`plan`/`ask` argv: build the effective config, apply
     the flag overrides, resolve skills and @file refs, route `--parallel`,
@@ -272,6 +273,7 @@ def _cmd_run(
         preset=preset,
         budget_overrides=budget_overrides,
         sandbox_overrides=sandbox_overrides,
+        model=model,
     )
     cfg, explicit_leaves = effective.config, effective.explicit_leaves
     if decompose:  # --decompose: plan-first for this run (overrides config)
@@ -301,7 +303,7 @@ def _cmd_run(
         # The route preflight run_task owns, here so the fan-out refuses before
         # cloning and its --max-usd check reads the listing the key check
         # refreshed; each lane's own `agent6 run` repeats it (a TTL-cache hit).
-        if not route_preflight(cfg, role, reporter=STDIO_REPORTER):
+        if not route_preflight(cfg, role, reporter=STDIO_REPORTER, model_flag=model):
             return 2
         return dispatch_parallel(
             cfg,
@@ -327,5 +329,6 @@ def _cmd_run(
         preset=preset,
         pins=pins,
         standing_goal=standing_goal,
+        model=model,
         explicit_leaves=explicit_leaves,
     )

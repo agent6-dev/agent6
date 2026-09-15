@@ -20,6 +20,7 @@
     "review_trigger": "on",
     "revise_prompt": "off",
     "preset": "",
+    "model": "",
     "verify_command": [],
     "verify_origin": "",
     "preset_from_flag": false

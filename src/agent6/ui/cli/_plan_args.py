@@ -16,6 +16,7 @@ from agent6.ui.cli._common import (
     _add_session_id,
     _sub,
 )
+from agent6.ui.cli._run_args import _add_model_flag
 from agent6.ui.cli.completers import (
     _complete_plan_session_ids,
     _complete_presets,
@@ -53,6 +54,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
     )
     plan_profile.completer = _complete_presets  # type: ignore[attr-defined]
+    _add_model_flag(plan_run)
     _add_config_flag(plan_run)
     plan_run.add_argument(
         "--tui",
@@ -138,6 +140,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
     )
     ask_profile.completer = _complete_presets  # type: ignore[attr-defined]
+    _add_model_flag(ask_query)
     _add_config_flag(ask_query)
     ask_query.add_argument(
         "-i",

@@ -27,7 +27,14 @@ from agent6.app.frontend import (
     SessionFrontend,
     settle_away_mode,
 )
-from agent6.app.manifest import pin_gate, stamp_fork_task, stamp_leg, stamp_preset, stamp_task
+from agent6.app.manifest import (
+    pin_gate,
+    stamp_fork_task,
+    stamp_leg,
+    stamp_model,
+    stamp_preset,
+    stamp_task,
+)
 from agent6.app.preflight import (
     SessionRefused,
     drop_gate_if_unrunnable,
@@ -258,6 +265,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     preset: str = "",
     steer: str = "",
     interactive: bool = False,
+    model: str = "",
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
@@ -304,6 +312,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     # continue it.
     try:
         manifest = read_manifest(layout.session_dir)
+        # The run's recorded `--model` replays unless this resume sets its own,
+        # the rule a flag-selected preset follows.
+        route = model or manifest.workflow.model
         mode = manifest.session_mode()
     except ManifestError as exc:
         reporter.error(f"cannot resume {session_id}: {exc}")
@@ -396,6 +407,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     preset=preset or manifest.workflow.replay_preset,
                     budget_overrides=budget_overrides,
                     sandbox_overrides=sandbox_overrides,
+                    model=route,
                 )
                 cfg = effective.config
             except ConfigError as exc:
@@ -415,6 +427,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 preset=preset,
+                model=route,
                 explicit_leaves=effective.explicit_leaves,
                 # Pin the ORIGINAL stamp ONLY for a FLAG-selected preset whose
                 # veto must survive, and only when this resume sets no --preset
@@ -523,22 +536,26 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 preset=preset or manifest_preset,
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
+                model=route,
             )
         except ConfigError as exc:
             reporter.error(str(exc))
             return 2
         cfg, explicit_leaves = effective.config, effective.explicit_leaves
-        if preset:
-            # This leg and every later one run under the operator's new
-            # choice; the stamp is what listings show and resume replays.
-            stamp_preset(layout.session_dir, preset)
 
         # Needs the config: "approve everything while away" is a grant per
         # scope, and the scopes in play include one per configured MCP server.
         settle_away_mode(layout.session_dir, cfg)
 
-        if not route_preflight(cfg, role, reporter=reporter):
+        if not route_preflight(cfg, role, reporter=reporter, model_flag=route):
             return 2
+        # Past the route refusal: this leg and every later one run under the
+        # operator's new choices; the stamps are what listings show and a
+        # later resume replays. A refused leg leaves them untouched.
+        if preset:
+            stamp_preset(layout.session_dir, preset)
+        if model:
+            stamp_model(layout.session_dir, model)
 
         try:
             isolation = select_isolation(
@@ -795,6 +812,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg=cfg,
                 layout=layout,
                 cwd=repo,
-                flags=override_flags(budget_overrides, sandbox_overrides),
+                flags=override_flags(budget_overrides, sandbox_overrides, model),
                 reporter=reporter,
             )

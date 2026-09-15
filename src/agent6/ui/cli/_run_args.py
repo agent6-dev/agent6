@@ -16,12 +16,28 @@ from agent6.ui.cli._common import (
     _sub,
 )
 from agent6.ui.cli.completers import (
+    _complete_model_routes,
     _complete_parallel_models,
     _complete_presets,
     _complete_resumable_ids,
     _complete_session_ids,
     _complete_skills,
 )
+
+
+def _add_model_flag(parser: argparse.ArgumentParser) -> None:
+    arg = parser.add_argument(
+        "--model",
+        default="",
+        metavar="[PROVIDER/]MODEL",
+        help=(
+            "The run's model, over every config layer: provider/model (`agent6 model"
+            " <role> <provider>` lists a provider's ids), or a model id on the role's"
+            " current provider. run and ask set the worker, plan the planner. Recorded"
+            " on the run: a resume keeps it unless it sets its own."
+        ),
+    )
+    arg.completer = _complete_model_routes  # type: ignore[attr-defined]
 
 
 def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -112,6 +128,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         ),
     )
     run_profile.completer = _complete_presets  # type: ignore[attr-defined]
+    _add_model_flag(run_p)
     _add_config_flag(run_p)
     run_p.add_argument(
         "-i",
@@ -168,6 +185,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     resume_preset.completer = _complete_presets  # type: ignore[attr-defined]
+    _add_model_flag(resume_p)
     _add_config_flag(resume_p)
     resume_p.add_argument(
         "-i",

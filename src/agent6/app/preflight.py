@@ -38,6 +38,7 @@ from agent6.git_ops import (
 from agent6.models.pricing import lookup_price
 from agent6.models.validate import (
     configured_model_refusal,
+    flag_model_refusal,
     validate_configured_model,
     warning_message,
 )
@@ -430,20 +431,27 @@ def headless_parking_note(
     )
 
 
-def route_preflight(cfg: Config, role: RoleName, *, reporter: Reporter) -> bool:
+def route_preflight(
+    cfg: Config, role: RoleName, *, reporter: Reporter, model_flag: str = ""
+) -> bool:
     """Whether the run's model route can run, decided before any state exists:
     every provider the run can reach has its key or sign-in (each refreshes
     its model listing on the way), then the configured model against that
     listing, so a typo refuses here with a did-you-mean instead of echoing
     the first provider call's 400. A model the cached listing lacks whose
     live re-check failed (offline) warns and proceeds: the first call is the
-    arbiter. False = refused, said through *reporter*."""
+    arbiter. False = refused, said through *reporter*. *model_flag* is the
+    `--model` value that set the role, so the refusal names the flag rather
+    than the config entry the operator never wrote."""
     missing = check_provider_keys(cfg)
     if missing is not None:
         reporter.err(missing)
         return False
     verdict = validate_configured_model(cfg, role)
     if verdict.refused:
+        if model_flag:
+            reporter.refuse(flag_model_refusal(verdict, cfg, role, model_flag))
+            return False
         # Name the entry the operator wrote: a plan whose planner fell back to
         # the worker model says models.worker.model.
         reporter.refuse(configured_model_refusal(verdict, cfg.models.source_role(role)))

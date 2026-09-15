@@ -1133,3 +1133,43 @@ def test_a_parked_resume_says_it_is_starting_once_it_starts(
     assert rc == 0
     err = capsys.readouterr().err
     assert err.count("was parked at submission; starting it now.") == 1
+
+
+def test_resume_model_flag_is_recorded_and_replayed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`resume --model X` runs the leg on X and stamps it on the run, so a
+    later plain resume routes to X again; a refused route stamps nothing."""
+    from agent6.sessions.manifest import read_manifest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _plan_session_dir(repo, "plan-MODEL1")
+    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    session_dir = state_dir(repo) / "sessions" / "runs" / "plan-MODEL1"
+    routes: list[tuple[str, str]] = []
+
+    def _route(cfg: object, role: str, *, reporter: object, model_flag: str = "") -> bool:
+        planner = cfg.models.resolve(role)  # type: ignore[attr-defined]
+        routes.append((model_flag, planner.model))
+        return model_flag != "claude-refused"
+
+    def _stop(*_a: object, **_k: object) -> object:
+        raise _Stop()
+
+    monkeypatch.setattr(resume_mod, "route_preflight", _route)
+    monkeypatch.setattr(session_mod, "detect_env", _stop)
+    assert _cmd_resume(None, "plan-MODEL1", force=False, model="claude-refused") == 2
+    assert read_manifest(session_dir).workflow.model == ""
+    with pytest.raises(_Stop):
+        _cmd_resume(None, "plan-MODEL1", force=False, model="claude-y")
+    assert read_manifest(session_dir).workflow.model == "claude-y"
+    with pytest.raises(_Stop):
+        _cmd_resume(None, "plan-MODEL1", force=False)
+    assert routes == [
+        ("claude-refused", "claude-refused"),
+        ("claude-y", "claude-y"),
+        ("claude-y", "claude-y"),
+    ]

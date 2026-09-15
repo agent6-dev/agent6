@@ -1076,3 +1076,65 @@ def test_auto_stash_pop_needs_the_stash_choice() -> None:
     assert GitConfig(dirty_tree="stash", auto_stash_pop=True).auto_stash_pop
     with pytest.raises(ValueError, match='dirty_tree = "stash"'):
         GitConfig(dirty_tree="include", auto_stash_pop=True)
+
+
+def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: Path) -> None:
+    """`--model provider/model` routes the role there; a bare id, or an id
+    whose first segment is no configured provider (an OpenRouter slug), stays
+    on the role's provider; the role's other fields survive."""
+    body = (
+        _VALID_TOML.replace(
+            '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+            '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\neffort = "high"\n',
+        )
+        + '\n[providers.openrouter]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    out = cfg.with_model_route("worker", "openrouter/moonshotai/kimi-k2.6")
+    assert (out.models.worker.provider, out.models.worker.model) == (  # type: ignore[union-attr]
+        "openrouter",
+        "moonshotai/kimi-k2.6",
+    )
+    assert out.models.worker.effort == "high"  # type: ignore[union-attr]
+    bare = cfg.with_model_route("worker", "claude-y")
+    assert (bare.models.worker.provider, bare.models.worker.model) == (  # type: ignore[union-attr]
+        "anthropic",
+        "claude-y",
+    )
+    provider_named = cfg.with_model_route("worker", "openrouter")
+    assert (provider_named.models.worker.provider, provider_named.models.worker.model) == (  # type: ignore[union-attr]
+        "anthropic",
+        "openrouter",
+    )
+    slug = cfg.with_model_route("worker", "moonshotai/kimi-k2.6")
+    assert (slug.models.worker.provider, slug.models.worker.model) == (  # type: ignore[union-attr]
+        "anthropic",
+        "moonshotai/kimi-k2.6",
+    )
+    # An unset planner falls back to the worker: the flag sets the planner
+    # itself, the worker untouched.
+    planned = cfg.with_model_route("planner", "openrouter/m")
+    assert planned.models.planner is not None
+    assert planned.models.planner.provider == "openrouter"
+    assert planned.models.worker == cfg.models.worker
+    assert cfg.models.worker is not None and cfg.models.worker.model == "claude-x"
+
+
+def test_with_model_route_refuses_what_it_cannot_route(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    with pytest.raises(ConfigError, match="no model id"):
+        cfg.with_model_route("worker", "anthropic/")
+    roleless = cfg.model_validate({**cfg.model_dump(mode="python"), "models": {}})
+    with pytest.raises(ConfigError, match="configured providers: anthropic"):
+        roleless.with_model_route("worker", "claude-y")
+
+
+def test_with_model_route_refuses_a_blank_and_an_empty_provider(tmp_path: Path) -> None:
+    """Whitespace is no model id, and `/model` names no provider: both refuse
+    instead of becoming a model id of spaces or of `/model`."""
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    with pytest.raises(ConfigError, match="no model id"):
+        cfg.with_model_route("worker", "   ")
+    with pytest.raises(ConfigError, match="name the provider as provider/model"):
+        cfg.with_model_route("worker", "/claude-y")
+    assert cfg.with_model_route("worker", " claude-y ").models.worker.model == "claude-y"  # type: ignore[union-attr]

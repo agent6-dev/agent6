@@ -70,3 +70,12 @@ def test_every_budget_override_survives_a_detach() -> None:
     for field in ("max_usd", "max_tokens_fallback", "max_percent"):
         assert getattr(overrides, field) is not None
         assert f"--{field.replace('_', '-')}" in argv, field
+
+
+def test_the_model_flag_survives_a_detach() -> None:
+    """A `--model` route rides the detached leg's argv like the budget and
+    sandbox flags, else the detached leg re-reads the config's model."""
+    from agent6.app._setup import override_flags
+
+    assert override_flags(None, None, "p/m") == ["--model", "p/m"]
+    assert override_flags(None, None) == []

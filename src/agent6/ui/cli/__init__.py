@@ -174,6 +174,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         parallel_spec=getattr(args, "parallel", ""),
         standing_goal=getattr(args, "standing", ""),
         pins=tuple(args.pins),
+        model=getattr(args, "model", ""),
     )
     # A fan-out ends in its own compare summary and the TUI owns its screen,
     # so neither hands the terminal back to a prompt.
@@ -252,6 +253,7 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
         config_path=args.config,
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
+        model=getattr(args, "model", ""),
     )
 
 
@@ -277,6 +279,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
+        model=getattr(args, "model", ""),
     )
     # The TUI owns its screen, so it does not hand the terminal back to a prompt.
     if args.tui:
@@ -321,6 +324,7 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
+        model=getattr(args, "model", ""),
     )
 
 
@@ -554,6 +558,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         preset=args.preset,
         steer=args.steer,
         interactive=getattr(args, "interactive", False),
+        model=getattr(args, "model", ""),
     )
     # A resumed leg ends the way a fresh one does: asking for the next input
     # (the TUI owns its screen).
@@ -648,7 +653,7 @@ def _dispatch_model(args: argparse.Namespace) -> int:
         args.config,
         role=args.role,
         provider=args.provider,
-        model=args.model,
+        model=getattr(args, "model", ""),
         effort=args.effort,
         to_repo=args.repo,
     )

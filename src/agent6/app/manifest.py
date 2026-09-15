@@ -90,6 +90,7 @@ def write_session_manifest(
     mode: str = "run",
     effective_preset: str = "",
     preset_from_flag: bool = False,
+    model_flag: str = "",
     gate: tuple[Sequence[str], str] | None = None,
     isolation: str = "",
     parent_session_id: str | None = None,
@@ -153,6 +154,7 @@ def write_session_manifest(
             # replayed as an override on resume (see WorkflowStamp.replay_preset).
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
+            model=model_flag,
             verify_command=tuple(verify_command),
             verify_origin=verify_origin,
         ),
@@ -248,6 +250,14 @@ def stamp_preset(session_dir: Path, name: str) -> None:
     (`WorkflowStamp.replay_preset`)."""
     m = read_manifest(session_dir)
     workflow = m.workflow.model_copy(update={"preset": name, "preset_from_flag": True})
+    write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"workflow": workflow}))
+
+
+def stamp_model(session_dir: Path, spec: str) -> None:
+    """Record the `--model` a resumed leg was started under: from here the run
+    runs on it, and a later resume without the flag replays it."""
+    m = read_manifest(session_dir)
+    workflow = m.workflow.model_copy(update={"model": spec})
     write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"workflow": workflow}))
 
 

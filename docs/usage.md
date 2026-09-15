@@ -153,6 +153,9 @@ agent6 ask "how does the task-graph curator work?"
 - `--preset <name>`: a strategy preset (`standard`, `quick`, `ultra`, `paranoid`, or your own; the [presets table](config.md#presets) says what each sets)
   - `agent6 config presets` lists them; `agent6 config set preset <name>` persists one
   - a preset cannot change mid-run; `agent6 resume <id> --preset <name>` continues a stopped run under another
+- `--model [provider/]model`: the run's model over every config layer, for the role the mode runs (worker for `run` and `ask`, planner for `plan`)
+  - a bare id keeps the role's provider; `agent6 model <role> <provider>` lists a provider's ids
+  - recorded on the run: a resume keeps it unless it sets its own `--model`, which is recorded in turn
 - `--parallel 3` (or `model-a,model-b`): isolated fan-out lanes, auto-compared into a ranked report
   - the fan-out is a session of its own: `attach` follows it, `sessions stop` ends it, `sessions show` lists its lanes with their placement
   - its lanes nest under it in every listing, folded into a count: `sessions list --lanes` and `ps --lanes` list them, Space in the TUI hub and the `lanes` line in the web hub expand them

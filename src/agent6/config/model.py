@@ -323,6 +323,37 @@ class Config(BaseModel):
             budget["max_percent"] = max_percent
         return Config.model_validate(data)
 
+    def with_model_route(self, role: RoleName, spec: str) -> Config:
+        """Return a copy whose *role* runs *spec* (the `--model` flag): a
+        `provider/model` whose first segment names a configured provider, or
+        a model id on the role's current provider (so an OpenRouter id with
+        its own slash stays one id). The role keeps its effort and
+        temperature. In memory only, like `with_budget_overrides`."""
+        spec = spec.strip()
+        provider, slash, model = spec.partition("/")
+        known = ", ".join(sorted(self.providers)) or "(none)"
+        if slash and not provider:
+            raise ConfigError(
+                f"--model {spec!r}: name the provider as provider/model"
+                f" (configured providers: {known})."
+            )
+        if not slash or provider not in self.providers:
+            current = self.models.resolve(role)
+            if current is None:
+                raise ConfigError(
+                    f"--model {spec!r}: name the provider as provider/model"
+                    f" (configured providers: {known})."
+                )
+            provider, model = current.provider, spec
+        if not model:
+            raise ConfigError(f"--model {spec!r}: no model id.")
+        base = self.models.resolve(role)
+        entry = base.model_dump(mode="python") if base is not None else {}
+        entry["provider"], entry["model"] = provider, model
+        data = self.model_dump(mode="python")
+        data.setdefault("models", {})[role] = entry
+        return Config.model_validate(data)
+
     def with_sandbox_overrides(
         self,
         *,

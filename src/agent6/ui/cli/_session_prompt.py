@@ -62,6 +62,7 @@ def end_of_session_prompt(
     config_path: Path | None = None,
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
+    model: str = "",
 ) -> int:
     """Keep the session going from the terminal until `/exit`.
 
@@ -105,6 +106,7 @@ def end_of_session_prompt(
             steer=answer,
             budget_overrides=budget_overrides,
             sandbox_overrides=sandbox_overrides,
+            model=model,
         )
         if rc != 0:
             return rc

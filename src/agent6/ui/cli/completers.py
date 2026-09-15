@@ -22,6 +22,7 @@ from agent6.config.layer import (
     load_effective,
     preset_catalog,
 )
+from agent6.models.choices import route_choices
 from agent6.paths import state_dir
 from agent6.ui.cli._common import (
     _plans_dir,
@@ -109,6 +110,17 @@ def _complete_models(prefix: str, **kw: object) -> list[str]:
     from agent6.ui.cli.model import _models_for  # noqa: PLC0415
 
     return [m for m in _models_for(_explicit_config(kw), provider) if m.startswith(prefix)]
+
+
+@_never_raises
+def _complete_model_routes(prefix: str, **kw: object) -> list[str]:
+    """argcomplete for `--model`: every `provider/model` the config can run
+    (`models.choices.route_choices`), under the `--config` already typed."""
+    try:
+        cfg = load_effective(Path.cwd(), _explicit_config(kw)).config
+    except ConfigError:
+        return []
+    return [r for r in route_choices(cfg) if r.startswith(prefix)]
 
 
 def _all_parallel_model_names(config_path: Path | None = None) -> list[str]:

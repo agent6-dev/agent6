@@ -215,6 +215,30 @@ def configured_model_refusal(v: ModelValidation, role: str) -> str:
     )
 
 
+def flag_model_refusal(v: ModelValidation, cfg: Config, role: RoleName, spec: str) -> str:
+    """Refusal text for a typo'd `--model` (a refused `validate_configured_model`
+    whose model the flag set): name what was typed, the provider whose listing
+    was checked live, the closest known ids, and, when the value's first
+    segment names no configured provider, that it was read as one model id."""
+    model = v.unknown[0]
+    route = cfg.models.resolve(role)
+    provider = route.provider if route is not None else ""
+    close = v.suggestions.get(model, ())
+    suffix = f" Closest: {', '.join(close)}." if close else ""
+    head, slash, _rest = spec.strip().partition("/")
+    misread = ""
+    if slash and head and head not in cfg.providers:
+        known = ", ".join(sorted(cfg.providers)) or "(none)"
+        misread = (
+            f" No provider is named {head!r} (configured: {known}), so the whole value was"
+            f" read as a model id on {provider}."
+        )
+    return (
+        f"--model {spec.strip()!r} is not in {provider}'s model listing (checked live)."
+        f"{misread}{suffix} Pass one of its ids, or provider/model for another provider."
+    )
+
+
 def refusal_message(v: ModelValidation, *, directive: bool) -> str:
     """The refusal text for an `unknown + can_validate` result: one line per
     unknown model with its closest matches. On a directive surface (the composers
@@ -231,16 +255,24 @@ def refusal_message(v: ModelValidation, *, directive: bool) -> str:
 
 
 def directive_model_refusal(
-    cwd: Path, segments: Sequence[Segment], config_path: Path | None = None
+    cwd: Path,
+    segments: Sequence[Segment],
+    config_path: Path | None = None,
+    *,
+    preset: str = "",
+    model: str = "",
 ) -> str | None:
     """Refuse a `/parallel` directive that names a model the configured
     providers' cache says doesn't exist, before any spawn (the surface's normal
     error path, nothing spawned). None = every model checks out, or there is no
     cache to check against (a fresh/offline machine proceeds; the detached
     lane's own preflight warns). A malformed or over-`max_lanes` spec surfaces
-    its grammar error."""
+    its grammar error. *preset* and *model* are the new run's overrides, so
+    validation uses the same worker route as the child."""
     try:
-        cfg = load_effective(cwd, config_path).config
+        cfg = load_effective(cwd, config_path, preset=preset).config
+        if model:
+            cfg = cfg.with_model_route("worker", model)
     except ConfigError:
         return None  # a broken config is its own separate error; don't mask it here
     try:

@@ -12,7 +12,7 @@ from agent6.config.layer import EffectiveConfig
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
-from agent6.types import RoleName
+from agent6.types import RoleName, session_kind
 
 ROLES: tuple[RoleName, ...] = ("worker", "reviewer", "planner")
 
@@ -40,6 +40,28 @@ def provider_model_choices(cfg: Config, provider: str) -> list[str]:
         api_key = resolve_api_key(provider, getattr(entry, "api_key_env", None), secrets=secrets)
         out.update(list_models(provider, entry, api_key))
     return sorted(out)
+
+
+def route_choices(cfg: Config) -> list[str]:
+    """Every `provider/model` a run can be pointed at (`--model` and the
+    composers' model picker): each configured provider's cached listing plus
+    the models the roles name on it. Cache-only, so a picker never waits on
+    the network; `agent6 model <role> <provider>` refreshes a listing."""
+    out: set[str] = set()
+    for name in cfg.providers:
+        out.update(f"{name}/{m}" for m in cached_models(name))
+    for role in ROLES:
+        rm = cfg.models.resolve(role)
+        if rm is not None and rm.provider in cfg.providers:
+            out.add(f"{rm.provider}/{rm.model}")
+    return sorted(out)
+
+
+def route_for(cfg: Config, mode: str) -> str:
+    """The `provider/model` a session of *mode* runs under this config (the
+    mode's role, worker fallback applied), or "" when the role is unset."""
+    rm = cfg.models.resolve(session_kind(mode).role)
+    return f"{rm.provider}/{rm.model}" if rm is not None else ""
 
 
 def model_role_provider(eff: EffectiveConfig, key: str) -> str | None:

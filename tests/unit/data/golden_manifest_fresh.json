@@ -23,6 +23,7 @@
     "review_trigger": "off",
     "revise_prompt": "on",
     "preset": "strict",
+    "model": "",
     "verify_command": [],
     "verify_origin": "",
     "preset_from_flag": false

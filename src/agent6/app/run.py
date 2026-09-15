@@ -127,6 +127,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     initial_steer: str = "",
     pins: Sequence[str] = (),
     preset_stamp: tuple[str, bool] | None = None,
+    model: str = "",
     # Which config leaves the operator actually WROTE, as dotted paths. A
     # default that this host cannot honour degrades with a warning; a value
     # they wrote down refuses, because they asked for something specific.
@@ -208,7 +209,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.note(parking)
     # Before isolation: its budget preflight prices the model from the listing
     # the key check refreshes.
-    if not route_preflight(cfg, role, reporter=reporter):
+    if not route_preflight(cfg, role, reporter=reporter, model_flag=model):
         return 2
     try:
         isolation = select_isolation(
@@ -373,6 +374,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             mode=mode,
             effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
             preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
+            model_flag=model,
             isolation=isolation,
         )
         if parked is not None:
@@ -585,6 +587,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg=cfg,
                 layout=layout,
                 cwd=cwd,
-                flags=override_flags(budget_overrides, sandbox_overrides),
+                flags=override_flags(budget_overrides, sandbox_overrides, model),
                 reporter=reporter,
             )

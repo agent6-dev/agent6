@@ -12,6 +12,7 @@ import pytest
 
 from agent6.ui.cli.completers import (
     _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
+    _complete_model_routes,  # pyright: ignore[reportPrivateUsage]
     _complete_presets,  # pyright: ignore[reportPrivateUsage]
 )
 from agent6.ui.cli.parser import build_parser
@@ -225,6 +226,24 @@ def test_profile_flags_have_the_profiles_completer() -> None:
     for sub in carriers:
         action = _option(sub, "--preset")
         assert getattr(action, "completer", None) is _complete_presets
+
+
+def test_the_model_flag_rides_every_session_verb_with_its_completer() -> None:
+    """`--model [PROVIDER/]MODEL` on run, resume, plan run and ask query, each
+    completing the routes the config can run."""
+    parser = build_parser()
+    carriers = (
+        _find(parser, "run"),
+        _find(parser, "resume"),
+        _find(_find(parser, "plan"), "run"),
+        _find(parser, "query"),
+    )
+    for sub in carriers:
+        action = _option(sub, "--model")
+        assert action.metavar == "[PROVIDER/]MODEL"
+        assert getattr(action, "completer", None) is _complete_model_routes
+    assert parser.parse_args(["run", "--model", "p/m", "t"]).model == "p/m"
+    assert parser.parse_args(["resume", "--model", "m", "sid"]).model == "m"
 
 
 def test_config_show_keys_complete_like_config_get() -> None:

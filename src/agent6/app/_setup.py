@@ -134,10 +134,16 @@ class BudgetOverrides:
         return "; ".join(parts) or str(exc)
 
 
-def override_flags(budget: BudgetOverrides | None, sandbox: SandboxOverrides | None) -> list[str]:
+def override_flags(
+    budget: BudgetOverrides | None, sandbox: SandboxOverrides | None, model: str = ""
+) -> list[str]:
     """The CLI flags a continuation this invocation spawns (a detached resume)
     carries so it runs under the same overrides."""
-    return [*(budget.argv() if budget else []), *(sandbox.argv() if sandbox else [])]
+    return [
+        *(budget.argv() if budget else []),
+        *(sandbox.argv() if sandbox else []),
+        *(["--model", model] if model else []),
+    ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,18 +237,21 @@ def load_session_config(
     preset: str = "",
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
+    model: str = "",
 ) -> EffectiveConfig:
     """The config a session of *mode* starts or resumes under, built the same
     way at every entry point (`agent6 run`, `resume`, an editor's ACP turn):
     the effective layers for *preset*, the git policy set from them, the
-    budget flags, `session_config` (the interactive clamp with the sandbox
-    flags landing last), checked runnable for the mode's role. Raises
-    ConfigError like `load_effective`."""
+    budget flags, the `--model` route for the mode's role, `session_config`
+    (the interactive clamp with the sandbox flags landing last), checked
+    runnable for the mode's role. Raises ConfigError like `load_effective`."""
     effective = load_effective(cwd, config_path, preset=preset)
     cfg = effective.config
     apply_git_ops_policy(cfg)
     if budget_overrides is not None:
         cfg = budget_overrides.apply(cfg)
+    if model:
+        cfg = cfg.with_model_route(session_kind(mode).role, model)
     cfg = session_config(cfg, mode, sandbox_overrides)
     cfg.require_runnable(session_kind(mode).role)
     return replace(effective, config=cfg)

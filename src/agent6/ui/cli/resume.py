@@ -28,6 +28,7 @@ def _cmd_resume(
     preset: str = "",
     steer: str = "",
     interactive: bool = False,
+    model: str = "",
 ) -> int:
     """Resume a paused/crashed run from its snapshot (see `app.resume`)."""
     return resume_task(
@@ -42,4 +43,5 @@ def _cmd_resume(
         preset=preset,
         steer=steer,
         interactive=interactive,
+        model=model,
     )
