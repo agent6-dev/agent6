@@ -224,7 +224,26 @@ def test_config_profiles_user_shadow_replaces_builtin(
 # --- repo target ------------------------------------------------------------
 
 
-# --- add / remove (list field: allow_urls) ----------------------------------
+# --- add / remove (list fields) ---------------------------------------------
+
+
+def test_repo_list_edits_keep_values_inherited_from_global(iso: Path) -> None:
+    assert _run(["config", "set", "sandbox.fetch_hosts", '["one.example", "two.example"]']) == 0
+
+    assert _run(["config", "add", "--repo", "sandbox.fetch_hosts", "three.example"]) == 0
+    repo = tomllib.loads((state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
+    assert repo["sandbox"]["fetch_hosts"] == [  # type: ignore[index]
+        "one.example",
+        "two.example",
+        "three.example",
+    ]
+
+    assert _run(["config", "remove", "--repo", "sandbox.fetch_hosts", "one.example"]) == 0
+    repo = tomllib.loads((state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
+    assert repo["sandbox"]["fetch_hosts"] == [  # type: ignore[index]
+        "two.example",
+        "three.example",
+    ]
 
 
 # --- machine [config] overlay target ----------------------------------------

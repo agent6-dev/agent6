@@ -434,26 +434,6 @@ def _cmd_config_unset(
     return 0
 
 
-def _schema_says_not_a_list(key: str) -> bool:
-    """True when the config schema knows *key* and its value is not a list.
-
-    Guards `config add/remove` on keys the target file does not set yet: the
-    effective (defaults-included) value reveals the leaf's shape, so a scalar
-    like sandbox.network fails with "not a list field" instead of a
-    contradictory revalidation error. Unknown keys and unloadable configs
-    return False; revalidation still rejects those."""
-    try:
-        eff = load_effective(Path.cwd(), None)
-    except ConfigError:
-        return False
-    leaf = effective_leaf(eff, key)
-    # List leaves surface as list or tuple depending on the field's type. A
-    # None effective value is an unset leaf (an optional scalar, or a preset
-    # leaf no layer sets); it doesn't prove the leaf is a scalar, so fall
-    # through and let revalidation reject a genuine scalar.
-    return leaf is not None and leaf[0] is not None and not isinstance(leaf[0], (list, tuple))
-
-
 def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None, add: bool) -> int:
     """Shared body for `config add` / `config remove` on a list field."""
     if err := _reject_machine_protected(key, machine):
@@ -467,11 +447,20 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
     with writing_config(target) as held:
         current = read_toml_leaf(read_toml_file(target), prefix + key)
         if current is None:
-            if _schema_says_not_a_list(key):
-                error(f"{key} is not a list field.")
-                return 2
-            current = []
-        if not isinstance(current, list):
+            # A new override starts from the value it is overriding. Starting
+            # from [] makes `config add --repo` silently discard every entry
+            # inherited from the global layer.
+            try:
+                base = (
+                    load_effective(Path.cwd(), None)
+                    if repo or machine is not None
+                    else load_global_only()
+                )
+                inherited = effective_leaf(base, key)
+            except ConfigError:
+                inherited = None
+            current = inherited[0] if inherited is not None and inherited[0] is not None else []
+        if not isinstance(current, (list, tuple)):
             error(f"{key} is not a list field in {target}.")
             return 2
         parsed = parse_cli_value(value)
