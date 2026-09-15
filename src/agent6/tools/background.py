@@ -223,8 +223,13 @@ class BackgroundShells:
             # AFTER the start: this file is the whole roster for a surface in
             # another process, so writing it first would list a command that
             # never started while read_background denies the id exists.
+            # The host pid rides along for a stop from another process (`agent6
+            # stop` on a worker that no longer answers); a command inside the
+            # session's namespaces has no host pid and dies with the session.
+            host_pid = shell.job.pid if isinstance(shell.job, (LocalJob, BackgroundJob)) else None
             meta.write_text(
-                json.dumps({"id": shell.id, "command": shell.command}), encoding="utf-8"
+                json.dumps({"id": shell.id, "command": shell.command, "pid": host_pid}),
+                encoding="utf-8",
             )
         except OSError as exc:
             stop_error = shell.job.stop()
@@ -421,6 +426,28 @@ class BackgroundShells:
 def shells_text(session_dir: Path) -> str:
     """The roster as one block for a text view; says so when there is none."""
     return "\n".join(roster_from_dir(session_dir / SHELLS_DIR)) or "no background commands this run"
+
+
+def shell_host_pids(root: Path) -> list[int]:
+    """The host pids the run's background commands recorded, off disk: what a
+    stop from another process can signal (a command inside the session's
+    namespaces recorded none and dies with the session)."""
+    if not root.is_dir():
+        return []
+    pids: list[int] = []
+    try:
+        directories = sorted(root.iterdir())
+    except OSError:
+        return []
+    for d in directories:
+        try:
+            meta = json.loads((d / _META_NAME).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        pid = meta.get("pid") if isinstance(meta, dict) else None
+        if isinstance(pid, int):
+            pids.append(pid)
+    return pids
 
 
 def roster_from_dir(root: Path) -> list[str]:

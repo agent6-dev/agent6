@@ -334,7 +334,7 @@ def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
     import signal
     import subprocess
 
-    from agent6.sandbox.jail import _kill_group_of  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox.jail import signal_group
 
     # A group leader we hold: killing it by group is safe and takes the child.
     # New GROUP, same session, so a sibling can join it (setpgid is
@@ -343,7 +343,7 @@ def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
     child = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, leader.pid))  # noqa: PLW1509
     try:
         assert os.getpgid(child.pid) == leader.pid
-        _kill_group_of(leader.pid)
+        signal_group(leader.pid)
         assert leader.wait(timeout=5) != 0
         assert child.wait(timeout=5) != 0
     finally:
@@ -355,7 +355,7 @@ def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
     bystander = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, 0))  # noqa: PLW1509
     joiner = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, bystander.pid))  # noqa: PLW1509
     try:
-        _kill_group_of(joiner.pid)
+        signal_group(joiner.pid)
         assert joiner.wait(timeout=5) != 0
         assert bystander.poll() is None, "the sweep killed a group it did not lead"
     finally:

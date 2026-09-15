@@ -542,8 +542,9 @@ def _forget_launcher(pid: int) -> None:
         _live_launchers.discard(pid)
 
 
-def _kill_group_of(pid: int) -> None:
-    """SIGKILL *pid*'s process group, or *pid* alone when it does not lead one.
+def signal_group(pid: int, sig: int = signal.SIGKILL) -> None:
+    """Send *sig* to *pid*'s process group, or to *pid* alone when it does not
+    lead one.
 
     A pgid is a leader's pid, and it is only reusable once that leader is
     reaped. We hold every one of these as an unreaped child, so a pgid equal to
@@ -553,9 +554,9 @@ def _kill_group_of(pid: int) -> None:
     """
     with contextlib.suppress(OSError):
         if os.getpgid(pid) == pid:
-            os.killpg(pid, signal.SIGKILL)
+            os.killpg(pid, sig)
         else:
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, sig)
 
 
 def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
@@ -583,7 +584,7 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
             if not escapees:
                 return frozenset()
             for pid in escapees:
-                _kill_group_of(pid)
+                signal_group(pid)
                 with contextlib.suppress(OSError):
                     # WNOHANG: a child wedged in uninterruptible sleep must not
                     # hang every later command behind the sweep lock.
