@@ -22,9 +22,12 @@ Every image is from a recorded run; click to enlarge.
 
 ## Conversation
 
-Opening a run lands on its conversation (also `agent6 sessions transcript`): the task, the model's reasoning, and every tool call with its input and output (clipped to the salient lines by default; Detail cycles hidden, collapsed, expanded), following live.
-A live run keeps a steer bar at the bottom; above it, a live pane streams a model call while it is in flight and lists the tool calls in flight (`→ run_command  sleep 60  · running`) until their results land in the transcript.
-An approval shows inline at the conversation's tail (the command, fixed-width) with a key row docked above the bar: `a` allow, `s` allow all this session, `d` deny, `x` deny all; answered, it collapses to one dim line.
+Opening a run lands on its conversation, the text `agent6 sessions transcript` prints: the task, the model's reasoning, and every tool call with its input and output, following live.
+Tool input and output are clipped to the salient lines by default; Detail cycles hidden, collapsed, expanded.
+A live run keeps a steer bar at the bottom.
+Above it, a live pane streams a model call while it is in flight, and lists the tool calls in flight (`→ run_command  sleep 60  · running`) until their results land in the transcript.
+An approval shows inline at the conversation's tail (the command, fixed-width), with a key row docked above the bar: `a` allow, `s` allow all this session, `d` deny, `x` deny all.
+Once answered, it collapses to one dim line.
 The composer keeps focus and owns the keys: they answer only while it is empty and focused (a typed message never answers); a click on a label answers from anywhere.
 Away from the conversation (the dashboard, a machine screen) an approval opens a modal instead: `y` allow, `a` allow session, `n` deny, `x` deny all.
 A modal's buttons sit in one row; on a terminal narrower than the row the later buttons are off screen, and the approval keys, the question modal's answer fields and Ctrl+S still answer.
@@ -71,7 +74,7 @@ The config page shows every setting, its effective value, and the layer that set
 
 ## Without the TUI
 
-`agent6 run` executes in the foreground: steer it with Ctrl-C, no TUI required.
+`agent6 run` executes in the foreground; Ctrl-C opens its pause menu to steer it.
 
 - the pause menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages
     - `/status`, `/tasks`, `/pin`, `/compact`, `/parallel`, `/btw`, `/shells`, `/restate`, `/undo`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
@@ -80,7 +83,7 @@ The config page shows every setting, its effective value, and the layer that set
 - `/exit` in the menu, the fallback prompt, or the `run -i` REPL stops the run and leaves without the follow-up prompt (`agent6 resume` continues it)
 - `/stop` in the menu, or Ctrl-C at the pause prompt itself, stops the run now (a third Ctrl-C without the prompt does the same); `agent6 stop ID` from another terminal is the same stop
 - `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
-- a viewer opened with `agent6 attach --tui` just closes
+- closing a viewer opened with `agent6 attach --tui` (Ctrl-Z) leaves the run as it was
 - TUI/web-hub runs start detached; `agent6 attach` covers both kinds: conversation by default, `--tui` full screen, `--json` one-shot snapshot, and `--raw` line tail for runs
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
@@ -90,7 +93,11 @@ The config page shows every setting, its effective value, and the layer that set
 ## Watching a state machine
 
 An [agent state machine](state-machines.md) runs in the terminal like anything else: author the file, read its graph, watch it execute.
-Here `code-fixer` runs a fix-loop: an agent state edits the repo to make a failing check pass, a tool state re-runs the check, and the machine routes on the result until it is green or the attempt budget is spent, with the agent's reasoning streamed live like a run.
+Here `code-fixer` runs a fix-loop.
+An agent state edits the repo to make a failing check pass.
+A tool state re-runs the check.
+The machine routes on the result until the check is green or the attempt budget is spent.
+The agent's reasoning streams live, as in a run.
 
 - the machines screen (`M` on the hub): `v` (or Enter) opens the parsed file, `r` runs it, `w` watches its instance, `c` creates a draft, `f` refreshes
 - the watch screen (also `agent6 attach --tui <id>`): `s` steers the current agent state, `m` messages a waiting instance (`machine poke`), `x` stops it at the next transition
@@ -101,4 +108,4 @@ Here `code-fixer` runs a fix-loop: an agent state edits the repo to make a faili
 
 ---
 
-These are regenerated from recorded runs by the [pages workflow](https://github.com/agent6-dev/agent6/blob/master/.github/workflows/pages.yml), so they track the current UI.
+The screenshots and videos are regenerated from recorded runs by the [pages workflow](https://github.com/agent6-dev/agent6/blob/master/.github/workflows/pages.yml), so they track the current UI.

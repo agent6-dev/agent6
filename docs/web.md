@@ -1,6 +1,8 @@
 # Web UI
 
-`agent6 web` serves a browser front-end for driving agent6 from a desktop or a phone: watch a run stream, steer it, approve prompts, answer questions, read the conversation, and browse, create, run, and watch state machines.
+`agent6 web` serves a browser front-end for driving agent6 from a desktop or a phone.
+From it you watch a run stream, steer it, approve prompts, answer questions, and read the conversation.
+State machines: browse, create, run, and watch them.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/web-desktop.webm" type="video/webm">
@@ -30,20 +32,23 @@ Stop it with Ctrl-C.
 Pages that take a task, a steer or a machine message dock their text entry at the bottom, like a chat: type, Enter sends, Shift+Enter inserts a newline.
 
 - **Sessions page**: every session (mode, status, last activity, cost)
-    - the docked composer starts new work: run / plan / ask, under a chosen preset and model (the model box shows the config's model for the mode and preset, re-resolved whenever either changes; a pick overrides it for this run)
-    - prune merged run branches, squash-merged ones too when the box beside it is ticked (the CLI's `--delete-squashed`); clear saved asks
+    - the docked composer starts new work: run / plan / ask, under a chosen preset and model
+        - the model box shows the config's model for the mode and preset, re-resolved whenever either changes; a pick overrides it for this run
+    - `more…` opens three buttons: **Prune merged runs** (`sessions prune`), **Prune merged runs, squash-merged too** (its `--delete-squashed`, after a confirm), and **Clear saved asks**
     - a fan-out's lanes fold under its row behind a `lanes: N` line, which expands them
 - **Machines page**: instances, `machine create` drafts, cards that run an authored machine file
     - the docked composer creates a new one
 - **Session view** (live over SSE): the conversation is the page, the same folded transcript the CLI and TUI render, with the in-progress turn streaming underneath
     - a detail toggle cycles collapsed / expanded / hidden; any clipped item expands on click
-    - the run's context (overview, plan.md, task graph, budget, tool calls, background shells, latest commit diff, event log) lives in a resizable details drawer
+    - the run's context (overview, plan.md, task graph, budget, tool calls, background shells, latest commit diff (runs only), event log) lives in a resizable details drawer
         - the plan.md card carries a planning run's deliverable, and shows only once there is one
     - the docked composer steers a live run or resumes an ended one, under the preset and model picked in the row above it (blank: as the run recorded); `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages
-        - Ctrl+Enter prefixes a live run's steer with `/now`, aborting the call in flight; text already starting with `/` goes as typed; `/stop` is the one stop `agent6 stop` is
+        - Ctrl+Enter prefixes a live run's steer with `/now`, aborting the call in flight; text already starting with `/` goes as typed; `/stop` stops the run, as `agent6 stop` does
     - the Latest commit widget selects any per-step commit (cumulative toggle); the Budget and Task graph widgets then show that step's state; a model-controlled run has no chain and says so
-    - stop now (the one stop `agent6 stop` is: the model call cut, a running command handed back, a worker that does not answer killed, the run resumable) / stop after step, compact, fork (a new run at the latest checkpoint, unstarted: its composer starts it), merge, delete history, run a finished plan (`run --from`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline
-      ("Allow session" appears only where it would grant something beyond the one call it is clicked on)
+    - stop now, or stop after step: the same stop as `agent6 stop` (the model call cut, a running command handed back, a worker that does not answer killed, the run resumable)
+    - compact, fork (a new run at the latest checkpoint, unstarted: its composer starts it), merge, delete history
+    - run a finished plan (`run --from`, spawned detached)
+    - approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline; "Allow session" appears only where it would grant something beyond the one call it is clicked on
 - **Machine view**: the state overview, the path taken, the current agent state's conversation
     - approve and answer the current state's prompts inline (same controls as a run)
     - the docked entry submits as **Steer** (into the current agent state) or **Message** (a `poke` payload a waiting machine's next tool reads)
@@ -90,11 +95,11 @@ curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per chang
 ```
 
 - `curl /api/session/<id>`: exactly what `agent6 attach <id> --json` prints; `?step=<sha>` folds only up to that commit
-- reads: `/api/meta`, `/api/hub`, `/api/config`, `/api/config/suggest/<key>`, `/api/config/provider_choices`, `/api/session/<id>` with `/conversation`, `/restate`, `/diff` and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` (a `machine create` draft) with `/conversation`, `/diff` and `/events`
+- reads: `/api/meta`, `/api/hub`, `/api/routes?mode=&preset=` (the composer's model box), `/api/config`, `/api/config/suggest/<key>`, `/api/config/provider_choices`, `/api/session/<id>` with `/conversation`, `/restate`, `/diff` and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` (a `machine create` draft) with `/conversation`, `/diff` and `/events`
     - a `/diff` takes `?sha=<sha>` and `&cumulative=1` for the chain up to that step
 - the page and its PWA assets: `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
 - writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/provider`, `/api/machine/{create,run}`)
-- every write drives the typed spawn / answer-file contracts, never arbitrary execution
+- every write goes through the typed spawn and answer-file contracts
 - a machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (optional `message`/`data`) on the instance
 - machine names and answer ids validate to a single path component: no traversal out of the instance dir
 

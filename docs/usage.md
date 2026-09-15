@@ -17,11 +17,11 @@ The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across ev
 
 agent6 routes three model roles independently:
 
-| Role       | Set with            | Used by                                                                          |
-| ---------- | ------------------- | -------------------------------------------------------------------------------- |
-| `worker`   | `[models.worker]`   | `agent6 run` and `agent6 resume`                                                 |
-| `reviewer` | `[models.reviewer]` | `agent6 review`, the in-loop review panel, the context summariser and the gister |
-| `planner`  | `[models.planner]`  | `agent6 plan`                                                                    |
+| Role       | Set with            | Used by                                                                                              |
+| ---------- | ------------------- | ---------------------------------------------------------------------------------------------------- |
+| `worker`   | `[models.worker]`   | `agent6 run` and `agent6 resume`                                                                     |
+| `reviewer` | `[models.reviewer]` | `agent6 review`, the in-loop review panel, the context summariser, the gister and the prompt reviser |
+| `planner`  | `[models.planner]`  | `agent6 plan`                                                                                        |
 
 `reviewer` and `planner` fall back to `worker` when unset.
 
@@ -40,8 +40,13 @@ agent6 run "add a --json output mode to the CLI"
 agent6 edits your working tree, commits each step to a per-run chain, and certifies the finished tree with the verify command.
 
 - your branch, HEAD, and index are never touched (the chain gets an `agent6/<id>` branch by default)
-- commands prompt for approval under the default `sandbox.run_commands = "ask"`: allow one call or the whole session; a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does), a hub-spawned one parks it, and a question under `deny` or `approve` gets empty answers with a note to decide alone (`sessions show` counts them); with commands settled (`--auto-approve`, `--no-commands`) and no away-mode, a fetch outside `sandbox.fetch_hosts` or an MCP call parks the run at its approval until a front-end answers, and the start says so
-- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`: the model call is cut, a running command is handed back, every command the run started is ended, and a worker that has not ended after 5 s is killed; `--after-step` lets the step finish first; the run stays resumable), or a ceiling (budget, iterations) stops it
+- commands prompt for approval under the default `sandbox.run_commands = "ask"`: allow one call or the whole session
+- a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is set: `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does); under `deny` or `approve` a question gets empty answers with a note to decide alone (`sessions show` counts them)
+- a hub-spawned run parks its prompts
+- with commands settled (`--auto-approve`, `--no-commands`) and no away-mode, a fetch outside `sandbox.fetch_hosts` or an MCP call parks the run at its approval until a front-end answers, and the start says so
+- the run ends three ways: the model declares it finished, the operator stops it (`agent6 stop ID`, in the cheat sheet below), or a ceiling (budget, iterations) stops it
+    - a stop cuts the model call, hands back a running command, ends every command the run started, and kills a worker that has not ended after 5 s
+    - `--after-step` lets the step finish first; the run stays resumable
 - at a terminal it then asks for the next input: type to continue the session, `/exit` to finish (still resumable)
 - without a terminal (CI, detached) the resume line prints instead
 
@@ -53,7 +58,7 @@ The verify command is the success gate.
 - the harness runs it when the model finishes over an uncertified tree; a red returns to the model with the output (`workflow.verify_retries`, default 2), then the run ends red
 - `workflow.verify_when` moves the harness run to every editing step (`step`) or leaves every run to the model (`never`); the model can always run it itself
 
-`agent6 run` streams in your terminal, no full-screen UI.
+`agent6 run` streams in your terminal.
 
 - `--tui`: the full-screen conversation view, dashboard on Ctrl+D (`agent6 plan --tui` for a planning run)
 - `-i`: drive the run from a stdin REPL
@@ -95,7 +100,9 @@ agent6 sessions graph         # the persisted task graph
 
 ## Answer a parked prompt
 
-A run waiting on an approval or a question takes its answer from a file in its session directory, whichever seat it waits in: a parked run polls it, and a foreground run's own terminal prompt reads it too.
+A run waiting on an approval or a question takes its answer from a file in its session directory.
+A parked run polls the file.
+A foreground run's own terminal prompt reads it too.
 Every front-end writes that file, and so can a script.
 
 - `agent6 answer <id>` prints the open question and its options; `agent6 answer <id> TEXT...` answers it (one TEXT per question, in order) without a terminal
@@ -112,11 +119,16 @@ agent6 fork <session-id> --at-turn 7 # new run from turn 7 (--steer seeds it)
 ```
 
 - state is snapshotted before each model call and checkpointed per turn
-- `fork` rolls a copy back to a turn and continues it as a new run in its own git worktree (under `[parallel].workdir`), so the original run and your checkout stay as they are; `sessions merge <fork>` lands it, `sessions prune` removes the worktree once it is merged (`sessions rm <fork>` removes it with the record)
-    - the fork's tree is the turn's committed content, and the files its commits leave out are the ones untracked in its own checkout when it was created (a fresh worktree usually has none)
-    - a `--steer`ed fork takes that steer as its own task: its listing row and its squashed merge subject read as the work you sent it to do
-    - a run the agent finished (the only resume a bare `--steer` allows) takes the steer as its task the same way: its row and its next squash name the new work    - a run that was squash-merged merges again from its landed tip (a resumed leg, or a fork continuing its chain), so the work the target already holds is not merged twice
-- `/undo` (a composer, the pause menu, `run -i`; a hub on a finished run) takes back the last message in place: the tree as it stands is committed on the run's chain ref (and branch), every tracked path that differs from the turn before is put back, and a fork continues in the same checkout with the message back in the composer
+- `fork` rolls a copy back to a turn and continues it as a new run in its own git worktree (under `[parallel].workdir`); the original run and your checkout stay as they are
+    - `sessions merge <fork>` lands it; `sessions prune` removes the worktree once it is merged; `sessions rm <fork>` removes it with the record
+    - the fork's tree is the turn's committed content; the files its commits leave out are the ones untracked in its own checkout when it was created (a fresh worktree usually has none)
+    - a `--steer`ed fork takes that steer as its own task: its listing row and its squashed merge subject name the work you sent it to do
+    - a run the agent finished resumes only with `--steer`; it takes the steer as its task the same way, so its row and its next squash name the new work
+    - a run that was squash-merged merges again from its landed tip (a resumed leg, or a fork continuing its chain), so the work the target already holds is not merged twice
+- `/undo` takes back the last message in place, from the TUI and web composers, the `agent6 run` pause menu, or the `run -i` REPL; the TUI and web session views offer it on a finished run too
+    - the tree as it stands is committed on the run's chain ref (and branch)
+    - every tracked path that differs from the turn before is put back
+    - a fork continues in the same checkout with the message back in the composer
     - the run's untracked-at-start files stay, and so do HEAD and the index; the later commits and the pre-undo commit stay on the run's ref
     - refused while another live run drives the checkout
 
@@ -159,14 +171,17 @@ agent6 ask "how does the task-graph curator work?"
   - recorded on the run: a resume keeps it unless it sets its own `--model`, which is recorded in turn
 - `--parallel 3` (or `provider/model-a,model-b`, one lane per entry; a bare id runs on the worker's provider): isolated fan-out lanes, auto-compared into a ranked report
   - the fan-out is a session of its own: `attach` follows it, `stop` ends it with its lanes, `sessions show` lists its lanes with their placement
-  - its lanes nest under it in every listing, folded into a count: `sessions list --lanes` and `ps --lanes` list them, Space in the TUI hub and the `lanes` line in the web hub expand them
+  - its lanes nest under it in every listing, folded into a count
+  - `sessions list --lanes` and `ps --lanes` list the lanes; Space in the TUI hub and the `lanes` line in the web hub expand them
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
-  - new work outranks it; it never passes, and only the operator retires it; budget, stop, and the iteration cap still end the run
+  - new work outranks it; it never passes, and only the operator retires it
+  - budget, stop, and the iteration cap still end the run; `workflow.standing_patience` (default `-1`, never) ends it after that many re-entries in a row that ran no tool call
 - `--pin "<text>"`: an instruction re-shown verbatim after every compaction restart, so it survives compaction (`/pin` does the same mid-run)
 - `--from <id>`: seed the run from another session (its task, outcome, diff, and its plan or ask transcript); a plan id with no task runs that plan; the run's manifest records the source and `sessions show` prints it as `seeded from`
 - `--decompose`: break the task into a task graph up front (`prompt.decompose`); `--skill NAME` puts a skill in the prompt (`[skills]`)
-  - an installed skill whose text gates on a person ("get your partner's approval before ...") drives an unattended run into `ask_user` on every task: `agent6 skills disable NAME` keeps it out of the index
+  - an installed skill whose text gates on a person ("get your partner's approval before ...") drives an unattended run into `ask_user` on every task
+  - `agent6 skills disable NAME` keeps such a skill out of the index
 - `--session-id ID`: name the new session yourself (default: a generated id)
 - `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: everything the model receives on the first call (system prompt, tool definitions, the first user message)
 
@@ -177,7 +192,7 @@ agent6 tui [target]                  # the full-screen hub, or one session's vie
 agent6 web [target]                  # the browser UI on 127.0.0.1:7658 (see web.md)
 agent6 acp                           # speak the Agent Client Protocol on stdio (see acp.md)
 agent6 ps [--json]                   # live sessions across every repository on this machine
-agent6 check [section]               # sandbox, config, boundaries, provider keys, MCP, verify_command
+agent6 check [section]               # sandbox, config (provider keys), boundaries, MCP, verify
 agent6 init [--yes] [--ecosystem E]  # the setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md
 agent6 memory add|list|show|rm       # the repo's memory: one fact per file, restated to every run
 agent6 memory decisions              # the operator rulings the harness recorded
@@ -193,6 +208,9 @@ agent6 config fill [--force]         # write the defaults + global layers as one
 ## Configuration
 
 Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config, `--config FILE`, then a machine agent's `[config]` overlay.
+A selected preset is one more layer, printed by `config show` as `preset`.
+`--preset NAME` places it above the per-repo config and below `--config FILE`.
+A top-level `preset` key in the global or per-repo config places it just above that config.
 
 - every field has a default; security-sensitive fields default safe (a repo can be zero-config)
 - `agent6 config show`: every effective value with the layer that set it

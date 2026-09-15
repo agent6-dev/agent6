@@ -20,10 +20,10 @@ Any ACP client works the same way, and the command above is the whole configurat
 
 ## What the editor sees
 
-Every run writes one event journal, and the CLI, TUI, and web UI render it through the same fold.
-ACP is a fourth projection of that fold, so an editor sees what `agent6 attach` shows: reasoning, each tool call and its outcome, auto-commits, and how the run ended.
+Every run writes one event journal; the CLI, TUI, web UI, and ACP all render it the same way.
+An editor sees what `agent6 attach` shows: reasoning, each tool call and its outcome, auto-commits, and how the run ended.
 
-A tool call arrives twice, as ACP models it.
+ACP carries a tool call as two messages.
 
 - `tool_call` (`in_progress`) when the run dispatches it, `tool_call_update` (`completed` or `failed`, with the output) when its result lands
 - built-in calls carry their ACP kind, and an edit result carries each journaled path as an absolute follow-along location
@@ -32,17 +32,27 @@ A tool call arrives twice, as ACP models it.
 - `toolCallId` is `<run id>:<turn>:<call>`, unique for the life of the session: each turn is one leg of the run, and a leg's call numbers start at 1
 
 Worker text and thinking deltas arrive in journal order as they stream; side-role output stays out of the conversation.
-Everything the lifecycle prints (the `agent6 run` footer: where the changes are, the auto-stash notice and how to restore it, a refusal's reason) arrives as an `[agent6]` agent message as it is printed, whatever state the journal is in.
+Everything the lifecycle prints arrives as an `[agent6]` agent message as it is printed, whatever state the journal is in.
+That is the `agent6 run` footer: where the changes are, the auto-stash notice and how to restore it, a refusal's reason.
 The cost receipt goes to stderr only, where a client that shows the agent's log picks it up.
 
 ## Approvals
 
-`session/request_permission` carries every approval the CLI would prompt for: `run_commands = "ask"`, an MCP tool call the server's `approve` does not cover, a `fetch` to a host outside the allow-list, an unsandboxed autorun.
-The editor renders the buttons.
-The request names the tool call it gates and carries the prompt as that call's title, which is the text the editor renders; it is sent once the run's journal tail has announced that call (a tail that stopped reading, or a cancelled turn, releases the request); a prompt that gates no call (a pre-run question) announces a tool call of its own and closes it with the answer.
-The prompt and its answer are journaled as `approval.prompt` / `approval.answer` (`question.*` for an `ask_user`) by the same gate every front-end answers through, the answer with `source: "acp"` (`"headless"` when the client declared it cannot be asked), so `agent6 attach` and the web show the run as awaiting the answer.
+`session/request_permission` carries every approval the CLI would prompt for.
 
-Three rules hold whoever is driving:
+- a command under `run_commands = "ask"`
+- an MCP tool call the server's `approve` does not cover
+- a `fetch` to a host outside the allow-list
+- an unsandboxed autorun
+
+The editor renders the buttons.
+The request names the tool call it gates and carries the prompt as that call's title, the text the editor renders.
+It is sent once the run's journal tail has announced that call; a tail that stopped reading, or a cancelled turn, releases the request.
+A prompt that gates no call (a pre-run question) announces a tool call of its own and closes it with the answer.
+The prompt and its answer are journaled as `approval.prompt` / `approval.answer` (`question.*` for an `ask_user`) by the same gate every front-end answers through, so `agent6 attach` and the web show the run as awaiting the answer.
+The answer carries `source: "acp"`, or `"headless"` when the client declared it cannot be asked.
+
+Three rules:
 
 - An unanswered request denies: after five minutes with no reply the approval is refused and the run continues without it.
 - An off-list `fetch` host is offered as `allow_once` only, so an editor's "always allow" cannot cover a different host later.
@@ -50,20 +60,22 @@ Three rules hold whoever is driving:
 
 ## Sessions
 
-One session is one directory, one conversation.
+A session is one conversation in one directory.
 
 - `session/new` carries an absolute `cwd`; config is that directory's own layered config (global, repo, preset)
 - the directory must be a git repository (the jail's writable mount; runs branch and commit each step)
 - the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (`resume --steer` semantics)
 - a prompt whose prior turn left no resume snapshot starts a new run when that turn recorded one (it died before its first checkpoint; the editor is told), and starts the same id when nothing was recorded
 - a busy session refuses a prompt rather than queueing it; the editor can offer it again
-- one connection runs one prompt at a time across sessions (the commit cwd is process-global): a prompt on another session waits its turn, tells the editor which session it waits for, and a `session/cancel` while it waits answers `cancelled` at once
+- one connection runs one prompt at a time across its sessions (the commit cwd is process-global)
+    - a prompt on another session waits its turn and tells the editor which session it waits for; a `session/cancel` while it waits answers `cancelled` at once
 - `session/cancel` drops the `agent6 stop --after-step` marker: the step in flight finishes and commits first
 
 ## Not implemented
 
 - `session/load`: ACP v2 reorganises it, and resume carries agent6's own semantics (`agent6 resume`, `agent6 fork`), so `initialize` reports the capability as absent.
-- Mid-run steering: ACP has no message for a prompt while a turn is running, so a session's follow-up is the next prompt, which resumes the run with that text as its first steering instruction.
+- Mid-run steering: ACP has no message for a prompt while a turn is running.
+  A session's follow-up is the next prompt, which resumes the run with that text as its first steering instruction.
 - `fs/*` and `terminal/*`: ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.
 - Embedded resources in a prompt: text and `resource_link` blocks are read (a link rides in as its uri; the workspace boundary still decides what it reaches)
     - images and embedded resources are dropped; `promptCapabilities.embeddedContext` says so
@@ -77,7 +89,7 @@ One session is one directory, one conversation.
 ## As an MCP server
 
 `agent6 mcp serve` speaks MCP over stdio, so another agent (an editor's own, or a second agent6 with `[mcp.servers]`) can use agent6's jail and run state.
-It is the inverse of `[mcp]` in the config, which is agent6 as an MCP CLIENT.
+It is the inverse of `[mcp]` in the config, which is agent6 as an MCP client.
 The cwd's config decides everything: the sandbox the commands run in, and which tools exist at all.
 
 Five tools, of which a default config publishes two:
@@ -90,7 +102,7 @@ Five tools, of which a default config publishes two:
 | `run_in_sandbox` (an argv, jailed) | `[sandbox] run_commands` is not `yes` |
 | `apply_patch_in_sandbox` (a patch, then the gate) | either of the two above |
 
-`run_commands = "ask"` withholds the command tools rather than offering ones that would refuse: the MCP boundary has no operator to prompt.
+`run_commands = "ask"` withholds the command tools: the MCP boundary has no operator to prompt.
 A client that calls a withheld tool by name is told which setting withheld it.
 
 ```jsonc
