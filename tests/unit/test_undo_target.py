@@ -79,6 +79,36 @@ def test_undo_walks_back_one_operator_message(tmp_path: Path) -> None:
     assert target.undone_text == "focus the parser"
 
 
+def test_undo_finds_the_last_message_across_a_compacted_checkpoint(tmp_path: Path) -> None:
+    """Compaction can drop older steers, so the newest conversation can hold
+    fewer operator messages than the checkpoint before it. Undo still selects
+    the checkpoint immediately before the latest steer first appeared."""
+    layout = _layout(tmp_path, "run-compacted")
+    _checkpoint(layout, 1, [_task("do the thing")])
+    _checkpoint(layout, 2, [_task("do the thing"), _steer("first steer")])
+    _checkpoint(
+        layout,
+        3,
+        [_task("do the thing"), _steer("first steer"), _steer("second steer")],
+    )
+    _checkpoint(
+        layout,
+        4,
+        [
+            _task("do the thing"),
+            _task("CONTEXT SUMMARY\nolder work"),
+            _assistant("working"),
+            _steer("second steer"),
+        ],
+    )
+
+    target = undo_target(tmp_path, "run-compacted")
+
+    assert target is not None
+    assert (target.source_session_id, target.at_turn) == ("run-compacted", 2)
+    assert target.undone_text == "second steer"
+
+
 def test_undo_with_only_the_task_restarts_from_the_first_checkpoint(tmp_path: Path) -> None:
     """The composer gets the operator's words back, never the skill block or
     digest composed in front of them (here with no manifest to read them

@@ -164,7 +164,7 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
         except ManifestError:
             task = operator_task_text(ops[0]) if ops else ""
         return UndoTarget(src, src.session_id, turns[0], first.next_iteration, task)
-    target = _newest_checkpoint_below(src, len(ops))
+    target = _newest_checkpoint_below(src, len(ops), ops[-1])
     if target is None:
         reporter.err(f"nothing to undo: no state before the last message of {src.session_id}.")
         return None
@@ -172,20 +172,35 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
 
 
 def _newest_checkpoint_below(
-    layout: SessionLayout, current_ops: int, *, seen: frozenset[str] = frozenset()
+    layout: SessionLayout,
+    current_ops: int,
+    last_message: str,
+    *,
+    seen: frozenset[str] = frozenset(),
 ) -> _Checkpoint | None:
-    """The newest checkpoint of *layout* -- or, following fork lineage, of an
-    ancestor -- whose conversation holds fewer operator messages than
-    *current_ops*. A fork carries one seed checkpoint, so walking back past it
-    means resolving in the parent it was cut from.
+    """The checkpoint before *last_message* first appeared in *layout*, or,
+    following fork lineage, in an ancestor.
+
+    Checkpoint conversations can shrink at context compaction, so their total
+    operator-message count is not monotonic. The append transition for the
+    last message remains in the full checkpoint history; use it before the
+    count fallback for snapshots that predate steering markers. A fork carries
+    one seed checkpoint, so walking back past it means resolving in the parent.
 
     *seen* stops a cyclic lineage: forks always point at an OLDER run, so a
     cycle only exists in a corrupt or hand-edited manifest, and following one
     would recurse until the stack blows. A revisited id ends the walk (no
     resolvable ancestor) instead of crashing."""
-    for at_turn in sorted(list_checkpoint_turns(layout), reverse=True):
-        snap = _snapshot_at(layout, at_turn)
-        if snap is not None and len(_operator_messages(snap.messages)) < current_ops:
+    snapshots = [
+        (at_turn, snap, _operator_messages(snap.messages))
+        for at_turn in sorted(list_checkpoint_turns(layout))
+        if (snap := _snapshot_at(layout, at_turn)) is not None
+    ]
+    for previous, current in zip(reversed(snapshots[:-1]), reversed(snapshots[1:]), strict=True):
+        if current[2].count(last_message) > previous[2].count(last_message):
+            return _Checkpoint(layout.session_id, previous[0], previous[1].next_iteration)
+    for at_turn, snap, messages in reversed(snapshots):
+        if len(messages) < current_ops:
             return _Checkpoint(layout.session_id, at_turn, snap.next_iteration)
     try:
         parent = read_manifest(layout.session_dir).parent_session_id
@@ -198,7 +213,9 @@ def _newest_checkpoint_below(
     )
     if not parent_layout.session_dir.is_dir():
         return None
-    return _newest_checkpoint_below(parent_layout, current_ops, seen=seen | {layout.session_id})
+    return _newest_checkpoint_below(
+        parent_layout, current_ops, last_message, seen=seen | {layout.session_id}
+    )
 
 
 def _rewind_checkout(checkout: Path, *, tip: str, sha: str, exclude: frozenset[str]) -> list[str]:
