@@ -96,8 +96,8 @@ def _show_assignments(config_path: Path | None) -> int:
             origin = src if source == r else f"worker's, {src}"
             print(f"  {r:<9} {rm.provider}/{rm.model}  effort={effort}  [{origin}]")
     print(
-        "\nSet one with: agent6 model worker <provider> <model>"
-        " [--effort low|medium|high|xhigh|max]  (prompted if omitted on a TTY)"
+        "\nSet one with: agent6 model worker provider/model"
+        " [--effort low|medium|high|xhigh|max]  (prompted if omitted on a terminal)"
     )
     return 0
 
@@ -113,7 +113,7 @@ def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
         return 2
     for m in options:
         print(m)
-    print(f"set one with: agent6 model {role} {provider} <model>", file=sys.stderr)
+    print(f"set one with: agent6 model {role} {provider}/<model>", file=sys.stderr)
     return 0
 
 
@@ -150,12 +150,49 @@ def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
         warn(f"provider {provider!r} has no stored API key; {remedy} before using it.")
 
 
+def _read_route(
+    config_path: Path | None, role: str, route: str, *, interactive: bool
+) -> tuple[str, str]:
+    """(provider, model) from a `[PROVIDER/]MODEL` value. A configured
+    provider at the first slash names the provider; any other slash stays in
+    the model id on the role's current provider. A configured provider's name
+    alone leaves the model to pick. A blank value prompts for the provider on
+    a terminal. Raises ConfigError for a value that names nothing."""
+    raw_route = route
+    route = route.strip()
+    if not route:
+        if raw_route:
+            raise ConfigError(f"{raw_route!r}: no model id.")
+        provider = _prompt_for_provider(config_path) if interactive else ""
+        if not provider:
+            raise ConfigError("no provider given: name it as provider/model.")
+        return provider, ""
+    cfg = load_effective(Path.cwd(), config_path).config
+    if "/" not in route and route in cfg.providers:
+        return route, ""
+    if not cfg.providers and "/" in route:
+        provider, model = route.split("/", 1)
+        if not provider:
+            raise ConfigError(f"{route!r}: name the provider as provider/model.")
+        if not model:
+            raise ConfigError(f"{route!r}: no model id after the slash.")
+        return provider, model
+    route_role = cast("RoleName", "worker" if role == "all" else role)
+    if "/" not in route and cfg.models.resolve(route_role) is None:
+        known = ", ".join(sorted(cfg.providers)) or "(none)"
+        raise ConfigError(
+            f"{route!r}: no provider is set for {role}, so name one as provider/model"
+            f" (configured providers: {known})."
+        )
+    parsed = cfg.model_route(route_role, route)
+    return parsed.provider, parsed.model
+
+
 def _cmd_model(
     config_path: Path | None,
     *,
     role: str | None,
-    provider: str,
-    model: str,
+    route: str,
     effort: str,
     to_repo: bool,
 ) -> int:
@@ -164,16 +201,16 @@ def _cmd_model(
         return _show_assignments(config_path)
     # `role` is validated by argparse `choices`: planner/worker/reviewer or the
     # pseudo-role "all" (no config field of that name, it expands to all three).
-    # Positional provider/model are optional: prompt interactively when blank,
-    # prefilling the provider list from connected providers and the model list
-    # from that provider's live/configured catalog. Interactive means both
-    # channels are a tty: `agent6 model worker openrouter | grep kimi` keeps
-    # stdin a tty but must get the listing, not a prompt buried in the pipe.
+    # The route is optional: prompt interactively when blank, prefilling the
+    # provider list from connected providers and the model list from that
+    # provider's live/configured catalog. Interactive means both channels are
+    # a tty: `agent6 model worker openrouter | grep kimi` keeps stdin a tty but
+    # must get the listing, not a prompt buried in the pipe.
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
-    if not provider and interactive:
-        provider = _prompt_for_provider(config_path)
-    if not provider:
-        error("no provider given.")
+    try:
+        provider, model = _read_route(config_path, role, route, interactive=interactive)
+    except ConfigError as exc:
+        error(str(exc))
         return 2
     if not model and not interactive:
         if effort:

@@ -374,9 +374,8 @@ def test_mcp_remove_offers_only_servers_in_the_selected_layer(
 def test_model_provider_completion_reads_the_typed_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_cmd_model` threads `--config FILE` into every provider lookup, so a
-    provider only that file declares is settable; completion read the default
-    global and repo config instead and offered nothing."""
+    """Model completion reads the typed config: it offers that file's provider,
+    not disconnected provider presets that only `connect` accepts."""
     import argparse
 
     from agent6.ui.cli.model import _connected_providers  # pyright: ignore[reportPrivateUsage]
@@ -388,35 +387,41 @@ def test_model_provider_completion_reads_the_typed_config(
         encoding="utf-8",
     )
     assert "myprovider" in _connected_providers(custom)
-    offered = completers._complete_model_provider(  # pyright: ignore[reportPrivateUsage]
+    offered = completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
         "my", argparse.Namespace(role="worker", config=custom)
     )
     assert offered == ["myprovider"]
+    assert not completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
+        "open", argparse.Namespace(role="worker", config=custom)
+    )
+    # No role typed yet: nothing, so the role slot stays the role choices.
+    assert not completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
+        "my", argparse.Namespace(role=None, config=custom)
+    )
 
 
-def test_model_completion_reads_the_typed_config(
+def test_model_verb_completion_offers_the_typed_configs_routes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`agent6 --config F model worker <provider> <TAB>` offers F's catalog;
-    the completer dropped `parsed_args.config` and answered for the default
-    layers, a config the command was not going to run under."""
+    """`agent6 --config F model worker <TAB>` offers F's provider/model routes."""
     import argparse
+    import json
 
-    from agent6.ui.cli import model as model_mod
-
-    seen: list[Path | None] = []
-
-    def _catalog(config_path: Path | None, provider: str) -> list[str]:
-        seen.append(config_path)
-        return ["from-typed-config"] if config_path is not None else ["from-default-config"]
-
-    monkeypatch.setattr(model_mod, "_models_for", _catalog)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    cache = tmp_path / "cache" / "agent6" / "models"
+    cache.mkdir(parents=True)
+    (cache / "anthropic.json").write_text(json.dumps({"models": ["claude-a"]}), encoding="utf-8")
     custom = tmp_path / "custom.toml"
-    custom.write_text('[models.worker]\nprovider = "anthropic"\n', encoding="utf-8")
-    offered = completers._complete_models(  # pyright: ignore[reportPrivateUsage]
-        "from-", parsed_args=argparse.Namespace(provider="anthropic", config=custom)
+    custom.write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        encoding="utf-8",
     )
-    assert offered == ["from-typed-config"], seen
+    offered = completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
+        "anthropic/", argparse.Namespace(role="worker", config=custom)
+    )
+    assert offered == ["anthropic/claude-a", "anthropic/claude-x"]
 
 
 def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(

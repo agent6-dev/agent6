@@ -89,7 +89,7 @@ See [the web UI](web.md).
 ```sh
 uv tool install agent6                 # or: pipx install agent6
 agent6 connect                         # pick a provider, paste an API key (once)
-agent6 model worker anthropic claude-sonnet-5
+agent6 model worker anthropic/claude-sonnet-5
 
 cd your-repo
 agent6 run "add a --json output mode to the CLI"

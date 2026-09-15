@@ -230,7 +230,7 @@ def test_connect_local_endpoint_no_key(
 
 
 def test_model_set_and_show(iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    rc = main(["model", "worker", "anthropic", "claude-x", "--effort", "medium"])
+    rc = main(["model", "worker", "anthropic/claude-x", "--effort", "medium"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.worker]" in gc
@@ -249,7 +249,7 @@ def test_model_all_sets_every_role(
     iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # "all" is a pseudo-role: one command writes planner/worker/reviewer alike.
-    rc = main(["model", "all", "anthropic", "claude-x"])
+    rc = main(["model", "all", "anthropic/claude-x"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.planner]" in gc
@@ -272,15 +272,20 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     # configured, so connect one first.)
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
     assert main(["connect", "anthropic"]) == 0
-    assert main(["model", "worker", "anthropic", "good-x"]) == 0
+    assert main(["model", "worker", "anthropic/good-x"]) == 0
     capsys.readouterr()
     cfg = tmp_path / "g" / "agent6" / "config.toml"
     before = cfg.read_text(encoding="utf-8")
-    assert main(["model", "worker", "missing-prov", "gpt"]) == 2
+
+    def _invalid(*_a: object, **_k: object) -> str:
+        return "models.worker.provider: no such provider"
+
+    monkeypatch.setattr("agent6.ui.cli.model.set_config_table", _invalid)
+    assert main(["model", "worker", "anthropic/bad-x"]) == 2
     assert capsys.readouterr().err.startswith("REFUSING:")
     after = cfg.read_text(encoding="utf-8")
     assert after == before  # rolled back exactly
-    assert "missing-prov" not in after
+    assert "bad-x" not in after
     assert main(["model"]) == 0  # config still loads (not bricked)
 
 
@@ -364,7 +369,7 @@ def test_model_piped_without_model_lists_the_catalog(
     assert rc == 0
     captured = capsys.readouterr()
     assert captured.out == "claude-a\nclaude-b\n"
-    assert "set one with: agent6 model worker anthropic <model>" in captured.err
+    assert "set one with: agent6 model worker anthropic/<model>" in captured.err
     # Nothing was written: the listing never touches config.
     assert "[models.worker]" not in (tmp_path / "g" / "agent6" / "config.toml").read_text(
         encoding="utf-8"
@@ -382,7 +387,7 @@ def test_model_set_warns_when_the_provider_has_no_key(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", _key_stub(None))
-    rc = main(["model", "worker", "anthropic", "claude-x"])
+    rc = main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     err = capsys.readouterr().err
     assert err.startswith("[agent6] WARNING: provider 'anthropic' has no stored API key")
@@ -397,9 +402,27 @@ def test_model_set_stays_quiet_when_the_key_resolves(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", _key_stub("sk-x"))
-    rc = main(["model", "worker", "anthropic", "claude-x"])
+    rc = main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     assert "note:" not in capsys.readouterr().err
+
+
+def test_model_set_keeps_an_openrouter_slug_on_the_roles_provider(
+    iso: Path, tmp_path: Path
+) -> None:
+    """A slash inside a model id splits only when its head names a configured provider."""
+    config = tmp_path / "g" / "agent6" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        '[providers.openrouter]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nprovider = "openrouter"\nmodel = "old"\n',
+        encoding="utf-8",
+    )
+
+    assert main(["model", "worker", "moonshotai/kimi-k2.6"]) == 0
+    text = config.read_text(encoding="utf-8")
+    assert 'provider = "openrouter"' in text
+    assert 'model = "moonshotai/kimi-k2.6"' in text
 
 
 def test_model_piped_unknown_provider_errors(
@@ -409,7 +432,7 @@ def test_model_piped_unknown_provider_errors(
     monkeypatch.setattr("agent6.models.choices.list_models", _models_stub([]))
     rc = main(["model", "worker", "nosuch"])
     assert rc == 2
-    assert "no known models for nosuch" in capsys.readouterr().err
+    assert "name one as provider/model" in capsys.readouterr().err
 
 
 def test_model_stdout_piped_lists_even_with_a_tty_stdin(
@@ -440,6 +463,13 @@ def test_model_piped_without_provider_errors_without_prompt_dump(
     captured = capsys.readouterr()
     assert "no provider given" in captured.err
     assert "Connected providers" not in captured.out
+
+
+def test_model_whitespace_route_names_the_value(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["model", "worker", "   "]) == 2
+    assert "'   ': no model id" in capsys.readouterr().err
 
 
 def test_model_piped_listing_notes_an_ignored_thinking_flag(
@@ -519,7 +549,7 @@ def test_model_all_interactive_prompts_once(
 
 
 def test_model_repo_scope_writes_repo(iso: Path, tmp_path: Path) -> None:
-    rc = main(["model", "reviewer", "anthropic", "claude-o", "--repo"])
+    rc = main(["model", "reviewer", "anthropic/claude-o", "--repo"])
     assert rc == 0
     repo_cfg = (state_dir(tmp_path) / "config.toml").read_text(encoding="utf-8")
     assert "[models.reviewer]" in repo_cfg
@@ -865,7 +895,7 @@ def test_a_role_that_falls_back_to_the_worker_says_so(
 
 
 def test_a_number_outside_the_model_list_is_refused(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     """The picker offers numbered models; a number past the list was taken as
     a model id and written to the config."""
@@ -887,6 +917,9 @@ def test_a_number_outside_the_model_list_is_refused(
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)
     typed[:] = ["7"]
-    assert main(["model", "worker", "anthropic"]) == 2
+    # A provider name alone is that provider with the model still to pick.
+    cfg = tmp_path / "custom.toml"
+    cfg.write_text('[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8")
+    assert main(["--config", str(cfg), "model", "worker", "anthropic"]) == 2
     err = capsys.readouterr().err
     assert err.count("ERROR") == 1 and "no model 7" in err

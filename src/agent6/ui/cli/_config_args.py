@@ -17,8 +17,7 @@ from agent6.ui.cli.completers import (
     _complete_config_keys,
     _complete_config_values,
     _complete_machine_files,
-    _complete_model_provider,
-    _complete_models,
+    _complete_model_verb_values,
     _complete_providers,
 )
 
@@ -211,25 +210,20 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
             " once). Omit to print the current assignments."
         ),
     )
-    model_provider = model_p.add_argument(
-        "provider",
+    model_route = model_p.add_argument(
+        "route",
         nargs="?",
         default="",
-        help="Provider name for the role (prompted from connected providers if omitted on a TTY).",
-    )
-    # Role-gated (not _complete_providers) so the provider list doesn't bleed
-    # into the first positional (role), see _complete_model_provider.
-    model_provider.completer = _complete_model_provider  # type: ignore[attr-defined]
-    model_model = model_p.add_argument(
-        "model",
-        nargs="?",
-        default="",
+        metavar="[PROVIDER/]MODEL",
         help=(
-            "Model identifier for the role"
-            " (prompted from the provider's catalog if omitted on a TTY)."
+            "Provider and model as provider/model. A model id alone keeps the role's provider;"
+            " a provider name alone lists its models (piped) or prompts for one (on a"
+            " terminal). Omit it to be prompted for both on a terminal."
         ),
     )
-    model_model.completer = _complete_models  # type: ignore[attr-defined]
+    # Role-gated (see _complete_model_verb_values) so the routes do not bleed
+    # into the first positional (role).
+    model_route.completer = _complete_model_verb_values  # type: ignore[attr-defined]
     model_p.add_argument(
         "--effort",
         choices=get_args(EffortLevel),

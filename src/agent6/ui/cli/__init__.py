@@ -652,8 +652,7 @@ def _dispatch_model(args: argparse.Namespace) -> int:
     return _cmd_model(
         args.config,
         role=args.role,
-        provider=args.provider,
-        model=getattr(args, "model", ""),
+        route=args.route,
         effort=args.effort,
         to_repo=args.repo,
     )

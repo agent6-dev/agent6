@@ -22,7 +22,7 @@ It can be empty or absent when the global config supplies a provider and model; 
 ## Creating and inspecting
 
 - `agent6 connect`: add a provider and, when needed, credentials (stored `0600`), global by default; `--repo` writes the provider entry to the repo config while credentials stay global.
-- `agent6 model <role> <provider> <model> [--effort off|low|medium|high|xhigh|max]`.
+- `agent6 model <role> [provider/]model [--effort off|low|medium|high|xhigh|max]`: a model id alone keeps the role's provider; a provider name alone lists its models.
 - `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.
@@ -88,7 +88,7 @@ Uses a ChatGPT plan (Plus/Pro/Business) instead of an API key, over the Codex Re
 
 ```bash
 agent6 connect chatgpt      # browser sign-in (paste fallback when headless)
-agent6 model worker chatgpt gpt-5.6-sol
+agent6 model worker chatgpt/gpt-5.6-sol
 ```
 
 - `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`, a constant, not config) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
@@ -108,7 +108,7 @@ Runs the worker inside the installed, signed-in Claude Code binary: a Claude sub
 ```bash
 claude auth login                        # once, in Claude Code itself
 agent6 connect claude                    # writes [providers.claude], checks the sign-in
-agent6 model worker claude claude-sonnet-4-5
+agent6 model worker claude/claude-sonnet-4-5
 ```
 
 - agent6's own loop, tools, jail, verify gate, and approvals drive the run; the binary supplies the model.
@@ -119,7 +119,7 @@ agent6 model worker claude claude-sonnet-4-5
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
   Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).
-- Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude claude-haiku-4-5`).
+- Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude/claude-haiku-4-5`).
   Each side call is one short-lived `claude` process.
 - One `claude` process serves a worker leg.
   It restarts, replaying the conversation as one text message, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.

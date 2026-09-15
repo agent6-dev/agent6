@@ -26,8 +26,8 @@ agent6 routes three model roles independently:
 `reviewer` and `planner` fall back to `worker` when unset.
 
 ```sh
-agent6 model worker anthropic claude-sonnet-5
-agent6 model all openrouter moonshotai/kimi-k2.6   # set every role at once
+agent6 model worker anthropic/claude-sonnet-5
+agent6 model all openrouter/moonshotai/kimi-k2.6   # set every role at once
 ```
 
 ## Your first run

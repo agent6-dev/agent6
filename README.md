@@ -68,7 +68,7 @@ See [installation](https://agent6.dev/installation/) for the full requirements a
 agent6 connect                # interactive: pick provider, paste API key
 # or `agent6 connect chatgpt` for a ChatGPT subscription
 # or `agent6 connect claude` for a signed-in Claude Code binary
-agent6 model worker anthropic claude-sonnet-5
+agent6 model worker anthropic/claude-sonnet-5
 
 # Run the agent on a task, create a plan, or ask a question.
 cd your-repo

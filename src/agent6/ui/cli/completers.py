@@ -101,18 +101,6 @@ def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
 
 
 @_never_raises
-def _complete_models(prefix: str, **kw: object) -> list[str]:
-    """argcomplete: live + configured model ids for the already-typed provider,
-    under the `--config` already typed."""
-    provider = getattr(kw.get("parsed_args"), "provider", "") or ""
-    if not provider:
-        return []
-    from agent6.ui.cli.model import _models_for  # noqa: PLC0415
-
-    return [m for m in _models_for(_explicit_config(kw), provider) if m.startswith(prefix)]
-
-
-@_never_raises
 def _complete_model_routes(prefix: str, **kw: object) -> list[str]:
     """argcomplete for `--model`: every `provider/model` the config can run
     (`models.choices.route_choices`), under the `--config` already typed."""
@@ -308,20 +296,26 @@ def _complete_config_values(
 
 
 @_never_raises
-def _complete_model_provider(
-    prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
+def _complete_model_verb_values(
+    prefix: str, parsed_args: argparse.Namespace | None = None, **kw: object
 ) -> list[str]:
-    """argcomplete for `agent6 model <role> <provider>`.
+    """argcomplete for `agent6 model <role> [PROVIDER/]MODEL`: the provider
+    names (a name alone lists or prompts) and every `provider/model` route.
 
-    Only offer provider names once a valid role has been typed. argcomplete
-    bleeds every nargs='?' positional's completer into the first slot, so
-    without this gate `agent6 model <TAB>` would mix provider names into the
-    role choices (and `agent6 model openrouter` then fails the role validator).
-    """
+    Only once a valid role has been typed: argcomplete bleeds every nargs='?'
+    positional's completer into the first slot, so without this gate
+    `agent6 model <TAB>` would mix providers into the role choices."""
     role = getattr(parsed_args, "role", None)
     if role not in ("planner", "worker", "reviewer", "all"):
         return []
-    return _complete_providers(prefix, parsed_args=parsed_args)
+    from agent6.ui.cli.model import _connected_providers  # noqa: PLC0415
+
+    providers = [
+        name
+        for name in _connected_providers(_explicit_config({"parsed_args": parsed_args}))
+        if name.startswith(prefix)
+    ]
+    return providers + _complete_model_routes(prefix, parsed_args=parsed_args, **kw)
 
 
 @_never_raises

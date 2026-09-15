@@ -212,8 +212,7 @@ def test_config_and_provider_help_cover_all_supported_shapes() -> None:
     connect = _find(parser, "connect")
     assert "credentials" in (connect.description or "")
     model = _find(parser, "model")
-    for positional in ("provider", "model"):
-        assert "on a TTY" in (_positional(model, positional).help or "")
+    assert "on a terminal" in (_positional(model, "route").help or "")
 
 
 def test_profile_flags_have_the_profiles_completer() -> None:
