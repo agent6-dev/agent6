@@ -820,6 +820,45 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
         conn.close()
 
 
+def test_sse_run_emits_the_last_delta_of_a_burst(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A delta inside the coalescing window was skipped, not deferred: the last
+    delta of a burst reached the page only with the next event, so streamed
+    text stopped one chunk short until the model's turn ended."""
+    import agent6.ui.web._sse as sse_mod
+
+    monkeypatch.setattr(sse_mod, "DELTA_COALESCE_S", 2.0)
+    _srv, port = server
+    _make_run(
+        tmp_path,
+        "delta-run",
+        [
+            {"type": "session.start", "user_task": "stream"},
+            {"type": "role.call", "role": "worker", "model": "model"},
+        ],
+    )
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "delta-run"
+    write_worker_pid(session_dir, os.getpid())
+    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", "/api/session/delta-run/events")
+        resp = conn.getresponse()
+        _read_until(resp, lambda s: s.get("log_count") == 2)
+        with (session_dir / "logs.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "role.text_delta", "text": "done"}) + "\n")
+        snap = _read_until(
+            resp,
+            lambda s: (
+                cast(dict[str, object], s.get("last_role", {})).get("streamed_text") == "done"
+            ),
+            deadline_s=4.0,
+        )
+        assert snap["log_count"] == 2  # streaming deltas stay out of the audit log
+    finally:
+        conn.close()
+
+
 def test_an_action_on_a_session_that_is_not_live_names_resume(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:

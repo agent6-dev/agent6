@@ -10,6 +10,7 @@ streaming behaviour needs no server to exercise.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import queue
 import threading
@@ -134,6 +135,20 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None: 
             d["stream_dead"] = True
         return d
 
+    def drain(ev: dict[str, Any] | None) -> tuple[str, bool]:
+        """Fold *ev* and everything queued behind it: (the last event's type,
+        whether the run ended)."""
+        nonlocal state
+        last_type = ""
+        while ev is not None:
+            state = apply_event(state, ev)
+            last_type = str(ev.get("type", ""))
+            try:
+                ev = events.get_nowait()
+            except queue.Empty:
+                return last_type, False
+        return last_type, True
+
     try:
         state = initial_state()
         last_delta_emit = 0.0
@@ -162,23 +177,24 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None: 
             # Fold everything already queued into one frame. On connect the
             # tailer replays the whole history, and a full SessionState frame per
             # historical event is quadratic (13 MB probed on a 502-event run).
-            last_type = ""
-            while ev is not None:
-                state = apply_event(state, ev)
-                last_type = str(ev.get("type", ""))
-                try:
-                    ev = events.get_nowait()
-                except queue.Empty:
-                    break
-            if ev is None:  # run ended: send the final snapshot and close
+            last_type, ended = drain(ev)
+            if ended:  # run ended: send the final snapshot and close
                 chan.send(frame())
                 return
-            now = time.monotonic()
-            if last_type in STREAMING_DELTAS and (now - last_delta_emit) < DELTA_COALESCE_S:
-                continue  # coalesce bursts of text/thinking deltas
+            # A burst of text/thinking deltas is one frame per window: wait out
+            # the rest of the window for the burst's tail, then emit, so the
+            # last delta is never held back until the next event.
+            wait = DELTA_COALESCE_S - (time.monotonic() - last_delta_emit)
+            if last_type in STREAMING_DELTAS and wait > 0:
+                time.sleep(wait)
+                with contextlib.suppress(queue.Empty):
+                    _, ended = drain(events.get_nowait())
+                    if ended:
+                        chan.send(frame())
+                        return
             if not chan.send(frame()):
                 return
-            last_delta_emit = now
+            last_delta_emit = time.monotonic()
     finally:
         # cancel the tailer so it exits on disconnect / dead run, not just session.end
         stop.set()
