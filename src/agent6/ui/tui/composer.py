@@ -34,17 +34,23 @@ from agent6.viewmodel.transcript import (
 ComposerMode = Literal["steer", "resume", "start"]
 
 
-def composer_labels(mode: ComposerMode, *, continue_as: str = "") -> tuple[str, str]:
+def composer_labels(
+    mode: ComposerMode, *, continue_as: str = "", needs_new_work: bool = False
+) -> tuple[str, str]:
     """(border title, key hint) for the composer.
 
     One conversation view serves runs, plans and asks, so it says "session".
     *continue_as* names the fork an undone run continues as (Enter resumes that
-    session).
+    session); *needs_new_work* is a run the agent finished green, which a bare
+    resume has nothing to do for (the web composer asks the same question).
     """
     if mode == "steer":
         return ("steer this session (/pin, /compact [focus])", "Enter sends · Ctrl-J newline")
     if mode == "resume":
-        title = f"continue as {continue_as}" if continue_as else "continue this session"
+        if continue_as:
+            title = f"continue as {continue_as}"
+        else:
+            title = "what should it do next" if needs_new_work else "continue this session"
         return (title, "Enter resumes · Ctrl-J newline")
     return ("new task", "Enter starts · Ctrl-J newline")
 
@@ -244,15 +250,21 @@ class SteerInput(TextArea):
     mode: ComposerMode = "steer"  # which directives apply (see steer_suggestion_rows)
 
     def set_mode(
-        self, *, mode: ComposerMode, ctx_pct: int | None = None, continue_as: str = ""
+        self,
+        *,
+        mode: ComposerMode,
+        ctx_pct: int | None = None,
+        continue_as: str = "",
+        needs_new_work: bool = False,
     ) -> None:
         """Relabel for the session's state: steering (live), resuming
-        (finished; *continue_as* names the fork an undone run resumes as), or
-        starting (a draft), plus the context-window fill when known, right
-        where you type. Only writes on a real change: this runs on every
-        heartbeat, and same-value style writes still cost a refresh."""
+        (finished; *continue_as* names the fork an undone run resumes as,
+        *needs_new_work* a run finished green), or starting (a draft), plus the
+        context-window fill when known, right where you type. Only writes on
+        a real change: this runs on every heartbeat, and same-value style
+        writes still cost a refresh."""
         self.mode = mode
-        title, keys = composer_labels(mode, continue_as=continue_as)
+        title, keys = composer_labels(mode, continue_as=continue_as, needs_new_work=needs_new_work)
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
         # The run's policy sits where the eye already goes for status, from the
         # same fold the CLI banner and the web header read.

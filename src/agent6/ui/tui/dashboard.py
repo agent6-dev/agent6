@@ -568,7 +568,10 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # in the subtitle moves with the run.
         mode: ComposerMode = "steer" if tui.session_controllable() else "resume"
         self.query_one("#dash-input", SteerInput).set_mode(
-            mode=mode, ctx_pct=tui.context_pct(), continue_as=tui.continue_as
+            mode=mode,
+            ctx_pct=tui.context_pct(),
+            continue_as=tui.continue_as,
+            needs_new_work=tui.finished_green(),
         )
         self.query_one("#dash-resume", ResumeOptions).show(mode == "resume")
         role = s.last_role

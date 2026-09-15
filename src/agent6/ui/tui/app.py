@@ -88,6 +88,7 @@ from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import (
     LIVE_STATUS_WORDS,
     finished_needs_new_work,
+    needs_new_work,
     status_for_session_dir,
     task_snippet,
 )
@@ -827,6 +828,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         (worker gone) and every end word route the composer to resume -- the
         one action that will actually be read."""
         return self.dir_status[0] in LIVE_STATUS_WORDS
+
+    def finished_green(self) -> bool:
+        """Whether the agent finished this run over a green tree: a bare
+        resume then has nothing to do, so the composer asks for new work."""
+        s = self.state
+        return needs_new_work(finished=s.finished, end_reason=s.end_reason, all_passed=s.all_passed)
 
     def model_call_in_flight(self) -> bool:
         """Whether the live run has a model call awaiting its result."""

@@ -725,6 +725,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
                 mode=mode,
                 ctx_pct=self._host.context_pct(),
                 continue_as=self._host.continue_as,
+                needs_new_work=self._host.finished_green(),
             )
 
     def refresh_liveness(self) -> None:

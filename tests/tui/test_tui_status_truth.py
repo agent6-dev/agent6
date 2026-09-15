@@ -754,7 +754,7 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) 
             assert "· t ·" in app.sub_title, "the live task name, not the dir fallback"
             await _open_dash(app, pilot)
             assert app._dash.query_one("#dash-input", SteerInput).border_title == (
-                "continue this session"
+                "what should it do next"  # finish_session over a green tree: new work only
             )
 
     asyncio.run(scenario())

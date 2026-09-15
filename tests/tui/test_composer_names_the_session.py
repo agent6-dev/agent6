@@ -24,3 +24,11 @@ def test_a_live_session_offers_to_steer_the_session() -> None:
     assert "run" not in title, title
     assert "session" in title
     assert "/pin" in title and "/compact" in title
+
+
+def test_a_finished_run_asks_for_new_work() -> None:
+    """A run the agent finished green has nothing to continue; the web asks
+    "what should it do next" and the TUI said "continue this session"."""
+    assert composer_labels("resume", needs_new_work=True)[0] == "what should it do next"
+    assert composer_labels("resume")[0] == "continue this session"
+    assert composer_labels("resume", continue_as="f", needs_new_work=True)[0] == "continue as f"
