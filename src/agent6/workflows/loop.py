@@ -5101,10 +5101,10 @@ class Workflow:
         )
 
     def _emit_budget(self, iteration: int) -> None:
-        """Per-iteration usage heartbeat: running token + cost totals. Lets
-        `agent6 sessions show` / the TUI show live spend, and leaves a recent event at
-        the start of each iteration so a long provider call is still
-        distinguishable from a stall."""
+        """Per-iteration usage heartbeat: running token + cost totals. The fold
+        keeps only its timestamp (the idle anchor) and reads totals from
+        `budget.update`; the event at the start of each iteration keeps a long
+        provider call distinguishable from a stall."""
         if self.budget is None:
             return
         snap = self.budget.snapshot()
