@@ -1051,3 +1051,35 @@ def test_new_task_view_model_box_goes_blank_when_no_route_resolves(
 
     asyncio.run(scenario())
     asyncio.run(empty_list())
+
+
+def test_new_task_view_tab_reaches_the_mode_picker_first(tmp_path: Path) -> None:
+    """Tab from the composer lands on the mode picker, then the preset, then
+    the model (what the intro promises): the empty transcript pane is not a
+    tab stop."""
+    import asyncio
+
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.new_work import NewWorkScreen
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a"]))
+            await pilot.pause()
+            first = app.focused
+            assert first is not None and first.id == "draft-input"
+            stops: list[str | None] = []
+            for _ in range(3):
+                await pilot.press("tab")
+                await pilot.pause()
+                focused = app.focused
+                assert focused is not None
+                stops.append(focused.id)
+            assert stops == ["draft-mode", "draft-preset", "draft-model"]
+
+    asyncio.run(scenario())

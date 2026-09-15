@@ -143,7 +143,9 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)
-        with Vertical(id="draft-main"), VerticalScroll(id="draft-scroll"):
+        # can_focus=False: the empty pane is no tab stop, so Tab reaches the
+        # pickers as the intro says.
+        with Vertical(id="draft-main"), VerticalScroll(id="draft-scroll", can_focus=False):
             yield Static(Text(_INTRO, style="dim italic"), id="draft-notice")
         yield SteerSuggest(id="draft-suggest")
         with Horizontal(id="draft-options"):
