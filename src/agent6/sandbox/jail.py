@@ -544,16 +544,22 @@ def _forget_launcher(pid: int) -> None:
 
 def signal_group(pid: int, sig: int = signal.SIGKILL) -> None:
     """Send *sig* to *pid*'s process group, or to *pid* alone when it does not
-    lead one.
+    lead one or the caller belongs to that group.
 
-    A pgid is a leader's pid, and it is only reusable once that leader is
-    reaped. We hold every one of these as an unreaped child, so a pgid equal to
-    the pid we looked up cannot have been recycled underneath us. A pgid that
-    is not the pid belongs to a leader we do not hold, and under sudo signalling
-    a recycled one would kill an unrelated group as root.
+    A pgid is a leader's pid, reusable once that leader is reaped. The jail's
+    sweep holds its launchers as unreaped children, so their pgids cannot be
+    recycled underneath it; a stop passes a detached worker's pid it checked
+    by identity just before the call, so its window is that check-to-signal
+    gap. A pgid that is not the pid belongs to a leader we do not hold, and
+    under sudo signalling a recycled one would kill an unrelated group as root.
+    A caller inside the target group signals only the target because killpg
+    would kill the caller.
     """
+    if pid == os.getpid():
+        return
     with contextlib.suppress(OSError):
-        if os.getpgid(pid) == pid:
+        pgid = os.getpgid(pid)
+        if pgid == pid and pgid != os.getpgrp():
             os.killpg(pid, sig)
         else:
             os.kill(pid, sig)

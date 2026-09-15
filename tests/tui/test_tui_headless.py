@@ -906,9 +906,9 @@ def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> N
     asyncio.run(scenario())
 
 
-def _no_kill(_session_dir: Path, _grace_s: float) -> int:
+def _no_kill(_session_dir: Path, _worker: object, _grace_s: float) -> tuple[bool, int]:
     """The escalation stubbed out: a test's worker pid is its own process."""
-    return 0
+    return False, 0
 
 
 def test_stop_now_aborts_via_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -940,6 +940,9 @@ def test_stop_now_aborts_via_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPa
                     break
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "abort"
             assert steer_request_pending(tmp_path) and stop_request_pending(tmp_path)
+            await app.workers.wait_for_complete()
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any("did not answer" in note for note in notes)
 
     asyncio.run(scenario())
 
@@ -1015,13 +1018,27 @@ def test_a_typed_stop_is_the_one_stop(tmp_path: Path, monkeypatch: pytest.Monkey
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
             app.submit_instruction("/stop")
-            for _ in range(50):
-                await pilot.pause()
-                if calls:
-                    break
+            await app.workers.wait_for_complete()
             assert calls == [False]
+            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert (f"{tmp_path.name} stopped", "information") in notes
+
+    async def finished() -> None:
+        (tmp_path / "logs.jsonl").write_text(
+            json.dumps(_ev(type="session.end", reason="finish_session")) + "\n",
+            encoding="utf-8",
+        )
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            app.submit_instruction("/stop")
+            await pilot.pause()
+            assert calls == [False]
+            notes = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert ("nothing to stop: the session is not live", "warning") in notes
 
     asyncio.run(scenario())
+    asyncio.run(finished())
 
 
 def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:

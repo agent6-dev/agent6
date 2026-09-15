@@ -331,20 +331,41 @@ def _read_pid_record(session_dir: Path) -> tuple[int, str] | None:
     return _parse_pid_record(session_dir / WORKER_PID_FILE)
 
 
+type ProcessIdentity = tuple[int, str]
+
+
+def process_identity(pid: int) -> ProcessIdentity:
+    """A pid and the start time that distinguishes it from later reuse."""
+    return pid, _proc_start_time(pid)
+
+
+def process_is_alive(identity: ProcessIdentity) -> bool:
+    """Whether *identity* still names its live process."""
+    return _still_the_process(*identity)
+
+
 def read_worker_pid(session_dir: Path) -> int | None:
     rec = _read_pid_record(session_dir)
     return None if rec is None else rec[0]
+
+
+def read_live_worker_identity(session_dir: Path) -> ProcessIdentity | None:
+    """The live worker's recorded pid and start time, or None.
+
+    Returning the identity from the same read that validates it lets a caller
+    keep targeting one worker while another resume takes over the run dir.
+    """
+    rec = _read_pid_record(session_dir)
+    if rec is None or not _still_the_process(*rec):
+        return None
+    return rec
 
 
 def worker_is_alive(session_dir: Path) -> bool:
     """True iff worker.pid points at a live process that IS the recorded worker:
     the pid is alive AND, when a start time was recorded, today's start time
     matches. A recycled pid fails the match and reads dead."""
-    rec = _read_pid_record(session_dir)
-    if rec is None:
-        return False
-    pid, recorded_start = rec
-    return _still_the_process(pid, recorded_start)
+    return read_live_worker_identity(session_dir) is not None
 
 
 def _still_the_process(pid: int, recorded_start: str) -> bool:

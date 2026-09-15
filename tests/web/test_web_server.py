@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import os
 import socket
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -52,6 +54,16 @@ when = [
 kind = "terminal"
 status = "ok"
 reason = "routed"
+"""
+
+_STOP_WORKER = """
+import json, sys, time
+from pathlib import Path
+d = Path(sys.argv[1])
+while not (d / "steer.answer").exists():
+    time.sleep(0.02)
+with (d / "logs.jsonl").open("a") as fh:
+    fh.write(json.dumps({"type": "session.end", "reason": "steer_abort"}) + "\\n")
 """
 
 
@@ -337,41 +349,28 @@ def test_stop_after_step_and_compact_drop_markers_on_a_live_run(
     assert (runs / "compact.request").exists()
 
 
-def _no_kill(_session_dir: Path, _grace_s: float) -> int:
-    """The escalation stubbed out: a test's worker pid is its own process."""
-    return 0
-
-
 def test_stop_now_lands_both_bridges_and_reports_the_run_stopped(
-    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     """The Stop now button posted a steer text; it is the one stop `agent6 stop`
     is. A run that answers (session.end after the abort) reads "stopped"."""
-    import os
-    import threading
-
-    import agent6.app.stop as stop_mod
-
-    monkeypatch.setattr(stop_mod, "STOP_WAIT_S", 3.0)
-    monkeypatch.setattr(stop_mod, "_kill", _no_kill)  # never this process
     _srv, port = server
     _make_run(tmp_path, "run-n", [{"type": "session.start"}])
     runs = state_dir(tmp_path) / "sessions" / "runs" / "run-n"
-    (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-
-    def answer() -> None:
-        deadline = time.monotonic() + 3.0
-        while not (runs / "steer.answer").exists() and time.monotonic() < deadline:
-            time.sleep(0.02)
-        with (runs / "logs.jsonl").open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"type": "session.end", "reason": "steer_abort"}) + "\n")
-
-    threading.Thread(target=answer, daemon=True).start()
-    status, data = _post(port, "/api/session/run-n/stop", {})
-    assert status == 200 and data["ok"] is True
-    assert str(data["message"]) == "run-n stopped"
-    assert (runs / "steer.answer").read_text(encoding="utf-8").strip() == "abort"
-    assert (runs / "stop.request").exists()
+    worker = subprocess.Popen(
+        [sys.executable, "-c", _STOP_WORKER, str(runs)], start_new_session=True
+    )
+    write_worker_pid(runs, worker.pid)
+    try:
+        status, data = _post(port, "/api/session/run-n/stop", {})
+        assert status == 200 and data["ok"] is True
+        assert str(data["message"]) == "run-n stopped"
+        assert (runs / "steer.answer").read_text(encoding="utf-8").strip() == "abort"
+        assert (runs / "stop.request").exists()
+        worker.wait(timeout=3.0)
+    finally:
+        worker.kill()
+        worker.wait()
 
 
 def test_stop_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
@@ -783,6 +782,8 @@ def test_a_post_on_an_unknown_session_or_machine_is_404_like_its_get(
     answers 404: one status per fact."""
     _srv, port = server
     status, body = _post(port, "/api/session/nope/steer", {"text": "x"})
+    assert (status, body["error"]) == (404, "no session 'nope'")
+    status, body = _post(port, "/api/session/nope/stop", {})
     assert (status, body["error"]) == (404, "no session 'nope'")
     status, body = _post(port, "/api/machine/nope/stop", {})
     assert (status, body["error"]) == (404, "no machine 'nope'")

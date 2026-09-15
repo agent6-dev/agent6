@@ -22,8 +22,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.sandbox.jail import signal_group
-from agent6.sessions.ipc import read_worker_pid, request_stop, submit_steer, worker_is_alive
-from agent6.tools.background import SHELLS_DIR, shell_host_pids
+from agent6.sessions.ipc import (
+    ProcessIdentity,
+    process_is_alive,
+    read_live_worker_identity,
+    request_stop,
+    submit_steer,
+)
+from agent6.tools.background import SHELLS_DIR, shell_host_processes
 from agent6.viewmodel import session_is_live, summarize_session_dir
 from agent6.viewmodel.listing import produced_result
 
@@ -34,7 +40,8 @@ _POLL_S = 0.1
 
 @dataclass(frozen=True, slots=True)
 class StopOutcome:
-    """What a stop did: *how* is `after_step`, `stopped`, `killed`, `not_live`
+    """What a stop did: *how* is `after_step`, `stopped`, `killed`, `stale` (the
+    run did not answer and nothing of it was left to signal), `not_live`
     (nothing to stop) or `failed` (a request could not be written); *message*
     is the line every surface shows."""
 
@@ -60,21 +67,41 @@ def stop_session(
         return StopOutcome(
             rid, False, "not_live", f"{rid} {_not_live_state(session_dir)}; nothing to stop"
         )
+    worker = read_live_worker_identity(session_dir)
     if after_step:
         if not request_stop(session_dir):
             return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
         return StopOutcome(rid, True, "after_step", f"{rid} stops after its current step")
     if not (submit_steer(session_dir, "abort", now=True) and request_stop(session_dir)):
         return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
-    if _ended_within(session_dir, wait_s):
+    return _ended(session_dir, worker, wait_s=wait_s, grace_s=grace_s)
+
+
+def _ended(
+    session_dir: Path, worker: ProcessIdentity | None, *, wait_s: float, grace_s: float
+) -> StopOutcome:
+    """The outcome once both bridges are written: the run ended within *wait_s*,
+    or what the kill after it signalled."""
+    rid = session_dir.name
+    if _ended_within(session_dir, worker, wait_s):
         return StopOutcome(rid, True, "stopped", f"{rid} stopped")
-    commands = _kill(session_dir, grace_s)
-    also = f" with {commands} background command{'' if commands == 1 else 's'}" if commands else ""
+    worker_killed, commands = _kill(session_dir, worker, grace_s)
+    if not worker_killed and not commands:
+        return StopOutcome(
+            rid,
+            True,
+            "stale",
+            f"{rid} did not answer within {wait_s:g} s and nothing of it is left to signal;"
+            " it reads stale, and resume continues it",
+        )
+    killed = ["its worker"] if worker_killed else []
+    if commands:
+        killed.append(f"{commands} background command{'' if commands == 1 else 's'}")
     return StopOutcome(
         rid,
         True,
         "killed",
-        f"{rid} did not answer within {wait_s:g} s: its worker was killed{also};"
+        f"{rid} did not answer within {wait_s:g} s: {' and '.join(killed)} killed;"
         " it reads stale, and resume continues it",
     )
 
@@ -88,41 +115,40 @@ def _not_live_state(session_dir: Path) -> str:
     return f"is not running ({summary.status})"
 
 
-def _ended_within(session_dir: Path, wait_s: float) -> bool:
+def _ended_within(session_dir: Path, worker: ProcessIdentity | None, wait_s: float) -> bool:
     deadline = time.monotonic() + wait_s
     while session_is_live(session_dir):
+        if read_live_worker_identity(session_dir) != worker:
+            return True
         if time.monotonic() >= deadline:
             return False
         time.sleep(_POLL_S)
     return True
 
 
-def _kill(session_dir: Path, grace_s: float) -> int:
-    """SIGTERM the worker and its host-side background commands, SIGKILL what is
-    still alive after *grace_s*. Returns how many commands were signalled."""
-    worker = read_worker_pid(session_dir) if worker_is_alive(session_dir) else None
-    commands = [pid for pid in shell_host_pids(session_dir / SHELLS_DIR) if _alive(pid)]
-    # Never this process: a front-end that is the worker (an ACP agent, a test)
-    # asks itself to stop through the bridges alone.
-    targets = [
-        pid for pid in ([worker] if worker is not None else []) + commands if pid != os.getpid()
+def _kill(session_dir: Path, worker: ProcessIdentity | None, grace_s: float) -> tuple[bool, int]:
+    """SIGTERM the worker and its host-side background commands that are still
+    alive, SIGKILL what remains after *grace_s*. Returns whether the worker was
+    signalled and how many commands were. Never this process: a front-end that
+    is the worker (an ACP agent, a test) asks itself to stop through the
+    bridges alone."""
+    me = os.getpid()
+    targets: list[ProcessIdentity] = []
+    worker_live = worker is not None and worker[0] != me and process_is_alive(worker)
+    if worker is not None and worker_live:
+        targets.append(worker)
+    commands = [
+        identity
+        for identity in shell_host_processes(session_dir / SHELLS_DIR)
+        if identity[0] != me and process_is_alive(identity)
     ]
-    for pid in targets:
-        signal_group(pid, signal.SIGTERM)
+    targets.extend(commands)
+    for identity in targets:
+        signal_group(identity[0], signal.SIGTERM)
     deadline = time.monotonic() + grace_s
-    while any(_alive(pid) for pid in targets) and time.monotonic() < deadline:
+    while any(process_is_alive(identity) for identity in targets) and time.monotonic() < deadline:
         time.sleep(_POLL_S)
-    for pid in targets:
-        if _alive(pid):
-            signal_group(pid, signal.SIGKILL)
-    return len(commands)
-
-
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    for identity in targets:
+        if process_is_alive(identity):
+            signal_group(identity[0], signal.SIGKILL)
+    return worker_live, len(commands)

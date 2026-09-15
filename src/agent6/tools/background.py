@@ -31,6 +31,7 @@ from agent6.sandbox.jail import (
     SessionJob,
     start_in_jail,
 )
+from agent6.sessions.ipc import ProcessIdentity, process_identity, process_is_alive
 from agent6.types import BackgroundHandoff, JailPolicy
 
 # The command's own output goes to a file both sides can read: the jail gets
@@ -226,9 +227,20 @@ class BackgroundShells:
             # The host pid rides along for a stop from another process (`agent6
             # stop` on a worker that no longer answers); a command inside the
             # session's namespaces has no host pid and dies with the session.
-            host_pid = shell.job.pid if isinstance(shell.job, (LocalJob, BackgroundJob)) else None
+            host = (
+                process_identity(shell.job.pid)
+                if isinstance(shell.job, (LocalJob, BackgroundJob))
+                else None
+            )
             meta.write_text(
-                json.dumps({"id": shell.id, "command": shell.command, "pid": host_pid}),
+                json.dumps(
+                    {
+                        "id": shell.id,
+                        "command": shell.command,
+                        "pid": host[0] if host else None,
+                        "pid_start": host[1] if host else None,
+                    }
+                ),
                 encoding="utf-8",
             )
         except OSError as exc:
@@ -428,13 +440,15 @@ def shells_text(session_dir: Path) -> str:
     return "\n".join(roster_from_dir(session_dir / SHELLS_DIR)) or "no background commands this run"
 
 
-def shell_host_pids(root: Path) -> list[int]:
-    """The host pids the run's background commands recorded, off disk: what a
-    stop from another process can signal (a command inside the session's
-    namespaces recorded none and dies with the session)."""
+def shell_host_processes(root: Path) -> list[ProcessIdentity]:
+    """The live host processes the run's background commands recorded.
+
+    A command inside the session's namespaces records no host identity and
+    dies with the session. A stale record cannot target a recycled pid.
+    """
     if not root.is_dir():
         return []
-    pids: list[int] = []
+    processes: list[ProcessIdentity] = []
     try:
         directories = sorted(root.iterdir())
     except OSError:
@@ -445,9 +459,12 @@ def shell_host_pids(root: Path) -> list[int]:
         except (OSError, ValueError):
             continue
         pid = meta.get("pid") if isinstance(meta, dict) else None
-        if isinstance(pid, int):
-            pids.append(pid)
-    return pids
+        started = meta.get("pid_start") if isinstance(meta, dict) else None
+        if type(pid) is int and pid > 0 and isinstance(started, str):
+            identity = (pid, started)
+            if process_is_alive(identity):
+                processes.append(identity)
+    return processes
 
 
 def roster_from_dir(root: Path) -> list[str]:
