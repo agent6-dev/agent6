@@ -41,7 +41,7 @@ A modal's buttons sit in one row; on a terminal narrower than the row the later 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
 
 - the diff pane opens on the latest commit; its selector walks the run's per-step commits (newest first), `cumulative` shows the chain up to that step; the task tree and the cost line follow the selected step; a run whose model owns git has no chain and the pane says so
-- the composer bar runs along the foot: type to steer, or to resume a finished run
+- the composer bar runs along the foot: type to steer, or to resume a finished run; the row above it picks the preset and model the next leg continues under (blank: as the run recorded)
 - `/` completes the steer directives; Ctrl-R searches the session's past messages
 - `/shells` lists the run's background commands and how they ended; `/restate` replays the conversation since your last message
 - the View menu maximizes the focused pane

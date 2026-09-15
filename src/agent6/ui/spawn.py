@@ -171,6 +171,7 @@ def spawn_detached_resume(
     *,
     steer: str = "",
     preset: str = "",
+    model: str = "",
     config_path: Path | None = None,
     flags: Sequence[str] = (),
 ) -> str:
@@ -192,7 +193,8 @@ def spawn_detached_resume(
     it as the first steering instruction. Operator-typed text, never LLM output.
     A malformed directive as *steer* is refused here, with the message the
     child would print. A non-empty *preset* is the `--preset` the leg
-    continues under; *flags* are further `resume` options the leg runs under
+    continues under and *model* its `--model`; *flags* are further `resume`
+    options the leg runs under
     (the detaching invocation's own overrides). argv is the agent6 exe + the
     run id (never LLM output)."""
     if steer and (problem := steer_problem(steer)) is not None:
@@ -204,6 +206,8 @@ def spawn_detached_resume(
     argv = [*agent6_argv(config_path), "resume", session_id]
     if preset:
         argv.append(f"--preset={preset}")
+    if model:
+        argv.append(f"--model={model}")
     if steer:
         argv.append(f"--steer={steer}")
     argv.extend(flags)

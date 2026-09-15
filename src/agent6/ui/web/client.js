@@ -822,22 +822,29 @@ function makeComposer(id) {
   const root = el('div', 'composer');
   const ta = el('textarea', 'field');
   const hint = el('div', 'hint');
-  // The preset the next leg continues under (`agent6 resume --preset`): a
-  // preset touches any setting, so it changes only between legs; the picker
-  // shows only while the composer resumes, filled once from the same list the
-  // config editor offers for the `preset` leaf.
+  // The preset and the model the next leg continues under (`agent6 resume
+  // --preset`, `--model`): both change only between legs, so the row shows
+  // only while the composer resumes, filled once from the lists the config
+  // editor and the new-work composer offer. Blank = as the run recorded.
   const presetRow = el('div', 'row');
   presetRow.style.display = 'none';
   presetRow.appendChild(el('span', 'sub muted', 'continue under preset'));
   const preset = el('select', 'field'); preset.style.flex = '0 0 auto'; preset.style.width = 'auto';
   const asRecorded = el('option', null, '(as recorded)'); asRecorded.value = ''; preset.appendChild(asRecorded);
   presetRow.appendChild(preset);
+  presetRow.appendChild(el('span', 'sub muted', 'model'));
+  const model = el('select', 'field'); model.style.flex = '0 0 auto'; model.style.width = 'auto';
+  const modelRecorded = el('option', null, '(as recorded)'); modelRecorded.value = ''; model.appendChild(modelRecorded);
+  presetRow.appendChild(model);
   let presetsFilled = false;
   const fillPresets = () => {
     if (presetsFilled) return;
     presetsFilled = true;
     getJSON('/api/config/suggest/preset').then(d => {
       for (const p of (d.values || [])) { const o = el('option', null, p); o.value = p; preset.appendChild(o); }
+    }).catch(() => {});
+    getJSON('/api/routes').then(d => {
+      for (const r of (d.routes || [])) { const o = el('option', null, r); o.value = r; model.appendChild(o); }
     }).catch(() => {});
   };
   let finished = null; // unknown until the first SSE frame
@@ -866,8 +873,9 @@ function makeComposer(id) {
   const resume = async (text) => {
     busy = true; apply();
     try {
-      await postJSON('/api/session/' + encodeURIComponent(id) + '/resume', { text, preset: preset.value });
-      toast(preset.value ? 'resuming the run under preset ' + preset.value + '…' : 'resuming the run…');
+      await postJSON('/api/session/' + encodeURIComponent(id) + '/resume', { text, preset: preset.value, model: model.value });
+      const under = [preset.value && 'preset ' + preset.value, model.value && 'model ' + model.value].filter(Boolean).join(', ');
+      toast(under ? 'resuming the run under ' + under + '…' : 'resuming the run…');
       // The resume is a detached spawn: wait for it to come live, then re-open
       // the view so the SSE stream and controls come back. Waiting on
       // `finished === false` would declare takeover on the first poll, since

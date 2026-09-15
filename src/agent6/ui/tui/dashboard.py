@@ -49,7 +49,7 @@ from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     RUN_MENU,
     ComposerMode,
-    ResumePreset,
+    ResumeOptions,
     SteerInput,
     SteerSuggest,
     open_history_search,
@@ -254,9 +254,12 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             self._cumulative = bool(event.value)
             self.render_state()
 
-    def __init__(self, *, presets: list[str] | None = None) -> None:
+    def __init__(
+        self, *, presets: list[str] | None = None, routes: list[str] | None = None
+    ) -> None:
         super().__init__()
         self._presets = presets if presets is not None else []
+        self._routes = routes if routes is not None else []
         # Select a task in the #plan tree to filter tools/log/diff to it; re-select
         # to clear. _log_filter tracks what the RichLog currently shows so a filter
         # change forces one full re-render (it is append-only otherwise).
@@ -402,7 +405,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
                     yield Checkbox("cumulative", id="diff-cumulative")
                 yield Static("", id="diff-body")
         yield SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
-        yield ResumePreset(self._presets, id="dash-preset")  # shown while the composer resumes
+        yield ResumeOptions(self._presets, self._routes, id="dash-resume")  # while resuming
         yield SteerInput(id="dash-input")
         yield Footer()
 
@@ -567,7 +570,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         self.query_one("#dash-input", SteerInput).set_mode(
             mode=mode, ctx_pct=tui.context_pct(), continue_as=tui.continue_as
         )
-        self.query_one("#dash-preset", ResumePreset).show(mode == "resume")
+        self.query_one("#dash-resume", ResumeOptions).show(mode == "resume")
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
         # the run is active: silent thinking and the resume gap tick visibly.

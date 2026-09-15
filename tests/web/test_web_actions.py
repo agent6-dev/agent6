@@ -530,6 +530,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
         *,
         steer: str = "",
         preset: str = "",
+        model: str = "",
         config_path: object = None,
     ) -> str:
         spawned.append(steer)

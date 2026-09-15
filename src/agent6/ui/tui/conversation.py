@@ -43,7 +43,7 @@ from agent6.ui.tui.composer import (
     RUN_MENU,
     ApprovalRow,
     ComposerMode,
-    ResumePreset,
+    ResumeOptions,
     SteerInput,
     SteerSuggest,
     open_history_search,
@@ -269,11 +269,13 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         *,
         title: Callable[[str], str],
         presets: list[str] | None = None,
+        routes: list[str] | None = None,
         prompts: PromptDispatcher | None = None,
     ) -> None:
         """The run app's main screen: Esc leaves the app, Ctrl+D toggles the
-        dashboard. *presets* are the config presets a resume may continue
-        under (the picker). *prompts* is the host's dispatcher, the one record
+        dashboard. *presets* and *routes* are the config presets and the
+        `provider/model` routes a resume may continue under (the row above
+        the composer). *prompts* is the host's dispatcher, the one record
         of which prompts a surface already took (a modal on another screen,
         this screen's row)."""
         super().__init__()
@@ -281,6 +283,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._prompts = prompts
         self._title = title
         self._presets = presets if presets is not None else []
+        self._routes = routes if routes is not None else []
         self._detail: DetailLevel = "collapsed"  # one shortcut cycles hidden/collapsed/expanded
         self._tail = LogTail(logs_path)
         self._fold = TranscriptFold()
@@ -320,7 +323,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             yield _ChromeStatic("", id="conv-live")  # chrome: not part of a selection
         yield Static(id="conv-approval", classes="conv-chunk")  # the open approval, inline
         yield SteerSuggest(id="conv-suggest")  # command hints while typing `/…`
-        yield ResumePreset(self._presets, id="conv-preset")  # shown while the composer resumes
+        yield ResumeOptions(self._presets, self._routes, id="conv-resume")  # while resuming
         yield SteerInput(id="conv-input")  # the composer: steer a live run, resume a finished one
         yield _JumpButton(_JUMP_LABEL, id="conv-jump")  # floats; shown when scrolled up
         yield Footer()  # Footer is ALLOW_SELECT=False in textual already
@@ -715,7 +718,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             if not bar.display:  # a same-value write still costs a relayout
                 bar.display = True
             mode: ComposerMode = "steer" if self._host_live() else "resume"
-            self.query_one("#conv-preset", ResumePreset).show(mode == "resume")
+            self.query_one("#conv-resume", ResumeOptions).show(mode == "resume")
             if not bar.policy:  # folded once: the manifest does not change mid-run
                 bar.policy = session_policy(self._logs_path.parent).short()
             bar.set_mode(

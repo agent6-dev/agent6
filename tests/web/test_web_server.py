@@ -251,7 +251,7 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
 
     _srv, port = server
     _make_run(tmp_path, "run-r", [{"type": "session.start"}, {"type": "session.end"}])
-    calls: list[tuple[Path, str, str, str]] = []
+    calls: list[tuple[Path, str, str, str, str]] = []
 
     def fake_resume(
         cwd: Path,
@@ -259,17 +259,20 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
         *,
         steer: str = "",
         preset: str = "",
+        model: str = "",
         config_path: object = None,
     ) -> str:
-        calls.append((cwd, session_id, steer, preset))
+        calls.append((cwd, session_id, steer, preset, model))
         return ""
 
     monkeypatch.setattr(actions, "spawn_detached_resume", fake_resume)
     status, data = _post(
-        port, "/api/session/run-r/resume", {"text": "also fix the docs", "preset": "quick"}
+        port,
+        "/api/session/run-r/resume",
+        {"text": "also fix the docs", "preset": "quick", "model": "o/b"},
     )
     assert status == 200 and data["ok"] is True
-    assert calls == [(tmp_path, "run-r", "also fix the docs", "quick")]
+    assert calls == [(tmp_path, "run-r", "also fix the docs", "quick", "o/b")]
 
 
 def test_resume_refused_while_the_worker_is_alive(

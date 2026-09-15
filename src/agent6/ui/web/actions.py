@@ -234,12 +234,14 @@ def resume_run(
     text: str = "",
     *,
     preset: str = "",
+    route: str = "",
     config_path: Path | None = None,
 ) -> tuple[bool, str]:
     """Resume a finished/stopped run detached, optionally seeding *text* as the
     first steering instruction (the composer's Enter on a finished run) and
-    continuing under *preset* (`resume --preset`; "" = as recorded). Refused
-    while the run's worker is alive: a live run is steered, not resumed."""
+    continuing under *preset* and the `[provider/]model` *route* (`resume
+    --preset`, `--model`; "" = as recorded). Refused while the run's worker is
+    alive: a live run is steered, not resumed."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
@@ -255,7 +257,7 @@ def resume_run(
             " type what to do next (Enter resumes it with the instruction)"
         )
     err = spawn_detached_resume(
-        cwd, session_dir.name, steer=text, preset=preset, config_path=config_path
+        cwd, session_dir.name, steer=text, preset=preset, model=route, config_path=config_path
     )
     return (err == ""), (err or "resuming")
 

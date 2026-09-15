@@ -807,7 +807,13 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+        _cwd: Path,
+        rid: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
     ) -> str:
         spawned.append((rid, steer))
         return ""
@@ -848,7 +854,7 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
 def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> None:
     """Continuing from the foreground run's end hold keeps the same view live."""
     from agent6.ui.tui import app as app_mod
-    from agent6.ui.tui.composer import SteerInput
+    from agent6.ui.tui.composer import ResumeOptions, SteerInput
 
     events = (
         _ev(type="session.start", user_task="finish the parser", mode="run"),
@@ -860,7 +866,13 @@ def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> N
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+        _cwd: Path,
+        rid: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
     ) -> str:
         spawned.append((rid, steer))
         (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -875,6 +887,8 @@ def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> N
         app = Agent6TUI(tmp_path, exit_on_end=True)
         async with app.run_test(size=(120, 40)) as pilot:
             await _wait_for(pilot, lambda: app._end_hold, "the end hold")
+            conv_row = app._conv.query_one("#conv-resume", ResumeOptions)
+            assert conv_row.display
             app._conv.query_one("#conv-input", SteerInput).post_message(
                 SteerInput.Submitted("also add tests")
             )
@@ -884,6 +898,9 @@ def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> N
             assert app.dir_status[0] == "running"
             assert not app._end_hold
             assert app._conv.query_one("#conv-input", SteerInput).mode == "steer"
+            assert not conv_row.display
+            await _show_dashboard(pilot)
+            assert not app._dash.query_one("#dash-resume", ResumeOptions).display
             assert "Ctrl+Q to leave" not in str(app.sub_title)
 
     asyncio.run(scenario())
@@ -1392,7 +1409,13 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+        _cwd: Path,
+        rid: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
     ) -> str:
         spawned.append((rid, steer))
         return ""

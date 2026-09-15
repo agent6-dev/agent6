@@ -47,6 +47,7 @@ from agent6.app.reporter import Reporter
 from agent6.app.undo import undo_fork
 from agent6.config.layer import available_preset_names
 from agent6.directive import parse_btw, parse_compact, parse_now
+from agent6.models.choices import available_routes
 from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import (
     register_frontend,
@@ -218,15 +219,18 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.last_event_at = time.monotonic()
         self._heartbeat_at = 0.0
         self.spin = 0
-        # The preset a resume from a composer continues under ("" = as
-        # recorded); both run views' pickers read and write it.
+        # The preset and the model a resume from a composer continues under
+        # ("" = as recorded); both run views' pickers read and write them.
         self.resume_preset = ""
+        self.resume_model = ""
         presets = available_preset_names(Path.cwd(), config_path)
-        self._dash = DashboardScreen(presets=presets)
+        routes = available_routes(Path.cwd(), config_path)
+        self._dash = DashboardScreen(presets=presets, routes=routes)
         self._conv = ConversationScreen(
             self.logs_path,
             title=self.screen_title,
             presets=presets,
+            routes=routes,
             prompts=self._prompts,
         )
 
@@ -556,23 +560,34 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         would be wiped by that clear). The new session's steer poll injects
         the text at its first boundary."""
         target = self.continue_as or self.session_dir.name
-        under = f" under preset {self.resume_preset}" if self.resume_preset else ""
         self._spawn_resume(
             target,
             steer=text,
-            preset=self.resume_preset,
-            started=f"resuming {target}{under} with your instruction…",
+            started=f"resuming {target}{self._resume_under()} with your instruction…",
         )
 
+    def _resume_under(self) -> str:
+        """The row's picks, for a notice: " under preset P, model M", or ""."""
+        picks = [
+            f"preset {self.resume_preset}" if self.resume_preset else "",
+            f"model {self.resume_model}" if self.resume_model else "",
+        ]
+        picked = ", ".join(p for p in picks if p)
+        return f" under {picked}" if picked else ""
+
     @work(thread=True)
-    def _spawn_resume(
-        self, target: str, *, started: str, steer: str = "", preset: str = ""
-    ) -> None:
-        """The detached resume, off the UI thread: the spawn waits until the
-        child owns the run or refuses (its preflight takes a second or more),
-        and the notice lands from here."""
+    def _spawn_resume(self, target: str, *, started: str, steer: str = "") -> None:
+        """The detached resume, off the UI thread, under the row's preset and
+        model picks: the spawn waits until the child owns the run or refuses
+        (its preflight takes a second or more), and the notice lands from
+        here."""
         err = spawn_detached_resume(
-            Path.cwd(), target, steer=steer, preset=preset, config_path=self.config_path
+            Path.cwd(),
+            target,
+            steer=steer,
+            preset=self.resume_preset,
+            model=self.resume_model,
+            config_path=self.config_path,
         )
         self.call_from_thread(
             self.notify, err or started, severity="error" if err else "information"
@@ -693,7 +708,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         if self.session_controllable():
             self.notify("nothing to resume: the session is still going", severity="warning")
             return
-        if finished_needs_new_work(self.session_dir):
+        target = self.continue_as or self.session_dir.name
+        if not self.continue_as and finished_needs_new_work(self.session_dir):
             self.notify(
                 "this run finished; type what to do next below (Enter resumes it with the"
                 " instruction)",
@@ -702,7 +718,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self._focus_composer()
             return
         self._spawn_resume(
-            self.session_dir.name, started=f"resuming {self.session_dir.name} in the background…"
+            target,
+            started=f"resuming {target}{self._resume_under()} in the background…",
         )
 
     def action_run_plan(self) -> None:

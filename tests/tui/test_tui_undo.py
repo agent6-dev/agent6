@@ -34,17 +34,23 @@ def _undone_run(d: Path) -> None:
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
 
-def test_a_live_undo_hands_the_follow_up_to_the_fork(tmp_path: Path, monkeypatch: Any) -> None:
-    """The composer holds the undone text, its title names the fork, and Enter
-    resumes the fork (this view's run is over; the fork carries on). The
-    view used to keep an empty composer pointed at the undone run, whose
-    resume would have started a leg on the wrong session."""
-    spawned: list[tuple[str, str]] = []
+def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The composer holds the undone text, its title names the fork, and both
+    Enter and bare Resume continue that fork under the row's choices."""
+    spawned: list[tuple[str, str, str, str]] = []
 
     def _fake_resume(
-        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+        _cwd: Path,
+        rid: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
     ) -> str:
-        spawned.append((rid, steer))
+        spawned.append((rid, steer, preset, model))
         return ""
 
     monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
@@ -60,9 +66,14 @@ def test_a_live_undo_hands_the_follow_up_to_the_fork(tmp_path: Path, monkeypatch
             assert app.continue_as == "fork-child-AAAAAA"
             assert bar.text == "name it better"
             assert "continue as fork-child-AAAAAA" in str(bar.border_title)
+            app.resume_preset = "quick"
+            app.resume_model = "o/m"
             app.submit_instruction("name it much better")
             await app.workers.wait_for_complete()
-            assert spawned == [("fork-child-AAAAAA", "name it much better")]
+            assert spawned == [("fork-child-AAAAAA", "name it much better", "quick", "o/m")]
+            app.action_resume()
+            await app.workers.wait_for_complete()
+            assert spawned[-1] == ("fork-child-AAAAAA", "", "quick", "o/m")
             # The dashboard's bar agrees.
             await pilot.press("ctrl+d")
             await pilot.pause()
@@ -84,7 +95,13 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+        _cwd: Path,
+        rid: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
     ) -> str:
         spawned.append((rid, steer))
         return ""
@@ -137,7 +154,13 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+        _cwd: Path,
+        rid: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
     ) -> str:
         spawned.append((rid, steer))
         return ""
@@ -219,7 +242,13 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+        _cwd: Path,
+        rid: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
     ) -> str:
         spawned.append((rid, steer))
         return ""

@@ -110,8 +110,10 @@ class PruneBody(_Body):
 class ResumeBody(_Body):
     # The follow-up instruction a finished run is resumed with; empty = plain resume.
     text: str = ""
-    # The config preset the leg continues under; empty = as the run recorded.
+    # The config preset and the model the leg continues under; empty = as the
+    # run recorded.
     preset: str = ""
+    model: str = ""
 
 
 class MachineCreateBody(_Body):
@@ -495,7 +497,12 @@ class _Handler(BaseHTTPRequestHandler):
         elif verb == "resume":
             rb = ResumeBody.model_validate(self._read_body())
             ok, msg = actions.resume_run(
-                self.cwd, session_id, rb.text, preset=rb.preset, config_path=self.config_path
+                self.cwd,
+                session_id,
+                rb.text,
+                preset=rb.preset,
+                route=rb.model,
+                config_path=self.config_path,
             )
         elif verb == "stop_step":
             self._read_body()  # drain the `{}` body (keep-alive framing)

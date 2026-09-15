@@ -222,7 +222,13 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
     spawned: list[tuple[str, str]] = []
 
     def _fake_resume(
-        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+        _cwd: Path,
+        rid: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
     ) -> str:
         spawned.append((rid, steer))
         return ""
@@ -277,47 +283,95 @@ def test_an_unreadable_run_tells_the_truth_on_the_stream_pane(tmp_path: Path) ->
 def test_a_resume_from_the_composer_carries_the_picked_preset(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """A run that is not live shows the preset picker above its composer (both
-    views); the pick rides the detached resume as `--preset`, and "(as
-    recorded)" sends none."""
+    """A run that is not live shows the preset and model pickers above its
+    composer (both views); the picks ride the detached resume as `--preset`
+    and `--model`, a bare resume included, and "(as recorded)" sends none. A
+    refused spawn says why and leaves the resume composer available."""
     from textual.widgets import Select
 
     from agent6.ui.tui import app as app_mod
-    from agent6.ui.tui.composer import ResumePreset
+    from agent6.ui.tui.composer import ResumeOptions
 
-    spawned: list[tuple[str, str, str]] = []
+    spawned: list[tuple[str, str, str, str]] = []
+    notes: list[str] = []
 
     def _fake_resume(
-        _cwd: Path, rid: str, *, steer: str = "", preset: str = "", config_path: object = None
+        _cwd: Path,
+        rid: str,
+        *,
+        steer: str = "",
+        preset: str = "",
+        model: str = "",
+        config_path: object = None,
     ) -> str:
-        spawned.append((rid, steer, preset))
-        return ""
+        spawned.append((rid, steer, preset, model))
+        return "the checkout is busy" if steer == "refuse me" else ""
 
     monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
 
     def _presets(_cwd: Path, _cp: object) -> list[str]:
         return ["quick", "ultra"]
 
+    def _routes(_cwd: Path, _cp: object) -> list[str]:
+        return ["o/a", "o/b"]
+
     monkeypatch.setattr(app_mod, "available_preset_names", _presets)
+    monkeypatch.setattr(app_mod, "available_routes", _routes)
     _mk_parked(tmp_path / "parked2")
 
     async def scenario() -> None:
         app = Agent6TUI(tmp_path / "parked2")
+        original = app.notify
+
+        def spy(message: Any, *args: Any, **kwargs: Any) -> None:
+            notes.append(str(message))
+            original(message, *args, **kwargs)
+
+        monkeypatch.setattr(app, "notify", spy)
         async with app.run_test(size=(140, 40)) as pilot:
             await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
-            picker = app._conv.query_one("#conv-preset", ResumePreset)
-            await _wait_for(pilot, lambda: picker.display, "the preset picker")
-            picker.query_one(Select).value = "quick"
+            row = app._conv.query_one("#conv-resume", ResumeOptions)
+            await _wait_for(pilot, lambda: row.display, "the resume row")
+            preset_options = row.query_one("#resume-preset", Select)._options  # pyright: ignore[reportPrivateUsage]
+            assert [value for _label, value in preset_options] == ["", "quick", "ultra"]
+            model_options = row.query_one("#resume-model", Select)._options  # pyright: ignore[reportPrivateUsage]
+            assert [value for _label, value in model_options] == ["", "o/a", "o/b"]
+            row.query_one("#resume-preset", Select).value = "quick"
+            row.query_one("#resume-model", Select).value = "o/b"
             await pilot.pause()
-            assert app.resume_preset == "quick"
+            assert (app.resume_preset, app.resume_model) == ("quick", "o/b")
             app.submit_instruction("go ahead")
             await app.workers.wait_for_complete()
-            assert spawned == [("parked2", "go ahead", "quick")]
-            # The dashboard's picker shows the same choice.
+            await pilot.pause()
+            assert spawned == [("parked2", "go ahead", "quick", "o/b")]
+            assert any(
+                "under preset quick, model o/b with your instruction" in note for note in notes
+            )
+            app.action_resume()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert spawned[-1] == ("parked2", "", "quick", "o/b")
+            assert any("under preset quick, model o/b in the background" in note for note in notes)
+            # The dashboard's pickers show the same choices.
             await _open_dash(app, pilot)
-            dash_picker = app._dash.query_one("#dash-preset", ResumePreset)
-            await _wait_for(pilot, lambda: dash_picker.display, "the dashboard's picker")
-            assert dash_picker.query_one(Select).value == "quick"
+            dash_row = app._dash.query_one("#dash-resume", ResumeOptions)
+            await _wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
+            preset = dash_row.query_one("#resume-preset", Select)
+            model = dash_row.query_one("#resume-model", Select)
+            assert preset.value == "quick"
+            assert model.value == "o/b"
+            preset.value = ""
+            model.value = ""
+            await pilot.pause()
+            app.submit_instruction("use the recorded choices")
+            await app.workers.wait_for_complete()
+            assert spawned[-1] == ("parked2", "use the recorded choices", "", "")
+            app.submit_instruction("refuse me")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert any("the checkout is busy" in note for note in notes)
+            assert dash_row.display
+            assert app._dash.query_one("#dash-input", SteerInput).mode == "resume"
 
     asyncio.run(scenario())
 

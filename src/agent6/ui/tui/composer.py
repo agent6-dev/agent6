@@ -120,22 +120,26 @@ _INPUT_MAX_ROWS = 6  # the steer bar grows to this many rows, then scrolls inter
 RECORDED_PRESET_LABEL = "(as recorded)"
 
 
-class ResumePreset(Horizontal):
-    """The row above a resume composer: pick the config preset the next leg
-    continues under (`agent6 resume --preset`). A preset touches any setting,
-    so it changes only between legs; the picker shows only while the composer
-    resumes, and the choice lives on the host app (`resume_preset`), so the
-    conversation and the dashboard composers agree."""
+class ResumeOptions(Horizontal):
+    """The row above a resume composer: the config preset and the model the
+    next leg continues under (`agent6 resume --preset`, `--model`). Both
+    change only between legs, so the row shows only while the composer
+    resumes; the choices live on the host app (`resume_preset`,
+    `resume_model`), so the conversation and the dashboard composers agree.
+    Blank = as the run recorded."""
 
     DEFAULT_CSS = """
-    ResumePreset { display: none; height: 3; padding: 0 1; }
-    ResumePreset .resume-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
-    ResumePreset Select { width: 1fr; max-width: 40; }
+    ResumeOptions { display: none; height: 3; padding: 0 1; }
+    ResumeOptions .resume-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
+    ResumeOptions #resume-preset { width: 1fr; max-width: 24; }
+    ResumeOptions #resume-model { width: 1fr; max-width: 44; }
+    ResumeOptions SelectCurrent Static#label { text-wrap: nowrap; text-overflow: ellipsis; }
     """
 
-    def __init__(self, presets: list[str], **kwargs: Any) -> None:
+    def __init__(self, presets: list[str], routes: list[str], **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._presets = presets
+        self._routes = routes
 
     def compose(self) -> ComposeResult:
         yield Static("continue under preset", classes="resume-label")
@@ -143,23 +147,36 @@ class ResumePreset(Horizontal):
             [(RECORDED_PRESET_LABEL, ""), *((p, p) for p in self._presets)],
             value="",
             allow_blank=False,
+            id="resume-preset",
+        )
+        yield Static("model", classes="resume-label")
+        yield Select(
+            [(RECORDED_PRESET_LABEL, ""), *((r, r) for r in self._routes)],
+            value="",
+            allow_blank=False,
+            id="resume-model",
         )
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        setattr(self.app, "resume_preset", str(event.value))  # noqa: B010
+        attr = "resume_model" if event.select.id == "resume-model" else "resume_preset"
+        setattr(self.app, attr, str(event.value))
 
     def show(self, shown: bool) -> None:
         if self.display != shown:
             self.display = shown
         if shown:
-            # After the refresh: on the first paint the Select is not mounted
-            # yet, and a value written before its mount leaves its label blank.
+            # After the refresh: on the first paint the Selects are not mounted
+            # yet, and a value written before the mount leaves a label blank.
             self.call_after_refresh(self._sync)
 
     def _sync(self) -> None:
-        wanted = getattr(self.app, "resume_preset", "")
-        for picker in self.query(Select):
-            if picker.value != wanted and wanted in ("", *self._presets):
+        for attr, picker_id, choices in (
+            ("resume_preset", "#resume-preset", self._presets),
+            ("resume_model", "#resume-model", self._routes),
+        ):
+            wanted = getattr(self.app, attr, "")
+            picker = self.query_one(picker_id, Select)
+            if picker.value != wanted and wanted in ("", *choices):
                 picker.value = wanted
 
 
