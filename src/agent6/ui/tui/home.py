@@ -124,11 +124,11 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # Footer order: run-list actions, then Config, then meta (Help, Quit, Menu).
         Binding("n", "new_work", "New run/plan/ask"),
         Binding("enter", "open_selected", "Open"),
-        Binding("l", "view_logs", "View logs"),
+        Binding("l", "view_logs", "View logs", show=False),
         Binding("space", "toggle_lanes", "Lanes"),
         Binding("m", "merge_selected", "Merge run"),
         Binding("d", "delete_selected", "Delete run"),
-        Binding("r", "refresh", "Refresh"),
+        Binding("r", "refresh", "Refresh", show=False),
         Binding("c", "open_config", "Config"),
         Binding("M", "open_machines", "Machines"),
         Binding("question_mark", "help", "Help"),
@@ -330,7 +330,9 @@ class HomeScreen(ScreenChrome, Screen[None]):
         """Grey Merge and Delete out on a live run, which `sessions merge` and
         `sessions rm` always refuse (the web disables the same button and says
         why). None, not False: False also hides the key, and a key missing from
-        the footer reads as a capability this hub does not have.
+        the footer reads as a capability this hub does not have. Lanes is the
+        exception: it is hidden (False) unless a fan-out is selected, since a
+        hub without one has nothing to fold.
 
         The other refusals (no commits, already merged) are the CLI's to make:
         deciding them here needs a git read per selection, and the summary's
