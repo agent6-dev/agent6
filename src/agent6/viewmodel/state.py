@@ -35,6 +35,7 @@ from agent6.viewmodel.listing import (
     needs_new_work,
     status_for_session_dir,
     status_word,
+    task_snippet,
 )
 from agent6.viewmodel.log_line import format_log_line, render_args
 from agent6.viewmodel.policy import session_policy
@@ -836,6 +837,9 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     # blocked on the operator (a "waiting" run is still live).
     d["status"] = word
     d["status_label"] = status_label(word, reason)
+    # The headline every listing shows, after the manifest fill above: a
+    # client never re-derives it from the composed task.
+    d["task_line"] = task_snippet(d["user_task"])
     # A run no model is touching (parked, never started, worker gone), worded
     # once for every surface; "" otherwise.
     d["dead_state"] = dead_run_note(word, reason)[0]

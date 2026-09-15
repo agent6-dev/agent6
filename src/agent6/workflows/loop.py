@@ -74,7 +74,7 @@ from agent6.providers import (
 )
 from agent6.sessions.ipc import emit_session_start
 from agent6.skills import ResolvedSkills, skill_command, skill_steer_payload
-from agent6.task_text import operator_task_text
+from agent6.task_text import operator_task_text, task_headline
 from agent6.tools.dispatch import (
     OperatorCommandUnexecutable,
     ToolDenied,
@@ -3310,13 +3310,8 @@ class Workflow:
         calls with `parent_id=None` attach under this root."""
         if self.curator is None:
             return None
-        # TaskNodeDraft.title has min_length=1, so take the first NON-EMPTY
-        # line ("(run)" when the task is blank).
-        first_nonempty = next(
-            (line.strip() for line in user_task.splitlines() if line.strip()),
-            "",
-        )
-        title = first_nonempty[:200] if first_nonempty else "(run)"
+        # TaskNodeDraft.title has min_length=1: "(run)" when the task is blank.
+        title = task_headline(user_task)[:200] or "(run)"
         try:
             draft = TaskNodeDraft(
                 title=title,

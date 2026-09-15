@@ -44,6 +44,7 @@ from agent6.viewmodel.format import (
 from agent6.viewmodel.listing import (
     lanes_of,
     summary_row,
+    task_snippet,
 )
 
 
@@ -321,8 +322,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
     pid_note = _pid_note(pid, alive=alive, finished=scan.finished)
     print(f"session:    {target.name}  (mode={mode_display or '?'})")
-    if task := (manifest.user_task or scan.task).strip():
-        print(f"task:       {task.splitlines()[0]}")
+    if task := task_snippet(manifest.user_task or scan.task):
+        print(f"task:       {task}")
     _print_lineage(manifest)
     _print_parallel_compare(manifest)
     _print_fanout(manifest, lanes, lane_manifests)

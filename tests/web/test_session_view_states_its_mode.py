@@ -88,11 +88,11 @@ def test_the_composer_does_not_flatten_an_outcome_to_finished() -> None:
     assert "This session finished" not in CLIENT_JS
 
 
-def test_the_run_card_shows_the_task_as_sessions_show_prints_it() -> None:
-    """A task seeded from a plan carries the whole plan below its title, and
-    the card printed all of it into one cell (`# Plan: ...  ## Original task
-    ...` inline). `sessions show` prints the first line; the card does the
-    same."""
+def test_the_run_card_shows_the_task_line_the_hub_rows_show() -> None:
+    """The card printed the whole composed task into one cell, then its raw first
+    line (a seed block's opener, a TASK.md heading's marks). It reads the
+    snapshot's task_line, the same headline the hub rows and the TUI show."""
     client = CLIENT_JS
-    assert "add('task', (s.user_task || '').split('\\n')[0] || '(none)')" in client
+    assert "add('task', s.task_line || '(none)')" in client
+    assert "s.user_task || '').split(" not in client
     assert "add('task', s.user_task || '(none)')" not in client

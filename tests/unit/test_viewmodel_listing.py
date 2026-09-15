@@ -94,6 +94,16 @@ def test_task_snippet_plain_task() -> None:
     assert task_snippet("add a --json flag\nmore detail") == "add a --json flag"
 
 
+def test_task_snippet_drops_a_markdown_heading_mark() -> None:
+    """A task pasted from a TASK.md opens with `# Title`; every listing and card
+    showed the marks. A `#` with no space after it (`#include`) is not a heading."""
+    assert task_snippet("# Implement `parse_url` per RFC 3986\n\nbody") == (
+        "Implement `parse_url` per RFC 3986"
+    )
+    assert task_snippet("### deep heading") == "deep heading"
+    assert task_snippet("#include <stdio.h> fails, why?") == "#include <stdio.h> fails, why?"
+
+
 def test_task_snippet_falls_back_to_stripped_text() -> None:
     assert task_snippet("   ") == ""
 

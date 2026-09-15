@@ -304,6 +304,21 @@ def _final_messages(provider: MagicMock) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def test_the_root_task_is_titled_by_the_headline_every_listing_shows(tmp_path: Path) -> None:
+    """The root took the task's first non-empty line verbatim: a seeded run's
+    root was the `<prior-run>` opener and a TASK.md task's kept its `# `."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    graph = _FakeGraph()
+    wf = _build_wf(repo, MagicMock(), steer_text="", graph=graph)
+    seeded = '<prior-run id="agile-echo-H2EWX5">\ndigest\n</prior-run>\n\n# Fix the parser\n\nbody'
+    root_id = wf._seed_root_task(seeded)  # pyright: ignore[reportPrivateUsage]
+    assert root_id is not None
+    assert graph.nodes()[root_id].title == "Fix the parser"
+    assert wf._seed_root_task("   ") is not None  # pyright: ignore[reportPrivateUsage]
+    assert [n.title for n in graph.nodes().values()] == ["Fix the parser", "(run)"]
+
+
 def test_none_spawner_answers_with_feedback_and_continues(tmp_path: Path) -> None:
     """No lane_spawner (default / headless) -> the directive is answered with a
     'not available' notice and the run continues; never a crash."""

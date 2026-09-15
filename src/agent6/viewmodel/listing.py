@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import re
 import time
 from collections.abc import Container, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -26,7 +25,7 @@ from agent6.sessions.layout import (
     session_has_record,
 )
 from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
-from agent6.task_text import operator_task_text
+from agent6.task_text import task_headline
 from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.format import (
     clip_cell,
@@ -96,34 +95,11 @@ def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
     return dirs[0] if dirs else None
 
 
-# An ask transcript's headers: the title (`# agent6 ask`, `# agent6 ask
-# (interactive)`), then `## Question` / `## Answer` for a one-shot ask or
-# `## Q1` / `## A1` (numbered) for an interactive one.
-_ASK_QUESTION_HEADER = re.compile(r"^## (Question|Q\d+)$")
-_ASK_ANSWER_HEADER = re.compile(r"^## (Answer|A\d+)$")
-
-
-def first_task_line(lines: Iterable[str]) -> str | None:
-    """First user-authored line: the ask headers (one-shot and interactive)
-    skipped, the composed context (`operator_task_text`: seed digests, file
-    seeds, skill blocks) stripped. Returns None when nothing stands out."""
-    for line in operator_task_text("\n".join(lines)).splitlines():
-        s = line.strip()
-        if s.startswith("# agent6 ask") or _ASK_QUESTION_HEADER.match(s):
-            continue
-        if _ASK_ANSWER_HEADER.match(s):
-            break
-        if s and not s.startswith("<"):
-            return s
-    return None
-
-
 def task_snippet(text: str, max_chars: int | None = None) -> str:
-    """One-line summary of a task or ask transcript for a listing: the first
-    user-authored line (block bodies skipped), else the stripped text; clipped
-    to *max_chars* with an ellipsis, so a cut task never reads as the whole
-    one."""
-    snip = first_task_line(text.splitlines()) or text.strip()
+    """One-line summary of a task or ask transcript for a listing: its
+    headline, else the stripped text; clipped to *max_chars* with an ellipsis,
+    so a cut task never reads as the whole one."""
+    snip = task_headline(text) or text.strip()
     if max_chars is not None and len(snip) > max_chars:
         snip = snip[: max_chars - 1] + "…"
     return snip

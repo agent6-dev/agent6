@@ -173,6 +173,21 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> Non
     assert "fallback_task" not in snap
 
 
+def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: Path) -> None:
+    """The run card took the raw first line of the task, so a resumed leg whose
+    task the manifest filled showed a seed block's opener, and a TASK.md task its
+    heading marks. The snapshot carries the same task_line the hub rows read."""
+    d = _bucket(tmp_path, "runs") / "titled1"
+    d.mkdir(parents=True)
+    task = '<prior-run id="agile-echo-H2EWX5">\ndigest\n</prior-run>\n\n# Fix the parser\n\nbody'
+    (d / "manifest.json").write_text(
+        json.dumps({"mode": "run", "user_task": task}), encoding="utf-8"
+    )
+    snap = session_snapshot(d)
+    assert snap["user_task"] == task
+    assert snap["task_line"] == "Fix the parser"
+
+
 def test_plan_snapshot_carries_the_plan_md(tmp_path: Path) -> None:
     """A planning run's deliverable rides the snapshot as plan_md (the web shows
     it in a Plan card; `agent6 plan show` prints the same file). A run, or a

@@ -908,18 +908,19 @@ def test_status_prints_the_task_and_names_a_plans_page(
 ) -> None:
     """The listing shows the task and the drill-down dropped it, on the text
     render and in --json; a plan's show ended without the plan or the way to
-    it."""
+    it. The text render prints the headline every listing shows (a TASK.md's
+    heading marks dropped); the JSON keeps the whole task."""
     d = _make_run(
         tmp_path,
         monkeypatch,
-        [{"ts": _ts(5), "type": "session.start", "mode": "run", "user_task": "add a flag\nmore"}],
+        [{"ts": _ts(5), "type": "session.start", "mode": "run", "user_task": "# add a flag\nmore"}],
     )
     assert _cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
     assert "task:       add a flag\n" in out and "more" not in out
     assert "plan:" not in out
     assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
-    assert json.loads(capsys.readouterr().out)["task"] == "add a flag\nmore"
+    assert json.loads(capsys.readouterr().out)["task"] == "# add a flag\nmore"
 
     (d / "manifest.json").write_text(json.dumps({"mode": "plan"}))
     assert _cmd_status("winsome-dawn-YWH5ZS") == 0

@@ -187,6 +187,7 @@
   "live": null,
   "status": "passed",
   "status_label": "passed",
+  "task_line": "Fix the bug",
   "dead_state": "",
   "operator_blocked": false
 }
