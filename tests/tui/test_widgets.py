@@ -247,3 +247,28 @@ def test_a_value_longer_than_the_row_scrolls_under_the_caret() -> None:
     rows = asyncio.run(scenario())
     assert any("\u258c" in row for row in rows), rows
     assert all(len(row) <= 16 for row in rows), rows
+
+
+class _TypeaheadRowsHost(App[None]):
+    def compose(self) -> ComposeResult:
+        yield TypeaheadField("gpt", ["gpt-5", "gpt-6"])
+
+    def on_mount(self) -> None:
+        self.query_one(TypeaheadField).focus()
+
+
+def test_typeahead_rows_sit_under_the_text_line() -> None:
+    """The suggestion rows start in the text line's first column: the
+    highlight bar marks the chosen row, not an indent (the rows sat two
+    columns in, a ragged edge beside the dialog's other fields)."""
+
+    async def scenario() -> None:
+        app = _TypeaheadRowsHost()
+        async with app.run_test(size=(40, 10)) as pilot:
+            await pilot.pause()
+            field = app.query_one(TypeaheadField)
+            lines = field.render().plain.splitlines()
+            assert lines[0].startswith("gpt▌")
+            assert [line.rstrip() for line in lines[1:]] == ["gpt-5", "gpt-6"]
+
+    asyncio.run(scenario())

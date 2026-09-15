@@ -384,17 +384,18 @@ class TypeaheadField(Widget, can_focus=True):
                 out.append("\n")
                 # One row per match even for long entries (history search offers
                 # whole steers): the value stays intact, only the display clips.
-                row = Text(f"  {m}", no_wrap=True, overflow="ellipsis")
+                # Rows start in the text line's first column.
+                row = Text(m, no_wrap=True, overflow="ellipsis")
                 row.pad_right(max(0, width - row.cell_len))
                 if i == self._index:
                     row.stylize(bar)
                 out.append_text(row)
             if total > len(matches):
                 out.append("\n")
-                out.append(f"  +{total - len(matches)} more, keep typing", style="dim")
+                out.append(f"+{total - len(matches)} more, keep typing", style="dim")
             elif not matches:
                 out.append("\n")
-                out.append("  (no matches; saved as typed)", style="dim")
+                out.append("(no matches; saved as typed)", style="dim")
         return out
 
     def _moved(self) -> None:
