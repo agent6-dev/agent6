@@ -738,7 +738,7 @@ def _dispatch_review(args: argparse.Namespace) -> int:
         base=args.base,
         head=args.head,
         paths=tuple(args.paths),
-        model_override=args.model,
+        model=args.model,
         reviewers=args.reviewers,
         personas=args.personas,
     )

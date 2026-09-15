@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent6.config import ConfigError
+from agent6.config import Config, ConfigError
 from agent6.ui.cli import cli_main
 
 
@@ -555,3 +555,65 @@ def test_a_tracked_file_named_head_does_not_break_the_diff(
 
     assert rc == 0, capsys.readouterr().err
     assert "print(1)" in provider.last_user
+
+
+def _other_provider() -> Config:
+    return Config.model_validate(
+        {"providers": {"other": {"api_format": "openai", "base_url": "http://x"}}}
+    )
+
+
+def test_review_model_routes_the_reviewer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`review --model provider/model` re-routes the reviewer role for this
+    review, so the single reviewer and every bare panel seat build on it."""
+    from types import SimpleNamespace
+
+    from agent6.ui.cli import review_cmds
+
+    _two_commits(tmp_path)
+    (tmp_path / "caller.py").write_text("print(1)\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    cfg = _other_provider()
+    built = MagicMock(return_value=_FixedReviewProvider())
+    monkeypatch.setattr(
+        review_cmds, "load_effective", MagicMock(return_value=SimpleNamespace(config=cfg))
+    )
+    monkeypatch.setattr(review_cmds, "check_provider_keys", MagicMock(return_value=None))
+    monkeypatch.setattr(review_cmds, "build_role_provider", built)
+
+    rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
+        None, base="", head="", paths=(), model="other/read-only-m"
+    )
+
+    assert rc == 0, capsys.readouterr().err
+    routed = built.call_args.args[0].models.resolve("reviewer")
+    assert (routed.provider, routed.model) == ("other", "read-only-m")
+
+
+def test_review_model_naming_no_provider_is_refused_before_the_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `--model` whose first segment is no configured provider is refused
+    with the configured names, before any git call."""
+    from types import SimpleNamespace
+
+    from agent6.ui.cli import review_cmds
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        review_cmds,
+        "load_effective",
+        MagicMock(return_value=SimpleNamespace(config=_other_provider())),
+    )
+    monkeypatch.setattr(review_cmds, "_reviewed_diff", MagicMock(side_effect=AssertionError))
+
+    rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
+        None, base="", head="", paths=(), model="nope/m"
+    )
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "'nope/m'" in err and "provider/model" in err and "other" in err

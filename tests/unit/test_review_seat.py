@@ -230,7 +230,7 @@ def test_parse_seat_spec_forms() -> None:
     assert parse_seat_spec("@anthropic/claude-opus-4-8") == ("", "anthropic", "claude-opus-4-8")
 
 
-# --- model_override on configured review_seats (the `review --model X` flag) ---
+# --- `review --model` re-routes the reviewer; a pinned seat keeps its own ---
 
 
 def _cfg_with_seats(seats: tuple[str, ...]) -> Any:
@@ -251,27 +251,25 @@ def _stub_seat_provider(*_a: Any, **_k: Any) -> Provider:
     return _prov("{}")
 
 
-def test_build_review_seats_model_override_overrides_pinned_seat(monkeypatch: Any) -> None:
-    # `review --model X` must override each configured seat's pinned model while
-    # keeping its provider routing -- otherwise the flag silently does nothing.
+def test_a_routed_reviewer_leaves_pinned_seats_alone(monkeypatch: Any) -> None:
+    """`review --model X` re-routes the reviewer role; a seat pinned to a
+    provider and model in [review].seats is the operator's own choice and
+    keeps it."""
     from agent6.app import providers as prov_mod
 
     monkeypatch.setattr(prov_mod, "_provider_from_entry", _stub_seat_provider)
     cfg = _cfg_with_seats(
         ("security@anthropic/claude-opus-4-8", "correctness@anthropic/some-model")
     )
+    cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
 
     seats = prov_mod.build_review_seats(
-        cfg,
-        transcript_sink=cast(Any, MagicMock()),
-        budget=cast(Any, None),
-        n=1,
-        model_override="claude-haiku-override",
+        cfg, transcript_sink=cast(Any, MagicMock()), budget=cast(Any, None), n=1
     )
     assert [s.model for s in seats] == [
-        "anthropic/claude-haiku-override",
-        "anthropic/claude-haiku-override",
-    ]  # provider kept, model overridden
+        "anthropic/claude-opus-4-8",
+        "anthropic/some-model",
+    ]
     assert [s.persona for s in seats] == ["security", "correctness"]
 
 
@@ -287,20 +285,17 @@ def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) ->
     assert seats[0].model == "anthropic/claude-opus-4-8"  # unchanged when no --model
 
 
-def test_build_review_seats_model_override_on_bare_persona_seat(monkeypatch: Any) -> None:
-    # A bare-persona seat routes via the reviewer role; --model must override that
-    # role's model too (mirroring the non-configured simple-form branch).
+def test_a_bare_persona_seat_follows_the_routed_reviewer(monkeypatch: Any) -> None:
+    """A bare-persona seat routes via the reviewer role, so `review --model`
+    reaches it."""
     from agent6.app import providers as prov_mod
 
     monkeypatch.setattr(prov_mod, "build_role_provider", _stub_seat_provider)
     cfg = _cfg_with_seats(("correctness",))
+    cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
 
     seats = prov_mod.build_review_seats(
-        cfg,
-        transcript_sink=cast(Any, MagicMock()),
-        budget=cast(Any, None),
-        n=1,
-        model_override="claude-haiku-override",
+        cfg, transcript_sink=cast(Any, MagicMock()), budget=cast(Any, None), n=1
     )
     assert seats[0].model == "anthropic/claude-haiku-override"
 

@@ -412,7 +412,6 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         agents_md="",
         reviewers=3,
         personas="security,correctness,tests",
-        model_override="",
         transcript_sink=TranscriptSink(tmp_path),
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
     )
@@ -474,7 +473,6 @@ def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys
             agents_md="",
             reviewers=1,
             personas="security",
-            model_override="",
             transcript_sink=MagicMock(),
             budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         )

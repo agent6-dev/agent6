@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 
 from agent6.ui.cli._common import _add_config_flag, _sub
+from agent6.ui.cli.completers import _complete_model_routes
 
 
 def _reviewer_count(raw: str) -> int:
@@ -90,15 +91,17 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="PATH",
         help="Restrict the diff to PATH (repeatable; forwarded to `git diff -- PATH...`).",
     )
-    review_p.add_argument(
+    review_model = review_p.add_argument(
         "--model",
         default="",
+        metavar="[PROVIDER/]MODEL",
         help=(
-            "Override the reviewer model for this one-shot review, under the"
-            " [models.reviewer] route's provider (e.g. claude-sonnet-4-5 for a cheaper"
-            " read). Default: that route's model."
+            "The reviewer for this review, over every config layer: provider/model, or a"
+            " model id on the reviewer's provider. A seat pinned in [review].seats keeps"
+            " its own model."
         ),
     )
+    review_model.completer = _complete_model_routes  # type: ignore[attr-defined]
     review_p.add_argument(
         "--reviewers",
         type=_reviewer_count,

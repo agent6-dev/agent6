@@ -108,7 +108,6 @@ def build_role_provider(
     *,
     transcript_sink: TranscriptSink,
     budget: BudgetTracker,
-    model_override: str = "",
     seat: str = "",
 ) -> Provider:
     """Construct the configured provider for `role`. *seat* is the transcript
@@ -116,16 +115,14 @@ def build_role_provider(
     (a review seat, the summariser, ...); default = the role itself.
 
     Resolves the API key via `agent6.secrets.resolve_api_key` (env var named
-    by `api_key_env` first, then `secrets.toml`). `model_override` (if
-    truthy) replaces the model string; provider routing is unchanged. The
-    role's `effort` level is wired to the provider's default reasoning
-    effort. Callers should have validated routing via
-    `cfg.require_runnable(role)` first.
+    by `api_key_env` first, then `secrets.toml`). The role's `effort` level
+    is wired to the provider's default reasoning effort. Callers should have
+    validated routing via `cfg.require_runnable(role)` first.
     """
     rm = cfg.models.resolve(role)
     if rm is None:  # pragma: no cover - blocked by require_runnable
         raise ProviderError(f"no model configured for role {role!r}")
-    model = model_override or rm.model
+    model = rm.model
     entry = cfg.providers.get(rm.provider)
     if entry is None:  # pragma: no cover - blocked by config validation
         raise ProviderError(
@@ -452,13 +449,12 @@ def build_review_seats(
     budget: BudgetTracker,
     n: int,
     personas: tuple[str, ...] = (),
-    model_override: str = "",
     events: EventSink | None = None,
 ) -> list[ReviewSeat]:
     """Build the review-panel seats, one per roster entry. An entry is
     `persona[@provider/model]`: with a provider and model the seat is pinned
-    to them (`--model X` overrides the model and keeps the provider), and a
-    bare persona routes via `[models.reviewer]`. `cfg.review.seats` names
+    to them, and a bare persona routes via `[models.reviewer]` (which a
+    `review --model` may have re-routed). `cfg.review.seats` names
     the roster outright; otherwise `n` seats cycle *personas* (the
     `--personas` flag, else a built-in set), so both surfaces speak one
     grammar.
@@ -508,7 +504,7 @@ def build_review_seats(
     for persona, provider_name, model in parsed_specs:
         if provider_name and model:
             entry = cfg.providers[provider_name]
-            seat_model = model_override or model
+            seat_model = model
             provider = _provider_from_entry(
                 provider_name,
                 entry,
@@ -528,10 +524,9 @@ def build_review_seats(
                 "reviewer",
                 transcript_sink=transcript_sink,
                 budget=budget,
-                model_override=model_override,
                 seat=f"review:{persona}",
             )
-            seat_model = model_override or (rm.model if rm is not None else "reviewer")
+            seat_model = rm.model if rm is not None else "reviewer"
             label = f"{rm.provider}/{seat_model}" if rm is not None else seat_model
             provider = _instrumented(
                 provider, persona, seat_model, rm.provider if rm is not None else ""

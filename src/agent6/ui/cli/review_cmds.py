@@ -15,6 +15,7 @@ from agent6.app.providers import build_review_seats, build_role_provider
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import (
     Config,
+    ConfigError,
     parse_seat_spec,
 )
 from agent6.config.layer import load_effective
@@ -26,6 +27,7 @@ from agent6.providers import (
 )
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.cli._common import error
+from agent6.workflows._context import agents_md_text
 from agent6.workflows.loop import build_readonly_review_tools
 from agent6.workflows.review import (
     CodeReviewError,
@@ -121,7 +123,6 @@ def _run_review_panel(
     agents_md: str,
     reviewers: int,
     personas: str,
-    model_override: str,
     transcript_sink: TranscriptSink,
     budget: BudgetTracker,
 ) -> int:
@@ -141,7 +142,6 @@ def _run_review_panel(
             budget=budget,
             n=reviewers,
             personas=persona_tuple,
-            model_override=model_override,
         )
     except ProviderError as exc:
         error(f"provider init failed: {exc}")
@@ -246,19 +246,30 @@ def _reviewed_diff(
     return git, root, diff, label
 
 
+def _reviewer_config(config_path: Path | None, model: str) -> Config:
+    """The effective config with `--model` (`[provider/]model`, may be empty)
+    applied to the reviewer route; raises ConfigError for a value that names
+    no configured provider or no model."""
+    cfg = load_effective(Path.cwd(), config_path).config
+    if not model:
+        return cfg
+    return cfg.with_model_route("reviewer", cfg.model_route("reviewer", model))
+
+
 def _cmd_review(  # noqa: PLR0911
     config_path: Path | None,
     *,
     base: str,
     head: str,
     paths: tuple[str, ...],
-    model_override: str = "",
+    model: str = "",
     reviewers: int = 0,
     personas: str = "",
 ) -> int:
     """Print a code review of a diff to stdout. Read-only; no jail. With
     `reviewers >= 1`, runs the grounded adversarial review panel instead of the
-    single freeform review."""
+    single freeform review. *model* is the `--model` value, `[provider/]model`,
+    applied to the reviewer route over every config layer."""
     if not base and head not in ("", "HEAD"):
         error("--head requires --base; without --base, review uses the working tree vs HEAD.")
         return 2
@@ -267,7 +278,11 @@ def _cmd_review(  # noqa: PLR0911
             "note: --personas ignored (no --reviewers N; this is the single freeform review).",
             file=sys.stderr,
         )
-    cfg = load_effective(Path.cwd(), config_path).config
+    try:
+        cfg = _reviewer_config(config_path, model)
+    except ConfigError as exc:
+        error(str(exc))
+        return 2
     if personas.strip() and reviewers >= 1 and cfg.review.seats:
         print("note: --personas ignored ([review].seats names the roster).", file=sys.stderr)
 
@@ -302,15 +317,7 @@ def _cmd_review(  # noqa: PLR0911
     )
     recent_log = log_proc.stdout if log_proc.returncode == 0 else ""
 
-    # Tolerant read, mirroring the run path's AGENTS.md reads: optional context
-    # degrades to a review without it, never a crash.
-    agents_md_path = root / "AGENTS.md"
-    agents_md = ""
-    if agents_md_path.is_file():
-        try:
-            agents_md = agents_md_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            agents_md = ""
+    agents_md = agents_md_text(root)
 
     # Reviewer-only: route the "reviewer" role per [models.reviewer]. Budget
     # is per-invocation since this command is a one-shot.
@@ -330,7 +337,6 @@ def _cmd_review(  # noqa: PLR0911
             agents_md=agents_md,
             reviewers=reviewers,
             personas=personas,
-            model_override=model_override,
             transcript_sink=transcript_sink,
             budget=budget,
         )
@@ -341,7 +347,6 @@ def _cmd_review(  # noqa: PLR0911
             "reviewer",
             transcript_sink=transcript_sink,
             budget=budget,
-            model_override=model_override,
         )
     except ProviderError as exc:
         error(f"provider init failed: {exc}")
