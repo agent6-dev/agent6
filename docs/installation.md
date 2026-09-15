@@ -52,7 +52,7 @@ agent6 completions          # or: agent6 completions bash|zsh|fish|xonsh
 
 ```sh
 agent6 --version
-agent6 check                # sandbox, config, keys, MCP, verify, boundaries
+agent6 check                # sandbox, config (provider keys), boundaries, MCP, verify
 ```
 
 `agent6 check sandbox` runs the jail through live probes and reports the isolation level a run will use on your kernel.

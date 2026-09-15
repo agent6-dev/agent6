@@ -12,7 +12,8 @@ Include: agent6 version (`agent6 --version`), kernel + distro (`uname -a`, `/etc
 
 Adversary: a fully malicious worker model, or an honest model prompt-injected by a file in the workspace.
 
-The adversary controls the text of every LLM response, the choice of tool calls and their arguments within the published JSON schema, and the content of any file the agent reads.
+The adversary controls the text of every LLM response and the content of any file the agent reads.
+It also chooses the tool calls and their arguments, within the published JSON schema.
 Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
 **Holds**
@@ -29,19 +30,26 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - `HOME` is a directory of agent6's own, never the operator's
     - `strict`: `/tmp/agent6-home`, created inside the private tmpfs and gone with the run; `[sandbox].home = "cache"` swaps in the persistent dir below, bind-mounted read-write at its real path
     - `hardened` and `none`: `$XDG_CACHE_HOME/agent6/home` (default `~/.cache/agent6/home`), created `0700` by agent6 and, under `hardened`, Landlock-granted read-write like the workspace; the rest of the operator's home stays ungranted
-    - a symlink, another user's directory, a mode open to group or others, or a path inside agent6's private dirs at that location refuses the run; the mode is checked on every run (a jailed command can `chmod` its own HOME) and the refusal names `chmod 700`, nothing restores it silently
+    - a symlink, another user's directory, a mode open to group or others, or a path inside agent6's private dirs at that location refuses the run.
+      The mode is checked on every run (a jailed command can `chmod` its own HOME), and the refusal names `chmod 700`; nothing restores it silently
     - persistence is a cross-run channel inside the jail's world: a poisoned cache or a `~/.gitconfig` alias reaches the next jailed run, never the operator's own tools
 - agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git))
     - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `strict`, and push needs egress
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary (one create path stays open, below)
-    - the exception is the jail's persistent `HOME` (`hardened`, `none`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run, and under `hardened` it is executable; the operator's own shell, tools, and dotfiles never read it
+    - the exception is the jail's persistent `HOME` (`hardened`, `none`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run, and under `hardened` it is executable.
+      The operator's own shell, tools, and dotfiles never read it
     - chmod-family syscalls (`fchmodat2` included) deny modes carrying `S_ISUID` / `S_ISGID`; ordinary chmod passes
     - so do the create paths that take a mode: `creat`, `mknod`/`mknodat`, and `open`/`openat` with `O_CREAT` or `O_TMPFILE`.
-      `openat2` carries its mode behind a struct pointer, out of seccomp's reach, so a command can plant the bit through it; every jail mount is `nosuid`, and the file is owned by the operator's own uid, so it grants nothing outside the jail either (`--allow-root` below is the exception)
+      `openat2` carries its mode behind a struct pointer, out of seccomp's reach, so a command can plant the bit through it.
+      Every jail mount is `nosuid`, and the file is owned by the operator's own uid, so it grants nothing outside the jail either (`--allow-root` below is the exception)
     - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable
     - `/tmp` allows exec (toolchain helpers)
     - children write inside the jail's mount namespace (`strict`) or the Landlock write grants (`hardened`)
-    - nothing a command starts outlives it: `strict`'s PID namespace takes the tree down at close, and its launcher, the namespace's init, sweeps what a stopped background command left outside its process group (a `setsid` daemon reparented onto it): what appeared after the command started and before the next still-running one did; `hardened` holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command
+    - nothing a command starts outlives it
+        - `strict`: the PID namespace takes the tree down at close.
+          Its launcher, the namespace's init, sweeps what a stopped background command left outside its process group (a `setsid` daemon reparented onto it).
+          The sweep covers what appeared after the command started and before the next still-running one did
+        - `hardened`: the agent process holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command
     - a survivor the sweep cannot kill fails the command, and a background `stop` answers with its pids
     - one still running when the run's jail session or a spawned MCP server closes is recorded as a `jail.degraded` event
 
@@ -51,7 +59,9 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - agent6 reaches the configured providers (each `[providers.*].base_url` host, plus the fixed ChatGPT OAuth authority for token grants); nothing stops the process reaching elsewhere
     - a jailed command's egress is bounded ([Network](#5-network))
 - On `hardened`, a command can hand work to a user daemon already running (tmux, `systemd --user`): unix sockets have no Landlock hook and stay nameable without a mount namespace
-    - the environment carries no address for one: a jailed command gets `LANG`, `LC_ALL`, `TERM` and `CI` from the host, plus `HOME`, `PATH`, `PYTHONDONTWRITEBYTECODE` and `UV_NO_SYNC` set by agent6 (a machine tool also `AGENT6_MACHINE_DATA_DIR`), and a jailed MCP server's base drops `DISPLAY`, `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_RUNTIME_DIR` (`curated_env(desktop=False)`)
+    - the environment carries no address for one.
+      A jailed command gets `LANG`, `LC_ALL`, `TERM` and `CI` from the host, plus `HOME`, `PATH`, `PYTHONDONTWRITEBYTECODE` and `UV_NO_SYNC` set by agent6 (a machine tool also `AGENT6_MACHINE_DATA_DIR`).
+      A jailed MCP server's base drops `DISPLAY`, `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_RUNTIME_DIR` (`curated_env(desktop=False)`)
     - `strict` does not expose them
 
 ## Defense layers
@@ -72,15 +82,20 @@ The model reaches the machine through two surfaces:
 
 The model sees the fixed tool set in `src/agent6/tools/schema.py`.
 
-- structured edits, read-only navigation, fixed-argv verify and metric commands, `finish_session`, `ask_user`, a curator task notepad, approval-gated `fetch` ([Network](#5-network)), capability-gated `run_command`
+- structured edits, read-only navigation, `read_session`, fixed-argv verify and metric commands, `finish_session`, `ask_user`, a curator task notepad, `use_skill` ([Skills](#skills)), approval-gated `fetch` ([Network](#5-network)), capability-gated `run_command` with `read_background` / `stop_background`, and `agent6_docs` under `agent6 ask` only
 - no `shell`, no `write_file`, no `eval`
 - adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md))
 
 Under `api_format = "claude_code"` the model runs inside the operator's installed Claude Code binary, unjailed, as the operator, with every built-in tool off (`--tools ""`).
-Its only reach into the machine is agent6's tools served over the sdk MCP tunnel, so the dispatcher, the jail, and the approval gates are unchanged; the binary holds the operator's Claude login exactly as an interactive `claude` does, and agent6 never reads it.
+Its only reach into the machine is agent6's tools served over the sdk MCP tunnel, so the dispatcher, the jail, and the approval gates are unchanged.
+The binary holds the operator's Claude login exactly as an interactive `claude` does, and agent6 never reads it.
 
-Every line the CLI prints to the operator's terminal, on stdout, stderr or `/dev/tty`, passes one scrubber (`scrub_terminal_output`): a control sequence inside text the model influenced (a file name a command created, a commit subject, a summary, a task a plan wrote) is dropped, so it cannot write the clipboard (OSC 52), retitle the window or forge a line.
-SGR styling is the allowlist, conceal excepted; an approval prompt drops every sequence from the text under judgment, and the spinners and the interactive composer write their erase and cursor sequences under the wrapper, the composer with its rows scrubbed.
+Every line the CLI prints to the operator's terminal, on stdout, stderr or `/dev/tty`, passes one scrubber (`scrub_terminal_output`).
+It drops a control sequence inside text the model influenced (a file name a command created, a commit subject, a summary, a task a plan wrote).
+That keeps the model from writing the clipboard (OSC 52), retitling the window or forging a line.
+SGR styling is the allowlist, conceal excepted.
+An approval prompt drops every sequence from the text under judgment.
+The spinners and the interactive composer write their erase and cursor sequences under the wrapper, the composer with its rows scrubbed.
 The ACP and MCP stdio transports write protocol bytes to their peer, not to a terminal; the TUI and the web render text as text by construction.
 
 ### 2. Sandbox
@@ -89,7 +104,8 @@ Every tool call that allows the model to run arbitrary commands (`run_command`, 
 
 `agent6 check mcp` and `agent6 mcp connect` start a spawned MCP server under that jail with the repository bound read-only.
 `check mcp` applies the run's refusals first and leaves a server it cannot hold that way unstarted: `unconfined = true`, a write grant (`write_paths`, `sandbox.extra_write_paths`, `sandbox.extra_device_paths`), or no jail at all.
-`mcp connect` probes under the same jail but only skips the probe when there is no jail at all, saying so; it is the operator's own invocation naming the server they are adding.
+`mcp connect` probes under the same jail, and skips the probe only when there is no jail at all, saying so.
+It is the operator's own invocation naming the server they are adding.
 A diagnostic hands a server the repository to read and writes nothing but the config it was asked to write.
 
 **Modes** (`[sandbox].isolation`)
@@ -126,25 +142,36 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 
 - Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths`, a persistent `HOME` under `[sandbox].home = "cache"`, and operator tool dirs at their real paths
     - every mount keeps the path it has outside
-    - a tool dir is mounted only when its identity clears a default-deny: never a dir at, inside, or containing an agent6 private dir, and never `$HOME` or an ancestor of it
-    - a fork's leg (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `strict`, a Landlock read+exec rule under `hardened`, in both cases whatever `protect_git` says; the main checkout's `.git` is read-only only under `strict` with `protect_git`, so a fork's is the more confined of the two, and the model's prompt says so
-    - the granted dir is the one agent6 recorded when it added the worktree (the manifest's `worktree_git_dir`, taken from the repository it ran in), never the worktree's own `.git` pointer, which a jailed command can rewrite under hardened; the policy builder refuses when the pointer no longer resolves to the record, and a linked worktree agent6 did not record gets no grant
+    - a tool dir is mounted only when its identity clears a default-deny.
+      Refused: a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it
+    - a fork's leg (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `strict`, a Landlock read+exec rule under `hardened`, in both cases whatever `protect_git` says.
+      The main checkout's `.git` is read-only only under `strict` with `protect_git`, so a fork's is the more confined of the two.
+      The model's prompt says so
+    - the granted dir is the one agent6 recorded when it added the worktree (the manifest's `worktree_git_dir`, taken from the repository it ran in).
+      The worktree's own `.git` pointer is never the source: a jailed command can rewrite it under `hardened`.
+      The policy builder refuses when the pointer no longer resolves to the record.
+      A linked worktree agent6 did not record gets no grant
     - the record reaches every policy consumer, the hardened exposure scan included: a `hide_paths` entry inside it refuses like any other unmaskable exposure
 - Masked last, after every bind (`strict`): the config dir, the state base, `[sandbox].hide_paths`
     - a grant at or inside a private dir is refused at config load
     - `hardened` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
     - `XDG_CONFIG_HOME` and `XDG_STATE_HOME` relocate those two dirs, `XDG_CACHE_HOME` the persistent `HOME`; the mask, the grant validator, and the tool-mount scan all read the relocated path
 - `/dev` (`strict`): `null`, `zero`, `urandom`, `random`, `full`, a private `shm`; no `/dev/tty`
-    - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute); each must be a char/block device on the host or the launch refuses, and on `hardened` the same grant is a Landlock read+write rule on the node
-    - creating one is denied at both levels: Landlock handles `MakeChar` / `MakeBlock` and grants them nowhere, seccomp `EPERM`s the `mknod` pair by device type (below), and `strict` also has the user namespace (no `CAP_MKNOD` in the initial one) and `MS_NODEV` on the `/dev` binds
+    - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute).
+      Each must be a char/block device on the host, or the launch refuses.
+      On `hardened` the same grant is a Landlock read+write rule on the node
+    - creating one is denied at both levels: Landlock handles `MakeChar` / `MakeBlock` and grants them nowhere, and seccomp `EPERM`s the `mknod` pair by device type (below).
+      `strict` also has the user namespace (no `CAP_MKNOD` in the initial one) and `MS_NODEV` on the `/dev` binds
     - under `hardened` with `--allow-root` only Landlock and seccomp stand
 - `/proc` (`strict`): fresh and private, empty if that fails; Landlock grants it read without execute
     - the launcher runs with an empty environment; it is PID 1 there, so the command can read `/proc/1/environ`
-- seccomp: a 36-syscall deny-list returning `EPERM`, covering process inspection (`ptrace`, `pidfd_getfd`, `process_vm_readv`/`writev`, `kcmp`), `io_uring_setup`, `userfaultfd`, the whole mount family (`mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`), `setns`, `unshare`, `kexec`, `bpf`, `perf_event_open`, the keyring calls (`keyctl`, `add_key`, `request_key`), module loading, `reboot`, swap, and the clock-setting family
-    - the list denies unconditionally; argument-conditional rules `EPERM` two more cases on syscalls that stay allowed: a mode carrying `S_ISUID` / `S_ISGID` on `chmod` and the create family (above), and a `mknod` / `mknodat` naming a character or block device (`/dev` above)
+- seccomp: a 36-syscall deny-list returning `EPERM`.
+  It covers process inspection (`ptrace`, `pidfd_getfd`, `process_vm_readv`/`writev`, `kcmp`), `io_uring_setup`, `userfaultfd`, the whole mount family (`mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`), `setns`, `unshare`, `kexec`, `bpf`, `perf_event_open`, the keyring calls (`keyctl`, `add_key`, `request_key`), module loading, `reboot`, swap, and the clock-setting family
+    - the list denies unconditionally.
+      Argument-conditional rules `EPERM` two more cases on syscalls that stay allowed: a mode carrying `S_ISUID` / `S_ISGID` on `chmod` and the create family (above), and a `mknod` / `mknodat` naming a character or block device (`/dev` above)
     - anything else is allowed; the list itself is the source (`jail/src/main.rs`), and it grows by syscall, never by class
 - Capabilities: cleared between fork and exec.
-- Timeout: `timeout_s` (verify and metric gates use `[workflow].verify_timeout_s`, default 600), then SIGKILL of the process group, rc=124
+- Timeout: the policy's `timeout_s` (verify and metric gates set it from `[workflow].verify_timeout_s`, default 600), then SIGKILL of the process group, rc=124
     - a model's `run_command` is not wall-clock killed: at `[workflow].command_checkin_s` it is handed back as a background job ([Commands and environment](#4-commands-and-environment))
 - One launcher per run at every isolation level; under `strict` its commands share that netns, PID namespace, and private `/tmp`, and under `hardened` the host's network and `/tmp`
     - closing the run's channel takes the PID namespace down
@@ -154,7 +181,8 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 
 **Verify**
 
-`agent6 check sandbox` prints the isolation this host resolves to, the reason when it is not `strict`, and every tool bin symlink resolving out of its bin dir (whose target directory is mounted read-only into the jail).
+`agent6 check sandbox` prints the isolation this host resolves to and the reason when it is not `strict`.
+It also prints every tool bin symlink resolving out of its bin dir (whose target directory is mounted read-only into the jail).
 It then runs live probes at that isolation.
 Exit 0 when all pass, 1 otherwise.
 
@@ -212,7 +240,8 @@ The agent works within the environment it is given and cannot expand it:
 - Toolchains, venvs, and deps are installed outside agent6. Access widens through config (`extra_read_paths`, `network`, `[providers.*].base_url`), all visible in `config show`.
 - Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary
     - `strict`'s single-uid map is then root to root: jailed children run as real root under Landlock, seccomp, and `NO_NEW_PRIVS` only
-    - a setuid bit planted through `openat2` (the one create path seccomp cannot filter) then lands on a root-owned file in the workspace: local root for whoever runs it outside the jail
+    - a setuid bit planted through `openat2` (the one create path seccomp cannot filter) then lands on a root-owned file in the workspace.
+      That is local root for whoever runs it outside the jail
     - writes outside the workspace and routes off the box stay closed
     - readable files include root-only ones (`/etc/shadow` under `hardened`; `strict`'s rootfs hides it)
 - Under `sudo`, agent6 reads the real user's config and secrets (`SUDO_UID` / `SUDO_USER`) and chowns state-dir writes back
@@ -248,7 +277,8 @@ A run's commands share one launcher, so there is no per-command `none`; a machin
 
 The run owns one session network.
 A holder process creates it, the run keeps it alive with an open descriptor on `/proc/<holder>/ns/{user,net}`, and every child that asks joins those.
-Entering a network namespace needs `CAP_SYS_ADMIN` in the user namespace that owns it, so a joiner enters that user namespace too; it still gets its own mount, PID, IPC, and UTS namespaces, so two members cannot see or signal each other.
+Entering a network namespace needs `CAP_SYS_ADMIN` in the user namespace that owns it, so a joiner enters that user namespace too.
+It still gets its own mount, PID, IPC, and UTS namespaces, so two members cannot see or signal each other.
 
 Under `strict`, the only level with namespaces:
 
@@ -269,11 +299,12 @@ Under `none` isolation nothing is enforced or refused.
 | `network = only_explicit_states`, or explicit `network = session` | run start, `hardened` |
 | a machine under `network = session`, or any `tool` with `network = none` | machine start, `hardened` |
 
-**MCP servers** take the same values per server, default `auto`:
+**MCP servers** take their own value per server (`[mcp.servers.<name>.sandbox].network`, default `auto`):
 
 - `auto`: a network of its own where the host can give one, degrading to the host's with a warning.
 - `none`: refuses instead of degrading.
 - `session`: joins the run's network, so a browser server reaches the dev server a background command started.
+- `host`: the machine's network.
 - A server is spawned on stdio or dialled at an operator-set `url`, outbound either way.
 
 **Ingress.** The loop opens no accept-side socket; the task graph is an in-process curator.
@@ -282,7 +313,9 @@ Under `none` isolation nothing is enforced or refused.
 - It binds loopback (`127.0.0.1`) by default with no app auth (run it behind `tailscale serve`, where the tailnet identity is the access control; see [the web UI](web.md)).
   A non-loopback bind needs `[web].allow_non_loopback = true` for `[web].host`, or `--allow-non-loopback` for `--host`.
 - The server renders folded state and drives typed contracts.
-  New-work spawns fixed argv with the task behind `--`; machine-run is allow-listed to authored files; answers write only the addressed run's answer files (session id, answer id, and machine target state dir each validated to one path component); merge, prune, and config-set are fixed agent6 subcommands.
+  New-work spawns fixed argv with the task behind `--`, and machine-run is allow-listed to authored files.
+  Answers write only the addressed run's answer files (session id, answer id, and machine target state dir each validated to one path component).
+  Merge, prune, and config-set are fixed agent6 subcommands.
 - State-changing POSTs carry a CSRF guard: the body must be `Content-Type: application/json` (a cross-site `fetch` with it triggers a preflight the server never answers) and any `Origin` must match `Host`.
   It holds on loopback and behind `tailscale serve`, and does not cover DNS rebinding (that needs a Host allow-list incompatible with the tailnet name).
 - Request framing is bounded: 1 MiB body cap (413), chunked refused (411), and any unread-body refusal closes the connection.
@@ -300,8 +333,11 @@ Under `none` isolation nothing is enforced or refused.
 - The `fetch` off-list host prompt and the sandbox-off gate take no standing answer; both say so, and no front-end shows the button
 - `isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue?
   [y/N]` interactively, a warning in CI and `machine run`.
-- A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every scope); a question under `deny` or `approve` gets empty answers with a note to decide alone. An unattended machine auto-denies.
-- `agent6 mcp serve` has no operator at all, so the tools that would prompt are not published: under `run_commands = "ask"` or `"no"` its command tools are absent from `tools/list`, and a client that names one is told which setting withheld it ([the tools](acp.md#as-an-mcp-server)).
+- A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every scope).
+  A question under `deny` or `approve` gets empty answers with a note to decide alone.
+  An unattended machine auto-denies.
+- `agent6 mcp serve` has no operator at all, so the tools that would prompt are not published.
+  Under `run_commands = "ask"` or `"no"` its command tools are absent from `tools/list`, and a client that names one is told which setting withheld it ([the tools](acp.md#as-an-mcp-server)).
 
 ### 7. Git
 
@@ -309,9 +345,12 @@ Under `none` isolation nothing is enforced or refused.
 
 - agent6's own git writes go through `git_ops.py` alone
     - it wraps the safe ops (status, add, commit, diff, branch, checkout)
-    - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable (pinned by `test_git_ops_never_spells_a_destructive_verb`, which exempts two argv: `push` inside a `git stash push`, and the one `branch -D` below)
-    - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags: `sessions diff` and `ask` read only, and `review` stages untracked files with `add -N` so they appear in its diff, undoing it with `reset` in a `finally`; `skills install` clones with fixed argv
-- One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged (a branch's commit survives in its reflog; a chain ref's line carries the sha to undelete it).
+    - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
+      `test_git_ops_never_spells_a_destructive_verb` pins every verb but `filter-repo`, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
+    - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags.
+      `sessions diff` and `ask` read only; `review` stages untracked files with `add -N` so they appear in its diff, undoing it with `reset` in a `finally`; `skills install` clones with fixed argv
+- One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged.
+  A branch's commit survives in its reflog; a chain ref's line carries the sha to undelete it.
 - `git_ops.py` runs git with the configured `api_key_env` names removed from its environment: a credential helper or content driver never inherits one
     - PATH, SSH, proxy, and credential-helper vars stay
     - the read-only collectors inherit the environment untouched (no remote contact; the hardening flags leave no repo-controlled code to receive it)
@@ -337,21 +376,24 @@ Under `none` isolation nothing is enforced or refused.
 ### 8. Secrets and `connect`
 
 - Provider keys live in `$XDG_CONFIG_HOME/agent6/secrets.toml`, `0600` and owner-only (refused if group- or other-readable, or foreign-owned), or come from `[providers.<name>].api_key_env` (env wins).
-- They are absent from transcripts, redacted in `config show`, and masked from the jail: the config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
+- They are absent from transcripts, redacted in `config show`, and masked from the jail.
+  The config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
 - No child agent6 spawns carries one: a jailed command's environment is built from its policy, and the unconfined paths (`isolation = "none"`, git subprocesses, MCP servers) drop every configured `api_key_env` name.
     - an `[mcp.servers.*].pass_env` naming a provider's `api_key_env` refuses at config load, so the name cannot be handed over deliberately either
 - `agent6 connect` prompts locally (`getpass`) and writes config and secrets
-    - one read-only `GET` to the provider's key endpoint confirms auth (status only; `--no-verify` skips it)
+    - one read-only `GET` of the provider's `/models` endpoint (OpenRouter's auth-gated `/key`) confirms auth (status only; `--no-verify` skips it)
     - it executes nothing a remote returns
 - `agent6 connect chatgpt` is a PKCE OAuth sign-in
     - a browser hits the authorize page of OpenAI's fixed OAuth authority (a constant, not config); the code returns on `localhost:1455` (or is pasted), state-checked either way
     - token exchange and refreshes `POST` only to the authority's `/oauth/token`
     - tokens live in `secrets.toml` under the same `0600` and executes-nothing rules
-    - agent6 never sends a rating or feedback on a response and has no rating surface: the backend may use rated turns for training, and that choice is never made on the operator's behalf
+    - agent6 never sends a rating or feedback on a response and has no rating surface.
+      The backend may use rated turns for training, and that choice is never made on the operator's behalf
 - `agent6 connect claude` stores nothing: Claude Code's own login (`~/.claude/.credentials.json`, `~/.claude.json`) is never read, copied, or mounted by agent6
     - the child's environment carries no `ANTHROPIC_*` or `CLAUDE*` variable from the operator shell, so a shell API key cannot override the subscription login; `CLAUDE_CONFIG_DIR` is the one passthrough
     - `claude auth status --json` is parsed for `loggedIn` only; its body (email, org) is never printed or journaled
-    - the binary's initialize handshake carries the account block; agent6 keeps the email in memory only, to replace it with `<operator-email>` in the model's returned text, and records none of it
+    - the binary's initialize handshake carries the account block.
+      agent6 keeps the email in memory only, to replace it with `<operator-email>` in the model's returned text, and records none of it
 
 ### 9. State and locks
 
@@ -359,7 +401,8 @@ Under `none` isolation nothing is enforced or refused.
     - every mutation validates against a pydantic schema before writing, under a per-mutation flock on the session dir
     - a write-path fault after the in-memory update reloads from disk before surfacing: a later read never observes a node that was never persisted
 - Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/`, outside the working directory jailed commands run in.
-    - every directory under the base is created `0700` whatever the umask (`mkdir_for_real_user`, the one creator), keeping transcripts, memory and run history from other local users; a base an older release created at `755` keeps that mode
+    - every directory under the base is created `0700` whatever the umask (`mkdir_for_real_user`, the one creator), keeping transcripts, memory and run history from other local users.
+      A base an older release created at `755` keeps that mode
 - The config write lock serializes read-modify-write cycles and enforces nothing
     - publishes are atomic: a torn config is impossible with or without it
     - it fails open (a planted symlink refuses `O_NOFOLLOW`; a stale root-owned lock is ignored); a write proceeding without it is kept, reported "kept as written" (docs/config.md)
@@ -382,7 +425,8 @@ Under `none` isolation nothing is enforced or refused.
 ### 11. State machines
 
 `machine run` is a supervisor that makes no network calls.
-Each `tool` state is jailed, so a per-tool `network` sets its netns independently ([Network](#5-network)): a machine can keep agents on the provider API while one reviewed, fixed-argv `tool` reaches the network.
+Each `tool` state is jailed, so a per-tool `network` sets its netns independently ([Network](#5-network)).
+A machine can keep agents on the provider API while one reviewed, fixed-argv `tool` reaches the network.
 
 **Operator-gated policy**
 
@@ -410,24 +454,31 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `isolation = "none"`.
   An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` level.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
-- `providers/claude_code.py`: the `api_format = "claude_code"` provider runs the operator-installed Claude Code binary with fixed argv (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory); prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.
+- `providers/claude_code.py`: the `api_format = "claude_code"` provider runs the operator-installed Claude Code binary with fixed argv (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory).
+  Prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.
   Curated environment, `--tools ""`, `--allowedTools mcp__agent6`, `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands`, `--no-session-persistence`; CLAUDE.md, auto-memory, and auto-compaction off by environment; `system/init` is audited so a tool outside `mcp__agent6__*` or an API-key source refuses the run.
   Unjailed: it needs the operator's login under `$HOME` and its own egress, at the agent process's trust tier.
-  Tool results stay under Claude Code's 50,000-byte persistence threshold (the loop caps them at 34,000 bytes for this provider, keeping 16,000 for the turn's notices; a wider payload is refused), so no tool output is written under `~/.claude`.
+  Tool results stay under Claude Code's 50,000-byte persistence threshold, so no tool output is written under `~/.claude`.
+  The loop caps them at 34,000 bytes for this provider, keeping 16,000 for the turn's notices; a wider payload is refused.
   `claude auth status --json` runs the same way for the sign-in preflight.
 - `sessions/ipc.py`: `ps -p <pid> -o lstart=` on hosts without `/proc` (macOS), for the `worker.pid` start-time identity, over a pid agent6 recorded.
 - `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer), so the side question keeps provider egress while the run is confined.
   Argv is the agent6 exe plus the question the operator typed, with `--` before it.
 - `ui/spawn.py`: the shared front-end spawn helper.
-  Spawns the agent6 CLI detached for run and machine launches, and captures `sessions merge` / `prune` / `config set`.
+  Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`), and captures `sessions merge` / `prune` / `rm` and `config set` / `unset`.
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present machine notification.
-- `ui/cli/` helpers: `$EDITOR` for plan and steer editing; `git diff` / `log` for the review subcommand and the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail; `rg` for history search; the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`; `cp` / `rm` / `apparmor_parser` via sudo with fixed argv for `agent6 system apparmor`; `agent6 completions` running the wrapped executable with fixed argv to delegate a completion.
-- `app/finalize.py`: both operator notify hooks (`run_notify_hook`): `[notify].on_complete` at run end and `[machine.notify].on_event` from a machine.
+- `ui/cli/` helpers:
+    - `plan_watch.py` and `_steer.py`: `$EDITOR` for plan and steer editing
+    - `review_cmds.py`, `sessions_cmds.py` and `_ask.py`: `git diff` / `log` for the review subcommand and the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail
+    - `history_cmds.py`: `rg` for history search
+    - `_live.py`: the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`
+    - `system_cmds.py`: `cp` / `rm` / `apparmor_parser` via sudo with fixed argv for `agent6 system apparmor`
+    - `completions_cmd.py`: runs nothing itself; its one `subprocess.run` is text inside the xonsh completer script it emits, which the operator's xonsh runs at tab time to ask `agent6` for candidates
+- `app/finalize.py`: both operator notify hooks (`run_notify_hook`): `[notify].on_complete` at run end and `[machine.notify].on_event` from `machine run` (built by `app/machine/_preflight.build_machine_notify_hook`).
   Argv from config, env from `hook_env` (a minimal base plus `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`, never the provider keys in the operator environment).
 - `app/machine/_scriptcheck.py`: ruff and ty with fixed argv, reading generated scripts statically.
   Those scripts execute only via `run_in_jail`.
 - `app/machine_agent.py`: spawns each agent state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess whose request travels in a temp file.
-  Its `[machine.notify].on_event` hook runs on the host through `app/finalize.run_notify_hook`.
 - `ui/cli/skills_cmds.py`: `git clone --depth 1 -- <url>` with fixed argv for `agent6 skills install`.
   The URL is operator-supplied and nothing fetched is executed.
 - `ui/tui/clipboard.py`: `tmux set-buffer -w` with the copied transcript text as one data argument.
@@ -445,7 +496,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 
 ## Prompt-injection tests
 
-[`tests/security/test_prompt_injection.py`](https://github.com/agent6-dev/agent6/blob/master/tests/security/test_prompt_injection.py) drives the dispatcher with the calls a compromised model would make: path traversal, a swapped symlink between check and open, an unknown tool name, extra fields, a write outside the workspace.
+[`tests/security/test_prompt_injection.py`](https://github.com/agent6-dev/agent6/blob/master/tests/security/test_prompt_injection.py) drives the dispatcher with the calls a compromised model would make.
+Those are path traversal, a swapped symlink between check and open, an unknown tool name, extra fields, and a write outside the workspace.
 It asserts the tool surface refuses them whatever the model says; it does not test the model's judgement, and calls no model.
 It catches prompt regressions; the structural defenses above confine a model that follows an injection.
 
@@ -460,8 +512,11 @@ It catches prompt regressions; the structural defenses above confine a model tha
 - agent6 installed inside the project it works on (pip into the project's own venv) puts the running agent's code in the jail's writable workspace
     - a jailed command can rewrite it; the next tool call runs the rewrite as you, outside the jail
     - install agent6 outside the tree (pipx, `uv tool`); agent6 warns at run entry on this shape
-- Claude Code (`api_format = "claude_code"`) appends the account email to every system prompt it sends and has no switch for it; the model can echo it, and agent6 scrubs it only from returned text, never from tool inputs (an edit carrying it lands as written)
-    - managed settings (`/etc/claude-code/managed-settings.json`) still apply inside the child; the `system/init` audit refuses the run when the tool list differs from what agent6 offered or `apiKeySource` is not `none`, and checks nothing else: a managed hook, or a managed MCP server exposing no tool, passes it
+- Claude Code (`api_format = "claude_code"`) appends the account email to every system prompt it sends and has no switch for it.
+  The model can echo it, and agent6 scrubs it only from returned text, never from tool inputs (an edit carrying it lands as written)
+    - managed settings (`/etc/claude-code/managed-settings.json`) still apply inside the child.
+      The `system/init` audit refuses the run when the tool list differs from what agent6 offered or `apiKeySource` is not `none`, and checks nothing else.
+      A managed hook, or a managed MCP server exposing no tool, passes it
 - Side channels: no claim about timing, cache, or speculative side channels.
 - Supply chain: pin your install
     - runtime deps `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair, `textual`, `ruff`, `ty`; build dep `hatchling`; jail crates `nix`, `libc`, `landlock`, `seccompiler`, `serde`, `serde_json`
