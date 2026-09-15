@@ -604,6 +604,7 @@ class InvalidEntry:
     path: Path  # the file to edit
     file_key: str  # dotted key WITHIN that file (leaf, or "config."+leaf for a machine overlay)
     is_table: bool = False  # True when the whole [leaf] table must be dropped, not one leaf
+    error_type: str = ""  # pydantic error type; distinguishes unknown from partial tables
 
 
 @dataclass(frozen=True, slots=True)
@@ -692,6 +693,7 @@ def _diagnose_errors(
                 path=layer.path,
                 file_key=file_key,
                 is_table=is_table,
+                error_type=issue["type"],
             )
         )
     return ConfigDiagnosis(tuple(removable), "\n".join(blocked) if blocked else None)
@@ -717,31 +719,54 @@ def _diagnose_presets(repo_root: Path) -> ConfigDiagnosis:
         if not isinstance(presets, dict):
             continue
         for name, body in presets.items():
-            if isinstance(body, dict):
-                by_name.setdefault(name, []).append(Layer(layer.name, layer.path, body))
-    for name, layers in by_name.items():
-        diagnosis = _diagnose_layers(layers, only_layer=None)
-        leaves = [entry for entry in diagnosis.removable if not entry.is_table]
-        if not leaves:
-            # A preset may be a partial table completed by the selecting
-            # config layer, just as one ordinary layer can complete another.
-            continue
-        return ConfigDiagnosis(
-            tuple(
-                InvalidEntry(
-                    leaf=f"presets.{name}.{entry.leaf}",
-                    value=read_toml_leaf(
-                        read_toml_file(entry.path), f"presets.{name}.{entry.file_key}"
+            if not isinstance(body, dict):
+                if layer.path is None:  # discover_layers always attaches file paths
+                    continue
+                return ConfigDiagnosis(
+                    (
+                        InvalidEntry(
+                            leaf=f"presets.{name}",
+                            value=body,
+                            layer=layer.name,
+                            path=layer.path,
+                            file_key=f"presets.{name}",
+                            error_type="dict_type",
+                        ),
                     ),
-                    layer=entry.layer,
-                    path=entry.path,
-                    file_key=f"presets.{name}.{entry.file_key}",
-                    is_table=entry.is_table,
+                    None,
                 )
-                for entry in leaves
-            ),
-            diagnosis.blocked,
-        )
+            by_name.setdefault(name, []).append(Layer(layer.name, layer.path, body))
+    for name, layers in by_name.items():
+        # Validate each layer prefix so a repo override cannot hide a stale
+        # value in the global preset. Whole-table errors are ignored because a
+        # partial preset may be completed by the next layer or by the config
+        # that selects it; an unknown table can never be completed.
+        for end in range(1, len(layers) + 1):
+            diagnosis = _diagnose_layers(layers[:end], only_layer=None)
+            leaves = [
+                entry
+                for entry in diagnosis.removable
+                if not entry.is_table or entry.error_type == "extra_forbidden"
+            ]
+            if not leaves:
+                continue
+            return ConfigDiagnosis(
+                tuple(
+                    InvalidEntry(
+                        leaf=f"presets.{name}.{entry.leaf}",
+                        value=read_toml_leaf(
+                            read_toml_file(entry.path), f"presets.{name}.{entry.file_key}"
+                        ),
+                        layer=entry.layer,
+                        path=entry.path,
+                        file_key=f"presets.{name}.{entry.file_key}",
+                        is_table=entry.is_table,
+                        error_type=entry.error_type,
+                    )
+                    for entry in leaves
+                ),
+                diagnosis.blocked,
+            )
     return ConfigDiagnosis((), None)
 
 
@@ -760,19 +785,19 @@ def find_invalid_entries(repo_root: Path, *, machine: Path | None = None) -> Con
     try:
         if machine is None and (preset_diagnosis := _diagnose_presets(repo_root)).removable:
             return preset_diagnosis
+        if machine is None:
+            cleaned, _ = _strip_presets(discover_layers(repo_root, None))
+            # Check each file-layer prefix before the selected preset is
+            # inserted. A preset is allowed to complete a partial table, but
+            # it must not hide a stale scalar in the file that selected it.
+            for end in range(1, len(cleaned) + 1):
+                diagnosis = _diagnose_layers(cleaned[:end], only_layer=None)
+                leaves = tuple(entry for entry in diagnosis.removable if not entry.is_table)
+                if leaves:
+                    return ConfigDiagnosis(leaves, None)
         layers = _fix_scope_layers(repo_root, machine)
     except ConfigError as exc:
         return ConfigDiagnosis((), str(exc))
-    if machine is None:
-        repo_index = next((i for i, layer in enumerate(layers) if layer.name == "repo"), None)
-        if repo_index is not None:
-            lower = _diagnose_layers(layers[:repo_index], only_layer=None)
-            # A blocked prefix, or a whole table failing its validator, can be
-            # a partial table the repo layer completes. A located bad leaf
-            # cannot be made valid by masking it, so fix it first.
-            leaves = tuple(entry for entry in lower.removable if not entry.is_table)
-            if leaves:
-                return ConfigDiagnosis(leaves, None)
     return _diagnose_layers(layers, only_layer=only)
 
 
@@ -789,16 +814,19 @@ def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | N
     """
     leaves = config_leaves(eff.config)
     parts = dotted_key.split(".")
-    if parts[0] == "presets" and len(parts) > 2 and ".".join(parts[2:]) in leaves:
-        # A preset's leaf: the value the most specific layer's [presets.<name>]
-        # table holds, or unset. `config get`, `set` and `unset` all address it,
-        # so a preset write has an inverse.
+    if parts[0] == "presets" and len(parts) > 2:
+        # A preset's leaf may be dynamic (a role or provider absent from the
+        # effective config), so read the authored table before consulting the
+        # effective schema. `config get`, `set` and `unset` all address it, so a
+        # preset write has an inverse.
         name, leaf = parts[1], ".".join(parts[2:])
         for layer in reversed(eff.layers):
             table = _file_presets(layer.path).get(name)
             if isinstance(table, dict) and (value := read_toml_leaf(table, leaf)) is not None:
                 return value, f"preset {name} ({layer.name})"
-        return None, "unset"
+        if leaf in leaves:
+            return None, "unset"
+        return None
     if dotted_key not in leaves:
         return None
     return leaves[dotted_key], eff.sources.get(dotted_key, "default")

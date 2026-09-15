@@ -264,7 +264,9 @@ def written_value_error(
         # leaf under a preset is a Config leaf and validates as one, since
         # the merged re-validation sees it only once that preset is selected.
         if len(parts) > 2:
-            return written_value_error(".".join(parts[2:]), value, repo_root=repo_root)
+            return written_value_error(
+                ".".join(parts[2:]), value, repo_root=repo_root, section=section
+            )
         return None
     if parts[0] == "providers" and len(parts) == 3:
         return provider_field_error(key, parts[2], value)

@@ -196,6 +196,24 @@ def test_config_write_keeps_the_edit_when_another_layer_was_already_invalid(
     assert "run_commands" in repo_config_path(repo).read_text(encoding="utf-8")
 
 
+def test_a_dynamic_leaf_in_an_unselected_preset_is_readable(repo: Path) -> None:
+    from agent6.config.layer import effective_leaf
+
+    global_path = repo.parent / "g" / "agent6" / "config.toml"
+    global_path.write_text(
+        global_path.read_text(encoding="utf-8")
+        + "\n[presets.demo.models.reviewer]\n"
+        + 'provider = "anthropic"\n'
+        + 'model = "claude-haiku"\n',
+        encoding="utf-8",
+    )
+
+    assert effective_leaf(load_effective(repo), "presets.demo.models.reviewer.model") == (
+        "claude-haiku",
+        "preset demo (global)",
+    )
+
+
 def test_set_then_unset_config_value(repo: Path) -> None:
     # repo config starts with run_commands="yes"; global has "ask".
     err = set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
@@ -497,6 +515,47 @@ def test_deep_merge_still_merges_when_kind_unchanged() -> None:
     override = {"providers": {"p": {"base_url": "Z"}}}
     merged = _deep_merge(base, override)
     assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Z", "api_key_env": "X"}
+
+
+def test_fix_finds_a_preset_definition_that_is_not_a_table(repo: Path) -> None:
+    from agent6.config.layer import find_invalid_entries
+
+    global_path = repo.parent / "g" / "agent6" / "config.toml"
+    global_path.write_text('[presets]\ndemo = "quick"\n', encoding="utf-8")
+
+    diagnosis = find_invalid_entries(repo)
+
+    assert [(entry.leaf, entry.value, entry.path) for entry in diagnosis.removable] == [
+        ("presets.demo", "quick", global_path)
+    ]
+
+
+def test_fix_finds_an_unknown_table_in_an_unselected_preset(repo: Path) -> None:
+    from agent6.config.layer import find_invalid_entries
+
+    global_path = repo.parent / "g" / "agent6" / "config.toml"
+    global_path.write_text('[presets.demo.cli]\ninput = "task"\n', encoding="utf-8")
+
+    diagnosis = find_invalid_entries(repo)
+
+    assert [
+        (entry.leaf, entry.layer, entry.path, entry.is_table) for entry in diagnosis.removable
+    ] == [("presets.demo.cli", "global", global_path, True)]
+
+
+def test_fix_finds_a_stale_value_masked_by_the_selected_preset(
+    repo: Path,
+) -> None:
+    from agent6.config.layer import find_invalid_entries
+
+    global_path = repo.parent / "g" / "agent6" / "config.toml"
+    global_path.write_text('preset = "quick"\n\n[review]\ntrigger = "banana"\n', encoding="utf-8")
+
+    diagnosis = find_invalid_entries(repo)
+
+    assert [(entry.leaf, entry.layer, entry.path) for entry in diagnosis.removable] == [
+        ("review.trigger", "global", global_path)
+    ]
 
 
 def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:

@@ -707,6 +707,23 @@ def test_top_level_help_names_the_directories(
     assert "agent6 config path" in out
 
 
+def test_a_preset_leaf_with_a_valid_sibling_can_be_changed(iso: Path) -> None:
+    config = iso / "g" / "agent6" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[presets.demo.context]\ndrop_at_chars = 100000\nsummarise_at_chars = 200000\n",
+        encoding="utf-8",
+    )
+
+    assert _run(["config", "set", "presets.demo.context.drop_at_chars", "120000"]) == 0
+    context = _global_toml(iso)["presets"]
+    assert isinstance(context, dict)
+    assert context["demo"]["context"] == {  # type: ignore[index]
+        "drop_at_chars": 120000,
+        "summarise_at_chars": 200000,
+    }
+
+
 def test_a_preset_leaf_is_validated_and_has_an_inverse(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

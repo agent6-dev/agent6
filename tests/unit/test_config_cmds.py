@@ -654,6 +654,32 @@ def test_config_fix_drops_an_invalid_unselected_preset_leaf(
     assert '[presets.good.review]\ntrigger = "before_finish"' in text
 
 
+def test_config_fix_drops_an_invalid_preset_leaf_masked_by_the_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    global_path = global_config_path()
+    global_path.parent.mkdir(parents=True)
+    global_path.write_text('[presets.demo.sandbox]\nnetwork = "banana"\n', encoding="utf-8")
+    repo_path = repo_config_path(repo)
+    repo_path.parent.mkdir(parents=True)
+    repo_path.write_text('[presets.demo.sandbox]\nnetwork = "host"\n', encoding="utf-8")
+
+    assert main(["config", "fix"]) == 0
+    out = capsys.readouterr().out
+    assert "presets.demo.sandbox.network" in out
+    assert str(global_path) in out
+    assert "network" not in global_path.read_text(encoding="utf-8")
+    assert 'network = "host"' in repo_path.read_text(encoding="utf-8")
+
+
 def test_config_fix_drops_an_unknown_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
