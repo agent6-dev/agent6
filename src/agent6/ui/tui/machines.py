@@ -740,7 +740,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         tally = (
             "no machines yet (c creates one)" if not n else f"{n} machine{'' if n == 1 else 's'}"
         )
-        self.app.sub_title = f"machines · {self.repo_cwd} · {tally}"
+        self.app.sub_title = f"machines · {self.repo_cwd.name} · {tally}"
 
     def _selected(self) -> Path | None:
         """The selected row's authored file; None for a row without one (an

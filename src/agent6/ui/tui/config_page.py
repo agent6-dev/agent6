@@ -684,7 +684,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 table.add_column(label, width=width)
         self._refresh()
         # Show "agent6 — config · <repo>" in the menu-bar title for this screen.
-        self.app.sub_title = f"config · {self.repo_root}"
+        self.app.sub_title = f"config · {self.repo_root.name}"
         # Focus the first section table (a _NavTable), not the pinned col-header
         # (which is can_focus=False): opening config shouldn't look like a menu
         # is half-activated. Alt+letter still reaches the menu bar.

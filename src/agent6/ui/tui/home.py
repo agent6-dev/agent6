@@ -268,7 +268,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
             if not count
             else f"{count} session{'' if count == 1 else 's'}"
         )
-        self.app.sub_title = f"{self.repo_cwd} · {tally}"
+        self.app.sub_title = f"{self.repo_cwd.name} · {tally}"
         # An empty table shouldn't paint a full-height focus cursor over its body.
         table.show_cursor = table.row_count > 0
 

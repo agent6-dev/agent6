@@ -68,3 +68,13 @@ def test_an_empty_hub_says_what_to_do_next(tmp_path: Path) -> None:
     subtitle = _subtitle(state, repo)
 
     assert "no sessions yet" in subtitle and "agent6 run" in subtitle, subtitle
+
+
+def test_the_hub_names_the_repository_by_its_directory(tmp_path: Path) -> None:
+    """The header carried the repository's full path, which pushed the session
+    count off the right edge of an 80-column terminal."""
+    state, repo = tmp_path / "state", tmp_path / "some-repo"
+    repo.mkdir()
+    _session(state, "runs", "runny-one-AAAAAA", "run")
+    sub = _subtitle(state, repo)
+    assert sub.startswith("some-repo · ") and str(tmp_path) not in sub
