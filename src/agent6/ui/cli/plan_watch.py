@@ -176,7 +176,8 @@ def _cmd_watch(
             file=sys.stderr,
         )
         return 3
-    return run_tui(target, config_path=config_path)
+    run_tui(target, config_path=config_path)
+    return 0
 
 
 def _cmd_tui(config_path: Path | None = None) -> int:
@@ -185,7 +186,6 @@ def _cmd_tui(config_path: Path | None = None) -> int:
     dashboard), opening a run watches it, then returns here on close."""
     try:
         from agent6.ui.tui.app import (  # noqa: PLC0415 - lazy: textual optional
-            QUIT_HUB_CODE,
             run_tui,
         )
         from agent6.ui.tui.home import run_home  # noqa: PLC0415
@@ -197,13 +197,17 @@ def _cmd_tui(config_path: Path | None = None) -> int:
     # The state dir: every bucket lookup below it goes through `bucket_dir`,
     # which appends `sessions/` itself.
     agent6_dir = state_dir(cwd)
+    session_dir: Path | None = None
     while True:
-        session_dir = run_home(agent6_dir, cwd, config_path)
+        # Esc in a run view returns here (reopen home), Run this plan hands the
+        # new run back to open next, and Ctrl+Q quits the hub.
+        session_dir = session_dir or run_home(agent6_dir, cwd, config_path)
         if session_dir is None:
             return 0
-        # Esc in the dashboard returns here (reopen home); q quits the hub.
-        if run_tui(session_dir, from_hub=True, config_path=config_path) == QUIT_HUB_CODE:
+        result = run_tui(session_dir, from_hub=True, config_path=config_path)
+        if result.quit_hub:
             return 0
+        session_dir = result.open_next
 
 
 def format_plain_event(line: str, *, session_start_ts: float | None) -> str:

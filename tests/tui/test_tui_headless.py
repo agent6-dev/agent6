@@ -25,7 +25,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
 from agent6.sessions.ipc import clear_answer
-from agent6.ui.tui.app import Agent6TUI
+from agent6.ui.tui.app import Agent6TUI, TuiExit
 from agent6.ui.tui.composer import ApprovalRow
 from agent6.ui.tui.modals import (
     ApprovalModal,
@@ -521,11 +521,11 @@ def test_start_question_before_session_start_is_answerable(tmp_path: Path) -> No
 def test_back_and_quit_exit_codes(tmp_path: Path) -> None:
     """Esc leaves the run view for the hub (exit 0) from both the conversation and
     the dashboard (their composer bars own plain letters, so there is no q alias);
-    Ctrl+Q quits the hub (QUIT_HUB_CODE) from anywhere. Standalone, every one of
-    them just closes (0)."""
-    from agent6.ui.tui.app import QUIT_HUB_CODE
+    Ctrl+Q quits the hub from anywhere. Standalone, every one of them just
+    closes."""
+    from agent6.ui.tui.app import TuiExit
 
-    async def press(from_hub: bool, *keys: str) -> int | None:
+    async def press(from_hub: bool, *keys: str) -> TuiExit | None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path, from_hub=from_hub)
         async with app.run_test(size=(100, 30)) as pilot:
@@ -535,11 +535,11 @@ def test_back_and_quit_exit_codes(tmp_path: Path) -> None:
                 await pilot.pause()
         return app.return_value
 
-    assert asyncio.run(press(True, "escape")) == 0  # conversation Esc -> back to the hub
-    assert asyncio.run(press(True, "ctrl+d", "escape")) == 0  # dashboard Esc -> the hub
-    assert asyncio.run(press(True, "ctrl+q")) == QUIT_HUB_CODE  # only Ctrl+Q quits the hub
-    assert asyncio.run(press(False, "escape")) == 0  # standalone: just close
-    assert asyncio.run(press(False, "ctrl+q")) == 0  # standalone: just close
+    assert asyncio.run(press(True, "escape")) == TuiExit()  # conversation Esc -> the hub
+    assert asyncio.run(press(True, "ctrl+d", "escape")) == TuiExit()  # dashboard Esc -> the hub
+    assert asyncio.run(press(True, "ctrl+q")) == TuiExit(quit_hub=True)  # only Ctrl+Q quits
+    assert asyncio.run(press(False, "escape")) == TuiExit()  # standalone: just close
+    assert asyncio.run(press(False, "ctrl+q")) == TuiExit()  # standalone: just close
 
 
 def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
@@ -971,7 +971,7 @@ def test_ctrl_z_on_the_run_spawned_view_detaches_the_run_itself(tmp_path: Path) 
             await pilot.press("ctrl+z")
             await pilot.pause()
         assert app.detached
-        assert app.return_value == 0  # reopen the hub, do not quit its loop
+        assert app.return_value == TuiExit()  # reopen the hub, do not quit its loop
 
     asyncio.run(spawned_view())
     asyncio.run(viewer())
@@ -1378,7 +1378,7 @@ def test_conversation_is_the_primary_view(tmp_path: Path) -> None:
             assert app.screen is first  # the same instance: nothing was rebuilt
             await pilot.press("escape")  # Esc on the primary view leaves for the hub
             await pilot.pause()
-        assert app.return_value == 0
+        assert app.return_value == TuiExit()
 
     asyncio.run(scenario())
 

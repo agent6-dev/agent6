@@ -29,7 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError as e:
         print(f"agent6 tui: {e}", file=sys.stderr)
         return 3
-    return run_tui(session_dir, exit_on_end=args.exit_on_end)
+    run_tui(session_dir, exit_on_end=args.exit_on_end)
+    return 0
 
 
 if __name__ == "__main__":

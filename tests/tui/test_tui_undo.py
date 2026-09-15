@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -299,13 +300,18 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
 
 def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any) -> None:
     """Run > Run this plan on a finished plan spawns `agent6 run --from
-    <id>` with the detached env; a non-plan session refuses without spawning."""
+    <id>` with the detached env and, from the hub, ends the view with the new
+    run to open; standalone it names the run to attach to. A non-plan session
+    refuses without spawning."""
+    from agent6.ui.tui.app import TuiExit
+
     seen: dict[str, Any] = {}
+    child = tmp_path / "sessions" / "runs" / "fresh-run-CCCCCC"
 
     def _fake_spawn(argv: list[str], _cwd: Path, **kw: Any) -> tuple[Path | None, str]:
         seen["argv"] = argv
         seen["env"] = kw.get("env")
-        return tmp_path / "sessions" / "runs" / "fresh-run-CCCCCC", ""
+        return child, ""
 
     monkeypatch.setattr(app_mod, "spawn_and_locate", _fake_spawn)
     plan = tmp_path / "sessions" / "plans" / "planny-one-AAAAAA"
@@ -318,15 +324,39 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
     (plan / "plan.md").write_text("# Plan\n", encoding="utf-8")
 
     async def scenario() -> None:
-        app = Agent6TUI(plan)
+        app = Agent6TUI(plan, from_hub=True)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_run_plan()
-            await app.workers.wait_for_complete()
+            # The spawn worker ends the app itself, so wait on the exit value.
+            deadline = time.monotonic() + 5
+            while app.return_value is None and time.monotonic() < deadline:
+                await pilot.pause(0.05)
+        assert app.return_value == TuiExit(open_next=child)
 
     asyncio.run(scenario())
     assert seen["argv"][-3:] == ["run", "--from", "planny-one-AAAAAA"]
     assert seen["env"]["AGENT6_DETACHED_AWAY"] == "wait"
+
+    async def standalone() -> None:
+        notes: list[str] = []
+        app = Agent6TUI(plan)
+        original = app.notify
+
+        def spy(message: Any, *args: Any, **kwargs: Any) -> None:
+            notes.append(str(message))
+            original(message, *args, **kwargs)
+
+        monkeypatch.setattr(app, "notify", spy)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.action_run_plan()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert app.return_value is None
+        assert any("agent6 attach fresh-run-CCCCCC" in note for note in notes)
+
+    asyncio.run(standalone())
 
     seen.clear()
     (plan / "plan.md").write_text(" \n\t", encoding="utf-8")

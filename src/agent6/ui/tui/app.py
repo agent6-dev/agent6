@@ -27,6 +27,7 @@ import os
 import threading
 import time
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
@@ -117,11 +118,19 @@ _STATUS_NOW_EVENTS = SESSION_START_EVENTS | {
     "question.answer",
 }
 
+
 # Dashboard exit code meaning "quit the whole hub" (vs 0 == back to the hub).
-QUIT_HUB_CODE = 99
+@dataclass(frozen=True, slots=True)
+class TuiExit:
+    """How a run view ended: back to the hub (the default), the hub quit
+    (`quit_hub`), or a session the hub opens next (`open_next`, the run a
+    plan's Run this plan started)."""
+
+    quit_hub: bool = False
+    open_next: Path | None = None
 
 
-class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
+class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
     TITLE = "agent6"
     CSS = (
         PALETTE_CSS
@@ -722,9 +731,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         )
 
     def action_run_plan(self) -> None:
-        """Execute a finished plan: spawn `agent6 run --from <id>` detached
-        (the hub lists and opens it). The plan session is untouched, so the
-        composer keeps revising it."""
+        """Execute a finished plan: spawn `agent6 run --from <id>` detached and,
+        from the hub, open it. The plan session is untouched, so the composer
+        keeps revising it."""
         if self.mode != "plan":
             self.notify("this session is not a plan", severity="warning")
             return
@@ -757,7 +766,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         if new_dir is None:
             self.call_from_thread(self.notify, err or "could not start the run", severity="error")
             return
-        self.call_from_thread(self.notify, f"run started: {new_dir.name} (open it from the hub)")
+        if self.from_hub:
+            self.call_from_thread(self.exit, TuiExit(open_next=new_dir))
+            return
+        self.call_from_thread(
+            self.notify, f"run started: {new_dir.name} (follow it: agent6 attach {new_dir.name})"
+        )
 
     def action_fork(self) -> None:
         """Fork this run at its latest checkpoint into a new run, unstarted. On
@@ -819,12 +833,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self.push_screen(self._conv)
 
     def action_to_hub(self) -> None:
-        self.exit(0)  # back to the hub loop (or just close, standalone)
+        self.exit(TuiExit())  # back to the hub loop (or just close, standalone)
 
     def action_quit_hub(self) -> None:
         # In the hub loop, signal "quit the hub" via the exit code; standalone,
         # there's nothing to return to, so a plain close (0) is the same thing.
-        self.exit(QUIT_HUB_CODE if self.from_hub else 0)
+        self.exit(TuiExit(quit_hub=self.from_hub))
 
     def action_detach_exit(self) -> None:
         # A viewer (`attach --tui`, the hub) leaves a run that is detached
@@ -838,7 +852,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self.notify("could not write the detach request", severity="warning")
             return
         self.detached = True
-        self.exit(0)
+        self.exit(TuiExit())
 
     def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
         # Drop textual's "Keys" panel (our Help page replaces it), "Screenshot" (an
@@ -857,11 +871,11 @@ def run_tui(
     exit_on_end: bool = False,
     from_hub: bool = False,
     config_path: Path | None = None,
-) -> int:
+) -> TuiExit:
     app = Agent6TUI(
         session_dir, exit_on_end=exit_on_end, from_hub=from_hub, config_path=config_path
     )
-    rc = app.run() or 0
+    result = app.run() or TuiExit()
     if app.detached:
         sid = session_dir.name
         if exit_on_end:
@@ -872,4 +886,4 @@ def run_tui(
             print(f"[agent6] detached: {sid} keeps running.")
             print(f"          reattach:  agent6 attach {sid}")
         print("          (Ctrl+_ undoes typing in the composer)")
-    return rc
+    return result

@@ -46,6 +46,7 @@ Before the first model call, the header names the role and model from the manife
 - `/` completes the steer directives; Ctrl-R searches the session's past messages
 - `/shells` lists the run's background commands and how they ended; `/restate` replays the conversation since your last message
 - the View menu maximizes the focused pane
+- on a finished plan, Run > Run this plan starts `agent6 run --from` on it and opens the new run; the plan session stays as it was
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
