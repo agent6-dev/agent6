@@ -16,6 +16,7 @@ import pytest
 from agent6.config import Config
 from agent6.prompts.loop import V2_VERIFY_WHEN
 from agent6.viewmodel.listing import status_word
+from agent6.workflows._loop_state import End
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
     LoopState,
@@ -105,7 +106,7 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
 
 
 def test_a_gateless_end_and_its_verdict_agree() -> None:
-    """`_emit_run_end_grounded` turned the gateless None into all_passed=True
+    """The grounded end turned the gateless None into all_passed=True
     (`is not False`) while `_verification` mapped the same None to
     not_applicable: the run read "passed" on every surface though nothing ever
     gated it, and the docstring claimed the two could never disagree.
@@ -128,8 +129,10 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
         wf.events.emit = _capture  # type: ignore[method-assign]
         state = LoopState(original_task="t", tool_calls=0, verify=verify_verdict)
         emitted.clear()
-        wf._emit_run_end_grounded(  # pyright: ignore[reportPrivateUsage]
-            reason="finish_session", iteration=1, state=state
+        wf._finish(  # pyright: ignore[reportPrivateUsage]
+            state,
+            End("finish_session", "", completed=True, verdict="grounded", checkpoint=False),
+            iteration=1,
         )
         assert emitted and emitted[-1]["all_passed"] is all_passed
         assert wf._verification(state) == verdict  # pyright: ignore[reportPrivateUsage]
@@ -156,8 +159,10 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
         state = LoopState(
             original_task="t", tool_calls=0, verify=VerifyVerdict(last_ok=True, scoped=scoped)
         )
-        wf._emit_run_end_grounded(  # pyright: ignore[reportPrivateUsage]
-            reason="finish_session", iteration=1, state=state
+        wf._finish(  # pyright: ignore[reportPrivateUsage]
+            state,
+            End("finish_session", "", completed=True, verdict="grounded", checkpoint=False),
+            iteration=1,
         )
         assert (emitted[-1]["all_passed"], emitted[-1]["scoped"]) == (True, scoped)
     assert status_word(

@@ -129,6 +129,7 @@ from agent6.workflows._dag_focus import (
 )
 from agent6.workflows._loop_state import (
     NEXT_TURN,
+    End,
     LoopState,
     NextTurn,
     TurnState,
@@ -1028,20 +1029,13 @@ class Workflow:
                 return outcome
 
         self._log(f"LOOP: max_iterations={self.max_iterations} reached")
-        self._final_checkpoint(self.iterations_reached)
-        self._emit(
-            "session.end",
-            reason="max_iterations",
-            iterations=self.iterations_reached,
-            all_passed=False,
-        )
-        return SessionResult(
-            completed=False,
-            verified=self._verification(state),
-            reason="max_iterations",
-            summary=f"max_iterations={self.max_iterations} reached without finish_session",
-            iterations=self.iterations_reached,
-            tool_calls=state.tool_calls,
+        return self._finish(
+            state,
+            End(
+                "max_iterations",
+                f"max_iterations={self.max_iterations} reached without finish_session",
+            ),
+            iteration=self.iterations_reached,
         )
 
     def _seeded_steer(
@@ -1129,32 +1123,22 @@ class Workflow:
             return self.caller.call(system, wire, tools, self._worker_max_tokens(state))
         except BudgetExceeded as exc:
             self._log(f"LOOP: budget exhausted at iter {iteration} ({exc})")
-            self._final_checkpoint(iteration)
-            self._emit(
-                "session.end",
-                reason="budget_exhausted",
-                iterations=iteration,
-                all_passed=False,
-            )
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="budget_exhausted",
-                summary=f"budget exhausted at iter {iteration}: {exc}",
-                iterations=iteration,
-                tool_calls=state.tool_calls,
+            return self._finish(
+                state,
+                End("budget_exhausted", f"budget exhausted at iter {iteration}: {exc}"),
+                iteration=iteration,
             )
         except ProviderAborted:
             self.steer_clear()  # consume the stop; don't leave it on disk to re-read
             self._log(f"LOOP: operator stopped the run mid-turn at iter {iteration}")
-            self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="steer_abort",
-                summary=f"operator stopped the run at iter {iteration}{self._dirty_tree_note()}",
-                iterations=iteration,
-                tool_calls=state.tool_calls,
+            return self._finish(
+                state,
+                End(
+                    "steer_abort",
+                    f"operator stopped the run at iter {iteration}{self._dirty_tree_note()}",
+                    checkpoint=False,
+                ),
+                iteration=iteration,
             )
         except ProviderInterrupted:
             # A steer was requested mid-stream; the watchdog ended the (thinking)
@@ -1174,24 +1158,17 @@ class Workflow:
             # goes in this one diagnostic log line; the end-block summary below
             # stays concise so the raw blob is not echoed to the operator twice.
             self._log(f"LOOP: provider error{attempts} at iter {iteration}: {exc}{hint}")
-            self._final_checkpoint(iteration)
-            self._emit(
-                "session.end",
-                reason="provider_error",
-                iterations=iteration,
-                all_passed=False,
-            )
             status = f" (HTTP {exc.status_code})" if exc.status_code else ""
             # A fatal error's text and a statusless transport failure are the
             # only available reason; an HTTP response's raw body stays in the log.
             detail = f": {exc}" if exc.fatal or exc.status_code is None else ""
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="provider_error",
-                summary=f"provider error{attempts} at iter {iteration}{status}{hint}{detail}",
-                iterations=iteration,
-                tool_calls=state.tool_calls,
+            return self._finish(
+                state,
+                End(
+                    "provider_error",
+                    f"provider error{attempts} at iter {iteration}{status}{hint}{detail}",
+                ),
+                iteration=iteration,
             )
 
     def _turn_dispatch_tools(self, state: LoopState, turn: TurnState) -> SessionResult | None:
@@ -1275,9 +1252,7 @@ class Workflow:
                 content = self._note_tool_error(state, name, tool_input, exc)
                 self._maybe_tool_error_ladder(state, turn)
             except OperatorCommandUnexecutable as exc:
-                return self._unexecutable_abort(
-                    exc, iteration=turn.iteration, tool_calls=state.tool_calls, state=state
-                )
+                return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
             turn.tool_results.append(
                 ToolResultItem(
                     tool_use_id=tu.id,
@@ -1683,9 +1658,7 @@ class Workflow:
             turn.tool_results.append(Notice(f"[harness verify] {why}: not run: {exc}"))
             return None
         except OperatorCommandUnexecutable as exc:
-            return self._unexecutable_abort(
-                exc, iteration=turn.iteration, tool_calls=state.tool_calls, state=state
-            )
+            return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         if (
             result.returncode == self._EXIT_TIMEOUT
             and not state.verify.scoped
@@ -1828,23 +1801,17 @@ class Workflow:
                 self._log(f"LOOP: interactive stop at iter {turn.iteration}")
                 # An operator stop is deliberate, not verified success: the
                 # same truth rule as steer_abort ("stopped", never "passed").
-                self._pass_pending_root_tasks()
-                self._emit(
-                    "session.end",
-                    reason="interactive_stop",
-                    iterations=turn.iteration,
-                    all_passed=False,
-                )
-                return SessionResult(
-                    completed=True,
-                    verified=self._verification(state),
-                    reason="interactive_stop",
-                    summary=(
+                return self._finish(
+                    state,
+                    End(
+                        "interactive_stop",
                         f"stopped interactively after iter {turn.iteration}"
-                        f"{self._dirty_tree_note()}"
+                        f"{self._dirty_tree_note()}",
+                        completed=True,
+                        checkpoint=False,
+                        roots=True,
                     ),
-                    iterations=turn.iteration,
-                    tool_calls=state.tool_calls,
+                    iteration=turn.iteration,
                 )
         return self._sample_metric(state, turn, sha=sha)
 
@@ -1873,9 +1840,7 @@ class Workflow:
                 state, iteration=turn.iteration, sha=sha
             )
         except OperatorCommandUnexecutable as exc:
-            return self._unexecutable_abort(
-                exc, iteration=turn.iteration, tool_calls=state.tool_calls, state=state
-            )
+            return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         turn.metric_plateau_finish = self._plateau_finish(state.metric_history)
         return None
 
@@ -2711,50 +2676,32 @@ class Workflow:
                 f"LOOP: tool_error stop at iter {turn.iteration}"
                 f" (streak {state.spiral.error_streak})"
             )
-            self._final_checkpoint(turn.iteration)
-            self._emit(
-                "session.end",
-                reason="tool_error_stuck",
-                iterations=turn.iteration,
-                all_passed=False,
-            )
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="tool_error_stuck",
-                summary=(
+            return self._finish(
+                state,
+                End(
+                    "tool_error_stuck",
                     "stopped: the same tool call failed"
                     f" {state.spiral.error_streak} times with the identical error"
                     " despite two harness interventions; resume with a different"
-                    " approach"
+                    " approach",
                 ),
-                iterations=turn.iteration,
-                tool_calls=state.tool_calls,
+                iteration=turn.iteration,
             )
         if turn.no_progress_stop:
             self._log(
                 f"LOOP: no_progress stop at iter {turn.iteration}"
                 f" (streak {state.verify.fail_streak})"
             )
-            self._final_checkpoint(turn.iteration)
-            self._emit(
-                "session.end",
-                reason="no_progress",
-                iterations=turn.iteration,
-                all_passed=False,
-            )
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="no_progress",
-                summary=(
+            return self._finish(
+                state,
+                End(
+                    "no_progress",
                     "stopped: the same verify failure persisted through"
                     f" {state.verify.fail_streak} consecutive runs despite two"
                     " harness interventions; resume with a new approach or a"
-                    " bigger budget"
+                    " bigger budget",
                 ),
-                iterations=turn.iteration,
-                tool_calls=state.tool_calls,
+                iteration=turn.iteration,
             )
         if turn.verify_settled_stop:
             self._log(
@@ -2766,48 +2713,40 @@ class Workflow:
             # (finish_session grounds on the same probe, so the two clean ends
             # cannot disagree).
             if state.verify.ever_passed and self._tree_is_verify_green(state) is not False:
-                self._emit_run_end_passed(
-                    reason="verify_settled", iterations=turn.iteration, scoped=state.verify.scoped
-                )
-                return SessionResult(
+                end = End(
+                    "verify_settled",
+                    self._with_open_tasks("verify passed and the worker stopped making changes"),
                     completed=True,
-                    verified=self._verification(state),
-                    reason="verify_settled",
-                    summary=self._with_open_tasks(
-                        "verify passed and the worker stopped making changes"
-                    ),
-                    iterations=turn.iteration,
-                    tool_calls=state.tool_calls,
+                    verdict="passed",
+                    checkpoint=False,
+                    scoped=state.verify.scoped,
                 )
-            # The work is committed and the worker went quiet, but nothing
-            # verified the FINAL tree, so this end never claims "passed".
-            self._pass_pending_root_tasks()
-            self._emit("session.end", reason="settled", iterations=turn.iteration, all_passed=False)
-            return SessionResult(
-                completed=True,
-                verified=self._verification(state),
-                reason="settled",
-                summary=self._settled_summary(state),
-                iterations=turn.iteration,
-                tool_calls=state.tool_calls,
-            )
+            else:
+                # The work is committed and the worker went quiet, but nothing
+                # verified the FINAL tree, so this end never claims "passed".
+                end = End(
+                    "settled",
+                    self._settled_summary(state),
+                    completed=True,
+                    checkpoint=False,
+                    roots=True,
+                )
+            return self._finish(state, end, iteration=turn.iteration)
         if turn.plateau_should_stop:
             assert turn.metric_plateau_finish is not None
             self._log(f"LOOP: metric_plateau at iter {turn.iteration}")
-            self._final_checkpoint(turn.iteration)
             # Ground on the tree like the sibling clean ends (finish_session,
             # verify_settled): an edit after the plateau's green verify means
             # nothing verified the FINAL tree, so this must not claim passed.
-            self._emit_run_end_grounded(
-                reason="metric_plateau", iteration=turn.iteration, state=state
-            )
-            return SessionResult(
-                completed=True,
-                verified=self._verification(state),
-                reason="metric_plateau",
-                summary=self._with_open_tasks(turn.metric_plateau_finish),
-                iterations=turn.iteration,
-                tool_calls=state.tool_calls,
+            return self._finish(
+                state,
+                End(
+                    "metric_plateau",
+                    self._with_open_tasks(turn.metric_plateau_finish),
+                    completed=True,
+                    verdict="grounded",
+                ),
+                iteration=turn.iteration,
             )
         # loop-guard escalation. The notice in _turn_notices is advisory; if
         # the worker keeps issuing the same call past loop_guard_kill_threshold,
@@ -2826,27 +2765,17 @@ class Workflow:
                 f" {latched_name} called {state.spiral.call_streak}x in a row"
                 f" (threshold={self.loop_guard_kill_threshold})"
             )
-            self._final_checkpoint(turn.iteration)
-            self._emit(
-                "session.end",
-                reason="loop_guard_killed",
-                iterations=turn.iteration,
-                all_passed=False,
-                tool=latched_name,
-                streak=state.spiral.call_streak,
-            )
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="loop_guard_killed",
-                summary=(
+            return self._finish(
+                state,
+                End(
+                    "loop_guard_killed",
                     f"loop-guard killed run: `{latched_name}`"
                     f" called {state.spiral.call_streak}x in a row with"
                     f" identical arguments (threshold"
-                    f" {self.loop_guard_kill_threshold})"
+                    f" {self.loop_guard_kill_threshold})",
+                    fields={"tool": latched_name, "streak": state.spiral.call_streak},
                 ),
-                iterations=turn.iteration,
-                tool_calls=state.tool_calls,
+                iteration=turn.iteration,
             )
         if turn.finish_signal is not None:
             self._log(f"LOOP: {turn.finish_kind} called at iter {turn.iteration}")
@@ -2857,19 +2786,18 @@ class Workflow:
             # model called finish_session".
             reason = self._finish_reason(turn, state)
             self._check_decisions_recorded(state)
-            if turn.finish_kind == "finish_session":
-                self._emit_run_end_grounded(reason=reason, iteration=turn.iteration, state=state)
-            else:
-                self._emit_run_end_passed(reason=reason, iterations=turn.iteration)
-            return SessionResult(
-                completed=True,
-                verified=self._verification(state),
-                reason=reason,
-                summary=self._with_open_tasks(turn.finish_signal),
-                iterations=turn.iteration,
-                tool_calls=state.tool_calls,
-                finish_payload=turn.finish_payload,
-                stale_gate=turn.finish_stale_gate,
+            return self._finish(
+                state,
+                End(
+                    reason,
+                    self._with_open_tasks(turn.finish_signal),
+                    completed=True,
+                    verdict="grounded" if turn.finish_kind == "finish_session" else "passed",
+                    checkpoint=False,
+                    finish_payload=turn.finish_payload,
+                    stale_gate=turn.finish_stale_gate,
+                ),
+                iteration=turn.iteration,
             )
         return None
 
@@ -2900,16 +2828,8 @@ class Workflow:
             remedy = f"plan.md unreadable: {exc}; fix it and `agent6 resume {session_id}`"
             self._log(f"LOOP: {remedy}")
             self._emit("loop.plan_read.failed", path=str(self.plan_output_path), error=str(exc))
-            self._emit(
-                "session.end", reason="plan_unreadable", iterations=iteration, all_passed=False
-            )
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="plan_unreadable",
-                summary=remedy,
-                iterations=iteration,
-                tool_calls=state.tool_calls,
+            return self._finish(
+                state, End("plan_unreadable", remedy, checkpoint=False), iteration=iteration
             )
         if text == state.plan_injected:
             return None
@@ -3182,25 +3102,21 @@ class Workflow:
             self._log(
                 f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
             )
-        self._final_checkpoint(iteration)
         # Honest finish: run/plan ground exactly like the explicit
         # finish_session path (observed green -> "passed", red or stale ->
         # "failed", ungated -> "finished"). Ask mode's prose answer is the
-        # success (it never runs verify), so it always ends passed.
-        if reason == "silent_finish":
-            self._emit_run_end_grounded(reason=reason, iteration=iteration, state=state)
-        else:
-            self._emit_run_end_passed(reason=reason, iterations=iteration)
-        return SessionResult(
-            completed=True,
-            verified=self._verification(state),
-            reason=reason,
-            # In ask mode the final prose IS the answer the caller
-            # prints, so keep it whole; run/plan only need a short
-            # summary line.
-            summary=text if self.mode == "ask" else self._with_open_tasks(text[:1000]),
-            iterations=iteration,
-            tool_calls=state.tool_calls,
+        # success (it never runs verify), so it always ends passed, and the
+        # final prose IS the answer the caller prints, so it is kept whole;
+        # run/plan only need a short summary line.
+        return self._finish(
+            state,
+            End(
+                reason,
+                text if self.mode == "ask" else self._with_open_tasks(text[:1000]),
+                completed=True,
+                verdict="grounded" if reason == "silent_finish" else "passed",
+            ),
+            iteration=iteration,
         )
 
     def _handle_went_quiet(
@@ -3284,20 +3200,8 @@ class Workflow:
         )
         if cont is not None:
             return None if isinstance(cont, NextTurn) else cont
-        self._final_checkpoint(iteration)
-        self._emit(
-            "session.end",
-            reason="went_quiet",
-            iterations=iteration,
-            all_passed=False,
-        )
-        return SessionResult(
-            completed=False,
-            verified=self._verification(state),
-            reason="went_quiet",
-            summary="(agent emitted no text and no tool_use)",
-            iterations=iteration,
-            tool_calls=state.tool_calls,
+        return self._finish(
+            state, End("went_quiet", "(agent emitted no text and no tool_use)"), iteration=iteration
         )
 
     # ---- snapshots and carryover -----------------------------------------------
@@ -3475,15 +3379,51 @@ class Workflow:
             return "passed"
         return "failed" if state.verify.last_ok is False else "unverified"
 
-    def _emit_run_end_passed(self, *, reason: str, iterations: int, scoped: bool = False) -> None:
-        """Emit a successful `session.end`, first auto-passing any still-pending
-        root task so the DAG (and every viewer + resume) agrees the run
-        completed -- otherwise a finish_session-only ask/run reads `tasks 0/1`.
-        `scoped` as in `_emit_run_end_grounded`: a green from the scoped gate
-        reads "passed · scoped gate"."""
-        self._pass_pending_root_tasks()
-        self._emit(
-            "session.end", reason=reason, iterations=iterations, all_passed=True, scoped=scoped
+    def _finish(self, state: LoopState, end: End, *, iteration: int) -> SessionResult:
+        """Record *end* (its checkpoint, the pending roots it passes, its
+        `session.end`) and return the run's result.
+
+        A clean end grounds `all_passed` on the FINAL tree: True only when it
+        is OBSERVED verify-green, False when it is red or stale, None when
+        nothing gated it, so "passed" never means "ended over a red or stale
+        verify", and an ungated end reads "finished", never "failed";
+        `_verification` gives the same state its not_applicable verdict. The
+        roots pass either way: the DAG tracks work items and the run-level
+        word carries the verify truth, so a red-verify finish would otherwise
+        read `tasks 0/1` forever. `scoped` says the gate ran scoped to the
+        tests nearest the diff, so a scoped green reads "passed · scoped
+        gate" on every surface."""
+        if end.checkpoint:
+            self._final_checkpoint(iteration)
+        roots = end.roots if end.roots is not None else end.verdict != "failed"
+        if roots:
+            self._pass_pending_root_tasks()
+        if end.event and end.verdict == "failed":
+            self._emit(
+                "session.end",
+                reason=end.reason,
+                iterations=iteration,
+                all_passed=False,
+                **end.fields,
+            )
+        elif end.event:
+            grounded = end.verdict == "grounded"
+            self._emit(
+                "session.end",
+                reason=end.reason,
+                iterations=iteration,
+                all_passed=self._tree_is_verify_green(state) if grounded else True,
+                scoped=state.verify.scoped if grounded else end.scoped,
+            )
+        return SessionResult(
+            completed=end.completed,
+            verified=self._verification(state),
+            reason=end.reason,
+            summary=end.summary,
+            iterations=iteration,
+            tool_calls=state.tool_calls,
+            finish_payload=end.finish_payload,
+            stale_gate=end.stale_gate,
         )
 
     def _tree_is_verify_green(self, state: LoopState) -> bool | None:
@@ -3515,33 +3455,6 @@ class Workflow:
             if state.verify.baseline_ok is False and not state.verify.ever_passed:
                 return "gate_red_at_base"
         return turn.finish_kind
-
-    def _emit_run_end_grounded(self, *, reason: str, iteration: int, state: LoopState) -> None:
-        """Emit a clean end honestly: `all_passed` carries the verify
-        tri-state. True only when the FINAL tree is OBSERVED verify-green,
-        False when it is not (red or stale), None when nothing gated it (no
-        verify command) -- so 'passed' can never mean 'ended over a red or
-        stale verify' or 'nothing gated it', and an ungated end reads
-        "finished", never "failed". finish_session, metric_plateau, and a
-        run/plan silent finish ground the same way; `_verification` gives the
-        same state its not_applicable verdict.
-
-        The roots pass either way, like the settled path: the DAG tracks work
-        items and the run-level word carries the verify truth, so grounding it
-        there too would leave a red-verify finish reading `tasks 0/1` forever.
-
-        `scoped` carries whether the gate ran scoped to the tests nearest the
-        diff (the full command overran verify_timeout_s), so a scoped green
-        reads "passed · scoped gate" on every surface, never a bare pass. Open
-        subtasks are the receipt's fact (`_with_open_tasks`), never this one."""
-        self._pass_pending_root_tasks()
-        self._emit(
-            "session.end",
-            reason=reason,
-            iterations=iteration,
-            all_passed=self._tree_is_verify_green(state),
-            scoped=state.verify.scoped,
-        )
 
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.
@@ -3847,12 +3760,7 @@ class Workflow:
         return self.budget.fraction_remaining()
 
     def _unexecutable_abort(
-        self,
-        exc: OperatorCommandUnexecutable,
-        *,
-        iteration: int,
-        tool_calls: int,
-        state: LoopState,
+        self, exc: OperatorCommandUnexecutable, *, iteration: int, state: LoopState
     ) -> SessionResult:
         """Graceful abort when an operator verify/metric command cannot run in
         the jail (e.g. its binary is not on the jail PATH). The model cannot fix
@@ -3864,20 +3772,8 @@ class Workflow:
         # The worst checkpoint case of all the harness ends: verify can never
         # go green here, so the per-turn auto-commit never fired and ALL of
         # the run's edits may exist only in the worktree.
-        self._final_checkpoint(iteration)
-        self._emit(
-            "session.end",
-            reason="verify_command_unexecutable",
-            iterations=iteration,
-            all_passed=False,
-        )
-        return SessionResult(
-            completed=False,
-            verified=self._verification(state),
-            reason="verify_command_unexecutable",
-            summary=str(exc),
-            iterations=iteration,
-            tool_calls=tool_calls,
+        return self._finish(
+            state, End("verify_command_unexecutable", str(exc)), iteration=iteration
         )
 
     def _worker_max_tokens(self, state: LoopState) -> int:
@@ -4498,16 +4394,14 @@ class Workflow:
         if self.stop_requested():
             self.stop_clear()
             self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
-            self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="steer_abort",
-                summary=(
-                    f"operator stopped the run after step {iteration}{self._dirty_tree_note()}"
+            return self._finish(
+                state,
+                End(
+                    "steer_abort",
+                    f"operator stopped the run after step {iteration}{self._dirty_tree_note()}",
+                    checkpoint=False,
                 ),
-                iterations=iteration,
-                tool_calls=state.tool_calls,
+                iteration=iteration,
             )
         # The operator can press Ctrl-C once to drop a steering instruction
         # into the conversation; a second Ctrl-C within 2s raises
@@ -4552,16 +4446,14 @@ class Workflow:
         while True:
             if self.stop_requested():
                 self.stop_clear()
-                self._emit(
-                    "session.end", reason="steer_abort", iterations=iteration, all_passed=False
-                )
-                return SessionResult(
-                    completed=False,
-                    verified=self._verification(state),
-                    reason="steer_abort",
-                    summary=f"operator stopped the parked run{self._dirty_tree_note()}",
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
+                return self._finish(
+                    state,
+                    End(
+                        "steer_abort",
+                        f"operator stopped the parked run{self._dirty_tree_note()}",
+                        checkpoint=False,
+                    ),
+                    iteration=iteration,
                 )
             if self.should_abort():
                 return self._steer_outcome("abort", iteration, state)
@@ -4583,17 +4475,15 @@ class Workflow:
             # "exit" is /exit at the pause menu: the same stop, but the end
             # reason tells the CLI to skip the follow-up prompt and leave.
             reason: SessionEndReason = "steer_exit" if steer_result == "exit" else "steer_abort"
-            self._emit("session.end", reason=reason, iterations=iteration, all_passed=False)
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason=reason,
-                summary=(
+            return self._finish(
+                state,
+                End(
+                    reason,
                     f"operator {'exited' if steer_result == 'exit' else 'aborted'}"
-                    f" at iter {iteration} via steering prompt{self._dirty_tree_note()}"
+                    f" at iter {iteration} via steering prompt{self._dirty_tree_note()}",
+                    checkpoint=False,
                 ),
-                iterations=iteration,
-                tool_calls=state.tool_calls,
+                iteration=iteration,
             )
         if steer_result == "undo":
             forked = self.undo_forker() if self.undo_forker is not None else None
@@ -4605,26 +4495,28 @@ class Workflow:
             self._emit("session.undone", new_session_id=new_id, undone_text=undone_text)
             # An undo is the operator's own end, like an abort: without a
             # session.end the run reads "stale" (a dead worker and no end).
-            self._emit("session.end", reason="undone", iterations=iteration, all_passed=False)
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="undone",
-                summary=f"operator undid the last message at iter {iteration}; forked to {new_id}",
-                iterations=iteration,
-                tool_calls=state.tool_calls,
+            return self._finish(
+                state,
+                End(
+                    "undone",
+                    f"operator undid the last message at iter {iteration}; forked to {new_id}",
+                    checkpoint=False,
+                ),
+                iteration=iteration,
             )
         if steer_result == "detach":
             # Not an end: the caller respawns a detached `resume` that appends to this
             # same log, so a persistent viewer follows straight through (no session.end).
             # The per-iteration snapshot is the resume point.
-            return SessionResult(
-                completed=False,
-                verified=self._verification(state),
-                reason="detached",
-                summary=f"operator detached at iter {iteration}; resuming in the background",
-                iterations=iteration,
-                tool_calls=state.tool_calls,
+            return self._finish(
+                state,
+                End(
+                    "detached",
+                    f"operator detached at iter {iteration}; resuming in the background",
+                    checkpoint=False,
+                    event=False,
+                ),
+                iteration=iteration,
             )
         return None
 

@@ -22,6 +22,7 @@ from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
+from agent6.workflows._loop_state import End
 from agent6.workflows._provider_call import (
     ProviderCaller,
     is_empty_tool_call_response,
@@ -4981,7 +4982,8 @@ def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
 def test_run_result_docstring_enumerates_every_loop_reason() -> None:
     # SessionResult.reason is a free-form str whose docstring is the enumeration
     # operators grep against; it silently drifted to omit five reasons. Pin it
-    # to the literal `reason=` values loop.py actually constructs.
+    # to the literal reasons loop.py actually constructs: an `End`'s first
+    # argument or `reason=`, and the `reason=` of the direct results.
     import ast
     import inspect
 
@@ -4992,12 +4994,12 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
     for node in ast.walk(ast.parse(inspect.getsource(loopmod))):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
             continue
-        if node.func.id != "SessionResult":
+        if node.func.id not in ("SessionResult", "End"):
             continue
-        for kw in node.keywords:
-            if kw.arg == "reason" and isinstance(kw.value, ast.Constant):
-                assert isinstance(kw.value.value, str)
-                reasons.add(kw.value.value)
+        literal = [*node.args[:1], *(kw.value for kw in node.keywords if kw.arg == "reason")]
+        for value in literal:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                reasons.add(value.value)
     # `reason=finish_kind` is the one non-literal construction; its Literal type
     # covers exactly these two.
     reasons |= {"finish_session", "finish_planning"}
@@ -6718,7 +6720,11 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
     events: list[dict[str, Any]] = []
     wf._emit = lambda event_type, **fields: events.append({"type": event_type, **fields})  # pyright: ignore[reportPrivateUsage]
 
-    wf._emit_run_end_grounded(reason="finish_session", iteration=3, state=state)  # pyright: ignore[reportPrivateUsage]
+    wf._finish(  # pyright: ignore[reportPrivateUsage]
+        state,
+        End("finish_session", "", completed=True, verdict="grounded", checkpoint=False),
+        iteration=3,
+    )
 
     (end,) = [e for e in events if e["type"] == "session.end"]
     assert end["all_passed"] is False  # the verify truth is unchanged...
