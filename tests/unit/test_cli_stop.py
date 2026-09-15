@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.app import stop as stop_mod
 from agent6.paths import state_dir
 from agent6.sessions.ipc import STEER_ANSWER_FILE, STOP_REQUEST_FILE, write_worker_pid
 from agent6.ui.cli import main
@@ -95,6 +96,138 @@ def test_all_stops_every_live_session(
             proc.wait(timeout=5)
     finally:
         for proc in workers:
+            proc.kill()
+
+
+def test_all_with_nothing_live_is_a_successful_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _run(tmp_path, "done-run-AAAAAA", finished=True)
+    assert main(["stop", "--all"]) == 0
+    captured = capsys.readouterr()
+    assert "no live session to stop" in captured.err and not captured.out
+
+
+def test_a_fanout_stops_only_its_live_lanes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    fan = _run(tmp_path, "fan-run-AAAAAA")
+    live = _run(tmp_path, "fan-run-AAAAAA-l1")
+    ended = _run(tmp_path, "fan-run-AAAAAA-l2", finished=True)
+    (fan / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": fan.name,
+                "mode": "run",
+                "user_task": "t",
+                "fanout": {"lanes": 2, "spec": "2"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    for lane, number in ((live, 1), (ended, 2)):
+        (lane / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "version": 3,
+                    "session_id": lane.name,
+                    "mode": "run",
+                    "user_task": "t",
+                    "parallel": {"group": fan.name, "lane": number, "coordinator": fan.name},
+                }
+            ),
+            encoding="utf-8",
+        )
+    workers = [
+        subprocess.Popen([sys.executable, "-c", _ANSWERING_WORKER, str(d)], start_new_session=True)
+        for d in (fan, live)
+    ]
+    for d, proc in zip((fan, live), workers, strict=True):
+        write_worker_pid(d, proc.pid)
+    try:
+        assert main(["stop", "fan-run-AAAAAA"]) == 0
+        out = capsys.readouterr().out
+        assert "fan-run-AAAAAA stopped with its 1 live lane; what they landed" in out
+        assert "fan-run-AAAAAA-l2" not in out
+        assert "resume with:" not in out
+        for proc in workers:
+            proc.wait(timeout=5.0)
+    finally:
+        for proc in workers:
+            proc.kill()
+
+
+_DRAINING_COORDINATOR = """
+import json, sys, time
+from pathlib import Path
+from agent6.viewmodel import session_is_live
+d, lane = Path(sys.argv[1]), Path(sys.argv[2])
+while session_is_live(lane):
+    time.sleep(0.05)
+end = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
+with (d / "logs.jsonl").open("a") as fh:
+    fh.write(json.dumps(end) + "\\n")
+"""
+
+
+def _fanout(tmp_path: Path, fan: str, lane: str) -> tuple[Path, Path]:
+    fan_dir, lane_dir = _run(tmp_path, fan), _run(tmp_path, lane)
+    (fan_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": fan,
+                "mode": "run",
+                "user_task": "t",
+                "fanout": {"lanes": 1, "spec": "1"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (lane_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": lane,
+                "mode": "run",
+                "user_task": "t",
+                "parallel": {"group": fan, "lane": 1, "coordinator": fan},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return fan_dir, lane_dir
+
+
+def test_a_fanouts_lanes_end_before_its_coordinator_drains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A coordinator ends only after its lanes: it drains them, imports what
+    they landed and ranks it. Stopped first, with a run's wait, it was killed
+    mid-drain and nothing was imported."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(stop_mod, "FANOUT_WAIT_S", 3.0)
+    fan, lane = _fanout(tmp_path, "drain-run-AAAAAA", "drain-run-AAAAAA-l1")
+    coordinator = subprocess.Popen(
+        [sys.executable, "-c", _DRAINING_COORDINATOR, str(fan), str(lane)],
+        start_new_session=True,
+    )
+    worker = subprocess.Popen(
+        [sys.executable, "-c", _ANSWERING_WORKER, str(lane)], start_new_session=True
+    )
+    write_worker_pid(fan, coordinator.pid)
+    write_worker_pid(lane, worker.pid)
+    try:
+        assert main(["stop", "drain-run-AAAAAA"]) == 0
+        out = capsys.readouterr().out
+        assert "drain-run-AAAAAA stopped with its 1 live lane" in out
+        assert coordinator.wait(timeout=5.0) == 0, "the coordinator was killed, not drained"
+        assert worker.wait(timeout=5.0) == 0
+    finally:
+        for proc in (coordinator, worker):
             proc.kill()
 
 
