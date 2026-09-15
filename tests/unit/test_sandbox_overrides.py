@@ -82,6 +82,6 @@ def test_overrides_render_as_the_flags_that_set_them() -> None:
     budget = BudgetOverrides(max_usd=0.25, max_tokens_fallback=1000)
     assert sandbox.argv() == ["--dangerously-disable-sandbox", "--auto-approve"]
     assert budget.argv() == ["--max-usd", "0.25", "--max-tokens-fallback", "1000"]
-    assert override_flags(budget, sandbox) == [*budget.argv(), *sandbox.argv()]
-    assert override_flags(None, None) == []
+    assert override_flags(budget, sandbox, None) == [*budget.argv(), *sandbox.argv()]
+    assert override_flags(None, None, None) == []
     assert _SandboxOverrides().argv() == [] and BudgetOverrides().argv() == []

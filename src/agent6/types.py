@@ -260,6 +260,20 @@ class JailPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelRoute:
+    """A provider and a model on it: the pair every per-run model choice (a
+    `--model` flag, a hub's picker, a recorded run) resolves to."""
+
+    provider: str
+    model: str
+
+    @property
+    def spec(self) -> str:
+        """The pair as `provider/model`, the one spelling every surface accepts."""
+        return f"{self.provider}/{self.model}"
+
+
+@dataclass(frozen=True, slots=True)
 class RepoSummary:
     """Compact view of a repository handed to the planner."""
 

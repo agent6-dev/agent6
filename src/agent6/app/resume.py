@@ -20,8 +20,10 @@ from agent6.app._session import (
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
+    flag_route,
     load_session_config,
     override_flags,
+    route_text,
 )
 from agent6.app.frontend import (
     SessionFrontend,
@@ -92,7 +94,7 @@ from agent6.sessions.lock import (
 )
 from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
 from agent6.tools.operator_prompts import OperatorPrompts
-from agent6.types import SESSION_KINDS, session_bucket, session_kind
+from agent6.types import SESSION_KINDS, ModelRoute, session_bucket, session_kind
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
 from agent6.workflows._context import agents_md_notices
 from agent6.workflows._session_state import (
@@ -312,9 +314,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     # continue it.
     try:
         manifest = read_manifest(layout.session_dir)
-        # The run's recorded `--model` replays unless this resume sets its own,
-        # the rule a flag-selected preset follows.
-        route = model or manifest.workflow.model
+        # The route a `--model` set on the run replays unless this resume sets
+        # its own, the rule a flag-selected preset follows.
+        recorded = manifest.models.driver
+        route: str | ModelRoute | None = model or (
+            ModelRoute(recorded.provider, recorded.model)
+            if manifest.models.driver_from_flag and recorded is not None
+            else None
+        )
         mode = manifest.session_mode()
     except ManifestError as exc:
         reporter.error(f"cannot resume {session_id}: {exc}")
@@ -547,15 +554,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # scope, and the scopes in play include one per configured MCP server.
         settle_away_mode(layout.session_dir, cfg)
 
-        if not route_preflight(cfg, role, reporter=reporter, model_flag=route):
+        if not route_preflight(cfg, role, reporter=reporter, model_flag=route_text(route)):
             return 2
-        # Past the route refusal: this leg and every later one run under the
-        # operator's new choices; the stamps are what listings show and a
-        # later resume replays. A refused leg leaves them untouched.
-        if preset:
-            stamp_preset(layout.session_dir, preset)
-        if model:
-            stamp_model(layout.session_dir, model)
 
         try:
             isolation = select_isolation(
@@ -708,6 +708,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             except (GitError, OSError) as exc:
                 reporter.error(f"cannot tell the run's files from the operator's: {exc}")
                 return 2
+        # Every preflight passed: this leg and every later one run under the
+        # operator's new choices. A refused leg leaves the recorded choices untouched.
+        if preset:
+            stamp_preset(layout.session_dir, preset)
+        if (flagged := flag_route(cfg, mode, model)) is not None:
+            stamp_model(layout.session_dir, flagged)
         if steer.strip():
             # A steer that IS the work names the run: the row and the next
             # squash of a run the agent finished (the only resume a finished
@@ -812,6 +818,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg=cfg,
                 layout=layout,
                 cwd=repo,
-                flags=override_flags(budget_overrides, sandbox_overrides, model),
+                flags=override_flags(
+                    budget_overrides, sandbox_overrides, flag_route(cfg, mode, route)
+                ),
                 reporter=reporter,
             )

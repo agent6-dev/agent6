@@ -53,6 +53,9 @@ class ModelsBrief(BaseModel):
 
     driver: ModelBrief | None = None
     reviewer: ModelBrief | None = None
+    # Whether `driver` came from a `--model` (the run's, or a resume's): a
+    # resume that sets none replays it, as a flag-selected preset is replayed.
+    driver_from_flag: bool = False
 
 
 class PolicyStamp(BaseModel):
@@ -82,10 +85,6 @@ class WorkflowStamp(BaseModel):
     review_trigger: str = ""
     revise_prompt: str = ""
     preset: str = ""
-    # The `--model` the run was started or last resumed with ("" = the
-    # config's route): a resume that sets none replays it, as a flag-selected
-    # preset is replayed.
-    model: str = ""
     # The verify gate this run is pinned to, and where it came from:
     # "configured" (a config file, which the model cannot write), "inferred"
     # (repo signals / AGENTS.md, which it can), "adopted" (gained mid-run by a

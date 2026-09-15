@@ -89,7 +89,7 @@ from agent6.sessions.manifest import (
     model_git_refusal,
     read_manifest,
 )
-from agent6.types import ResumableMode, session_bucket, session_kind
+from agent6.types import ModelRoute, ResumableMode, session_bucket, session_kind
 from agent6.viewmodel import newest_session_dir
 from agent6.workflows._session_state import load_session_snapshot
 
@@ -246,7 +246,7 @@ class _ForkPlan:
     mode: ResumableMode
     preset: str
     preset_from_flag: bool
-    model: str  # the source's recorded `--model`, replayed like its preset
+    driver_from_flag: bool  # the source's driver came from --model: replayed like its preset
     cfg: Config
     # The source's pinned verify command and its origin. A fork inherits it
     # rather than deriving one from the current config: an inferred or adopted
@@ -322,7 +322,8 @@ def _plan_fork(
         # the SAME preset-resolved config or `sessions show` reports a model the forked
         # run never uses.
         cfg = load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config
-        route = sm.workflow.model
+        recorded = sm.models.driver if sm.models.driver_from_flag else None
+        route = ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
         cfg = session_config(
             cfg.with_model_route(session_kind(src_mode).role, route) if route else cfg,
             src_mode,
@@ -372,7 +373,7 @@ def _plan_fork(
         # manifest's possibly-stale name.
         preset=sm.workflow.replay_preset or cfg.preset,
         preset_from_flag=sm.workflow.preset_from_flag,
-        model=sm.workflow.model,
+        driver_from_flag=sm.models.driver_from_flag,
         cfg=cfg,
         gate=(sm.workflow.verify_command, sm.workflow.verify_origin),
     )
@@ -510,7 +511,7 @@ def _materialize_fork(
         mode=plan.mode,
         effective_preset=plan.preset,
         preset_from_flag=plan.preset_from_flag,
-        model_flag=plan.model,
+        driver_from_flag=plan.driver_from_flag,
         parent_session_id=src.session_id,
         forked_from_turn=plan.forked_from_turn,
         forked_from_sha=plan.forked_from_sha,

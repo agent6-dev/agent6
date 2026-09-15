@@ -39,7 +39,7 @@ from agent6.secrets import SecretsError, load_oauth_tokens, load_secrets, resolv
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
 from agent6.tools.policy import jail_policy
-from agent6.types import IsolationLevel, JailPolicy, NetworkMode, session_kind
+from agent6.types import IsolationLevel, JailPolicy, ModelRoute, NetworkMode, session_kind
 
 
 def detect_env() -> Environment:
@@ -135,15 +135,31 @@ class BudgetOverrides:
 
 
 def override_flags(
-    budget: BudgetOverrides | None, sandbox: SandboxOverrides | None, model: str = ""
+    budget: BudgetOverrides | None, sandbox: SandboxOverrides | None, route: ModelRoute | None
 ) -> list[str]:
     """The CLI flags a continuation this invocation spawns (a detached resume)
-    carries so it runs under the same overrides."""
+    carries so it runs under the same overrides; *route* is the pair a
+    `--model` resolved to, spelled `provider/model`."""
     return [
         *(budget.argv() if budget else []),
         *(sandbox.argv() if sandbox else []),
-        *(["--model", model] if model else []),
+        *(["--model", route.spec] if route else []),
     ]
+
+
+def route_text(model: str | ModelRoute | None) -> str:
+    """A `--model` as its operator typed it, or a recorded pair as
+    `provider/model`, for a refusal to quote; "" for no flag."""
+    return model.spec if isinstance(model, ModelRoute) else (model or "")
+
+
+def flag_route(cfg: Config, mode: str, model: str | ModelRoute | None) -> ModelRoute | None:
+    """The pair *cfg* runs the mode's role on when a `--model` set it
+    (`load_session_config` applied it), else None."""
+    if not model:
+        return None
+    rm = cfg.models.resolve(session_kind(mode).role)
+    return ModelRoute(rm.provider, rm.model) if rm is not None else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,21 +253,25 @@ def load_session_config(
     preset: str = "",
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
-    model: str = "",
+    model: str | ModelRoute | None = None,
 ) -> EffectiveConfig:
     """The config a session of *mode* starts or resumes under, built the same
     way at every entry point (`agent6 run`, `resume`, an editor's ACP turn):
     the effective layers for *preset*, the git policy set from them, the
-    budget flags, the `--model` route for the mode's role, `session_config`
-    (the interactive clamp with the sandbox flags landing last), checked
-    runnable for the mode's role. Raises ConfigError like `load_effective`."""
+    budget flags, the `--model` route for the mode's role (a typed
+    `[provider/]model` parsed here, once, or a recorded pair applied as is),
+    `session_config` (the interactive clamp with the sandbox flags landing
+    last), checked runnable for the mode's role. Raises ConfigError like
+    `load_effective`."""
     effective = load_effective(cwd, config_path, preset=preset)
     cfg = effective.config
     apply_git_ops_policy(cfg)
     if budget_overrides is not None:
         cfg = budget_overrides.apply(cfg)
     if model:
-        cfg = cfg.with_model_route(session_kind(mode).role, model)
+        role = session_kind(mode).role
+        route = cfg.model_route(role, model) if isinstance(model, str) else model
+        cfg = cfg.with_model_route(role, route)
     cfg = session_config(cfg, mode, sandbox_overrides)
     cfg.require_runnable(session_kind(mode).role)
     return replace(effective, config=cfg)

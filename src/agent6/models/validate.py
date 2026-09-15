@@ -272,7 +272,7 @@ def directive_model_refusal(
     try:
         cfg = load_effective(cwd, config_path, preset=preset).config
         if model:
-            cfg = cfg.with_model_route("worker", model)
+            cfg = cfg.with_model_route("worker", cfg.model_route("worker", model))
     except ConfigError:
         return None  # a broken config is its own separate error; don't mask it here
     try:

@@ -32,7 +32,7 @@ from agent6.sessions.manifest import (
     read_manifest,
 )
 from agent6.task_text import operator_task_text
-from agent6.types import session_kind
+from agent6.types import ModelRoute, session_kind
 
 
 def _policy_stamp(cfg: Config, isolation: str) -> PolicyStamp:
@@ -90,7 +90,7 @@ def write_session_manifest(
     mode: str = "run",
     effective_preset: str = "",
     preset_from_flag: bool = False,
-    model_flag: str = "",
+    driver_from_flag: bool = False,
     gate: tuple[Sequence[str], str] | None = None,
     isolation: str = "",
     parent_session_id: str | None = None,
@@ -145,6 +145,7 @@ def write_session_manifest(
             # run makes `sessions show` name a model that never ran.
             driver=_model_brief(cfg.models.resolve(session_kind(mode).role)),
             reviewer=_model_brief(cfg.models.resolve("reviewer")),
+            driver_from_flag=driver_from_flag,
         ),
         workflow=WorkflowStamp(
             review_trigger=cfg.review.trigger,
@@ -154,7 +155,6 @@ def write_session_manifest(
             # replayed as an override on resume (see WorkflowStamp.replay_preset).
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
-            model=model_flag,
             verify_command=tuple(verify_command),
             verify_origin=verify_origin,
         ),
@@ -237,6 +237,7 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
                 "models": ModelsBrief(
                     driver=_model_brief(cfg.models.resolve(session_kind(mode).role)),
                     reviewer=_model_brief(cfg.models.resolve("reviewer")),
+                    driver_from_flag=m.models.driver_from_flag,
                 ),
                 "policy": _policy_stamp(cfg, isolation),
             }
@@ -253,12 +254,18 @@ def stamp_preset(session_dir: Path, name: str) -> None:
     write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"workflow": workflow}))
 
 
-def stamp_model(session_dir: Path, spec: str) -> None:
-    """Record the `--model` a resumed leg was started under: from here the run
-    runs on it, and a later resume without the flag replays it."""
+def stamp_model(session_dir: Path, route: ModelRoute) -> None:
+    """Record the route a resumed leg's `--model` set as the run's driver:
+    from here the run runs on it, and a later resume without the flag
+    replays it."""
     m = read_manifest(session_dir)
-    workflow = m.workflow.model_copy(update={"model": spec})
-    write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"workflow": workflow}))
+    models = m.models.model_copy(
+        update={
+            "driver": ModelBrief(provider=route.provider, model=route.model),
+            "driver_from_flag": True,
+        }
+    )
+    write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"models": models}))
 
 
 def stamp_fork_task(session_dir: Path, steer: str, *, source_dir: Path) -> None:

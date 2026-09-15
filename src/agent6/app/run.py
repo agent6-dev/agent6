@@ -22,7 +22,9 @@ from agent6.app._session import (
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
+    flag_route,
     override_flags,
+    route_text,
     session_config,
 )
 from agent6.app.finalize import (
@@ -94,7 +96,7 @@ from agent6.sessions.lock import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.operator_prompts import OperatorPrompts
-from agent6.types import ResumableMode, session_bucket, session_kind
+from agent6.types import ModelRoute, ResumableMode, session_bucket, session_kind
 from agent6.viewmodel.listing import finished_needs_new_work
 from agent6.workflows._context import agents_md_notices
 
@@ -127,7 +129,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     initial_steer: str = "",
     pins: Sequence[str] = (),
     preset_stamp: tuple[str, bool] | None = None,
-    model: str = "",
+    model: str | ModelRoute | None = None,
     # Which config leaves the operator actually WROTE, as dotted paths. A
     # default that this host cannot honour degrades with a warning; a value
     # they wrote down refuses, because they asked for something specific.
@@ -209,7 +211,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.note(parking)
     # Before isolation: its budget preflight prices the model from the listing
     # the key check refreshes.
-    if not route_preflight(cfg, role, reporter=reporter, model_flag=model):
+    if not route_preflight(cfg, role, reporter=reporter, model_flag=route_text(model)):
         return 2
     try:
         isolation = select_isolation(
@@ -374,7 +376,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             mode=mode,
             effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
             preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
-            model_flag=model,
+            driver_from_flag=bool(model),
             isolation=isolation,
         )
         if parked is not None:
@@ -587,6 +589,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg=cfg,
                 layout=layout,
                 cwd=cwd,
-                flags=override_flags(budget_overrides, sandbox_overrides, model),
+                flags=override_flags(
+                    budget_overrides, sandbox_overrides, flag_route(cfg, mode, model)
+                ),
                 reporter=reporter,
             )

@@ -55,7 +55,7 @@ from agent6.config._workflow import (
     WorkflowConfig,
 )
 from agent6.errors import OperatorError
-from agent6.types import RoleName
+from agent6.types import ModelRoute, RoleName
 
 
 class ConfigError(OperatorError):
@@ -323,12 +323,12 @@ class Config(BaseModel):
             budget["max_percent"] = max_percent
         return Config.model_validate(data)
 
-    def with_model_route(self, role: RoleName, spec: str) -> Config:
-        """Return a copy whose *role* runs *spec* (the `--model` flag): a
+    def model_route(self, role: RoleName, spec: str) -> ModelRoute:
+        """The pair a `[provider/]model` value names for *role*: a
         `provider/model` whose first segment names a configured provider, or
         a model id on the role's current provider (so an OpenRouter id with
-        its own slash stays one id). The role keeps its effort and
-        temperature. In memory only, like `with_budget_overrides`."""
+        its own slash stays one id). Parsed once, here; everything after
+        carries the pair. Raises ConfigError for a value that names nothing."""
         spec = spec.strip()
         provider, slash, model = spec.partition("/")
         known = ", ".join(sorted(self.providers)) or "(none)"
@@ -347,9 +347,14 @@ class Config(BaseModel):
             provider, model = current.provider, spec
         if not model:
             raise ConfigError(f"--model {spec!r}: no model id.")
+        return ModelRoute(provider, model)
+
+    def with_model_route(self, role: RoleName, route: ModelRoute) -> Config:
+        """Return a copy whose *role* runs *route*; the role keeps its effort
+        and temperature. In memory only, like `with_budget_overrides`."""
         base = self.models.resolve(role)
         entry = base.model_dump(mode="python") if base is not None else {}
-        entry["provider"], entry["model"] = provider, model
+        entry["provider"], entry["model"] = route.provider, route.model
         data = self.model_dump(mode="python")
         data.setdefault("models", {})[role] = entry
         return Config.model_validate(data)

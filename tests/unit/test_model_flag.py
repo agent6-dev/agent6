@@ -220,8 +220,8 @@ def test_a_fresh_run_records_its_model_flag(repo: Path) -> None:
         base_branch="",
         run_branch=None,
         cfg=cfg,
-        model_flag="claude-y",
+        driver_from_flag=True,
     )
     stamp = read_manifest(layout.session_dir)
-    assert stamp.workflow.model == "claude-y"
+    assert stamp.models.driver_from_flag is True
     assert stamp.models.driver is not None and stamp.models.driver.model == "claude-y"

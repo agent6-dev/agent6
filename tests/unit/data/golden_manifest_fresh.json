@@ -17,13 +17,13 @@
     "reviewer": {
       "provider": "anthropic",
       "model": "claude-y"
-    }
+    },
+    "driver_from_flag": false
   },
   "workflow": {
     "review_trigger": "off",
     "revise_prompt": "on",
     "preset": "strict",
-    "model": "",
     "verify_command": [],
     "verify_origin": "",
     "preset_from_flag": false

@@ -301,21 +301,19 @@ def test_resume_preset_flag_is_recorded_for_later_legs(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     _plan_session_dir(repo, "plan-PRESET1")
     _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
     session_dir = state_dir(repo) / "sessions" / "runs" / "plan-PRESET1"
 
-    def _stop(*_a: object, **_k: object) -> object:
-        raise _Stop()
-
-    monkeypatch.setattr(session_mod, "detect_env", _stop)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
-    with pytest.raises(_Stop):
-        _cmd_resume(None, "plan-PRESET1", force=False, preset="quick")
+    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
+    monkeypatch.setattr(resume_mod, "verify_git_identity", _nothing)
+    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    assert _cmd_resume(None, "plan-PRESET1", force=False, preset="quick") == 0
     stamp = read_manifest(session_dir).workflow
     assert (stamp.preset, stamp.preset_from_flag, stamp.replay_preset) == ("quick", True, "quick")
-    with pytest.raises(_Stop):
-        _cmd_resume(None, "plan-PRESET1", force=False)
+    assert _cmd_resume(None, "plan-PRESET1", force=False) == 0
     assert read_manifest(session_dir).workflow.replay_preset == "quick"
 
 
@@ -375,6 +373,42 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     monkeypatch.setattr(resume_mod, "run_leg", _leg)
     assert _cmd_resume(None, "plan-PIDORDER", force=False) == 0
     assert order == ["isolation", "pid", "leg"]
+
+
+def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pick becomes the run's recorded default only when its leg starts; a
+    later preflight refusal must leave the last running leg's choices intact."""
+    from agent6.app.preflight import SessionRefused
+    from agent6.sessions.manifest import read_manifest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _plan_session_dir(repo, "plan-PICKREFUSE")
+    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
+
+    def _refuse(*_a: object, **_k: object) -> str:
+        raise SessionRefused(2)
+
+    monkeypatch.setattr(resume_mod, "select_isolation", _refuse)
+
+    assert (
+        _cmd_resume(
+            None,
+            "plan-PICKREFUSE",
+            force=False,
+            preset="quick",
+            model="claude-y",
+        )
+        == 2
+    )
+    manifest = read_manifest(state_dir(repo) / "sessions" / "runs" / "plan-PICKREFUSE")
+    assert manifest.workflow.preset == ""
+    assert manifest.models.driver_from_flag is False
 
 
 def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
@@ -1140,12 +1174,15 @@ def test_resume_model_flag_is_recorded_and_replayed(
 ) -> None:
     """`resume --model X` runs the leg on X and stamps it on the run, so a
     later plain resume routes to X again; a refused route stamps nothing."""
+    from agent6.app.manifest import stamp_leg
+    from agent6.config import load_config
     from agent6.sessions.manifest import read_manifest
 
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     _plan_session_dir(repo, "plan-MODEL1")
     _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
     session_dir = state_dir(repo) / "sessions" / "runs" / "plan-MODEL1"
@@ -1156,20 +1193,24 @@ def test_resume_model_flag_is_recorded_and_replayed(
         routes.append((model_flag, planner.model))
         return model_flag != "claude-refused"
 
-    def _stop(*_a: object, **_k: object) -> object:
-        raise _Stop()
-
     monkeypatch.setattr(resume_mod, "route_preflight", _route)
-    monkeypatch.setattr(session_mod, "detect_env", _stop)
+    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
+    monkeypatch.setattr(resume_mod, "verify_git_identity", _nothing)
+    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
     assert _cmd_resume(None, "plan-MODEL1", force=False, model="claude-refused") == 2
-    assert read_manifest(session_dir).workflow.model == ""
-    with pytest.raises(_Stop):
-        _cmd_resume(None, "plan-MODEL1", force=False, model="claude-y")
-    assert read_manifest(session_dir).workflow.model == "claude-y"
-    with pytest.raises(_Stop):
-        _cmd_resume(None, "plan-MODEL1", force=False)
+    assert read_manifest(session_dir).models.driver_from_flag is False
+    assert _cmd_resume(None, "plan-MODEL1", force=False, model="claude-y") == 0
+    stamped = read_manifest(session_dir).models
+    assert stamped.driver_from_flag and stamped.driver is not None
+    assert (stamped.driver.provider, stamped.driver.model) == ("anthropic", "claude-y")
+    cfg = load_config(tmp_path / "cfg.toml")
+    route = cfg.model_route("planner", "claude-y")
+    stamp_leg(session_dir, cfg.with_model_route("planner", route), "plan", "none")
+    assert read_manifest(session_dir).models.driver_from_flag
+    assert _cmd_resume(None, "plan-MODEL1", force=False) == 0
+    # The replayed leg carries the recorded pair, spelled provider/model.
     assert routes == [
         ("claude-refused", "claude-refused"),
         ("claude-y", "claude-y"),
-        ("claude-y", "claude-y"),
+        ("anthropic/claude-y", "claude-y"),
     ]
