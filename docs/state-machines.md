@@ -4,7 +4,8 @@ An agent state machine is a declarative, human-editable, machine-parseable progr
 It lets an operator compose small deterministic agents that run for a long time, and agent6 is the runner.
 
 This document specifies the format and its runtime.
-The runtime lives under `src/agent6/machine/` (the engine and the format) with the lifecycles around it in `src/agent6/app/machine*`, driven by the `agent6 machine` subcommands: `list`, `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, `stop`, and `replay` ([CLI surface](#7-cli-surface)).
+The runtime lives under `src/agent6/machine/` (the engine and the format), with the lifecycles around it in `src/agent6/app/machine*`.
+The `agent6 machine` subcommands drive it: `list`, `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, `stop`, and `replay` ([CLI surface](#7-cli-surface)).
 It changes neither the security model nor the tool surface [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md) binds; [Security considerations](#9-security-considerations) records how each invariant holds.
 
 ---
@@ -13,7 +14,8 @@ It changes neither the security model nor the tool surface [AGENTS.md](https://g
 
 `run` and `review` are single-shot.
 A machine expresses the long-running shape: timed polling, branches on agent output, side-effecting steps, and terminal states.
-Where "always-on" agents hand the LLM the *control flow* (so the same inputs take different paths and crashes lose state), here the operator authors the flow as a static graph and the LLM stays confined to the work *inside* a state: the deterministic snapshot-and-replay posture `run` already has internally, lifted one layer up.
+The operator authors the flow as a static graph, and the LLM works inside one state at a time.
+The same inputs take the same path, and a crash loses no state: the snapshot-and-replay posture `run` has internally, one layer up.
 
 ---
 
@@ -23,10 +25,11 @@ Where "always-on" agents hand the LLM the *control flow* (so the same inputs tak
     - the branch/predicate grammar is non-Turing-complete: no loops inside a predicate, no arbitrary code
     - loops exist only as graph edges
 - Not a distributed scheduler
-    - one machine = one OS process (systemd / cron-friendly), restartable; no clustering in v1
+    - one supervisor process per machine (systemd / cron-friendly), each `agent` state a child process; restartable
+    - one active state at a time; compose by running independent machines
 - Not a new network surface
     - anything that talks to the outside world is a *tool*, gated by the existing audit rules
-- Not LLM-authorized
+- Not run unreviewed
     - `machine create` may draft a machine; in a repository `machine run` refuses the draft until the operator commits it
 
 ---
@@ -40,11 +43,11 @@ Where "always-on" agents hand the LLM the *control flow* (so the same inputs tak
     - TOML: diff-friendly, commentable
     - a state can *be* an agent6 run, so mini-agents are wired together rather than written in Python
 - **Everything nondeterministic is journaled as a fact**
-    - wall-clock reads, tool stdout, agent outputs: appended to an immutable event log the moment observed
+    - wall-clock reads, tool stdout, agent outputs: appended to an immutable event log once observed and reduced
     - the engine is a pure reducer over `(machine, blackboard, event) → blackboard'`
     - replay reads the journal instead of re-observing the world: a run backtests offline
 - **Fail loudly** (repo convention)
-    - one file parses to exactly one validated machine or a precise error
+    - one file parses to one validated machine or a precise error
     - a missing transition target, an unreachable state, a blackboard type mismatch, an unknown key: load-time errors
 - **No implicit defaults** (mirrors `Config`: `extra="forbid", frozen=True`)
     - every variable declares a type and an explicit initial value (`value` for `[vars.operator]`, `default` for mutable `[vars.code]`/`[vars.agent]`)
@@ -55,10 +58,10 @@ Where "always-on" agents hand the LLM the *control flow* (so the same inputs tak
 ## 4. The format
 
 A machine is a single TOML file, suffix `.asm.toml` ("agent6 state machine").
-TOML because the project already standardizes on it, `tomllib` parses it with no new dependency, and it is comfortable to hand-edit and diff.
-The parsed document is validated by a pydantic v2 model at the trust boundary (`extra="forbid", frozen=True`), exactly like `Config`.
+TOML because the project already standardizes on it and `tomllib` parses it.
+The parsed document is validated by a pydantic v2 model at the trust boundary (`extra="forbid", frozen=True`), like `Config`.
 
-> **Naming.** The suffix `.asm.toml` ("agent state machine") is a convention, not a requirement: `load_machine` accepts any path, and shell completion globs `*.asm.toml`.
+> **Naming.** `load_machine` accepts any path; shell completion globs `*.asm.toml`.
 
 ### 4.1 Top-level shape
 
@@ -68,7 +71,7 @@ version = 1                                # schema version; bumped on changes
 initial = "poll"                           # name of the entry state
 
 [budget]                  # required; max_transitions always binds
-max_usd         = 25.0    # optional cap on metered spend (see below)
+max_usd         = 25.0    # optional cap on metered spend (Spend bounds, section 9)
 max_transitions = 100000  # hard stop on total edges taken (runaway guard)
 
 # The blackboard is three subtables, named by who may write each variable.
@@ -117,19 +120,19 @@ Only `tool` states (into `[vars.code]`) and `agent` states (into `[vars.agent]`)
 - a `tool` cannot smuggle a write into an LLM-owned variable; an agent cannot overwrite a deterministic one
 
 Allowed types (all three subtables): `str`, `int`, `float`, `bool`, `list[<scalar>]`, `json`, and any **named record type** declared in `[schemas.*]` (see [Record schemas](#46-record-schemas-schemas)).
-The two structured types differ on exactly one axis, **navigability**:
+The two structured types differ on one axis, **navigability**:
 
 - `json` is an **opaque** blob: read or written wholesale only
     - passable to a tool/agent (`{{ x | json }}`) or captured whole, never dotted (`x.key` on `json` is a load-time error)
     - use it only when the machine never inspects the value's internals
 - a **record type** (e.g. `classification`) is **navigable**
     - every `.field` read in a predicate or template checks against the schema at `machine check` time
-    - a misspelled field is a load error, not a silent misroute
+    - a misspelled field is a load error
 
-Declaring types up front is what makes branch predicates statically type-checkable: scalars by their declared type, record fields by their schema, and `json` forbidden from being dotted at all.
+Declared types make branch predicates statically type-checkable: scalars by their declared type, record fields by their schema, and `json` forbidden from being dotted at all.
 
 The blackboard (all three subtables) is the *only* state that flows between states.
-The mutable halves (`[vars.code]` + `[vars.agent]`) are snapshotted to disk after every transition; `[vars.operator]` is fixed for the life of the machine.
+The whole blackboard is snapshotted to disk after every transition; `[vars.operator]` is fixed for the life of the machine.
 
 ### 4.3 State kinds
 
@@ -145,7 +148,7 @@ Every state has a `kind`.
 
 - outcome labels are a fixed enum per kind, produced deterministically by the state executor
 - a non-terminal, non-branch state declares `on = { ... }` mapping *every* label its kind can emit to a target; an omitted label is a load error
-- the edge taken is a pure function of the closed label set, never of free-form LLM text
+- the edge taken is a pure function of the closed label set
 
 #### `agent`
 
@@ -175,32 +178,42 @@ An `agent` state spins up a normal agent6 run: its own snapshot dir, transcript,
 
 - its only control-flow signal is the outcome label
 - its structured product is the `finish_session` payload, validated against `output_schema`, captured into the blackboard
-    - the state's task states the contract (the schema rendered field by field), and the loop refuses a non-conforming `finish_session` with the problems so the model retries in-run; the engine's own validation of the recorded payload stays the authority
+    - the state's task states the contract (the schema rendered field by field)
+    - the loop refuses a non-conforming `finish_session` with the problems, so the model retries in-run; the engine's own validation of the recorded payload stays the authority
 - the LLM cannot pick the next state; it populates variables a downstream `branch` reads
 
 `mode` chooses the tool surface.
 
-- `"agent"` (default): a read-only, structured-output loop; the dispatcher refuses edit, `run_command`, `run_verify_command`, `read_session` and `fetch`, so the state can only read the repo and call `finish_session`
-- `"run"`: real coding work (edit + verify + commit tools), exactly like `agent6 run`
+- `"agent"` (default): a read-only, structured-output loop: the read and navigation tools plus `finish_session`
+    - withheld: `apply_edit`, `apply_patch`, `run_command`, `run_verify_command`, `run_metric_command`, `read_session`, `fetch`, `read_background` and `stop_background`
+- `"run"`: real coding work (edit + verify + commit tools), as `agent6 run` has
 
 Where a run state's work lands:
 
 - each run state executes in a fresh clone (the `--parallel` lane mechanism, `[parallel].workdir` cache) checked out at the machine chain's tip
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
-- merge the branch when you want the work (the run's ending names it and the `git merge` line); a state's clone is removed as it lands, so nothing is left for `sessions prune` to sweep
-- the chain ref (`refs/agent6/machine-<id>/head`) outlives the instance dir: a fresh instance over a leftover chain starts from HEAD once its tip is in HEAD (dropping the ref), and refuses while it is not, naming the merge and delete remedies; a branch left without its ref is an ordinary branch, and the instance starts from HEAD
-- a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip, so an edit-then-check loop sees the committed work with no plumbing
+- merge the branch when you want the work (the run's ending names it and the `git merge` line)
+- a state's clone is removed as it lands, so nothing is left for `sessions prune` to sweep
+- the chain ref (`refs/agent6/machine-<id>/head`) outlives the instance dir
+    - a fresh instance over a leftover chain starts from HEAD once the chain's tip is in HEAD, dropping the ref
+    - while the tip is not in HEAD it refuses, naming the merge and delete remedies
+    - a branch left without its ref is an ordinary branch, and the instance starts from HEAD
+- a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip
+    - an edit-then-check loop sees the committed work with no plumbing
 - a `tool` state's tree writes are scratch, discarded with its clone; durable output goes to the blackboard or `$AGENT6_MACHINE_DATA_DIR`
 - a machine with no run states runs its tool states in your checkout, unchanged
 - states are sequential continuations of the branch (each starts from the previous state's tree); lanes are parallel alternatives cut at base
 - a `mode = "run"` state still returns only its outcome label and `finish_session` payload
 - `machine run` resolves a git commit identity up front (`[git.commit]` or the repo's git config) so the confined agent's commits succeed
 
-`run_command` in any agent state is gated by `sandbox.run_commands`:
+`run_command` in a `mode = "run"` state is gated by `sandbox.run_commands`:
 
 - under the default `ask`, an unattended machine auto-denies every call (`machine run` warns up front when a `mode = "run"` state would hit this)
-- a machine spawned from the web or TUI hub parks each approval and question for the front-end (the spawn carries the detached `wait` away-mode), so the answer never depends on when the viewer attached
-- grant per invocation with `--auto-approve` or `AGENT6_AUTO_APPROVE=1` (ask upgrades to yes; a withheld `no` stays no); `--no-commands` or `AGENT6_NO_COMMANDS=1` withholds every command tool; or set `sandbox.run_commands = "yes"` in the repo config. Agent states alone read the two env names
+- a machine spawned from the web or TUI hub parks each approval and question for the front-end (the spawn carries the detached `wait` away-mode)
+    - the answer never depends on when the viewer attached
+- grant per invocation with `--auto-approve` or `AGENT6_AUTO_APPROVE=1` (ask upgrades to yes; a withheld `no` stays no), or set `sandbox.run_commands = "yes"` in the repo config
+- `--no-commands` or `AGENT6_NO_COMMANDS=1` withholds every command tool
+- agent states alone read the two env names
 - a machine `[config]` overlay cannot grant it (sandbox policy is operator-only)
 - edits and the auto-commit need no approval; `run_verify_command` and the `verify_when` certification share the same gate: prefer `tool` states over shelling out
 
@@ -225,8 +238,9 @@ on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 A single command, argv-style (never a shell string), through the existing `run_in_jail`.
 
 - `nonzero` is any non-zero exit
-- stdout parses as JSON, bound to the capture-scope name `result` ([Names, references, and namespaces](#45-names-references-and-namespaces-normative))
-- a capture binds only on `ok`: `nonzero` and `timeout` leave the blackboard as it was, so a branch reading a captured var on those edges reads the previous iteration's value
+- stdout parses as JSON, bound to the capture-scope name `result` ([Names, references, and namespaces](#45-names-references-and-namespaces))
+- a capture binds only on `ok`: `nonzero` and `timeout` leave the blackboard as it was
+    - a branch reading a captured var on those edges reads the previous iteration's value
 - capture has two modes; a state uses at most one:
     - **Opaque whole-capture**: `capture = { stdout_json = "<var>" }` binds the entire parsed stdout to one variable
         - no `output_schema` needed; `result` is opaque and may not be dotted
@@ -238,7 +252,9 @@ A single command, argv-style (never a shell string), through the existing `run_i
 
 **Network (opt-in, host network off by default).**
 
-- a `tool`'s `network`: `"auto"` (default: its own network where the host can give one, degrading to the host's with a warning on `hardened`), `"none"` (the same, required: refuses on `hardened`, which cannot isolate a single tool), `"host"`
+- a `tool`'s `network` is `"auto"`, `"none"` or `"host"`
+    - `"auto"` (default): its own network where the host can give one, degrading to the host's with a warning on `hardened`
+    - `"none"`: its own network, required; refuses on `hardened`, which cannot isolate a single tool
 - only `network = "host"` reaches the host network
 - the engine is a host-netns supervisor (each `agent` state is its own subprocess; [Security considerations](#9-security-considerations)), so one opt-in `tool` can be networked while every other jailed command stays offline
 - a `tool` command is fixed and operator-reviewed: not the free exfiltration channel a networked `run_command` would be
@@ -258,7 +274,8 @@ A single command, argv-style (never a shell string), through the existing `run_i
 **Secrets (opt-in, none by default).**
 
 - a `tool`'s `pass_env`: environment variable names its jailed command receives from the operator's environment, e.g. `pass_env = ["X_TOKEN"]`
-- only names the operator lists in `[machine].pass_env` reach a jail (global/repo config, never the machine overlay); a state naming one not listed refuses the run at startup, naming the variable
+- only names the operator lists in `[machine].pass_env` reach a jail (global/repo config, never the machine overlay)
+- a state naming one not listed refuses the run at startup, naming the variable
 - a provider's `api_key_env` is never allowed there, as for an MCP server's `pass_env`
 - `machine check` names every variable a state declares
 
@@ -268,7 +285,8 @@ A single command, argv-style (never a shell string), through the existing `run_i
 - a bare binary in `command[0]` resolves against the jail PATH (the set `machine check` probes and `run_command` uses), never the host `PATH`; absolute paths for anything elsewhere
 - `machine check` validates the bundle: every `scripts/` entry and static command reference resolves inside it (escaping symlinks rejected)
 - `strict`: the bundle is RO-bound in every jail; a tool or agent cannot rewrite its own machine logic mid-run
-- `hardened`: Landlock carves the same protection, granting read on the workspace and write on each top-level entry outside the bundle; new top-level entries are denied, so a tool writes to `$AGENT6_MACHINE_DATA_DIR`
+- `hardened`: Landlock carves the same protection, granting read on the workspace and write on each top-level entry outside the bundle
+    - new top-level entries are denied, so a tool writes to `$AGENT6_MACHINE_DATA_DIR`
 
 Cross-iteration persistence: `$AGENT6_MACHINE_DATA_DIR`.
 
@@ -284,11 +302,11 @@ every_secs = "{{ poll_secs }}"   # at most one of: every_secs | until
 on = { tick = "scan", signal = "scan" }
 ```
 
-`wait` is what makes a machine long-running without burning CPU or tokens.
+A `wait` keeps a machine running for a long time without spending CPU or tokens.
 
 - at most one of `every_secs` or `until` (an absolute ISO-8601 instant); both is a load error
-- on entry the engine journals the absolute next-wake instant *before* sleeping: replay re-reads it and never sleeps
-- v1 blocks in-process until the instant or an external `signal` (a file/IPC poke)
+- on entry the engine persists the absolute next-wake instant (`wait.json`) before sleeping and journals it on the `WaitFact` after the wake: replay re-reads it and never sleeps
+- without `--exit-on-wait` the engine blocks in-process until the instant or an external `signal` (a file/IPC poke)
 - the wake being journaled absolutely lets the `--exit-on-wait` persisted-wake driver ([Reliability](#6-reliability-for-247-operation)) run the identical file, no format change
 
 **Wait-forever (no timer).** Declare *zero* timers to park indefinitely until an operator `signal` poke:
@@ -304,7 +322,7 @@ on = { signal = "handle" }        # no timer: a forever wait declares `signal`
 
 **Poke payloads.** `agent6 machine poke <id> [--data <json> | --message <text>]` carries an optional payload to the waking `wait`.
 
-- one signal pending at a time: a second poke replaces the first, payload included (a wake, never a queue)
+- one signal pending at a time: a second poke replaces the first, payload included
 - the payload is journaled on the `signal` `WaitFact` (replay-safe) and materialized to `$AGENT6_MACHINE_DATA_DIR/poke.json` for the next `tool`
 - no capture on `wait`: the payload flows through the existing tool -> capture -> branch pattern
 - on replay the journaled payload reproduces the identical input
@@ -360,7 +378,9 @@ reason = "done"
 - presentation only: no edge, no control-flow effect, no blackboard write
 - `machine.end` is also a notify trigger, so a terminal need not set `notify` to be surfaced
 - the message is a blackboard template, checked at `machine check`
-- a `wait` state emits once per park: the armed wake record is the machine's memory that it already entered, so a resume that re-enters mid-park does not page the operator again. Every other state kind re-emits on a resume that re-enters it
+- a `wait` state emits once per park: the armed wake record is the machine's memory that it already entered
+    - a resume that re-enters mid-park does not page the operator again
+    - every other state kind re-emits on a resume that re-enters it
 
 Two channels render it; agent6 owns no push infrastructure:
 
@@ -375,14 +395,14 @@ Strings may contain `{{ ... }}` interpolations.
 - no arbitrary expressions, no chained filters, no method calls; anything richer belongs in a `branch` predicate (itself restricted)
 - this keeps validation and replay simple, and the format from quietly becoming a scripting language
 
-There are exactly two filters, both zero-argument:
+There are two filters, both zero-argument:
 
 | filter | applies to | result |
 |--------|------------|--------|
 | `len`  | `str`, `list`, or a `json`/record container | the integer length |
 | `json` | any value | compact JSON, object keys sorted (deterministic) |
 
-- deliberately no `join` filter: a delimited string a command must re-split is fragile and injection-prone; lists reach argv by **splicing** (below)
+- no `join` filter: a delimited string a command must re-split is fragile and injection-prone; lists reach argv by **splicing** (below)
 - an interpolation renders to a string, except a lone filter-less `{{ ref }}` in `capture.set`, which assigns the referenced value with its own type (it must match the target's declared type)
 - elsewhere a bare `{{ x }}` is legal only for a scalar (`str`/`int`/`float`/`bool`); a bare `list`/`json`/record reference is a load error (apply `json`, or splice a list in argv)
 
@@ -394,10 +414,10 @@ There are exactly two filters, both zero-argument:
 - two load errors guard it: splicing a non-list, and embedding `{{ listvar }}` inside a larger string (`"--x={{ items }}"`)
 - filter and reference grammar are validated at `machine check`
 
-### 4.5 Names, references, and namespaces (normative)
+### 4.5 Names, references, and namespaces
 
-Every rule about how variables are named, written, and read, so one machine file has exactly one meaning.
-Every rule here is enforced by `agent6 machine check` and re-checked before `machine run`; each violation is a *load-time* error, never a silent runtime surprise.
+The rules for naming, writing, and reading variables.
+`agent6 machine check` enforces each one, `machine run` re-checks them, and a violation is a load-time error.
 
 **Identifier grammar.** A *variable name* and a *state name* each match `^[a-z][a-z0-9_]*$` (ASCII snake_case).
 TOML quoted/dotted keys that would smuggle other characters (`"last-seen"`, `"a.b"`) are a load error.
@@ -410,8 +430,8 @@ The owner prefix never appears in a reference.
 
 Three consequences, each a `machine check` error:
 
-- **Global uniqueness across owners.** A name may be declared in exactly one of the three subtables.
-  Declaring `positions` in both `[vars.code]` and `[vars.agent]` is rejected: *"variable `positions` declared in both `[vars.code]` and `[vars.agent]`; the three owner subtables share one read namespace"*.
+- **Global uniqueness across owners.** A name is declared in one of the three subtables only.
+  Declaring `positions` in both `[vars.code]` and `[vars.agent]` is rejected: *"variable 'positions' declared in both `[vars.code]` and `[vars.agent]`; the three owner subtables share one read namespace"*.
   A bare reference is forbidden rather than resolved by precedence.
 - **No bare top-level vars.** Every variable must live under one of the three owner subtables.
   A key written directly under `[vars]` (i.e. `vars.positions`) has no declared owner and is rejected: *"`vars.positions` has no owner subtable; put it in `[vars.operator]`, `[vars.code]`, or `[vars.agent]`"*.
@@ -423,7 +443,7 @@ Three consequences, each a `machine check` error:
 
 ```
 ref  := name ("." key)*
-name := an identifier declared in exactly one [vars.*] subtable
+name := an identifier declared in one [vars.*] subtable
 key  := an identifier (a declared field of a record type)
 ```
 
@@ -435,7 +455,7 @@ key  := an identifier (a declared field of a record type)
 **Capture scope and `result`.**
 
 - inside a state's `capture` table, the reserved `result` denotes the structured output the state just produced, visible only there
-- not a blackboard variable, not declarable, invisible outside the capturing state
+- not a declarable blackboard variable; invisible outside the capturing state
 - dottable only when typed by an `output_schema` record (mandatory for `agent` states; optional for `tool` states, which are otherwise whole-capture only)
 
 A `capture` has two forms of target:
@@ -456,8 +476,8 @@ A `capture` has two forms of target:
 A **record type** is a named, field-typed structure declared once under `[schemas.<name>]`.
 
 - used as a variable's `type` (navigability) and as an `agent` state's `output_schema` (payload validation at the trust boundary)
-- one mechanism for both: exactly one way to describe structured data
-- the schema language is tiny: inline TOML, no JSON Schema, no new dependency (`tomllib` + `pydantic`)
+- one mechanism for both
+- the schema language is inline TOML
 - each entry is `field = "<type>"` or `field = { type = "<type>", ... }`:
 
 ```toml
@@ -500,7 +520,8 @@ Two hard rules:
 - **No connections/secrets, no sandbox policy, no presets, no MCP servers, no host hooks**
     - `[config.providers.*]`, `[config.sandbox.*]`, `[config.presets.*]`, `[config.mcp.*]`, a top-level `preset`, `git.run_repo_hooks`, `git.run_repo_filters`, `machine.notify`, `machine.pass_env`, `notify.on_complete`, `prompt.system_prompt_file`: each a load-time error
     - endpoints, key-env names, and secrets live in the global config / secrets store; sandbox policy, presets, MCP servers, and host-argv hooks are operator decisions in the global/repo config
-    - a machine file may be LLM-drafted or shared: it must not widen its own egress, weaken its jail, or run host code through the overlay, directly or via a preset the operator's selection would resolve
+    - a machine file may be LLM-drafted or shared: it must not widen its own egress, weaken its jail, or run host code through the overlay
+    - a top-level `preset` is refused for the same reason: the operator's selection would resolve it into those same knobs
     - the overlay only routes to a provider name that already exists, and sets benign knobs (commit identity)
 - Per-`agent`-state knobs ([State kinds](#43-state-kinds)) override the overlay for that one state
     - agent-loop precedence: per-state knob > machine `[config]` > repo > global > built-in default
@@ -517,22 +538,23 @@ blackboard = Machine.initial_vars()
 state = Machine.initial
 loop:
     event   = execute(state, blackboard)     # the only impure step
+    blackboard = reduce(blackboard, event)   # pure; a fact that cannot reduce halts
     journal.append(event)                    # append-only, fsync
-    blackboard = reduce(blackboard, event)   # pure
     state   = next_state(Machine, state, event, blackboard)  # pure
     snapshot(state, blackboard)              # atomic temp+rename
     if state is terminal: break
 ```
 
 - `execute` is the only place the world is touched (run an agent, run a tool, read the clock)
-- its result journals as a fact *before* the blackboard updates; `reduce` and `next_state` are pure
+- a fact is journaled only after it reduces; `reduce` and `next_state` are pure
 - replaying the journal reproduces the exact path, branches included (the outputs a branch reads are in the journal)
 
 ### 5.2 Determinism guarantees and the predicate evaluator
 
 - Branch edges are pure functions of the blackboard; the blackboard is a pure function of journaled events; no branch depends on un-logged state
 - The predicate evaluator is a hand-written recursive walk over a small AST
-    - `ast.parse(..., mode="eval")`, then a strict node allow-list: `Compare`, `BoolOp`, `UnaryOp`, `Name`, `Constant`, a fixed-name `Call` list, and `Attribute` reinterpreted as record data navigation, never Python attribute access
+    - `ast.parse(..., mode="eval")`, then a strict node allow-list: `Compare`, `BoolOp` (`and`, `or`), `UnaryOp` (`not`, `-`, `+`), `Name`, `Constant`, `List` and `Tuple` literals of constants, and a fixed-name `Call` list
+    - `Attribute` is reinterpreted as record data navigation, never Python attribute access
     - anything outside the allow-list raises at `machine check`
     - it parses but never calls `eval`, `exec`, or `getattr`; an `Attribute` chain walks the blackboard dict, a `Name` must be declared, any other free name is a load error
 - Wall-clock, randomness, and external reads are captured as facts
@@ -549,7 +571,8 @@ Mirrors the existing per-run layout under the per-repo state dir, out of the wor
   snapshots/<n>.json         # blackboard + current state, atomic temp+rename
   agent_transcripts/<utc-iso>-<seq>.json  # one lossless request/response per file
   states/<seq>-<state>/logs.jsonl  # per-execution event stream (role.*/tool.*),
-                                   #   the watchable live view; pruned to recent
+                                   #   the watchable live view; pruned to recent;
+                                   #   <seq> is four digits: 0003-classify
   states/<seq>-<state>/approvals/, questions/  # that execution's answer bridge
                                    #   (`<id>.answer` from a front-end), steer files beside them
   data/                      # writable scratch ($AGENT6_MACHINE_DATA_DIR)
@@ -564,30 +587,35 @@ Mirrors the existing per-run layout under the per-repo state dir, out of the wor
   approvals/away.mode        # a hub-spawned instance's away mode ("wait")
 ```
 
-- each `agent` state execution emits a `logs.jsonl` stream under `states/<seq>-<state>/` (the same `role.*_delta` / `tool.*` events a run emits): a running machine follows live exactly like a run
+- each `agent` state execution emits a `logs.jsonl` stream under `states/<seq>-<state>/` (the same `role.*_delta` / `tool.*` events a run emits): a running machine follows live like a run
 - the heavy per-state logs prune to the most recent `state_log_keep` (default 50); the journal stays the complete transition history
 
 Sizing for long-running machines:
 
-- the journal grows ~one line (~200 B) per transition; a 10-minute-interval machine makes ~150k transitions a year (3 per idle tick), tens of MB
-- snapshots keep only the most recent `[machine] snapshot_keep` (default 5, `0` = all); replay from the journal is bounded by that tail
+- the journal grows one line per transition; a 10-minute-interval machine makes ~150k transitions a year (3 per idle tick)
+    - a `wait` or `branch` line is ~200 B; a `tool` line carries the command's full stdout and stderr; an `agent` line carries its payload
+- snapshots keep only the most recent `[machine] snapshot_keep` (default 5, `0` = all)
+    - `machine status` reads the newest readable one, falling back through the retained tail when the newest is corrupt
+    - replay and recovery fold the whole journal and never read a snapshot
 - per-state reasoning logs grow with agent-state executions only, and self-prune
 - the journal has no rotation: archive or delete an instance dir when replay no longer needs it; `[budget] max_transitions` is the primary runaway guard
 
 ### 5.4 Idempotency and crash recovery
 
-- a state runs, then exactly one fsync'd `StepEvent` records its outcome and captured fact: the commit point
-- the capture validates *before* the StepEvent writes, so the journal never holds a fact a later `reduce` could not replay: a tool's malformed stdout halts the machine loudly, and an agent's non-conforming `finish_session` is refused in-run (the model retries; a leg that never conforms lands outcome `failed` and routes on that edge)
-- on restart the engine rehydrates from the last StepEvent and continues
+- a state runs, then one fsync'd `StepEvent` records its outcome and captured fact: the commit point
+- the capture validates before the StepEvent writes, so the journal never holds a fact a later `reduce` could not replay
+    - a tool's malformed stdout halts the machine loudly
+    - an agent's non-conforming `finish_session` is refused in-run, so the model retries; a leg that never conforms lands outcome `failed` and routes on that edge
+- on restart the engine folds the journal and continues from the last StepEvent
 - the crash window is side-effect-done to StepEvent-on-disk: a kill there loses the fact and the step re-runs on resume
 - the posture is at-least-once: a `tool` with an external side effect must be idempotent (the examples move a file or write `$AGENT6_MACHINE_DATA_DIR`, so a re-run is a no-op)
-- the journal is crash-tolerant: a torn final line drops on read and heals on the next append; a corrupt newest snapshot falls back to the retained tail
+- the journal is crash-tolerant: a torn final line drops on read and heals on the next append
 
 ---
 
 ## 6. Reliability for 24/7 operation
 
-- **Restartable, not resident**
+- **Restartable**
     - a `wait` blocks in-process or persists the next wake and exits 0, re-armed by a systemd timer / cron
     - the journal is the source of truth either way: a reboot loses nothing
 - **Runaway guards**
@@ -606,30 +634,38 @@ Sizing for long-running machines:
 
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
-| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam), written into a drafting workspace of its own; per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail; failures hand the problems back (`--max-attempts`, default 3); output: a draft for operator review + commit ([Security considerations](#9-security-considerations)) |
-| `agent6 machine check <file>`             | validate: the `[config]` overlay against the config schema (and its refusals); parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff + ty, config from the nearest `pyproject.toml`/`ruff.toml` above the file); no execution, no network |
-| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/*_test.py` mock tests in a no-network jail (`strict` only: elsewhere they count as skipped on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
+| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam), written into a drafting workspace of its own; per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail, dry-run; failures hand the problems back (`--max-attempts`, default 3); output: a draft for operator review + commit ([Security considerations](#9-security-considerations)) |
+| `agent6 machine check <file>`             | validate: the `[config]` overlay against the config schema (and its refusals); parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff with its own config discovery, the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]` above the bundle; ty on a private temp copy with no config); no execution, no network |
+| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/**/*_test.py` mock tests in a no-network jail (`strict` only: elsewhere they count as skipped on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait] [--auto-approve\|--no-commands] [--dangerously-disable-sandbox]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. The approval and sandbox flags are the run flags, for the same reasons and with the same refusals. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
 | `agent6 machine` (`machine list`)         | this repo's machines: each instance's status and current state joined with the authored `.asm.toml` that declares it, then the authored files no instance has run (spec validity per file). Read-only. |
 | `agent6 attach <id>`                       | follow a running instance live (the unified watcher; the same command follows a run): state overview + current state, each transition as it lands, and the active agent state's reasoning (its per-state `logs.jsonl`). Read-only; Ctrl-C to stop. `agent6 attach --tui <id>` opens the machine screen, where a running agent state takes a steer (`s`), as the web machine page does. |
 | `agent6 machine poke <id> [--data <json>\|--message <text>]` | signal a waiting instance to wake on its next check; an optional payload reaches the next `tool` at `$AGENT6_MACHINE_DATA_DIR/poke.json` (journaled, replay-safe). |
-| `agent6 machine stop <id>`                | park at the next transition boundary: a durable marker, not a kill; wakes a sleeping `wait`, leaving it armed; no `MachineEnd` journaled (resumes with `machine run`); ended/not-running answered with the note and exit 0, no marker; a journal it cannot read refused; the same answers on the web machine page and the TUI machine screen (`x`) |
+| `agent6 machine stop <id>`                | park at the next transition boundary through a durable marker (the state in flight finishes and journals its fact); wakes a sleeping `wait`, leaving it armed; no `MachineEnd` journaled (resumes with `machine run`); ended/not-running answered with the note and exit 0, no marker; a journal it cannot read refused; the same answers on the web machine page and the TUI machine screen (`x`) |
 | `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
 | `agent6 config show/get/set/unset/add/remove/fix --machine-file FILE` | read and write the machine's own `[config]` overlay through the config surfaces, with the same refusals as hand-editing it. |
 
-`machine check` is the human-editability payoff: precise, fail-loud diagnostics (``state 'act': branch is not total (no final `else`)``), and a warning when a `tool` state's binary is not on the jail's PATH.
+`machine check` names each problem with its state and rule (``state 'act': branch is not total (no final `else`)``).
+It warns when a `tool` state's binary is not on the jail's PATH.
 
 ### 7.1 `machine create`
 
 Describe a loop in plain language and get a first-cut bundle back.
-It is an ordinary agent6 run handed this document's grammar, working in a drafting workspace of its own: the model writes the `.asm.toml` and every `scripts/...` file there with `apply_edit`, one file at a time, and finishes when the bundle is complete.
-No new tool. The leg has the edit tools; `run_commands = "no"` withholds `run_command`, `run_verify_command` and `stop_background`, the operator's `[workflow].metric` is dropped so `run_metric_command` has nothing to run, and no host is pre-allowed so a headless `fetch` denies. It never sees the operator's checkout, and its writes are bounded by the workspace the way any run's are by its repo.
+It is an ordinary agent6 run handed this document's grammar, working in a drafting workspace of its own.
+The model writes the `.asm.toml` and every `scripts/...` file there with `apply_edit`, one file at a time, and finishes when the bundle is complete.
+No new tool.
+The leg has the edit tools; `run_commands = "no"` withholds `run_command`, `run_verify_command`, `run_metric_command` and `stop_background`, and the operator's `[workflow].metric` is dropped.
+No host is pre-allowed, so a headless `fetch` denies.
+It never sees the operator's checkout, and its writes are bounded by the workspace the way any run's are by its repo.
 
-- the workspace is an empty git repo under `[parallel].workdir` (where lane clones and fork worktrees live), so each iteration commits and the draft survives a failure for the operator to read
-- every draft is gated: `machine check`, ruff (the destination's ruff config), ty, mock tests in a no-network jail (`strict` only: elsewhere they are counted as skipped)
-    - agent6 runs those validators itself between attempts (they need agent6, which no jailed command can reach) and hands the problems back, up to `--max-attempts` (default 3); the agent patches the files it wrote
+- the workspace is an empty git repo under `[parallel].workdir` (where lane clones and fork worktrees live)
+    - each iteration commits, so the draft survives a failure for the operator to read
+- every draft is gated: `machine check`, ruff (the destination's ruff config), ty, the `machine test` dry-run, and mock tests in a no-network jail
+    - the mock tests run under `strict` only: elsewhere they are counted as skipped
+    - agent6 runs those validators itself between attempts (they need agent6, which no jailed command can reach) and hands the problems back
+    - up to `--max-attempts` (default 3); the agent patches the files it wrote
 - the result is a draft: `-o <file>` overwrites freely, else `<name>.asm.toml` in the cwd, never clobbered (a collision prints to stdout, exits non-zero)
     - scripts land in `scripts/`
 - each attempt is watchable: a draft dir under the state dir carries the prompt, the transcript, and a `logs.jsonl` the TUI/web follow live
@@ -644,8 +680,11 @@ The layering is `ui → app → workflows → tools → sandbox`, with `agent6.m
 An `agent` state needs to *invoke* the `loop` workflow, so the engine cannot itself be a `workflow` without breaking that rule.
 
 The engine does not import the workflow stack.
-Rather than constructing a `Workflow` itself, `engine.drive` runs an `agent` state through an injected `agent_runner` callable (`Callable[[AgentRequest, Path | None], AgentExecResult]`, the second argument being the per-state event-log path (`<instance>/states/<seq>-<state>/logs.jsonl`) each agent-state execution streams to).
-`app/`, which already depends on both `agent6.machine` and `agent6.workflows`, builds that runner and the orchestration around `machine create`/`run` (`app/machine_agent.py`, `app/machine/`), with `ui/cli` adapting argv and rendering, so `agent6.machine` never gains an edge into `agent6.workflows` and the tach graph stays acyclic.
+`engine.drive` takes a `World`; the live one, `LiveWorld`, runs an `agent` state through its `agent_runner` callable (`Callable[[AgentRequest, Path | None], AgentExecResult]`).
+The second argument is the per-state event-log path (`<instance>/states/<seq>-<state>/logs.jsonl`) each agent-state execution streams to.
+`app/`, which depends on both `agent6.machine` and `agent6.workflows`, builds that runner (`build_machine_agent_runner` in `app/machine_agent.py`) and wires it into the `LiveWorld` in `app/machine/run.py`.
+The orchestration around `machine create`/`run` lives in `app/machine/`, and `ui/cli` adapts argv and renders.
+So `agent6.machine` never gains an edge into `agent6.workflows`, and the tach graph stays acyclic.
 
 Files (all `from __future__ import annotations`, strict pyright, pydantic only at the parse boundary, `@dataclass(frozen=True, slots=True)` for the internal value types):
 
@@ -657,7 +696,7 @@ Files (all `from __future__ import annotations`, strict pyright, pydantic only a
 - `machine/graph.py`: the mermaid/DOT renderers.
 - `machine/journal.py`: append-only event log, snapshots, locking, and persisted-wake state.
 - `machine/engine.py`: the deterministic reducer loop.
-- `machine/authoring.py`: the dependency-free prompt scaffolding for `machine create` (grammar guide, per-attempt prompt builder).
+- `machine/authoring.py`: the per-attempt prompt builder for `machine create`, around the grammar guide in `agent6.prompts.machine`; it imports nothing from the workflow stack.
 
 No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
 
@@ -667,11 +706,11 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
 
 - **No new LLM tool surface**
     - the fixed set in `tools/schema.py` is unchanged; machines orchestrate existing capabilities
-    - `machine create` is no exception: the drafting agent has the same edit tools any run has, pointed at a drafting workspace of its own, with every command tool withheld and its own `[workflow].metric` and `fetch` reach removed
+    - `machine create` is no exception: the drafting agent has the same edit tools any run has, pointed at a drafting workspace of its own
+    - every command tool is withheld, and its `[workflow].metric` and `fetch` reach are removed
 - **No arbitrary code execution from a file**
     - predicates and templates are parsed-then-walked against an allow-list; never `eval`/`exec`, never `getattr`
-    - dotted references are agent6-interpreted data navigation, not Python attribute resolution
-    - a `.asm.toml` is data, not code
+    - dotted references are agent6-interpreted data navigation
 - **All side effects stay jailed**
     - `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, commands jailed like any run's
     - `mode = "run"` machines never touch the operator's checkout: fresh clones per state, commits on `agent6/machine-<id>`, tool-state tree writes discarded with the clone
@@ -680,7 +719,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
     - `[budget].max_transitions` is required and always binds
     - `max_usd` (optional) caps cumulative metered spend; an unpriced model is bounded per state by the agent6 config's `[budget].max_tokens_fallback` (`0` refuses unmetered models outright)
     - a supervisor crash mid-state cannot re-grant its slice: the resume books the orphaned per-state totals as an `attempt.spend` journal event, counted everywhere
-- **Machines are operator artifacts, never LLM-authored**
+- **Machines are operator artifacts**
     - the threat model assumes the file is operator-written and reviewed like code; an LLM may propose (`machine create` drafts), running requires operator review + commit
     - `create` writes into its own workspace, publishes one reviewed bundle into the working tree, and never auto-runs
     - `run` operates on a committed bundle, records it under the instance dir at first run, and refuses a continuation whose bundle drifted from the recorded bytes
@@ -798,17 +837,3 @@ stateDiagram-v2
     record --> poll: timeout
     halt --> [*]
 ```
-
----
-
-## 11. Resolved decisions
-
-- **`wait` runtime**: an absolute next-wake instant is journaled; v1 blocks in-process ([State kinds](#43-state-kinds), [Reliability](#6-reliability-for-247-operation))
-    - a persisted-wake/systemd driver runs the identical file later
-    - a zero-timer `wait` parks until a `signal` poke; the payload journals and materializes to `poke.json`
-- **Schema language**: inline `[schemas.*]` TOML ([Record schemas](#46-record-schemas-schemas)), not JSON Schema; no new dependency, human-editable, one mechanism for both `output_schema` validation and navigable record vars.
-- **`agent` writes**: exactly one validated `finish_session` payload per `agent` state is the LLM's only write channel ([The blackboard](#42-the-blackboard-three-owners)); multiple outputs are fields of one record.
-- **Concurrency**: strictly sequential, one active state; compose by running independent machines (`fork`/`join` may come later)
-- **`json` navigability**: opaque `json` is wholesale-only; anything navigated with `.field` must be a declared record type ([Record schemas](#46-record-schemas-schemas)), so every path is statically checkable.
-- **List → argv**: no `join` filter; a lone `"{{ listvar }}"` argv element is spliced to one element per item ([Templating and list-splicing](#44-templating-and-list-splicing)).
-- **Naming**: subcommand `machine`; suffix `.asm.toml` ([The format](#4-the-format)).
