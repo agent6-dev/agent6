@@ -56,6 +56,17 @@ def test_agents_md_inline_marker() -> None:
     assert verify_from_agents_md("Test: make check") == ("make", "check")
 
 
+def test_agents_md_inline_marker_written_as_code() -> None:
+    """A Verify line whose command is written as inline code keeps the backticks
+    out of the argv (kept, `sh -c` ran the tests and then executed their output
+    as a command)."""
+    argv = verify_from_agents_md("Verify: `python -m pytest -q`")
+    assert argv == ("python", "-m", "pytest", "-q")
+    assert verify_from_agents_md("Test: `make check`.") == ("make", "check")
+    assert verify_from_agents_md("Verify: `a && b`") == ("sh", "-c", "a && b")
+    assert verify_from_agents_md("Verify: ruff check .") == ("ruff", "check", ".")
+
+
 def test_agents_md_none_when_absent() -> None:
     assert verify_from_agents_md("# Readme\n\nNo verify here.") is None
     assert verify_from_agents_md("") is None

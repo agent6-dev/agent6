@@ -124,9 +124,19 @@ def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
                 return argv
     for line in lines:
         m = _INLINE_VERIFY.match(line)
-        if m and (argv := line_to_argv(m.group(1))) is not None:
+        if m and (argv := line_to_argv(_unquote_code(m.group(1)))) is not None:
             return argv
     return None
+
+
+def _unquote_code(text: str) -> str:
+    """An inline command written as markdown code (`cmd`, a sentence's period
+    after it allowed) minus the backticks: kept, they read as a shell
+    substitution."""
+    text = text.strip().removesuffix(".") if text.rstrip().endswith("`.") else text.strip()
+    if len(text) > 1 and text[0] == "`" and text[-1] == "`":
+        return text[1:-1]
+    return text
 
 
 def _has_make_target(text: str, target: str) -> bool:
