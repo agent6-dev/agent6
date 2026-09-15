@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, StrictBool, ValidationError
 
 from agent6 import __version__
 from agent6.config import is_loopback_host
@@ -109,7 +109,7 @@ class PruneBody(_Body):
 
 class StopBody(_Body):
     # True: let the current step finish (its tool results and auto-commit land) first.
-    after_step: bool = False
+    after_step: StrictBool = False
 
 
 class ResumeBody(_Body):

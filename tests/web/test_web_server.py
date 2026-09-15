@@ -381,6 +381,18 @@ def test_stop_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Pat
     assert "nothing to stop" in str(data["error"])
 
 
+def test_stop_rejects_a_non_boolean_after_step(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    _srv, port = server
+    _make_run(tmp_path, "run-bad-stop", [{"type": "session.start"}])
+    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-bad-stop"
+    status, data = _post(port, "/api/session/run-bad-stop/stop", {"after_step": "false"})
+    assert status == 400
+    assert "after_step" in str(data["error"])
+    assert not (runs / "stop.request").exists()
+
+
 @pytest.mark.skipif(os.geteuid() == 0, reason="root writes through a read-only dir")
 def test_stop_that_cannot_write_the_marker_is_refused(
     server: tuple[WebServer, int], tmp_path: Path
