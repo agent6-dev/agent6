@@ -55,6 +55,9 @@ A run keeps one message history with one provider and one model.
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
 - under `api_format = "claude_code"` the provider keeps one `claude` process per leg and replays that history as text whenever a call is not a continuation of its last round ([Config](config.md))
 
+`workflows/loop.py` holds the turn: the request, the model call, the tool dispatch, what the tools did, and the ends.
+What the turn leans on sits beside it, one module each: `_chain` (the run's commit chain), `_steer` (the operator's callables, the steer verbs, the pin cap), `_guards` (each heuristic's counters and its rule: no progress, settled, the metric plateau, quiet turns, stagnation, the memory nudges, the standing goal, reachability, focus), `_finish_gates` (what an end must satisfy and what it is called), and the settings each sibling owns (`_review`, `_compaction`, `_provider_call`, `_prompt_revision`).
+
 Drawn by hand against `workflows/loop.py`, the turn as a state machine:
 
 ```mermaid
@@ -208,7 +211,7 @@ The detached spawn it drives (`ui.spawn`'s `spawn_and_locate`, the path the web 
 - nothing merges automatically
 - `--max-usd` is per lane and caps the judge like one more lane; the `$X/lane x N + judge = $Y total` line prints before spawning
 
-**A `/parallel` steer dispatches a sibling group** through `Workflow.lane_spawner` (the injection point keeping `workflows` from importing `ui`; `run.py`/`resume.py` wire the real spawner, run mode only).
+**A `/parallel` steer dispatches a sibling group** through `OperatorBridge.lane_spawner`, on `Workflow.bridge` (the injection point keeping `workflows` from importing `ui`; `run.py`/`resume.py` wire the real spawner, run mode only).
 
 - the loop blocks with no provider calls while lanes run, in this order:
     - expand each segment into its lanes
