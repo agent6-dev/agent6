@@ -126,7 +126,7 @@ def _live_session_dir(cwd: Path, session_id: str) -> Path | tuple[bool, str]:
     if session_dir is None:
         return False, f"no session {session_id!r}"
     if not session_is_live(session_dir):
-        return False, "the session is not live"
+        return False, "the session is not live; resume it instead"
     return session_dir
 
 

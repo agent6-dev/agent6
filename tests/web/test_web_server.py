@@ -820,6 +820,21 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
         conn.close()
 
 
+def test_an_action_on_a_session_that_is_not_live_names_resume(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """The refusal said "not live" and left the operator to guess the way on."""
+    _srv, port = server
+    _make_run(
+        tmp_path,
+        "done-run",
+        [{"type": "session.start"}, {"type": "session.end", "reason": "finish_session"}],
+    )
+    status, data = _post(port, "/api/session/done-run/steer", {"text": "more"})
+    assert status == 422
+    assert "not live" in str(data["error"]) and "resume" in str(data["error"])
+
+
 def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_leg(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
