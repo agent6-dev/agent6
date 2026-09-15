@@ -343,6 +343,8 @@ function listCard(title, entries, empty, paint) {
 
 // The fan-outs whose lanes the operator expanded, kept across the hub's repaints.
 const expandedFanouts = new Set();
+// Whether the sessions card's "more…" maintenance menu is open, kept the same way.
+let moreOpen = false;
 
 // One session row; a fan-out's lanes (`r.lanes`, the server's nested rows)
 // fold under it behind a `lanes: N` line, and expand to the same rows indented.
@@ -387,27 +389,31 @@ function paintSession(r, it, g) {
 
 function sessionsCard(sessions) {
   const card = listCard('Sessions', sessions, 'no sessions yet', paintSession);
-  const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
-  // The CLI's --delete-squashed, as a flag beside the verb: with the default
-  // squash strategy every merged run's branch is unreachable, so a plain prune
+  // Maintenance sits behind one control, the actions the TUI's File menu
+  // holds: the list is what the operator came for.
+  const more = el('details', 'more');
+  more.open = moreOpen; // kept across the hub's repaints, like the expanded fan-outs
+  more.ontoggle = () => { moreOpen = more.open; };
+  more.appendChild(el('summary', null, 'more…'));
+  const menu = el('div', 'menu');
+  const action = (label, run) => { const b = el('button', 'danger', label); b.onclick = run; menu.appendChild(b); };
+  // The CLI's --delete-squashed as its own entry: with the default squash
+  // strategy every merged run's branch is unreachable, so a plain prune
   // reports them and deletes none.
-  const sq = el('label', 'sub muted'); sq.style.marginLeft = '8px';
-  const sqBox = document.createElement('input'); sqBox.type = 'checkbox';
-  sq.appendChild(sqBox); sq.appendChild(document.createTextNode(' also squash-merged branches'));
-  prune.onclick = async () => {
-    if (sqBox.checked && !confirm('Force-delete branches and chain refs recorded as squash-merged? Their commits stay in the base; each deletion prints an undelete command.')) return;
-    try { const d = await postJSON('/api/sessions/prune', { delete_squashed: sqBox.checked }); toast(d.message || 'pruned'); route(); }
+  const prune = async (deleteSquashed) => {
+    if (deleteSquashed && !confirm('Force-delete branches and chain refs recorded as squash-merged? Their commits stay in the base; each deletion prints an undelete command.')) return;
+    try { const d = await postJSON('/api/sessions/prune', { delete_squashed: deleteSquashed }); toast(d.message || 'pruned'); route(); }
     catch (e) { toast(e.message, true); }
   };
-  card.appendChild(prune); card.appendChild(sq);
-  const rmAsks = el('button', 'danger'); rmAsks.textContent = 'Clear saved asks';
-  rmAsks.style.marginTop = '10px'; rmAsks.style.marginLeft = '6px';
-  rmAsks.onclick = async () => {
+  action('Prune merged runs', () => prune(false));
+  action('Prune merged runs, squash-merged too', () => prune(true));
+  action('Clear saved asks', async () => {
     if (!confirm('Delete every saved ask?')) return;
     try { const d = await postJSON('/api/sessions/rm_asks', {}); toast(d.message || 'cleared'); route(); }
     catch (e) { toast(e.message, true); }
-  };
-  card.appendChild(rmAsks);
+  });
+  more.appendChild(menu);
+  card.appendChild(more);
   return card;
 }
 

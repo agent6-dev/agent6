@@ -17,7 +17,7 @@ from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "e7be94f445499a609857204a7d1db6c75cf5be5016a647659c299225a8ce911c"
+PAGE_SHA256 = "49d1ecee2637a17e9d336a4eeac0cd21ca91871c89977ad0d4234be49a0f19b9"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -111,3 +111,12 @@ def test_the_empty_machines_card_says_what_the_tui_says() -> None:
     """The web card read "no machine instances" where the TUI's machines screen
     says "no machines yet"."""
     assert "'no machines yet'" in CLIENT_JS and "no machine instances" not in CLIENT_JS
+
+
+def test_the_hub_keeps_its_maintenance_actions_behind_one_control() -> None:
+    """Two danger buttons and a checkbox sat under every session list; the
+    actions the TUI's File menu holds open from one "more…" disclosure."""
+    assert "el('details', 'more')" in CLIENT_JS
+    for label in ("Prune merged runs", "Prune merged runs, squash-merged too", "Clear saved asks"):
+        assert f"action('{label}'" in CLIENT_JS
+    assert "also squash-merged branches" not in CLIENT_JS
