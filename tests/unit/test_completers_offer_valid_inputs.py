@@ -145,7 +145,7 @@ def test_enum_value_completion_is_derived_from_the_schema(
 def test_live_only_verbs_offer_only_live_sessions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """steer, answer, exec, forward and sessions stop refuse a finished run,
+    """steer, stop, answer, exec and forward refuse a finished run,
     so offering every session offered four suggestions that fail on Enter."""
     import argparse
     import os

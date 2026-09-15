@@ -425,7 +425,7 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
 
 
 def test_a_stop_request_ends_an_away_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`sessions stop` drops the stop marker; a run blocked in an away-wait
+    """`stop --after-step` drops the stop marker; a run blocked in an away-wait
     (a pre-start question, an approval nobody attached to answer) has no step
     to stop after, so the marker breaks the wait: the questioner returns empty
     answers and the run parks or denies instead of waiting on forever."""

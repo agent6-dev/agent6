@@ -187,7 +187,7 @@ def test_every_ask_command_tool_uses_the_command_scope(
 
 
 def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: Path) -> None:
-    """`sessions stop` reaches a run blocked on an approval by breaking the
+    """A stop reaches a run blocked on an approval by breaking the
     wait; the tool result then said "not approved (run_commands='ask')" as
     if the policy had refused. With a stop request pending it names the stop."""
     from agent6.sessions.ipc import request_stop

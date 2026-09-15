@@ -874,7 +874,7 @@ def _import_lanes(
                     res,
                     "still running; left in place"
                     f" (watch: agent6 attach {res.spec.session_id};"
-                    f" stop: agent6 sessions stop {res.spec.session_id})",
+                    f" stop: agent6 stop {res.spec.session_id})",
                 )
             )
             continue
@@ -999,7 +999,7 @@ def run_parallel(
     `--parallel` argument as typed) and no run branch, a journal (the
     dispatch, the ranking, the end), and a worker pid while the lanes run
     and the judge ranks them, so every listing shows it live and nests the
-    lanes under it. `sessions stop <fanout_id>` ends it the way Ctrl+C does.
+    lanes under it. `stop <fanout_id>` ends it with its lanes.
 
     Returns `fanout_exit_code` over the lanes (0 a lane verified green or no
     lane had a gate, 1 nothing rankable, 4 gates ran and none passed), 2 with

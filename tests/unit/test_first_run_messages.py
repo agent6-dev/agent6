@@ -24,7 +24,7 @@ _EMPTY_STATE = [
     ["sessions", "diff"],
     ["sessions", "commits"],
     ["sessions", "merge"],
-    ["sessions", "stop"],
+    ["stop"],
     ["sessions", "rm"],
     ["attach"],
     ["resume"],

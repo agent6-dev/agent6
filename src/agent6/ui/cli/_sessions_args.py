@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Parser builder for `sessions` and its subcommands: list this repo's sessions,
-or inspect one (show/diff/merge/compare/commits/stop/prune/transcript/graph)."""
+or inspect one (show/diff/merge/compare/commits/prune/transcript/graph)."""
 
 from __future__ import annotations
 
 import argparse
 
 from agent6.ui.cli._common import SESSION_ID, _add_session_id, _sub
-from agent6.ui.cli.completers import _complete_live_session_ids, _complete_session_ids
+from agent6.ui.cli.completers import _complete_session_ids
 
 
 def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -152,13 +152,6 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help="List the commits a session made.",
     )
     _add_session_id(sessions_commits, _complete_session_ids)
-
-    sessions_stop = _sub(
-        sessions_sub,
-        "stop",
-        help="Ask a running session to finish its current step, then stop. It can be resumed.",
-    )
-    _add_session_id(sessions_stop, _complete_live_session_ids)
 
     sessions_dir = _sub(
         sessions_sub,

@@ -271,10 +271,6 @@ def test_sessions_help_matches_each_commands_target_scope() -> None:
     assert diff.description == "Print the committed changes a session made."
     commits = _find(sessions, "commits")
     assert commits.description == "List the commits a session made."
-    stop = _find(sessions, "stop")
-    assert stop.description == (
-        "Ask a running session to finish its current step, then stop. It can be resumed."
-    )
     prune = _find(sessions, "prune")
     squashed = _option(prune, "--delete-squashed").help or ""
     assert "recorded target" in squashed

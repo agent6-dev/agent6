@@ -97,7 +97,7 @@ def _plan_merge(  # noqa: PLR0911
             f"run {session_id!r} is still live; a merge now lands only the"
             " commits so far (its later ones need another merge) and moves your"
             " index while the worker still edits. Stop it first:\n"
-            f"    agent6 sessions stop {session_id}"
+            f"    agent6 stop {session_id}"
         )
         return 2
     ref = _commits_ref(cwd, manifest)

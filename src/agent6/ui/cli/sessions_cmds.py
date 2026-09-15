@@ -33,7 +33,7 @@ from agent6.git_ops import (
 )
 from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.ipc import request_stop, worker_is_alive
+from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import (
     SESSION_BUCKETS,
     SessionLayout,
@@ -60,9 +60,7 @@ from agent6.ui.cli._common import (
 from agent6.viewmodel import (
     is_winner,
     newest_session_dir,
-    produced_result,
     session_dirs,
-    session_is_live,
     summarize_session_dir,
     task_snippet,
 )
@@ -350,54 +348,6 @@ def _resolve_session_manifest(
     return layout, manifest
 
 
-def _cmd_stop(*, session_id: str) -> int:
-    """Ask a running session to stop cleanly after its current step.
-
-    Drops the same 'stop after this step' marker the TUI/web Stop button uses:
-    the run finishes the in-flight step (its tool results and auto-commit land),
-    then ends and is resumable. For a running run only; a finished one is a no-op
-    with a note."""
-    cwd = Path.cwd()
-    try:
-        layout = resolve_or_newest_layout(cwd, session_id)
-    except SessionIdError as exc:
-        error(f"{exc}")
-        return 2
-    if layout is None:
-        print_nothing_yet()
-        return 2
-    session_dir = layout.session_dir
-    rid = session_dir.name
-    if not session_is_live(session_dir):
-        # The liveness owner, not the pid: a finished run's worker.pid lingers
-        # through teardown, and "it ends after the current step" would promise
-        # a stop the exited loop will never read.
-        summary = summarize_session_dir(session_dir)
-        if summary.status == "parked":
-            state = "is parked and has not started"
-        elif produced_result(summary.status):
-            state = f"is already {summary.status}"
-        else:
-            state = f"is not running ({summary.status})"
-        print(f"[agent6] {rid} {state}; nothing to stop.", file=sys.stderr)
-        return 0
-    if not request_stop(session_dir):
-        print(f"[agent6] could not write the stop request for {rid}", file=sys.stderr)
-        return 1
-    fanout = None
-    with contextlib.suppress(ManifestError):
-        fanout = read_manifest(session_dir).fanout
-    if fanout is not None:
-        print(
-            f"[agent6] requested stop for {rid}; its lanes are asked to stop and what"
-            " landed is imported and ranked."
-        )
-        return 0
-    print(f"[agent6] requested stop for {rid}; it ends after the current step.")
-    print(f"  resume with:  agent6 resume {rid}")
-    return 0
-
-
 def _committed_nothing(cwd: Path, session_id: str) -> bool:
     """True when a run left no commit anywhere: the chain ref it commits to was
     never created, so its branch was never cut either."""
@@ -516,8 +466,7 @@ def _rm_refusal(layout: SessionLayout, worktree: Path | None, tips: tuple[str, .
     that still holds work no commit has would leave nothing to find it by."""
     if worker_is_alive(layout.session_dir):
         return (
-            f"{layout.session_id} is still live; stop it first"
-            f" (agent6 sessions stop {layout.session_id})."
+            f"{layout.session_id} is still live; stop it first (agent6 stop {layout.session_id})."
         )
     if worktree is None or not (dirt := uncommitted_in_worktree(worktree, tips)):
         return ""

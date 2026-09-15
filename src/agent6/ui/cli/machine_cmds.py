@@ -380,7 +380,7 @@ def _cmd_machine_stop(machine_id: str) -> int:
 
     The engine parks at its next transition boundary (or wakes out of a sleep)
     without journaling an end, so the instance stays resumable. A machine that
-    is not running gets the note and exit 0, as `sessions stop` answers, and
+    is not running gets the note and exit 0, as `agent6 stop` answers, and
     no marker that would ambush the next `machine run`."""
     cwd = Path.cwd()
     root = _existing_machine_root(machine_id, cwd)

@@ -1108,7 +1108,7 @@ def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
 def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> None:
     """A husk (a dir a crash orphaned before any manifest or log) is hidden by
     every listing, but the recency query returned it, so a bare `attach` /
-    `sessions show` / `sessions stop` targeted a phantom the operator cannot see -- and
+    `sessions show` / `stop` targeted a phantom the operator cannot see -- and
     could miss a live run whose log was quiet during a long provider call."""
     from agent6.viewmodel.listing import newest_session_dir
 

@@ -78,6 +78,7 @@ The config page shows every setting, its effective value, and the layer that set
 - a steer sent from another surface (`agent6 steer`, the web or TUI composer) while the menu is open is taken as the answer
 - `/detach` in the menu hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and stands an armed pause down, it never suspends the run (a suspended agent would lose its live provider stream)
 - `/exit` in the menu, the fallback prompt, or the `run -i` REPL stops the run and leaves without the follow-up prompt (`agent6 resume` continues it)
+- `/stop` in the menu, or Ctrl-C at the pause prompt itself, stops the run now (a third Ctrl-C without the prompt does the same); `agent6 stop ID` from another terminal is the same stop
 - `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
 - a viewer opened with `agent6 attach --tui` just closes
 - TUI/web-hub runs start detached; `agent6 attach` covers both kinds: conversation by default, `--tui` full screen, `--json` one-shot snapshot, and `--raw` line tail for runs

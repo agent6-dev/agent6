@@ -588,7 +588,7 @@ def test_status_ambiguous_prefix_names_the_candidates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An ambiguous id prefix must say so and name the matches, as `attach` and
-    `sessions stop` do. `sessions show` swallowed the resolver's error and printed
+    `stop` do. `sessions show` swallowed the resolver's error and printed
     "no session matches 't'" -- telling the operator no such run exists while two
     did."""
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])

@@ -469,7 +469,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     f"run {holder!r} is already driving this checkout; a"
                     " second run-mode worker would interleave auto-commits on the"
                     " one working tree. Wait for it, or stop it first:\n"
-                    f"    agent6 sessions stop {holder}"
+                    f"    agent6 stop {holder}"
                 )
                 return 2
 

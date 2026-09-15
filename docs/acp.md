@@ -58,7 +58,7 @@ One session is one directory, one conversation.
 - a prompt whose prior turn left no resume snapshot starts a new run when that turn recorded one (it died before its first checkpoint; the editor is told), and starts the same id when nothing was recorded
 - a busy session refuses a prompt rather than queueing it; the editor can offer it again
 - one connection runs one prompt at a time across sessions (the commit cwd is process-global): a prompt on another session waits its turn, tells the editor which session it waits for, and a `session/cancel` while it waits answers `cancelled` at once
-- `session/cancel` drops the `agent6 sessions stop` marker: the step in flight finishes and commits first
+- `session/cancel` drops the `agent6 stop --after-step` marker: the step in flight finishes and commits first
 
 ## Not implemented
 

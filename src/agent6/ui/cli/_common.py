@@ -312,7 +312,7 @@ def resolve_or_newest_layout(
     "no sessions exist" case, so the caller phrases its own 'none yet' message. Raises
     `SessionIdError` (`.no_match` set only when nothing matched) when an explicit id has
     no or many matches. The one 'a run by id, or the latest' resolution behind
-    `attach` / `sessions stop` / `sessions show`.
+    `attach` / `stop` / `sessions show`.
     """
     if session_id:
         return resolve_session_layout(repo_root, session_id, allow_husk=allow_husk)

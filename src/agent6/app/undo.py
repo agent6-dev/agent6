@@ -247,7 +247,7 @@ def _checkout_writer_lock(
         return None, (
             f"run {undone.session_id!r} is still live; /undo would put the tree back"
             " under it. Stop it first:\n"
-            f"    agent6 sessions stop {undone.session_id}"
+            f"    agent6 stop {undone.session_id}"
         )
     lock_fd = acquire_repo_writer(state, checkout, undone.session_id)
     if lock_fd is None:
@@ -255,7 +255,7 @@ def _checkout_writer_lock(
         return None, (
             f"run {holder!r} is driving this checkout, and /undo would put the tree back"
             " under it. Stop it first:\n"
-            f"    agent6 sessions stop {holder}"
+            f"    agent6 stop {holder}"
         )
     return lock_fd, ""
 

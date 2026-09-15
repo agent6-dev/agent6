@@ -408,13 +408,16 @@ def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
     """Attach as the answering front-end on an interactive terminal (both
     streams a tty); piped/redirected stays a pure reader (None)."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        print(f"[agent6] following {target.name}. Ctrl-C to exit.", file=sys.stderr)
+        print(
+            f"[agent6] following {target.name}. Ctrl-C exits; agent6 stop {target.name} stops it.",
+            file=sys.stderr,
+        )
         return None
     front_end = _CliFrontEnd(target, view)
     register_frontend(target, os.getpid())
     print(
         f"[agent6] attached to {target.name}: approvals and questions prompt here."
-        " Ctrl-C to detach.",
+        f" Ctrl-C detaches; agent6 stop {target.name} stops it.",
         file=sys.stderr,
     )
     return front_end

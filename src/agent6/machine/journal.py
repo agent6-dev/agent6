@@ -643,7 +643,7 @@ def read_source(root: Path) -> str:
 def write_stop_request(root: Path) -> None:
     """Ask the live machine to park at its next transition boundary.
 
-    A marker, not a kill (the `sessions stop` semantics): the state in flight
+    A marker, not a kill (the `stop --after-step` semantics): the state in flight
     finishes and journals its fact, then the engine returns a "stopped" result
     without a MachineEnd, so the instance stays resumable."""
     mkdir_for_real_user(root)

@@ -1285,7 +1285,7 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
 ) -> None:
     """`machine stop` writes the durable marker only for a live worker; a
     parked/dead instance gets the note and exit 0 (a stop that finds nothing
-    running has done what was asked, the answer `sessions stop` gives), never
+    running has done what was asked, the answer `agent6 stop` gives), never
     a marker that would ambush the next `machine run` at its first boundary."""
 
     from agent6.viewmodel import machine_state as machine_state_mod

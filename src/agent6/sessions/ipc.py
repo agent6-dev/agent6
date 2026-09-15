@@ -459,7 +459,7 @@ def await_frontend_reply[T](session_dir: Path, read_once: Callable[[], T | None]
     answer files, and the answer's existence, not a claim, is the proof
     someone answered. `read_once` paces itself (its liveness dead-grace
     caps a claim-less round); the extra sleep paces the no-claim loop. A
-    front-end's Stop lands as a steer abort and `sessions stop` as the stop
+    front-end's Stop lands as a steer abort and `stop --after-step` as the stop
     marker; either breaks the wait so the run can end (a run parked in a
     pre-start question has no step to stop after: the empty reply parks
     it). Returns the reply, or None on stop."""

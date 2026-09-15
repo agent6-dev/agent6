@@ -41,7 +41,7 @@ agent6 edits your working tree, commits each step to a per-run chain, and certif
 
 - your branch, HEAD, and index are never touched (the chain gets an `agent6/<id>` branch by default)
 - commands prompt for approval under the default `sandbox.run_commands = "ask"`: allow one call or the whole session; a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does), a hub-spawned one parks it, and a question under `deny` or `approve` gets empty answers with a note to decide alone (`sessions show` counts them); with commands settled (`--auto-approve`, `--no-commands`) and no away-mode, a fetch outside `sandbox.fetch_hosts` or an MCP call parks the run at its approval until a front-end answers, and the start says so
-- the run ends when the model declares it finished, the operator stops it, or a ceiling (budget, iterations) stops it
+- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`: the model call is cut, a running command is handed back, every command the run started is ended, and a worker that has not ended after 5 s is killed; `--after-step` lets the step finish first; the run stays resumable), or a ceiling (budget, iterations) stops it
 - at a terminal it then asks for the next input: type to continue the session, `/exit` to finish (still resumable)
 - without a terminal (CI, detached) the resume line prints instead
 
@@ -79,7 +79,7 @@ agent6 sessions transcript    # the conversation as text, every tool call with I
 agent6 sessions prune         # delete merged agent6/* branches; report the rest
 agent6 sessions dir           # where this repo's run history lives (scriptable)
 agent6 sessions dir <id>      # that session's own directory
-agent6 sessions stop          # stop a live run at its next step boundary
+agent6 stop ID                # stop a live run now (the worker killed if it does not answer); --after-step, --all
 agent6 resume ID [--force]    # continue a stopped or parked run (--force past a diverged chain)
 agent6 fork ID --at-turn 7    # a new run from a checkpoint; --no-run creates it without starting
 agent6 exec ID -- <command>   # run a command inside the run's jail and network
@@ -158,7 +158,7 @@ agent6 ask "how does the task-graph curator work?"
   - a bare id keeps the role's provider; `agent6 model <role> <provider>` lists a provider's ids
   - recorded on the run: a resume keeps it unless it sets its own `--model`, which is recorded in turn
 - `--parallel 3` (or `provider/model-a,model-b`, one lane per entry; a bare id runs on the worker's provider): isolated fan-out lanes, auto-compared into a ranked report
-  - the fan-out is a session of its own: `attach` follows it, `sessions stop` ends it, `sessions show` lists its lanes with their placement
+  - the fan-out is a session of its own: `attach` follows it, `stop` ends it with its lanes, `sessions show` lists its lanes with their placement
   - its lanes nest under it in every listing, folded into a count: `sessions list --lanes` and `ps --lanes` list them, Space in the TUI hub and the `lanes` line in the web hub expand them
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains

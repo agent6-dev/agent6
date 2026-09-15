@@ -84,7 +84,7 @@ def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
 
     Husks are skipped, like every listing skips them: a crash-orphaned dir with
     no manifest and no log is newer than the real runs, so returning it would
-    point bare `attach` / `sessions show` / `sessions stop` at a phantom the
+    point bare `attach` / `sessions show` / `stop` at a phantom the
     operator cannot see in any listing.
     """
     runs: list[Path] = []

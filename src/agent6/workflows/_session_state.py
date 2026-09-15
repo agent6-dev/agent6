@@ -90,7 +90,7 @@ class SessionResult:
                           in the jail; the model cannot fix operator config.
       loop_guard_killed - identical tool call repeated past the kill threshold.
       interactive_stop  - operator chose "stop" at the REPL after_auto_commit hook.
-      steer_abort       - operator stopped the run: `agent6 sessions stop`, a
+      steer_abort       - operator stopped the run: `agent6 stop`, a
                           front-end's stop, or "abort" at a steering prompt
                           ends it mid-call, at the step boundary, or while
                           parked, whichever the marker reaches first; a quit

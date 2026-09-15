@@ -345,7 +345,7 @@ def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
 @_never_raises
 def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: the sessions the operator can still act on, for the verbs
-    that reach a running one (steer, answer, exec, forward, sessions stop).
+    that reach a running one (steer, stop, answer, exec, forward).
     `session_is_live` is those verbs' own gate: a finished run whose worker
     pid is still up in its teardown window is refused, so it is not offered."""
     return sorted(

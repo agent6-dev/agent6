@@ -438,7 +438,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
 def test_coordinator_dispatch_wait_honors_a_stop_request(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    """`sessions stop` writes stop.request, but the in-run coordinator's lane
+    """`stop` writes stop.request, but the in-run coordinator's lane
     wait polled only the separate immediate-abort answer and could block until
     every lane ended on its own."""
     origin_state = tmp_path / "ostate"
@@ -2413,7 +2413,7 @@ def test_run_parallel_is_a_session_of_its_own(
 def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions stop <fan-out>` writes the coordinator's stop marker; the
+    """`stop <fan-out>` writes the coordinator's stop marker; the
     await reads it between polls, asks every live lane to stop, and returns
     interrupted so the import and the report still run."""
     from agent6.sessions.ipc import stop_request_pending

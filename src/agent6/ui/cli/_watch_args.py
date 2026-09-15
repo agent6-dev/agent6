@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import SESSION_ID, SESSION_ID_HELP, _sub
+from agent6.ui.cli._common import SESSION_ID, SESSION_ID_HELP, _add_session_id, _sub
 from agent6.ui.cli.completers import (
     _complete_live_session_ids,
     _complete_session_ports,
@@ -148,6 +148,30 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
             " (the default waits for the next step boundary; an approval or"
             " question wait cannot be interrupted either way)."
         ),
+    )
+
+
+def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    stop_p = _sub(
+        sub,
+        "stop",
+        help=(
+            "Stop a live session now: its model call is cut, a running command is handed"
+            " back, the run ends as stopped and every command it started is ended; a"
+            " worker that has not ended after 5 s is killed with them. The session stays"
+            " resumable (`agent6 resume ID`). Default: the newest session."
+        ),
+    )
+    _add_session_id(stop_p, _complete_live_session_ids)
+    stop_p.add_argument(
+        "--after-step",
+        action="store_true",
+        help="Let the current step finish (its tool results and auto-commit land), then stop.",
+    )
+    stop_p.add_argument(
+        "--all",
+        action="store_true",
+        help="Stop every live session of this repository (a fan-out's lanes with it).",
     )
 
 

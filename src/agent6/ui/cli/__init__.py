@@ -367,6 +367,12 @@ def _dispatch_steer(args: argparse.Namespace) -> int:
     return _cmd_steer(args.target, args.text, now=args.now)
 
 
+def _dispatch_stop(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.stop_cmd import _cmd_stop  # noqa: PLC0415
+
+    return _cmd_stop(args.session_id, all_sessions=args.all, after_step=args.after_step)
+
+
 def _dispatch_answer(args: argparse.Namespace) -> int:
     from agent6.ui.cli.answer_cmd import _cmd_answer  # noqa: PLC0415
 
@@ -449,7 +455,6 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
         _cmd_list,
         _cmd_sessions_dir,
         _cmd_sessions_rm,
-        _cmd_stop,
     )
     from agent6.ui.cli.sessions_compare import _cmd_compare  # noqa: PLC0415
     from agent6.ui.cli.sessions_merge import _cmd_merge, _cmd_prune  # noqa: PLC0415
@@ -477,8 +482,6 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
         )
     if args.sessions_command == "commits":
         return _cmd_commits(session_id=args.session_id)
-    if args.sessions_command == "stop":
-        return _cmd_stop(session_id=args.session_id)
     if args.sessions_command == "prune":
         return _cmd_prune(delete_squashed=args.delete_squashed, config_path=args.config)
     if args.sessions_command == "dir":
@@ -865,6 +868,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "ask": _dispatch_ask,
     "attach": _dispatch_attach,
     "steer": _dispatch_steer,
+    "stop": _dispatch_stop,
     "answer": _dispatch_answer,
     "exec": _dispatch_exec,
     "forward": _dispatch_forward,
