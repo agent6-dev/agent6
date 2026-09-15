@@ -35,8 +35,6 @@ from agent6.git_ops import status as git_status
 from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import (
     AddSubtaskIntent,
-    NodeStatus,
-    RecordCommitIntent,
     SetCursorIntent,
     TaskNodeDraft,
     UpdateStatusIntent,
@@ -81,7 +79,7 @@ from agent6.tools.schema import (
     FinishSessionInput,
     ReadBackgroundInput,
 )
-from agent6.types import AutoCommitDirective, RepoSummary
+from agent6.types import RepoSummary
 from agent6.verify_infer import infer_verify_command, read_agents_md
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import (
@@ -203,10 +201,12 @@ from agent6.workflows._panel import (
     review_notice,
 )
 from agent6.workflows._parallel_dispatch import (
-    LaneJoin,
+    add_parallel_node,
     join_lane_result,
+    parallel_parent_id,
     segment_lanes,
-    segment_stamp,
+    stamp_parallel_node,
+    stamp_segment_node,
     summary_text,
 )
 from agent6.workflows._prompt_blocks import build_system_prompt, initial_instructions
@@ -236,6 +236,7 @@ from agent6.workflows._session_state import (
     load_session_snapshot,
     write_turn_marker,
 )
+from agent6.workflows._steer import PINS_MAX_CHARS, STEER_VERBS, OperatorBridge, try_pin
 from agent6.workflows._toolset import (
     build_readonly_review_tools,
     tool_definitions,
@@ -248,7 +249,6 @@ from agent6.workflows._verify_gate import (
     scoped_verify_notice,
 )
 from agent6.workflows.subrun import (
-    GroupLaneSpawner,
     SubrunError,
 )
 
@@ -267,13 +267,6 @@ if TYPE_CHECKING:
 # (see Workflow._worker_max_tokens). 2 spares a one-off starvation its full
 # recovery room while breaking a reasoning-binge spiral.
 _STARVATION_BACKOFF_AFTER_QUIETS = 2
-
-# Total chars of operator `/pin` instructions a run may hold. Pins are
-# re-injected verbatim into every tier-2 restart, so the cap bounds what every
-# post-compaction context permanently re-pays. An over-cap pin is delivered as
-# an ordinary steer (the instruction still reaches the model once); only its
-# survives-compaction durability is refused.
-PINS_MAX_CHARS = 4_000
 
 # The before-finish panel's rejection, by the ending it rejected; the
 # findings follow.
@@ -439,61 +432,14 @@ class Workflow:
     provider_retry_count: int = 4
     provider_retry_delay_s: float = 2.0
     provider_retry_max_delay_s: float = 30.0
-    # Steering interrupt callbacks, polled between iterations; on request the
-    # workflow prompts the operator for an instruction or "abort". When unset
-    # (the defaults) the loop runs without operator interaction.
-    steer_requested: Callable[[], bool] = field(default=lambda: False)
     # A machine agent state's finish contract: called on each finish_session
     # payload, returning the problems (empty = conforms). Injected by the
     # machine leg builder from the state's output_schema; None (every plain
     # run) leaves finishes ungated. The engine's own validation of the
     # recorded fact stays the authority.
     finish_validator: Callable[[dict[str, Any] | None], list[str]] | None = None
-    steer_clear: Callable[[], None] = field(default=lambda: None)
-    steer_prompt: Callable[[], str | None] = field(default=lambda: None)
-    # Called at each leg entry (run/resume): disarms a SIGINT stage the prior
-    # leg never consumed, without touching the steer marker files.
-    steer_reset: Callable[[], None] = field(default=lambda: None)
-    # Manual compaction request (the TUI's "Compact now"): polled at the same
-    # pre-call boundary as the tiered thresholds; a positive forces the tier-2
-    # summarise-and-restart. The marker travels the same file bridge as steer.
-    compact_requested: Callable[[], str | None] = field(default=lambda: None)
-    compact_clear: Callable[[], None] = field(default=lambda: None)
-    # Operator "stop after this step": polled at each completed-iteration
-    # boundary (post tool results + auto-commit), ending the run cleanly there.
-    # The mid-turn immediate stop stays the steer "abort" answer.
-    stop_requested: Callable[[], bool] = field(default=lambda: False)
-    stop_clear: Callable[[], None] = field(default=lambda: None)
-    # Polled DURING a streaming model call (not just between steps): True once the
-    # operator has asked to stop, so a long reasoning turn aborts promptly.
-    should_abort: Callable[[], bool] = field(default=lambda: False)
-    # Polled DURING a streaming call: True once the operator has asked to STEER
-    # (Ctrl-C / TUI `s`), so the watchdog ends the turn and the loop reaches its
-    # steer boundary (the menu) at once instead of waiting the whole turn out.
-    should_interrupt: Callable[[], bool] = field(default=lambda: False)
-    # Hook invoked once per successful auto-commit (after the
-    # commit lands). Returning "stop" exits the loop cleanly with
-    # completed=True, reason="interactive_stop"; "undo" takes the steer's
-    # /undo path (fork back before the last message); "continue" (the
-    # default) lets the next iteration run. The CLI's `agent6 run -i`
-    # installs a TTY prompt here for the REPL; default no-op preserves
-    # autonomous behaviour for `agent6 run` and `agent6 resume`.
-    after_auto_commit: Callable[[int, str], AutoCommitDirective] = field(
-        default=lambda _i, _sha: "continue"
-    )
-    # `/parallel` steer dispatch: the ui-side group spawner that runs a sibling
-    # group of subordinate lanes to completion and imports their branches into
-    # this run's repo (workflows.subrun.GroupLaneSpawner). None (the default, and
-    # every headless / non-run path) makes a `/parallel` directive answer with
-    # steer feedback and continue -- never a crash. Depth 1: the ui side tags lane
-    # spawns AGENT6_SUBRUN=1 and run.py leaves this None inside a lane.
-    lane_spawner: GroupLaneSpawner | None = None
-    # `/undo`: commits the tree as it stands onto this session's ref, forks
-    # the session at the state before its last operator message, and puts the
-    # checkout back to that state's tree (app.undo.undo_fork, injected:
-    # workflows never import app); returns (new_session_id, undone_text), or
-    # None with the reason printed.
-    undo_forker: Callable[[], tuple[str, str] | None] | None = None
+    # What the operator can do to the run, as the front-end injects it.
+    bridge: OperatorBridge = field(default_factory=OperatorBridge)
     # In-loop review panel. When `review_trigger != "off"` and `review_seats`
     # is non-empty, the panel runs at the configured trigger (verify-failure /
     # before finish_session / every review_period iters) over the run diff and
@@ -607,7 +553,7 @@ class Workflow:
 
     def run(self, user_task: str) -> SessionResult:
         """Drive the single-loop agent to completion."""
-        self.steer_reset()  # a leg starts with no armed Ctrl-C
+        self.bridge.steer_reset()  # a leg starts with no armed Ctrl-C
         if self.mode == "plan" and self.plan_output_path is None:
             raise ValueError("Workflow(mode='plan') requires plan_output_path to be set")
         # The run dir name is the authoritative run id; stamped into session.start so
@@ -709,7 +655,7 @@ class Workflow:
         DAG state on disk is restored by spawning a curator against the
         same run layout in the CLI.
         """
-        self.steer_reset()  # a leg starts with no armed Ctrl-C
+        self.bridge.steer_reset()  # a leg starts with no armed Ctrl-C
         if self.resume_state_path is None:
             raise ResumeError("resume() called but resume_state_path is None")
         try:
@@ -796,7 +742,7 @@ class Workflow:
             # Seed via the pin owner so --pin honors the cap + non-empty check;
             # a --pin that doesn't fit is refused loudly.
             for pin in self.initial_pins:
-                if not self._try_pin(state, pin):
+                if not try_pin(state.pins, pin):
                     self._log(f"  --pin refused (empty or over the {PINS_MAX_CHARS}-char cap)")
                     self._emit("loop.pin.refused", chars=len(pin), limit=PINS_MAX_CHARS)
             self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
@@ -1089,7 +1035,7 @@ class Workflow:
                 iteration=iteration,
             )
         except ProviderAborted:
-            self.steer_clear()  # consume the stop; don't leave it on disk to re-read
+            self.bridge.steer_clear()  # consume the stop; don't leave it on disk to re-read
             self._log(f"LOOP: operator stopped the run mid-turn at iter {iteration}")
             return self._finish(
                 state,
@@ -1754,7 +1700,7 @@ class Workflow:
             self._report_auto_commit_failure(exc, commit_subject, iteration=turn.iteration)
         # REPL hook. Default no-op returns "continue".
         if sha:
-            directive = self.after_auto_commit(turn.iteration, sha)
+            directive = self.bridge.after_auto_commit(turn.iteration, sha)
             if directive in ("undo", "exit"):
                 ended = self._steer_outcome(directive, turn.iteration, state)
                 if ended is not None:
@@ -3725,9 +3671,9 @@ class Workflow:
         "Compact now") forces tier 2 regardless of the size thresholds; the
         marker is consumed here so one request means one compaction.
         """
-        forced = self.compact_requested()
+        forced = self.bridge.compact_requested()
         if forced is not None:
-            self.compact_clear()
+            self.bridge.compact_clear()
             focus_note = f" (focus: {forced[:80]})" if forced else ""
             self._log(f"LOOP: operator requested a manual compaction{focus_note}")
             self._emit("loop.compact.requested", focus=forced)
@@ -4144,8 +4090,8 @@ class Workflow:
             retry_delay_s=self.provider_retry_delay_s,
             retry_max_delay_s=self.provider_retry_max_delay_s,
             temperature=self.temperature,
-            should_abort=self.should_abort,
-            should_interrupt=self.should_interrupt,
+            should_abort=self.bridge.should_abort,
+            should_interrupt=self.bridge.should_interrupt,
             log=self._log,
             emit=self._emit,
         )
@@ -4277,8 +4223,8 @@ class Workflow:
         # only reaches disk when someone observes it, and `/shells` reads from
         # there.
         self.dispatcher.settle_background()
-        if self.stop_requested():
-            self.stop_clear()
+        if self.bridge.stop_requested():
+            self.bridge.stop_clear()
             self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
             return self._finish(
                 state,
@@ -4330,8 +4276,8 @@ class Workflow:
         )
         self._emit("loop.parked", iteration=iteration, reason=reason)
         while True:
-            if self.stop_requested():
-                self.stop_clear()
+            if self.bridge.stop_requested():
+                self.bridge.stop_clear()
                 return self._finish(
                     state,
                     End(
@@ -4341,9 +4287,9 @@ class Workflow:
                     ),
                     iteration=iteration,
                 )
-            if self.should_abort():
+            if self.bridge.should_abort():
                 return self._steer_outcome("abort", iteration, state)
-            if self.steer_requested():
+            if self.bridge.steer_requested():
                 verb = self._maybe_handle_steer(conversation, iteration, state)
                 if verb is not None:
                     return self._steer_outcome(verb, iteration, state)
@@ -4372,7 +4318,7 @@ class Workflow:
                 iteration=iteration,
             )
         if steer_result == "undo":
-            forked = self.undo_forker() if self.undo_forker is not None else None
+            forked = self.bridge.undo_forker() if self.bridge.undo_forker is not None else None
             if forked is None:
                 # The forker printed why (or no forker is wired); keep running.
                 self._log("  /undo: nothing to undo; continuing")
@@ -4406,7 +4352,7 @@ class Workflow:
             )
         return None
 
-    def _maybe_handle_steer(  # noqa: PLR0911 - one return per steer verb
+    def _maybe_handle_steer(
         self,
         conversation: Conversation,
         iteration: int,
@@ -4426,34 +4372,23 @@ class Workflow:
         is a dispatch directive (see `_dispatch_parallel`), not an injected
         instruction.
         """
-        if not self.steer_requested():
+        if not self.bridge.steer_requested():
             return None
         self._emit("loop.steer.requested", iteration=iteration)
         self._log(f"STEER: operator steering at iter {iteration}")
         try:
-            text = self.steer_prompt()
+            text = self.bridge.steer_prompt()
         finally:
-            self.steer_clear()
+            self.bridge.steer_clear()
         if text is None or not text.strip():
             self._log("  (empty - continuing)")
             return None
         steer_text = text.strip()
-        if steer_text.lower() == "abort":
-            self._emit("loop.steer.aborted")
-            self._log("  abort - halting the run")
-            return "abort"
-        if steer_text.lower() == "exit":
-            self._emit("loop.steer.exited")
-            self._log("  exit - halting the run and leaving the terminal")
-            return "exit"
-        if steer_text.lower() == "/undo":
-            self._emit("loop.steer.undo")
-            self._log("  /undo - forking back before the last message")
-            return "undo"
-        if steer_text.lower() == "detach":
-            self._emit("loop.steer.detached")
-            self._log("  detach - stopping to resume in the background")
-            return "detach"
+        if verb := STEER_VERBS.get(steer_text.lower()):
+            name, event, line = verb
+            self._emit(event)
+            self._log(f"  {line}")
+            return name
         if (
             self._steer_directive(conversation, iteration, state, steer_text)
             or self._steer_pin(conversation, state, steer_text)
@@ -4503,7 +4438,7 @@ class Workflow:
             return True
         if instruction is None:
             return False
-        if not self._try_pin(state, instruction):
+        if not try_pin(state.pins, instruction):
             # parse_pin already rejects an empty directive, so a refusal here is
             # always the cap: deliver the instruction as an ordinary steer.
             self._log(f"  /pin over cap (> {PINS_MAX_CHARS}); delivered as an ordinary steer")
@@ -4523,20 +4458,6 @@ class Workflow:
             " and binds for the rest of the run):\n"
             f"{instruction}"
         )
-        return True
-
-    def _try_pin(self, state: LoopState, instruction: str) -> bool:
-        """Append *instruction* to the run's pins IF it is non-empty and fits
-        the PINS_MAX_CHARS cap; return whether it was pinned. THE single owner
-        of the pin invariants -- both `/pin` and the pre-run --pin seeding go
-        through it, so seeding can skip neither the cap nor the empty check."""
-        instruction = instruction.strip()
-        if not instruction:
-            return False
-        held = sum(len(p) for p in state.pins)
-        if held + len(instruction) > PINS_MAX_CHARS:
-            return False
-        state.pins.append(instruction)
         return True
 
     # ---- /parallel steer dispatch (coordinator) --------------------------
@@ -4582,7 +4503,7 @@ class Workflow:
         Never ends the run: an unavailable spawner, a bad spec, a dirty tree it
         cannot auto-commit, a spawner fault, a failed lane, or a join conflict
         each answer the steer with a message and continue."""
-        if self.lane_spawner is None:
+        if self.bridge.lane_spawner is None:
             self._inject_parallel_feedback(
                 conversation,
                 "parallel dispatch is not available in this front-end; continuing normally.",
@@ -4637,15 +4558,17 @@ class Workflow:
             lanes=len(lanes),
             tasks=[seg.task[:200] for seg in segments],
         )
-        parent_id = self._parallel_parent_id(state.root_task_id)
-        node_ids = [self._add_parallel_node(seg.task, parent_id) for seg in segments]
+        parent_id = parallel_parent_id(self.curator, state.root_task_id)
+        node_ids = [
+            add_parallel_node(self.curator, seg.task, parent_id, log=self._log) for seg in segments
+        ]
         if any(n is not None for n in node_ids):
             self._emit_graph_snapshot()
 
         try:
             # Lanes cut from the run's chain tip, which _ensure_clean_for_dispatch
             # just made current; blocks, no provider calls meanwhile.
-            results = self.lane_spawner(lanes, group, at=self.chain.tip() or None)
+            results = self.bridge.lane_spawner(lanes, group, at=self.chain.tip() or None)
             if len(results) != len(lanes):
                 raise SubrunError(
                     f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
@@ -4655,10 +4578,16 @@ class Workflow:
             # detached spawns); any fault it leaks -- OSError, SubrunError, a
             # result-count mismatch -- must answer the steer, never abort the
             # run. Everything after this point is never-raising by construction
-            # (_join_lane_result and _stamp_parallel_node catch their own faults).
+            # (join_lane_result and stamp_parallel_node catch their own faults).
             self._log(f"PARALLEL: group {group} dispatch failed: {exc}")
             for nid in node_ids:
-                self._stamp_parallel_node(nid, status="failed", note=f"dispatch failed: {exc}")
+                stamp_parallel_node(
+                    self.curator,
+                    nid,
+                    status="failed",
+                    note=f"dispatch failed: {exc}",
+                    log=self._log,
+                )
             self._emit_graph_snapshot()
             self._emit("loop.parallel.failed", group=group, error=str(exc))
             self._inject_parallel_feedback(
@@ -4691,7 +4620,7 @@ class Workflow:
         cursor = 0
         for nid, seg_lanes in zip(node_ids, per_segment, strict=True):
             width = len(seg_lanes)
-            self._stamp_segment_node(nid, lanes[cursor : cursor + width])
+            stamp_segment_node(self.curator, nid, lanes[cursor : cursor + width], log=self._log)
             cursor += width
         self._emit_graph_snapshot()
 
@@ -4734,55 +4663,6 @@ class Workflow:
         except (GitError, OSError) as exc:
             self._log(f"PARALLEL: pre-dispatch checkpoint failed: {exc}")
         return not self.chain.dirty()
-
-    def _parallel_parent_id(self, root_task_id: str | None) -> str | None:
-        """Parent for a dispatched subtask: the curator cursor when it points at
-        an open node, else the run root."""
-        if self.curator is None:
-            return root_task_id
-        return current_task_id(self.curator.nodes(), self.curator.cursor()) or root_task_id
-
-    def _add_parallel_node(self, task: str, parent_id: str | None) -> str | None:
-        """Add a steering-created DAG node for one dispatched task; None when no
-        curator is wired or the add fails (the dispatch still proceeds)."""
-        if self.curator is None:
-            return None
-        title = next((ln.strip() for ln in task.splitlines() if ln.strip()), "")[:200]
-        try:
-            node = self.curator.add_subtask(
-                AddSubtaskIntent(
-                    parent_id=parent_id,
-                    draft=TaskNodeDraft(
-                        title=title or "(parallel task)",
-                        rationale="dispatched via /parallel steering",
-                        created_by="steering",
-                    ),
-                )
-            )
-            return node.id
-        except (CuratorError, OSError, ValidationError) as exc:
-            self._log(f"PARALLEL: DAG node add failed: {exc}")
-            return None
-
-    def _stamp_parallel_node(
-        self, node_id: str | None, *, status: NodeStatus, note: str, sha: str = ""
-    ) -> None:
-        """Record a dispatched node's outcome: its join sha (when given) then its
-        final status. Best-effort -- a curator hiccup must not break the run."""
-        if self.curator is None or node_id is None:
-            return
-        try:
-            if sha:
-                self.curator.record_commit(RecordCommitIntent(id=node_id, sha=sha))
-            self.curator.update_status(UpdateStatusIntent(id=node_id, new_status=status, note=note))
-        except (CuratorError, OSError, ValidationError) as exc:
-            self._log(f"PARALLEL: DAG node stamp failed for {node_id}: {exc}")
-
-    def _stamp_segment_node(self, node_id: str | None, lanes: list[LaneJoin]) -> None:
-        """Stamp one segment's DAG node from its lanes' joins (the reduction
-        lives in `segment_stamp`)."""
-        status, note, sha = segment_stamp(lanes)
-        self._stamp_parallel_node(node_id, status=status, note=note, sha=sha)
 
     def _inject_parallel_feedback(self, conversation: Conversation, msg: str) -> None:
         """Answer a `/parallel` steer with a one-line notice and continue."""

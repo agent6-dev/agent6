@@ -94,6 +94,7 @@ from agent6.tools.operator_prompts import (
 from agent6.types import IsolationLevel
 from agent6.viewmodel.machine_state import Spend, read_budget_totals
 from agent6.workflows._chain import RunChain, commit_identity
+from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import SubrunError, clone_workspace
 
@@ -480,9 +481,13 @@ def run_one(
         keep_recent_chars=keep_recent,
         keep_thinking_turns=cfg.context.keep_thinking_turns,
         compact_elision_gists=cfg.context.elision_gists,
-        steer_requested=bridges.steer_requested if bridges is not None else (lambda: False),
-        steer_clear=bridges.steer_clear if bridges is not None else (lambda: None),
-        steer_prompt=bridges.steer_prompt if bridges is not None else (lambda: None),
+        bridge=OperatorBridge(
+            steer_requested=bridges.steer_requested,
+            steer_clear=bridges.steer_clear,
+            steer_prompt=bridges.steer_prompt,
+        )
+        if bridges is not None
+        else OperatorBridge(),
         finish_validator=_finish_validator(r),
     )
     result = wf.run(_task_with_contract(r))

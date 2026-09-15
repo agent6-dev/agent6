@@ -70,6 +70,7 @@ from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import AutoCommitDirective, IsolationLevel, ResumableMode
 from agent6.workflows._chain import RunChain, commit_identity
 from agent6.workflows._session_state import SessionEndReason
+from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import ResumeError, SessionResult, Workflow
 
 
@@ -331,31 +332,36 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             logger=loop_log,
             events=events,
             curator=curator,
-            steer_requested=steer_state.requested,
-            steer_clear=steer_state.clear,
-            steer_prompt=steer_state.prompt,
-            steer_reset=steer_state.reset_stage,
-            # "Compact now" from a front-end: the same file-bridge pattern as
-            # steer, honored at the next pre-call boundary.
-            compact_requested=lambda: read_compact_request(layout.session_dir),
-            compact_clear=lambda: clear_compact_request(layout.session_dir),
-            stop_requested=lambda: stop_request_pending(layout.session_dir),
-            stop_clear=lambda: clear_stop_request(layout.session_dir),
-            should_abort=steer_state.abort_pending,
-            undo_forker=_undo_forker,
-            should_interrupt=steer_state.interrupt,
-            # `/parallel` steer dispatch: the coordinator's group spawner (None
-            # in plan/ask, and inside a lane -- depth 1).
-            lane_spawner=frontend.build_coordinator_spawner(
-                cfg,
-                cwd,
-                state_dir,
-                mode,
-                inputs.session_id,
-                inputs.budget_overrides.max_usd if inputs.budget_overrides is not None else None,
-                inputs.sandbox_overrides.auto_approve
-                if inputs.sandbox_overrides is not None
-                else False,
+            bridge=OperatorBridge(
+                steer_requested=steer_state.requested,
+                steer_clear=steer_state.clear,
+                steer_prompt=steer_state.prompt,
+                steer_reset=steer_state.reset_stage,
+                # "Compact now" from a front-end: the same file-bridge pattern
+                # as steer, honored at the next pre-call boundary.
+                compact_requested=lambda: read_compact_request(layout.session_dir),
+                compact_clear=lambda: clear_compact_request(layout.session_dir),
+                stop_requested=lambda: stop_request_pending(layout.session_dir),
+                stop_clear=lambda: clear_stop_request(layout.session_dir),
+                should_abort=steer_state.abort_pending,
+                should_interrupt=steer_state.interrupt,
+                after_auto_commit=after_auto_commit,
+                undo_forker=_undo_forker,
+                # `/parallel` steer dispatch: the coordinator's group spawner
+                # (None in plan/ask, and inside a lane -- depth 1).
+                lane_spawner=frontend.build_coordinator_spawner(
+                    cfg,
+                    cwd,
+                    state_dir,
+                    mode,
+                    inputs.session_id,
+                    inputs.budget_overrides.max_usd
+                    if inputs.budget_overrides is not None
+                    else None,
+                    inputs.sandbox_overrides.auto_approve
+                    if inputs.sandbox_overrides is not None
+                    else False,
+                ),
             ),
             budget=budget,
             state_dir=state_dir,
@@ -363,7 +369,6 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             resume_state_path=inputs.resume_state_path,
             mode=mode,
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
-            after_auto_commit=after_auto_commit,
             review_trigger=cfg.review.trigger,
             review_period=cfg.review.period,
             review_seats=session.review_seats,

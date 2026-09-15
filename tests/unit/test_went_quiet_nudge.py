@@ -23,6 +23,7 @@ from agent6.events import EventSink
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.workflows._chain import RunChain
+from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import Workflow
 
 
@@ -405,9 +406,11 @@ def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: Path) -> N
         events=events,
         went_quiet_max_nudges=0,  # no nudge left: the park is the continuation
         interactive=True,
-        steer_requested=lambda: bool(parked) and bool(steers),
-        steer_prompt=lambda: steers.pop(0) if steers else None,
-        steer_clear=parked.clear,
+        bridge=OperatorBridge(
+            steer_requested=lambda: bool(parked) and bool(steers),
+            steer_prompt=lambda: steers.pop(0) if steers else None,
+            steer_clear=parked.clear,
+        ),
     )
     wf.run("do something")
 

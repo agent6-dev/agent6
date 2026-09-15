@@ -30,6 +30,7 @@ from agent6.workflows._provider_call import (
     reasoning_starvation,
 )
 from agent6.workflows._session_state import SNAPSHOT_VERSION
+from agent6.workflows._steer import OperatorBridge
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import LoopState, TurnState, Workflow
 
@@ -1317,9 +1318,9 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
         provider=provider,
         dispatcher=DispatcherStub(),
         max_iterations=10,
-        steer_requested=steer.requested,
-        steer_prompt=steer.prompt,
-        steer_clear=steer.clear,
+        bridge=OperatorBridge(
+            steer_requested=steer.requested, steer_prompt=steer.prompt, steer_clear=steer.clear
+        ),
     )
     snapshot = _resume_snapshot()
 
@@ -3149,8 +3150,10 @@ def test_forced_compact_threads_focus_to_summariser() -> None:
     wf = _wf(
         events=ev,
         summariser_provider=summariser,
-        compact_requested=lambda: "weigh the auth decisions",
-        compact_clear=lambda: cleared.append(True),
+        bridge=OperatorBridge(
+            compact_requested=lambda: "weigh the auth decisions",
+            compact_clear=lambda: cleared.append(True),
+        ),
         compact_drop_at_chars=10**9,
         compact_summarise_at_chars=10**9,
     )
@@ -3174,8 +3177,10 @@ def test_forced_compact_below_the_floor_says_it_was_refused() -> None:
     wf = _wf(
         events=ev,
         summariser_provider=summariser,
-        compact_requested=lambda: "keep the auth work",
-        compact_clear=lambda: cleared.append(True),
+        bridge=OperatorBridge(
+            compact_requested=lambda: "keep the auth work",
+            compact_clear=lambda: cleared.append(True),
+        ),
         compact_drop_at_chars=10**9,
         compact_summarise_at_chars=10**9,
     )
@@ -3194,7 +3199,7 @@ def test_forced_compact_plain_keeps_prompt_unfocused() -> None:
     summariser.call.return_value = _resp("s")
     wf = _wf(
         summariser_provider=summariser,
-        compact_requested=lambda: "",
+        bridge=OperatorBridge(compact_requested=lambda: ""),
         compact_drop_at_chars=10**9,
         compact_summarise_at_chars=10**9,
     )
@@ -3930,8 +3935,10 @@ def test_compact_request_forces_a_tier2_restart() -> None:
     wf = _wf(
         summariser_provider=summariser,
         compact_summarise_at_chars=500_000,
-        compact_requested=lambda: "" if pending["req"] else None,
-        compact_clear=lambda: pending.__setitem__("req", False),
+        bridge=OperatorBridge(
+            compact_requested=lambda: "" if pending["req"] else None,
+            compact_clear=lambda: pending.__setitem__("req", False),
+        ),
     )
     small = _big_text_history("TASK: x", blocks=2, block_chars=100)  # nowhere near tier 2
     assert _compact_via_wire(wf, small) is True
@@ -3995,8 +4002,10 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
         provider=provider,
         dispatcher=DispatcherStub(),
         events=EventSink(tmp_path / "logs.jsonl"),
-        stop_requested=lambda: pending["stop"],
-        stop_clear=lambda: pending.__setitem__("stop", False),
+        bridge=OperatorBridge(
+            stop_requested=lambda: pending["stop"],
+            stop_clear=lambda: pending.__setitem__("stop", False),
+        ),
         max_iterations=30,
         loop_guard_kill_threshold=0,
     )
@@ -4212,9 +4221,11 @@ def test_steer_injects_instruction() -> None:
     """Requested + non-empty prompt text -> instruction appended to messages."""
     cleared: list[bool] = []
     wf = _wf(
-        steer_requested=lambda: True,
-        steer_clear=lambda: cleared.append(True),
-        steer_prompt=lambda: "focus on perf_takehome.py first",
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_clear=lambda: cleared.append(True),
+            steer_prompt=lambda: "focus on perf_takehome.py first",
+        ),
     )
     messages: list[dict[str, Any]] = []
     result = _steer_via_wire(wf, messages, iteration=3, state=_state())
@@ -4233,9 +4244,11 @@ def test_steer_empty_text_continues_without_inject() -> None:
     """Operator answered blank/whitespace -> continue with no message."""
     cleared: list[bool] = []
     wf = _wf(
-        steer_requested=lambda: True,
-        steer_clear=lambda: cleared.append(True),
-        steer_prompt=lambda: "   ",
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_clear=lambda: cleared.append(True),
+            steer_prompt=lambda: "   ",
+        ),
     )
     messages: list[dict[str, Any]] = []
     result = _steer_via_wire(wf, messages, iteration=2, state=_state())
@@ -4248,9 +4261,11 @@ def test_steer_none_text_continues_without_inject() -> None:
     """Operator EOF'd (None) -> continue with no message."""
     cleared: list[bool] = []
     wf = _wf(
-        steer_requested=lambda: True,
-        steer_clear=lambda: cleared.append(True),
-        steer_prompt=lambda: None,
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_clear=lambda: cleared.append(True),
+            steer_prompt=lambda: None,
+        ),
     )
     messages: list[dict[str, Any]] = []
     result = _steer_via_wire(wf, messages, iteration=2, state=_state())
@@ -4264,9 +4279,11 @@ def test_steer_pin_records_and_injects_marked_notice() -> None:
     st = _state()
     wf = _wf(
         events=ev,
-        steer_requested=lambda: True,
-        steer_clear=lambda: None,
-        steer_prompt=lambda: "/pin never touch the schema files",
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_clear=lambda: None,
+            steer_prompt=lambda: "/pin never touch the schema files",
+        ),
     )
     messages: list[dict[str, Any]] = []
     assert _steer_via_wire(wf, messages, iteration=3, state=st) is None
@@ -4282,15 +4299,17 @@ def test_steer_pin_records_and_injects_marked_notice() -> None:
 def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
     """A pin past the total cap still reaches the model NOW as a plain steer;
     only the survives-compaction durability is refused, loudly."""
-    from agent6.workflows.loop import PINS_MAX_CHARS
+    from agent6.workflows._steer import PINS_MAX_CHARS
 
     ev = _EventCapture()
     st = _state(pins=["x" * (PINS_MAX_CHARS - 10)])
     wf = _wf(
         events=ev,
-        steer_requested=lambda: True,
-        steer_clear=lambda: None,
-        steer_prompt=lambda: "/pin " + "y" * 100,
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_clear=lambda: None,
+            steer_prompt=lambda: "/pin " + "y" * 100,
+        ),
     )
     messages: list[dict[str, Any]] = []
     assert _steer_via_wire(wf, messages, iteration=3, state=st) is None
@@ -4306,9 +4325,9 @@ def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
 def test_steer_bare_pin_answers_with_feedback() -> None:
     st = _state()
     wf = _wf(
-        steer_requested=lambda: True,
-        steer_clear=lambda: None,
-        steer_prompt=lambda: "/pin   ",
+        bridge=OperatorBridge(
+            steer_requested=lambda: True, steer_clear=lambda: None, steer_prompt=lambda: "/pin   "
+        ),
     )
     messages: list[dict[str, Any]] = []
     assert _steer_via_wire(wf, messages, iteration=1, state=st) is None
@@ -4328,9 +4347,9 @@ def test_steer_abort_signal() -> None:
             return t
 
         wf = _wf(
-            steer_requested=lambda: True,
-            steer_clear=_record,
-            steer_prompt=_typed,
+            bridge=OperatorBridge(
+                steer_requested=lambda: True, steer_clear=_record, steer_prompt=_typed
+            ),
         )
         messages: list[dict[str, Any]] = []
         result = _steer_via_wire(wf, messages, iteration=5, state=_state())
@@ -4343,9 +4362,11 @@ def test_steer_detach_signal() -> None:
     """Operator chose 'detach' -> returns 'detach' (the caller backgrounds the run)."""
     cleared: list[bool] = []
     wf = _wf(
-        steer_requested=lambda: True,
-        steer_clear=lambda: cleared.append(True),
-        steer_prompt=lambda: "detach",
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_clear=lambda: cleared.append(True),
+            steer_prompt=lambda: "detach",
+        ),
     )
     messages: list[dict[str, Any]] = []
     result = _steer_via_wire(wf, messages, iteration=4, state=_state())
@@ -4362,9 +4383,11 @@ def test_steer_clear_called_even_when_prompt_raises() -> None:
         raise RuntimeError("input EOF")
 
     wf = _wf(
-        steer_requested=lambda: True,
-        steer_clear=lambda: cleared.append(True),
-        steer_prompt=boom,
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_clear=lambda: cleared.append(True),
+            steer_prompt=boom,
+        ),
     )
     messages: list[dict[str, Any]] = []
     with pytest.raises(RuntimeError, match="input EOF"):
@@ -6065,7 +6088,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
         dispatcher=DispatcherStub(),
         max_iterations=10,
         events=_Events(),
-        after_auto_commit=_stop_hook,
+        bridge=OperatorBridge(after_auto_commit=_stop_hook),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
     with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
@@ -6130,7 +6153,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: Path) -> None:
         dispatcher=DispatcherStub(),
         max_iterations=10,
         events=_Events(),
-        after_auto_commit=_exit_hook,
+        bridge=OperatorBridge(after_auto_commit=_exit_hook),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
     with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
@@ -6196,9 +6219,10 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
         dispatcher=DispatcherStub(),
         max_iterations=10,
         events=_Events(),
-        after_auto_commit=_undo_hook,
+        bridge=OperatorBridge(
+            after_auto_commit=_undo_hook, undo_forker=lambda: ("forked-child-ID", "t")
+        ),
     )
-    wf.undo_forker = lambda: ("forked-child-ID", "t")
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
     with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -6623,8 +6647,10 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
         provider=ProviderStub(),
         dispatcher=MagicMock(),
         max_iterations=5,
-        stop_requested=lambda: True,
-        stop_clear=lambda: cleared.__setitem__("n", cleared["n"] + 1),
+        bridge=OperatorBridge(
+            stop_requested=lambda: True,
+            stop_clear=lambda: cleared.__setitem__("n", cleared["n"] + 1),
+        ),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -6806,7 +6832,12 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: Pat
             for i in range(1, len(lanes) + 1)
         ]
 
-    wf = _wf(root=tmp_path, mode="run", lane_spawner=spawner, resume_state_path=snap)
+    wf = _wf(
+        root=tmp_path,
+        mode="run",
+        bridge=OperatorBridge(lane_spawner=spawner),
+        resume_state_path=snap,
+    )
     conversation = Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
@@ -6853,7 +6884,7 @@ def test_a_second_restart_carries_the_first_summary_forward() -> None:
         summariser_provider=summariser,
         compact_drop_at_chars=10**9,
         compact_summarise_at_chars=10**9,
-        compact_requested=lambda: "",
+        bridge=OperatorBridge(compact_requested=lambda: ""),
     )
     # A conversation that already carries one restart, then plenty of new work
     # so the tail clip has something to prefer over the notice.
@@ -6913,9 +6944,11 @@ def test_steer_undo_signal() -> None:
     """`/undo` typed as a steer -> the "undo" sentinel, no injected message."""
     cleared: list[bool] = []
     wf = _wf(
-        steer_requested=lambda: True,
-        steer_clear=lambda: cleared.append(True),
-        steer_prompt=lambda: "/undo",
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_clear=lambda: cleared.append(True),
+            steer_prompt=lambda: "/undo",
+        ),
     )
     messages: list[dict[str, Any]] = []
     result = _steer_via_wire(wf, messages, iteration=4, state=_state())
@@ -7073,8 +7106,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
     wf = _wf(
         mode="run",
         interactive=True,
-        steer_requested=lambda: True,
-        steer_prompt=lambda: next(steers),
+        bridge=OperatorBridge(steer_requested=lambda: True, steer_prompt=lambda: next(steers)),
     )
     conv = Conversation()
     state = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
@@ -7087,8 +7119,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
     wf2 = _wf(
         mode="run",
         interactive=True,
-        steer_requested=lambda: True,
-        steer_prompt=lambda: next(aborts),
+        bridge=OperatorBridge(steer_requested=lambda: True, steer_prompt=lambda: next(aborts)),
     )
     ended = wf2._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
         "Done.",
@@ -7363,8 +7394,7 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
     wf = _wf(
         mode="run",
         events=ev,
-        steer_requested=lambda: True,
-        steer_prompt=lambda: "exit",
+        bridge=OperatorBridge(steer_requested=lambda: True, steer_prompt=lambda: "exit"),
     )
     result = wf._maybe_handle_steer(  # pyright: ignore[reportPrivateUsage]
         Conversation(), 3, _state()
@@ -7493,9 +7523,11 @@ def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
         provider=MagicMock(),
         dispatcher=MagicMock(),
         events=events,
-        steer_requested=lambda: True,
-        steer_prompt=lambda: next(prompts),
-        steer_clear=lambda: None,
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_prompt=lambda: next(prompts),
+            steer_clear=lambda: None,
+        ),
     )
     st = _state()
     turn = _turn(iteration=1)
@@ -7549,9 +7581,11 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: Path) -> None:
         provider=MagicMock(),
         dispatcher=dispatcher,
         events=events,
-        steer_requested=lambda: True,
-        steer_prompt=lambda: next(prompts),
-        steer_clear=lambda: None,
+        bridge=OperatorBridge(
+            steer_requested=lambda: True,
+            steer_prompt=lambda: next(prompts),
+            steer_clear=lambda: None,
+        ),
     )
     wf.mode = "run"
     st = _state()
@@ -7772,9 +7806,9 @@ def _ruling_wf(tmp_path: Path) -> Workflow:
         logger=_silent,
         mode="run",
         state_dir=tmp_path / "state",
-        steer_requested=lambda: True,
-        steer_clear=lambda: None,
-        steer_prompt=steer_prompt,
+        bridge=OperatorBridge(
+            steer_requested=lambda: True, steer_clear=lambda: None, steer_prompt=steer_prompt
+        ),
     )
 
 

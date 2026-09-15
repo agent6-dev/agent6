@@ -1047,9 +1047,9 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     """--pin seeded state.pins DIRECTLY, bypassing the PINS_MAX_CHARS cap (a
     huge --pin then rode every restart and permanently wedged /pin) and the
     non-empty check (--pin '' seeded a blank pin). Seeding now goes through the
-    same _try_pin owner /pin uses."""
+    same try_pin owner /pin uses."""
     from agent6.providers import ProviderResponse
-    from agent6.workflows.loop import PINS_MAX_CHARS  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._steer import PINS_MAX_CHARS
 
     provider = MagicMock()
     provider.call.return_value = ProviderResponse(

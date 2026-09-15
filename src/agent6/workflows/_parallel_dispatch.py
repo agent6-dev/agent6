@@ -11,14 +11,24 @@ continues with. Unit-testable without a Workflow.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from pydantic import ValidationError
+
 from agent6.directive import Segment, parse_spec
 from agent6.git_ops import CommitIdentity, GitError, chain_merge
-from agent6.graph.models import NodeStatus
+from agent6.graph.curator import CuratorError, GraphCurator
+from agent6.graph.models import (
+    AddSubtaskIntent,
+    NodeStatus,
+    RecordCommitIntent,
+    TaskNodeDraft,
+    UpdateStatusIntent,
+)
+from agent6.workflows._dag_focus import current_task_id
 from agent6.workflows.subrun import LaneResult, LaneTask
 
 
@@ -134,3 +144,69 @@ def summary_text(group: str, lanes: list[LaneJoin]) -> str:
             lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
     lines.append("Review what landed and continue.")
     return "\n".join(lines)
+
+
+def parallel_parent_id(curator: GraphCurator | None, root_task_id: str | None) -> str | None:
+    """Parent for a dispatched subtask: the curator cursor when it points at
+    an open node, else the run root."""
+    if curator is None:
+        return root_task_id
+    return current_task_id(curator.nodes(), curator.cursor()) or root_task_id
+
+
+def add_parallel_node(
+    curator: GraphCurator | None, task: str, parent_id: str | None, *, log: Callable[[str], None]
+) -> str | None:
+    """Add a steering-created DAG node for one dispatched task; None when no
+    curator is wired or the add fails (the dispatch still proceeds)."""
+    if curator is None:
+        return None
+    title = next((ln.strip() for ln in task.splitlines() if ln.strip()), "")[:200]
+    try:
+        node = curator.add_subtask(
+            AddSubtaskIntent(
+                parent_id=parent_id,
+                draft=TaskNodeDraft(
+                    title=title or "(parallel task)",
+                    rationale="dispatched via /parallel steering",
+                    created_by="steering",
+                ),
+            )
+        )
+        return node.id
+    except (CuratorError, OSError, ValidationError) as exc:
+        log(f"PARALLEL: DAG node add failed: {exc}")
+        return None
+
+
+def stamp_parallel_node(
+    curator: GraphCurator | None,
+    node_id: str | None,
+    *,
+    status: NodeStatus,
+    note: str,
+    sha: str = "",
+    log: Callable[[str], None],
+) -> None:
+    """Record a dispatched node's outcome: its join sha (when given) then its
+    final status. Best-effort: a curator hiccup must not break the run."""
+    if curator is None or node_id is None:
+        return
+    try:
+        if sha:
+            curator.record_commit(RecordCommitIntent(id=node_id, sha=sha))
+        curator.update_status(UpdateStatusIntent(id=node_id, new_status=status, note=note))
+    except (CuratorError, OSError, ValidationError) as exc:
+        log(f"PARALLEL: DAG node stamp failed for {node_id}: {exc}")
+
+
+def stamp_segment_node(
+    curator: GraphCurator | None,
+    node_id: str | None,
+    lanes: list[LaneJoin],
+    *,
+    log: Callable[[str], None],
+) -> None:
+    """Stamp one segment's DAG node from its lanes' joins (`segment_stamp`)."""
+    status, note, sha = segment_stamp(lanes)
+    stamp_parallel_node(curator, node_id, status=status, note=note, sha=sha, log=log)

@@ -208,12 +208,14 @@ def _stub_leg_internals(
         def __init__(self, **kw: Any) -> None:
             if built is not None:
                 built.update(kw)
-            self._undo_forker: Callable[[], tuple[str, str] | None] = kw["undo_forker"]
+            self._undo_forker: Callable[[], tuple[str, str] | None] | None = kw[
+                "bridge"
+            ].undo_forker
 
         def run(self, _task: str) -> SessionResult:
             if isinstance(result, Exception):
                 raise result
-            if result.reason == "undone":
+            if result.reason == "undone" and self._undo_forker is not None:
                 self._undo_forker()  # what the loop does before an `undone` end
             return result
 

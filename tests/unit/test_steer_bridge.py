@@ -25,6 +25,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.ui.cli._steer import file_bridge_steer, install_steer_sigint, make_steer_state
 from agent6.workflows._chain import RunChain
+from agent6.workflows._steer import OperatorBridge
 
 
 def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
@@ -299,7 +300,7 @@ def test_workflow_run_resets_the_steer_stage_at_leg_entry() -> None:
         provider=MagicMock(),
         dispatcher=MagicMock(),
         mode="ask",
-        steer_reset=spy,
+        bridge=OperatorBridge(steer_reset=spy),
     )
     for expected in (1, 2):
         with contextlib.suppress(Exception):  # mocks explode later in the leg

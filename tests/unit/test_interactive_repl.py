@@ -32,6 +32,7 @@ from agent6.ui.cli._repl import REPL_HELP
 from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.steer import SteerState
 from agent6.workflows._chain import RunChain
+from agent6.workflows._steer import OperatorBridge
 
 
 def _init_repo(path: Path) -> None:
@@ -228,7 +229,7 @@ def test_after_auto_commit_default_continues() -> None:
         logger=lambda _m: None,
     )
     # Field exists and defaults to the no-op shape.
-    assert wf.after_auto_commit(1, "abc") == "continue"
+    assert wf.bridge.after_auto_commit(1, "abc") == "continue"
 
 
 def test_after_auto_commit_field_is_overridable() -> None:
@@ -250,9 +251,9 @@ def test_after_auto_commit_field_is_overridable() -> None:
         provider=MagicMock(),
         dispatcher=MagicMock(),
         logger=lambda _m: None,
-        after_auto_commit=hook,
+        bridge=OperatorBridge(after_auto_commit=hook),
     )
-    assert wf.after_auto_commit(7, "deadbeef") == "stop"
+    assert wf.bridge.after_auto_commit(7, "deadbeef") == "stop"
     assert calls == [(7, "deadbeef")]
 
 

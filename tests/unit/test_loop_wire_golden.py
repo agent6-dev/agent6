@@ -36,6 +36,7 @@ from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, RawResult, ToolResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation
+from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import Workflow
 
 _GOLDEN = Path(__file__).parent / "data" / "golden_loop_wire.json"
@@ -262,11 +263,13 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         summariser_provider=summariser,  # type: ignore[arg-type]
         compact_drop_at_chars=2_000,
         resume_state_path=snap_path,
-        steer_requested=steer.requested,
-        steer_prompt=steer.prompt,
-        steer_clear=steer.clear,
-        compact_requested=_compact_requested,
-        compact_clear=_compact_clear,
+        bridge=OperatorBridge(
+            steer_requested=steer.requested,
+            steer_prompt=steer.prompt,
+            steer_clear=steer.clear,
+            compact_requested=_compact_requested,
+            compact_clear=_compact_clear,
+        ),
     )
     initial = {"role": "user", "content": [{"type": "text", "text": f"TASK:\n{_TASK}\n\nBegin."}]}
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
