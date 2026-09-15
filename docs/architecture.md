@@ -26,8 +26,10 @@ graph TD
 
 Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `events`, `git_ops`, `graph`, `init`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secrets`, `sessions`, `skills`, `task_text`, `types`, `verify_infer`, `viewmodel`.
 
-- **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root.
-  The four front-ends (`ui/cli`, `ui/tui`, `ui/web`, `ui/acp`), `ui/mcp_server.py` (agent6 as an MCP server), and the write helpers `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place), over the shared read-model fold (`viewmodel`).
+- **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
+    - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`
+    - `ui/mcp_server.py`: agent6 as an MCP server
+    - the write helpers: `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place)
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
     - never imports `agent6.ui`
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
@@ -40,7 +42,7 @@ Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `co
 **Where the CLI resolves things.** `ui/cli` parses arguments, optionally spawns the TUI, and picks a workflow.
 
 - `cli_main` is the one error boundary: `OperatorError` (with `ConfigError`, `MemoryStoreError`) prints an `ERROR:` refusal at exit 2; anything else crash-reports with a saved traceback at exit 1
-- config resolves through [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (defaults, global, per-repo, `--config FILE`); paths and sudo/root through [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py); keys through [secrets.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secrets.py)
+- config resolves through [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (defaults, global, per-repo, `--config FILE`, then a machine agent's per-state overlay; a selected preset sits just above the layer that named it); paths and sudo/root through [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py); keys through [secrets.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secrets.py)
 - per-repo state lives out of the workspace at `$XDG_STATE_HOME/agent6/<repo-id>/`, keyed on the repository (a subdirectory reaches the same runs, memory and config, and so does a linked worktree, through its `.git` file)
 - every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held validate + revalidate + rollback cycle, or "kept as written" when the fail-open lock was not held
 
@@ -49,7 +51,7 @@ Unset roles fall back to `worker`.
 
 ## A run
 
-One provider, one model, one message history.
+A run keeps one message history with one provider and one model.
 
 - the model drives by calling tools; the workflow dispatches, snapshots, tracks budget
 - multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
@@ -90,16 +92,23 @@ flowchart TD
 `agent6 resume` rehydrates from `loop_state.json` and `agent6 fork --at-turn N` from the matching checkpoint.
 With the per-call transcripts, an interrupted run replays deterministically up to the next model call.
 
-**The harness runs the gate** (`[workflow].verify_when`, default `finish`): when `finish_session` arrives over a tree no green run covers, the loop runs `verify_command` itself through the same dispatcher path as the model's `run_verify_command` (approvals included; a denied approval withholds the gate for the rest of the run, and the run ends unverified); `step` also runs it after every editing turn; `never` leaves every run to the model. A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run or the model's own) re-runs scoped to the tests nearest the run's diff and runs scoped until a full run of the gate passes; the notice lists the selected files, `session.end` carries `scoped`, and a scoped green reads `passed · scoped gate` on every surface.
+**The harness runs the gate** (`[workflow].verify_when`, default `finish`).
+When `finish_session` arrives over a tree no green run covers, the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
+A denied approval withholds the gate for the rest of the run, and the run ends unverified.
+`step` also runs it after every editing turn; `never` leaves every run to the model.
+A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run or the model's own) re-runs scoped to the tests nearest the run's diff.
+It stays scoped until a full run of the gate passes.
+The notice lists the selected files, `session.end` carries `scoped`, and a scoped green reads `passed · scoped gate` on every surface.
 A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
 
-**Per-step commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged); a step no gate judged (a gateless run, a gate nobody may run under `run_commands = "no"` or after a denial, or `verify_when = "finish"` between the model's own gate runs) commits as a checkpoint.
+**Per-step commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
 
+- a step no gate judged commits as a checkpoint: a gateless run, a gate nobody may run (under `run_commands = "no"`, or after a denial), or `verify_when = "finish"` between the model's own gate runs
 - `branch_per_run` also advances a visible `agent6/<id>` branch
 - HEAD, the index, and the checkout never move: mid-run git activity cannot collide with the record
 - consolidation is chosen at `sessions merge` time (`git.merge_strategy`: `squash`, `merge`, `ff`)
 
-**The task DAG is scaffolding.** `add_task` / `update_task` / `list_tasks` write a curator-owned side store with `depends_on` edges, cycle-checked; they do not pick the next tool.
+**The task DAG is a curator-owned side store.** `add_task` / `update_task` / `list_tasks` write it, with `depends_on` edges, cycle-checked; they do not pick the next tool.
 
 - each turn the current task surfaces into the prompt (the cursor's open subtask, else the first dependency-satisfied pending one), advances as tasks pass, marks `in_progress`
 - `finish_session` refuses while the worker's own subtasks are open, capped so an unclosable task cannot stall the run
@@ -122,27 +131,33 @@ A red finish certification returns to the model with the gate's output `verify_r
 - tier 2, `summarise_at_chars`: the elided history is summarised by the `reviewer` model; the conversation restarts from task + summary
 - the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)
 - compaction is visible: events carry the elisions and the restart summary, every view marks them in place, `/status` shows counts
-- `/now <text>` steers at once, aborting the call in flight (the CLI's `steer --now`); `/compact [focus]` compacts on demand; `/pin <text>` survives every restart verbatim (4000-char total cap, loud refusal over it) and persists in the snapshot
+- `/now <text>` steers at once, aborting the call in flight (the CLI's `steer --now`)
+- `/compact [focus]` compacts on demand
+- `/pin <text>` survives every restart verbatim and persists in the snapshot (4000-char total cap, loud refusal over it)
 
 **Repo memory**: one fact per markdown file under `<state-dir>/<repo-id>/memory/`, plus a one-line-per-entry `MEMORY.md` index.
-Beside it, `DECISIONS.md` holds the operator's rulings: the harness appends every `ask_user` answer and every steer that answered a question, verbatim with its question, session and time (an identical ruling already on file is recorded once); the model reads it first (a `<decisions>` block, re-shown after a compaction restart), never writes it (`agent6 memory decisions` prints it), and a finish-time check reports any ruling missing from the file.
+Beside it, `DECISIONS.md` holds the operator's rulings.
+The harness appends every `ask_user` answer and every steer that answered a question, verbatim with its question, session and time; an identical ruling already on file is recorded once.
+The model reads it first (a `<decisions>` block, re-shown after a compaction restart) and never writes it; `agent6 memory decisions` prints it.
+A finish-time check reports any ruling missing from the file.
 
 - the index injects into every run's prompt as a capped `<memory>` block; depth is a file read
 - the worker writes through the ordinary edit tools under a narrow grant, in-process only; the jail never mounts it
 - run mode writes; plan and ask read; machine modes see none
-- models never write unprompted (46 bench legs: zero writes), so the loop surfaces the mechanism twice: an advisory when verify first recovers green, and a once-deferred `finish_session` after such a recovery with nothing recorded
+- models never write unprompted ([zero writes in 46 bench legs](https://github.com/agent6-dev/agent6/blob/master/bench/longhorizon/FINDINGS.md)), so the loop nudges twice: an advisory when verify first recovers green, and a once-deferred `finish_session` after such a recovery with nothing recorded
 - `agent6 memory add/list/show/rm` is the operator surface over the same files
 
 **Skills** resolve at run start from `<data-dir>/skills/` plus `[skills].extra_dirs`, through one resolution: the `<skills>` index and what `use_skill` serves cannot diverge.
 
 - `always` skills inject full text; the rest get an index line and load on demand; run mode only
-- delivery is measured: small models never call `use_skill` from the index alone; the reliable paths are `always`, `/name`, and `run --skill`
+- small models never call `use_skill` from the index alone ([measured](https://github.com/agent6-dev/agent6/blob/master/bench/coreagent/FINDINGS.md)); the reliable paths are `always`, `/name`, and `run --skill`
 
 **`finish_session(summary)`** is the only terminal tool: it emits a `session.end` event and returns control to the CLI.
 
 ## The run lifecycle
 
-`app/run.py`'s `run_task` composes one stage per step, drawn in the order it calls them: refusals and clamps, the route preflight, isolation, git preflight, manifest, provider and tool assembly, gate inference, the loop, then auto-merge and the end report.
+`app/run.py`'s `run_task` composes one stage per step.
+The diagram draws them in call order: refusals and clamps, the route preflight, isolation, git preflight, manifest, provider and tool assembly, gate inference, the loop, then auto-merge and the end report.
 The stash finalize is last because it runs from `finally`, on every exit path, refusals included.
 
 ```mermaid
@@ -209,10 +224,12 @@ It prints a markdown review, and makes no edits, no commits, and no `run_command
 
 ## Parallel runs
 
-Three consumers drive one primitive, a task run as a subordinate isolated run whose branch joins back: `run --parallel`, the web and TUI composers' `/parallel` new-work directive, and a live run's `/parallel` steer.
+The primitive is a task run as a subordinate isolated run whose branch joins back.
+Three consumers drive it: `run --parallel`, the web and TUI composers' `/parallel` new-work directive, and a live run's `/parallel` steer.
 `agent6 sessions compare` is not one of them: it only ranks finished runs, and never clones, imports, or joins.
 
-All three share one grammar in [directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py), a pure-stdlib leaf both `workflows` and `ui` import: `/parallel [spec] <task>`, repeatable, where `spec` is an optional lane count or model list and `parse_spec` maps it to one model per lane.
+All three share one grammar in [directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py), a pure-stdlib leaf both `workflows` and `ui` import.
+The form is `/parallel [spec] <task>`, repeatable; `spec` is an optional lane count or model list, and `parse_spec` maps it to one model per lane.
 A segment's first token counts as a spec when it contains a comma or a slash, since model ids are provider/model shaped.
 A bare name like `opus` stays task text, and a task whose first word is a path parses as a bogus model spec, so start a task with a verb.
 
@@ -233,7 +250,10 @@ The detached spawn it drives (`ui.spawn`, the path `attach` and `resume` use) is
 
 **`agent6 run --parallel N|[provider/]model,...`** plans one `LaneSpec` per lane, each spawned as an ordinary detached `agent6 run` with its own jail and `run_commands` policy.
 
-- the fan-out is a session of its own under the origin's runs, named by the fan-out id: a manifest with the fan-out stamp and no run branch, a journal (the dispatch, `loop.parallel.compared` with the ranking, the judge's cost as its own spend, the end), and a worker pid while the lanes run and the judge ranks them; `stop <id>` ends it with its lanes, and `resume` refuses it
+- the fan-out is a session of its own under the origin's runs, named by the fan-out id; `stop <id>` ends it with its lanes, and `resume` refuses it
+    - a manifest with the fan-out stamp and no run branch
+    - a journal: the dispatch, `loop.parallel.compared` with the ranking, the judge's cost as its own spend, the end
+    - a worker pid while the lanes run and the judge ranks them
 - every lane's manifest names the session that dispatched it (`parallel.coordinator`, stamped from the spawn env), so each listing nests lanes under their coordinator, folded into a count
 - each lane's live session dir symlinks into `<origin_state>/sessions/runs/` on locate: a fan-out is visible in every hub while it runs
 - on completion a lane imports and the symlink becomes the real directory; a failed-to-start, still-running, or refused lane keeps its clone and symlink (never the only copy lost)
@@ -244,9 +264,12 @@ The detached spawn it drives (`ui.spawn`, the path `attach` and `resume` use) is
 
 **A `/parallel` steer dispatches a sibling group** through `Workflow.lane_spawner` (the injection point keeping `workflows` from importing `ui`; `run.py`/`resume.py` wire the real spawner, run mode only).
 
-- the loop blocks with no provider calls while lanes run: chain-commit the worktree first (lanes cut from the chain tip), expand segments, clone/spawn/await/import, merge each branch onto the chain in dispatch order (`chain_merge` syncs merged files into the worktree)
+- the loop blocks with no provider calls while lanes run, in this order:
+    - chain-commit the worktree (lanes cut from the chain tip)
+    - expand segments, then clone, spawn, await and import the lanes
+    - merge each branch onto the chain in dispatch order (`chain_merge` syncs merged files into the worktree)
 - each segment gets one DAG node: `passed` with the last joined sha, or `failed` when every lane failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
-- `loop.parallel.dispatched` / `joined` / `failed` render as conversation markers: the blocked wait is visible, never silent
+- `loop.parallel.dispatched` / `joined` / `failed` render as conversation markers, so the blocked wait is visible
 
 **Depth is 1.** Every spawned lane carries `AGENT6_SUBRUN=1`, and both `--parallel` and `build_coordinator_spawner` refuse to wire a `lane_spawner` when it is set.
 
@@ -280,13 +303,17 @@ One curator per run is an invariant (two live curators cache independently; the 
 - a per-mutation flock on the session dir guards concurrent operator-CLI reads/writes
 - a write-path fault after the in-memory update reloads from disk before surfacing: no read ever observes an unpersisted node
 
-One live run-mode worker per checkout is the level above (`sessions/lock.py`, a flock on `<state-dir>/locks/<checkout-id>.lock`, one per checkout of the repository): run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
-A second `agent6 run` parks: the submitted task is saved verbatim in the new run's manifest (`parked_task`, with `parked_reason`, shown as "parked · checkout busy" in listings) and `agent6 resume <id>` starts it once the checkout is free; the message also offers a `/parallel 1 <task>` steer that hands it to the live run as an isolated lane.
+One live run-mode worker per checkout is the level above (`sessions/lock.py`, a flock on `<state-dir>/locks/<checkout-id>.lock`).
+Run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
+A second `agent6 run` parks.
+The submitted task is saved verbatim in the new run's manifest (`parked_task`, with `parked_reason`, shown as "parked · checkout busy" in listings), and `agent6 resume <id>` starts it once the checkout is free.
+The message also offers a `/parallel 1 <task>` steer that hands it to the live run as an isolated lane.
 Plan and ask expose no edit tools and spawn freely; `--parallel` lanes work in isolated workdirs under the coordinator's one lock.
 
 The working tree at start is the run's next gate, in the same shape.
 Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt. A resume adds the files that appeared between legs and the run cannot show it wrote, and its note names them.
-Uncommitted changes to tracked files are asked about over the `ask_user` channel (stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes"); `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before its dir exists.
+Uncommitted changes to tracked files are asked about over the `ask_user` channel: stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes".
+`[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before its dir exists.
 
 ## Session state on disk
 
@@ -305,33 +332,48 @@ Ids are one namespace across every bucket, since every surface addresses a sessi
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between legs and it cannot show it wrote; left out of every chain commit and dirty check; a fork copies its source's |
 
 `loop_state.json` is the latest pointer for resume; `checkpoints/` is the per-turn history `fork --at-turn` addresses, kept in full.
-`finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor; the planner re-reads it before every turn and is shown it whenever it differs from what it last saw, so answers written there survive the next `finish_planning`.
+`finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor.
+The planner re-reads it before every turn and is shown it whenever it differs from what it last saw, so answers written there survive the next `finish_planning`.
 `agent6 run --from` feeds it as a new run's task.
 
-**A fork** clones a source run's state as of a checkpoint into a new session dir with a new id, and gives it a linked git worktree of its own.
-It adds the worktree detached at the turn's sha (`<[parallel].workdir>/<repo-id>/<new>`), copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`, rebuilds the curator DAG at the checkpoint's `graph_version`, writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `worktree` / `worktree_git_dir` (the repository git dir the worktree points into, recorded here so the jail grant never depends on the worktree's own `.git` pointer), and cuts `agent6/<new>` at the turn's sha.
+**A fork** clones a source run's state as of a checkpoint into a new session dir with a new id, and gives it a linked git worktree of its own:
+
+- adds the worktree detached at the turn's sha (`<[parallel].workdir>/<repo-id>/<new>`)
+- copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`
+- rebuilds the curator DAG at the checkpoint's `graph_version`
+- writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `worktree` / `worktree_git_dir` (the repository git dir the worktree points into, recorded so the jail grant never depends on the worktree's own `.git` pointer)
+- cuts `agent6/<new>` at the turn's sha
+
 The source run and the operator's checkout are never mutated, and one fork edge per line lands in a per-repo `lineage.jsonl`.
-`agent6 resume <new>` runs the leg in that worktree (the repository's state dir and config apply there); the jail policy grants the recorded `worktree_git_dir` read-only there, refusing when the worktree's `.git` pointer no longer resolves to it, and the worktree's checkout lock is removed with the worktree.
+`agent6 resume <new>` runs the leg in that worktree; the repository's state dir and config apply there.
+The jail policy grants the recorded `worktree_git_dir` read-only, and refuses when the worktree's `.git` pointer no longer resolves to it.
+The worktree's checkout lock is removed with the worktree.
 The worktree shares the repository's refs, so `sessions diff|commits|merge <new>` work from the repo like any run's; `sessions prune` removes the worktree once the fork is merged, and `sessions rm <new>` removes it with the record.
-The manifest is the only thing that names a worktree as agent6's: a directory under `[parallel].workdir` that no manifest records is never deleted, and a worktree two sessions name (an `/undo` fork and its source) stays while either still needs it.
+The manifest is the only thing that names a worktree as agent6's.
+A directory under `[parallel].workdir` that no manifest records is never deleted, and a worktree two sessions name (an `/undo` fork and its source) stays while either still needs it.
 
 The rebuild (`graph/replay.py`) undoes every journal-stamped mutation newer than that version, so a fork's tasks, statuses, cursor, and journal match the turn its conversation came from.
 Node content the journal never records (title, rationale, acceptance, paths) is immutable after creation and comes from the current nodes; `notes` and `updated_at` cannot be unwound and stay current.
 A checkpoint with `graph_version: 0` has no version to rebuild at, so its fork copies the DAG verbatim.
 
-A fork's tree is the repo as of that committed sha, nothing more.
-On a gated run, an edit not yet committed at the forked turn is absent from the fork's tree even though the copied transcript mentions it, and the forked run picks it up by re-reading the real files.
-A fork is a commit plus the conversation up to that turn, which is predictable and cheap, rather than snapshotting uncommitted bytes into every checkpoint.
+A fork's tree is the repo as of that committed sha.
+On a gated run, an edit not yet committed at the forked turn is absent from the fork's tree, even though the copied transcript mentions it.
+The forked run picks it up by re-reading the real files.
+A fork is a commit plus the conversation up to that turn; no checkpoint holds uncommitted bytes.
 An `/undo` fork adds no worktree: it keeps the undone session's checkout.
 
 ## Events
 
-One headless core feeds four front-ends: the CLI, the Textual TUI, the browser UI (`agent6 web`), and the ACP agent an editor drives.
+Four front-ends share one headless core: the CLI, the Textual TUI, the browser UI (`agent6 web`), and the ACP agent an editor drives.
 All four fold the same event stream and render their own way.
 One listing row shape (`viewmodel.summary_row`) serves `sessions list --json` and `/api/hub`, and `sessions show --json` names the state with the same `status` word.
-Two shared layers sit under them: the read side [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (the `SessionState` and `MachineState` fold plus its wire form, exactly what `agent6 attach --json` and the web endpoints emit), and the write side, [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, steer, and compact-request file contract the workflow polls.
+Two shared layers sit under them.
 
-The journal is durable by contract: an append failure on anything but the streaming deltas stops the run loudly (`EventWriteError`) rather than running on with an unrecordable outcome, and in-process listeners see an event only after its write landed.
+- the read side, [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel): the `SessionState` and `MachineState` fold plus its wire form, exactly what `agent6 attach --json` and the web endpoints emit
+- the write side: [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns, and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, steer, and compact-request file contract the workflow polls
+
+The journal is durable by contract.
+An append failure on anything but the streaming deltas stops the run loudly (`EventWriteError`), and in-process listeners see an event only after its write landed.
 
 The `logs.jsonl` vocabulary is small and stable, and is the data contract for any external viewer:
 
@@ -350,7 +392,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `session.undone` | `/undo`: the turn taken back and the fork that continues from it |
 | `btw.opened` / `.answered` | a `/btw` side question and its answer block |
 | `command.backgrounded` | a `run_command` handed back as a background job (`id`, `pid`, `seconds`) |
-| `metric.start` | the metric command about to run (argv) |
+| `metric.start` / `.end` | `cmd` (argv); the end adds `exit_code`, `duration_s`, `*_tail`, `score` |
 | `jail.degraded` | `detail`: the sandbox came up weaker than asked, or a process survived the sweep at the run's jail session or a spawned MCP server's close |
 | `mcp.server_unavailable` | a configured MCP server that did not start; the run continues without it |
 | `budget.update` | input/output token totals, the cached read and creation totals, and the fallback cap, plus `usd_total`, `usd_partial`, `usd_cap`, `tokens_unmetered`, and the plan meter (`plan_used_percent`, `plan_consumed`, `plan_cap`, `plan_resets_at`) |
@@ -358,7 +400,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `question.prompt` / `.answer` | `id`, `questions` (each `question`, `options`), `call_id` (null for the dirty-tree start question) / `id`, `answers` (aligned to the questions; an unanswered one is `""`), `source` (`stdin`, `frontend`, `await-frontend`, `away-wait`, `headless-default`, `headless`, `acp`): the `ask_user` tool and the start question |
 | `graph.update` | the task DAG after this turn: `nodes` (title, status, parent_id, children), `cursor` |
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.review.*`, `loop.steer.*` |
-| `loop.budget` | per-iteration usage heartbeat, read by `agent6 sessions show` |
+| `loop.budget` | per-iteration usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |
 | `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it); one shape from every exit path |
 
@@ -367,8 +409,10 @@ A `run_command` approval publishes as `approval.prompt`.
 - one gate (`tools/operator_prompts.py`, held by the dispatcher) mints the ids and journals every prompt/answer pair, whichever front-end answers; a front-end's approver and questioner only answer and name their source
 - the TUI's Allow/Deny writes the literal choice to `approvals/<id>.answer`; the gate clears that slot before journaling the prompt, and the approver reads it before the gate records `approval.answer`
 - the transcript fold marks the call a prompt's `call_id` names as awaiting (`sessions show`, the web and TUI conversation, ACP's `pending`)
-- the asking side decides what a choice grants: each prompt names its "allow all" scope (`command`, or one MCP server); standing answers record per scope; a no-standing gate sets `standing: false` and no front-end shows the button
-- the answer poll falls back headless (stdin, or deny for a machine state) only after the front-end stays dead 30 consecutive seconds: a page reload or locked phone never converts a pending approval into a deny
+- the asking side decides what a choice grants: each prompt names its "allow all" scope (`command`, or one MCP server), and standing answers record per scope
+- a no-standing gate sets `standing: false`, and no front-end shows the button
+- the answer poll falls back headless (stdin, or deny for a machine state) only after the front-end stays dead 30 consecutive seconds
+    - a page reload or a locked phone never converts a pending approval into a deny
 - a watching browser registers as the run's answer front-end; prompts bridge to the page
 - the task DAG rides as `graph.update` (`nodes`: title, status, parent_id, children; `cursor`), one per turn; every mutation is curator-owned in `graph.jsonl`, read via `sessions graph`
 
@@ -380,7 +424,7 @@ A `run_command` approval publishes as `approval.prompt`.
 | Tool surface | [tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py) |
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [workflows/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/loop.py) |
-| Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (pure strings the loop, review, judge, and machine assemble) |
+| Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (pure strings the loop, review, judge, and machine assemble; `revision.py` holds the loop's prompt-revision, summariser, gist and restart-notice prompts) |
 | Review workflow | [workflows/review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/review.py) |
 | Code-review call shape | [workflows/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/code_review.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
@@ -398,7 +442,7 @@ A `run_command` approval publishes as `approval.prompt`.
 
 ## Bench and development switches
 
-Six env vars exist for benchmark arms, harness experiments and debugging rather than product configuration, listed here so no behaviour keys off undocumented state:
+These env vars are switches for benchmark arms, harness experiments and debugging, listed here so no behaviour keys off undocumented state:
 
 - `AGENT6_SYMBOL_TOOLS`: selects a symbol-tool arm, hiding part of the navigation surface; a call to a hidden tool says so.
 - `AGENT6_DISABLE_APPLY_EDIT=1`: withholds `apply_edit`, forcing the patch path; the refusal names the switch.
@@ -407,7 +451,13 @@ Six env vars exist for benchmark arms, harness experiments and debugging rather 
 - `AGENT6_FORCE_STREAM=1`: streams the run's reasoning to stderr with no TTY, for a bench or CI log.
 - `AGENT6_DEBUG=1`: re-raises an unexpected error with its traceback instead of writing a crash-report file, and prints the notices a run would keep to its log.
 
+agent6 also sets markers for its own children:
+
+- `AGENT6_SUBRUN=1`: subordinate work (a lane, a machine state, a `/btw` question), which never fans out itself ([Parallel runs](#parallel-runs)).
+- `AGENT6_STREAM_TO_LOG=1`: a detached spawn or lane emits its stream deltas as events with no console echo.
+- `AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`: the lineage a lane's manifest records.
+
 ## Pre-1.0 stability
 
-Every public shape (config TOML, IPC frames, the on-disk graph, CLI flags, transcript layout) is liquid until 1.0, and breaks cleanly rather than carrying shims.
+Every public shape (config TOML, IPC frames, the on-disk graph, CLI flags, transcript layout) is liquid until 1.0; a change breaks the old shape and carries no shim.
 See [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).

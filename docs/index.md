@@ -22,7 +22,7 @@ hide:
 </div>
 
 The model can write code and ask to run commands, but those commands go through a jail with restricted filesystem and network access.
-Long-running workflows can be written, reviewed, edited, resumed, and replayed as declarative state machines instead of being left to an open-ended agent loop.
+Long-running workflows can be written, reviewed, edited, resumed, and replayed as declarative state machines.
 
 <div class="a6-grid" markdown>
 
@@ -70,7 +70,8 @@ Merging stays manual.
 </video>
 
 `agent6 run` streams the run's conversation in your terminal, with no full-screen UI.
-`agent6 tui` opens the hub instead: every run for the repository with its mode, status, and cost, where you open a session to read its live conversation, toggle the dashboard (Ctrl+D), or scroll the event log.
+`agent6 tui` opens the hub instead: every run for the repository with its mode, status, and cost.
+From there you open a session to read its live conversation, toggle the dashboard (Ctrl+D), or scroll the event log.
 `agent6 run --tui` starts on that conversation view, and `-i` drives the run from a stdin REPL.
 The [terminal UI](terminal.md) page has a still of each screen.
 
@@ -80,7 +81,8 @@ The [terminal UI](terminal.md) page has a still of each screen.
   <source src="/screenshots/out/web-desktop.webm" type="video/webm">
 </video>
 
-`agent6 web` serves the same views in a browser, from a desktop or a phone: start a run and watch it stream, steer it, approve prompts, answer questions, read the transcript, and browse and run state machines.
+`agent6 web` serves the same views in a browser, from a desktop or a phone.
+There you start a run and watch it stream, steer it, approve prompts, answer questions, read the transcript, and browse and run state machines.
 It binds `127.0.0.1`; put `tailscale serve` in front for encrypted remote access.
 See [the web UI](web.md).
 

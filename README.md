@@ -3,7 +3,7 @@
 A coding agent that jails model commands and uses editable state machines for long-running tasks.
 
 The model can write code and ask to run commands, but those commands go through a jail with restricted filesystem and network access.
-Long-running workflows can be written, reviewed, edited, resumed, and replayed as declarative state machines instead of being left to an open-ended agent loop.
+Long-running workflows can be written, reviewed, edited, resumed, and replayed as declarative state machines.
 
 **Full documentation: [agent6.dev](https://agent6.dev)**
 
@@ -26,14 +26,15 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 
 ## Features
 
-- **Jailed commands**: every command the model asks to run goes through a jail that controls what it can read and write and restricts its network access; `auto` picks the strongest level the host allows ([Security](https://agent6.dev/security/))
+- **Jailed commands**: every command the model asks to run goes through a jail that controls what it can read, write and reach on the network; `auto` picks the strongest level the host allows ([Security](https://agent6.dev/security/))
 - **State machines**: long-running workflows as declarative `.asm.toml` files you review, edit, test offline, run, watch, and replay, with waits, operator input, and steering built in ([State machines](https://agent6.dev/state-machines/))
 - **Three session kinds**: `run` edits; `plan` and `ask` never do; `--from <id>` seeds one from another, and `/btw` asks a question beside a live run
 - **Verify gate**: the repo's test command (inferred when unset) certifies the tree before a run may finish, and every surface shows the same green or red
-- **Clean checkout**: every step commits to the run's own hidden ref, so your branch, HEAD, and index are never touched (a visible `agent6/<id>` branch tracks it by default); `sessions merge` lands it, `resume` continues it, `fork` branches it at any turn into its own worktree
+- **Clean checkout**: every step commits to the run's own hidden ref, so your branch, HEAD, and index are never touched (a visible `agent6/<id>` branch tracks it by default)
+- **Merge, resume, fork**: `sessions merge` lands a run's work, `resume` continues it, and `fork` branches it at any turn into its own worktree
 - **Task graph**: the worker's plan is a persistent DAG, live on every surface and surviving crashes and compaction
 - **Context control**: compaction is visible everywhere, `/compact [focus]` and `/pin` steer it, and repo memory carries lessons across runs
-- **Four front-ends, one engine**: CLI, TUI, [browser](https://agent6.dev/web/) (desktop or phone), and [editor over ACP](https://agent6.dev/acp/) all drive the same runs
+- **Four front-ends**: CLI, TUI, [browser](https://agent6.dev/web/) (desktop or phone), and [editor over ACP](https://agent6.dev/acp/) all drive the same runs
 - **Live runs are addressable**: `attach` follows and answers one, `steer` queues an instruction from a script or cron job, `exec` and `forward` reach inside its sandbox network, `ps` and `history` find it
 - **Parallel fan-out**: `--parallel N|model-a,model-b` runs isolated lanes and compares them into a ranked report ([Architecture](https://agent6.dev/architecture/#parallel-runs))
 - **Code review**: `agent6 review` on any diff, plus an in-loop adversarial panel where only blocking findings gate a finish
@@ -95,9 +96,12 @@ See [usage](https://agent6.dev/usage/) for the full command tour, [the web UI](h
 
 The general rules, which the rest of agent6 follows:
 
-- Commands need your approval: under the default `run_commands = "ask"`, each command the model proposes waits for your yes, once or for the session; a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does), and a hub-spawned one parks it. A question under `deny` or `approve` gets empty answers with a note to decide alone; `sessions show` counts them
-- A run never touches your branch, HEAD or index: its work lands as per-step commits on its own chain (a visible `agent6/<id>` branch by default), and `agent6 sessions merge` lands them when you are ready
-- Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (state dir, never committed), `--config FILE`, then a machine agent's per-state overlay; a selected preset splices in just above the layer that named it
-- Nothing is hidden: `agent6 config show` prints every effective value and the layer that set it; every field has a default, and security-sensitive fields default safe (`network = "auto"`, `run_commands = "ask"`, `protect_git = true`)
+- Commands need your approval: under the default `run_commands = "ask"`, each command the model proposes waits for your yes, once or for the session
+    - a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does); a hub-spawned one parks it
+    - a question under `deny` or `approve` gets empty answers with a note to decide alone; `sessions show` counts them
+- A run never touches your branch, HEAD or index: per-step commits go onto its own chain (a visible `agent6/<id>` branch by default), and `agent6 sessions merge` lands them when you are ready
+- Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (state dir, never committed), `--config FILE`, then a machine agent's per-state overlay
+    - a selected preset sits just above the layer that named it
+- `agent6 config show` prints every effective value and the layer that set it; every field has a default, and security-sensitive fields default safe (`network = "auto"`, `run_commands = "ask"`, `protect_git = true`)
 - `"auto"` picks the most secure option the host allows, warning when it falls short; an explicit value the host cannot enforce refuses to run
 - agent6 never pushes, rewrites history, or `reset --hard`; no config key can enable them
