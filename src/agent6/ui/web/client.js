@@ -412,7 +412,7 @@ function sessionsCard(sessions) {
 }
 
 function machinesCard(machines) {
-  return listCard('Machines', machines, 'no machine instances', (m, it, g) => {
+  return listCard('Machines', machines, 'no machines yet', (m, it, g) => {
     it.onclick = () => location.hash = '#/machine/' + encodeURIComponent(m.name);
     g.appendChild(el('div', 'title', m.machine || m.name));
     g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${when(m.mtime)}`));

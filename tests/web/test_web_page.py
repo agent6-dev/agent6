@@ -13,11 +13,11 @@ from __future__ import annotations
 import hashlib
 from importlib import resources
 
-from agent6.ui.web.page import PAGE_HTML
+from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "07c799b18b59cbec136dd649131088154436a9638ab37a1d29211d56a992b788"
+PAGE_SHA256 = "e7be94f445499a609857204a7d1db6c75cf5be5016a647659c299225a8ce911c"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -105,3 +105,9 @@ def test_the_config_editor_sends_a_string_leaf_as_a_toml_string() -> None:
     assert "s.type === 'str' ? JSON.stringify(field.value) : field.value" in config.read_text(
         encoding="utf-8"
     )
+
+
+def test_the_empty_machines_card_says_what_the_tui_says() -> None:
+    """The web card read "no machine instances" where the TUI's machines screen
+    says "no machines yet"."""
+    assert "'no machines yet'" in CLIENT_JS and "no machine instances" not in CLIENT_JS
