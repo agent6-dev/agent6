@@ -1160,3 +1160,32 @@ def test_new_task_view_tab_reaches_the_mode_picker_first(tmp_path: Path) -> None
             assert stops == ["draft-mode", "draft-preset", "draft-model"]
 
     asyncio.run(scenario())
+
+
+def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: Path) -> None:
+    """A fixed 60-character snippet overflowed the table at 100 columns: a
+    horizontal scrollbar under the rows and a task cut mid-word at the edge.
+    The column takes what the width leaves, as `sessions list` sizes it."""
+    from textual.widgets import DataTable
+
+    from agent6.ui.tui.home import Agent6HomeApp
+
+    a6 = tmp_path / ".agent6"
+    _write_run(
+        a6, "runs", "long-task-run-AAAAAA", [{"type": "session.start", "user_task": "x" * 200}]
+    )
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            table = app.screen.query_one("#sessions", DataTable)
+            await _wait_for(pilot, lambda: table.row_count == 1, "the row")
+            await pilot.pause()
+            assert table.virtual_size.width <= table.scrollable_content_region.width
+            narrow = str(table.get_row_at(0)[4])
+            assert narrow.endswith("…") and len(narrow) < 60
+            await pilot.resize_terminal(160, 30)
+            await _wait_for(pilot, lambda: len(str(table.get_row_at(0)[4])) > len(narrow), "wider")
+            assert table.virtual_size.width <= table.scrollable_content_region.width
+
+    asyncio.run(scenario())

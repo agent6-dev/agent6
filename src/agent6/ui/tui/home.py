@@ -17,6 +17,7 @@ from typing import ClassVar
 
 try:
     from rich.text import Text
+    from textual import events
     from textual.app import App, ComposeResult, SystemCommand
     from textual.binding import Binding
     from textual.screen import Screen
@@ -171,6 +172,11 @@ class HomeScreen(ScreenChrome, Screen[None]):
         table.focus()
         self.set_interval(_HUB_POLL_S, self._poll)
 
+    def on_resize(self, _event: events.Resize) -> None:
+        # The task column is sized to the width: refill on a resize (the first
+        # layout included, when the mount-time fill saw no width yet).
+        self.action_refresh()
+
     def on_screen_resume(self) -> None:
         # Returning from a pushed screen (e.g. config) doesn't re-run on_mount, so
         # refresh, which also resets the menu-bar sub_title config changed to
@@ -204,18 +210,13 @@ class HomeScreen(ScreenChrome, Screen[None]):
         listing = nested_rows(summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values())
         self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
 
+        pending: list[tuple[str, Text, str, str, str]] = []
+
         def add(row: ListingRow, id_cell: str) -> None:
-            # Text cells: task is model/user input and may carry markup brackets.
             # The time is the row's (a fan-out's latest lane activity while its
             # own journal is quiet), as `sessions list` and the web hub show it.
             s = row.summary
-            table.add_row(
-                format_when(row.mtime),
-                _status_cell(s),
-                s.cost_cell,
-                Text(id_cell),
-                Text(task_snippet(s.task, max_chars=60)),
-            )
+            pending.append((format_when(row.mtime), _status_cell(s), s.cost_cell, id_cell, s.task))
             survivors.append(dirs[s.session_id])
             rows[s.session_id] = s
 
@@ -236,6 +237,20 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
         for row in listing:
             emit(row, 0)
+        # The task column takes what the width leaves after the other four
+        # (each as wide as its label or its widest cell, plus a pad on either
+        # side), floor 24, as `sessions list` sizes it: the row fits with no
+        # horizontal scroll.
+        fixed = sum(
+            max(len(label), max((len(str(cells[i])) for cells in pending), default=0)) + 2
+            for i, label in enumerate(("updated", "status", "cost", "id"))
+        )
+        task_w = max(24, table.scrollable_content_region.width - fixed - 2)
+        for when, status, cost, id_cell, task in pending:
+            # Text cells: the task is model/user input and may carry markup brackets.
+            table.add_row(
+                when, status, cost, Text(id_cell), Text(task_snippet(task, max_chars=task_w))
+            )
         self._runs = survivors
         self._summaries = rows
         if selected:
@@ -341,7 +356,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         """
         del parameters
         if action == "toggle_lanes":
-            return True if self._selected_fanout() is not None else None
+            return self._selected_fanout() is not None
         if action in ("merge_selected", "delete_selected"):
             rd = self._selected_dir()
             if rd is None:
