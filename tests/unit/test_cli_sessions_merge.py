@@ -848,11 +848,16 @@ def test_merge_squash_combine_style_uses_gits_own_message(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit.squash]\nmessage = "combine"\n', encoding="utf-8"
     )
-    _setup_run(tmp_path, "run-CMB111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(
+        tmp_path,
+        "run-CMB111",
+        commits=[("a.txt", "a\n", "agent6 iter 1: add a\n\nThe reason for a.")],
+    )
     assert main(["sessions", "merge", "run-CMB111", "--strategy", "squash"]) == 0
     msg = _head_message(tmp_path)
     assert "Squashed commit of the following" in msg
     assert "agent6 iter 1: add a" in msg
+    assert "The reason for a." in msg
 
 
 def test_merge_squash_conventional_style_derives_the_subject(

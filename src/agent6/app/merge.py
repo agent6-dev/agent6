@@ -214,7 +214,10 @@ def _squash_message(
         # Git's own SQUASH_MSG shape, synthesized (the plumbing merge never
         # runs `merge --squash`, so git never writes one).
         parts = ["Squashed commit of the following:\n"]
-        parts += [f"commit {r.sha}\n\n    {r.subject}" for r in rows]
+        parts += [
+            f"commit {r.sha}\n\n    {r.message.rstrip().replace(chr(10), chr(10) + '    ')}"
+            for r in rows
+        ]
         return "\n".join(parts) if rows else None
     base_msg = condense_commit_message(rows, subject=manifest.user_task or "agent6 run")
     if style == "conventional":
