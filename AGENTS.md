@@ -86,6 +86,8 @@ The shortest version that still carries the point wins.
   When the fact matters and its provenance does not, state the fact in the repo's terms ("the fleet stopped at its spend ceiling", not whose ceiling it was); what fails the test belongs in the untracked ledgers.
 - Lead with the point; add rationale a reader could not reconstruct.
   Cut every word a sentence works without, and every sentence that restates the one before.
+- Plain language, as ISO 24495-1:2023 defines it, for every doc, comment and surface string: the reader finds what they need, understands it on the first read, and can act on it.
+  Everyday words in the reader's terms, not the code's; a name from the code appears when the reader has to go there.
 - Plain punctuation: commas, colons, parentheses, periods.
   An em dash flags an overstuffed sentence to recast.
 - Concrete over abstract: name the command, the field, the number ("retries twice, then fails the run").
