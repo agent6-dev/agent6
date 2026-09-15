@@ -66,7 +66,7 @@ def build_authoring_prompt(
         " seam (network/clock/files), ALSO write a `scripts/<name>_test.py` that"
         " mocks the seam and asserts the contract; these run offline in a"
         " no-network jail so the operator can simulate the machine without live"
-        " services. Put a one-line rationale per state in `summary`.",
+        " services.",
     ]
     if diagnostics:
         joined = "\n".join(f"  - {problem}" for problem in diagnostics)

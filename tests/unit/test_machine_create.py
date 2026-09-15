@@ -69,6 +69,25 @@ reason = "x"
 # --- pure pieces -----------------------------------------------------------
 
 
+def test_the_authoring_prompt_asks_for_no_key_a_state_refuses() -> None:
+    """The prompt asked for "a one-line rationale per state in `summary`";
+    no state has that key (`extra="forbid"`), so an obedient draft failed
+    `machine check` and burned an attempt."""
+    import pydantic
+
+    from agent6.machine.model import MachineSpec
+
+    prompt = build_authoring_prompt("Poll a queue", attempt=1)
+    assert "`summary`" not in prompt
+    with pytest.raises(pydantic.ValidationError, match="summary"):
+        MachineSpec.model_validate(
+            {
+                "machine": {"name": "m", "start": "done"},
+                "states": {"done": {"kind": "terminal", "reason": "ok", "summary": "x"}},
+            }
+        )
+
+
 def test_build_authoring_prompt_first_attempt() -> None:
     prompt = build_authoring_prompt("Poll a queue", attempt=1)
     assert "authoring guide" in prompt
