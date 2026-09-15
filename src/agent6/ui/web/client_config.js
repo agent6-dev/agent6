@@ -71,7 +71,11 @@ async function addProvider() {
   let autofilled = '';
   name.oninput = () => {
     const preset = (choices.defaults || {})[name.value.trim()];
-    if (!preset) return;
+    if (!preset) {
+      if (autofilled && baseUrl.value === autofilled) baseUrl.value = '';
+      autofilled = '';
+      return;
+    }
     format.value = preset.api_format;
     if (baseUrl.value === '' || baseUrl.value === autofilled) { autofilled = preset.base_url || ''; baseUrl.value = autofilled; }
   };

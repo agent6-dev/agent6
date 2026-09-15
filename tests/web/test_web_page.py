@@ -17,7 +17,7 @@ from agent6.ui.web.page import PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "3aa028e334fd124f4ae0e4d76135c9d156d1e4aeb89d9dc1879b375568b9360f"
+PAGE_SHA256 = "098e8ee76834d51d470df2916912363281b476209fb6c84cf8e217148f104b67"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -79,6 +79,14 @@ def test_parallel_model_completion_handles_each_whole_fragment() -> None:
     ]
     assert "v.matchAll(/(^|\\s)\\/parallel(?=\\s|$)/g)" in suggest
     assert "while (fragEnd < end && v[fragEnd] !== ',') fragEnd++;" in suggest
+
+
+def test_add_provider_does_not_keep_another_names_autofilled_url() -> None:
+    config = resources.files("agent6.ui.web").joinpath("client_config.js")
+    text = config.read_text(encoding="utf-8")
+    prefill = text[text.index("name.oninput") : text.index("const repoRow")]
+    assert "baseUrl.value === autofilled" in prefill
+    assert "autofilled = '';" in prefill
 
 
 def test_the_config_editor_keeps_a_list_as_toml_on_an_untouched_save() -> None:
