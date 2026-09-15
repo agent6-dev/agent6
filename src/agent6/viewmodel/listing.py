@@ -97,9 +97,10 @@ def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
 
 def task_snippet(text: str, max_chars: int | None = None) -> str:
     """One-line summary of a task or ask transcript for a listing: its
-    headline, else the stripped text; clipped to *max_chars* with an ellipsis,
-    so a cut task never reads as the whole one."""
-    snip = task_headline(text) or text.strip()
+    headline, else its first line (a task that is only a file block names the
+    file); clipped to *max_chars* with an ellipsis, so a cut task never reads
+    as the whole one."""
+    snip = task_headline(text) or next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
     if max_chars is not None and len(snip) > max_chars:
         snip = snip[: max_chars - 1] + "…"
     return snip

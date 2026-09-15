@@ -108,6 +108,13 @@ def test_task_snippet_falls_back_to_stripped_text() -> None:
     assert task_snippet("   ") == ""
 
 
+def test_task_snippet_of_a_task_that_is_only_a_file_block_is_its_first_line() -> None:
+    """With no words of the operator's, the fallback was the whole stripped block,
+    three lines in a one-line cell; the opener names the file the run got."""
+    task = '<file path="question.md">\nWhy is the broker slow?\n</file>'
+    assert task_snippet(task) == '<file path="question.md">'
+
+
 def _stamp(session_dir: Path, compare: object) -> None:
     session_dir.mkdir(parents=True, exist_ok=True)
     (session_dir / "manifest.json").write_text(json.dumps({"compare": compare}), encoding="utf-8")
