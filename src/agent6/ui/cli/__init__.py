@@ -812,9 +812,9 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.machine_command == "list":
         return _cmd_machine_list()
     if args.machine_command == "check":
-        return _cmd_machine_check(args.file)
+        return _cmd_machine_check(args.file, config_path=args.config)
     if args.machine_command == "test":
-        return _cmd_machine_test(args.file, blackboard=args.blackboard)
+        return _cmd_machine_test(args.file, blackboard=args.blackboard, config_path=args.config)
     if args.machine_command == "graph":
         return _cmd_machine_graph(args.file, fmt=args.format)
     if args.machine_command == "run":

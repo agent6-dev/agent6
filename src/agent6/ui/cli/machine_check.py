@@ -42,7 +42,9 @@ def _fail(path: Path, problems: list[str], label: str = "") -> int:
     return 1
 
 
-def _load_validated(path: Path) -> tuple[MachineSpec | None, list[str], str]:
+def _load_validated(
+    path: Path, *, config_path: Path | None = None
+) -> tuple[MachineSpec | None, list[str], str]:
     """Shared `check`/`test` front half: load, structural bundle validation,
     and the effective-config overlay merge `machine run` performs, so a bad
     `[config]` key fails here rather than first at run.
@@ -58,7 +60,7 @@ def _load_validated(path: Path) -> tuple[MachineSpec | None, list[str], str]:
     if bundle_problems:
         return None, bundle_problems, "bundle"
     try:
-        load_effective_with_overlay(Path.cwd(), spec.config)
+        load_effective_with_overlay(Path.cwd(), spec.config, explicit_path=config_path)
     except ConfigError as exc:
         return None, [str(exc)], "config"
     return spec, [], ""
@@ -116,8 +118,8 @@ def _tool_reachability_warnings(spec: MachineSpec, path: Path) -> list[str]:
     ]
 
 
-def _cmd_machine_check(path: Path) -> int:
-    spec, problems, label = _load_validated(path)
+def _cmd_machine_check(path: Path, *, config_path: Path | None = None) -> int:
+    spec, problems, label = _load_validated(path, config_path=config_path)
     if spec is None:
         return _fail(path, problems, label)
     script_problems = lint_and_typecheck(path.parent / "scripts")
@@ -135,12 +137,14 @@ def _cmd_machine_check(path: Path) -> int:
     return 0
 
 
-def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
+def _cmd_machine_test(
+    path: Path, *, blackboard: Path | None, config_path: Path | None = None
+) -> int:
     # `machine test` is the offline simulation: `machine check`'s structural +
     # bundle validation, plus running the bundle's `*_test.py` mocks in a jail
     # (no network), plus a pure dry-run. Reuse the same load + bundle validation
     # so a malformed machine fails the same way.
-    spec, problems, label = _load_validated(path)
+    spec, problems, label = _load_validated(path, config_path=config_path)
     if spec is None:
         return _fail(path, problems, label)
     # Static (lint + types) then the offline mock tests in a no-network jail.

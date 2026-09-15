@@ -1231,6 +1231,26 @@ reason = "lint"
 """
 
 
+@pytest.mark.parametrize("verb", ["check", "test"])
+def test_offline_validation_reads_the_explicit_config_layer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    verb: str,
+) -> None:
+    """The top-level `--config` layer applies to every command; check/test must
+    reject the same malformed explicit config before `machine run` sees it."""
+    monkeypatch.chdir(tmp_path)
+    machine = tmp_path / "tiny.asm.toml"
+    machine.write_text(TINY, encoding="utf-8")
+    config = tmp_path / "broken.toml"
+    config.write_text('[workflow]\nnonsense_key = "x"\n', encoding="utf-8")
+
+    assert main(["--config", str(config), "machine", verb, str(machine)]) == 1
+    err = capsys.readouterr().err
+    assert "FAIL" in err and "nonsense_key" in err
+
+
 def test_check_validates_the_config_overlay_run_will_merge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
