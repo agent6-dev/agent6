@@ -47,7 +47,12 @@ __all__ = [
     "type_str",
 ]
 
-_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
+# TOML already supplies native scalar types. Refuse quoted numbers/bools rather
+# than silently changing an author's malformed file; only TOML array -> frozen
+# tuple conversion is enabled explicitly on tuple fields below.
+_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
+_StrTuple = Annotated[tuple[str, ...], Field(strict=False)]
+_NonEmptyStrTuple = Annotated[tuple[str, ...], Field(strict=False, min_length=1)]
 
 IDENT_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _LIST_RE = re.compile(r"^list\[([a-z0-9_]+)\]$")
@@ -155,7 +160,7 @@ class FieldSpec(BaseModel):
 
     type: str = Field(min_length=1)
     optional: bool = False
-    enum: tuple[str, ...] | None = None
+    enum: _StrTuple | None = None
 
 
 _FieldSpecT = Annotated[FieldSpec, BeforeValidator(_normalize_field)]
@@ -316,7 +321,7 @@ class ToolState(BaseModel):
 
     kind: Literal["tool"]
     notify: _NotifySpecT | None = None
-    command: tuple[str, ...] = Field(min_length=1)
+    command: _NonEmptyStrTuple
     output_schema: str | None = None
     capture: Capture | None = None
     timeout_secs: int = Field(gt=0)
@@ -346,7 +351,7 @@ class ToolState(BaseModel):
     # (global/repo config, never a machine overlay); a name the operator has
     # not allowed refuses the run at startup, naming every such state and var.
     # A tool jail otherwise gets the fixed passthrough environment alone.
-    pass_env: tuple[str, ...] = ()
+    pass_env: _StrTuple = ()
 
     @field_validator("pass_env")
     @classmethod
@@ -386,7 +391,7 @@ class BranchState(BaseModel):
 
     kind: Literal["branch"]
     notify: _NotifySpecT | None = None
-    when: tuple[WhenClause, ...] = Field(min_length=1)
+    when: Annotated[tuple[WhenClause, ...], Field(strict=False, min_length=1)]
 
 
 class TerminalState(BaseModel):

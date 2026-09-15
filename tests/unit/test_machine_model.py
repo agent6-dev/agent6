@@ -133,6 +133,29 @@ def test_bad_toml(tmp_path: Path) -> None:
     assert any("not valid TOML" in p for p in problems)
 
 
+@pytest.mark.parametrize(
+    ("old", "new", "field", "rule"),
+    [
+        ("max_transitions = 100000", 'max_transitions = "100000"', "max_transitions", "integer"),
+        ("max_usd         = 25.0", 'max_usd         = "25.0"', "max_usd", "number"),
+        ("timeout_secs = 60", 'timeout_secs = "60"', "timeout_secs", "integer"),
+        (
+            'confidence = "float"',
+            'confidence = { type = "float", optional = "false" }',
+            "optional",
+            "boolean",
+        ),
+    ],
+)
+def test_native_toml_scalar_types_are_not_coerced(
+    tmp_path: Path, old: str, new: str, field: str, rule: str
+) -> None:
+    """TOML already supplies native scalar types, so a quoted number or bool is
+    malformed input, not an alternate spelling the machine parser may coerce."""
+    problems = _problems(tmp_path, VALID_MACHINE.replace(old, new, 1))
+    assert any(field in problem and rule in problem for problem in problems)
+
+
 def test_non_utf8_file_raises_machine_error(tmp_path: Path) -> None:
     # A non-UTF-8 .asm.toml must surface as a MachineError (which the CLI catches
     # and prints cleanly), not an unhandled UnicodeDecodeError that crashes
