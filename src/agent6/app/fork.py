@@ -499,7 +499,11 @@ def _materialize_fork(
         excluded = read_untracked_at_start(src.session_dir)
     write_untracked_at_start(dst.session_dir, excluded)
 
-    run_branch = run_branch_for(dst.session_id) if plan.cfg.git.branch_per_run else None
+    run_branch = (
+        run_branch_for(dst.session_id)
+        if plan.mode == "run" and plan.cfg.git.branch_per_run
+        else None
+    )
     write_session_manifest(
         dst,
         session_id=dst.session_id,
@@ -521,16 +525,18 @@ def _materialize_fork(
         worktree_git_dir=checkout.git_dir if checkout is not None else None,
     )
 
-    # Seed the fork's chain at the historical sha WITHOUT touching the
+    # Seed a run fork's chain at the historical sha WITHOUT touching the
     # operator's checkout: the hidden ref always, the visible branch per
     # [git].branch_per_run (both additive ref writes, never a checkout).
+    # Plan and ask sessions make no commits, so they own no git refs.
     try:
         # The branch is the write that can refuse (it exists at another sha, as
         # after `sessions rm`, which keeps branches), so cut it first: nothing
         # of the fork's is on disk yet to unpick.
         if run_branch is not None:
             create_branch_at(cwd, run_branch, plan.forked_from_sha)
-        set_ref(cwd, chain_ref_for(dst.session_id), plan.forked_from_sha)
+        if plan.mode == "run":
+            set_ref(cwd, chain_ref_for(dst.session_id), plan.forked_from_sha)
     except GitError as exc:
         reporter.error(f"could not cut fork refs at {plan.forked_from_sha[:12]}: {exc}")
         # A fork exists only with its refs: the run dir written above goes too.
@@ -549,7 +555,13 @@ def _materialize_fork(
             "ts": _dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
         },
     )
-    at = f"(branch {run_branch} " if run_branch else f"({chain_ref_for(dst.session_id)} "
+    at = (
+        f"(branch {run_branch} "
+        if run_branch
+        else f"({chain_ref_for(dst.session_id)} "
+        if plan.mode == "run"
+        else "("
+    )
     where = f" in {checkout.worktree}" if checkout is not None else ""
     reporter.note(
         f"forked {src.session_id}@turn {plan.forked_from_turn} -> {dst.session_id} "

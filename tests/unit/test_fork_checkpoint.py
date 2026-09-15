@@ -334,6 +334,38 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
     assert not (state / "sessions" / "runs" / "plan-fork-BBBB22").exists()
 
 
+def test_a_plan_fork_creates_no_git_refs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A plan makes no commits, so its fork must not create the visible run
+    branch or hidden commit-chain ref that only run mode owns."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = state_dir(repo)
+    _seed_source_run(state, "plan-src-AAAA11", head_sha=head, turns=(1,), mode="plan")
+
+    assert _cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True) == 0
+
+    dst = SessionLayout(
+        state_dir=state, session_id="plan-fork-BBBB22", subdir=session_bucket("plan")
+    )
+    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["run_branch"] is None
+    refs = sp.run(
+        [
+            "git",
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads/agent6/plan-fork-BBBB22",
+            chain_ref_for("plan-fork-BBBB22"),
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert refs == ""
+
+
 def test_fork_refuses_an_explicit_id_held_by_any_bucket(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
