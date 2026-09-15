@@ -33,6 +33,7 @@ from agent6.tools.schema import (
 )
 from agent6.types import RepoSummary
 from agent6.workflows import loop as loopmod
+from agent6.workflows._chain import RunChain
 from agent6.workflows.loop import Workflow
 
 _VALID_TOML = """
@@ -541,9 +542,25 @@ def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: Path) -> None:
 # --- Workflow plan-mode validation --------------------------------------
 
 
-def _wf(**kw: Any) -> Workflow:
+def _wf(
+    root: Path | None = None,
+    *,
+    ref: str | None = None,
+    fallback_parent: str | None = None,
+    branch: str | None = None,
+    per_step: bool = True,
+    base_sha: str = "",
+    **kw: Any,
+) -> Workflow:
     defaults: dict[str, Any] = {
-        "root": Path("/tmp"),
+        "chain": RunChain(
+            root or Path("/tmp"),
+            ref=ref,
+            branch=branch,
+            fallback_parent=fallback_parent,
+            per_step=per_step,
+            base_sha=base_sha,
+        ),
         "config": MagicMock(
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
@@ -596,7 +613,7 @@ def _tool_use(name: str, args: dict[str, Any], tu_id: str = "tu1") -> ProviderRe
 
 def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Workflow:
     return Workflow(
-        root=repo,
+        chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file="", decompose="off"),
@@ -686,7 +703,7 @@ def test_an_unreadable_plan_parks_the_leg(tmp_path: Path) -> None:
     plan.chmod(0o000)
     try:
         wf = loopmod.Workflow(
-            root=tmp_path,
+            chain=RunChain(tmp_path),
             config=MagicMock(),
             provider=MagicMock(),
             dispatcher=MagicMock(),

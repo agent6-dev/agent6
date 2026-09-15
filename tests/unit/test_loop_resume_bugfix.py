@@ -19,6 +19,7 @@ from unittest.mock import MagicMock
 
 from agent6.config import Config
 from agent6.tools.results import ExecResult, RawResult
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation
 from agent6.workflows._metric import MetricSample as _MetricSample
 from agent6.workflows._session_state import (
@@ -32,7 +33,7 @@ from agent6.workflows.loop import (
 )
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
-# identity (`_commit_identity`), empty as a real Config carries it unset.
+# identity (`commit_identity`), empty as a real Config carries it unset.
 _GIT_STUB = SimpleNamespace(
     control="agent6",
     commit_per_step=True,
@@ -46,9 +47,31 @@ def _silent(_: str) -> None:
     return None
 
 
-def _wf(**kw: Any) -> Workflow:
+def _wf(
+    root: Path | None = None,
+    *,
+    ref: str | None = None,
+    fallback_parent: str | None = None,
+    **kw: Any,
+) -> Workflow:
+    """A loop over *root* with a chain mirroring run.py's wiring (the chain's
+    first parent is HEAD at start); no root, no chain."""
+    if root is not None and fallback_parent is None:
+        fallback_parent = (
+            sp.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.strip()
+            or None
+        )
     defaults: dict[str, Any] = {
-        "root": Path("/tmp"),
+        "chain": RunChain(
+            root or Path("/tmp"),
+            ref=ref or ("refs/agent6/test" if root is not None else None),
+            fallback_parent=fallback_parent,
+        ),
         "config": MagicMock(
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
@@ -60,16 +83,6 @@ def _wf(**kw: Any) -> Workflow:
         "logger": _silent,
     }
     defaults.update(kw)
-    if "chain_fallback_parent" not in kw and "root" in kw:
-        # Mirror run.py's wiring: the chain's first parent is HEAD at start.
-        head = sp.run(
-            ["git", "-C", str(kw["root"]), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.strip()
-        defaults.setdefault("chain_ref", "refs/agent6/test")
-        defaults.setdefault("chain_fallback_parent", head or None)
     return Workflow(**defaults)
 
 
@@ -1192,8 +1205,8 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
     wf = _wf(
         root=repo,
         config=Config.model_validate({"workflow": {"verify_command": ["true"]}}),
-        chain_ref=chain,
-        chain_fallback_parent=base,
+        ref=chain,
+        fallback_parent=base,
     )
     # Leg one: the worker edits, the gate goes green, the harness chain-commits.
     (repo / "x.txt").write_text("the run's work\n", encoding="utf-8")
@@ -1209,7 +1222,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
             "verify_command": ("true",),
             "last_verify_ok": True,
             "edited_since_verify": False,
-            "head_sha": wf._checkpoint_head_sha(),  # pyright: ignore[reportPrivateUsage]
+            "head_sha": wf.chain.checkpoint_head_sha(),
         }
     )
     assert snap.head_sha == chain_tip(repo, chain) != git_status(repo).head_sha

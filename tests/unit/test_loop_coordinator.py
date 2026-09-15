@@ -28,6 +28,8 @@ from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.ui.cli.parallel import lane_runtime
 from agent6.viewmodel.transcript import fold_transcript
+from agent6.workflows import _chain as chain_mod
+from agent6.workflows._chain import RunChain
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask
 
@@ -253,9 +255,7 @@ def _build_wf(
     if dispatcher is None:
         disp.dispatch.return_value = RawResult({"content": "hi\n"})
     return Workflow(
-        root=repo,
-        chain_ref="refs/agent6/coord",
-        chain_fallback_parent=_head(repo),
+        chain=RunChain(repo, ref="refs/agent6/coord", fallback_parent=_head(repo)),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
@@ -708,13 +708,12 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
 ) -> None:
     """If the tree stays dirty after the auto-commit attempt, dispatch is refused
     (never clone stale work) and the run continues."""
-    import agent6.workflows.loop as loop_mod
 
     # chain_commit becomes a no-op, so the tree stays dirty after the attempt.
     def _noop_commit(*_a: object, **_k: object) -> None:
         return None
 
-    monkeypatch.setattr(loop_mod, "chain_commit", _noop_commit)
+    monkeypatch.setattr(chain_mod, "chain_commit", _noop_commit)
 
     repo = tmp_path / "repo"
     _init_repo(repo)

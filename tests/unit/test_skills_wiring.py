@@ -9,6 +9,7 @@ from pathlib import Path
 from agent6.config import Config, load_config
 from agent6.skills import ResolvedSkills, Skill
 from agent6.types import RepoSummary
+from agent6.workflows._chain import RunChain
 from agent6.workflows._prompt_blocks import build_system_prompt, skills_block
 
 _VALID_TOML = """
@@ -289,7 +290,13 @@ class TestWorkflowLoadSkills:
         _install(sd, "tidy")
         cfg = _config(tmp_path)
         d = ToolDispatcher(root=tmp_path, config=cfg)
-        wf = Workflow(root=tmp_path, config=cfg, provider=None, dispatcher=d, logger=lambda _: None)  # type: ignore[arg-type]
+        wf = Workflow(
+            chain=RunChain(tmp_path),
+            config=cfg,
+            provider=None,  # pyright: ignore[reportArgumentType]
+            dispatcher=d,
+            logger=lambda _: None,
+        )
         resolved = wf._load_skills()  # pyright: ignore[reportPrivateUsage]
         assert resolved is not None
         assert [s.name for s in resolved.enabled] == ["tidy"]
@@ -303,7 +310,7 @@ class TestWorkflowLoadSkills:
         cfg = _config(tmp_path)
         d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
         wf = Workflow(
-            root=tmp_path,
+            chain=RunChain(tmp_path),
             config=cfg,
             provider=None,  # type: ignore[arg-type]
             dispatcher=d,

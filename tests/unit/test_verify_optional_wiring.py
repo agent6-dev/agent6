@@ -21,6 +21,7 @@ from agent6.config.layer import EffectiveConfig
 from agent6.paths import state_dir
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import RepoSummary
+from agent6.workflows._chain import RunChain
 from agent6.workflows._prompt_blocks import build_system_prompt
 from agent6.workflows._session_state import SNAPSHOT_VERSION
 from agent6.workflows._verify_verdict import VerifyVerdict
@@ -706,7 +707,7 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> Non
     )
     dispatcher = MagicMock()
     wf = Workflow(
-        root=tmp_path,
+        chain=RunChain(tmp_path),
         config=Config.model_validate({"workflow": {"verify_infer": False}}),
         provider=MagicMock(),
         dispatcher=dispatcher,

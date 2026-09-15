@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.tools.results import ExecResult
+from agent6.workflows._chain import RunChain
 from agent6.workflows.loop import (
     LoopState,
     TurnState,
@@ -26,8 +27,7 @@ _BASE = "b" * 40
 
 def _wf(*, head: str = _BASE, clean: bool = True) -> Workflow:
     wf = Workflow.__new__(Workflow)
-    wf.base_sha = _BASE
-    wf.root = Path("/nonexistent")
+    wf.chain = RunChain(Path("/nonexistent"), base_sha=_BASE)
     object.__setattr__(wf, "_git_status", lambda: SimpleNamespace(is_clean=clean, head_sha=head))
     object.__setattr__(wf, "_emit", _quiet)
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]

@@ -13,6 +13,7 @@ from agent6.providers import ProviderResponse
 from agent6.tools.results import ExecResult, RawResult
 from agent6.types import RepoSummary
 from agent6.workflows import loop as loopmod
+from agent6.workflows._chain import RunChain
 from agent6.workflows.loop import Workflow
 
 _VALID_TOML = """
@@ -106,7 +107,7 @@ def _wf(tmp_path: Path, **kw: Any) -> Workflow:
         returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
     )
     defaults: dict[str, Any] = {
-        "root": tmp_path,
+        "chain": RunChain(tmp_path),
         "config": _config(tmp_path),
         "provider": MagicMock(),
         "dispatcher": dispatcher,

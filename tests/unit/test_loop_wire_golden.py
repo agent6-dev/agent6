@@ -34,6 +34,7 @@ from typing import Any
 from agent6.providers import ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, RawResult, ToolResult
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation
 from agent6.workflows.loop import Workflow
 
@@ -253,7 +254,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         compact_flag[0] = False
 
     wf = Workflow(
-        root=tmp_dir,
+        chain=RunChain(tmp_dir),
         config=_config(),
         provider=worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher(compact_flag),  # type: ignore[arg-type]
@@ -296,7 +297,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         resume_snap,
     )
     wf2 = Workflow(
-        root=tmp_dir,
+        chain=RunChain(tmp_dir),
         config=_config(),
         provider=resume_worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher([False]),  # type: ignore[arg-type]

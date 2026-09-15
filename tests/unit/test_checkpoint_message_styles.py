@@ -12,7 +12,8 @@ import pytest
 
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.workflows import loop as loopmod
+from agent6.workflows import _chain as chain_mod
+from agent6.workflows._chain import RunChain
 from agent6.workflows.loop import (
     TurnState,
     Workflow,
@@ -22,7 +23,7 @@ from agent6.workflows.loop import (
 def _wf(tmp_path: Path, style: str, provider: Any = None, logger: Any = print) -> Workflow:
     cfg = Config.model_validate({"git": {"commit": {"checkpoint": {"message": style}}}})
     return Workflow(
-        root=tmp_path,
+        chain=RunChain(tmp_path),
         config=cfg,
         provider=provider or MagicMock(),
         dispatcher=ToolDispatcher(root=tmp_path, config=cfg),
@@ -48,7 +49,7 @@ def test_conventional_style_derives_from_the_worktree(
     def _one_added(_p: Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("A", "src/agent6/config/write.py"),)
 
-    monkeypatch.setattr(loopmod, "worktree_name_status", _one_added)
+    monkeypatch.setattr(chain_mod, "worktree_name_status", _one_added)
     wf = _wf(tmp_path, "conventional")
     got = wf._checkpoint_subject(  # pyright: ignore[reportPrivateUsage]
         _turn("Add the unified write path."), fallback="verify passed"
@@ -62,7 +63,7 @@ def test_model_style_uses_the_provider_text(
     def _one_modified(_p: Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("M", "a.py"),)
 
-    monkeypatch.setattr(loopmod, "worktree_name_status", _one_modified)
+    monkeypatch.setattr(chain_mod, "worktree_name_status", _one_modified)
     provider = MagicMock()
     provider.call.return_value = MagicMock(text=" fix: tighten the resolver \n")
     wf = _wf(tmp_path, "model", provider=provider)
@@ -76,7 +77,7 @@ def test_model_style_degrades_to_agent6_with_a_warning(
     def _one_modified(_p: Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
         return (("M", "a.py"),)
 
-    monkeypatch.setattr(loopmod, "worktree_name_status", _one_modified)
+    monkeypatch.setattr(chain_mod, "worktree_name_status", _one_modified)
     provider = MagicMock()
     provider.call.side_effect = RuntimeError("no endpoint")
     logged: list[str] = []

@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 from agent6.events import EventSink
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
+from agent6.workflows._chain import RunChain
 from agent6.workflows.loop import Workflow
 
 
@@ -97,7 +98,7 @@ def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
     dispatcher = MagicMock()
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
     return Workflow(
-        root=repo,
+        chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),

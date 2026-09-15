@@ -16,6 +16,7 @@ from agent6.providers import OpenAIProvider, ToolDefinition, TranscriptSink
 from agent6.providers._openai_parse import parse_response
 from agent6.providers._openai_recovery import coerce_text_tool_calls
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation, ToolResultItem
 from agent6.workflows._loop_state import LoopState, TurnState
 from agent6.workflows.loop import Workflow
@@ -117,7 +118,7 @@ def test_unknown_tagged_call_returns_the_dispatcher_error(tmp_path: Path) -> Non
     assistant = conversation.assistant(response.raw["content"])
     dispatcher = ToolDispatcher(root=tmp_path, config=Config())
     workflow = Workflow(
-        root=tmp_path,
+        chain=RunChain(tmp_path),
         config=Config(),
         provider=OpenAIProvider(api_key="k", model="weak-model"),
         dispatcher=dispatcher,
@@ -219,7 +220,7 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
     events = EventSink(journal)
     dispatcher = ToolDispatcher(root=tmp_path, config=Config(), events=events)
     workflow = Workflow(
-        root=tmp_path,
+        chain=RunChain(tmp_path),
         config=Config(),
         provider=provider,
         dispatcher=dispatcher,
@@ -284,7 +285,7 @@ def test_malformed_recovered_call_returns_only_its_error(
     assistant = conversation.assistant(response.raw["content"])
     dispatcher = ToolDispatcher(root=tmp_path, config=Config())
     workflow = Workflow(
-        root=tmp_path,
+        chain=RunChain(tmp_path),
         config=Config(),
         provider=provider,
         dispatcher=dispatcher,

@@ -16,6 +16,7 @@ import pytest
 from agent6.config import Config
 from agent6.prompts.loop import V2_VERIFY_WHEN
 from agent6.viewmodel.listing import status_word
+from agent6.workflows._chain import RunChain
 from agent6.workflows._loop_state import End
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
@@ -33,7 +34,7 @@ def _wf(
 ) -> Workflow:
     data: dict[str, Any] = {"workflow": {"verify_command": ["true"]}} if verify else {}
     return Workflow(
-        root=root,
+        chain=RunChain(root),
         config=Config.model_validate(data),
         provider=MagicMock(),
         dispatcher=MagicMock(),
@@ -230,7 +231,7 @@ def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(tmp_pat
     _git_seed(tmp_path)
     (tmp_path / "a.txt").write_text("uncommitted\n", encoding="utf-8")
     wf = _wf(verify=True, root=tmp_path)
-    assert wf._worktree_dirty() is True  # pyright: ignore[reportPrivateUsage]
+    assert wf.chain.dirty() is True
     state = LoopState(original_task="t", tool_calls=0)
     state.verify.note_edit()
     state.verify.note_pass()
@@ -358,7 +359,7 @@ def _harness_wf(when: str, retries: int = 2, *, policy: str = "yes") -> tuple[Wo
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = policy
     wf = Workflow(
-        root=Path("/tmp"),
+        chain=RunChain(Path("/tmp")),
         config=Config.model_validate(data),
         provider=MagicMock(),
         dispatcher=dispatcher,
@@ -576,7 +577,7 @@ def _scoped_wf(
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = "yes"
     wf = Workflow(
-        root=root,
+        chain=RunChain(root),
         config=Config.model_validate(data),
         provider=MagicMock(),
         dispatcher=dispatcher,
@@ -599,7 +600,7 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
     gates go straight to the scoped form instead of burning the timeout again.
     Grounds the SWE-rebench broke-P2P class: big-repo legs finished over a
     gate that timed out and certified nothing."""
-    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     emitted: list[tuple[str, dict[str, Any]]] = []
 
@@ -635,7 +636,7 @@ def test_a_timed_out_non_pytest_gate_stays_a_plain_timeout(
 ) -> None:
     """Only pytest takes file-path selection; a make/other gate that times out
     is reported as-is, one run, no scoped rerun."""
-    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["make", "test"])
     dispatcher.run_verify.return_value = _exec(124)
     state = LoopState(original_task="t", tool_calls=0)
@@ -661,7 +662,7 @@ def test_a_gate_that_cannot_take_appended_paths_stays_a_plain_timeout(
     unchanged, and `pytest tests` unions the dir with the files: the re-run
     would be the identical full command, a second timeout, and a false "ran
     scoped" notice. The substring predicate scoped both; neither scopes."""
-    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, command)
     dispatcher.run_verify.return_value = _exec(124)
     state = LoopState(original_task="t", tool_calls=0)
@@ -679,7 +680,7 @@ def test_a_timeout_with_no_nearby_tests_stands(tmp_path: Path, monkeypatch: Any)
     def no_tests_diff(_self: Workflow) -> str:
         return "diff --git a/docs/page.md b/docs/page.md\n"
 
-    monkeypatch.setattr(Workflow, "_run_diff", no_tests_diff)
+    monkeypatch.setattr(RunChain, "diff_since_base", no_tests_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.return_value = _exec(124)
     state = LoopState(original_task="t", tool_calls=0)
@@ -697,7 +698,7 @@ def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
     follow-up too. The harness-gate fallback alone never reached this flow (a
     self-judged turn is not re-judged), so pilot legs timed out at the full
     budget with no scoped re-run ever firing."""
-    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.return_value = _exec(0)
     state = LoopState(original_task="t", tool_calls=0)
@@ -722,7 +723,7 @@ def test_never_mode_leaves_the_models_timed_out_gate_alone(
 ) -> None:
     """`never`: only the model's own run_verify_command calls run the gate, so
     a timeout there gets no harness re-run; the 124 is the turn's verdict."""
-    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"], when="never")
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn()
@@ -740,7 +741,7 @@ def test_a_full_green_from_the_models_own_gate_unarms_scoping(
     """The model's own run_verify_command runs the full argv: a green there is
     a full pass, so scoping (armed by an earlier timeout) ends and the run's
     end reads a plain "passed", never "passed · scoped gate"."""
-    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.return_value = _exec(0)
     state = LoopState(original_task="t", tool_calls=0)
@@ -765,7 +766,7 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     path's words, and a later finish never asks again."""
     from agent6.tools.errors import ToolDenied
 
-    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.side_effect = [
         _exec(124),
@@ -799,7 +800,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
     )
     wf = Workflow(
-        root=Path("/tmp"),
+        chain=RunChain(Path("/tmp")),
         config=Config.model_validate(
             {"workflow": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
         ),
@@ -830,7 +831,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = policy
     wf = Workflow(
-        root=Path("/tmp"),
+        chain=RunChain(Path("/tmp")),
         config=Config.model_validate(
             {"workflow": {"verify_command": ["true"], "verify_when": "step", "verify_retries": 2}}
         ),

@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
+from agent6.workflows._chain import RunChain
 from agent6.workflows.loop import Workflow
 
 
@@ -67,11 +68,13 @@ def _init_repo(repo: Path) -> None:
 
 def _build_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock) -> Workflow:
     return Workflow(
-        root=repo,
-        chain_ref="refs/agent6/guard",
-        chain_fallback_parent=_sp.run(
-            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-        ).stdout.strip(),
+        chain=RunChain(
+            repo,
+            ref="refs/agent6/guard",
+            fallback_parent=_sp.run(
+                ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+            ).stdout.strip(),
+        ),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
@@ -257,7 +260,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> No
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = Workflow(
-        root=repo,
+        chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
@@ -293,7 +296,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = Workflow(
-        root=repo,
+        chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
@@ -318,11 +321,13 @@ def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any)
     fires only on a green verify -- so a run_command-authored edit stays in the
     worktree and only a final checkpoint can get it into git history."""
     return Workflow(
-        root=repo,
-        chain_ref="refs/agent6/guard",
-        chain_fallback_parent=_sp.run(
-            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-        ).stdout.strip(),
+        chain=RunChain(
+            repo,
+            ref="refs/agent6/guard",
+            fallback_parent=_sp.run(
+                ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+            ).stdout.strip(),
+        ),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),

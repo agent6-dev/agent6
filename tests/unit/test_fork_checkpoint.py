@@ -34,6 +34,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
+from agent6.workflows._chain import RunChain
 from agent6.workflows._session_state import SNAPSHOT_VERSION, load_session_snapshot
 from agent6.workflows.loop import (
     LoopState,
@@ -58,9 +59,25 @@ def _git_repo(path: Path) -> str:
     ).stdout.strip()
 
 
-def _wf(**kw: Any) -> Workflow:
+def _wf(
+    root: Path | None = None,
+    *,
+    ref: str | None = None,
+    fallback_parent: str | None = None,
+    branch: str | None = None,
+    per_step: bool = True,
+    base_sha: str = "",
+    **kw: Any,
+) -> Workflow:
     defaults: dict[str, Any] = {
-        "root": Path("/tmp"),
+        "chain": RunChain(
+            root or Path("/tmp"),
+            ref=ref,
+            branch=branch,
+            fallback_parent=fallback_parent,
+            per_step=per_step,
+            base_sha=base_sha,
+        ),
         "config": MagicMock(
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),

@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import (
     call_label,
     compact_old_tool_results,
@@ -815,7 +816,7 @@ def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: Path) -> None:
     curator.add_subtask(AddSubtaskIntent(parent_id=container.id, draft=draft("open child")))
     done = curator.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=draft("finished")))
     wf = Workflow(
-        root=tmp_path,
+        chain=RunChain(tmp_path),
         config=Config(),
         provider=MagicMock(),
         dispatcher=MagicMock(),

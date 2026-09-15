@@ -31,6 +31,7 @@ from agent6.paths import state_dir
 from agent6.ui.cli._repl import REPL_HELP
 from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.steer import SteerState
+from agent6.workflows._chain import RunChain
 
 
 def _init_repo(path: Path) -> None:
@@ -217,7 +218,7 @@ def test_after_auto_commit_default_continues() -> None:
     from agent6.workflows.loop import Workflow
 
     wf = Workflow(
-        root=Path("/tmp"),
+        chain=RunChain(Path("/tmp")),
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
@@ -241,7 +242,7 @@ def test_after_auto_commit_field_is_overridable() -> None:
         return "stop"
 
     wf = Workflow(
-        root=Path("/tmp"),
+        chain=RunChain(Path("/tmp")),
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),

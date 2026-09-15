@@ -21,6 +21,7 @@ from agent6.config import Config
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
 from agent6.workflows._loop_state import End
 from agent6.workflows._provider_call import (
@@ -33,7 +34,7 @@ from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import LoopState, TurnState, Workflow
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
-# identity (`_commit_identity`), which the real Config carries as empty
+# identity (`commit_identity`), which the real Config carries as empty
 # strings when the operator sets neither.
 _GIT_STUB = SimpleNamespace(
     control="agent6",
@@ -85,14 +86,43 @@ def _silent(_msg: str) -> None:
     return None
 
 
-def _wf(**kw: Any) -> Workflow:
+def _wf(
+    root: Path | None = None,
+    *,
+    ref: str | None = "refs/agent6/test",
+    fallback_parent: str | None = None,
+    branch: str | None = None,
+    per_step: bool = True,
+    base_sha: str = "",
+    **kw: Any,
+) -> Workflow:
     """Construct a Workflow with mocks for everything not under test.
 
     Caller-supplied kwargs win over the defaults so a test can pass its
     own provider / steer callables without colliding on the keyword.
     """
+    if root is not None and fallback_parent is None:
+        # Mirror run.py's wiring: the chain's first parent is HEAD at start.
+        fallback_parent = (
+            subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.strip()
+            or None
+        )
+    # A live chain by default, so the auto-commit paths run; tests patch
+    # `_chain.chain_commit`.
     defaults: dict[str, Any] = {
-        "root": Path("/tmp"),
+        "chain": RunChain(
+            root or Path("/tmp"),
+            ref=ref,
+            branch=branch,
+            fallback_parent=fallback_parent,
+            per_step=per_step,
+            base_sha=base_sha,
+        ),
         "config": MagicMock(
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
@@ -104,20 +134,9 @@ def _wf(**kw: Any) -> Workflow:
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
         "logger": _silent,
-        # A live chain so the auto-commit paths run; tests patch loop.chain_commit.
-        "chain_ref": "refs/agent6/test",
         "provider_retry_delay_s": 0.01,  # keep tests fast
     }
     defaults.update(kw)
-    if "chain_fallback_parent" not in kw and "root" in kw:
-        # Mirror run.py's wiring: the chain's first parent is HEAD at start.
-        head = subprocess.run(
-            ["git", "-C", str(kw["root"]), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.strip()
-        defaults.setdefault("chain_fallback_parent", head or None)
     return Workflow(**defaults)
 
 
@@ -795,7 +814,7 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: Path) -> Non
             metric=SimpleNamespace(goal="minimize"),
         ),
     )
-    wf = _wf(root=repo, config=config, dispatcher=_Dispatcher(), commit_per_step=False)
+    wf = _wf(root=repo, config=config, dispatcher=_Dispatcher(), per_step=False)
     state = _state()
 
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's edit
@@ -886,11 +905,11 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
         max_iterations=4,
         # `[git].commit_per_step` governs the COMMIT; the measurement the
         # prompt promises after every verified edit is not the commit's.
-        commit_per_step=commit_per_step,
+        per_step=commit_per_step,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
-    with patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -962,7 +981,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
     assert wf.iterations_reached == 0  # untouched before the loop runs
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
 
-    with patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -1304,7 +1323,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
     )
     snapshot = _resume_snapshot()
 
-    with patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system=snapshot.system,
             conversation=Conversation.from_wire(snapshot.messages),
@@ -1420,7 +1439,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
-    with patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -1485,8 +1504,8 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     trees = iter(["t1", "t2", "t3"])
     with (
-        patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"),
-        patch.object(wf, "_worktree_tree_sha", side_effect=lambda: next(trees)),
+        patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"),
+        patch.object(RunChain, "tree_sha", side_effect=lambda: next(trees)),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
@@ -1575,7 +1594,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
         commits.append(subject)
         return f"sha{len(commits)}"
 
-    with patch("agent6.workflows.loop.chain_commit", side_effect=_fake_commit):
+    with patch("agent6.workflows._chain.chain_commit", side_effect=_fake_commit):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -1762,7 +1781,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows.loop.chain_commit",
+        "agent6.workflows._chain.chain_commit",
         side_effect=["sha1", "sha2", "sha3", "sha4", "sha5", "sha6", "sha7", "sha8"],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1846,7 +1865,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows.loop.chain_commit",
+        "agent6.workflows._chain.chain_commit",
         side_effect=["sha1", "sha2", "sha3", "sha4", "sha5"],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1944,7 +1963,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows.loop.chain_commit",
+        "agent6.workflows._chain.chain_commit",
         side_effect=[f"sha{i}" for i in range(20)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2159,7 +2178,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
         max_iterations=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -2227,7 +2246,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -2249,7 +2268,7 @@ def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
     state = _state(verify=VerifyVerdict(ever_passed=True, last_ok=False))
     turn = _turn(iteration=8, verify_settled_stop=True)
 
-    with patch.object(wf, "_worktree_dirty", return_value=False):
+    with patch.object(RunChain, "dirty", return_value=False):
         result = wf._turn_stop_checks(  # pyright: ignore[reportPrivateUsage]
             state, turn, Conversation()
         )
@@ -2351,7 +2370,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
         max_iterations=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value=""):
+    with patch("agent6.workflows._chain.chain_commit", return_value=""):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -2414,7 +2433,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
         max_iterations=8,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value=""):
+    with patch("agent6.workflows._chain.chain_commit", return_value=""):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -2508,7 +2527,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows.loop.chain_commit",
+        "agent6.workflows._chain.chain_commit",
         side_effect=[f"sha{i}" for i in range(1, max_iters + 2)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2823,7 +2842,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with patch(
-        "agent6.workflows.loop.chain_commit",
+        "agent6.workflows._chain.chain_commit",
         side_effect=[f"sha{i}" for i in range(1, 22)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -3341,7 +3360,7 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
         task_finish_nudges_used=TASK_FINISH_PATIENCE,
     )
     turn = _turn()
-    with patch.object(wf, "_worktree_tree_sha", return_value="tree"):
+    with patch.object(RunChain, "tree_sha", return_value="tree"):
         assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
         assert turn.verify_settled_stop is True and turn.end_returned is False
         result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
@@ -3364,7 +3383,7 @@ def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
         verify_settled_idle=VERIFY_SETTLED_STOP_AFTER - 1,
     )
     turn = _turn()
-    with patch.object(wf, "_worktree_tree_sha", return_value="tree"):
+    with patch.object(RunChain, "tree_sha", return_value="tree"):
         assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
         result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "verify_settled"
@@ -3396,7 +3415,7 @@ def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
         verify_settled_idle=VERIFY_SETTLED_STOP_AFTER - 1,
     )
     turn = _turn()
-    with patch.object(wf, "_worktree_tree_sha", return_value="tree"):
+    with patch.object(RunChain, "tree_sha", return_value="tree"):
         result = wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
 
     assert result is None
@@ -3982,7 +4001,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
         loop_guard_kill_threshold=0,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: x"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -4079,7 +4098,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
         loop_guard_kill_threshold=0,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: review"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -4763,7 +4782,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: optimize"}]}]
 
-    with patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -4869,7 +4888,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
         max_iterations=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5167,7 +5186,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5235,7 +5254,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
         max_iterations=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5313,7 +5332,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
         max_iterations=60,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5365,7 +5384,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
         max_iterations=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5425,7 +5444,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
         max_iterations=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5499,7 +5518,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5558,7 +5577,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nread"}]}]
     conversation = Conversation.from_wire(messages)
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=conversation,
@@ -5635,7 +5654,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nsearch"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5723,7 +5742,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nship"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5787,7 +5806,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
         max_iterations=20,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5914,7 +5933,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
         max_iterations=20,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -5982,7 +6001,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6049,7 +6068,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
         after_auto_commit=_stop_hook,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6114,7 +6133,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: Path) -> None:
         after_auto_commit=_exit_hook,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6181,7 +6200,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
     )
     wf.undo_forker = lambda: ("forked-child-ID", "t")
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6262,7 +6281,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6329,7 +6348,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
         max_iterations=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -6647,7 +6666,7 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
         # The green verify predates the last edit.
         verify=VerifyVerdict(ever_passed=True, last_ok=True, edited_since=True),
     )
-    with patch.object(wf, "_worktree_dirty", return_value=False):
+    with patch.object(RunChain, "dirty", return_value=False):
         result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "metric_plateau"
     ends = [e for e in ev.events if e["type"] == "session.end"]
@@ -6674,7 +6693,7 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
     state = _state(
         ever_edited=True, verify=VerifyVerdict(ever_passed=True, last_ok=True, edited_since=False)
     )
-    with patch.object(wf, "_worktree_dirty", return_value=False):
+    with patch.object(RunChain, "dirty", return_value=False):
         result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "metric_plateau"
     ends = [e for e in ev.events if e["type"] == "session.end"]
@@ -7149,7 +7168,7 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: Path) -> None
     that never happened (a live run printed `auto-commit: ` with a blank
     sha)."""
     events: list[dict[str, Any]] = []
-    wf = _wf(root=tmp_path, mode="run", commit_per_step=True)
+    wf = _wf(root=tmp_path, mode="run", per_step=True)
 
     def _capture(_type: str, **f: Any) -> None:
         events.append({"type": _type, **f})
@@ -7159,7 +7178,7 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: Path) -> None
     turn = _turn(iteration=3)
     turn.verify_just_passed = True
     turn.edit_since_verify_pass = False
-    with patch.object(wf, "_chain_commit", return_value=""):
+    with patch.object(RunChain, "commit", return_value=""):
         wf._turn_auto_commit_and_metric(_state(), turn)  # pyright: ignore[reportPrivateUsage]
     assert [e for e in events if e["type"] == "loop.auto_commit"] == []
     assert turn.committed is False
@@ -7174,7 +7193,7 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: Path) -> None:
     from agent6.git_ops import GitError
 
     events: list[dict[str, Any]] = []
-    wf = _wf(root=tmp_path, mode="run", commit_per_step=True)
+    wf = _wf(root=tmp_path, mode="run", per_step=True)
 
     def _capture(_type: str, **f: Any) -> None:
         events.append({"type": _type, **f})
@@ -7240,7 +7259,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
         resume_state_path=tmp_path / "loop_state.json",
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"):
+    with patch("agent6.workflows._chain.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
@@ -7573,7 +7592,9 @@ def _metric_wf(
 ) -> Workflow:
     """A gateless run with an operator metric on a chain."""
     return Workflow(
-        root=repo,
+        chain=RunChain(
+            repo, ref="refs/agent6/metric-run/head", fallback_parent=base, per_step=commit_per_step
+        ),
         config=Config.model_validate(
             {
                 "workflow": {
@@ -7590,9 +7611,6 @@ def _metric_wf(
         dispatcher=dispatcher,
         logger=_silent,
         mode="run",
-        chain_ref="refs/agent6/metric-run/head",
-        chain_fallback_parent=base,
-        commit_per_step=commit_per_step,
     )
 
 
@@ -7712,7 +7730,12 @@ def test_the_settled_stop_still_fires_without_per_step_commits(tmp_path: Path, g
 
     def wf_for(repo: Path, base: str, *, commit_per_step: bool) -> Workflow:
         return Workflow(
-            root=repo,
+            chain=RunChain(
+                repo,
+                ref="refs/agent6/settled-run/head",
+                fallback_parent=base,
+                per_step=commit_per_step,
+            ),
             config=Config.model_validate(
                 {"workflow": {"verify_command": ["true"] if gated else []}}
             ),
@@ -7720,9 +7743,6 @@ def test_the_settled_stop_still_fires_without_per_step_commits(tmp_path: Path, g
             dispatcher=MagicMock(),
             logger=_silent,
             mode="run",
-            chain_ref="refs/agent6/settled-run/head",
-            chain_fallback_parent=base,
-            commit_per_step=commit_per_step,
         )
 
     repo = tmp_path / "repo"
@@ -7745,7 +7765,7 @@ def _ruling_wf(tmp_path: Path) -> Workflow:
         return "keep squash"
 
     return Workflow(
-        root=tmp_path,
+        chain=RunChain(tmp_path),
         config=Config(),
         provider=MagicMock(),
         dispatcher=MagicMock(),
@@ -7884,7 +7904,7 @@ def test_the_root_passes_with_an_open_child(
         )
     )
     wf = Workflow(
-        root=tmp_path,
+        chain=RunChain(tmp_path),
         config=Config(),
         provider=MagicMock(),
         dispatcher=MagicMock(),
@@ -7925,7 +7945,7 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: Path) -> None:
         )
     )
     wf = Workflow(
-        root=tmp_path,
+        chain=RunChain(tmp_path),
         config=Config(),
         provider=MagicMock(),
         dispatcher=MagicMock(),
@@ -8062,7 +8082,9 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
 
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     with (
-        patch("agent6.workflows.loop.chain_commit", side_effect=[f"sha{i}" for i in range(1, 20)]),
+        patch(
+            "agent6.workflows._chain.chain_commit", side_effect=[f"sha{i}" for i in range(1, 20)]
+        ),
         patch.object(Workflow, "_run_review_panel", fake_panel),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -8130,7 +8152,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: Pat
         max_iterations=5,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1") as commit:
+    with patch("agent6.workflows._chain.chain_commit", return_value="sha1") as commit:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
@@ -8218,7 +8240,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: Path) -> No
     def _next_sha(*_args: object, **_kwargs: object) -> str:
         return next(shas)
 
-    with patch("agent6.workflows.loop.chain_commit", side_effect=_next_sha):
+    with patch("agent6.workflows._chain.chain_commit", side_effect=_next_sha):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),

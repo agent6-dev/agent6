@@ -93,6 +93,7 @@ from agent6.tools.operator_prompts import (
 )
 from agent6.types import IsolationLevel
 from agent6.viewmodel.machine_state import Spend, read_budget_totals
+from agent6.workflows._chain import RunChain, commit_identity
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import SubrunError, clone_workspace
 
@@ -449,11 +450,22 @@ def run_one(
     )
     cfg = resolve_decompose(cfg, rm, log=reporter.err)
     wf = Workflow(
-        root=req.root,
-        config=cfg,
-        commit_trailer=render_commit_trailer(
-            cfg.git.commit.trailer, models=(rm.model if rm is not None else "",)
+        # A mode="run" state commits on its own chain like any run; the
+        # instance dir name is its session-unique id. Read-only states never
+        # commit (mode gate), so the refs stay None there.
+        chain=RunChain(
+            req.root,
+            ref=machine_chain_ref_for(req.transcript_dir.parent.name) if not read_only else None,
+            fallback_parent=_machine_head_sha(req.root) if not read_only else None,
+            identity=commit_identity(
+                cfg.git.commit,
+                render_commit_trailer(
+                    cfg.git.commit.trailer, models=(rm.model if rm is not None else "",)
+                ),
+            ),
+            per_step=cfg.git.commit_per_step,
         ),
+        config=cfg,
         max_iterations=cfg.workflow.max_iterations,
         tool_result_cap_bytes=tool_result_cap_bytes(cfg, "worker"),
         provider=provider,
@@ -461,14 +473,6 @@ def run_one(
         dispatcher=dispatcher,
         logger=reporter.err,
         mode="agent" if mode == "agent" else "run",
-        # A mode="run" state commits on its own chain like any run; the
-        # instance dir name is its session-unique id. Read-only states never
-        # commit (mode gate), so the refs stay None there.
-        chain_ref=(
-            machine_chain_ref_for(req.transcript_dir.parent.name) if not read_only else None
-        ),
-        chain_fallback_parent=_machine_head_sha(req.root) if not read_only else None,
-        commit_per_step=cfg.git.commit_per_step,
         state_dir=state_dir(req.cwd),
         compact_drop_at_chars=compact_drop,
         compact_summarise_at_chars=compact_summarise,

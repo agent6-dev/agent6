@@ -27,17 +27,9 @@ from agent6.commit_message import conventional_commit_subject
 from agent6.config import Config
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_pin
 from agent6.git_ops import (
-    CommitIdentity,
     GitError,
-    chain_commit,
-    chain_dirty,
-    chain_dirty_paths,
-    chain_tip,
     commit_diff,
-    diff_since,
     tree_diff_paths,
-    worktree_name_status,
-    worktree_tree,
 )
 from agent6.git_ops import status as git_status
 from agent6.graph.curator import CuratorError, GraphCurator
@@ -91,6 +83,7 @@ from agent6.tools.schema import (
 )
 from agent6.types import AutoCommitDirective, RepoSummary
 from agent6.verify_infer import infer_verify_command, read_agents_md
+from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import (
     DROP_BLOCKS_AT_CHARS,
     KEEP_RECENT_CHARS,
@@ -282,9 +275,6 @@ _STARVATION_BACKOFF_AFTER_QUIETS = 2
 # survives-compaction durability is refused.
 PINS_MAX_CHARS = 4_000
 
-# Paths counted for the operator-stop dirty-tree note; a bigger tree reads "N+".
-_DIRTY_NOTE_CAP = 500
-
 # The before-finish panel's rejection, by the ending it rejected; the
 # findings follow.
 _REVIEW_REJECTED = {
@@ -372,7 +362,9 @@ class Workflow:
     (events).
     """
 
-    root: Path
+    # The run's commit chain: the repository root, where per-step commits go
+    # and what the worktree holds beyond them.
+    chain: RunChain
     config: Config
     provider: Provider
     dispatcher: ToolDispatcher
@@ -396,29 +388,6 @@ class Workflow:
     # dispatcher so memory-dir edits persist across runs.
     # None (bench / tests / one-off embedders) runs memory-less.
     state_dir: Path | None = None
-    # Rendered [git.commit].trailer line (render_commit_trailer), appended once
-    # to every commit this loop makes. None = no trailer configured.
-    commit_trailer: str | None = None
-    # The run's detached commit chain. Per-step commits land on chain_ref
-    # (`refs/agent6/<session>/head`, the gc anchor) via a temp index: HEAD, the
-    # operator's index, and the checkout are never touched, so operator or
-    # model git activity mid-run cannot collide with the run's own record.
-    # None (plan/ask, unit-test embedders) = the loop never commits.
-    chain_ref: str | None = None
-    # Visible `refs/heads/<name>` advanced to the same tip ([git].branch_per_run);
-    # None = hidden ref only.
-    chain_branch: str | None = None
-    # Parent for the chain's first commit when chain_ref does not exist yet:
-    # HEAD's sha at run start (None in an unborn repo).
-    chain_fallback_parent: str | None = None
-    # Files that were untracked when the run started (repo-root-relative). The
-    # operator's, so no chain commit records them and no dirty check counts
-    # them; a file the model creates is not in the set and is committed.
-    untracked_at_start: frozenset[str] = frozenset()
-    # [git].commit_per_step: False disables every agent commit. The chain never
-    # advances; resume-from-git, sessions diff/merge, and /parallel dispatch
-    # from a changed tree degrade, and the work stays only in the worktree.
-    commit_per_step: bool = True
     # Cap on assistant turns for THIS leg (config [workflow].max_iterations;
     # -1 unlimited). Each turn = one provider.call. A resumed leg re-arms the
     # allowance: the cap is relative to its start_iteration, so a standing
@@ -577,7 +546,6 @@ class Workflow:
     review_max_total_rejections: int = 4
     review_budget_fraction: float = 0.25
     review_concurrency: int = 1
-    base_sha: str = ""
     # When set, Workflow writes a JSON snapshot of (system, messages,
     # tool_calls, next_iteration, root_task_id) before every LLM call. The
     # snapshot is provider-agnostic (it holds the anthropic-shaped message
@@ -655,7 +623,7 @@ class Workflow:
             mode=self.mode,
         )
         self._log("LOOP: LOAD_CONTEXT")
-        repo = load_repo_summary(self.root)
+        repo = load_repo_summary(self.chain.root)
         system = build_system_prompt(
             config=self.config,
             repo=repo,
@@ -837,7 +805,7 @@ class Workflow:
 
     def _carry_verify_verdict(self, state: LoopState, snap: SessionSnapshot) -> None:
         """Carry the prior leg's verify observation when it still describes THIS
-        tree: the chain tip is the snapshot's (`_checkpoint_head_sha` wrote
+        tree: the chain tip is the snapshot's (`RunChain.checkpoint_head_sha` wrote
         it; a chain commit moves neither HEAD nor the checkout) and the
         worktree holds nothing the chain does not. An operator commit or edit
         between legs invalidates it -- fails closed, like the baseline probe,
@@ -851,17 +819,9 @@ class Workflow:
         if snap.last_verify_ok is None or not snap.head_sha:
             return
         try:
-            if snap.head_sha != self._checkpoint_head_sha():
+            if snap.head_sha != self.chain.checkpoint_head_sha():
                 return
-            if self.chain_ref is not None:
-                dirty = chain_dirty(
-                    self.root,
-                    self.chain_ref,
-                    self.chain_fallback_parent,
-                    exclude=self.untracked_at_start,
-                )
-            else:
-                dirty = not git_status(self.root, exclude=self.untracked_at_start).is_clean
+            dirty = self.chain.is_dirty()
         except (GitError, OSError):
             return
         if not dirty:
@@ -1288,7 +1248,7 @@ class Workflow:
         A run that has already made the gate GREEN is answerable for a later
         red: it demonstrably could pass.
 
-        Fails CLOSED. Every other user of `_worktree_dirty` treats an
+        Fails CLOSED. Every other user of `RunChain.dirty` treats an
         unreadable git as "assume clean"; here that would be a false
         exoneration, so an unreadable git records nothing.
         """
@@ -1297,14 +1257,14 @@ class Workflow:
             or result.exec_failed
             or result.returncode == self._EXIT_TIMEOUT
             or verify_did_not_run(result.stdout, result.stderr, result.duration_s)
-            or not self.base_sha
+            or not self.chain.base_sha
         ):
             return False
         try:
-            status = git_status(self.root, exclude=self.untracked_at_start)
+            status = git_status(self.chain.root, exclude=self.chain.untracked_at_start)
         except (GitError, OSError):
             return False
-        return status.is_clean and status.head_sha == self.base_sha
+        return status.is_clean and status.head_sha == self.chain.base_sha
 
     def _note_verify_result(self, state: LoopState, turn: TurnState, result: ExecResult) -> None:
         """Verify bookkeeping: pass/fail flags, the grounding tail, and the
@@ -1373,7 +1333,7 @@ class Workflow:
             state.no_progress_nudges_used = 0
             return
         verdict.note_fail(verify_failure_signature(result.stdout, result.stderr))
-        verdict.red_tree = self._worktree_tree_sha()
+        verdict.red_tree = self.chain.tree_sha()
         if verdict.fail_streak == 1:
             # A NEW stuck point: the nudge allowance starts over with it.
             state.no_progress_nudges_used = 0
@@ -1385,7 +1345,7 @@ class Workflow:
         they drop must not invalidate the pass they just produced."""
         if name != "run_command" and not name.startswith(MCP_TOOL_PREFIX):
             return ""
-        return self._worktree_tree_sha()
+        return self.chain.tree_sha()
 
     def _left_the_tree_dirty(self, tree_before: str) -> bool:
         """True when a child-process tool changed the tree: its content sha
@@ -1395,7 +1355,7 @@ class Workflow:
         a tool that cannot touch the tree) reads as unchanged."""
         if not tree_before:
             return False
-        after = self._worktree_tree_sha()
+        after = self.chain.tree_sha()
         return bool(after) and after != tree_before
 
     def _note_tool_effects(
@@ -1439,7 +1399,7 @@ class Workflow:
             # The tree this reading covers: without the stamp the auto path
             # samples it again on every turn that reads the tree as changed
             # (all of them, with nothing committing between steps).
-            state.metric_tree = self._worktree_tree_sha()
+            state.metric_tree = self.chain.tree_sha()
             turn.metric_feedback = self._record_metric_result(
                 state.metric_history,
                 result,
@@ -1577,7 +1537,9 @@ class Workflow:
         `verify_infer = false` pins gatelessness: no adoption either."""
         if not self.config.workflow.verify_infer:
             return
-        inferred = infer_verify_command(self.root, read_agents_md(self.root), llm_call=None)
+        inferred = infer_verify_command(
+            self.chain.root, read_agents_md(self.chain.root), llm_call=None
+        )
         if inferred is None or inferred.argv in state.verify.unadoptable:
             return
         if not self.dispatcher.adopt_verify_command(inferred.argv):
@@ -1683,7 +1645,7 @@ class Workflow:
         near the change exists to run."""
         if not is_bare_pytest(tuple(self.config.workflow.verify_command)):
             return ()
-        return nearest_test_paths(self.root, diff_changed_paths(self._run_diff()))
+        return nearest_test_paths(self.chain.root, diff_changed_paths(self.chain.diff_since_base()))
 
     def _scoped_gate_followup(self, state: LoopState, turn: TurnState) -> ExecResult | None:
         """The scoped re-run after a full gate overran its budget, wherever
@@ -1744,7 +1706,7 @@ class Workflow:
             self.config.workflow.verify_when == "finish"
             and not (turn.verify_just_passed or turn.verify_just_failed)
         )
-        unjudged_changed = unjudged and (turn.edited or self._worktree_dirty())
+        unjudged_changed = unjudged and (turn.edited or self.chain.dirty())
         verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
         if self.mode != "run" or not (verified_commit or unjudged_changed):
             return None
@@ -1752,7 +1714,7 @@ class Workflow:
             # Seed the idle-stop net for runs where no green verify fires per
             # step (see the verify-settled bookkeeping), commits or not.
             state.gateless_ever_edited = True
-        if not self.commit_per_step:
+        if not self.chain.per_step:
             # `commit_per_step` governs the COMMIT. The metric is measurement:
             # the prompt promises a [harness metric] block after every verified
             # edit, so the model sees the number it is asked to move.
@@ -1762,7 +1724,7 @@ class Workflow:
         )
         sha = ""
         try:
-            sha = self._chain_commit(commit_subject)
+            sha = self.chain.commit(commit_subject)
             if sha:
                 # "" is chain_commit's nothing-changed answer (a green verify
                 # with no new edits); an event or log line for it would claim
@@ -1786,7 +1748,7 @@ class Workflow:
                 self._emit(
                     "diff.updated",
                     sha=sha,
-                    patch=commit_diff(self.root, sha, max_bytes=8000),
+                    patch=commit_diff(self.chain.root, sha, max_bytes=8000),
                 )
         except (GitError, OSError) as exc:
             self._report_auto_commit_failure(exc, commit_subject, iteration=turn.iteration)
@@ -1827,7 +1789,7 @@ class Workflow:
         benchmark on every turn, read-only ones included."""
         if turn.metric_sampled or state.metric_denied:
             return None
-        tree = self._worktree_tree_sha()
+        tree = self.chain.tree_sha()
         if tree and tree == state.metric_tree:
             return None
         state.metric_tree = tree
@@ -1865,7 +1827,7 @@ class Workflow:
         # is already gone by this point in the loop), omit the snapshot.
         worktree_status = ""
         try:
-            st = git_status(self.root, exclude=self.untracked_at_start)
+            st = git_status(self.chain.root, exclude=self.chain.untracked_at_start)
             worktree_status = (
                 f"branch={st.branch}"
                 f" head={st.head_sha[:12]}"
@@ -2432,7 +2394,7 @@ class Workflow:
         # gateless run, where verify never fires) an editing step.
         settled_seeded = state.verify.ever_passed or state.gateless_ever_edited
         if non_metric_run and settled_seeded:
-            tree = self._worktree_tree_sha()
+            tree = self.chain.tree_sha()
             made_progress = turn.committed or turn.edited or tree != state.settled_tree
             state.settled_tree = tree
             if made_progress:
@@ -3230,36 +3192,6 @@ class Workflow:
             self._log(f"LOOP: failed to seed root task: {exc}")
             return None
 
-    def _worktree_dirty(self) -> bool:
-        """True if the worktree holds content not yet recorded on the run's
-        chain, e.g. an edit a worker made via run_command that the verify-pass
-        auto-commit hasn't captured yet. The verify-settled detector treats
-        that as in-progress work. (Plain `git status` would be wrong here: the
-        operator's HEAD never moves during a run, so everything the agent has
-        long since committed to the chain still reads as "dirty" against it.)
-        Best-effort: any git error reports clean, so a hiccup can't wedge the
-        detector; no chain (unit-test embedders) falls back to status."""
-        try:
-            if self.chain_ref is not None:
-                return chain_dirty(
-                    self.root,
-                    self.chain_ref,
-                    self.chain_fallback_parent,
-                    exclude=self.untracked_at_start,
-                )
-            return not git_status(self.root, exclude=self.untracked_at_start).is_clean
-        except (GitError, OSError):
-            return False
-
-    def _worktree_tree_sha(self) -> str:
-        """Tree sha of the worktree's content (minus untracked_at_start),
-        seeded on the chain tip like a chain commit; "" when git cannot say."""
-        try:
-            seed = self._chain_tip_sha() or self.chain_fallback_parent
-            return worktree_tree(self.root, seed, self.untracked_at_start)
-        except (GitError, OSError):
-            return ""
-
     def _test_only_paths_since_red(self, red_tree: str) -> tuple[str, ...]:
         """Paths whose content differs between *red_tree* (the tree at the
         last red verify) and the current tree, when every one is a test file;
@@ -3267,11 +3199,11 @@ class Workflow:
         Asked of git, so a run_command edit counts like an apply_edit."""
         if not red_tree:
             return ()
-        tree = self._worktree_tree_sha()
+        tree = self.chain.tree_sha()
         if not tree:
             return ()
         try:
-            paths = tree_diff_paths(self.root, red_tree, tree)
+            paths = tree_diff_paths(self.chain.root, red_tree, tree)
         except (GitError, OSError):
             return ()
         if paths and all(is_test_path(p) for p in paths):
@@ -3279,30 +3211,9 @@ class Workflow:
         return ()
 
     def _dirty_tree_note(self) -> str:
-        """Summary suffix naming an uncommitted worktree, or "" when clean.
-
-        An operator stop deliberately skips `_final_checkpoint`: committing
-        over someone who is taking over would remove their choice to discard.
-        The work is still in the checkout, but nothing reads it there --
-        `sessions diff` and `sessions merge` both read git history -- so the state
-        is stated rather than left silent."""
-        if self.mode != "run" or self.chain_ref is None:
-            return ""
-        try:
-            paths = chain_dirty_paths(
-                self.root,
-                self.chain_ref,
-                self.chain_fallback_parent,
-                _DIRTY_NOTE_CAP,
-                exclude=self.untracked_at_start,
-            )
-        except (GitError, OSError):
-            return ""
-        if not paths:
-            return ""
-        more = "+" if len(paths) == _DIRTY_NOTE_CAP else ""
-        noun = "file" if len(paths) == 1 and not more else "files"
-        return f"; worktree left dirty ({len(paths)}{more} {noun} uncommitted, not checkpointed)"
+        """Summary suffix naming an uncommitted worktree (`RunChain.dirty_note`),
+        for a run; "" in the modes that never commit."""
+        return self.chain.dirty_note() if self.mode == "run" else ""
 
     def _final_checkpoint(self, iteration: int) -> None:
         """Best-effort commit of any dirty worktree on a successful exit so
@@ -3313,11 +3224,11 @@ class Workflow:
         verify, never re-verified, is left only in the working tree and is
         silently lost when the run ends (score.sh, resume, and the diff viewer
         all read git history). Capturing it here closes that gap."""
-        if self.mode != "run" or not self.commit_per_step or not self._worktree_dirty():
+        if self.mode != "run" or not self.chain.per_step or not self.chain.dirty():
             return
         try:
             subject = f"checkpoint (iter {iteration})"
-            sha = self._chain_commit(subject)
+            sha = self.chain.commit(subject)
             if sha:
                 self._log(f"  final checkpoint: {sha[:12]}")
                 self._emit("loop.auto_commit", iteration=iteration, sha=sha, subject=subject)
@@ -3327,7 +3238,7 @@ class Workflow:
                 self._emit(
                     "diff.updated",
                     sha=sha,
-                    patch=commit_diff(self.root, sha, max_bytes=8000),
+                    patch=commit_diff(self.chain.root, sha, max_bytes=8000),
                 )
         except (GitError, OSError) as exc:
             self._log(f"  final checkpoint commit failed: {exc}")
@@ -3606,7 +3517,7 @@ class Workflow:
             standing_tools_mark=state.standing_tools_mark,
             standing_fruitless=state.standing_fruitless,
             ok_tool_calls=state.ok_tool_calls,
-            head_sha=self._checkpoint_head_sha(),
+            head_sha=self.chain.checkpoint_head_sha(),
             graph_version=self._checkpoint_graph_version(),
         )
         blob = snapshot.model_dump_json()
@@ -3630,19 +3541,6 @@ class Workflow:
                     f"LOOP: WARNING could not persist resume snapshot ({exc}); "
                     "resume/fork are unavailable for this run, continuing anyway"
                 )
-
-    def _checkpoint_head_sha(self) -> str:
-        """Tip of the run's commit line for the per-turn checkpoint; "" if it
-        can't be read. fork cuts its chain here; resume compares it to the
-        live chain to warn about divergence. Without a chain (unit-test
-        embedders) it is HEAD, and a checkpoint is best-effort recovery
-        state -- a missing sha must not crash the snapshot."""
-        if self.chain_ref is not None:
-            return self._chain_tip_sha()
-        try:
-            return git_status(self.root).head_sha
-        except (GitError, OSError):
-            return ""
 
     def _checkpoint_graph_version(self) -> int:
         """Curator DAG version for the per-turn checkpoint; 0 if no curator."""
@@ -4259,18 +4157,6 @@ class Workflow:
         every in-loop review trigger."""
         return bool(self.review_seats)
 
-    def _run_diff(self) -> str:
-        """The run's cumulative change: base commit vs the working tree, so it
-        includes committed AND uncommitted edits, with the RUN'S new
-        untracked files as additions (untracked-at-start files excluded,
-        matching the chain). Empty if no base is known or git fails. Routed through
-        git_ops so the repo-controlled fsmonitor/diff.external/hooks keys stay
-        neutralized (a raw `git diff` here would run a poisoned `.git/config`
-        payload on the host)."""
-        if not self.base_sha:
-            return ""
-        return diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)
-
     def _run_review_panel(
         self, state: LoopState, *, trigger: str, iteration: int
     ) -> CritiqueResult | None:
@@ -4279,7 +4165,7 @@ class Workflow:
         the gate is still armed). Per-seat + panel events are emitted in seat
         order; the per-run rejection counter decays on a pass and disarms the gate
         once it hits the cap so a gating panel can never stall the run."""
-        diff = self._run_diff()
+        diff = self.chain.diff_since_base()
         if not diff.strip():
             # No diff to ground against (nothing changed, or base_sha missing on a
             # pre-field resume). Can't review -> approve, but make the skip visible
@@ -4313,7 +4199,7 @@ class Workflow:
             task=state.original_task,
             # The same text the run prompt injects (repo root's file included on
             # a subdirectory start), so review and worker see one set of conventions.
-            agents_md=agents_md_text(self.root),
+            agents_md=agents_md_text(self.chain.root),
             diff=diff,
             verify_ok=state.verify.last_ok,
             verify_output=state.verify.last_tail,
@@ -4759,7 +4645,7 @@ class Workflow:
         try:
             # Lanes cut from the run's chain tip, which _ensure_clean_for_dispatch
             # just made current; blocks, no provider calls meanwhile.
-            results = self.lane_spawner(lanes, group, at=self._chain_tip_sha() or None)
+            results = self.lane_spawner(lanes, group, at=self.chain.tip() or None)
             if len(results) != len(lanes):
                 raise SubrunError(
                     f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
@@ -4793,12 +4679,12 @@ class Workflow:
         # per segment from its lanes' joins.
         lanes = [
             join_lane_result(
-                self.root,
+                self.chain.root,
                 res,
-                ref=self.chain_ref or "",
-                fallback_parent=self.chain_fallback_parent,
-                identity=self._commit_identity(),
-                also_branch=self.chain_branch,
+                ref=self.chain.ref or "",
+                fallback_parent=self.chain.fallback_parent,
+                identity=self.chain.identity,
+                also_branch=self.chain.branch,
             )
             for res in results
         ]
@@ -4830,24 +4716,24 @@ class Workflow:
         from it see current work. Changed content is chain-committed first;
         returns whether it came clean (with commit_per_step off, a changed
         tree cannot be captured and dispatch is refused)."""
-        if not self._worktree_dirty():
+        if not self.chain.dirty():
             return True
-        if not self.commit_per_step:
+        if not self.chain.per_step:
             return False
         try:
             subject = f"checkpoint before /parallel dispatch (iter {iteration})"
-            sha = self._chain_commit(subject)
+            sha = self.chain.commit(subject)
             if sha:
                 self._log(f"  pre-dispatch checkpoint: {sha[:12]}")
                 self._emit("loop.auto_commit", iteration=iteration, sha=sha, subject=subject)
                 self._emit(
                     "diff.updated",
                     sha=sha,
-                    patch=commit_diff(self.root, sha, max_bytes=8000),
+                    patch=commit_diff(self.chain.root, sha, max_bytes=8000),
                 )
         except (GitError, OSError) as exc:
             self._log(f"PARALLEL: pre-dispatch checkpoint failed: {exc}")
-        return not self._worktree_dirty()
+        return not self.chain.dirty()
 
     def _parallel_parent_id(self, root_task_id: str | None) -> str | None:
         """Parent for a dispatched subtask: the curator cursor when it points at
@@ -4916,48 +4802,6 @@ class Workflow:
         if self.events is not None:
             emit_session_start(self.events, self.events.path.parent, event_type, **fields)
 
-    def _commit_identity(self) -> CommitIdentity | None:
-        """Author identity plus the provenance trailer for this loop's commits.
-
-        `[git.commit].name`/`.email` are the only identity on a machine whose
-        git has none: preflight accepts them, so dropping them here would fail
-        every chain commit with "Author identity unknown".
-        """
-        commit = self.config.git.commit
-        if not (commit.name or commit.email or self.commit_trailer):
-            return None
-        return CommitIdentity(
-            name=commit.name or None, email=commit.email or None, trailer=self.commit_trailer
-        )
-
-    def _chain_commit(self, subject: str) -> str:
-        """One commit of the worktree onto the run's detached chain; "" when
-        nothing changed since the tip or no chain is configured."""
-        if self.chain_ref is None:
-            return ""
-        return (
-            chain_commit(
-                self.root,
-                subject,
-                ref=self.chain_ref,
-                fallback_parent=self.chain_fallback_parent,
-                identity=self._commit_identity(),
-                also_branch=self.chain_branch,
-                exclude=self.untracked_at_start,
-            )
-            or ""
-        )
-
-    def _chain_tip_sha(self) -> str:
-        """Tip of the run's commit line; "" when the chain has no commits and
-        no fallback (unborn repo) or no chain is configured."""
-        if self.chain_ref is None:
-            return ""
-        try:
-            return chain_tip(self.root, self.chain_ref) or self.chain_fallback_parent or ""
-        except (GitError, OSError):
-            return ""
-
     def _checkpoint_subject(self, turn: TurnState, *, fallback: str) -> str:
         """The per-step commit message, per `[git.commit.checkpoint].message`."""
         agent6_subject = _summarise_assistant_text_for_commit(
@@ -4967,7 +4811,7 @@ class Workflow:
         if style == "agent6":
             return agent6_subject
         summary = _first_prose_line(turn.resp.text or "", fallback=fallback)
-        changes = worktree_name_status(self.root, exclude=self.untracked_at_start)
+        changes = self.chain.name_status()
         if style == "conventional":
             return conventional_commit_subject(changes, summary=summary)
         msg = self._model_commit_message(changes, hint=summary)

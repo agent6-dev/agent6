@@ -22,6 +22,7 @@ from agent6.app.machine_agent import (
 from agent6.config import Config
 from agent6.machine import AgentRequest
 from agent6.machine.model import FieldSpec
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Notice
 from agent6.workflows.loop import (
     TurnState,
@@ -61,7 +62,7 @@ def test_a_schemaless_request_leaves_the_task_alone() -> None:
 
 def _wf(validator: Any) -> Workflow:
     wf = Workflow(
-        root=Path("/tmp"),
+        chain=RunChain(Path("/tmp")),
         config=Config.model_validate({}),
         provider=MagicMock(),
         dispatcher=MagicMock(),

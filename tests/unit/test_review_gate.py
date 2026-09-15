@@ -18,12 +18,13 @@ from unittest.mock import MagicMock, patch
 
 from agent6.providers import ProviderResponse
 from agent6.tools.results import ExecResult, RawResult
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation, Notice
 from agent6.workflows._review import CritiqueResult
 from agent6.workflows.loop import Workflow
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
-# identity (`_commit_identity`), empty as a real Config carries it unset.
+# identity (`commit_identity`), empty as a real Config carries it unset.
 _GIT_STUB = SimpleNamespace(
     commit=SimpleNamespace(
         checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
@@ -35,9 +36,25 @@ def _silent(_msg: str) -> None:
     return None
 
 
-def _wf(**kw: Any) -> Workflow:
+def _wf(
+    root: Path | None = None,
+    *,
+    ref: str | None = None,
+    fallback_parent: str | None = None,
+    branch: str | None = None,
+    per_step: bool = True,
+    base_sha: str = "",
+    **kw: Any,
+) -> Workflow:
     defaults: dict[str, Any] = {
-        "root": Path("/tmp"),
+        "chain": RunChain(
+            root or Path("/tmp"),
+            ref=ref,
+            branch=branch,
+            fallback_parent=fallback_parent,
+            per_step=per_step,
+            base_sha=base_sha,
+        ),
         "config": MagicMock(
             git=_GIT_STUB,
             prompt=MagicMock(system_prompt_file=""),
@@ -297,7 +314,7 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
     # verify-settled detector stays dormant and all 5 iterations run.
     with (
         patch.object(Workflow, "_run_review_panel", panel),
-        patch("agent6.workflows.loop.chain_commit", return_value="sha"),
+        patch("agent6.workflows._chain.chain_commit", return_value="sha"),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",

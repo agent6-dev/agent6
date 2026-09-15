@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 from agent6.config import Config
 from agent6.tools.results import EditResult, ExecResult
 from agent6.workflows import _nudges
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Notice
 from agent6.workflows._nudges import is_test_path
 from agent6.workflows.loop import LoopState, TurnState, Workflow
@@ -64,7 +65,7 @@ Emitted = list[tuple[str, dict[str, Any]]]
 
 def _wf(root: Path) -> tuple[Workflow, Emitted]:
     wf = Workflow(
-        root=root,
+        chain=RunChain(root),
         config=Config.model_validate({"workflow": {"verify_command": ["true"]}}),
         provider=MagicMock(),
         dispatcher=MagicMock(),
@@ -91,7 +92,7 @@ def _turn(iteration: int) -> TurnState:
 def _edit(wf: Workflow, state: LoopState, turn: TurnState, rel: str) -> None:
     """apply_edit through the real path: the file changes on disk, then the
     loop notes the result."""
-    (wf.root / rel).write_text("y = 2\n", encoding="utf-8")
+    (wf.chain.root / rel).write_text("y = 2\n", encoding="utf-8")
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "apply_edit", EditResult(applied=("replace",), path=rel), {"path": rel}
     )
@@ -104,7 +105,7 @@ def _command(
     the loop asks git whether the tree moved."""
     before = wf._tree_before_command("run_command")  # pyright: ignore[reportPrivateUsage]
     for rel in writes:
-        (wf.root / rel).write_text("z = 3\n", encoding="utf-8")
+        (wf.chain.root / rel).write_text("z = 3\n", encoding="utf-8")
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "run_command", _exec(0), {"command": "ls"}, tree_before=before
     )

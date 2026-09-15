@@ -68,6 +68,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import AutoCommitDirective, IsolationLevel, ResumableMode
+from agent6.workflows._chain import RunChain, commit_identity
 from agent6.workflows._session_state import SessionEndReason
 from agent6.workflows.loop import ResumeError, SessionResult, Workflow
 
@@ -302,23 +303,27 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             else (lambda _i, _s: "continue")
         )
         wf = Workflow(
-            root=cwd,
+            chain=RunChain(
+                cwd,
+                # `git.control = "model"` suspends the whole shadow chain: the
+                # model's own commits are the record.
+                ref=chain_ref_for(inputs.session_id)
+                if mode == "run" and cfg.git.control != "model"
+                else None,
+                branch=inputs.chain_branch,
+                fallback_parent=inputs.base_sha or None,
+                untracked_at_start=inputs.untracked_at_start,
+                identity=commit_identity(
+                    cfg.git.commit,
+                    render_commit_trailer(cfg.git.commit.trailer, models=(session.rm_role.model,)),
+                ),
+                per_step=cfg.git.commit_per_step,
+                base_sha=inputs.base_sha,
+            ),
             config=cfg,
             standing_goal=inputs.standing_goal,
             interactive=inputs.interactive and mode == "run",
             initial_pins=inputs.pins,
-            commit_trailer=render_commit_trailer(
-                cfg.git.commit.trailer, models=(session.rm_role.model,)
-            ),
-            # `git.control = "model"` suspends the whole shadow chain: the
-            # model's own commits are the record.
-            chain_ref=chain_ref_for(inputs.session_id)
-            if mode == "run" and cfg.git.control != "model"
-            else None,
-            chain_branch=inputs.chain_branch,
-            chain_fallback_parent=inputs.base_sha or None,
-            untracked_at_start=inputs.untracked_at_start,
-            commit_per_step=cfg.git.commit_per_step,
             tool_result_cap_bytes=tool_result_cap_bytes(cfg, role),
             max_iterations=cfg.workflow.max_iterations,
             provider=session.provider,
@@ -367,7 +372,6 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             review_max_total_rejections=cfg.review.max_total_rejections,
             review_budget_fraction=cfg.review.budget_fraction,
             review_concurrency=cfg.review.concurrency,
-            base_sha=inputs.base_sha,
             prompt_reviser_provider=prompt_reviser_provider,
             revise_prompt=effective_revise_prompt,
             temperature=role_temperature(cfg, role),

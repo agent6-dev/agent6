@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 
 from agent6.config import Config
 from agent6.tools.results import EditResult, ExecResult
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import AssistantTurn, Notice
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
 from agent6.workflows._verify_verdict import VerifyVerdict
@@ -26,7 +27,7 @@ from agent6.workflows.loop import (
 def _wf(**kw: Any) -> Workflow:
     kw.setdefault("state_dir", Path("/tmp/state"))
     return Workflow(
-        root=Path("/tmp"),
+        chain=RunChain(Path("/tmp")),
         config=Config.model_validate({}),
         provider=MagicMock(),
         dispatcher=MagicMock(),

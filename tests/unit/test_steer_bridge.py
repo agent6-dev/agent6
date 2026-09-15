@@ -24,6 +24,7 @@ from agent6.sessions.ipc import (
     write_steer_answer,
 )
 from agent6.ui.cli._steer import file_bridge_steer, install_steer_sigint, make_steer_state
+from agent6.workflows._chain import RunChain
 
 
 def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
@@ -293,7 +294,7 @@ def test_workflow_run_resets_the_steer_stage_at_leg_entry() -> None:
         resets.append(True)
 
     wf = Workflow(
-        root=Path("/tmp"),
+        chain=RunChain(Path("/tmp")),
         config=MagicMock(),
         provider=MagicMock(),
         dispatcher=MagicMock(),
@@ -329,7 +330,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
     )
     dispatcher = MagicMock()
     wf = Workflow(
-        root=repo,
+        chain=RunChain(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),

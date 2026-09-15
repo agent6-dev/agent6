@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from agent6.tools.results import RawResult
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation
 from agent6.workflows._review import ReviewSeat
 from agent6.workflows.loop import Workflow
@@ -56,7 +57,7 @@ def _begin() -> list[dict[str, Any]]:
 
 def _drive(wf: Workflow, messages: list[dict[str, Any]]) -> Any:
     conversation = Conversation.from_wire(messages)
-    with patch.object(Workflow, "_run_diff", return_value=_DIFF):
+    with patch.object(RunChain, "diff_since_base", return_value=_DIFF):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -220,7 +221,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     )
     state = LoopState(original_task="t", tool_calls=0)
     with (
-        patch.object(loop_mod.Workflow, "_run_diff", return_value=_DIFF),
+        patch.object(RunChain, "diff_since_base", return_value=_DIFF),
         patch.object(loop_mod, "run_panel", return_value=res),
     ):
         out = wf._run_review_panel(  # pyright: ignore[reportPrivateUsage]

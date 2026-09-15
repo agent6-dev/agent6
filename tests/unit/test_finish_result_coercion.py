@@ -11,6 +11,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.config import Config
+from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import AssistantTurn
 from agent6.workflows.loop import (
     TurnState,
@@ -21,7 +22,7 @@ from agent6.workflows.loop import (
 def _wf(**kw: Any) -> Workflow:
     kw.setdefault("state_dir", Path("/tmp/state"))
     return Workflow(
-        root=Path("/tmp"),
+        chain=RunChain(Path("/tmp")),
         config=Config.model_validate({}),
         provider=MagicMock(),
         dispatcher=MagicMock(),
