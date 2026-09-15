@@ -41,8 +41,8 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         sub,
         "config",
         help=(
-            "Inspect and materialize the layered config (global + repo + defaults);"
-            " a bare `agent6 config` shows it."
+            "Show or change agent6 settings. With no subcommand, show every setting and where"
+            " its value came from."
         ),
     )
     config_sub = config_p.add_subparsers(
@@ -52,77 +52,91 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         config_sub,
         "show",
         help=(
-            "Print every effective config value and where it came from"
-            " (default / global / repo / preset / flag / machine). `*` marks values a config layer"
-            " set, whatever their value."
+            "Show every setting and where its value came from. The source column says default,"
+            " global, repo, preset, flag, or machine. An asterisk marks a value supplied by a"
+            " config source instead of the built-in defaults."
         ),
     )
     show_keys = config_show.add_argument(
         "keys",
         nargs="*",
         metavar="KEY",
-        help="Show just these leaves (or section prefixes, e.g. 'sandbox') untruncated.",
+        help=(
+            "Setting or section names to show in full, such as sandbox.network or sandbox."
+            " Default: all settings."
+        ),
     )
     show_keys.completer = partial(  # type: ignore[attr-defined]
         _complete_config_keys, settable=False, sections=True
     )
     config_show.add_argument(
-        "--json", action="store_true", dest="as_json", help="Emit JSON instead of a table."
+        "--json", action="store_true", dest="as_json", help="Print JSON instead of a table."
     )
     config_show.add_argument(
         "--descriptions",
         action="store_true",
-        help="Print each value's meaning under its row (the docs table cell).",
+        help="Show what each setting controls below its value.",
     )
-    _add_machine_file(
-        config_show, "View every leaf with a machine file's [config] overlay applied."
-    )
+    _add_machine_file(config_show, "Apply the [config] section in FILE when reading settings.")
     config_fill = _sub(
         config_sub,
         "fill",
         help=(
-            "Write the defaults + global layers as one explicit global config"
-            " file (repo overlays and preset effects stay overlays). Handy"
-            " before tightening defaults or for an audit snapshot."
+            "Write every built-in default and global setting to the global config file. Keep"
+            " preset definitions and the selected preset name, but do not copy repository"
+            " settings or the preset's changes."
         ),
     )
     config_fill.add_argument(
-        "--force", action="store_true", help="Overwrite the target file if it already exists."
+        "--force",
+        action="store_true",
+        help="Allow replacement of an existing global config file. Default: refuse.",
     )
     _sub(
         config_sub,
         "path",
-        help="Print the resolved config, secrets, state, skills and cache paths.",
+        help="Show the paths agent6 uses for config, secrets, state, skills, and cache.",
     )
     _sub(
         config_sub,
         "presets",
         help=(
-            "List config presets (built-in + user [presets.*]) with the overrides"
-            " each applies, marking the selected one and its source."
+            "Show the available presets and the settings each one changes. Also show which"
+            " preset is selected and where each preset came from."
         ),
     )
     config_get = _sub(
-        config_sub, "get", help="Print a leaf's effective value and which layer set it."
+        config_sub, "get", help="Show one setting's current value and where it came from."
     )
-    config_get_key = config_get.add_argument("key", help="Dotted leaf path, e.g. sandbox.network.")
+    config_get_key = config_get.add_argument("key", help="Setting name, such as sandbox.network.")
     # `get` reads effective leaves, and `[presets.*]` are stripped before
     # validation, so offering them would propose an input it refuses.
     config_get_key.completer = partial(  # type: ignore[attr-defined]
         _complete_config_keys, settable=False
     )
-    _add_machine_file(config_get, "View the value with a machine file's [config] overlay applied.")
+    _add_machine_file(config_get, "Apply the [config] section in FILE when reading the setting.")
     for verb, blurb in (
-        ("set", "Set a leaf to a TOML-typed value (global by default)."),
-        ("unset", "Remove a leaf, reverting it to the next-lower layer / default."),
-        ("add", "Append a value to a list field such as sandbox.extra_read_paths."),
-        ("remove", "Remove a value from a list field."),
+        ("set", "Save a setting. Default: global config file."),
+        (
+            "unset",
+            "Remove a saved setting. agent6 then uses a value from another config source or its"
+            " built-in default. Default: remove it from the global config file.",
+        ),
+        ("add", "Add a value to a list setting. Default: global config file."),
+        ("remove", "Remove a value from a list setting. Default: global config file."),
     ):
         p = _sub(config_sub, verb, help=blurb)
-        key_arg = p.add_argument("key", help="Dotted leaf path, e.g. sandbox.network.")
+        key_arg = p.add_argument("key", help="Setting name, such as sandbox.network.")
         key_arg.completer = _complete_config_keys  # type: ignore[attr-defined]
         if verb != "unset":
-            val_arg = p.add_argument("value", help="Value (TOML-typed; bare text is a string).")
+            action = "save" if verb == "set" else verb
+            val_arg = p.add_argument(
+                "value",
+                help=(
+                    f"Value to {action}. TOML booleans, numbers, quoted strings, and lists keep"
+                    " their types. Other text is treated as a string."
+                ),
+            )
             val_arg.completer = _complete_config_values  # type: ignore[attr-defined]
         p.add_argument(
             "--repo",
@@ -132,8 +146,8 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         _add_machine_file(
             p,
             (
-                "Edit a machine file's [config] overlay (providers, sandbox, presets"
-                " and mcp, and the host-escape leaves, are operator-only and refused)."
+                "Save the change in FILE's [config] section. Settings that could access the"
+                " host, plus providers, sandbox settings, presets, and MCP servers, are refused."
             ),
         )
 
@@ -141,13 +155,15 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         config_sub,
         "fix",
         help=(
-            "Drop invalid config entries (unknown keys, stale values) from the global"
-            " and repo config, printing each and whether it was global or repo. Repairs"
-            " a machine file's [config] overlay instead with --machine-file."
+            "Remove settings that prevent the config from loading. By default, check the global"
+            " and repository config files and print each removal. A machine file limits changes"
+            " to its [config] section."
         ),
     )
     _add_machine_file(
-        config_fix, "Repair a machine file's [config] overlay instead of the global/repo config."
+        config_fix,
+        "Remove invalid settings only from FILE's [config] section. Report problems in other"
+        " config files without changing them.",
     )
 
 
@@ -156,29 +172,34 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         sub,
         "connect",
         help=(
-            "Interactively add or update a provider and its credentials"
-            " (stored in the global secrets file)."
+            "Set up a model provider. agent6 asks for connection and sign-in details, then saves"
+            " the provider settings. Credentials, when needed, go in the private global secrets"
+            " file."
         ),
     )
     connect_provider = connect_p.add_argument(
         "provider",
         nargs="?",
         default="",
-        help="Provider name to add/update (e.g. anthropic, openrouter). Prompted if omitted.",
+        help=("Provider to set up, such as anthropic or openrouter. Default: ask for a provider."),
     )
     connect_provider.completer = _complete_providers  # type: ignore[attr-defined]
     connect_p.add_argument(
         "--logout",
         action="store_true",
-        help="Sign out instead: remove the provider's stored credentials from secrets.toml"
-        " (a ChatGPT sign-in is also revoked at the issuer). The config block stays.",
+        help=(
+            "Remove the provider's saved credentials instead. agent6 tries to revoke a ChatGPT"
+            " sign-in. The provider settings stay in the config file."
+        ),
     )
     connect_p.add_argument(
         "--no-verify",
         dest="verify",
         action="store_false",
-        help="Skip the post-save read-only key check (a GET to the provider's /models)."
-        " Use for offline/local endpoints (Ollama, llama.cpp) that have no models listing.",
+        help=(
+            "Do not test a newly saved API key against the provider. Use this for a local or"
+            " offline provider that does not offer a model list."
+        ),
     )
     connect_p.add_argument(
         "--repo",
@@ -191,7 +212,7 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     model_p = _sub(
         sub,
         "model",
-        help="Show or set which model + reasoning effort each role uses (planner/worker/reviewer).",
+        help="Show or set the model and reasoning effort for planning, work, and review.",
     )
     # choices gives both argparse validation and argcomplete tab-completion for
     # free. default=None (not "") so the omitted case isn't checked against
@@ -206,8 +227,8 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         default=None,
         metavar="role",
         help=(
-            "Role to set: planner, worker, reviewer, or all (sets every role at"
-            " once). Omit to print the current assignments."
+            "Assignment to change: planner, worker, reviewer, or all. Choose all to update every"
+            " assignment. Default: show the current assignments."
         ),
     )
     model_route = model_p.add_argument(
@@ -216,9 +237,10 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         default="",
         metavar="[PROVIDER/]MODEL",
         help=(
-            "Provider and model as provider/model. A model id alone keeps the role's provider;"
-            " a provider name alone lists its models (piped) or prompts for one (on a"
-            " terminal). Omit it to be prompted for both on a terminal."
+            "Provider and model, written as PROVIDER/MODEL. MODEL alone keeps the assignment's"
+            " current provider. On a terminal, give only a configured PROVIDER to choose from"
+            " its models, or omit this value to choose both. Without an interactive terminal, a"
+            " configured PROVIDER prints its known models."
         ),
     )
     # Role-gated (see _complete_model_verb_values) so the routes do not bleed
@@ -228,7 +250,10 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "--effort",
         choices=get_args(EffortLevel),
         default="",
-        help="Reasoning effort for the role (the top tiers where the model offers them).",
+        help=(
+            "Reasoning effort to save with this assignment. Default: none saved, so the"
+            " provider's own default applies."
+        ),
     )
     model_p.add_argument(
         "--repo",

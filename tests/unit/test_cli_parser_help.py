@@ -258,17 +258,33 @@ def test_machine_help_covers_running() -> None:
 def test_config_and_provider_help_cover_all_supported_shapes() -> None:
     parser = build_parser()
     config = _find(parser, "config")
+    assert (config.description or "").startswith("Show or change agent6 settings")
     show = _find(config, "show")
     for source in ("default", "global", "repo", "preset", "flag", "machine"):
         assert source in (show.description or "")
     set_command = _find(config, "set")
-    assert "TOML-typed value" in (set_command.description or "")
+    assert (set_command.description or "").startswith("Save a setting")
+    assert "TOML" in (_positional(set_command, "value").help or "")
     path = _find(config, "path")
-    assert "config, secrets, state, skills and cache" in (path.description or "")
+    assert "config, secrets, state, skills, and cache" in (path.description or "")
+
     connect = _find(parser, "connect")
-    assert "credentials" in (connect.description or "")
+    assert (connect.description or "").startswith("Set up a model provider")
+    assert "tries to revoke" in (_option(connect, "--logout").help or "")
+
     model = _find(parser, "model")
-    assert "on a terminal" in (_positional(model, "route").help or "")
+    assert (model.description or "").startswith("Show or set the model")
+    assert "On a terminal" in (_positional(model, "route").help or "")
+
+
+def test_mcp_help_explains_server_setup_in_user_terms() -> None:
+    mcp = _find(build_parser(), "mcp")
+    connect = _find(mcp, "connect")
+    assert (connect.description or "").startswith("Add an MCP server")
+    assert "without testing it" in (connect.description or "")
+    assert (_positional(connect, "name").help or "").startswith("Server name")
+    listing = _find(mcp, "list")
+    assert "does not start or test" in (listing.description or "")
 
 
 def test_profile_flags_have_the_profiles_completer() -> None:

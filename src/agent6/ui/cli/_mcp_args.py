@@ -15,24 +15,37 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
     connect = _sub(
         mcp_sub,
         "connect",
-        help="Add an MCP server, after proving it answers and listing its tools.",
+        help=(
+            "Add an MCP server. agent6 starts it and shows its tools before saving it. If"
+            " sandboxing is unavailable, a server started by a command is saved without testing"
+            " it and gets a warning."
+        ),
     )
-    connect.add_argument("name", help="The tool prefix: its tools appear as mcp__<name>__<tool>.")
+    connect.add_argument(
+        "name",
+        help=(
+            "Server name. Use letters, numbers, hyphens, or underscores, but never two"
+            " underscores in a row. Its tools appear as mcp__NAME__TOOL."
+        ),
+    )
     connect.add_argument(
         # Not named "command": a positional's name is its dest, and the root
         # parser's subcommand verb already owns args.command.
         "server_command",
         nargs="*",
-        metavar="ARGV",
-        help=("argv for a server to spawn (put it after `--`). Exactly one of this or --url."),
+        metavar="COMMAND",
+        help=(
+            "Command and arguments used to start the server. Put `--` before the command so its"
+            " options reach the server. Give either a command or a URL, not both."
+        ),
     )
     connect.add_argument(
         "--url",
         default="",
         metavar="URL",
         help=(
-            "An http(s) endpoint of a server you run, which agent6 only connects"
-            " to. Exactly one of this or a command."
+            "URL of an MCP server that is already running. It must start with http:// or"
+            " https://. Give either a URL or a command, not both."
         ),
     )
     connect.add_argument(
@@ -41,8 +54,8 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         default="",
         metavar="VAR",
         help=(
-            "For --url: the environment variable holding the bearer token."
-            " The config records the name; the value never enters it."
+            "Name of the environment variable that holds the bearer token for a URL server."
+            " agent6 saves the variable name, not the token."
         ),
     )
     connect.add_argument(
@@ -52,9 +65,9 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         default=[],
         metavar="VAR",
         help=(
-            "For a spawned server: an environment variable it needs, by name"
-            " (repeatable). Everything else is agent6's curated base, which"
-            " never carries a provider key."
+            "Name of an environment variable to pass to a server started by a command. Repeat"
+            " this option for each variable. Other variables come from agent6's limited base"
+            " environment, which excludes model-provider API keys."
         ),
     )
     connect.add_argument(
@@ -67,9 +80,9 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
     remove = _sub(
         mcp_sub,
         "remove",
-        help="Drop a configured MCP server (the inverse of connect).",
+        help="Remove an MCP server from a config file. Default: global config file.",
     )
-    remove_name = remove.add_argument("name", help="The server to remove, as `mcp list` names it.")
+    remove_name = remove.add_argument("name", help="Server name shown by `agent6 mcp list`.")
     remove_name.completer = _complete_mcp_servers  # type: ignore[attr-defined]
     remove.add_argument(
         "--repo",
@@ -78,4 +91,11 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         help="Remove from the per-repo config instead of the global config.",
     )
 
-    _sub(mcp_sub, "list", help="The configured MCP servers and how each is reached.")
+    _sub(
+        mcp_sub,
+        "list",
+        help=(
+            "Show configured MCP servers and how agent6 reaches them. This does not start or test"
+            " the servers."
+        ),
+    )
