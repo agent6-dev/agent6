@@ -635,9 +635,7 @@ def build_machine_agent_runner(
                         result = salvaged("error")
                     else:
                         try:
-                            result = AgentExecResult.model_validate_json(
-                                out_file.read_text(encoding="utf-8")
-                            )
+                            result = AgentExecResult.model_validate_json(out_file.read_bytes())
                         except (OSError, ValidationError):
                             # A malformed result.json is treated like a missing
                             # one: the spend salvage keeps the budget honest.

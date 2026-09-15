@@ -501,7 +501,7 @@ class MachineJournal:
         for seq in seqs:
             path = self.snapshots_dir / f"{seq}.json"
             try:
-                return Snapshot.model_validate_json(path.read_text(encoding="utf-8"))
+                return Snapshot.model_validate_json(path.read_bytes())
             except (ValidationError, OSError):
                 continue
         return None
@@ -587,8 +587,8 @@ class MachineJournal:
         if not self.wait_path.is_file():
             return None
         try:
-            return PendingWait.model_validate_json(self.wait_path.read_text(encoding="utf-8"))
-        except ValidationError as exc:
+            return PendingWait.model_validate_json(self.wait_path.read_bytes())
+        except (ValidationError, OSError) as exc:
             # The engine cannot guess a wake instant from this: firing early or
             # skipping the wait are both worse than refusing. Name the remedy,
             # like every other refusal: deleting the file re-arms the wait from
@@ -637,7 +637,10 @@ def read_source(root: Path) -> str:
     path = root / "machine.asm.toml"
     if not path.is_file():
         raise JournalError(f"no persisted machine source at {path}")
-    return path.read_text(encoding="utf-8")
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise JournalError(f"cannot read persisted machine source at {path}: {exc}") from exc
 
 
 def write_stop_request(root: Path) -> None:

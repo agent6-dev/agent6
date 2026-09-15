@@ -222,8 +222,9 @@ def test_latest_snapshot_falls_back_past_corrupt_newest(tmp_path: Path) -> None:
     j = _journal(tmp_path)
     j.write_snapshot(Snapshot(seq=1, state="a", blackboard={"n": 1}))
     j.write_snapshot(Snapshot(seq=2, state="b", blackboard={"n": 2}))
-    # Corrupt the newest snapshot; latest_snapshot must fall back to seq=1.
-    (j.snapshots_dir / "2.json").write_text("{ not valid", encoding="utf-8")
+    # Invalid UTF-8 is corruption too; it must not escape before the older
+    # retained snapshot gets its chance to restore the inspection readout.
+    (j.snapshots_dir / "2.json").write_bytes(b"\xff\xfe")
     snap = j.latest_snapshot()
     assert snap is not None
     assert snap.seq == 1
@@ -506,6 +507,15 @@ def test_source_roundtrip(tmp_path: Path) -> None:
 def test_read_source_missing_raises(tmp_path: Path) -> None:
     with pytest.raises(JournalError):
         read_source(tmp_path / "absent")
+
+
+def test_read_source_reports_invalid_utf8_as_a_journal_error(tmp_path: Path) -> None:
+    root = tmp_path / "m"
+    root.mkdir()
+    (root / "machine.asm.toml").write_bytes(b"\xff\xfe")
+
+    with pytest.raises(JournalError, match="cannot read persisted machine source"):
+        read_source(root)
 
 
 def test_append_and_snapshot_survive_a_lone_surrogate(tmp_path: Path) -> None:

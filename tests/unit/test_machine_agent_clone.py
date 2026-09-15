@@ -235,6 +235,34 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
     assert not clone_cwd.exists()  # scratch tree, discarded
 
 
+def test_invalid_utf8_result_routes_failed_instead_of_escaping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A killed or broken child may leave arbitrary result bytes; the host
+    treats them like a missing result and returns the recoverable failed edge."""
+    origin = _origin(tmp_path)
+
+    class _BadResultChild:
+        pid = 4242
+        returncode = 0
+
+        def __init__(self, argv: list[str], **_kwargs: object) -> None:
+            Path(argv[-1]).write_bytes(b"\xff\xfe")
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    def bad_result(argv: list[str], **kwargs: Any) -> Any:
+        if any("machine_agent" in str(arg) for arg in argv):
+            return _BadResultChild(argv, **kwargs)
+        return _REAL_POPEN(argv, **kwargs)
+
+    monkeypatch.setattr(ma.subprocess, "Popen", bad_result)
+    runner = ma.build_machine_agent_runner({}, origin, "none", tmp_path / "transcripts")
+
+    assert runner(_req(0, mode="agent"), None).reason == "error"
+
+
 def test_spawn_failure_routes_failed_and_discards_the_unused_clone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
