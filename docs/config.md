@@ -236,7 +236,7 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 | Field | Default | Meaning |
 |---|---|---|
 | `checkpoint.message` | `"agent6"` | The message of each per-step commit: `agent6` (`agent6 iter N: <summary>`), `conventional` (a `type(scope): subject` derived from the diff, no model call), or `model` (the model writes it from the git facts, falling back to `agent6` with a warning on any failure). |
-| `squash.message` | `"agent6"` | The message of the one commit a squash merge produces: `agent6` (`agent6 iter N: <summary>` style), `conventional` (a `type(scope): subject` derived from the diff, no model call), `combine` (git's own squash message: the per-step log concatenated), or `model` (model-written, falling back to `agent6` with a warning on any failure). |
+| `squash.message` | `"agent6"` | The message of the one commit a squash merge produces: `agent6` (the task's first clause as the subject, the steps as bullets), `conventional` (a `type(scope): subject` derived from the diff, no model call), `combine` (git's own squash message: the per-step log concatenated), or `model` (model-written, falling back to `agent6` with a warning on any failure). |
 
 ## `preset` (top-level)
 

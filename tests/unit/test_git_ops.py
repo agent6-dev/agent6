@@ -1234,18 +1234,16 @@ def test_condense_strips_prefix_and_bullets(tmp_path: Path) -> None:
     assert "- add a" in message and "- add b" in message  # prefix stripped, bulleted
 
 
-def test_condense_subject_is_first_clause_and_wraps_the_rest(tmp_path: Path) -> None:
-    # A long multi-clause task must not become one 180-char subject line: the
-    # subject is the first clause (<= 72 chars); the whole task wraps into the body.
+def test_condense_subject_is_first_clause_and_the_task_stays_out(tmp_path: Path) -> None:
+    """The subject is the task's first clause, capped at 72 characters; the
+    rest of the task is session prose (a plan, an instruction) and does not
+    enter the commit body."""
     task = (
         "Add a --limit flag to runs list. Then update the parser help and add a "
         "focused unit test covering the newest-N slice and the argcomplete choices"
     )
     message = condense_commit_message((), subject=task)
-    lines = message.splitlines()
-    assert lines[0] == "Add a --limit flag to runs list"  # first clause only
-    assert all(len(ln) <= 72 for ln in lines)  # nothing over the subject/body cap
-    assert "focused unit test" in message  # the rest is preserved, wrapped
+    assert message == "Add a --limit flag to runs list"
 
 
 def test_condense_subject_truncates_a_clauseless_run_on_with_ellipsis(tmp_path: Path) -> None:

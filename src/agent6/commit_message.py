@@ -8,7 +8,6 @@ gets. Pure string work; `git_ops` runs git.
 from __future__ import annotations
 
 import re
-import textwrap
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -41,9 +40,10 @@ def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str
     """Fold per-step commits into one readable message, so a squash reads as a
     single authored commit, not a squashed series.
 
-    *subject* is the run's task (the headline). The body lists the distinct,
-    de-noised per-step subjects (the `agent6 iter N:` prefix and checkpoint
-    noise stripped). The provenance trailer is the commit emitter's job
+    *subject* is the run's task, headlined to its first clause. The body lists
+    the distinct, de-noised per-step subjects (the `agent6 iter N:` prefix and
+    checkpoint noise stripped); the task itself is session prose and stays out
+    of history. The provenance trailer is the commit emitter's job
     (identity.trailer), not this message's."""
     bullets: list[str] = []
     seen: set[str] = set()
@@ -56,12 +56,6 @@ def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str
     task = _ITER_SUBJECT_RE.sub("", subject).strip()
     headline = _headline_subject(task) or (bullets[0] if bullets else "agent6 run")
     parts = [headline]
-    # If the subject truncated the task, wrap the full task into the body so
-    # nothing is lost (git never wraps the subject line itself).
-    full = " ".join(task.split())
-    if full and full != headline:
-        parts.append("")
-        parts.extend(textwrap.wrap(full, width=72))
     if bullets:
         parts.append("")
         parts.extend(f"- {b}" for b in bullets)
