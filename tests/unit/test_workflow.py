@@ -24,6 +24,7 @@ from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
+from agent6.workflows._finish_gates import task_finish_nudge, with_open_tasks
 from agent6.workflows._guards import (
     FinishGates,
     GuardSettings,
@@ -3340,12 +3341,12 @@ def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
     wf = _wf(curator=_FakeGraph(nodes))
     st = _state()
     for i in range(1, TASK_FINISH_PATIENCE + 1):
-        nudge = wf._task_finish_gate_nudge(st)  # pyright: ignore[reportPrivateUsage]
+        nudge = task_finish_nudge(wf._open_subtasks(), st.gates)  # pyright: ignore[reportPrivateUsage]
         assert nudge is not None and "sub1: audit providers" in nudge
         assert "audit sandbox" not in nudge  # passed subtask not listed
         assert st.gates.task_nudges_used == i
-    assert wf._task_finish_gate_nudge(st) is None  # pyright: ignore[reportPrivateUsage]
-    assert "1 open task(s): audit providers" in wf._with_open_tasks("done")  # pyright: ignore[reportPrivateUsage]
+    assert task_finish_nudge(wf._open_subtasks(), st.gates) is None  # pyright: ignore[reportPrivateUsage]
+    assert "1 open task(s): audit providers" in with_open_tasks("done", wf._open_subtasks())  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_plans_tasks_neither_gate_nor_decorate_its_finish() -> None:
@@ -3357,8 +3358,8 @@ def test_a_plans_tasks_neither_gate_nor_decorate_its_finish() -> None:
     }
     wf = _wf(curator=_FakeGraph(nodes))
     wf.mode = "plan"
-    assert wf._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
-    assert wf._with_open_tasks("planned") == "planned"  # pyright: ignore[reportPrivateUsage]
+    assert task_finish_nudge(wf._open_subtasks(), _state().gates) is None  # pyright: ignore[reportPrivateUsage]
+    assert with_open_tasks("planned", wf._open_subtasks()) == "planned"  # pyright: ignore[reportPrivateUsage]
     turn = _turn()
     assert wf._end_gates(_state(), turn, ending="silent_finish") is None  # pyright: ignore[reportPrivateUsage]
     assert turn.end_returned is False and turn.tool_results == []
@@ -3416,8 +3417,8 @@ def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
     """Only SUBTASKS gate. The always-pending auto-root alone must NOT block a
     finish (else every run deadlocks); no curator -> no gate either."""
     root_only = _FakeGraph({"root": {"parent_id": None, "status": "pending", "title": "t"}})
-    assert _wf(curator=root_only)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
-    assert _wf(curator=None)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
+    assert task_finish_nudge(_wf(curator=root_only)._open_subtasks(), _state().gates) is None  # pyright: ignore[reportPrivateUsage]
+    assert task_finish_nudge(_wf(curator=None)._open_subtasks(), _state().gates) is None  # pyright: ignore[reportPrivateUsage]
 
 
 def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:

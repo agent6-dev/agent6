@@ -113,6 +113,15 @@ from agent6.workflows._dag_focus import (
     ready_subtask,
     stuck_on_task_nudge,
 )
+from agent6.workflows._finish_gates import (
+    REVIEW_REJECTED,
+    contract_refusal,
+    finish_reason,
+    open_subtasks,
+    red_gate_returns,
+    task_finish_nudge,
+    with_open_tasks,
+)
 from agent6.workflows._guards import GuardSettings
 from agent6.workflows._loop_state import (
     NEXT_TURN,
@@ -160,7 +169,6 @@ from agent6.workflows._nudges import (
     SILENT_NO_WORK_PATIENCE,
     STAGNATION_NUDGE,
     STAGNATION_NUDGE_GATELESS,
-    TASK_FINISH_PATIENCE,
     TOOL_DENIED_NUDGE,
     TOOL_ERROR_ESCALATION,
     TOOL_ERROR_NUDGE,
@@ -262,29 +270,6 @@ if TYPE_CHECKING:
 # (see Workflow._worker_max_tokens). 2 spares a one-off starvation its full
 # recovery room while breaking a reasoning-binge spiral.
 _STARVATION_BACKOFF_AFTER_QUIETS = 2
-
-# The before-finish panel's rejection, by the ending it rejected; the
-# findings follow.
-_REVIEW_REJECTED = {
-    "finish_session": (
-        "The review panel rejected your finish_session call. Address the"
-        " issues below before calling finish_session again.\n\n"
-    ),
-    "silent_finish": (
-        "The review panel rejected your silent finish (no tool_use, just"
-        " text). Address the issues below and continue the task.\n\n"
-    ),
-    "settled": (
-        "The review panel rejected the settled end. Address the issues"
-        " below; the run ends when it settles again or finish_session"
-        " passes.\n\n"
-    ),
-    "metric_plateau": (
-        "The review panel rejected the end at the metric plateau. Address the"
-        " issues below; the run ends when the plateau holds again or"
-        " finish_session passes.\n\n"
-    ),
-}
 
 
 def _first_prose_line(text: str, *, fallback: str) -> str:
@@ -1772,7 +1757,7 @@ class Workflow:
             self._log(f"  review rejected {ending} at iter {turn.iteration}")
             self._emit("loop.review.rejected_finish", iteration=turn.iteration, ending=ending)
             state.gates.review_consecutive += 1
-            turn.review_text = _REVIEW_REJECTED[ending] + critique.text
+            turn.review_text = REVIEW_REJECTED[ending] + critique.text
             return True
         if not critique.satisfied:
             self._log(
@@ -1847,14 +1832,14 @@ class Workflow:
 
     def _gate_task_finish(self, state: LoopState, turn: TurnState) -> None:
         """Task finish-gate: don't let finish_session through while the worker's
-        own subtasks are still open (see _task_finish_gate_nudge)."""
+        own subtasks are still open (see task_finish_nudge)."""
         if not (
             turn.finish_signal is not None
             and turn.finish_kind == "finish_session"
             and self.mode == "run"
         ):
             return
-        task_nudge = self._task_finish_gate_nudge(state)
+        task_nudge = task_finish_nudge(self._open_subtasks(), state.gates)
         if task_nudge is None:
             return
         turn.finish_signal = None
@@ -1905,13 +1890,7 @@ class Workflow:
             return
         turn.finish_signal = None
         turn.finish_payload = None
-        turn.tool_results.append(
-            Notice(
-                "finish_session refused: "
-                + "; ".join(problems)
-                + ". Call finish_session again with a `result` that satisfies the schema."
-            )
-        )
+        turn.tool_results.append(Notice(contract_refusal(problems)))
         self._log(
             f"  finish_session returned: result violates the contract at iter {turn.iteration}"
         )
@@ -1928,7 +1907,12 @@ class Workflow:
             and turn.finish_kind == "finish_session"
             and self.mode == "run"
             and self._tree_is_verify_green(state) is False
-            and self._red_gate_returns(state)
+            and red_gate_returns(
+                self.config.workflow,
+                state.verify,
+                state.gates,
+                gate_present=self._gate_present(denied=state.verify.denied),
+            )
         ):
             return
         wf = self.config.workflow
@@ -2117,7 +2101,7 @@ class Workflow:
 
     def _settled_summary(self, state: LoopState) -> str:
         """Why a settled end is not a pass, with the open subtasks named."""
-        return self._with_open_tasks(self._settled_reason(state))
+        return with_open_tasks(self._settled_reason(state), self._open_subtasks())
 
     def _settled_reason(self, state: LoopState) -> str:
         if state.verify.last_ok is False:
@@ -2135,21 +2119,6 @@ class Workflow:
             )
         return "the worker settled after committing work; the verify never passed"
 
-    def _red_gate_returns(self, state: LoopState) -> bool:
-        """Whether a red gate is the model's to fix, so an end over it goes
-        back: a gate exists and is the harness's to run, was not red before
-        the run touched anything (or this run has since made it green), was
-        not denied or withheld by the operator, and returns are left. One
-        answer for finish_session and the ends the harness declares, so
-        neither can hand back a gate the model cannot run."""
-        wf = self.config.workflow
-        return (
-            wf.verify_when != "never"
-            and self._gate_present(denied=state.verify.denied)
-            and (state.verify.baseline_ok is not False or state.verify.ever_passed)
-            and state.gates.verify_retries_used < wf.verify_retries
-        )
-
     def _end_gates(self, state: LoopState, turn: TurnState, *, ending: str) -> SessionResult | None:
         """An end declared without finish_session (`settled`: the harness's
         idle stop; `silent_finish`: a prose turn with no tool call) passes the
@@ -2163,7 +2132,12 @@ class Workflow:
         if aborted is not None:
             return aborted
         wf = self.config.workflow
-        red_returned = state.verify.last_ok is False and self._red_gate_returns(state)
+        red_returned = state.verify.last_ok is False and red_gate_returns(
+            self.config.workflow,
+            state.verify,
+            state.gates,
+            gate_present=self._gate_present(denied=state.verify.denied),
+        )
         if red_returned:
             state.gates.verify_retries_used += 1
             turn.tool_results.append(
@@ -2186,7 +2160,9 @@ class Workflow:
             turn.tool_results.append(Notice(review_notice(turn.review_text)))
             turn.review_text = None
         turn.end_returned = red_returned or reviewed
-        if not turn.end_returned and (task_nudge := self._task_finish_gate_nudge(state)):
+        if not turn.end_returned and (
+            task_nudge := task_finish_nudge(self._open_subtasks(), state.gates)
+        ):
             turn.tool_results.append(Notice(task_nudge))
             turn.end_returned = True
             self._log(
@@ -2487,7 +2463,10 @@ class Workflow:
             if state.verify.ever_passed and self._tree_is_verify_green(state) is not False:
                 end = End(
                     "verify_settled",
-                    self._with_open_tasks("verify passed and the worker stopped making changes"),
+                    with_open_tasks(
+                        "verify passed and the worker stopped making changes",
+                        self._open_subtasks(),
+                    ),
                     completed=True,
                     verdict="passed",
                     checkpoint=False,
@@ -2514,7 +2493,7 @@ class Workflow:
                 state,
                 End(
                     "metric_plateau",
-                    self._with_open_tasks(turn.metric_plateau_finish),
+                    with_open_tasks(turn.metric_plateau_finish, self._open_subtasks()),
                     completed=True,
                     verdict="grounded",
                 ),
@@ -2556,13 +2535,18 @@ class Workflow:
             # finish_session over a red/stale verify is "finished", not "passed"
             # -- all_passed reflects the actual verify state, never just "the
             # model called finish_session".
-            reason = self._finish_reason(turn, state)
+            reason = finish_reason(
+                turn.finish_kind,
+                stale_gate=turn.finish_stale_gate,
+                tree_green=self._tree_is_verify_green(state),
+                verify=state.verify,
+            )
             self._check_decisions_recorded(state)
             return self._finish(
                 state,
                 End(
                     reason,
-                    self._with_open_tasks(turn.finish_signal),
+                    with_open_tasks(turn.finish_signal, self._open_subtasks()),
                     completed=True,
                     verdict="grounded" if turn.finish_kind == "finish_session" else "passed",
                     checkpoint=False,
@@ -2872,7 +2856,7 @@ class Workflow:
             state,
             End(
                 reason,
-                text if self.mode == "ask" else self._with_open_tasks(text[:1000]),
+                text if self.mode == "ask" else with_open_tasks(text[:1000], self._open_subtasks()),
                 completed=True,
                 verdict="grounded" if reason == "silent_finish" else "passed",
             ),
@@ -3147,25 +3131,6 @@ class Workflow:
         if not self.config.workflow.verify_command:
             return None
         return state.verify.green_and_untouched
-
-    def _finish_reason(self, turn: TurnState, state: LoopState) -> SessionEndReason:
-        """What this finish is called.
-
-        `gate_stale` needs a gate that is actually RED. Green means it passed,
-        truthfully. And `_tree_is_verify_green` returns None for a GATELESS run,
-        where there is no gate to be stale. The proposal is recorded either way.
-
-        `gate_red_at_base` outranks a plain finish over red: the gate was
-        already failing before this run touched anything, so a red end is not
-        this run's failure. Only ever from an observation, never a guess -- a
-        run where nothing ever verified a clean tree says nothing.
-        """
-        if turn.finish_kind == "finish_session" and self._tree_is_verify_green(state) is False:
-            if turn.finish_stale_gate:
-                return "gate_stale"
-            if state.verify.baseline_ok is False and not state.verify.ever_passed:
-                return "gate_red_at_base"
-        return turn.finish_kind
 
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.
@@ -3812,46 +3777,7 @@ class Workflow:
         curator -> nothing open."""
         if self.curator is None or self.mode != "run":
             return []
-        return [
-            (nid, node.title[:120])
-            for nid, node in self.curator.nodes().items()
-            if node.parent_id is not None
-            and node.status in OPEN_STATUSES
-            # A standing task is not unfinished work: it gates the finish via
-            # its own re-entry, never via the capped nudge.
-            and not node.standing
-        ]
-
-    def _with_open_tasks(self, summary: str) -> str:
-        """*summary* with the open subtasks named, when an end went through
-        over them (the gate's cap): the receipt says what was left."""
-        open_subtasks = self._open_subtasks()
-        if not open_subtasks:
-            return summary
-        titles = ", ".join(title for _tid, title in open_subtasks)
-        return f"{summary} ({len(open_subtasks)} open task(s): {titles})"
-
-    def _task_finish_gate_nudge(self, state: LoopState) -> str | None:
-        """If the worker created subtasks and any are still open, return a nudge
-        message to re-prompt with instead of finishing; else None (finish OK).
-
-        Capped by `TASK_FINISH_PATIENCE`, as the review gate is: after that many
-        refusals the end goes through and its receipt names the open tasks
-        (`_with_open_tasks`), so a worker that neither closes nor retires a
-        task cannot bounce the loop for the whole budget."""
-        open_subtasks = self._open_subtasks()
-        if not open_subtasks:
-            return None
-        if state.gates.task_nudges_used >= TASK_FINISH_PATIENCE:
-            return None  # cap reached: the end goes through, the receipt names them
-        state.gates.task_nudges_used += 1
-        listing = "\n".join(f"- {tid}: {title}" for tid, title in open_subtasks)
-        return (
-            f"[harness] finish_session deferred: {len(open_subtasks)} task(s) are"
-            f" pending or in_progress:\n{listing}\n"
-            "update_task marks one skipped or obsolete; the run ends once the"
-            f" list is clear, or on the {TASK_FINISH_PATIENCE + 1}th call."
-        )
+        return open_subtasks(self.curator.nodes())
 
     # ---- prompt revision and provider retry ------------------------------------
 

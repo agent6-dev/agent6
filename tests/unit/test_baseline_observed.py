@@ -16,6 +16,7 @@ import pytest
 
 from agent6.tools.results import ExecResult
 from agent6.workflows._chain import RunChain
+from agent6.workflows._finish_gates import finish_reason, red_gate_returns
 from agent6.workflows.loop import (
     LoopState,
     TurnState,
@@ -144,8 +145,21 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     turn = _turn()
     turn.finish_kind = "finish_session"
 
-    assert wf._red_gate_returns(state) is True  # pyright: ignore[reportPrivateUsage]
-    assert wf._finish_reason(turn, state) == "finish_session"  # pyright: ignore[reportPrivateUsage]
+    assert red_gate_returns(
+        wf.config.workflow,
+        state.verify,
+        state.gates,
+        gate_present=wf._gate_present(denied=state.verify.denied),  # pyright: ignore[reportPrivateUsage]
+    )
+    assert (
+        finish_reason(
+            turn.finish_kind,
+            stale_gate=turn.finish_stale_gate,
+            tree_green=wf._tree_is_verify_green(state),  # pyright: ignore[reportPrivateUsage]
+            verify=state.verify,
+        )
+        == "finish_session"
+    )
 
 
 @pytest.mark.parametrize(
@@ -188,7 +202,15 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     state.verify.last_ok = False
     turn = _turn()
     turn.finish_kind = "finish_planning"
-    assert wf._finish_reason(turn, state) == "finish_planning"  # pyright: ignore[reportPrivateUsage]
+    assert (
+        finish_reason(
+            turn.finish_kind,
+            stale_gate=turn.finish_stale_gate,
+            tree_green=wf._tree_is_verify_green(state),  # pyright: ignore[reportPrivateUsage]
+            verify=state.verify,
+        )
+        == "finish_planning"
+    )
 
 
 def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:

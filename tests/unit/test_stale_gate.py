@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import io
 from contextlib import redirect_stdout
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -27,7 +26,7 @@ def test_the_reason_reads_as_a_failure_with_its_cause() -> None:
 
 
 def test_a_green_tree_is_still_what_passes() -> None:
-    """`gate_stale` never reaches a green run (see _finish_reason), but the
+    """`gate_stale` never reaches a green run (see finish_reason), but the
     word mapping is grounded on all_passed either way: the worker records a
     proposal, it does not certify itself."""
     assert status_word(finished=True, all_passed=True, end_reason="gate_stale") == ("passed", "")
@@ -122,18 +121,12 @@ def test_nothing_is_printed_without_a_declaration() -> None:
 def test_a_declaration_names_the_end_only_over_a_red_tree(
     declared: str, green: bool | None, expected: str
 ) -> None:
-    from agent6.workflows.loop import (
-        LoopState,
-        TurnState,
-        Workflow,
-    )
+    from agent6.workflows._finish_gates import finish_reason
+    from agent6.workflows._verify_verdict import VerifyVerdict
 
-    wf = Workflow.__new__(Workflow)
-    turn = TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    turn.finish_kind = "finish_session"
-    turn.finish_stale_gate = declared
-    object.__setattr__(wf, "_tree_is_verify_green", MagicMock(return_value=green))
-    reason = wf._finish_reason(turn, MagicMock(spec=LoopState))  # pyright: ignore[reportPrivateUsage]
+    reason = finish_reason(
+        "finish_session", stale_gate=declared, tree_green=green, verify=VerifyVerdict()
+    )
     assert reason == expected
 
 

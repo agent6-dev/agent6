@@ -17,6 +17,7 @@ from agent6.config import Config
 from agent6.prompts.loop import V2_VERIFY_WHEN
 from agent6.viewmodel.listing import status_word
 from agent6.workflows._chain import RunChain
+from agent6.workflows._finish_gates import red_gate_returns
 from agent6.workflows._loop_state import End
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
@@ -76,7 +77,12 @@ def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> Non
         tool_calls=0,
         verify=VerifyVerdict(last_ok=False, baseline_ok=False),
     )
-    assert wf._red_gate_returns(state) is False  # pyright: ignore[reportPrivateUsage]
+    assert not red_gate_returns(
+        wf.config.workflow,
+        state.verify,
+        state.gates,
+        gate_present=wf._gate_present(denied=state.verify.denied),  # pyright: ignore[reportPrivateUsage]
+    )
     assert "untouched base" in V2_VERIFY_WHEN["finish"]
 
 
