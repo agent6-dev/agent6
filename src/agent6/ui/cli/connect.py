@@ -445,7 +445,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
     preset_format = preset["api_format"] if preset else ""
     if logout:
         return _cmd_logout(name, preset_format)
-    print("agent6 connect: add a provider and API key.\n")
+    print("agent6 connect: set up a model provider.\n")
     api_format = _prompt_api_format(name, preset_format)
     if api_format is None:
         return 2

@@ -109,7 +109,10 @@ def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
     on stderr."""
     options = _models_for(config_path, provider)
     if not options:
-        error(f"no known models for {provider} (couldn't reach its API or none configured).")
+        error(
+            f"no known models for {provider}: no listing reached and no role names one."
+            f" Set one with: agent6 model {role} {provider}/<model>"
+        )
         return 2
     for m in options:
         print(m)
