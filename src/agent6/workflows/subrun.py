@@ -107,7 +107,7 @@ def import_run(
     origin_state: Path,
 ) -> Path:
     """Land a finished lane's *branch* in *origin* and move `lane_session_dir`
-    under `<origin_state>/runs/`. Returns the imported run dir.
+    under `<origin_state>/sessions/runs/`. Returns the imported run dir.
 
     Refuses (SubrunError) to overwrite an existing branch in *origin* or an
     existing run dir at the destination -- checked before either the fetch or

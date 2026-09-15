@@ -258,7 +258,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     overlay = cfg.model_dump(mode="json")
     overlay.pop("preset", None)  # the overlay layer forbids a preset
     # The leg writes files and nothing else. `run_commands = "no"` withholds
-    # the three command tools; the operator's metric goes too, since
+    # the four command tools; the operator's metric goes too, since
     # `run_metric_command` runs its command in the jail and authoring has no
     # metric to chase; an unlisted host makes every `fetch` a prompt, which a
     # headless create denies. agent6 runs the validators itself: they need

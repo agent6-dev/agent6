@@ -459,10 +459,10 @@ class MachineJournal:
     def write_snapshot(self, snapshot: Snapshot) -> None:
         """Write a snapshot atomically (temp file + rename), pruning old ones.
 
-        Recovery only ever reads `latest_snapshot` and replay rebuilds from
-        the journal, so old snapshots are dead weight: a 10-minute-loop machine
-        would otherwise accumulate ~150k files a year. Keep a short fixed tail
-        (paranoia against a corrupt latest) and delete the rest.
+        Only `machine status` reads `latest_snapshot`; recovery and replay
+        fold the journal, so old snapshots are dead weight: a 10-minute-loop
+        machine would otherwise accumulate ~150k files a year. Keep a short
+        fixed tail (a fallback for a corrupt latest) and delete the rest.
         """
         mkdir_for_real_user(self.snapshots_dir)
         dest = self.snapshots_dir / f"{snapshot.seq}.json"

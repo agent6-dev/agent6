@@ -109,8 +109,8 @@ class MachineConfig(BaseModel):
         ge=0,
         default=5,
         description=(
-            "How many blackboard snapshots a machine instance keeps (recovery reads only the "
-            "latest; `machine replay` rebuilds any state from the journal). `0` keeps all."
+            "How many blackboard snapshots a machine instance keeps (`machine status` reads the "
+            "latest; recovery and `machine replay` fold the journal). `0` keeps all."
         ),
     )
     state_log_keep: int = Field(
