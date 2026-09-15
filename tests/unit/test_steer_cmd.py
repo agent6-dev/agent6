@@ -10,7 +10,12 @@ from pathlib import Path
 import pytest
 
 from agent6.paths import state_dir
-from agent6.sessions.ipc import steer_request_pending, take_steer_answer, write_worker_pid
+from agent6.sessions.ipc import (
+    read_compact_request,
+    steer_request_pending,
+    take_steer_answer,
+    write_worker_pid,
+)
 from agent6.ui.cli import main
 
 
@@ -81,6 +86,69 @@ def test_steer_refuses_a_session_that_is_not_running(
     assert "not running" in err
     assert "agent6 resume tiny-run-BBBB22 --steer" in err
     assert not steer_request_pending(d)
+
+
+def test_steer_refuses_a_finished_run_even_with_a_stale_live_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A session end outranks a stale or reused worker pid."""
+    import json
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = _run_session(tmp_path, "done-run-FFFF66")
+    (d / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + "\n",
+        encoding="utf-8",
+    )
+    write_worker_pid(d, os.getpid())
+
+    assert main(["steer", "done-run-FFFF66", "more work"]) == 2
+    err = capsys.readouterr().err
+    assert "not running" in err
+    assert "agent6 resume done-run-FFFF66 --steer" in err
+    assert not steer_request_pending(d)
+
+
+def test_steer_compact_writes_the_compaction_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = _run_session(tmp_path, "tiny-run-GGGG77")
+    write_worker_pid(d, os.getpid())
+
+    assert main(["steer", "tiny-run-GGGG77", "/compact focus on test failures"]) == 0
+    out = capsys.readouterr().out
+    assert "compaction requested for tiny-run-GGGG77" in out
+    assert read_compact_request(d) == "focus on test failures"
+    assert not steer_request_pending(d)
+    assert take_steer_answer(d) is None
+
+
+def test_steer_btw_opens_a_side_ask_instead_of_queuing_the_directive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = _run_session(tmp_path, "tiny-run-HHHH88")
+    write_worker_pid(d, os.getpid())
+    opened: list[tuple[Path, str]] = []
+
+    def _open_btw(session_dir: Path, question: str) -> tuple[bool, str]:
+        opened.append((session_dir, question))
+        return True, "[agent6] btw side-ask-IIII99 opened"
+
+    monkeypatch.setattr("agent6.ui.cli.steer_cmd.open_btw", _open_btw, raising=False)
+
+    assert main(["steer", "tiny-run-HHHH88", "/btw is the migration safe?"]) == 0
+    assert opened == [(d, "is the migration safe?")]
+    assert "btw side-ask-IIII99 opened" in capsys.readouterr().out
+    assert not steer_request_pending(d)
+    assert take_steer_answer(d) is None
 
 
 def test_steer_reports_an_unknown_id(
