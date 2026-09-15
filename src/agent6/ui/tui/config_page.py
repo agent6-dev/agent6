@@ -259,9 +259,13 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
             # inverse of parse_cli_value instead; scalars stay bare.
             raw = s.value if s.value is not None else s.default
             current = (
-                format_toml_value(raw)
-                if isinstance(raw, (list, tuple, dict))
-                else format_value(raw)
+                raw
+                if isinstance(raw, str)
+                else (
+                    format_toml_value(raw)
+                    if isinstance(raw, (list, tuple, dict))
+                    else format_value(raw)
+                )
             )
             if self._typeahead is not None:
                 # Big open list (e.g. model ids): type to narrow over suggestions.

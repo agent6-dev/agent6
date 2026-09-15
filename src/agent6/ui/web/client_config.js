@@ -109,10 +109,7 @@ async function addProvider() {
 // select, everything else a text field, with the default, source, and type
 // shown; "set for this repo" writes the per-repo config instead of the global.
 function editConfig(key, s) {
-  const cur = s.value === null || s.value === undefined ? ''
-    : Array.isArray(s.value) ? s.value.join(',')
-    : typeof s.value === 'object' ? JSON.stringify(s.value)
-    : String(s.value);
+  const cur = s.input;
   const back = el('div', 'overlay');
   const opener = document.activeElement;
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';

@@ -19,6 +19,7 @@ from typing import Any
 from agent6.app.confine import resolved_config_values
 from agent6.app.parallel import subordinate_workdir_root
 from agent6.config import ConfigError
+from agent6.config.io import format_toml_value
 from agent6.config.layer import available_preset_names, load_effective
 from agent6.git_ops import EMPTY_TREE, commit_diff, diff_range, run_ref_tips
 from agent6.models.choices import available_routes, config_value_choices, default_route
@@ -314,13 +315,20 @@ def machine_reasoning_snapshot(
 
 def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
     """The effective config as a per-leaf view (value/effective/default/source/
-    modified/adaptive/type/choices), keyed by dotted key. The same structure
-    `agent6 config show --json` prints, its adaptive leaves (the compaction
-    thresholds, `prompt.decompose = auto`) resolved from the worker model the
-    same way; never includes secrets."""
+    modified/adaptive/type/choices), keyed by dotted key, plus each value's
+    round-trippable editor input. The shared fields are the same structure
+    `agent6 config show --json` prints. Adaptive leaves (the compaction
+    thresholds, `prompt.decompose = auto`) resolve from the worker model the
+    same way. The payload never includes secrets."""
     eff = load_effective(cwd, config_path)
     resolved = resolved_config_values(eff.config)
-    return json.loads(render_show(eff, as_json=True, resolved=resolved))
+    payload: dict[str, Any] = json.loads(render_show(eff, as_json=True, resolved=resolved))
+    for setting in payload.values():
+        value = setting["value"]
+        setting["input"] = (
+            "" if value is None else value if isinstance(value, str) else format_toml_value(value)
+        )
+    return payload
 
 
 def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> list[str]:

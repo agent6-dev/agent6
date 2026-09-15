@@ -439,6 +439,41 @@ def test_config_endpoint(server: tuple[WebServer, int]) -> None:
     assert {"value", "effective", "default", "source", "modified"} <= set(sample)
 
 
+def test_config_endpoint_sets_typed_values_and_unsets_to_the_next_layer(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _srv, port = server
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
+
+    status, data = _post(
+        port,
+        "/api/config",
+        {"key": "git.commit.name", "value": json.dumps("true")},
+    )
+    assert status == 200 and data["ok"] is True
+    status, data = _post(
+        port,
+        "/api/config",
+        {"key": "sandbox.run_commands", "value": "no"},
+    )
+    assert status == 200 and data["ok"] is True
+    status, body, _ = _get(port, "/api/config")
+    config = json.loads(body)
+    assert config["git.commit.name"]["value"] == "true"
+    assert config["sandbox.run_commands"]["value"] == "no"
+    assert config["git.commit.name"]["source"] == "global"
+
+    status, data = _post(
+        port,
+        "/api/config",
+        {"key": "git.commit.name", "unset": True},
+    )
+    assert status == 200 and data["ok"] is True
+    status, body, _ = _get(port, "/api/config")
+    assert json.loads(body)["git.commit.name"]["source"] == "default"
+
+
 def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     session_dir = state_dir(tmp_path) / "sessions" / "runs" / "appr-run"

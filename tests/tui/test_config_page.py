@@ -102,6 +102,52 @@ def test_config_page_view_search_filter_help(repo: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_cli_changes_reach_the_tui_and_web_with_their_layer(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent6.ui.cli import cli_main
+    from agent6.ui.web.model import config_payload
+
+    monkeypatch.chdir(repo)
+    assert cli_main(["config", "set", "review.period", "9"]) == 0
+    assert cli_main(["config", "set", "--repo", "review.period", "11"]) == 0
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            table = screen.query_one("#tbl-review", DataTable)
+            row = next(
+                table.get_row_at(i)
+                for i in range(table.row_count)
+                if str(table.get_row_at(i)[0]).strip() == "period"
+            )
+            assert str(row[1]).strip() == "11"
+            assert "repo" in str(row[2])
+            web = config_payload(repo)
+            assert web["review.period"]["value"] == 11
+            assert web["review.period"]["source"] == "repo"
+
+            assert cli_main(["config", "unset", "--repo", "review.period"]) == 0
+            screen.action_reload()
+            await pilot.pause()
+            table = screen.query_one("#tbl-review", DataTable)
+            row = next(
+                table.get_row_at(i)
+                for i in range(table.row_count)
+                if str(table.get_row_at(i)[0]).strip() == "period"
+            )
+            assert str(row[1]).strip() == "9"
+            assert "global" in str(row[2])
+            web = config_payload(repo)
+            assert web["review.period"]["value"] == 9
+            assert web["review.period"]["source"] == "global"
+
+    asyncio.run(scenario())
+
+
 def test_config_page_adaptive_value_shown(repo: Path) -> None:
     async def scenario() -> None:
         app = _Host(repo)
@@ -381,6 +427,31 @@ def test_model_field_is_a_typeahead_picker(repo: Path, monkeypatch: pytest.Monke
             await pilot.press("down")
             await pilot.pause()
             assert field.value == "claude-haiku-4-5"
+
+    asyncio.run(scenario())
+
+
+def test_empty_preset_prefill_saves_back_unchanged(repo: Path) -> None:
+    async def scenario() -> None:
+        from agent6.ui.tui.config_page import ChoiceField
+
+        app = _Host(repo)
+        async with app.run_test(size=(100, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            table = screen.query_one("#tbl-preset", DataTable)
+            table.focus()
+            table.move_cursor(row=0)
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, EditModal)
+            assert modal.query_one("#edit-value", ChoiceField).value == ""
+            modal.action_save()
+            await pilot.pause()
+            assert load_effective(repo).config.preset == ""
 
     asyncio.run(scenario())
 

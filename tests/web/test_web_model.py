@@ -394,10 +394,24 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: Path
     resolved = resolved_adaptive_values(eff.config)
     shown = json.loads(render_show(eff, as_json=True, resolved=resolved))
     for key in ("prompt.decompose", "context.drop_at_chars", "context.summarise_at_chars"):
-        assert payload[key] == shown[key]
+        shared = {name: value for name, value in payload[key].items() if name != "input"}
+        assert shared == shown[key]
         assert payload[key]["adaptive"] is True
     assert payload["prompt.decompose"]["display"] == "off  (adaptive)"
     assert isinstance(payload["context.drop_at_chars"]["effective"], int)
+
+
+def test_config_payload_carries_round_trippable_editor_values(tmp_path: Path) -> None:
+    cfg = tmp_path / "c.toml"
+    cfg.write_text(
+        '[workflow]\nverify_command = ["uv", "run", "pytest"]\n[skills.state]\nalpha = "always"\n',
+        encoding="utf-8",
+    )
+
+    payload = model.config_payload(tmp_path, cfg)
+
+    assert payload["workflow.verify_command"]["input"] == '["uv", "run", "pytest"]'
+    assert payload["skills.state"]["input"] == '{ alpha = "always" }'
 
 
 def test_config_suggestions_providers_and_models(
