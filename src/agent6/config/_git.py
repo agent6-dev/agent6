@@ -138,11 +138,10 @@ class GitConfig(BaseModel):
         ),
     )
     # Per-step commits land on the run's own detached chain
-    # (refs/agent6/<session>/head), parented on HEAD at run start; HEAD, the
-    # operator's index, and the checkout are never touched. branch_per_run
-    # additionally advances a visible agent6/<slug> branch ref to the chain
-    # tip (off = the hidden ref only). Forced on for --parallel lanes (work
-    # is imported by branch).
+    # (refs/agent6/<session>/head), parented on HEAD at run start; HEAD never
+    # moves. branch_per_run additionally advances a visible agent6/<slug>
+    # branch ref to the chain tip (off = the hidden ref only). Forced on for
+    # --parallel lanes (work is imported by branch).
     control: Literal["agent6", "model"] = Field(
         default="agent6",
         description=(
@@ -167,10 +166,11 @@ class GitConfig(BaseModel):
     commit_per_step: bool = Field(
         default=True,
         description=(
-            "Commit each editing step onto the run's detached chain (a temp index; HEAD, your "
-            "index, and your checkout are never touched). `false`: agent6 never commits; the work "
-            "stays only in the worktree, and resume-from-git, `sessions diff`/`merge`, and "
-            "`/parallel` dispatch from a changed tree degrade."
+            "Commit each editing step onto the run's detached chain (a temp index; HEAD never "
+            "moves, and your index and working tree are touched only when the run's own branch "
+            "is the one checked out). `false`: agent6 never commits; the work stays only in the "
+            "worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch "
+            "from a changed tree degrade."
         ),
     )
     merge_strategy: Literal["squash", "merge", "ff"] = Field(
