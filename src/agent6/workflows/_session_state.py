@@ -224,7 +224,8 @@ class SessionSnapshot(BaseModel):
     # restart. Run-lifetime like the group counter above (additive default:
     # a snapshot written before pins existed loads with none).
     pins: tuple[str, ...] = ()
-    # Fork extras: the workspace HEAD and curator graph_version at this turn.
+    # Fork extras: the run's chain tip and curator graph_version at this turn
+    # (head_sha falls back to HEAD only where there is no chain).
     # `fork --at-turn N` cuts the branch at head_sha; graph_version names
     # the exact past graph the fork REBUILDS via replay (see app/fork.py).
     # Best-effort at write time: "" / 0 when git/curator was unreadable. Plain
