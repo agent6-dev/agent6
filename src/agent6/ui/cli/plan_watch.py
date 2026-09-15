@@ -143,7 +143,8 @@ def _cmd_watch(
     """Read-only live view of a run directory.
 
     Default follows the run's conversation (the same render as `agent6 run`).
-    `--raw` is the no-deps event-line tail; `--tui` the full-screen dashboard.
+    `--raw` follows the event log, one line per event; `--tui` the full-screen
+    dashboard.
     """
     cwd = Path.cwd()
     # An explicit id resolves across every run-style bucket (runs/asks/machine-

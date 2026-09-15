@@ -135,11 +135,11 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--interactive",
         action="store_true",
         help=(
-            "REPL mode: after each successful auto-commit, prompt on stdin for"
-            " one of /continue (default), /diff, /cost, /undo (take back the last message:"
-            " the tree goes back to the turn before it and a fork continues from there),"
-            " /watch, /mcp, /init, /help, /quit, /exit (stop and leave without the"
-            " follow-up prompt). Requires a TTY in the foreground process group."
+            "Interactive: after each auto-commit a prompt takes /continue (the default),"
+            " /diff, /cost, /undo (take back the last message: the tree returns to the"
+            " turn before it and a fork continues from there), /watch, /mcp, /init,"
+            " /help, /quit or /exit (stop and leave without the follow-up prompt). Needs"
+            " a terminal in the foreground."
         ),
     )
     run_p.add_argument(
@@ -172,9 +172,11 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     resume_p.add_argument(
         "--force",
         action="store_true",
-        help="Resume even if the run's commit chain diverged from its last snapshot "
-        "(a rewritten or replaced agent6/<id> ref; the run's own forward commits resume "
-        "without this flag).",
+        help=(
+            "Resume even when the run's commits no longer match its last snapshot (its"
+            " agent6/<id> ref was rewritten or replaced); the run's own later commits"
+            " never need this."
+        ),
     )
     resume_preset = resume_p.add_argument(
         "--preset",

@@ -51,7 +51,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_show = _sub(
         sessions_sub,
         "show",
-        help="One-shot liveness + progress of a session, then exit (`agent6 attach` follows live).",
+        help=(
+            "Whether a session is alive and how far it got, printed once"
+            " (`agent6 attach` follows it live)."
+        ),
     )
     _add_session_id(sessions_show, _complete_session_ids)
     sessions_show.add_argument(
@@ -64,8 +67,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         sessions_sub,
         "diff",
         help=(
-            "Print the git diff produced by a session"
-            " (manifest.base_sha -> HEAD of its run branch or chain ref)."
+            "Print the git diff a session produced: from where it started to the tip"
+            " of its run branch or chain ref."
         ),
     )
     _add_session_id(sessions_diff, _complete_session_ids)
@@ -112,9 +115,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         sessions_sub,
         "compare",
         help=(
-            "Advisory ranked comparison across >=2 sessions (verify+cost, judged by the"
-            " reviewer model when configured): the report `--parallel`'s auto-compare"
-            " prints. A fan-out id prints that report as recorded. Never merges."
+            "Rank two or more sessions against each other (their verify results and"
+            " cost, judged by the reviewer model when one is configured): the report a"
+            " --parallel fan-out prints at its end. A fan-out's id prints its recorded"
+            " report. Nothing is merged."
         ),
     )
     sessions_compare.add_argument(
@@ -199,7 +203,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_tr = _sub(
         sessions_sub,
         "transcript",
-        help="Render a session's full LLM conversation (the lossless transcripts) as Markdown.",
+        help="Print a session's whole model conversation as Markdown, from its transcripts.",
     )
     _add_session_id(sessions_tr, _complete_session_ids)
     sessions_tr.add_argument(

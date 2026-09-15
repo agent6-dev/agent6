@@ -21,12 +21,11 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         sub,
         "attach",
         help=(
-            "Attach to a session or machine and drive it live: follow the conversation"
-            " (the same render as `agent6 run`) and, on a terminal, answer its"
-            " run_command approvals and ask_user questions. For a run, --raw is"
-            " the no-deps event-line tail; --tui is the full-screen TUI and --json a one-shot"
-            " snapshot of the folded state. Omit the target for the most recent"
-            " session."
+            "Attach to a session or machine and drive it live: the conversation as"
+            " `agent6 run` prints it, and, on a terminal, its command approvals and"
+            " questions to answer. For a run, --raw follows the event log one line per"
+            " event, --tui opens the full-screen view, --json prints one snapshot of its"
+            " state. Omit the target for the newest session."
         ),
     )
     watch_target = watch_p.add_argument(
@@ -47,14 +46,14 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     watch_mode.add_argument(
         "--json",
         action="store_true",
-        help="Print a one-shot JSON snapshot of the folded state and exit (the web wire form).",
+        help="Print one JSON snapshot of the session's state and exit (what the web UI reads).",
     )
     watch_mode.add_argument(
         "--raw",
         action="store_true",
         help=(
-            "For a run, follow the no-deps event-line tail (type + key fields)"
-            " instead of the conversation; machines have no raw mode."
+            "For a run, follow the event log instead of the conversation, one line per"
+            " event (its type and key fields); a machine has no raw mode."
         ),
     )
     watch_p.add_argument(
@@ -131,10 +130,9 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         sub,
         "steer",
         help=(
-            "Queue a steering instruction for a live run: the same channel the"
-            " TUI and web composers use, picked up at the run's next iteration"
-            " boundary (pause-menu directives like abort and /undo ride the"
-            " same way). Live runs only; for a session that is not running,"
+            "Send an instruction to a live run, as the TUI and web composers do; the"
+            " run takes it at its next step (pause-menu directives such as abort and"
+            " /undo travel the same way). Live runs only: for a stopped session,"
             " `agent6 resume ID --steer TEXT` queues one for its next leg."
         ),
     )

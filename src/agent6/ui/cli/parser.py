@@ -189,10 +189,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         default=None,
         metavar="FILE",
         help=(
-            "Explicit config file, layered on top of the global config (its path"
-            " is printed below) and the per-repo config (out of the workspace,"
-            " under the state dir). Default: use only those two layers + built-in"
-            " defaults."
+            "A config file layered over the global config (its path is below) and"
+            " the per-repo config (kept under the state dir, out of the workspace)."
+            " Default: those two and the built-in defaults."
         ),
     )
     parser.add_argument(
@@ -229,8 +228,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         sub,
         "ps",
         help=(
-            "Live agent6 sessions across every repository on this machine"
-            " (directory, id, mode, status, pid, front-end; per-repo views: `sessions`)."
+            "The live sessions of every repository on this machine: directory, id,"
+            " mode, status, pid, front-end (`sessions` lists one repository's)."
         ),
     )
     ps_p.add_argument(
@@ -249,10 +248,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     hist_p = _sub(
         sub,
         "history",
-        help=(
-            "Cross-session search over persisted transcripts and session data"
-            " (per-session views: `sessions`)."
-        ),
+        help=("Search every session's transcripts and records (`sessions` shows one session)."),
     )
     hist_sub = hist_p.add_subparsers(dest="history_command", required=True, metavar="<subcommand>")
     hist_search = _sub(hist_sub, "search", help="ripgrep-backed search over all sessions.")
