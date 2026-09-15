@@ -199,6 +199,12 @@ def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSe
             diff_body = f"```diff\n{diff[:cap]}{tail}\n```"
     plan_path = layout.session_dir / "plan.md"
     plan_section = f"\n## Plan\n{read_operator_file(plan_path)}\n" if plan_path.is_file() else ""
+    transcript_path = layout.session_dir / "transcript.md"
+    ask_section = (
+        f"\n## Ask transcript\n{read_operator_file(transcript_path)}\n"
+        if layout.subdir == "asks" and transcript_path.is_file()
+        else ""
+    )
     return SessionSeed(
         source_session_id=target,
         text=(
@@ -210,6 +216,7 @@ def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSe
             f"## Outcome / key events\n{summarize_session_log(layout.logs_path)}\n\n"
             f"## Diff {diff_label}\n{diff_body}\n"
             f"{plan_section}"
+            f"{ask_section}"
             f"</prior-run>"
         ),
     )

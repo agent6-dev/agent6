@@ -127,7 +127,8 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         metavar="SESSION_ID",
         help=(
             "Include context from another run, plan, or ask: its task, outcome, diff, key"
-            " events, and plan text when present. Accepts a session id or unambiguous prefix."
+            " events, and its plan or ask transcript when present. Accepts a session id or"
+            " unambiguous prefix."
         ),
     )
     ask_session.completer = _complete_session_ids  # type: ignore[attr-defined]

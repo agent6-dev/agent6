@@ -39,9 +39,20 @@ trigger = "off"
 class _Finisher:
     def __init__(self) -> None:
         self.messages: list[object] = []
+        self.answer_ask = False
 
     def call(self, **kwargs: Any) -> ProviderResponse:
         self.messages.append(kwargs["messages"])
+        if self.answer_ask:
+            return ProviderResponse(
+                text="Use the source context.",
+                tool_uses=(),
+                stop_reason="end_turn",
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+            )
         tool = {
             "type": "tool_use",
             "id": "finish-1",
@@ -120,6 +131,12 @@ def _seed_source(repo: Path, bucket: str, session_id: str) -> None:
     )
     if bucket == "plans":
         (source / "plan.md").write_text("# Plan: source plan\n\n1. Do it.\n", encoding="utf-8")
+    if bucket == "asks":
+        (source / "transcript.md").write_text(
+            "# agent6 ask\n\n## Question\n\nsource ask task\n\n"
+            "## Answer\n\nUse the indexed conversion table.\n",
+            encoding="utf-8",
+        )
 
 
 @pytest.mark.parametrize("bucket", ["asks", "plans", "runs"])
@@ -154,3 +171,24 @@ def test_a_seeded_runs_manifest_records_its_resolved_source(
         assert "## Outcome / key events" in prompt
         assert "session.end reason=finish_session" in prompt
         assert "## Diff" in prompt
+        if bucket == "asks":
+            assert "Use the indexed conversion table." in prompt
+
+
+def test_a_seeded_asks_manifest_records_its_resolved_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, provider = _setup(tmp_path, monkeypatch)
+    source_id = "source-run-AAA111"
+    _seed_source(repo, "runs", source_id)
+    provider.answer_ask = True
+
+    assert cli_main(["ask", "--from", "source-run-", "what should I do next?"]) == 0
+
+    asks = list((state_dir(repo) / "sessions" / "asks").iterdir())
+    assert len(asks) == 1
+    manifest = json.loads((asks[0] / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["source_session_id"] == source_id
+    prompt = json.dumps(provider.messages)
+    assert "source run task" in prompt
+    assert "what should I do next?" in prompt
