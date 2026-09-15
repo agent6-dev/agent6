@@ -75,11 +75,15 @@ def test_plan_show_omit_id_uses_most_recent_plan(
 def test_from_plan_task_leads_with_the_plan_title() -> None:
     # The run's task (shown in listings / DAG root) must read as the plan, not
     # the 'The following plan was prepared...' boilerplate.
+    from agent6.task_text import operator_task_text
     from agent6.ui.cli import _from_plan_task  # pyright: ignore[reportPrivateUsage]
 
     task = _from_plan_task("# Plan: Add a --count flag\n\n1. do it", "serene-geyser-NP20")
     assert task.startswith("Execute the prepared plan: Add a --count flag")
     assert "1. do it" in task  # the full plan is still fed to the agent
+    # The plan rides as composed context: the recorded task is the headline
+    # alone, so no session id or plan text reaches a listing or a commit.
+    assert operator_task_text(task) == "Execute the prepared plan: Add a --count flag"
 
 
 def test_plan_show_omit_id_with_no_plans_errors(

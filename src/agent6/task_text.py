@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import re
 
-_BLOCK_RE = re.compile(r"<(prior-run|file|skill)\b[^>]*>.*?</\1>\s*", re.DOTALL)
-_OPEN_BLOCK_RE = re.compile(r"<(prior-run|file|skill)\b[^>]*>.*\Z", re.DOTALL)
+_BLOCK_RE = re.compile(r"<(prior-run|file|skill|plan)\b[^>]*>.*?</\1>\s*", re.DOTALL)
+_OPEN_BLOCK_RE = re.compile(r"<(prior-run|file|skill|plan)\b[^>]*>.*\Z", re.DOTALL)
 SKILLS_PREAMBLE = "Apply the operator-installed skill(s) below to this task."
 
 

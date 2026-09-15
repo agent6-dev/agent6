@@ -46,7 +46,7 @@ def _from_plan_task(plan_md: str, session_id: str) -> str:
     listing (the runs table, the DAG root, attach --json) shows the plan as the
     run's task."""
     title = _plan_title(plan_md)
-    return f"Execute the prepared plan: {title}\n\n(from planning pass {session_id})\n\n{plan_md}"
+    return f'Execute the prepared plan: {title}\n\n<plan id="{session_id}">\n{plan_md}\n</plan>'
 
 
 def _plan_text_for_run(plan_path: Path, session_id: str) -> str | None:
