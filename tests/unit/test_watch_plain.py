@@ -75,8 +75,34 @@ def test_raw_watch_exits_when_the_worker_is_gone(
         pytest.fail("raw watch slept after the worker was gone")
 
     monkeypatch.setattr(plan_watch.time, "sleep", _must_not_sleep)
-    assert plan_watch._cmd_watch_plain(target, since=0) == 0  # pyright: ignore[reportPrivateUsage]
+    assert plan_watch._cmd_watch_plain(target, since=0) == 1  # pyright: ignore[reportPrivateUsage]
     assert "crashed or killed" in capsys.readouterr().err
+
+
+def test_raw_watch_returns_nonzero_when_the_log_disappears_before_the_end(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "dying-run"
+    target.mkdir()
+    events = target / "logs.jsonl"
+    events.write_text('{"type":"session.start"}\n', encoding="utf-8")
+    liveness_checks = 0
+
+    def _worker_is_alive(_target: Path) -> bool:
+        nonlocal liveness_checks
+        liveness_checks += 1
+        return liveness_checks == 1
+
+    def _remove_log(_seconds: float) -> None:
+        events.unlink()
+
+    monkeypatch.setattr(plan_watch, "worker_is_alive", _worker_is_alive)
+    monkeypatch.setattr(plan_watch.time, "sleep", _remove_log)
+
+    assert plan_watch._cmd_watch_plain(target, since=0) == 1  # pyright: ignore[reportPrivateUsage]
+    assert "is gone" in capsys.readouterr().err
 
 
 def test_raw_watch_preserves_a_partial_replay_line(

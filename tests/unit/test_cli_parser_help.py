@@ -203,6 +203,7 @@ def test_attach_and_web_say_machine_id() -> None:
     attach = _find(parser, "attach")
     assert (attach.description or "").startswith("Attach to a session or machine")
     assert "newest session" in (attach.description or "")
+    assert "exit non-zero" in (attach.description or "")
     for cmd in ("attach", "web"):
         help_text = _positional(_find(parser, cmd), "target").help or ""
         assert "machine id" in help_text

@@ -25,7 +25,8 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             " `agent6 run` prints it, and, on a terminal, its command approvals and"
             " questions to answer. For a run, --raw follows the event log one line per"
             " event, --tui opens the full-screen view, --json prints one snapshot of its"
-            " state. Omit the target for the newest session."
+            " state. The plain and raw run followers exit non-zero if the worker dies"
+            " before the run ends. Omit the target for the newest session."
         ),
     )
     watch_target = watch_p.add_argument(

@@ -396,6 +396,7 @@ def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> 
         view.close()
     if not finished:
         _print_crashed_line(target)
+        return 1
     return 0
 
 
@@ -477,6 +478,7 @@ def _watch_transcript(target: Path) -> int:
         # No session.end settled the call the worker died on.
         view.settle_dead("the run died")
         _print_crashed_line(target)
+        return 1
     return 0
 
 
@@ -495,8 +497,8 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
     """Tail `logs.jsonl` line-by-line with no extra deps.
 
     Polls the file with 0.25s sleeps; rotates when the inode changes.
-    Pretty-prints each event with the type and key fields. Returns 0 on
-    EOF (run dir gone) or KeyboardInterrupt.
+    Pretty-prints each event with the type and key fields. Returns 0 at
+    `session.end` or on KeyboardInterrupt, and 1 if the worker or log dies first.
     """
     events_path = target / LOGS_NAME
     if not events_path.is_file():
@@ -583,7 +585,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
                     time.sleep(0.5)
                     continue
                 print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
-                return 0
+                return 1
             if new_ino != current_ino:
                 with contextlib.suppress(OSError):
                     fh.close()
@@ -594,13 +596,13 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
                         time.sleep(0.5)
                         continue
                     print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
-                    return 0
+                    return 1
                 current_ino = new_ino
                 pending = b""
                 continue
             if not worker_is_alive(target):
                 _print_crashed_line(target)
-                return 0
+                return 1
             time.sleep(0.25)
     except KeyboardInterrupt:
         print("\n[agent6] watch: stopped.", file=sys.stderr)

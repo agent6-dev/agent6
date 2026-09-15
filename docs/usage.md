@@ -64,6 +64,7 @@ The verify command is the success gate.
 
 - a run renders its conversation (the `agent6 run` view); a machine streams its state overview and reasoning
 - `--raw` tails a run's event stream; `--tui` opens the full-screen TUI
+- the plain and raw run followers exit 0 at the run's end and non-zero if its worker dies first
 - session ids are positional, exact or an unambiguous prefix; omit for the most recent run
 
 ```sh

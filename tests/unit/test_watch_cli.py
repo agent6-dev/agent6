@@ -221,7 +221,7 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
     t.start()
     t.join(timeout=5)
     assert not t.is_alive(), "attach failed to terminate on a crashed run"
-    assert result == [0]
+    assert result == [1]
     out = capsys.readouterr()
     assert "stale · worker exited without finishing (crashed or killed)" in out.err
     # The tool call left open when the worker died is not silently dropped: the
@@ -320,7 +320,32 @@ def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
     t.start()
     t.join(timeout=5)
     assert not t.is_alive(), "attach followed a session with no worker"
-    assert result == [0]
+    assert result == [1]
+    assert "crashed or killed" in capsys.readouterr().err
+
+
+def test_attach_returns_nonzero_when_a_live_runs_worker_dies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worker that dies during the follow is an attach failure, not a clean end."""
+    import threading
+
+    _make_run(tmp_path, "dying-run", [{"type": "session.start", "user_task": "t"}])
+    monkeypatch.chdir(tmp_path)
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "dying-run"
+    write_worker_pid(session_dir, os.getpid())
+
+    result: list[int] = []
+    watcher = threading.Thread(
+        target=lambda: result.append(main(["attach", "dying-run"])), daemon=True
+    )
+    watcher.start()
+    time.sleep(0.5)
+    (session_dir / "worker.pid").unlink()
+    watcher.join(timeout=5)
+
+    assert not watcher.is_alive(), "attach followed a dead worker"
+    assert result == [1]
     assert "crashed or killed" in capsys.readouterr().err
 
 
@@ -486,7 +511,7 @@ def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
     shutil.rmtree(run_dir)
     t.join(timeout=5)
     assert not t.is_alive(), "the raw tail is still polling the deleted run dir"
-    assert rcs == [0]
+    assert rcs == [1]
 
 
 def test_attach_to_a_husk_names_the_crash_not_a_missing_id(
