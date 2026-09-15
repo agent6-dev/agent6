@@ -206,6 +206,34 @@ def test_run_from_a_run_with_no_task_names_what_it_needs(
     assert "needs a task" in capsys.readouterr().err
 
 
+def test_run_from_a_plan_missing_plan_md_names_the_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    session_id = "empty-fox-abcd"
+    (state_dir(tmp_path) / "sessions" / "plans" / session_id).mkdir(parents=True)
+
+    assert cli_main(["run", "--from", session_id]) == 2
+
+    err = capsys.readouterr().err
+    assert session_id in err
+    assert "plan.md" in err
+
+
+def test_run_from_a_plan_with_empty_plan_md_names_the_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    session_id = "blank-owl-abcd"
+    _seed_plan(tmp_path, session_id, " \n\t")
+
+    assert cli_main(["run", "--from", session_id]) == 2
+
+    err = capsys.readouterr().err
+    assert session_id in err
+    assert "empty plan.md" in err
+
+
 def test_seeding_from_a_plan_carries_its_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import argcomplete
 
-from agent6.errors import OperatorError
+from agent6.errors import OperatorError, read_operator_file
 from agent6.events import EventWriteError
 from agent6.paths import state_dir
 from agent6.ui.cli._common import _enforce_root_policy, error, note, refuse, safe_input
@@ -47,6 +47,18 @@ def _from_plan_task(plan_md: str, session_id: str) -> str:
     run's task."""
     title = _plan_title(plan_md)
     return f"Execute the prepared plan: {title}\n\n(from planning pass {session_id})\n\n{plan_md}"
+
+
+def _plan_text_for_run(plan_path: Path, session_id: str) -> str | None:
+    """A plan's non-empty markdown, or None after naming the unusable plan."""
+    if not plan_path.is_file():
+        error(f"plan {session_id!r} has no plan.md")
+        return None
+    plan_md = read_operator_file(plan_path)
+    if not plan_md.strip():
+        error(f"plan {session_id!r} has an empty plan.md")
+        return None
+    return plan_md
 
 
 def cli_main(argv: list[str] | None = None) -> int:
@@ -90,7 +102,6 @@ def cli_main(argv: list[str] | None = None) -> int:
 
 def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
-    from agent6.errors import read_operator_file  # noqa: PLC0415
     from agent6.ui.cli._common import _plans_dir  # noqa: PLC0415
     from agent6.ui.cli._session_prompt import prompting_is_possible  # noqa: PLC0415
     from agent6.ui.cli.plan_watch import (  # noqa: PLC0415
@@ -127,11 +138,13 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         except SessionIdError as exc:
             error(f"{exc}")
             return 2
-        plan_path = layout.session_dir / "plan.md"
-        if not plan_path.is_file():
+        if layout.subdir != "plans":
             error("'run' needs a task; --from <id> seeds one, and a plan id alone runs that plan.")
             return 2
-        task = _from_plan_task(read_operator_file(plan_path), layout.session_id)
+        plan_md = _plan_text_for_run(layout.session_dir / "plan.md", layout.session_id)
+        if plan_md is None:
+            return 2
+        task = _from_plan_task(plan_md, layout.session_id)
         seed_from = ""
     elif not args.task:
         # No task: fall back to the most recent plan run, the common
@@ -140,9 +153,14 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         # `run` in a script should not silently start mutating).
         last_plan = _most_recent_plan_session_id(_plans_dir(Path.cwd()))
         if last_plan is None:
-            error("'run' needs a task (or --from <plan-id>); no prior plan found to execute.")
+            error(
+                "'run' needs a task and there is no saved plan. Start with"
+                ' `agent6 run "TASK"`, or create one with `agent6 plan "TASK"`.'
+            )
             return 2
-        plan_md = read_operator_file(_plans_dir(Path.cwd()) / last_plan / "plan.md")
+        plan_md = _plan_text_for_run(_plans_dir(Path.cwd()) / last_plan / "plan.md", last_plan)
+        if plan_md is None:
+            return 2
         title = _plan_title(plan_md)
         if not sys.stdin.isatty():
             error(

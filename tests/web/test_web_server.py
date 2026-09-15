@@ -275,6 +275,36 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
     assert calls == [(tmp_path, "run-r", "also fix the docs", "quick", "o/b")]
 
 
+def test_run_plan_http_returns_the_child_and_leaves_the_plan_unchanged(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent6.ui.web import actions
+
+    _srv, port = server
+    plan = state_dir(tmp_path) / "sessions" / "plans" / "plan-http-AAAAAA"
+    plan.mkdir(parents=True)
+    (plan / "manifest.json").write_text(
+        json.dumps({"version": 3, "session_id": plan.name, "mode": "plan"}), encoding="utf-8"
+    )
+    (plan / "logs.jsonl").write_text("", encoding="utf-8")
+    (plan / "plan.md").write_text("# Plan: via HTTP\n\n1. Run it.\n", encoding="utf-8")
+    before = {path.name: path.read_bytes() for path in plan.iterdir()}
+    child = state_dir(tmp_path) / "sessions" / "runs" / "run-http-BBBBBB"
+
+    def fake_spawn(argv: list[str], _cwd: Path, **_kwargs: object) -> tuple[Path, str]:
+        assert argv[-3:] == ["run", "--from", plan.name]
+        child.mkdir(parents=True)
+        return child, ""
+
+    monkeypatch.setattr(actions, "spawn_and_locate", fake_spawn)
+
+    status, data = _post(port, f"/api/session/{plan.name}/run_plan", {})
+
+    assert status == 200
+    assert data == {"ok": True, "run_id": child.name}
+    assert {name: (plan / name).read_bytes() for name in before} == before
+
+
 def test_resume_refused_while_the_worker_is_alive(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:

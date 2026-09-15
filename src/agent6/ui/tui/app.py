@@ -728,8 +728,16 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         if self.mode != "plan":
             self.notify("this session is not a plan", severity="warning")
             return
-        if not (self.session_dir / "plan.md").is_file():
-            self.notify("no plan.md yet (still planning, or never finished)", severity="warning")
+        plan_path = self.session_dir / "plan.md"
+        try:
+            plan_md = plan_path.read_text(encoding="utf-8")
+        except OSError:
+            self.notify(
+                "no readable plan.md yet (still planning, or never finished)", severity="warning"
+            )
+            return
+        if not plan_md.strip():
+            self.notify(f"plan {self.session_dir.name!r} has an empty plan.md", severity="warning")
             return
         runs = bucket_dir(layout_of(self.session_dir).state_dir, "runs")
         mkdir_for_real_user(runs)

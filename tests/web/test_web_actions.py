@@ -615,6 +615,10 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
     payload, err = actions.run_plan(tmp_path, "planny-one-AAAAAA")
     assert payload is None and "no plan.md" in err and not seen
 
+    (plan / "plan.md").write_text(" \n\t", encoding="utf-8")
+    payload, err = actions.run_plan(tmp_path, "planny-one-AAAAAA")
+    assert payload is None and "empty plan.md" in err and not seen
+
     (plan / "plan.md").write_text("# Plan\n", encoding="utf-8")
     payload, err = actions.run_plan(tmp_path, "planny-one-AAAAAA")
     assert err == "" and payload == {"run_id": "fresh-run-BBBBBB"}

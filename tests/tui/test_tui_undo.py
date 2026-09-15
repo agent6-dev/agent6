@@ -329,6 +329,18 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
     assert seen["env"]["AGENT6_DETACHED_AWAY"] == "wait"
 
     seen.clear()
+    (plan / "plan.md").write_text(" \n\t", encoding="utf-8")
+
+    async def refuse_empty() -> None:
+        app = Agent6TUI(plan)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.action_run_plan()
+            await pilot.pause()
+
+    asyncio.run(refuse_empty())
+    assert not seen
+
     run = tmp_path / "sessions" / "runs" / "runny-one-AAAAAA"
     run.mkdir(parents=True)
     (run / "logs.jsonl").write_text("", encoding="utf-8")

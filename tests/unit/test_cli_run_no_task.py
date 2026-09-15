@@ -69,8 +69,10 @@ def test_run_without_task_errors(
     (tmp_path / "agent6.toml").write_text("# placeholder\n", encoding="utf-8")
     rc = main(["run"])
     assert rc == 2
-    # With no task AND no prior plan to fall back to, `run` still errors.
-    assert "needs a task" in capsys.readouterr().err
+    # With no task AND no prior plan to fall back to, name both ways to start.
+    err = capsys.readouterr().err
+    assert 'agent6 run "TASK"' in err
+    assert 'agent6 plan "TASK"' in err
 
 
 def test_run_no_task_points_at_most_recent_plan(
@@ -89,6 +91,37 @@ def test_run_no_task_points_at_most_recent_plan(
     err = capsys.readouterr().err
     assert "tidy-otter-AB12CD" in err
     assert "--from" in err
+
+
+def test_run_no_task_terminal_offer_names_the_newest_updated_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent6.ui import cli
+
+    monkeypatch.chdir(tmp_path)
+    plans = state_dir(tmp_path) / "sessions" / "plans"
+    old = plans / "zebra-plan-OLD111"
+    new = plans / "alpha-plan-NEW222"
+    for session_dir, title in ((old, "old work"), (new, "new work")):
+        session_dir.mkdir(parents=True)
+        (session_dir / "plan.md").write_text(f"# Plan: {title}\n", encoding="utf-8")
+        (session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
+    os.utime(old / "logs.jsonl", (100, 100))
+    os.utime(new / "logs.jsonl", (1000, 1000))
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def decline(_prompt: str) -> str:
+        return "n"
+
+    monkeypatch.setattr(cli, "safe_input", decline)
+
+    assert main(["run"]) == 0
+
+    out = capsys.readouterr().out
+    assert "alpha-plan-NEW222  (new work)" in out
+    assert "zebra-plan-OLD111" not in out
 
 
 def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(

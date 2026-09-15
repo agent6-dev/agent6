@@ -276,8 +276,13 @@ def run_plan(
         manifest_mode = read_manifest(session_dir).mode
     if manifest_mode != "plan":
         return None, f"{session_id!r} is not a plan"
-    if not (session_dir / "plan.md").is_file():
-        return None, "this plan has no plan.md yet (it is still planning, or never finished)"
+    plan_path = session_dir / "plan.md"
+    try:
+        plan_md = plan_path.read_text(encoding="utf-8")
+    except OSError:
+        return None, f"plan {session_id!r} has no plan.md that can be read yet"
+    if not plan_md.strip():
+        return None, f"plan {session_id!r} has an empty plan.md"
     runs = bucket_dir(state_dir(cwd), "runs")
     mkdir_for_real_user(runs)
     new_dir, err = spawn_and_locate(
