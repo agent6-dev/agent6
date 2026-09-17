@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,15 @@ end = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
 with (d / "logs.jsonl").open("a") as fh:
     fh.write(json.dumps(end) + "\\n")
 """
+
+
+def _wait_for(path: Path, timeout_s: float = 20.0) -> None:
+    """Block until *path* exists. A spawned helper interpreter takes seconds to
+    import agent6 on a loaded machine, and every wait after it is a real one."""
+    deadline = time.monotonic() + timeout_s
+    while not path.exists():
+        assert time.monotonic() < deadline, f"{path.name} never appeared"
+        time.sleep(0.02)
 
 
 def _run(repo: Path, name: str, *, finished: bool = False) -> Path:
@@ -165,6 +175,7 @@ import json, sys, time
 from pathlib import Path
 from agent6.viewmodel import session_is_live
 d, lane = Path(sys.argv[1]), Path(sys.argv[2])
+(d / "draining").write_text("1")  # the caller waits for this before stopping
 while session_is_live(lane):
     time.sleep(0.05)
 end = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
@@ -211,15 +222,19 @@ def test_a_fanouts_lanes_end_before_its_coordinator_drains(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(stop_mod, "FANOUT_WAIT_S", 3.0)
     fan, lane = _fanout(tmp_path, "drain-run-AAAAAA", "drain-run-AAAAAA-l1")
+    # The lane is live before the coordinator that polls it starts: a
+    # coordinator whose first poll finds no lane pid drains and ends at once,
+    # leaving nothing to stop.
+    worker = subprocess.Popen(
+        [sys.executable, "-c", _ANSWERING_WORKER, str(lane)], start_new_session=True
+    )
+    write_worker_pid(lane, worker.pid)
     coordinator = subprocess.Popen(
         [sys.executable, "-c", _DRAINING_COORDINATOR, str(fan), str(lane)],
         start_new_session=True,
     )
-    worker = subprocess.Popen(
-        [sys.executable, "-c", _ANSWERING_WORKER, str(lane)], start_new_session=True
-    )
     write_worker_pid(fan, coordinator.pid)
-    write_worker_pid(lane, worker.pid)
+    _wait_for(fan / "draining")  # the drain loop is running, so the wait times a drain
     try:
         assert main(["stop", "drain-run-AAAAAA"]) == 0
         out = capsys.readouterr().out
