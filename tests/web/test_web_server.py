@@ -1786,7 +1786,7 @@ def test_steer_btw_opens_a_side_ask(
 
     monkeypatch.setattr(btw_mod, "direct_launch", launch)
     status, body = _post(port, "/api/session/btw-run/steer", {"text": "/btw"})
-    assert status == 422 and "ask something" in str(body)
+    assert status == 422 and "/btw needs a question" in str(body)
     status, body = _post(port, "/api/session/btw-run/steer", {"text": "/btw is it safe?"})
     assert status == 200 and body["ok"] is True and "opened" in str(body["message"])
     assert not (session_dir / "steer.request").exists()

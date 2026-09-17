@@ -13,18 +13,16 @@ import sys
 from pathlib import Path
 
 from agent6.app.stop import stop_session
-from agent6.directive import parse_btw, parse_compact
+from agent6.directive import parse_now
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.ipc import request_compact, submit_steer
-from agent6.ui.btw import open_btw
+from agent6.sessions.ipc import submit_steer
 from agent6.ui.cli._common import error, refuse, resolve_session_layout
+from agent6.ui.directives import act_on_directive
 from agent6.viewmodel import session_is_live
 from agent6.viewmodel.listing import summarize_session_dir
 
 
-def _cmd_steer(  # noqa: PLR0911, PLR0912 - each refusal names its own reason
-    target: str, text: str, *, now: bool = False
-) -> int:
+def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
     try:
         layout = resolve_session_layout(Path.cwd(), target)
     except SessionIdError as exc:
@@ -41,27 +39,19 @@ def _cmd_steer(  # noqa: PLR0911, PLR0912 - each refusal names its own reason
             f" agent6 resume {layout.session_id} --steer TEXT"
         )
         return 2
-    question = parse_btw(text)
-    if question is not None:
-        if not question:
-            refuse("/btw needs a question: /btw <question>")
-            return 2
-        opened, line = open_btw(layout.session_dir, question)
-        if opened:
-            print(line)
-        else:
-            error(line.removeprefix("[agent6] "))
-        return 0 if opened else 1
-    focus = parse_compact(text)
-    if focus is not None:
-        requested = request_compact(layout.session_dir, focus=focus)
-        if requested:
-            print(
-                f"compaction requested for {layout.session_id}: applies before the next model call."
-            )
-        else:
-            error(f"could not write the compaction request for {layout.session_id}")
-        return 0 if requested else 1
+    # The same directives the composers act on, from the one owner: a line
+    # typed here does what it does in the TUI, the web and the pause menu.
+    handled = act_on_directive(layout.session_dir, text)
+    if handled is not None:
+        did, said = handled
+        print(said) if did else error(said)
+        return 0 if did else 1
+    urgent = parse_now(text)  # `/now <text>`: what --now spells
+    if urgent == "":
+        refuse("/now needs the instruction: /now <text>")
+        return 2
+    if urgent is not None:
+        text, now = urgent, True
     queued = submit_steer(layout.session_dir, text, now=now)
     if not queued:
         error(f"could not write the steer request for {layout.session_id}")

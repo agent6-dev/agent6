@@ -48,20 +48,18 @@ from agent6.app.reporter import Reporter
 from agent6.app.stop import stop_session
 from agent6.app.undo import undo_fork
 from agent6.config.layer import available_preset_names
-from agent6.directive import parse_btw, parse_compact, parse_now, parse_task
+from agent6.directive import parse_now
 from agent6.models.choices import available_routes, resume_defaults
 from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import (
-    queue_task,
     register_frontend,
-    request_compact,
     submit_steer,
     unregister_frontend,
 )
 from agent6.sessions.layout import LOGS_NAME, bucket_dir, layout_of
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.background import shells_text
-from agent6.ui.btw import open_btw
+from agent6.ui.directives import act_on_directive
 from agent6.ui.spawn import (
     DETACHED_RUN_ENV,
     agent6_argv,
@@ -509,29 +507,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             action()
             return
         if self.session_controllable():
-            question = parse_btw(text)
-            if question is not None:
-                opened, line = open_btw(self.session_dir, question)
-                self.notify(line, severity="information" if opened else "warning")
-                return
-            queued = parse_task(text)
-            if queued is not None:
-                # `/task <text>` joins the run's task graph, so the turn in
-                # flight never sees it.
-                if not queued:
-                    self.notify("/task needs the work: /task <text>", severity="warning")
-                    return
-                queue_task(self.session_dir, queued)
-                self.notify("task queued; it runs once the open tasks drain")
-                return
-            focus = parse_compact(text)
-            if focus is not None:
-                # `/compact [focus]` is an out-of-band request, not steer text;
-                # /pin and /parallel stay steers the loop parses itself.
-                if request_compact(self.session_dir, focus=focus):
-                    self.notify("compaction requested; applies before the next model call")
-                else:
-                    self.notify("could not write the compaction request", severity="warning")
+            handled = act_on_directive(self.session_dir, text)
+            if handled is not None:
+                did, said = handled
+                self.notify(said, severity="information" if did else "warning")
                 return
             urgent = parse_now(text)
             if urgent == "":

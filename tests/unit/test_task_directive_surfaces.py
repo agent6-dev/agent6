@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`/task` on every composer writes the queue, never the steer channel.
+"""`/task` writes the queue, never the steer channel, wherever it is typed.
 
-The directive is the composer's spelling of `agent6 task`: the work joins the
-run's graph and the turn in flight is left alone. The TUI composer is covered
-by tests/tui/test_tui_task_directive.py, which needs a running app.
+One owner parses a composer line (`ui.directives`), so the web composer, the
+pause menu and `agent6 steer` all act on the same words the same way. The TUI
+composer is covered by tests/tui/test_tui_task_directive.py, which needs a
+running app.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import pytest
 from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS, parse_task
 from agent6.paths import state_dir
 from agent6.sessions.ipc import drain_queued_tasks, steer_request_pending, write_worker_pid
+from agent6.ui.cli import main
 from agent6.ui.web import actions
 
 
@@ -51,7 +53,7 @@ def test_the_web_composer_queues_instead_of_steering(
 
     ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/task add a --json flag")
 
-    assert (ok, msg) == (True, "task queued")
+    assert ok and msg.startswith("task queued")
     assert drain_queued_tasks(d) == ["add a --json flag"]
     assert not steer_request_pending(d)
 
@@ -89,5 +91,43 @@ def test_the_pause_menu_refuses_a_bare_directive(
 
     _run_info_command("/task", tmp_path)
 
-    assert "a task needs text" in capsys.readouterr().out
+    assert "/task needs the work" in capsys.readouterr().out
     assert drain_queued_tasks(tmp_path) == []
+
+
+def test_agent6_steer_acts_on_the_directive_instead_of_sending_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 steer ID "/task ..."` used to send the literal text to the model
+    as an instruction: the CLI parsed `/btw` and `/compact` but not `/task`."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = state_dir(tmp_path) / "sessions" / "runs" / "tiny-run-AAAA11"
+    d.mkdir(parents=True)
+    (d / "logs.jsonl").write_text("", encoding="utf-8")
+    write_worker_pid(d, os.getpid())
+
+    assert main(["steer", "tiny-run", "/task add a --json flag"]) == 0
+
+    assert "task queued" in capsys.readouterr().out
+    assert drain_queued_tasks(d) == ["add a --json flag"]
+    assert not steer_request_pending(d)
+
+
+def test_agent6_steer_takes_now_as_the_composers_spell_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/now <text>` is what `--now` spells, so both reach the same marker."""
+    from agent6.sessions.ipc import steer_interrupt_pending, take_steer_answer
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = state_dir(tmp_path) / "sessions" / "runs" / "tiny-run-BBBB22"
+    d.mkdir(parents=True)
+    (d / "logs.jsonl").write_text("", encoding="utf-8")
+    write_worker_pid(d, os.getpid())
+
+    assert main(["steer", "tiny-run", "/now wrap up"]) == 0
+
+    assert steer_interrupt_pending(d)
+    assert take_steer_answer(d) == "wrap up"

@@ -123,7 +123,7 @@ def test_steer_compact_writes_the_compaction_marker(
 
     assert main(["steer", "tiny-run-GGGG77", "/compact focus on test failures"]) == 0
     out = capsys.readouterr().out
-    assert "compaction requested for tiny-run-GGGG77" in out
+    assert "compaction requested" in out
     assert read_compact_request(d) == "focus on test failures"
     assert not steer_request_pending(d)
     assert take_steer_answer(d) is None
@@ -142,7 +142,7 @@ def test_steer_btw_opens_a_side_ask_instead_of_queuing_the_directive(
         opened.append((session_dir, question))
         return True, "[agent6] btw side-ask-IIII99 opened"
 
-    monkeypatch.setattr("agent6.ui.cli.steer_cmd.open_btw", _open_btw, raising=False)
+    monkeypatch.setattr("agent6.ui.directives.open_btw", _open_btw, raising=False)
 
     assert main(["steer", "tiny-run-HHHH88", "/btw is the migration safe?"]) == 0
     assert opened == [(d, "is the migration safe?")]

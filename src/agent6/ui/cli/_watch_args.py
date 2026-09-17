@@ -132,9 +132,11 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "steer",
         help=(
             "Send an instruction to a live run, as the TUI and web composers do; the"
-            " run takes it at its next step (pause-menu directives such as abort and"
-            " /undo travel the same way). Live runs only: for a stopped session,"
-            " `agent6 resume ID --steer TEXT` queues one for its next leg."
+            " run takes it at its next step. It takes the composer directives too, so"
+            " `/task <text>` queues work and `/btw <question>` asks beside the run"
+            " (pause-menu directives such as abort and /undo travel the same way)."
+            " Live runs only: for a stopped session, `agent6 resume ID --steer TEXT`"
+            " queues one for its next leg."
         ),
     )
     steer_target = steer_p.add_argument("target", help=f"{SESSION_ID}.")
@@ -148,24 +150,6 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
             " (the default waits for the next step boundary; an approval or"
             " question wait cannot be interrupted either way)."
         ),
-    )
-
-
-def _add_task_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    task_p = _sub(
-        sub,
-        "task",
-        help=(
-            "Add work to a live run's task graph without steering it: the run picks it"
-            " up once its open tasks drain, and the turn in flight never sees it. Live"
-            " runs only: for a stopped session, `agent6 resume ID --steer TEXT`."
-        ),
-    )
-    task_target = task_p.add_argument("target", help=f"{SESSION_ID}.")
-    task_target.completer = _complete_live_session_ids  # type: ignore[attr-defined]
-    task_p.add_argument(
-        "text",
-        help="What to do. Its first line names the task; the whole text is the spec.",
     )
 
 
