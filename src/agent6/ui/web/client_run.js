@@ -527,15 +527,16 @@ function paintRun(cards, s) {
   } else if (!steps.length) {
     cards.diff.appendChild(el('div', 'muted', 'no commit yet'));
   } else {
-    const nav = el('div', 'form-row');
-    const sel = document.createElement('select');
+    const nav = el('div', 'row pickers'); // the composers' picker-row style
+    const sel = el('select', 'field');
     sel.appendChild(new Option('latest commit', ''));
     for (const st of steps) sel.appendChild(new Option(['iter ' + st.iteration, st.sha.slice(0, 7), st.subject].filter(Boolean).join(' · '), st.sha));
-    const cum = document.createElement('input'); cum.type = 'checkbox'; cum.id = 'diff-cumulative';
-    const cumLabel = el('label', 'muted', ' cumulative'); cumLabel.htmlFor = 'diff-cumulative';
+    const cum = document.createElement('input'); cum.type = 'checkbox';
+    const cumLabel = el('label', 'pick');
+    cumLabel.appendChild(cum); cumLabel.appendChild(el('span', 'muted', 'cumulative'));
     const pick = cards._diffPick || { sha: '', cumulative: false };
     sel.value = pick.sha; cum.checked = pick.cumulative;
-    nav.appendChild(sel); nav.appendChild(cum); nav.appendChild(cumLabel);
+    nav.appendChild(sel); nav.appendChild(cumLabel);
     cards.diff.appendChild(nav);
     const body = el('div');
     cards.diff.appendChild(body);

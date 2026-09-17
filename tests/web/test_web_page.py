@@ -17,7 +17,7 @@ from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "b94c03c0a4f3710e56084f594310c93ae6ce24290d39cddd2139b2d452cb2154"
+PAGE_SHA256 = "bcb4e0bae398239d4638c5cd3719cab7d99739fd6c3201dd707d50122f7fac9f"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -81,6 +81,16 @@ def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
     composer = client[client.index("function makeComposer") :]
     assert "pickerRow([['continue under preset', preset], ['model', model]])" in composer
     assert "root.appendChild(presetRow); root.appendChild(ta);" in composer
+
+
+def test_the_commit_step_row_is_a_picker_row() -> None:
+    """The Latest commit card's dropdown and checkbox share the picker rows'
+    style, so neither shows the browser's light default on the dark page."""
+    run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
+    assert "const nav = el('div', 'row pickers');" in run
+    assert "const sel = el('select', 'field');" in run
+    css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
+    assert ".pickers input[type=checkbox] {" in css and "accent-color: var(--accent)" in css
 
 
 def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:
