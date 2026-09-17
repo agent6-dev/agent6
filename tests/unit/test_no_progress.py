@@ -43,9 +43,9 @@ def test_the_ladder_nudges_escalates_then_stops_softly() -> None:
     assert nudge.fields == {"iteration": NO_PROGRESS_NUDGE_AFTER, "streak": 4, "level": 1}
     assert isinstance(escalation, Nudge) and escalation.text == NO_PROGRESS_ESCALATION
     assert escalation.fields["streak"] == NO_PROGRESS_ESCALATE_AFTER
-    assert isinstance(stop, Stop) and stop.end.reason == "no_progress"
+    assert isinstance(stop, Stop) and stop.end().reason == "no_progress"
     assert stop.soft == "no_progress" and stop.declared == ""
-    assert f"through {NO_PROGRESS_STOP_AFTER} consecutive runs" in stop.end.summary
+    assert f"through {NO_PROGRESS_STOP_AFTER} consecutive runs" in stop.end().summary
     assert stop.log == f"LOOP: no_progress stop at iter {NO_PROGRESS_STOP_AFTER} (streak 10)"
 
 

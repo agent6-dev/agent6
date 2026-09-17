@@ -45,9 +45,9 @@ def test_the_ladder_nudges_escalates_then_stops() -> None:
     assert isinstance(escalation, Nudge) and escalation.text == TOOL_ERROR_ESCALATION
     assert escalation.fields["streak"] == TOOL_ERROR_ESCALATE_AFTER
     assert escalation.fields["level"] == 2
-    assert isinstance(stop, Stop) and stop.end.reason == "tool_error_stuck"
+    assert isinstance(stop, Stop) and stop.end().reason == "tool_error_stuck"
     assert stop.soft == "" and stop.declared == ""
-    assert f"failed {TOOL_ERROR_STOP_AFTER} times" in stop.end.summary
+    assert f"failed {TOOL_ERROR_STOP_AFTER} times" in stop.end().summary
     assert stop.log == f"LOOP: tool_error stop at iter 3 (streak {TOOL_ERROR_STOP_AFTER})"
 
 

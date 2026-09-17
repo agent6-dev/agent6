@@ -30,6 +30,9 @@ from agent6.workflows._guards import (
     MetricGuard,
     QuietGuard,
     SettledGuard,
+    Stop,
+    settled_end,
+    verify_settled,
 )
 from agent6.workflows._provider_call import (
     CallSettings,
@@ -310,6 +313,16 @@ def _turn(**kw: Any) -> Any:
     }
     defaults.update(kw)
     return TurnState(**defaults)
+
+
+def _ctx(wf: Workflow, state: Any, iteration: int = 1) -> Any:
+    return wf._turn_context(state, iteration=iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+
+
+def _settle(wf: Workflow, state: Any, turn: Any) -> Any:
+    """The settled advisor's answer, applied through the loop (a stop runs
+    the end gates at once)."""
+    return wf._take(state, turn, verify_settled(turn, state, _ctx(wf, state, turn.iteration)))  # pyright: ignore[reportPrivateUsage]
 
 
 def test_finish_planning_salvages_a_title_only_plan(tmp_path: Path) -> None:
@@ -2281,12 +2294,9 @@ def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
     summary must report that red instead of claiming no reverify happened."""
     wf = _wf(mode="run", config=_cfg_with_verify())
     state = _state(verify=VerifyVerdict(ever_passed=True, last_ok=False))
-    turn = _turn(iteration=8, verify_settled_stop=True)
 
     with patch.object(RunChain, "dirty", return_value=False):
-        result = wf._turn_stop_checks(  # pyright: ignore[reportPrivateUsage]
-            state, turn, Conversation()
-        )
+        result = wf._finish(state, settled_end(state, _ctx(wf, state)), iteration=8)  # pyright: ignore[reportPrivateUsage]
 
     assert result is not None and result.reason == "settled"
     assert result.verified == "failed"
@@ -3383,8 +3393,8 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
     )
     turn = _turn()
     with patch.object(RunChain, "tree_sha", return_value="tree"):
-        assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
-        assert turn.verify_settled_stop is True and turn.end_returned is False
+        assert _settle(wf, state, turn) is None
+        assert turn.stops and turn.end_returned is False
         result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
 
     assert result is not None and result.reason == "verify_settled"
@@ -3405,7 +3415,7 @@ def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
     )
     turn = _turn()
     with patch.object(RunChain, "tree_sha", return_value="tree"):
-        assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
+        assert _settle(wf, state, turn) is None
         result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "verify_settled"
     ends = [e for e in ev.events if e["type"] == "session.end"]
@@ -3436,10 +3446,10 @@ def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
     )
     turn = _turn()
     with patch.object(RunChain, "tree_sha", return_value="tree"):
-        result = wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
+        result = _settle(wf, state, turn)
 
     assert result is None
-    assert turn.verify_settled_stop is False
+    assert turn.stops == []
     assert turn.end_returned is True
     assert any(
         isinstance(item, Notice) and "sub1: audit providers" in item.text
@@ -5036,16 +5046,18 @@ def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
 def test_run_result_docstring_enumerates_every_loop_reason() -> None:
     # SessionResult.reason is a free-form str whose docstring is the enumeration
     # operators grep against; it silently drifted to omit five reasons. Pin it
-    # to the literal reasons loop.py actually constructs: an `End`'s first
-    # argument or `reason=`, and the `reason=` of the direct results.
+    # to the literal reasons the loop and its advisors construct: an `End`'s
+    # first argument or `reason=`, and the `reason=` of the direct results.
     import ast
     import inspect
 
+    import agent6.workflows._guards as guardsmod
     import agent6.workflows.loop as loopmod
     from agent6.workflows._session_state import SessionResult
 
     reasons: set[str] = set()
-    for node in ast.walk(ast.parse(inspect.getsource(loopmod))):
+    source = inspect.getsource(loopmod) + inspect.getsource(guardsmod)
+    for node in ast.walk(ast.parse(source)):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
             continue
         if node.func.id not in ("SessionResult", "End"):
@@ -7045,11 +7057,12 @@ def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     # Soft stop: verify_settled absorbs and clears its streak.
     state.ok_tool_calls += 1
     turn2 = _turn(iteration=3)
-    turn2.verify_settled_stop = True
+    ctx = _ctx(wf, state, 3)
+    turn2.stops.append(Stop(lambda: settled_end(state, ctx), soft="verify_settled"))
     state.settled.idle = 9
     conv = Conversation()
     wf._absorb_soft_stop(state, turn2, conv)  # pyright: ignore[reportPrivateUsage]
-    assert turn2.verify_settled_stop is False
+    assert turn2.stops == []
     assert state.settled.idle == 0
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
 
@@ -7754,14 +7767,14 @@ def _settles_at(wf: Workflow, repo: Path, state: LoopState, *, gated: bool) -> i
         state.verify.note_pass()
         first.verify_just_passed = True
     wf._turn_auto_commit_and_metric(state, first)  # pyright: ignore[reportPrivateUsage]
-    wf._turn_verify_settled(state, first)  # pyright: ignore[reportPrivateUsage]
+    _settle(wf, state, first)
     for i in range(2, VERIFY_SETTLED_STOP_AFTER * 3):
         turn = TurnState(
             iteration=i, resp=_resp(""), assistant=AssistantTurn(raw_content=(), tool_uses=())
         )
         wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
-        wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
-        if turn.verify_settled_stop:
+        _settle(wf, state, turn)
+        if turn.stops:
             return i
     return None
 

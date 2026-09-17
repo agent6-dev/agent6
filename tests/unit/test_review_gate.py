@@ -472,6 +472,15 @@ def _idle_turn() -> Any:
     return TurnState(iteration=9, resp=MagicMock(), assistant=MagicMock())
 
 
+def _settle(wf: Workflow, state: Any, turn: Any) -> Any:
+    """The settled advisor's answer, applied through the loop (a stop runs
+    the end gates at once)."""
+    from agent6.workflows._guards import verify_settled
+
+    ctx = wf._turn_context(state, iteration=turn.iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+    return wf._take(state, turn, verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
+
+
 def test_a_settled_end_is_reviewed_like_a_finish() -> None:
     """A gateless run that commits and goes idle ends "settled" without ever
     calling finish_session; the before-finish panel judges that end too: a
@@ -489,8 +498,8 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
     with patch.object(Workflow, "_run_review_panel", panel):
         state = _settled_state()
         turn = _idle_turn()
-        assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
-        assert turn.verify_settled_stop is False
+        assert _settle(wf, state, turn) is None
+        assert turn.stops == []
         assert state.settled.idle == 0
         # The turn's notices went out before the settled check, so the panel's
         # findings ride the settled path's own notice.
@@ -501,8 +510,8 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
         )
         state = _settled_state()
         turn = _idle_turn()
-        wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
-        assert turn.verify_settled_stop is True
+        _settle(wf, state, turn)
+        assert [stop.soft for stop in turn.stops] == ["verify_settled"]
     assert panel.calls == 2
 
 
@@ -519,7 +528,7 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
     with patch.object(Workflow, "_run_review_panel", panel):
         wf._turn_review_triggers(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
         wf._turn_notices(state, turn)  # pyright: ignore[reportPrivateUsage]
-        wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
+        _settle(wf, state, turn)
     delivered = [
         item
         for item in turn.tool_results
@@ -560,9 +569,9 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     wf.mode = "run"
     state = _settled_state()
     turn = _idle_turn()
-    assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
+    assert _settle(wf, state, turn) is None
     dispatcher.run_verify.assert_called_once_with(extra_argv=())
-    assert turn.verify_settled_stop is False and state.settled.idle == 0
+    assert turn.stops == [] and state.settled.idle == 0
     assert state.gates.verify_retries_used == 1
     notices = [r.text for r in turn.tool_results if hasattr(r, "text")]
     assert any("[harness verify] finish" in n for n in notices)
@@ -570,16 +579,16 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     # The return is spent: the next settled end stands, red and all.
     state.settled.idle = 6
     turn = _idle_turn()
-    wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
-    assert turn.verify_settled_stop is True
+    _settle(wf, state, turn)
+    assert [stop.soft for stop in turn.stops] == ["verify_settled"]
     # A green gate certifies the end at once.
     dispatcher.run_verify.return_value = ExecResult(
         returncode=0, stdout="", stderr="", duration_s=1.0, exec_failed=False
     )
     state = _settled_state()
     turn = _idle_turn()
-    wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
-    assert turn.verify_settled_stop is True and state.verify.green_and_untouched
+    _settle(wf, state, turn)
+    assert turn.stops and state.verify.green_and_untouched
 
 
 def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:

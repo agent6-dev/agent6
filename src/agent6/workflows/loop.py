@@ -171,7 +171,6 @@ from agent6.workflows._nudges import (
     SILENT_NO_WORK_NUDGE,
     SILENT_NO_WORK_PATIENCE,
     VERIFY_BROKEN_NUDGE,
-    VERIFY_SETTLED_NUDGE,
     VERIFY_UNADOPTED_NOTICE,
     WENT_QUIET_NUDGE,
     ending_question,
@@ -777,9 +776,6 @@ class Workflow:
             if result is not None:
                 return result
             result = self._turn_metric_plateau(state, turn)
-            if result is not None:
-                return result
-            result = self._turn_verify_settled(state, turn)
             if result is not None:
                 return result
             conversation.results(turn.tool_results)
@@ -2092,26 +2088,6 @@ class Workflow:
                 turn.plateau_should_stop = False
         return None
 
-    def _settled_summary(self, state: LoopState) -> str:
-        """Why a settled end is not a pass, with the open subtasks named."""
-        return with_open_tasks(self._settled_reason(state), self._open_subtasks())
-
-    def _settled_reason(self, state: LoopState) -> str:
-        if state.verify.last_ok is False:
-            return "the worker settled, but the verify gate is still red"
-        if state.verify.ever_passed:
-            return (
-                "the worker settled, but edits after the last green verify were never re-verified"
-            )
-        if not self.config.workflow.verify_command:
-            return "the worker settled after committing work; no verify command existed to gate it"
-        if not self._gate_present(denied=state.verify.denied):
-            return (
-                "the worker settled after committing work; the verify command could not run"
-                " (commands withheld, or the gate denied)"
-            )
-        return "the worker settled after committing work; the verify never passed"
-
     def _end_gates(self, state: LoopState, turn: TurnState, *, ending: str) -> SessionResult | None:
         """An end declared without finish_session (`settled`: the harness's
         idle stop; `silent_finish`: a prose turn with no tool call) passes the
@@ -2168,56 +2144,10 @@ class Workflow:
                 nudges_used=state.gates.task_nudges_used,
                 trigger=ending,
             )
-        return None
-
-    def _turn_verify_settled(self, state: LoopState, turn: TurnState) -> SessionResult | None:
-        """Verify-settled completion bookkeeping (run mode): count no-progress
-        iterations after the first green verify; nudge once, then stop (the
-        stop happens in the stop checks, via `turn.verify_settled_stop`).
-
-        "Progress" is any forward motion the prompt encourages, so a
-        legitimately-working run is never truncated: an apply_edit/apply_patch,
-        a new commit, or a changed tree (an edit made via run_command). A
-        verify RUN itself (re-verifying between reads is active
-        work, not idle) is held neutral so it neither resets nor accrues. Only
-        the pathology, spinning on read-only commands with a clean,
-        already-committed tree, accrues idle.
-
-        Only governs PLAIN runs. A metric/optimisation run is also mode=="run"
-        but its completion is owned by the metric early-finish guard +
-        plateau/ceiling logic (which deliberately keep going while budget
-        remains); measure/analyse/read iterations there legitimately make no
-        commit, so the settled detector must defer to them. (Gating the
-        bookkeeping here also keeps the tree hash off the metric hot path.)
-
-        Progress is a changed TREE, not a dirty worktree: with nothing
-        committing between steps (`commit_per_step = false`) the chain never
-        advances and the worktree reads dirty for the rest of the run."""
-        non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
-        # "Settled" once the run reached a good state: a green verify, or (on a
-        # gateless run, where verify never fires) an editing step.
-        settled_seeded = state.verify.ever_passed or state.settled.gateless_ever_edited
-        if non_metric_run and settled_seeded:
-            tree = self.chain.tree_sha()
-            state.settled.note_turn(
-                tree,
-                progress=turn.committed or turn.edited or tree != state.settled.tree,
-                verify_ran=turn.verify_just_passed or turn.verify_just_failed,
-            )
-        armed = non_metric_run and turn.finish_signal is None and settled_seeded
-        turn.verify_settled_stop = armed and state.settled.stop_due()
-        if turn.verify_settled_stop:
-            aborted = self._end_gates(state, turn, ending="settled")
-            if aborted is not None:
-                return aborted
-            if turn.end_returned:
-                turn.verify_settled_stop = False
-                state.settled.restart()
-        if armed and not turn.verify_settled_stop and state.settled.nudge_due():
-            turn.tool_results.append(Notice(VERIFY_SETTLED_NUDGE))
-            self._emit(
-                "loop.verify_settled.nudge", iteration=turn.iteration, idle=state.settled.idle
-            )
+        if turn.end_returned:
+            # A returned end asks for work whose turns are idle to the settle
+            # guard, so its streak starts over.
+            state.settled.restart()
         return None
 
     def _note_tool_error(
@@ -2328,9 +2258,7 @@ class Workflow:
         every hard bound still end the run; the absorb itself refuses on
         spent budget or a spin."""
         soft = (
-            "verify_settled"
-            if turn.verify_settled_stop
-            else "metric_plateau"
+            "metric_plateau"
             if turn.plateau_should_stop
             else next((stop.soft for stop in turn.stops if stop.soft), None)
         )
@@ -2339,7 +2267,6 @@ class Workflow:
         nudge = self._standing_absorb(state, reason=soft, iteration=turn.iteration)
         if nudge is None:
             return
-        turn.verify_settled_stop = False
         turn.plateau_should_stop = False
         turn.stops = [stop for stop in turn.stops if not stop.soft]
         state.settled.restart()
@@ -2355,44 +2282,14 @@ class Workflow:
     ) -> SessionResult | None:
         """Terminal checks, run after the turn's tool_results are in
         `messages` and the post-tools snapshot is written, in precedence
-        order: the advisors' stops as decided, the verify-settled stop, the
-        metric-plateau stop, the loop-guard kill, then honouring a finish
-        call that survived the gates."""
+        order: the advisors' stops as decided, the metric-plateau stop, the
+        loop-guard kill, then honouring a finish call that survived the
+        gates."""
         self._absorb_soft_stop(state, turn, conversation)
         for stop in turn.stops:
             if stop.log:
                 self._log(stop.log)
-            return self._finish(state, stop.end, iteration=turn.iteration)
-        if turn.verify_settled_stop:
-            self._log(f"LOOP: verify_settled at iter {turn.iteration} (idle {state.settled.idle})")
-            self._final_checkpoint(turn.iteration)
-            # Ground on the TREE, not on verify_ever_passed: a green verify
-            # followed by un-reverified edits must not settle as "passed"
-            # (finish_session grounds on the same probe, so the two clean ends
-            # cannot disagree).
-            if state.verify.ever_passed and self._tree_is_verify_green(state) is not False:
-                end = End(
-                    "verify_settled",
-                    with_open_tasks(
-                        "verify passed and the worker stopped making changes",
-                        self._open_subtasks(),
-                    ),
-                    completed=True,
-                    verdict="passed",
-                    checkpoint=False,
-                    scoped=state.verify.scoped,
-                )
-            else:
-                # The work is committed and the worker went quiet, but nothing
-                # verified the FINAL tree, so this end never claims "passed".
-                end = End(
-                    "settled",
-                    self._settled_summary(state),
-                    completed=True,
-                    checkpoint=False,
-                    roots=True,
-                )
-            return self._finish(state, end, iteration=turn.iteration)
+            return self._finish(state, stop.end(), iteration=turn.iteration)
         if turn.plateau_should_stop:
             assert turn.metric_plateau_finish is not None
             self._log(f"LOOP: metric_plateau at iter {turn.iteration}")

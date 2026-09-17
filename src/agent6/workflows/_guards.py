@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
+from agent6.workflows._finish_gates import with_open_tasks
 from agent6.workflows._metric import MetricSample
 from agent6.workflows._nudges import (
     LOOP_GUARD_NOTICE_AFTER,
@@ -34,6 +35,7 @@ from agent6.workflows._nudges import (
     TOOL_DENIED_NUDGE,
     TOOL_ERROR_ESCALATION,
     TOOL_ERROR_NUDGE,
+    VERIFY_SETTLED_NUDGE,
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
     loop_guard_words,
@@ -61,14 +63,15 @@ class Nudge:
 @dataclass(frozen=True, slots=True)
 class Stop:
     """An advisor's decision to end the run, honoured once the turn's results
-    and snapshot are on disk (`Workflow._turn_stop_checks`): `end` is what
-    `_finish` records, `log` the line written then. `soft` names the reason
-    a standing task's re-entry nudge carries when it absorbs the stop ("" =
-    a hard stop nothing converts); `declared` names the ending the end gates
+    and snapshot are on disk (`Workflow._turn_stop_checks`): `end` composes
+    what `_finish` records, called then so it reads the run as the end gates
+    left it; `log` is the line written then. `soft` names the reason a
+    standing task's re-entry nudge carries when it absorbs the stop ("" = a
+    hard stop nothing converts); `declared` names the ending the end gates
     judge as soon as the stop is decided ("" = a fault no gate judges). The
     event is emitted when the stop is decided."""
 
-    end: End
+    end: Callable[[], End]
     soft: str = ""
     declared: str = ""
     event: str = ""
@@ -176,13 +179,14 @@ def no_progress(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | 
     if rung is None:
         return None
     if rung == "stop":
+        end = End(
+            "no_progress",
+            f"stopped: the same verify failure persisted through {streak} consecutive"
+            " runs despite two harness interventions; resume with a new approach or"
+            " a bigger budget",
+        )
         return Stop(
-            End(
-                "no_progress",
-                f"stopped: the same verify failure persisted through {streak} consecutive"
-                " runs despite two harness interventions; resume with a new approach or"
-                " a bigger budget",
-            ),
+            lambda: end,
             soft="no_progress",
             log=f"LOOP: no_progress stop at iter {turn.iteration} (streak {streak})",
         )
@@ -229,6 +233,81 @@ class SettledGuard:
             return False
         self.nudged = True
         return True
+
+
+def settled_reason(state: LoopState, ctx: TurnContext) -> str:
+    """Why a settled end is not a pass."""
+    if state.verify.last_ok is False:
+        return "the worker settled, but the verify gate is still red"
+    if state.verify.ever_passed:
+        return "the worker settled, but edits after the last green verify were never re-verified"
+    if not ctx.verify_command():
+        return "the worker settled after committing work; no verify command existed to gate it"
+    if not ctx.gate_present():
+        return (
+            "the worker settled after committing work; the verify command could not run"
+            " (commands withheld, or the gate denied)"
+        )
+    return "the worker settled after committing work; the verify never passed"
+
+
+def settled_end(state: LoopState, ctx: TurnContext) -> End:
+    """The settled stop's end, grounded on the tree: `verify_settled` (a
+    pass) only when a green verify covers the tree as it stands, else
+    `settled` with the reason it is not a pass; both name the open subtasks."""
+    if state.verify.ever_passed and ctx.tree_green() is not False:
+        return End(
+            "verify_settled",
+            with_open_tasks(
+                "verify passed and the worker stopped making changes", ctx.open_subtasks()
+            ),
+            completed=True,
+            verdict="passed",
+            scoped=state.verify.scoped,
+        )
+    return End(
+        "settled",
+        with_open_tasks(settled_reason(state, ctx), ctx.open_subtasks()),
+        completed=True,
+        roots=True,
+    )
+
+
+def verify_settled(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
+    """The settled end of a plain run (`SettledGuard`): once a green verify
+    (or, gateless, an editing step) seeded it, each turn with no edit, no
+    commit and an unchanged tree counts as idle (a verify run is neutral):
+    one nudge, then the stop, an ending the end gates judge and a standing
+    task may absorb. A finish call this turn disarms both. A metric run's
+    end belongs to its plateau and ceiling rules, and its read-only turns
+    are work."""
+    if ctx.mode != "run" or ctx.metric:
+        return None
+    guard = state.settled
+    if not (state.verify.ever_passed or guard.gateless_ever_edited):
+        return None
+    tree = ctx.tree_sha()
+    guard.note_turn(
+        tree,
+        progress=turn.committed or turn.edited or tree != guard.tree,
+        verify_ran=turn.verify_just_passed or turn.verify_just_failed,
+    )
+    if turn.finish_signal is not None:
+        return None
+    if guard.stop_due():
+        return Stop(
+            lambda: settled_end(state, ctx),
+            soft="verify_settled",
+            declared="settled",
+            log=f"LOOP: verify_settled at iter {turn.iteration} (idle {guard.idle})",
+        )
+    if guard.nudge_due():
+        return Nudge(
+            VERIFY_SETTLED_NUDGE,
+            event="loop.verify_settled.nudge",
+            fields={"iteration": turn.iteration, "idle": guard.idle},
+        )
+    return None
 
 
 @dataclass(slots=True)
@@ -288,14 +367,14 @@ def tool_error_ladder(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nu
     if rung is None:
         return None
     if rung == "stop":
+        end = End(
+            "tool_error_stuck",
+            f"stopped: the same tool call failed {streak} times with the identical"
+            " error despite two harness interventions; resume with a different"
+            " approach",
+        )
         return Stop(
-            End(
-                "tool_error_stuck",
-                f"stopped: the same tool call failed {streak} times with the identical"
-                " error despite two harness interventions; resume with a different"
-                " approach",
-            ),
-            log=f"LOOP: tool_error stop at iter {turn.iteration} (streak {streak})",
+            lambda: end, log=f"LOOP: tool_error stop at iter {turn.iteration} (streak {streak})"
         )
     if state.spiral.last_error_was_denial:
         text = TOOL_DENIED_NUDGE
@@ -480,4 +559,10 @@ class BudgetNudges:
 
 # The advisors that run once a turn's tools have run, in the order their
 # notices reach the model.
-AFTER_TOOLS: tuple[Advisor, ...] = (memory_flip, loop_guard_notice, stagnation, no_progress)
+AFTER_TOOLS: tuple[Advisor, ...] = (
+    memory_flip,
+    loop_guard_notice,
+    stagnation,
+    verify_settled,
+    no_progress,
+)
