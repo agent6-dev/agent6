@@ -201,3 +201,27 @@ def test_a_live_run_with_no_question_says_so(
     assert _cmd_answer("curious-fox", ("yes",)) == 2
 
     assert "is not waiting on a question" in capsys.readouterr().err
+
+
+def test_answer_asks_the_affordance_question_the_other_verbs_ask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ "Will anything read what I write" has one predicate. `answer` probed the
+    pid instead, where `steer` and the web's approve read the status word, so
+    the same run could be answerable on one surface and not another."""
+    import inspect
+
+    from agent6.ui.cli import answer_cmd
+
+    assert "session_is_live" in inspect.getsource(answer_cmd)
+    assert "worker_is_alive" not in inspect.getsource(answer_cmd)
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = state_dir(tmp_path) / "sessions" / "runs" / "gone-run-AAAA11"
+    d.mkdir(parents=True)
+    (d / "logs.jsonl").write_text("", encoding="utf-8")
+
+    assert _cmd_answer("gone-run", ("yes",)) == 2
+
+    assert "is not running" in capsys.readouterr().err

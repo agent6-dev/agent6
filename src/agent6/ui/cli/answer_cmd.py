@@ -15,9 +15,9 @@ import sys
 from pathlib import Path
 
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.ipc import ANSWERED_ELSEWHERE, worker_is_alive, write_question_answers
+from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_question_answers
 from agent6.ui.cli._common import error, refuse, resolve_session_layout
-from agent6.viewmodel import QuestionPrompt, open_question
+from agent6.viewmodel import QuestionPrompt, open_question, session_is_live
 
 
 def _print_question(session_id: str, prompt: QuestionPrompt) -> None:
@@ -37,7 +37,7 @@ def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
     except SessionIdError as exc:
         error(f"{exc}")
         return 2
-    if not worker_is_alive(layout.session_dir):
+    if not session_is_live(layout.session_dir):
         refuse(
             f"session {layout.session_id} is not running; only a live run holds a question open."
         )
