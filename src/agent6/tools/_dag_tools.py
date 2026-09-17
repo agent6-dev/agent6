@@ -61,7 +61,7 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     node = None
     if args.note and args.status is None:
         # The graph records a note on a status change only.
-        raise ToolError("update_task: a note rides along with a status; pass status too")
+        raise ToolError("a note rides along with a status; pass status too")
     if args.status is not None:
         if args.status in ("skipped", "obsolete"):
             current = curator.get(args.id)
