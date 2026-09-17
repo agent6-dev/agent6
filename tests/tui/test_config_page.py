@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from textual.app import App
-from textual.widgets import DataTable, Input, OptionList
+from textual.widgets import DataTable, Input, OptionList, Static
 
 from agent6.config import OpenAIProviderEntry
 from agent6.config.layer import load_effective
@@ -86,6 +86,9 @@ def test_config_page_view_search_filter_help(repo: Path) -> None:
             await pilot.pause()
             narrowed = _row_total(screen)
             assert 0 < narrowed < total
+            assert narrowed == 1  # one key matches, and the count says "1 setting"
+            status = str(screen.query_one("#status", Static).render())
+            assert status.startswith("1 setting") and "1 settings" not in status
 
             # Modified-only filter: clear search, show only overridden settings.
             screen.query_one("#search", Input).value = ""

@@ -732,7 +732,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             self.query_one(f"#sec-{section}", Collapsible).display = bool(rows)
             shown += len(rows)
         flt = "   ·   modified only" if self._modified_only else ""
-        self.query_one("#status", Static).update(f"{shown} settings{flt}")
+        self.query_one("#status", Static).update(f"{shown} setting{'' if shown == 1 else 's'}{flt}")
         if focused_section is not None and focused_section not in self._ordered_sections():
             self._focus_first_setting()
 
