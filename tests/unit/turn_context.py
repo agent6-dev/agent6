@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.workflows._guards import GuardSettings, TurnContext
+from agent6.workflows._advice import GuardSettings, TurnContext
 
 
 def turn_context(**overrides: Any) -> TurnContext:

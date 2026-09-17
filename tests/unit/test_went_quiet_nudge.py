@@ -22,8 +22,8 @@ from unittest.mock import MagicMock
 from agent6.events import EventSink
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
+from agent6.workflows._advice import GuardSettings
 from agent6.workflows._chain import RunChain
-from agent6.workflows._guards import GuardSettings
 from agent6.workflows._provider_call import CallSettings
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows.loop import Workflow

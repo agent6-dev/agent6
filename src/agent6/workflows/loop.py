@@ -80,6 +80,7 @@ from agent6.tools.schema import (
 )
 from agent6.types import RepoSummary
 from agent6.verify_infer import infer_verify_command, read_agents_md
+from agent6.workflows._advice import GuardSettings, Nudge, Stop, TurnContext
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import (
     CompactionSettings,
@@ -123,10 +124,6 @@ from agent6.workflows._finish_gates import (
 from agent6.workflows._guards import (
     AFTER_TOOLS,
     BEFORE_CALL,
-    GuardSettings,
-    Nudge,
-    Stop,
-    TurnContext,
     stuck_on_task,
     tool_error_ladder,
     unreachable_tool,

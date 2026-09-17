@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""What the loop's advisors answer with, and what they read: a `Nudge` (a
+notice for the model, recorded), a `Stop` (an end of the run), the frozen
+`TurnContext` of run facts, and the operator's `GuardSettings`. The advisors
+live in `_guards` and `_metric`; the loop applies their answers."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal
+
+from agent6.workflows._session_state import End
+
+if TYPE_CHECKING:
+    from agent6.workflows._loop_state import LoopState, TurnState
+
+
+@dataclass(frozen=True, slots=True)
+class GuardSettings:
+    """The guards' operator-facing knobs. `went_quiet_max_nudges`: an empty
+    turn (no text, no tool call) is answered with a harness notice and
+    re-asked up to this many times per streak, reasoning-starvation bursts
+    included; 0 ends the run on the first. `loop_guard_kill_threshold`: the
+    same (tool, args) call this many times in a row ends the run as
+    loop_guard_killed (the notice fires from three, every other turn); 0
+    leaves the notice alone. `stagnation_notice_after_s`: one notice when
+    this much wall clock passes with no edit and no verify (a recall spiral
+    makes few calls with long reasoning between them, below every
+    call-count guard's horizon); 0 disables."""
+
+    went_quiet_max_nudges: int = 4
+    loop_guard_kill_threshold: int = 10
+    stagnation_notice_after_s: float = 300.0
+
+
+@dataclass(frozen=True, slots=True)
+class Nudge:
+    """What an advisor says to the model this turn, and how the harness
+    records it: the notice text, the event (with its fields) and the log
+    line; "" skips the event or the line."""
+
+    text: str
+    event: str = ""
+    fields: Mapping[str, object] = field(default_factory=dict)
+    log: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Stop:
+    """An advisor's decision to end the run, honoured once the turn's results
+    and snapshot are on disk (`Workflow._turn_stop_checks`): `end` composes
+    what `_finish` records, called then so it reads the run as the end gates
+    left it; `log` is the line written then. `soft` names the reason a
+    standing task's re-entry nudge carries when it absorbs the stop ("" = a
+    hard stop nothing converts); `declared` names the ending the end gates
+    judge as soon as the stop is decided ("" = a fault no gate judges). The
+    event is emitted when the stop is decided."""
+
+    end: Callable[[], End]
+    soft: str = ""
+    declared: str = ""
+    event: str = ""
+    fields: Mapping[str, object] = field(default_factory=dict)
+    log: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class TurnContext:
+    """The run facts an advisor reads, built once per turn. A fact that can
+    move within the turn (a harness verify can deny or un-adopt the gate,
+    an edit moves the tree) is a zero-arg callable read where it is needed."""
+
+    mode: Literal["run", "plan", "ask", "agent"]
+    iteration: int
+    # The leg's first iteration: a turn allowance counts from it.
+    leg_start: int
+    guards: GuardSettings
+    # A metric goal is configured: the plateau and ceiling rules own the
+    # run's end, and the plain-run guards stand down.
+    metric: bool
+    # A memory store is wired, so the memory nudges apply.
+    memory_wired: bool
+    gate_present: Callable[[], bool]
+    verify_command: Callable[[], tuple[str, ...]]
+    tree_sha: Callable[[], str]
+    tree_green: Callable[[], bool | None]
+    budget_remaining: Callable[[], float | None]
+    operator_wait_s: Callable[[], float]
+    open_subtasks: Callable[[], list[tuple[str, str]]]
+
+
+# An advisor: one heuristic over the turn, the run state and the context,
+# answering with what to say, a decision to end the run, or nothing.
+Advisor = Callable[["TurnState", "LoopState", TurnContext], Nudge | Stop | None]
+# A before-call advisor speaks before the turn exists: its nudge goes to the
+# conversation ahead of the provider call.
+BeforeCallAdvisor = Callable[["LoopState", TurnContext], Nudge | None]

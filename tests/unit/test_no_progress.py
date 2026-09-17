@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from agent6.workflows._advice import Nudge, Stop
 from agent6.workflows._conversation import AssistantTurn
-from agent6.workflows._guards import Nudge, Stop, no_progress
+from agent6.workflows._guards import no_progress
 from agent6.workflows._loop_state import LoopState, TurnState
 from agent6.workflows._nudges import (
     NO_PROGRESS_ESCALATE_AFTER,

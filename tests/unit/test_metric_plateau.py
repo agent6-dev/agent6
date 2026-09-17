@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from agent6.workflows._advice import Nudge, Stop
 from agent6.workflows._conversation import AssistantTurn
-from agent6.workflows._guards import MetricGuard, Nudge, Stop, metric_plateau
+from agent6.workflows._guards import MetricGuard, metric_plateau
 from agent6.workflows._loop_state import LoopState, TurnState
 from agent6.workflows._metric import METRIC_PLATEAU_PATIENCE, MetricSample
 from tests.unit.turn_context import turn_context
