@@ -37,6 +37,12 @@ from agent6.workflows._nudges import (
     NO_PROGRESS_NUDGE,
     NO_PROGRESS_NUDGE_AFTER,
     NO_PROGRESS_STOP_AFTER,
+    PLAN_BUDGET_NUDGE,
+    PLAN_BUDGET_NUDGE_BELOW,
+    PLAN_NUDGE_AFTER_ITERS,
+    RUN_BUDGET_NUDGE,
+    RUN_BUDGET_NUDGE_BELOW,
+    RUN_BUDGET_NUDGE_GATELESS,
     STAGNATION_NUDGE,
     STAGNATION_NUDGE_GATELESS,
     TOOL_DENIED_NUDGE,
@@ -115,6 +121,9 @@ class TurnContext:
 # An advisor: one heuristic over the turn, the run state and the context,
 # answering with what to say, a decision to end the run, or nothing.
 Advisor = Callable[["TurnState", "LoopState", TurnContext], Nudge | Stop | None]
+# A before-call advisor speaks before the turn exists: its nudge goes to the
+# conversation ahead of the provider call.
+BeforeCallAdvisor = Callable[["LoopState", TurnContext], Nudge | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -672,6 +681,48 @@ class BudgetNudges:
     run_budget: bool = False
 
 
+def plan_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
+    """The planner's one-shot finish directive: the budget fraction fell to
+    `PLAN_BUDGET_NUDGE_BELOW`, or the leg reached `PLAN_NUDGE_AFTER_ITERS`
+    turns without a plan landing (a planner takes many cheap cached turns,
+    so the turn count is the lever that reaches the reads-forever case)."""
+    if ctx.mode != "plan" or state.budget_nudges.plan_finish:
+        return None
+    remaining = ctx.budget_remaining()
+    low_budget = remaining is not None and remaining <= PLAN_BUDGET_NUDGE_BELOW
+    too_many_turns = ctx.iteration - ctx.leg_start + 1 >= PLAN_NUDGE_AFTER_ITERS
+    if not (low_budget or too_many_turns):
+        return None
+    state.budget_nudges.plan_finish = True
+    return Nudge(
+        PLAN_BUDGET_NUDGE,
+        event="loop.plan_finish.nudge",
+        fields={"iteration": ctx.iteration, "budget_remaining": remaining},
+        log=(
+            f"LOOP: plan finish-nudge at iter {ctx.iteration}"
+            f" (turns={too_many_turns}, low_budget={low_budget})"
+        ),
+    )
+
+
+def run_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
+    """A plain run's one-shot wrap-up directive once the budget fraction falls
+    to `RUN_BUDGET_NUDGE_BELOW`: verify and finish before a cap ends the run
+    (gateless, finish alone). A metric run has its own end-game."""
+    if ctx.mode != "run" or ctx.metric or state.budget_nudges.run_budget:
+        return None
+    remaining = ctx.budget_remaining()
+    if remaining is None or remaining > RUN_BUDGET_NUDGE_BELOW:
+        return None
+    state.budget_nudges.run_budget = True
+    return Nudge(
+        RUN_BUDGET_NUDGE if ctx.gate_present() else RUN_BUDGET_NUDGE_GATELESS,
+        event="loop.run_budget.nudge",
+        fields={"iteration": ctx.iteration, "budget_remaining": remaining},
+        log=f"LOOP: run budget-nudge at iter {ctx.iteration}",
+    )
+
+
 # The advisors that run once a turn's tools have run, in the order their
 # notices reach the model.
 AFTER_TOOLS: tuple[Advisor, ...] = (
@@ -683,3 +734,6 @@ AFTER_TOOLS: tuple[Advisor, ...] = (
     no_progress,
     loop_guard_kill,
 )
+
+# The advisors that speak before the provider call, in order.
+BEFORE_CALL: tuple[BeforeCallAdvisor, ...] = (plan_budget_nudge, run_budget_nudge)

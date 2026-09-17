@@ -123,6 +123,7 @@ from agent6.workflows._finish_gates import (
 )
 from agent6.workflows._guards import (
     AFTER_TOOLS,
+    BEFORE_CALL,
     GuardSettings,
     Nudge,
     Stop,
@@ -158,14 +159,8 @@ from agent6.workflows._nearest_tests import (
 from agent6.workflows._nudges import (
     BASELINE_RED_NOTICE,
     MEMORY_FINISH_NUDGE,
-    PLAN_BUDGET_NUDGE,
-    PLAN_BUDGET_NUDGE_BELOW,
-    PLAN_NUDGE_AFTER_ITERS,
     PLAN_ON_DISK_HEADER,
     QUESTION_NUDGE,
-    RUN_BUDGET_NUDGE,
-    RUN_BUDGET_NUDGE_BELOW,
-    RUN_BUDGET_NUDGE_GATELESS,
     SILENT_NO_WORK_NUDGE,
     SILENT_NO_WORK_PATIENCE,
     VERIFY_BROKEN_NUDGE,
@@ -701,8 +696,7 @@ class Workflow:
                 system=system,
                 conversation=conversation,
                 state=state,
-                iteration=iteration,
-                start_iteration=start_iteration,
+                ctx=ctx,
                 root_task_id=root_task_id,
                 prefix_chars=request_prefix_chars(system, tools),
             )
@@ -832,8 +826,7 @@ class Workflow:
         system: str,
         conversation: Conversation,
         state: LoopState,
-        iteration: int,
-        start_iteration: int,
+        ctx: TurnContext,
         root_task_id: str | None,
         prefix_chars: int = 0,
     ) -> list[dict[str, Any]] | SessionResult:
@@ -848,25 +841,23 @@ class Workflow:
         be final) and BEFORE the snapshot (markers persist across resume).
         After the snapshot write, a crash anywhere up to the next iteration's
         snapshot can be resumed by re-running this same call."""
-        self._emit_budget(iteration)
+        self._emit_budget(ctx.iteration)
         if self._maybe_compact(conversation, state, prefix_chars=prefix_chars):
             # A tier-2 restart wiped the surfaced focus banner and the plan
             # block; let the passes below put both back into the fresh context.
             state.focus.surfaced_task_id = None
             state.plan_injected = ""
-        parked = self._maybe_inject_plan(conversation, state, iteration=iteration)
+        parked = self._maybe_inject_plan(conversation, state, iteration=ctx.iteration)
         if parked is not None:
             return parked
-        self._maybe_pre_call_nudges(
-            conversation, state, iteration=iteration, start_iteration=start_iteration
-        )
+        self._turn_before_call(conversation, state, ctx)
         conversation.roll_cache_marks()
         wire = conversation.to_wire()
         self._save_resume_snapshot(
             system=system,
             messages=wire,
             tool_calls=state.tool_calls,
-            next_iteration=iteration,
+            next_iteration=ctx.iteration,
             root_task_id=root_task_id,
             state=state,
             # The one numbered-checkpoint writer: this state is what turn
@@ -2251,60 +2242,22 @@ class Workflow:
             bytes=len(text.encode("utf-8")),
         )
 
-    def _maybe_pre_call_nudges(
-        self,
-        conversation: Conversation,
-        state: LoopState,
-        *,
-        iteration: int,
-        start_iteration: int,
+    def _turn_before_call(
+        self, conversation: Conversation, state: LoopState, ctx: TurnContext
     ) -> None:
-        """Before the LLM call, surface the current task for one-task focus, and
-        inject a one-shot finish directive when a verbose planner or a non-metric
-        run is reading forever without landing a plan / verify+finish before the
-        budget dies."""
-        # Surface-current-task first, so when a low budget ALSO fires a finish
-        # directive below, that finish nudge is the most-recent (strongest)
-        # message rather than the focus banner.
+        """Before the provider call: the focus banner first, then the
+        before-call advisors, so a finish directive a low budget draws is the
+        most recent message, not the banner."""
         self._maybe_surface_current_task(conversation, state)
-        # Force a verbose planner to land a plan. Trigger on EITHER a low
-        # token budget OR too many planning turns, with prompt caching a
-        # planner can take many cheap turns, so an iteration cap is the
-        # reliable lever for the "reads forever" failure mode. A rough
-        # delivered plan beats an exhaustive one that never gets emitted.
-        if self.mode == "plan" and not state.budget_nudges.plan_finish:
-            remaining = self._budget_fraction_remaining()
-            low_budget = remaining is not None and remaining <= PLAN_BUDGET_NUDGE_BELOW
-            too_many_turns = iteration - start_iteration + 1 >= PLAN_NUDGE_AFTER_ITERS
-            if low_budget or too_many_turns:
-                state.budget_nudges.plan_finish = True
-                conversation.notice(PLAN_BUDGET_NUDGE)
-                self._log(
-                    f"LOOP: plan finish-nudge at iter {iteration}"
-                    f" (turns={too_many_turns}, low_budget={low_budget})"
-                )
-                self._emit(
-                    "loop.plan_finish.nudge", iteration=iteration, budget_remaining=remaining
-                )
-
-        # Same lever for a non-metric coding run: force a verify + finish
-        # before the budget dies (metric runs have their own end-game).
-        if (
-            self.mode == "run"
-            and not state.budget_nudges.run_budget
-            and metric_goal(self.config.workflow.metric) is None
-        ):
-            remaining = self._budget_fraction_remaining()
-            if remaining is not None and remaining <= RUN_BUDGET_NUDGE_BELOW:
-                state.budget_nudges.run_budget = True
-                nudge = (
-                    RUN_BUDGET_NUDGE
-                    if self._gate_present(denied=state.verify.denied)
-                    else RUN_BUDGET_NUDGE_GATELESS
-                )
-                conversation.notice(nudge)
-                self._log(f"LOOP: run budget-nudge at iter {iteration}")
-                self._emit("loop.run_budget.nudge", iteration=iteration, budget_remaining=remaining)
+        for advisor in BEFORE_CALL:
+            nudge = advisor(state, ctx)
+            if nudge is None:
+                continue
+            conversation.notice(nudge.text)
+            if nudge.event:
+                self._emit(nudge.event, **nudge.fields)
+            if nudge.log:
+                self._log(nudge.log)
 
     def _maybe_surface_current_task(self, conversation: Conversation, state: LoopState) -> None:
         """Surface-current-task: keep the worker on ONE task at a time.
