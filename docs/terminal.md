@@ -52,6 +52,7 @@ Before the first model call, the header names the role and model from the manife
 - the composer bar runs along the foot: type to steer, or to resume a finished run; the row above it picks the preset and model the next leg continues under (each first entry names what a resume without flags runs under)
 - `/` completes the steer directives; Ctrl-R searches the session's past messages
 - `/shells` lists the run's background commands and how they ended; `/restate` replays the conversation since your last message
+- `/task <text>` adds work to the run's task graph instead of steering it: the turn in flight never sees it, and the run works it once its open tasks drain (`agent6 task ID "<text>"` does the same from a script or another machine)
 - the View menu maximizes the focused pane
 - on a terminal under 28 rows the dashboard shows one pane row at a time: the row holding focus, else the log and diff, with a summary line of the tool calls; Tab reaches the folded panes and unfolds them
 - on a finished plan, Run > Run this plan starts `agent6 run --from` on it and opens the new run; the plan session stays as it was
@@ -82,7 +83,7 @@ The config page shows every setting, its effective value, and the layer that set
 `agent6 run` executes in the foreground; Ctrl-C opens its pause menu to steer it.
 
 - the pause menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages
-    - `/status`, `/tasks`, `/pin`, `/compact`, `/parallel`, `/btw`, `/shells`, `/restate`, `/undo`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
+    - `/status`, `/tasks`, `/pin`, `/compact`, `/parallel`, `/btw`, `/task`, `/shells`, `/restate`, `/undo`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
 - a steer sent from another surface (`agent6 steer`, the web or TUI composer) while the menu is open is taken as the answer
 - `/detach` in the menu hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and stands an armed pause down, it never suspends the run (a suspended agent would lose its live provider stream)
 - `/exit` in the menu, the fallback prompt, or the `run -i` REPL stops the run and leaves without the follow-up prompt (`agent6 resume` continues it)

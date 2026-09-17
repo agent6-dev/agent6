@@ -75,6 +75,7 @@ The verify command is the success gate.
 ```sh
 agent6 attach                 # follow the conversation live; --raw, --tui, --json
 agent6 steer ID "focus on X"  # steer a live run at its next step boundary (--now interrupts the in-flight call; the TUI and web composers say /now <text>; /stop is `agent6 stop`)
+agent6 task ID "add a --json flag"  # queue work into the run's task graph; it runs once the open tasks drain
 agent6 answer ID "yes"        # answer a live run's ask_user question (bare: print the question)
 agent6 sessions show          # status, iteration, elapsed, cost, where the changes are; --json to script
 agent6 sessions diff          # the git diff the run produced; --stat for the summary, --path P to narrow
@@ -176,8 +177,12 @@ agent6 ask "how does the task-graph curator work?"
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
   - new work outranks it; it never passes, and only the operator retires it
+  - one per run, and the operator's: `resume --standing` and `fork --standing` give one to a session that started without it, a session that has one keeps it, and a model asking for its own gets an ordinary task
   - budget, stop, and the iteration cap still end the run; `workflow.standing_patience` (default `-1`, never) ends it after that many re-entries in a row that ran no tool call
 - `--pin "<text>"`: an instruction re-shown verbatim after every compaction restart, so it survives compaction (`/pin` does the same mid-run)
+- `agent6 task ID "<text>"` adds work to a live run's task graph instead of steering it: the turn in flight never sees it, and the run works it once its open tasks drain (every composer spells it `/task <text>`)
+  - the first line names the task, the whole text is its spec, and `[prompt].revise_prompt` covers it as it covers the run's own task
+  - the model may finish it but not retire it, and a run that ends over one names it in its receipt
 - `--from <id>`: seed the run from another session (its task, outcome, diff, and its plan or ask transcript); a plan id with no task runs that plan; the run's manifest records the source and `sessions show` prints it as `seeded from`
 - `--decompose`: break the task into a task graph up front (`prompt.decompose`); `--skill NAME` puts a skill in the prompt (`[skills]`)
   - an installed skill whose text gates on a person ("get your partner's approval before ...") drives an unattended run into `ask_user` on every task
