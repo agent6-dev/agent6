@@ -34,6 +34,7 @@ def _cmd_fork(
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
     steer: str = "",
+    standing_goal: str = "",
 ) -> int:
     """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
 
@@ -108,4 +109,5 @@ def _cmd_fork(
         budget_overrides=budget_overrides,
         sandbox_overrides=sandbox_overrides,
         steer=steer,
+        standing_goal=standing_goal,
     )

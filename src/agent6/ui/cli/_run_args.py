@@ -174,6 +174,16 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     resume_p.add_argument(
+        "--standing",
+        default="",
+        metavar="GOAL",
+        help=(
+            "Give this session the standing goal it did not have: it returns to GOAL whenever"
+            " all other tasks are done or the agent tries to stop. A session that already has"
+            " one keeps it."
+        ),
+    )
+    resume_p.add_argument(
         "--force",
         action="store_true",
         help=(
@@ -227,6 +237,16 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         fork_p,
         _complete_resumable_ids,
         help_text=("Source session id or unambiguous prefix. Default: newest resumable session."),
+    )
+    fork_p.add_argument(
+        "--standing",
+        default="",
+        metavar="GOAL",
+        help=(
+            "Give the fork the standing goal the source did not have: it returns to GOAL"
+            " whenever all other tasks are done or the agent tries to stop. A source that"
+            " already has one passes it to the fork, which keeps it."
+        ),
     )
     fork_p.add_argument(
         "--at-turn",

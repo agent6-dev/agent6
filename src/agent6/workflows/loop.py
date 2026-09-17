@@ -414,18 +414,7 @@ class Workflow:
         if root_id is not None:
             self.dispatcher.set_run_root_node_id(root_id)
             self._log(f"LOOP: DAG root task seeded: {root_id}")
-            if self.standing_goal.strip() and self.curator is not None:
-                node = self.curator.add_subtask(
-                    AddSubtaskIntent(
-                        parent_id=root_id,
-                        draft=TaskNodeDraft(
-                            title=self.standing_goal.strip(),
-                            standing=True,
-                            created_by="steering",
-                        ),
-                    )
-                )
-                self._log(f"LOOP: standing goal seeded: {node.id}")
+            self._seed_standing_goal(root_id)
             self._emit_graph_snapshot()  # show the root in the live task view
 
         self._log(
@@ -494,6 +483,9 @@ class Workflow:
         if snapshot.root_task_id is not None:
             self.dispatcher.set_run_root_node_id(snapshot.root_task_id)
             self._log(f"LOOP: DAG root task restored: {snapshot.root_task_id}")
+            # `--standing` reaches a continuation too: a resumed or forked leg
+            # takes the goal when the run has none.
+            self._seed_standing_goal(snapshot.root_task_id)
 
         # The system prompt is the run's, frozen: config that gained (or lost) a
         # verify command between legs swaps what judges the work while the
@@ -2009,6 +2001,31 @@ class Workflow:
         except (CuratorError, OSError, ValidationError) as exc:
             self._log(f"LOOP: failed to seed root task: {exc}")
             return None
+
+    def _seed_standing_goal(self, root_id: str) -> None:
+        """The operator's `--standing` goal, as the run's last-resort task.
+
+        One per run and the operator's: a run that already has one keeps it, so
+        a resume naming a different goal changes nothing (the caller refuses
+        that up front; this is the engine's half of the invariant)."""
+        goal = self.standing_goal.strip()
+        if not goal or self.curator is None:
+            return
+        if any(node.standing for node in self.curator.nodes().values()):
+            self._log("LOOP: standing goal already set; --standing ignored")
+            return
+        try:
+            node = self.curator.add_subtask(
+                AddSubtaskIntent(
+                    parent_id=root_id,
+                    draft=TaskNodeDraft(title=goal, standing=True, created_by="steering"),
+                )
+            )
+        except (CuratorError, OSError, ValidationError) as exc:
+            self._log(f"LOOP: standing goal not seeded: {exc}")
+            return
+        self._log(f"LOOP: standing goal seeded: {node.id}")
+        self._emit_graph_snapshot()
 
     def _dirty_tree_note(self) -> str:
         """Summary suffix naming an uncommitted worktree (`RunChain.dirty_note`),
