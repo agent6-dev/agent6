@@ -18,7 +18,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import Screen
-from textual.widgets import Select, Static, TextArea
+from textual.widgets import Input, Select, Static, TextArea
 
 from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS
 from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_answer
@@ -252,6 +252,36 @@ APPROVAL_ANSWERS: tuple[tuple[str, str, str, str], ...] = (
 _STANDING_ANSWERS = frozenset({"session", "session-deny"})
 
 
+# A run view lists these in its own BINDINGS (textual merges bindings only from
+# DOM classes, so a mixin cannot carry them) and mixes in ApprovalKeys.
+APPROVAL_KEY_BINDINGS: tuple[Binding, ...] = tuple(
+    Binding(key, f"answer('{answer}')", label, show=False)
+    for key, answer, label, _style in APPROVAL_ANSWERS
+)
+
+
+class ApprovalKeys:
+    """Mix into a run view (before its Screen base), with APPROVAL_KEY_BINDINGS
+    in its BINDINGS: while an approval is open, its letters answer from
+    anywhere on the screen except a text field.
+
+    Tab out of the composer and the keys work wherever the focus lands (the
+    transcript, a pane); keep tabbing and each answer is a tab stop of its own,
+    where Enter answers it. The composer keeps every letter it is given."""
+
+    def action_answer(self, answer: str) -> None:
+        cast(Screen[Any], self).post_message(ApprovalRow.Answered(answer))
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action != "answer":
+            return True
+        screen = cast(Screen[Any], self)
+        rows = screen.query(ApprovalRow)
+        if not rows or isinstance(screen.focused, TextArea | Input):
+            return False  # a text field keeps its letters
+        return rows.first().offers(str(parameters[0]))
+
+
 class SteerInput(TextArea):
     """The bottom composer bar: a TextArea that submits on Enter (Ctrl+J /
     Shift+Enter insert a newline instead) and grows with its content up to
@@ -399,13 +429,6 @@ class ApprovalRow(Vertical):
     ApprovalRow _AnswerLabel:hover { background: $primary 30%; }
     """
 
-    BINDINGS: ClassVar = [
-        *(
-            Binding(key, f"answer('{answer}')", label, show=False)
-            for key, answer, label, _style in APPROVAL_ANSWERS
-        ),
-    ]
-
     class Answered(Message):
         def __init__(self, answer: str) -> None:
             super().__init__()
@@ -428,17 +451,10 @@ class ApprovalRow(Vertical):
             for key, answer, label, style in APPROVAL_ANSWERS:
                 if self.offers(answer):
                     yield _AnswerLabel(key, answer, label, style)
-            yield Static(Text("(Tab here for the keys; or click)", style="dim"))
+            yield Static(Text("(Tab out of the bar for the keys; or click)", style="dim"))
 
     def offers(self, answer: str) -> bool:
         return self._standing or answer not in _STANDING_ANSWERS
-
-    def action_answer(self, answer: str) -> None:
-        self.post_message(self.Answered(answer))
-
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """A prompt with no scope offers no session answer, key included."""
-        return self.offers(str(parameters[0])) if action == "answer" else True
 
     def focus_answers(self) -> None:
         """Put the focus on the first answer, where the keys work."""

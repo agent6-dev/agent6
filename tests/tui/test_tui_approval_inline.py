@@ -326,9 +326,9 @@ def test_a_non_standing_approvals_session_keys_type_the_letter(tmp_path: Path) -
     asyncio.run(scenario())
 
 
-def test_a_key_off_the_composer_answers_nothing(tmp_path: Path) -> None:
-    """The answer keys are the composer's: with focus elsewhere (the
-    scrollback), a key neither answers nor types; the label's click does."""
+def test_a_key_answers_from_the_transcript(tmp_path: Path) -> None:
+    """Tab out of the composer and the letters answer wherever the focus
+    landed: the transcript, where the command is, answers like the row."""
     run = tmp_path / "live-run-FFFFFF"
     _live_run(run)
 
@@ -339,11 +339,9 @@ def test_a_key_off_the_composer_answers_nothing(tmp_path: Path) -> None:
             app._conv.query_one("#conv-scroll").focus()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.press("y")
-            await pilot.pause()
-            assert not (run / "approvals" / "ap1.answer").exists()
+            assert await _answer_written(run, pilot) == "yes"
             bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
-            assert bar.text == ""
-            assert await _row_shown(app, pilot)
+            assert bar.text == ""  # the transcript types nothing
 
     asyncio.run(scenario())
 

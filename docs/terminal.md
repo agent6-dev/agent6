@@ -32,7 +32,7 @@ The keys are the CLI prompt's, on every surface: `y` allow, `a` allow all this s
 Once answered, it collapses to one dim line.
 The dashboard docks the same row, carrying the command (it has no transcript for it); a machine screen, which has no composer, opens a dialog instead.
 No approval takes the focus or a key: the composer keeps both, so a message typed as one arrives is a message.
-Tab (or a click) moves the focus into the row, where every answer is a tab stop, Enter answers the focused one, and the letters answer.
+Tab (or a click) moves the focus off the composer, and the letters answer wherever it lands: the transcript, a pane, or the row itself, where every answer is its own tab stop and Enter answers the focused one.
 Answering from the row leaves the focus there, so the next approval answers straight away.
 A modal's buttons sit in one row; on a terminal narrower than the row the later buttons are off screen, and the approval keys, the question modal's answer fields and Ctrl+S still answer.
 

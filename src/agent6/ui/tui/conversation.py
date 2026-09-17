@@ -39,7 +39,9 @@ from textual.widgets import Footer, Static, TextArea
 
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
+    APPROVAL_KEY_BINDINGS,
     RUN_MENU,
+    ApprovalKeys,
     ApprovalRow,
     ComposerMode,
     ResumeOptions,
@@ -188,7 +190,7 @@ class _JumpButton(Static):
             handler()
 
 
-class ConversationScreen(ScreenChrome, Screen[None]):
+class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     """Scrollable, live-following, selectable LLM conversation for a single run."""
 
     CSS = """
@@ -254,6 +256,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         Binding("ctrl+home", "scroll_top", "Top", priority=True, show=False),
         Binding("ctrl+end", "scroll_bottom", "End", priority=True, show=False),
         Binding("question_mark", "help", "Help", show=False),
+        *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
         *menu_bindings(MENUS),
     ]
     COMMANDS: ClassVar = {MenuCommands}

@@ -48,7 +48,9 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import SESSION_KINDS
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
+    APPROVAL_KEY_BINDINGS,
     RUN_MENU,
+    ApprovalKeys,
     ApprovalRow,
     ComposerMode,
     ResumeOptions,
@@ -113,7 +115,7 @@ class _ScrollPane(VerticalScroll):
     ALLOW_MAXIMIZE = True
 
 
-class DashboardScreen(ScreenChrome, Screen[None]):
+class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     """The run dashboard panes: task graph, live stream, tool table, log window,
     diff/verify, and the composer bar. Presentation only: it renders the app's
     folded SessionState and dispatches run control back through the app (see the
@@ -223,6 +225,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         Binding("ctrl+home", "scroll_top", "Top", priority=True, show=False),
         Binding("ctrl+end", "scroll_bottom", "End", priority=True, show=False),
         Binding("question_mark", "help", "Help", show=False),
+        *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
         *menu_bindings(MENUS),
     ]
 
