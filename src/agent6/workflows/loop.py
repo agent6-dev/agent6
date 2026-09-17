@@ -122,7 +122,7 @@ from agent6.workflows._finish_gates import (
     task_finish_nudge,
     with_open_tasks,
 )
-from agent6.workflows._guards import GuardSettings
+from agent6.workflows._guards import AFTER_TOOLS, GuardSettings, Nudge, TurnContext
 from agent6.workflows._loop_state import (
     NEXT_TURN,
     LoopState,
@@ -166,8 +166,6 @@ from agent6.workflows._nudges import (
     RUN_BUDGET_NUDGE_GATELESS,
     SILENT_NO_WORK_NUDGE,
     SILENT_NO_WORK_PATIENCE,
-    STAGNATION_NUDGE,
-    STAGNATION_NUDGE_GATELESS,
     TOOL_DENIED_NUDGE,
     TOOL_ERROR_ESCALATION,
     TOOL_ERROR_NUDGE,
@@ -774,6 +772,9 @@ class Workflow:
             self._turn_review_triggers(state, turn, conversation)
             self._turn_finish_gates(state, turn)
             self._turn_notices(state, turn)
+            ctx = self._turn_context(state, iteration=iteration, leg_start=start_iteration)
+            for advisor in AFTER_TOOLS:
+                self._take(turn, advisor(turn, state, ctx))
             result = self._turn_metric_plateau(state, turn)
             if result is not None:
                 return result
@@ -1959,6 +1960,38 @@ class Workflow:
         self._log(f"  finish_session deferred once: memory backstop at iter {turn.iteration}")
         self._emit("loop.memory_finish.gated", iteration=turn.iteration)
 
+    # ---- the advisors ------------------------------------------------------------
+
+    def _turn_context(self, state: LoopState, *, iteration: int, leg_start: int) -> TurnContext:
+        """The facts the advisors read this turn (`TurnContext`)."""
+        return TurnContext(
+            mode=self.mode,
+            iteration=iteration,
+            leg_start=leg_start,
+            workflow=self.config.workflow,
+            guards=self.guards,
+            metric=metric_goal(self.config.workflow.metric) is not None,
+            memory_wired=self.state_dir is not None,
+            gate_present=lambda: self._gate_present(denied=state.verify.denied),
+            verify_command=lambda: tuple(self.config.workflow.verify_command),
+            tree_sha=self.chain.tree_sha,
+            tree_green=lambda: self._tree_is_verify_green(state),
+            budget_remaining=self._budget_fraction_remaining,
+            operator_wait_s=lambda: self.dispatcher.operator_wait_s,
+            open_subtasks=self._open_subtasks,
+        )
+
+    def _take(self, turn: TurnState, outcome: Nudge | None) -> None:
+        """Apply one advisor's answer: the notice joins the turn's results,
+        the event is emitted, the line logged."""
+        if outcome is None:
+            return
+        turn.tool_results.append(Notice(outcome.text))
+        if outcome.event:
+            self._emit(outcome.event, **outcome.fields)
+        if outcome.log:
+            self._log(outcome.log)
+
     # ---- turn notices and spiral guards ----------------------------------------
 
     def _turn_notices(self, state: LoopState, turn: TurnState) -> None:
@@ -2020,25 +2053,6 @@ class Workflow:
                 f" {state.spiral.call_streak}x in a row - injecting notice"
             )
             state.spiral.warned_at_iteration = turn.iteration
-        attemptless = (
-            self.guards.stagnation_notice_after_s > 0
-            and not state.stagnation.nudged
-            and not state.ever_edited
-            and state.verify.last_ok is None
-            and self.mode == "run"
-        )
-        elapsed = time.monotonic() - state.stagnation.started_monotonic
-        if attemptless and elapsed >= self.guards.stagnation_notice_after_s:
-            # Time blocked on the operator is not the model's.
-            elapsed -= self.dispatcher.operator_wait_s
-        if attemptless and elapsed >= self.guards.stagnation_notice_after_s:
-            state.stagnation.nudged = True
-            minutes = max(1, int(elapsed // 60))
-            gated = self._gate_present(denied=state.verify.denied)
-            notice = STAGNATION_NUDGE if gated else STAGNATION_NUDGE_GATELESS
-            turn.tool_results.append(Notice(notice.format(minutes=minutes)))
-            self._emit("loop.stagnation.nudged", iteration=turn.iteration, elapsed_s=int(elapsed))
-            self._log(f"  stagnation: {minutes}m with no attempt - injecting notice")
 
     def _turn_metric_plateau(self, state: LoopState, turn: TurnState) -> SessionResult | None:
         """Metric-plateau handling. When a verified metric merely ties the

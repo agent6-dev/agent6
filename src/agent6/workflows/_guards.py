@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The loop's guards: each heuristic that nudges or ends a run owns its
-counters and its threshold rule here, in one small object the loop holds on
-`LoopState`. The loop does the reading and the writing (the notice, the
-event, the log line, the stop); the guard decides when.
+"""The loop's guards: each heuristic that nudges or ends a run is one
+advisor function here, reading its counters from the guard object the loop
+holds on `LoopState` and returning what the harness says and records
+(`Nudge`) or nothing. The loop runs `AFTER_TOOLS` in order once a turn's
+tools have run and applies each outcome (`Workflow._take`).
 
 Leg-local by design, like every counter not named in `SessionSnapshot`: a
 resume is operator-initiated, so a resumed leg's refreshed patience is the
@@ -14,20 +15,71 @@ operator granting another window. The completion-relevant subset persists
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
+from agent6.config import WorkflowConfig
 from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
 from agent6.workflows._metric import MetricSample
 from agent6.workflows._nudges import (
     NO_PROGRESS_ESCALATE_AFTER,
     NO_PROGRESS_NUDGE_AFTER,
     NO_PROGRESS_STOP_AFTER,
+    STAGNATION_NUDGE,
+    STAGNATION_NUDGE_GATELESS,
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
 )
 
+if TYPE_CHECKING:
+    from agent6.workflows._loop_state import LoopState, TurnState
+
 Rung = Literal["nudge", "escalate", "stop"]
+
+
+@dataclass(frozen=True, slots=True)
+class Nudge:
+    """What an advisor says to the model this turn, and how the harness
+    records it: the notice text, the event (with its fields) and the log
+    line; "" skips the event or the line."""
+
+    text: str
+    event: str = ""
+    fields: Mapping[str, object] = field(default_factory=dict)
+    log: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class TurnContext:
+    """The run facts an advisor reads, built once per turn. A fact that can
+    move within the turn (a harness verify can deny or un-adopt the gate,
+    an edit moves the tree) is a zero-arg callable read where it is needed;
+    `workflow` carries the knobs that never move mid-run."""
+
+    mode: Literal["run", "plan", "ask", "agent"]
+    iteration: int
+    # The leg's first iteration: a turn allowance counts from it.
+    leg_start: int
+    workflow: WorkflowConfig
+    guards: GuardSettings
+    # A metric goal is configured: the plateau and ceiling rules own the
+    # run's end, and the plain-run guards stand down.
+    metric: bool
+    # A memory store is wired, so the memory nudges apply.
+    memory_wired: bool
+    gate_present: Callable[[], bool]
+    verify_command: Callable[[], tuple[str, ...]]
+    tree_sha: Callable[[], str]
+    tree_green: Callable[[], bool | None]
+    budget_remaining: Callable[[], float | None]
+    operator_wait_s: Callable[[], float]
+    open_subtasks: Callable[[], list[tuple[str, str]]]
+
+
+# An advisor: one heuristic over the turn, the run state and the context,
+# answering with what to say or nothing.
+Advisor = Callable[["TurnState", "LoopState", TurnContext], Nudge | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +221,36 @@ class StagnationGuard:
     nudged: bool = False
 
 
+def stagnation(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
+    """One notice when `stagnation_notice_after_s` of wall clock passed on a
+    run with no edit and no verify yet; time blocked on the operator is not
+    the model's, and a gateless run's notice names no gate."""
+    guard = state.stagnation
+    after = ctx.guards.stagnation_notice_after_s
+    if not (
+        after > 0
+        and ctx.mode == "run"
+        and not guard.nudged
+        and not state.ever_edited
+        and state.verify.last_ok is None
+    ):
+        return None
+    elapsed = time.monotonic() - guard.started_monotonic
+    if elapsed >= after:
+        elapsed -= ctx.operator_wait_s()
+    if elapsed < after:
+        return None
+    guard.nudged = True
+    minutes = max(1, int(elapsed // 60))
+    text = STAGNATION_NUDGE if ctx.gate_present() else STAGNATION_NUDGE_GATELESS
+    return Nudge(
+        text.format(minutes=minutes),
+        event="loop.stagnation.nudged",
+        fields={"iteration": turn.iteration, "elapsed_s": int(elapsed)},
+        log=f"  stagnation: {minutes}m with no attempt - injecting notice",
+    )
+
+
 @dataclass(slots=True)
 class MemoryNudges:
     """The two memory write nudges (run mode, a memory store wired): one flip
@@ -277,3 +359,8 @@ class BudgetNudges:
 
     plan_finish: bool = False
     run_budget: bool = False
+
+
+# The advisors that run once a turn's tools have run, in the order their
+# notices reach the model.
+AFTER_TOOLS: tuple[Advisor, ...] = (stagnation,)
