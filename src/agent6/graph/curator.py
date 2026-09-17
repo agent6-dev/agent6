@@ -246,7 +246,11 @@ class GraphCurator:
                 acceptance=intent.draft.acceptance,
                 relevant_paths=intent.draft.relevant_paths,
                 depends_on=intent.draft.depends_on,
-                standing=intent.draft.standing,
+                # The standing slot is the operator's: `--standing` seeds one
+                # (created_by "steering") and it is the run's last resort. A
+                # model asking for another keeps its task and loses the flag,
+                # so there is exactly one and nobody can evict it.
+                standing=intent.draft.standing and intent.draft.created_by == "steering",
                 children=(),
                 status="pending",
                 created_at=now,
@@ -288,6 +292,19 @@ class GraphCurator:
                 raise CuratorError(
                     f"{intent.id} is retired ({node.status}) and stays retired;"
                     " add_task if the work is needed after all"
+                )
+            if (
+                node.parent_id is not None
+                and node.created_by == "user"
+                and intent.new_status in ("skipped", "obsolete")
+            ):
+                # A task the operator queued is theirs to withdraw: pass it
+                # when it is done, or leave it open and let the run's end
+                # receipt say it went undone. The seeded root is "user" too,
+                # hence the parent check; an abandoned run still retires it.
+                raise CuratorError(
+                    f"{intent.id} was queued by the operator, so it is not yours to retire;"
+                    " pass it when it is done, or leave it open"
                 )
             if node.standing and intent.new_status == "passed":
                 raise CuratorError(

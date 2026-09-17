@@ -117,7 +117,7 @@ def test_standing_task_is_the_fallback_never_the_frontier(tmp_path: Path) -> Non
     standing = cur.add_subtask(
         AddSubtaskIntent(
             parent_id=root,
-            draft=TaskNodeDraft(title="keep testing", created_by="worker", standing=True),
+            draft=TaskNodeDraft(title="keep testing", created_by="steering", standing=True),
         )
     ).id
     work = _add(cur, root, "real work")
@@ -146,7 +146,7 @@ def test_standing_survives_the_storage_round_trip(tmp_path: Path) -> None:
     sid = cur.add_subtask(
         AddSubtaskIntent(
             parent_id=root,
-            draft=TaskNodeDraft(title="hunt bugs", created_by="worker", standing=True),
+            draft=TaskNodeDraft(title="hunt bugs", created_by="steering", standing=True),
         )
     ).id
     # A fresh curator over the same layout re-reads the files from disk.
@@ -160,9 +160,8 @@ def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: Path) -> 
     """`run --standing` seeds the goal with created_by="steering"; update_task
     (the model's route) refuses to skip/obsolete it, or the never-finishing
     fallback becomes an ordinary early finish (seen live: the goal worked
-    once, marked skipped, run over at half budget). The model's OWN standing
-    task (add_task standing=true) stays retirable; the curator itself stays
-    permissive (the operator's surfaces go through it)."""
+    once, marked skipped, run over at half budget). A model asking for a
+    standing task of its own gets an ordinary one, which stays retirable."""
     from agent6.graph.models import TaskNodeDraft, UpdateStatusIntent
     from agent6.tools._dag_tools import update_task
     from agent6.tools.errors import ToolError
@@ -183,6 +182,7 @@ def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: Path) -> 
             draft=TaskNodeDraft(title="keep tests green", created_by="worker", standing=True),
         )
     ).id
+    assert not cur.get(models_own).standing
     for status in ("skipped", "obsolete"):
         with pytest.raises(ToolError, match="operator's standing goal"):
             update_task(cur, {"id": operators, "status": status})
