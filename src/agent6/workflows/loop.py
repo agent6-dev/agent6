@@ -55,7 +55,7 @@ from agent6.providers import (
     ToolDefinition,
     call_for_text,
 )
-from agent6.sessions.ipc import emit_session_start
+from agent6.sessions.ipc import drain_queued_tasks, emit_session_start
 from agent6.skills import ResolvedSkills, skill_command, skill_steer_payload
 from agent6.task_text import operator_task_text, task_headline
 from agent6.tools.dispatch import (
@@ -1669,9 +1669,11 @@ class Workflow:
     def _turn_before_call(
         self, conversation: Conversation, state: LoopState, ctx: TurnContext
     ) -> None:
-        """Before the provider call: the focus banner first, then the
-        before-call advisors, so a finish directive a low budget draws is the
-        most recent message, not the banner."""
+        """Before the provider call: anything the operator queued joins the
+        graph, then the focus banner, then the before-call advisors, so a
+        finish directive a low budget draws is the most recent message, not the
+        banner."""
+        self._drain_queued_tasks(state)
         self._maybe_surface_current_task(conversation, state)
         for advisor in BEFORE_CALL:
             self._tell(conversation, advisor(state, ctx))
@@ -1686,6 +1688,37 @@ class Workflow:
             self._emit(nudge.event, **nudge.fields)
         if nudge.log:
             self._log(nudge.log)
+
+    def _drain_queued_tasks(self, state: LoopState) -> None:
+        """Add what the operator queued (`agent6 task`, a composer's `/task`)
+        to the graph, before this turn's focus is computed.
+
+        Each lands as the root's last ordinary child, so the run reaches it
+        once the open work drains. Nothing enters the conversation: the point
+        of queueing rather than steering is that the turn in flight never sees
+        it. The title is the operator's first line, the whole text their
+        rationale, so a long spec survives whole."""
+        if self.curator is None or self.events is None or state.root_task_id is None:
+            return
+        for text in drain_queued_tasks(self.events.path.parent):
+            title = task_headline(text)[:200] or text.strip()[:200]
+            try:
+                node = self.curator.add_subtask(
+                    AddSubtaskIntent(
+                        parent_id=state.root_task_id,
+                        draft=TaskNodeDraft(
+                            title=title,
+                            rationale=text if text.strip() != title else "",
+                            created_by="user",
+                        ),
+                    )
+                )
+            except (CuratorError, OSError, ValidationError) as exc:
+                self._log(f"LOOP: queued task refused: {exc}")
+                continue
+            self._log(f"LOOP: operator queued task {node.id}: {title}")
+            self._emit("loop.task.queued", id=node.id, title=title)
+            self._emit_graph_snapshot()
 
     def _maybe_surface_current_task(self, conversation: Conversation, state: LoopState) -> None:
         """Surface-current-task: keep the worker on ONE task at a time.

@@ -97,6 +97,15 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
     """The per-turn focus directive naming the current task and its acceptance."""
     title = node.title.strip() or "(untitled)"
     lines = [f"[harness focus] Current task ({task_id}): {title}"]
+    if node.created_by == "user" and node.parent_id is not None:
+        # Queued by the operator mid-run, so the wording is theirs and the
+        # whole text is the spec (the title is only its first line).
+        if (queued := node.rationale.strip()) and queued != title:
+            lines.append(queued)
+        lines.append(
+            "The operator queued this task while the run was going. Their wording is the"
+            " spec: work it as written, and add_task child subtasks under it if it is large."
+        )
     acceptance = node.acceptance.strip()
     if acceptance:
         lines.append(f"Acceptance: {acceptance}")
