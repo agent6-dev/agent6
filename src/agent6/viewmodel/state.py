@@ -55,6 +55,9 @@ class TaskNodeView:
     status: NodeStatus = "pending"
     depth: int = 0
     is_cursor: bool = False
+    # Who added the task. A subtask the operator queued reads differently on
+    # every surface; "" for a run dir written before the field existed.
+    created_by: str = ""
     glyph: str = ""  # the status as every surface draws it (TASK_STATUS_GLYPH)
 
     def __post_init__(self) -> None:
@@ -640,6 +643,7 @@ def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNode
                 status=node.get("status", "pending"),
                 depth=depth,
                 is_cursor=(nid == cursor),
+                created_by=str(node.get("created_by", "")),
             )
         )
         children = node.get("children", ())

@@ -3653,8 +3653,10 @@ def test_current_task_banner_carries_title_acceptance_paths() -> None:
 def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: Path) -> None:
     """FROZEN wire surface: the graph.update event the loop emits (consumed by
     the viewmodel fold, web and TUI, and on-disk in old run dirs) projects each
-    node to exactly {title, status, parent_id, children} plus a top-level
-    cursor, with children a JSON list. Interface-independent: drives a real
+    node to exactly {title, status, parent_id, children, created_by} plus a
+    top-level cursor, with children a JSON list. A run dir written before
+    `created_by` existed simply lacks it, and every reader defaults it.
+    Interface-independent: drives a real
     curator + real Workflow, so it pins the emitted bytes regardless of how the
     curator hands state to the loop internally."""
     from agent6.graph.curator import GraphCurator
@@ -3695,12 +3697,14 @@ def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: Path) -> None:
                 "status": "pending",
                 "parent_id": None,
                 "children": [child.id],
+                "created_by": "planner",
             },
             child.id: {
                 "title": "child",
                 "status": "in_progress",
                 "parent_id": root.id,
                 "children": [],
+                "created_by": "worker",
             },
         },
         "cursor": child.id,

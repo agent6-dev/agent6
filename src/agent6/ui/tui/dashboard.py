@@ -826,6 +826,9 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 indent = "  " * tv.depth
                 marker = "▸ " if tv.is_cursor else ""
                 label = Text(f"{indent}{marker}{icon} {tv.title}")
+                if tv.created_by == "user" and tv.depth:
+                    # Queued into the running session, not written by the model.
+                    label.append("  queued by you", style="dim italic")
                 if tv.id == sel:  # the task the panes are filtered to
                     label.stylize("bold reverse")
                 tree.root.add_leaf(label, data=tv.id)

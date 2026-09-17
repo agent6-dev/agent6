@@ -139,9 +139,13 @@ def open_subtasks(nodes: Mapping[str, TaskNode]) -> list[tuple[str, str]]:
     SUBTASKS (parent_id is not None) count: the auto-root is pending until
     the run ends, so counting it would deadlock every gate. A standing task
     is not unfinished work: it gates the finish via its own re-entry, never
-    via the capped nudge."""
+    via the capped nudge.
+
+    A task the operator queued carries that in its title: both consumers are
+    prose the operator or the model reads (the end receipt, the finish
+    deferral), and an end over one of those is worth naming as theirs."""
     return [
-        (nid, node.title[:120])
+        (nid, node.title[:120] + (" (queued by you)" if node.created_by == "user" else ""))
         for nid, node in nodes.items()
         if node.parent_id is not None and node.status in OPEN_STATUSES and not node.standing
     ]

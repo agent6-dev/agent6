@@ -334,6 +334,12 @@ def _compact_requested_body(event: dict[str, Any]) -> str:
     return f"compaction requested: {focus}" if focus else "compaction requested"
 
 
+def _task_queued_body(event: dict[str, Any]) -> str:
+    """The operator added work to the graph mid-run. It reaches the model only
+    when the frontier gets there, so the line says it arrived, nothing more."""
+    return f"task queued: {str(event.get('title', '')).strip()}".rstrip(": ")
+
+
 def _compact_done_body(event: dict[str, Any]) -> str:
     """Tier 2 replaced the history above this line with a summary."""
     chars = as_int(event.get("summary_chars"))
@@ -368,6 +374,7 @@ _MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     # Compaction rewrites the history the reader is looking at: the surface
     # that promised a `/compact` "applies before the next model call" is the
     # one that says it did, failed, or was refused.
+    "loop.task.queued": _task_queued_body,
     "loop.compact.requested": _compact_requested_body,
     "loop.compact.summarise.done": _compact_done_body,
     "loop.compact.summarise.failed": _compact_failed_body,

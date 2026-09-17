@@ -374,6 +374,8 @@ function paintDetails(cards, s, asOf) {
     const glyph = t.glyph || '·'; // the server's TASK_STATUS_GLYPH
     line.appendChild(el('span', 'st-' + t.status, '  '.repeat(t.depth) + glyph + ' '));
     line.appendChild(document.createTextNode(t.title));
+    // A task you queued into a running session, not one the model wrote.
+    if (t.created_by === 'user' && t.depth > 0) line.appendChild(el('span', 'sub muted', ' queued by you'));
     tree.appendChild(line);
   }
   cards.tasks.appendChild(tree);

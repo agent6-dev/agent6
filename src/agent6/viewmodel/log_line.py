@@ -81,6 +81,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             salient = f"{len(nodes)} tasks" if isinstance(nodes, dict) else ""
         case "diff.updated":
             salient = f"{len(str(event.get('patch', '')).splitlines())} lines"
+        case "loop.task.queued":
+            salient = str(event.get("title", ""))
         case "loop.auto_commit":
             salient = f"{str(event.get('sha', ''))[:12]} {event.get('subject', '')}".strip()
         case "tool.call":
