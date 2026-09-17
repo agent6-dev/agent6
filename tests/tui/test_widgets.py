@@ -325,3 +325,29 @@ def test_the_last_picker_in_a_row_ends_its_value_in_an_ellipsis() -> None:
             assert field.x < arrow.x and arrow.right <= field.right
 
     asyncio.run(scenario())
+
+
+class _PickerTopHost(App[None]):
+    CSS = "#row { dock: top; height: 1; margin-top: 2; padding: 0 1; }"
+
+    def compose(self) -> ComposeResult:
+        modes = [("run", "run"), ("plan", "plan"), ("ask", "ask")]
+        with Horizontal(id="row"):
+            yield Picker(modes, value="run", allow_blank=False, opens="down", id="a")
+
+
+def test_a_picker_at_the_top_of_a_pane_opens_its_list_downward() -> None:
+    """`opens="down"` puts the list right under the field, in its column."""
+
+    async def scenario() -> None:
+        app = _PickerTopHost()
+        async with app.run_test(size=(40, 20)) as pilot:
+            picker = app.query_one("#a", Picker)
+            picker.focus()
+            await pilot.press("enter")
+            await pilot.pause()
+            field = picker.query_one(SelectCurrent).region
+            overlay = picker.query_one(SelectOverlay).region
+            assert (overlay.y, overlay.x) == (field.bottom, field.x - 1)
+
+    asyncio.run(scenario())

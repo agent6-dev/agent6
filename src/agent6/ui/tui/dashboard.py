@@ -64,6 +64,7 @@ from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import (
     status_style,
 )
+from agent6.ui.tui.widgets import Picker
 from agent6.viewmodel import manifest_branches, manifest_header, session_compare
 from agent6.viewmodel.format import (
     TASK_STATUS_GLYPH,
@@ -129,6 +130,11 @@ class DashboardScreen(ScreenChrome, Screen[None]):
     #body { height: 1fr; }
     #log { width: 1fr; border: round $primary; }
     #diff { width: 1fr; border: round $primary; padding: 0 1; }
+    /* The step picker and the cumulative toggle: one row, like the pickers
+       above a composer; the compact toggle's focus border would make it three. */
+    #diff-nav { height: 1; }
+    #diff-cumulative { margin-left: 2; background: transparent; }
+    #diff-cumulative:focus { border: none; }
     /* The stream/diff bodies fill their scroll pane so long content scrolls;
        they are selectable text, so the pointer shows an I-beam over them. */
     #stream-body, #diff-body { width: 1fr; height: auto; pointer: text; }
@@ -399,10 +405,14 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             )
             with _ScrollPane(id="diff"):
                 with Horizontal(id="diff-nav"):
-                    yield Select(
-                        [("latest commit", "")], value="", id="diff-step", allow_blank=False
+                    yield Picker(
+                        [("latest commit", "")],
+                        value="",
+                        allow_blank=False,
+                        opens="down",
+                        id="diff-step",
                     )
-                    yield Checkbox("cumulative", id="diff-cumulative")
+                    yield Checkbox("cumulative", compact=True, id="diff-cumulative")
                 yield Static("", id="diff-body")
         yield SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
         yield ResumeOptions(self._presets, self._routes, id="dash-resume")  # while resuming

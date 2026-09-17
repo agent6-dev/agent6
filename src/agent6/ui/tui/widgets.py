@@ -9,6 +9,7 @@ accent-driven, arrow-navigable controls with no per-screen drift."""
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any, Literal
 
 try:
     from rich.color import Color
@@ -518,11 +519,12 @@ _PICKER_ROWS = 10  # options a Picker's list shows before it scrolls
 
 
 class Picker(Select[str]):
-    """A one-row dropdown for the options row above a composer: a flat field
-    like `.edit-input`, sized to its value. Its list opens upward, with the
-    menus' round accent border, so the field and the composer stay visible.
-    The last picker in a row takes what is left of it, and a value too long
-    for that ends in an ellipsis."""
+    """A one-row dropdown: a flat field like `.edit-input`, sized to its value,
+    whose list has the menus' round accent border. The list opens upward, so
+    a row above a composer keeps the field and the composer visible;
+    `opens="down"` suits a row at the top of a pane. The last picker in a row
+    takes what is left of it, and a value too long for that ends in an
+    ellipsis."""
 
     DEFAULT_CSS = f"""
     Picker {{ width: auto; }}
@@ -542,15 +544,26 @@ class Picker(Select[str]):
     }}
     """
 
+    def __init__(
+        self,
+        options: Iterable[tuple[RenderableType, str]],
+        *,
+        opens: Literal["up", "down"] = "up",
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(options, **kwargs)
+        self._opens = opens
+
     def watch_expanded(self, expanded: bool) -> None:
         if expanded:
             field = self.query_one(SelectCurrent)
             overlay = self.query_one(SelectOverlay)
             rows = min(overlay.option_count, _PICKER_ROWS) + 2
-            # Over the field, its border one cell out, so the listed values
-            # line up with the field's; above it by the list's height.
+            # Its border one cell out from the field, so the listed values line
+            # up with the field's; above the field by the list's height, or
+            # right under it.
             overlay.styles.min_width = field.outer_size.width + 2
-            overlay.styles.offset = (-1, -(rows + 1))
+            overlay.styles.offset = (-1, -(rows + 1) if self._opens == "up" else 0)
 
     def set_options(self, options: Iterable[tuple[RenderableType, str]]) -> None:
         super().set_options(options)
