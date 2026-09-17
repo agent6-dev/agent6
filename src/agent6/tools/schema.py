@@ -25,7 +25,9 @@ ROSTER_MAX = 40
 _STATUS_PATTERN = f"^({'|'.join(get_args(NodeStatus))})$"
 
 # A task id as the DAG tools accept it: ULIDs are exactly 26 chars.
-Ulid = Annotated[str, StringConstraints(min_length=26, max_length=26)]
+# A task id as the graph assigns it: the run's own count, zero-padded. Bounded
+# rather than fixed-width, because the number grows a digit past the padding.
+TaskId = Annotated[str, StringConstraints(min_length=1, max_length=26)]
 
 
 class _ToolInput(BaseModel):
@@ -377,15 +379,14 @@ class DagAddTaskInput(_ToolInput):
     )
 
     title: str = Field(min_length=1)
-    # ULID is exactly 26 chars, like update_task; None means "under the run
-    # root", and the length constraint rejects "".
-    parent_id: str | None = Field(default=None, min_length=26, max_length=26)
+    # None means "under the run root"; the length bound rejects "".
+    parent_id: str | None = Field(default=None, min_length=1, max_length=26)
     # A sibling under the same parent; the task lands right after it.
-    after: str | None = Field(default=None, min_length=26, max_length=26)
+    after: str | None = Field(default=None, min_length=1, max_length=26)
     rationale: str = ""
     acceptance: str = ""
     relevant_paths: tuple[str, ...] = ()
-    depends_on: tuple[Ulid, ...] = ()
+    depends_on: tuple[TaskId, ...] = ()
 
 
 class DagUpdateTaskInput(_ToolInput):
@@ -400,10 +401,10 @@ class DagUpdateTaskInput(_ToolInput):
         " one stays retired; add_task records work needed after all."
     )
 
-    id: str = Field(min_length=26, max_length=26)
+    id: str = Field(min_length=1, max_length=26)
     status: str | None = Field(default=None, pattern=_STATUS_PATTERN)
     note: str = ""
-    depends_on: tuple[Ulid, ...] = ()
+    depends_on: tuple[TaskId, ...] = ()
 
 
 class DagListTasksInput(_ToolInput):

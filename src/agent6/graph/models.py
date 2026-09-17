@@ -69,7 +69,7 @@ class TaskNode(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    id: str = Field(min_length=26, max_length=26)
+    id: str = Field(min_length=1, max_length=26)
     parent_id: str | None
     title: str = Field(min_length=1)
     rationale: str = ""

@@ -174,7 +174,8 @@ depends_on = ["agent6.app", "agent6.config", "agent6.config.io", "agent6.config.
 path = "agent6.ui.directives"
 depends_on = [
   "agent6.directive",
-  "agent6.graph.storage",  # `/retire` resolves a task id prefix against the run's graph
+  "agent6.graph.order",  # the order a task listing reads in
+  "agent6.graph.storage",  # `/retire` names a task from the run's own graph
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
   "agent6.ui.btw",
@@ -628,7 +629,7 @@ depends_on = ["agent6.graph.models", "agent6.paths", "agent6.portable", "agent6.
 
 [[modules]]
 path = "agent6.graph.curator"
-depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.graph.storage", "agent6.graph.ulid"]
+depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.graph.storage"]
 
 [[modules]]
 path = "agent6.machine"

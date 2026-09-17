@@ -231,7 +231,7 @@ def test_wire_add_task_order(tmp_path: Path) -> None:
     )
     w = _wire(d.dispatch("add_task", {"title": "sub"}))
     assert list(w) == ["id", "parent_id", "title", "status"]
-    assert len(w["id"]) == 26 and w["id"] != root.id  # a fresh ULID, not the root's
+    assert w["id"].isdigit() and w["id"] != root.id  # the run's next number, not the root's
     assert (w["parent_id"], w["title"], w["status"]) == (root.id, "sub", "pending")
 
 

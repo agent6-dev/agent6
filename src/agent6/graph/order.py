@@ -81,9 +81,19 @@ def tree_order(nodes: dict[str, TaskNode]) -> list[str]:
         for child in nodes[nid].children:
             walk(child)
 
-    for nid in sorted(nodes):
+    for nid in sorted(nodes, key=id_order):
         if nodes[nid].parent_id is None:
             walk(nid)
-    for nid in sorted(nodes):
+    for nid in sorted(nodes, key=id_order):
         walk(nid)
     return order
+
+
+def id_order(task_id: str) -> tuple[int, str]:
+    """Creation order from an id alone: shorter first, then lexicographic.
+
+    Task ids are numbers, zero-padded so a listing lines up, so string order is
+    already creation order at a fixed width; the length key keeps that true
+    when a run passes the padding and the numbers grow a digit.
+    """
+    return len(task_id), task_id

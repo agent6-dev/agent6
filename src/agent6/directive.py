@@ -324,7 +324,7 @@ STEER_COMMANDS: dict[str, str] = {
     "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",
     "/task": "queue work into the task graph: /task <text> (worked when the queue drains)",
     "/standing": "set the goal the run returns to when the queue drains: /standing <text>",
-    "/retire": "drop a task from the graph: /retire <task id> (the short id /tasks prints)",
+    "/retire": "drop a task from the graph: /retire <task id>, the number /tasks prints",
     "/now": "steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)",
     "/stop": "stop the run now, as `agent6 stop` does (resumable)",
     "/shells": "background commands this run started, and how they ended",

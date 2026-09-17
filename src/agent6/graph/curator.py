@@ -64,7 +64,6 @@ from agent6.graph.storage import (
     write_journal,
     write_node,
 )
-from agent6.graph.ulid import new_ulid
 
 
 class CuratorError(Exception):
@@ -140,6 +139,25 @@ def _place(
     if standing_at is None:
         return (*children, new_id)
     return (*children[:standing_at], new_id, *children[standing_at:])
+
+
+# Task ids are the run's own count, zero-padded so a listing lines up. Four
+# digits covers any run we have seen (the busiest recorded graph held 24
+# tasks); a run past 9999 keeps working, since `graph.order.id_order` sorts on
+# the number rather than the string.
+TASK_ID_WIDTH = 4
+
+
+def _next_task_id(nodes: dict[str, TaskNode]) -> str:
+    """The next task number for this graph.
+
+    A count rather than a ULID: the graph belongs to one run, the curator
+    serialises every mutation behind its flock, and nothing deletes a node, so
+    the highest number plus one is free and never reused. A graph carried in
+    from before (its ids opaque) simply starts the count at one.
+    """
+    highest = max((int(nid) for nid in nodes if nid.isdigit()), default=0)
+    return f"{highest + 1:0{TASK_ID_WIDTH}d}"
 
 
 def _now() -> datetime:
@@ -248,7 +266,7 @@ class GraphCurator:
                     raise CuratorError(f"add_subtask: unknown dep {dep!r}")
             now = _now()
             node = TaskNode(
-                id=new_ulid(),
+                id=_next_task_id(self._nodes),
                 parent_id=intent.parent_id,
                 title=intent.draft.title,
                 rationale=intent.draft.rationale,

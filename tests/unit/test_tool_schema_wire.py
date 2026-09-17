@@ -146,21 +146,22 @@ def test_an_ask_user_question_is_bounded_like_every_other_model_string() -> None
         AskUserInput.model_validate({"questions": [{"question": "q", "options": ["y" * 201]}]})
 
 
-def test_add_task_parent_id_carries_the_ulid_constraint() -> None:
-    """parent_id was the one task-ULID param without the 26-char rule its
-    siblings enforce; "" passed the schema and silently attached the task to
-    the run root. None still means root; a malformed id fails loud."""
+def test_add_task_parent_id_is_bounded_like_its_siblings() -> None:
+    """parent_id was the one task-id param without the bound its siblings
+    enforce; "" passed the schema and silently attached the task to the run
+    root. None still means root; an empty or oversized id fails loud."""
     import pytest
     from pydantic import ValidationError
 
     from agent6.tools.schema import DagAddTaskInput
 
     DagAddTaskInput(title="t")  # omitted -> root, unchanged
-    DagAddTaskInput(title="t", parent_id="01ARZ3NDEKTSV4RRFFQ69G5FAV")
+    DagAddTaskInput(title="t", parent_id="0003")
+    DagAddTaskInput(title="t", parent_id="01ARZ3NDEKTSV4RRFFQ69G5FAV")  # a graph from before
     with pytest.raises(ValidationError):
         DagAddTaskInput(title="t", parent_id="")
     with pytest.raises(ValidationError):
-        DagAddTaskInput(title="t", parent_id="short")
+        DagAddTaskInput(title="t", parent_id="x" * 27)
 
 
 def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> None:
