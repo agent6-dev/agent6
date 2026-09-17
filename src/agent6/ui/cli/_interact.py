@@ -42,6 +42,7 @@ from agent6.ui.cli._steer import (
     tty_message,
     tty_prompt,
 )
+from agent6.ui.keymap import answer_for, approval_prompt_suffix
 from agent6.ui.steer import SteerState
 from agent6.viewmodel import approval_parts
 from agent6.viewmodel.transcript import scrub_terminal_controls
@@ -85,7 +86,7 @@ def default_stdin_approver(
     vocabulary marks it: a bold yellow `?` and bold header (the question),
     the command plain (the thing under judgment), the answer line dim, the
     sibling of the `->` call line that follows an allow."""
-    suffix = "[y/N/a/d]  (a = allow all, d = deny all, this session): " if standing else "[y/N]: "
+    suffix = approval_prompt_suffix(standing=standing)
     bold, dim, yellow, reset = "\033[1m", "\033[2m", "\033[33m", "\033[0m"
     # The text under judgment carries no sequence at all, styling included:
     # conceal (SGR 8) hides the part of a command it wraps.
@@ -103,12 +104,7 @@ def default_stdin_approver(
     ans = tty_prompt(rendered, plain=plain, until=until)
     if ans is None:
         return None
-    ans = ans.strip().lower()
-    if standing and ans in {"a", "all", "always", "session"}:
-        return "session"
-    if standing and ans in {"d", "deny", "never"}:
-        return "session-deny"
-    return "yes" if ans in {"y", "yes"} else "no"
+    return answer_for(ans, standing=standing)
 
 
 def prompt_detach_away_mode(session_dir: Path, scopes: tuple[str, ...]) -> None:

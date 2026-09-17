@@ -1685,7 +1685,8 @@ def test_a_prompt_with_no_scope_shows_no_allow_session_button() -> None:
             assert isinstance(modal, ApprovalModal)
             labels = [str(b.label) for b in modal.query(Button)]
             assert labels == ["Allow (y)", "Deny (n)"]
-            assert modal.check_action("approve_session", ()) is False
+            assert modal.check_action("answer", ("session",)) is False
+            assert modal.check_action("answer", ("yes",)) is True
             await pilot.press("a")  # the removed binding must not answer
             await pilot.pause()
             assert app.screen is modal, "'a' dismissed a modal that offers no session answer"

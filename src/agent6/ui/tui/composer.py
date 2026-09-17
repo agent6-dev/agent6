@@ -22,6 +22,7 @@ from textual.widgets import Input, Select, Static, TextArea
 
 from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS
 from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_answer
+from agent6.ui.keymap import APPROVAL_ANSWERS
 from agent6.ui.tui.menubar import (
     Menu,
     MenuItem,
@@ -239,24 +240,22 @@ RUN_MENU = Menu(
 )
 
 
-# The answers an open approval offers, with the CLI prompt's and the modal's
-# keys ("yes" / "no" / "session" / "session-deny"): (key, answer, label, style).
-# The row renders them and answers a click; the composer binds the keys.
-APPROVAL_ANSWERS: tuple[tuple[str, str, str, str], ...] = (
-    ("y", "yes", "allow", "bold green"),
-    ("a", "session", "allow all (session)", "green"),
-    ("n", "no", "deny", "bold red"),
-    ("d", "session-deny", "deny all", "red"),
-)
-# Offered only by a standing approval (one the operator may answer for the session).
-_STANDING_ANSWERS = frozenset({"session", "session-deny"})
+# How the row paints each answer (`ui.keymap` owns the keys and the words; the
+# colour is this surface's alone): allow green, deny red, the scoped pair dimmer
+# than the plain one it widens.
+_ANSWER_STYLES: dict[str, str] = {
+    "yes": "bold green",
+    "session": "green",
+    "no": "bold red",
+    "session-deny": "red",
+}
 
 
 # A run view lists these in its own BINDINGS (textual merges bindings only from
 # DOM classes, so a mixin cannot carry them) and mixes in ApprovalKeys.
 APPROVAL_KEY_BINDINGS: tuple[Binding, ...] = tuple(
-    Binding(key, f"answer('{answer}')", label, show=False)
-    for key, answer, label, _style in APPROVAL_ANSWERS
+    Binding(entry.key, f"answer('{entry.answer}')", entry.label, show=False)
+    for entry in APPROVAL_ANSWERS
 )
 
 
@@ -448,13 +447,18 @@ class ApprovalRow(Vertical):
                 body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
             yield Static(body)
         with Horizontal(id="approval-answers"):
-            for key, answer, label, style in APPROVAL_ANSWERS:
-                if self.offers(answer):
-                    yield _AnswerLabel(key, answer, label, style)
+            for entry in APPROVAL_ANSWERS:
+                if self.offers(entry.answer):
+                    yield _AnswerLabel(
+                        entry.key, entry.answer, entry.label, _ANSWER_STYLES[entry.answer]
+                    )
             yield Static(Text("(Tab out of the bar for the keys; or click)", style="dim"))
 
     def offers(self, answer: str) -> bool:
-        return self._standing or answer not in _STANDING_ANSWERS
+        """Whether this prompt offers *answer*: a prompt with no scope offers
+        no session answer, so its letter is the letter it is."""
+        scoped = {e.answer for e in APPROVAL_ANSWERS if e.standing}
+        return self._standing or answer not in scoped
 
     def focus_answers(self) -> None:
         """Put the focus on the first answer, where the keys work."""

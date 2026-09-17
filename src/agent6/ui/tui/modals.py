@@ -26,6 +26,7 @@ from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static, TextArea
 
+from agent6.ui.keymap import APPROVAL_ANSWERS
 from agent6.ui.tui.widgets import TypeaheadField
 from agent6.viewmodel.state import Question
 
@@ -69,15 +70,17 @@ class ApprovalModal(ModalScreen[str]):
     """
 
     # Keys handled on the modal (not the app) so they reach the focused button.
+    # The letters and words are `ui.keymap`'s, shared with the CLI prompt and
+    # the inline row; a scoped answer's binding is hidden when the prompt has
+    # no scope (`check_action`). The upper-case twins forgive a stuck shift.
     BINDINGS: ClassVar = [
         *_ARROW_NAV,
-        Binding("y", "approve", "Allow", show=True),
-        Binding("Y", "approve", "Allow", show=False),
-        Binding("a", "approve_session", "Allow all", show=True),  # dropped when not standing
-        Binding("n", "deny", "Deny", show=True),
-        Binding("N", "deny", "Deny", show=False),
-        Binding("d", "deny_session", "Deny all", show=True),  # dropped when not standing
-        Binding("escape", "deny", "Deny", show=False),
+        *(
+            Binding(key, f"answer('{entry.answer}')", entry.label.title(), show=show)
+            for entry in APPROVAL_ANSWERS
+            for key, show in ((entry.key, True), (entry.key.upper(), False))
+        ),
+        Binding("escape", "answer('no')", "Deny", show=False),
     ]
 
     def __init__(self, prompt_id: str, prompt: str, *, standing: bool = True) -> None:
@@ -108,22 +111,15 @@ class ApprovalModal(ModalScreen[str]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id or "no")  # button ids are the answer values
 
-    def action_approve(self) -> None:
-        self.dismiss("yes")
+    def action_answer(self, answer: str) -> None:
+        self.dismiss(answer)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Hides the scope bindings (footer included) on a prompt with none."""
-        del parameters
-        return self.standing if action in ("approve_session", "deny_session") else True
-
-    def action_approve_session(self) -> None:
-        self.dismiss("session")
-
-    def action_deny_session(self) -> None:
-        self.dismiss("session-deny")
-
-    def action_deny(self) -> None:
-        self.dismiss("no")
+        """Hides the scope answers (footer included) on a prompt with none."""
+        if action != "answer":
+            return True
+        scoped = {e.answer for e in APPROVAL_ANSWERS if e.standing}
+        return self.standing or str(parameters[0]) not in scoped
 
 
 class ConfirmModal(ModalScreen[bool]):
