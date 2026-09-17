@@ -58,7 +58,7 @@ def composer_labels(
         else:
             title = "what should it do next" if needs_new_work else "continue this session"
         return (title, "Enter resumes · Ctrl-J newline")
-    return ("new task", "Enter starts · Ctrl-J newline")
+    return ("new session", "Enter starts · Ctrl-J newline")
 
 
 def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, str]]:

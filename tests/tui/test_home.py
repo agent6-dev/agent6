@@ -262,7 +262,7 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
             await pilot.pause()
             assert isinstance(app.screen, NewWorkScreen)
             bar = app.screen.query_one("#draft-input", SteerInput)
-            assert bar.border_title == "new task"
+            assert bar.border_title == "new session"
             app.screen.query_one("#draft-mode", Select).value = "plan"
             app.screen.query_one("#draft-preset", Select).value = "ultra"
             bar.focus()

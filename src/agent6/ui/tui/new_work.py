@@ -97,7 +97,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         *menu_bindings(MENUS),
     ]
     COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
-    HELP_TITLE: ClassVar = "agent6 — new task"
+    HELP_TITLE: ClassVar = "agent6 — new session"
     HELP_HINTS: ClassVar = (
         "Enter starts the task; Ctrl-J or Shift+Enter inserts a newline",
         "Tab moves between the text, the mode, the preset and the model",
@@ -145,7 +145,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.app.sub_title = "new task"
+        self.app.sub_title = "new session"
         bar = self.query_one("#draft-input", SteerInput)
         bar.set_mode(mode="start")
         bar.focus()
