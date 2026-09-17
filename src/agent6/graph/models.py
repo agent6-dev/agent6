@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """The persistent task-graph models: nodes plus the LLM-emitted curator intents
-that mutate them, a doubly-linked tree keyed by time-sortable ULID ids.
+that mutate them, a doubly-linked tree keyed by the run's own task count.
 
-Every node carries a 26-char Crockford-base32 ULID `id` and a `parent_id`; the
+Every node carries an `id` (the run's count, zero-padded) and a `parent_id`; the
 tree is doubly linked (a parent lists each child's id in `children`, each child
 names its `parent_id`), a symmetry the curator maintains on every mutation.
 `status` ranges over the fixed `NodeStatus` vocabulary (pending, in_progress,
@@ -63,7 +63,7 @@ class TaskNodeDraft(BaseModel):
 
 
 class TaskNode(BaseModel):
-    """A persisted task-graph node: a time-sortable 26-char ULID `id`, a
+    """A persisted task-graph node: an `id` counting up within the run, a
     `parent_id`/`children` pair the curator keeps mutually consistent, and a
     `status` drawn from the fixed `NodeStatus` vocabulary."""
 
@@ -99,8 +99,8 @@ class TaskNode(BaseModel):
         # boundary must reject a crafted 26-char id carrying separators
         # ('../zzz...') that would make the next write_node escape graph_dir.
         # A bad-id file then fails validation -> load_graph skips it with a
-        # warning, exactly like every other corrupt node file. new_ulid()
-        # always emits valid Crockford, so real ids are unaffected.
+        # warning, exactly like every other corrupt node file. Digits are
+        # Crockford, so the ids the curator assigns always pass.
         if any(ch not in CROCKFORD for ch in v):
             raise ValueError(f"node id is not Crockford base32: {v!r}")
         return v

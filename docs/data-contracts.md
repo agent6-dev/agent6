@@ -109,9 +109,9 @@ Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpe
 
 [`agent6.graph.models`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/graph/models.py) &middot; pydantic model + 6 nested models
 
-The persistent task-graph models: nodes plus the LLM-emitted curator intents that mutate them, a doubly-linked tree keyed by time-sortable ULID ids.
+The persistent task-graph models: nodes plus the LLM-emitted curator intents that mutate them, a doubly-linked tree keyed by the run's own task count.
 
-**TaskNode** &mdash; A persisted task-graph node: a time-sortable 26-char ULID `id`, a `parent_id`/`children` pair the curator keeps mutually consistent, and a `status` drawn from the fixed `NodeStatus` vocabulary.
+**TaskNode** &mdash; A persisted task-graph node: an `id` counting up within the run, a `parent_id`/`children` pair the curator keeps mutually consistent, and a `status` drawn from the fixed `NodeStatus` vocabulary.
 
 | field | type | default |
 | --- | --- | --- |

@@ -45,7 +45,7 @@ def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
     reordered or positionally-inserted child executes where it appears.
 
     Roots (and any node an ancestor does not reach, e.g. a stale parent
-    reference) fall back to id order: ids are time-sortable ULIDs, so that is
+    reference) fall back to id order, which is the run's own count, so that is
     creation order even on a resumed run, where the nodes dict arrives in
     filesystem order.
 

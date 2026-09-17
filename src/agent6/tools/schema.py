@@ -24,7 +24,6 @@ ROSTER_MAX = 40
 # tests/unit/test_tool_schema_wire.py.
 _STATUS_PATTERN = f"^({'|'.join(get_args(NodeStatus))})$"
 
-# A task id as the DAG tools accept it: ULIDs are exactly 26 chars.
 # A task id as the graph assigns it: the run's own count, zero-padded. Bounded
 # rather than fixed-width, because the number grows a digit past the padding.
 TaskId = Annotated[str, StringConstraints(min_length=1, max_length=26)]
@@ -374,8 +373,8 @@ class DagAddTaskInput(_ToolInput):
         " parent_id attaches under an existing task (default the root). title"
         " is a short imperative; acceptance the verifiable condition. after"
         " inserts directly after that sibling. relevant_paths is an array of the"
-        " repo paths the task touches; depends_on an array of task ULIDs"
-        " that must pass first. Returns the new task's ULID."
+        " repo paths the task touches; depends_on an array of task ids"
+        " that must pass first. Returns the new task's id."
     )
 
     title: str = Field(min_length=1)
@@ -395,7 +394,7 @@ class DagUpdateTaskInput(_ToolInput):
         "Update a task: status (in_progress marks the task being worked, which"
         " the harness sets on the focus task; passed once the verify confirms"
         " it, or once you have checked it yourself in a gateless run), or"
-        " depends_on (task ULIDs that must be settled first); a note rides"
+        " depends_on (task ids that must be settled first); a note rides"
         " along with a status change. Fields omitted stay unchanged. An end is"
         " final: a passed task takes only obsolete, and a skipped or obsolete"
         " one stays retired; add_task records work needed after all."

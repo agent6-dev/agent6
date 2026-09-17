@@ -87,7 +87,7 @@ class _JournalBase(BaseModel):
 
 class AddSubtaskJournal(_JournalBase):
     op: Literal["add_subtask"] = "add_subtask"
-    id: str  # the ASSIGNED ULID (the intent has none yet)
+    id: str  # the ASSIGNED id (the intent has none yet)
     parent_id: str | None
     by: NodeActor
 
