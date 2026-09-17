@@ -31,6 +31,7 @@ from agent6.workflows._guards import (
     QuietGuard,
     SettledGuard,
     Stop,
+    metric_plateau,
     settled_end,
     verify_settled,
 )
@@ -317,6 +318,12 @@ def _turn(**kw: Any) -> Any:
 
 def _ctx(wf: Workflow, state: Any, iteration: int = 1) -> Any:
     return wf._turn_context(state, iteration=iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+
+
+def _plateau_stop() -> Stop:
+    """The metric plateau's stop as the advisor decides it: a grounded end."""
+    end = End("metric_plateau", "score plateaued at 10", completed=True, verdict="grounded")
+    return Stop(lambda: end, soft="metric_plateau", declared="metric_plateau")
 
 
 def _settle(wf: Workflow, state: Any, turn: Any) -> Any:
@@ -3475,10 +3482,10 @@ def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
     )
     turn = _turn(metric_plateau_finish="score reached its ceiling")
 
-    result = wf._turn_metric_plateau(state, turn)  # pyright: ignore[reportPrivateUsage]
+    result = wf._take(state, turn, metric_plateau(turn, state, _ctx(wf, state)))  # pyright: ignore[reportPrivateUsage]
 
     assert result is None
-    assert turn.plateau_should_stop is False
+    assert turn.stops == []
     assert turn.end_returned is True
     assert any(
         isinstance(item, Notice) and "sub1: measure variant" in item.text
@@ -6708,9 +6715,8 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
             raw_content=(),
             tool_uses=(ToolUse(id="tu1", name="apply_edit", input={}),),
         ),
-        plateau_should_stop=True,
-        metric_plateau_finish="score plateaued at 10",
     )
+    turn.stops.append(_plateau_stop())
     state = _state(
         ever_edited=True,
         # The green verify predates the last edit.
@@ -6737,9 +6743,8 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
             raw_content=(),
             tool_uses=(ToolUse(id="tu1", name="run_verify_command", input={}),),
         ),
-        plateau_should_stop=True,
-        metric_plateau_finish="score plateaued at 10",
     )
+    turn.stops.append(_plateau_stop())
     state = _state(
         ever_edited=True, verify=VerifyVerdict(ever_passed=True, last_ok=True, edited_since=False)
     )

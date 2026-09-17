@@ -140,7 +140,6 @@ from agent6.workflows._loop_state import (
 from agent6.workflows._metric import (
     METRIC_EARLY_FINISH_PATIENCE,
     METRIC_FINISH_NUDGE,
-    METRIC_PLATEAU_PATIENCE,
     METRIC_PLATEAU_STOP_BELOW_BUDGET,
     MetricSample,
     best_metric_sample,
@@ -149,7 +148,6 @@ from agent6.workflows._metric import (
     format_metric_feedback,
     metric_at_fraction_ceiling,
     metric_goal,
-    metric_plateau_nudge,
     metric_plateau_summary,
 )
 from agent6.workflows._nearest_tests import (
@@ -773,9 +771,6 @@ class Workflow:
             self._turn_review_triggers(state, turn, conversation)
             self._turn_finish_gates(state, turn)
             result = self._turn_advisors(state, turn, ctx)
-            if result is not None:
-                return result
-            result = self._turn_metric_plateau(state, turn)
             if result is not None:
                 return result
             conversation.results(turn.tool_results)
@@ -2029,65 +2024,6 @@ class Workflow:
         if turn.metric_feedback:
             turn.tool_results.append(Notice(turn.metric_feedback))
 
-    def _turn_metric_plateau(self, state: LoopState, turn: TurnState) -> SessionResult | None:
-        """Metric-plateau handling. When a verified metric merely ties the
-        prior best, the plateau detector fires. With budget to spare the run
-        gets the plateau notice and goes on; it ends only once it is in the
-        final budget slice and has still failed to beat the best after a few
-        nudges. With no budget signal (tests / MCP) the fixed
-        `METRIC_PLATEAU_PATIENCE` bounds the nudging. Sets
-        `turn.plateau_should_stop`; the stop itself happens in the stop
-        checks, after the post-tools snapshot."""
-        if turn.metric_plateau_finish is None:
-            return None
-        budget_remaining = self._budget_fraction_remaining()
-        in_final_slice = (
-            budget_remaining is None or budget_remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET
-        )
-        if state.metric.at_ceiling():
-            # A metric at its provable ceiling (e.g. SCORE: 27/27) cannot
-            # improve: stop now rather than nudge the worker to "pivot" toward
-            # a number that does not exist. This is the dominant cause of weak
-            # reasoning models burning their whole budget (and wall-clock)
-            # re-deriving a solved task.
-            turn.plateau_should_stop = True
-            self._emit("loop.metric_ceiling.stop", iteration=turn.iteration)
-        elif in_final_slice and state.metric.plateau_nudges_used >= METRIC_PLATEAU_PATIENCE:
-            turn.plateau_should_stop = True
-        else:
-            # Count patience only against final-slice nudges. While the run
-            # still has runway (in_final_slice False), keep nudging the
-            # worker to explore without consuming the budget, exactly as the
-            # early-finish guard only counts rejections while it has runway.
-            # Counting runway ties here would exhaust METRIC_PLATEAU_PATIENCE
-            # before the final slice, so the run would stop the instant the
-            # budget crossed the threshold and the final-slice notice would
-            # never fire.
-            if in_final_slice:
-                state.metric.plateau_nudges_used += 1
-            nudge_text = metric_plateau_nudge(budget_remaining)
-            turn.tool_results.append(Notice(nudge_text))
-            budget_note = "n/a" if budget_remaining is None else f"{budget_remaining:.0%} left"
-            self._log(
-                f"  metric_plateau notice at iter {turn.iteration} (budget"
-                f" {budget_note}; final-slice patience"
-                f" {state.metric.plateau_nudges_used}/{METRIC_PLATEAU_PATIENCE})"
-            )
-            self._emit(
-                "loop.metric_plateau.nudge",
-                iteration=turn.iteration,
-                nudges_used=state.metric.plateau_nudges_used,
-                budget_remaining=budget_remaining,
-            )
-        # A finish signal on the same turn already ran the end gates.
-        if turn.plateau_should_stop and turn.finish_signal is None:
-            aborted = self._end_gates(state, turn, ending="metric_plateau")
-            if aborted is not None:
-                return aborted
-            if turn.end_returned:
-                turn.plateau_should_stop = False
-        return None
-
     def _end_gates(self, state: LoopState, turn: TurnState, *, ending: str) -> SessionResult | None:
         """An end declared without finish_session (`settled`: the harness's
         idle stop; `silent_finish`: a prose turn with no tool call) passes the
@@ -2257,17 +2193,12 @@ class Workflow:
         joins the conversation. Faults (tool_error), the loop guard, and
         every hard bound still end the run; the absorb itself refuses on
         spent budget or a spin."""
-        soft = (
-            "metric_plateau"
-            if turn.plateau_should_stop
-            else next((stop.soft for stop in turn.stops if stop.soft), None)
-        )
+        soft = next((stop.soft for stop in turn.stops if stop.soft), None)
         if soft is None or any(not stop.soft for stop in turn.stops):
             return
         nudge = self._standing_absorb(state, reason=soft, iteration=turn.iteration)
         if nudge is None:
             return
-        turn.plateau_should_stop = False
         turn.stops = [stop for stop in turn.stops if not stop.soft]
         state.settled.restart()
         state.verify.fail_streak = 0
@@ -2282,30 +2213,13 @@ class Workflow:
     ) -> SessionResult | None:
         """Terminal checks, run after the turn's tool_results are in
         `messages` and the post-tools snapshot is written, in precedence
-        order: the advisors' stops as decided, the metric-plateau stop, the
-        loop-guard kill, then honouring a finish call that survived the
-        gates."""
+        order: the advisors' stops as decided, the loop-guard kill, then
+        honouring a finish call that survived the gates."""
         self._absorb_soft_stop(state, turn, conversation)
         for stop in turn.stops:
             if stop.log:
                 self._log(stop.log)
             return self._finish(state, stop.end(), iteration=turn.iteration)
-        if turn.plateau_should_stop:
-            assert turn.metric_plateau_finish is not None
-            self._log(f"LOOP: metric_plateau at iter {turn.iteration}")
-            # Ground on the tree like the sibling clean ends (finish_session,
-            # verify_settled): an edit after the plateau's green verify means
-            # nothing verified the FINAL tree, so this must not claim passed.
-            return self._finish(
-                state,
-                End(
-                    "metric_plateau",
-                    with_open_tasks(turn.metric_plateau_finish, self._open_subtasks()),
-                    completed=True,
-                    verdict="grounded",
-                ),
-                iteration=turn.iteration,
-            )
         # loop-guard escalation. The notice in _turn_notices is advisory; if
         # the worker keeps issuing the same call past loop_guard_kill_threshold,
         # terminate the run before it burns the rest of the budget circling.
