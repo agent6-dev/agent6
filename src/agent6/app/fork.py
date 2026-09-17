@@ -322,7 +322,7 @@ def _plan_fork(
         # the SAME preset-resolved config or `sessions show` reports a model the forked
         # run never uses.
         cfg = load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config
-        recorded = sm.models.driver if sm.models.driver_from_flag else None
+        recorded = sm.models.replay_driver
         route = ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
         cfg = session_config(
             cfg.with_model_route(session_kind(src_mode).role, route) if route else cfg,

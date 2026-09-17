@@ -57,6 +57,13 @@ class ModelsBrief(BaseModel):
     # resume that sets none replays it, as a flag-selected preset is replayed.
     driver_from_flag: bool = False
 
+    @property
+    def replay_driver(self) -> ModelBrief | None:
+        """The driver a resumed or forked leg without its own `--model` must
+        re-apply: only a flag-selected one (the preset's rule,
+        `WorkflowStamp.replay_preset`); None re-resolves from the config."""
+        return self.driver if self.driver_from_flag else None
+
 
 class PolicyStamp(BaseModel):
     """How the run was launched: the policy facts an operator wants to see

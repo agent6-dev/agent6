@@ -316,11 +316,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         manifest = read_manifest(layout.session_dir)
         # The route a `--model` set on the run replays unless this resume sets
         # its own, the rule a flag-selected preset follows.
-        recorded = manifest.models.driver
+        recorded = manifest.models.replay_driver
         route: str | ModelRoute | None = model or (
-            ModelRoute(recorded.provider, recorded.model)
-            if manifest.models.driver_from_flag and recorded is not None
-            else None
+            ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
         )
         mode = manifest.session_mode()
     except ManifestError as exc:
