@@ -1778,7 +1778,7 @@ class Workflow:
                 self.curator.set_cursor(SetCursorIntent(id=current_id))
             except (CuratorError, OSError, ValidationError) as exc:  # advisory; never fatal
                 self._log(f"LOOP: cursor advance skipped: {exc}")
-        self._tell(conversation, stuck_on_task(state, current_id, nodes[current_id]))
+        self._tell(conversation, stuck_on_task(state, current_id, nodes[current_id], nodes))
         if current_id == state.focus.surfaced_task_id:
             return  # already surfaced; the banner survives tier-1 elision
         node = nodes[current_id]

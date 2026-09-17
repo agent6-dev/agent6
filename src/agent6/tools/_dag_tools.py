@@ -11,10 +11,11 @@ from agent6.graph.curator import GraphCurator
 from agent6.graph.models import (
     AddDependencyIntent,
     AddSubtaskIntent,
+    TaskNode,
     TaskNodeDraft,
     UpdateStatusIntent,
 )
-from agent6.graph.order import tree_order
+from agent6.graph.order import is_focusable_subtask, tree_order
 from agent6.tools.errors import ToolError
 from agent6.tools.results import (
     AddTaskResult,
@@ -92,7 +93,23 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     if node is None:
         raise ToolError("update_task: pass status and/or depends_on")
     return UpdateTaskResult(
-        id=node.id, status=node.status, title=node.title, depends_on=tuple(node.depends_on)
+        id=node.id,
+        status=node.status,
+        title=node.title,
+        depends_on=tuple(node.depends_on),
+        note=_claim_note(curator, node) if args.status == "in_progress" else "",
+    )
+
+
+def _claim_note(curator: GraphCurator, node: TaskNode) -> str:
+    """What marking a task in_progress did to the focus: the harness works the
+    claimed task next while it stays workable, so a claim the frontier cannot
+    honour says so instead of quietly doing nothing."""
+    if is_focusable_subtask(curator.nodes(), node):
+        return "claimed: this is the task the harness works next"
+    return (
+        "not workable yet (a dependency, an open child, or a standing task), so the"
+        " harness works its own next pick instead"
     )
 
 

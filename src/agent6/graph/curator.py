@@ -359,6 +359,13 @@ class GraphCurator:
                 }
             )
             updated = self._write(updated)
+            if intent.new_status == "in_progress":
+                # Claiming a task is how the worker picks what it works next:
+                # the frontier honours the cursor while it points at a
+                # focusable subtask, so the claim holds until that task is
+                # settled. The harness marks the task it has just focused,
+                # where this writes the cursor it was about to write anyway.
+                write_cursor(self._layout, updated.id)
             self._post_mutation(UpdateStatusJournal(id=updated.id, new_status=intent.new_status))
             return updated
 

@@ -39,6 +39,24 @@ def unresolved_children(nodes: dict[str, TaskNode], node: TaskNode) -> list[str]
     ]
 
 
+def ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
+    """An open SUBTASK whose dependencies are satisfied and whose children are
+    all settled (a decomposed parent is not itself a unit of work)."""
+    if node.parent_id is None or node.status not in OPEN_STATUSES:
+        return False
+    for dep in node.depends_on:
+        d = nodes.get(dep)
+        if d is None or d.status not in DONE_STATUSES:
+            return False
+    return not has_open_child(nodes, node)
+
+
+def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
+    """A ready ORDINARY subtask. Standing tasks are excluded here: they are
+    the fallback, selected only when nothing ordinary is ready."""
+    return not node.standing and ready_subtask(nodes, node)
+
+
 def tree_order(nodes: dict[str, TaskNode]) -> list[str]:
     """Every node id, depth-first through `children`, roots in id order.
 

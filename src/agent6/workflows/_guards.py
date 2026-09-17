@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.graph.models import TaskNode
+from agent6.graph.order import is_focusable_subtask
 from agent6.tools.results import ExecResult, ToolResult
 from agent6.workflows._advice import (
     Advisor,
@@ -29,7 +30,11 @@ from agent6.workflows._advice import (
     TurnContext,
     with_open_tasks,
 )
-from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER, stuck_on_task_nudge
+from agent6.workflows._dag_focus import (
+    STUCK_NUDGE_MAX,
+    STUCK_ON_TASK_AFTER,
+    stuck_on_task_nudge,
+)
 from agent6.workflows._metric import metric_plateau
 from agent6.workflows._nudges import (
     LOOP_GUARD_NOTICE_AFTER,
@@ -482,15 +487,22 @@ class FocusGuard:
         self.turns_on_task = 0
         self.last_focus_id = None
 
-    def note(self, current_id: str, *, standing: bool) -> bool:
+    def note(self, current_id: str, *, standing: bool, progressed: bool = True) -> bool:
         """Count a turn on *current_id*; True when the stuck nudge fires (every
         `STUCK_ON_TASK_AFTER` turns, `STUCK_NUDGE_MAX` times per task, never
-        for a standing task)."""
+        for a standing task).
+
+        A focus change only resets the count when something was concluded.
+        Switching away from a task that is still open (the worker claiming
+        another with update_task) keeps counting, so a worker that moves from
+        task to task without finishing one is caught like one that grinds on a
+        single task."""
         if current_id != self.last_focus_id:
-            self.turns_on_task = 0
             self.last_focus_id = current_id
-            self.stuck_nudges_fired = 0
-            return False
+            if progressed:
+                self.turns_on_task = 0
+                self.stuck_nudges_fired = 0
+                return False
         self.turns_on_task += 1
         if (
             self.turns_on_task % STUCK_ON_TASK_AFTER == 0
@@ -502,15 +514,23 @@ class FocusGuard:
         return False
 
 
-def stuck_on_task(state: LoopState, current_id: str, node: TaskNode) -> Nudge | None:
+def stuck_on_task(
+    state: LoopState, current_id: str, node: TaskNode, nodes: dict[str, TaskNode]
+) -> Nudge | None:
     """The anti-grind nudge, judged each turn the focus phase names a current
-    task: every `STUCK_ON_TASK_AFTER` consecutive turns on the same task with
-    no forward motion (a cursor advance, a task marked done or decomposed
-    changes the focus and resets the count; compaction does not), up to
-    `STUCK_NUDGE_MAX` times per task, it offers to split, pass or skip the
-    task. A standing task is exempt: it never concludes."""
+    task: every `STUCK_ON_TASK_AFTER` turns with nothing concluded (a task
+    marked done or decomposed resets the count; compaction and a claim of
+    another open task do not), up to `STUCK_NUDGE_MAX` times per task, it
+    offers to split, pass or skip the task. A standing task is exempt: it
+    never concludes."""
     focus = state.focus
-    if not focus.note(current_id, standing=node.standing):
+    # Forward motion is the previous focus ceasing to be workable: passed,
+    # retired, or decomposed into children that are the work now. A previous
+    # focus still sitting there ready means the worker claimed another task
+    # instead of concluding this one, which the counter keeps counting.
+    previous = nodes.get(focus.last_focus_id or "")
+    progressed = previous is None or not is_focusable_subtask(nodes, previous)
+    if not focus.note(current_id, standing=node.standing, progressed=progressed):
         return None
     return Nudge(
         stuck_on_task_nudge(current_id, node, focus.turns_on_task),

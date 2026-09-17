@@ -134,7 +134,7 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 
 - **Written by:** graph/{curator, storage}
 - **Read by:** graph/{order, replay}, tools/{_dag_tools, schema}, workflows/{_advice, _compactor, _dag_focus, _guards, _parallel_dispatch, loop}
-- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (14 test files exercise it)
+- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (17 test files exercise it)
 
 ## Run/machine wire snapshot
 
@@ -146,4 +146,4 @@ Pure event-fold: list[event_dict] -> SessionState.
 
 - **Written by:** viewmodel/{machine_state, state}
 - **Read by:** ui/cli/{_interact, _repl, _steer_menu, _task_tree, answer_cmd}, ui/tui/{app, composer, conversation, dashboard, logview, modals, prompts}, ui/web/{_sse, actions, model}, viewmodel/{__init__, snapshot}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (8 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (9 test files exercise it)

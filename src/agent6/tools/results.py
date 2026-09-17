@@ -486,14 +486,20 @@ class UpdateTaskResult(ToolResult):
     status: str
     title: str
     depends_on: tuple[str, ...] = ()
+    # What the graph did beyond the status, when it did: marking a task
+    # in_progress claims it as the focus.
+    note: str = ""
 
     def to_wire(self) -> dict[str, Any]:
-        return {
+        wire: dict[str, Any] = {
             "id": self.id,
             "status": self.status,
             "title": self.title,
             "depends_on": list(self.depends_on),
         }
+        if self.note:
+            wire["note"] = self.note
+        return wire
 
     def summary(self) -> str:
         return f"{self.status}: {str(self.title)[:60]}"

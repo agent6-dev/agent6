@@ -17,7 +17,7 @@ work to surface.
 from __future__ import annotations
 
 from agent6.graph.models import TaskNode
-from agent6.graph.order import DONE_STATUSES, OPEN_STATUSES, has_open_child, tree_order
+from agent6.graph.order import is_focusable_subtask, ready_subtask, tree_order
 
 # Tool names that mutate the task DAG; after one runs the loop re-snapshots the
 # graph (graph.update event) so a live viewer can render the worker's task
@@ -36,24 +36,6 @@ DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task"})
 # model making normal progress (which changes focus well before this) never sees it.
 STUCK_ON_TASK_AFTER = 20
 STUCK_NUDGE_MAX = 3
-
-
-def ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
-    """An open SUBTASK whose dependencies are satisfied and whose children are
-    all settled (a decomposed parent is not itself a unit of work)."""
-    if node.parent_id is None or node.status not in OPEN_STATUSES:
-        return False
-    for dep in node.depends_on:
-        d = nodes.get(dep)
-        if d is None or d.status not in DONE_STATUSES:
-            return False
-    return not has_open_child(nodes, node)
-
-
-def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
-    """A ready ORDINARY subtask. Standing tasks are excluded here: they are
-    the fallback, selected only when nothing ordinary is ready."""
-    return not node.standing and ready_subtask(nodes, node)
 
 
 def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
