@@ -2249,9 +2249,10 @@ def test_routes_payload_lists_every_route_and_the_modes_default(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`/api/routes?mode=&preset=` feeds the composer's model box: every
-    provider/model the config can run and the one the mode runs under the
-    preset (a preset that swaps the worker model moves the default); an
-    unknown mode is refused."""
+    provider/model the config can run and the label naming the one the mode
+    runs under the preset (a preset that swaps the worker model moves the
+    default); an unknown mode is refused. The hub names the config's preset,
+    and a run's resume row what a resume without flags runs under."""
     _srv, port = server
     xdg = tmp_path / "xdg-config"
     (xdg / "agent6").mkdir(parents=True)
@@ -2265,13 +2266,30 @@ def test_routes_payload_lists_every_route_and_the_modes_default(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     status, body, _ = _get(port, "/api/routes?mode=run&preset=")
     assert status == 200
-    assert json.loads(body) == {"routes": ["o/m", "o/p"], "default": "o/m"}
+    assert json.loads(body) == {"routes": ["o/m", "o/p"], "default_label": "o/m (config default)"}
     status, body, _ = _get(port, "/api/routes?mode=plan&preset=fast")
-    assert json.loads(body)["default"] == "o/p"
+    assert json.loads(body)["default_label"] == "o/p (config default)"
     status, body, _ = _get(port, "/api/routes?mode=run&preset=fast")
-    assert json.loads(body)["default"] == "o/f"
+    assert json.loads(body)["default_label"] == "o/f (config default)"
     status, body, _ = _get(port, "/api/routes?mode=machine")
     assert (status, json.loads(body)["error"]) == (422, "unknown mode 'machine'")
+    status, body, _ = _get(port, "/api/hub")
+    assert json.loads(body)["preset_default_label"] == "none (config default)"
+    _make_run(tmp_path, "run-r", [{"type": "session.start", "mode": "run", "user_task": "r"}])
+    manifest = state_dir(tmp_path) / "sessions" / "runs" / "run-r" / "manifest.json"
+    manifest.write_text(json.dumps({"session_id": "run-r", "mode": "run"}), encoding="utf-8")
+    status, body, _ = _get(port, "/api/session/run-r/resume_defaults?preset=fast")
+    assert (status, json.loads(body)) == (
+        200,
+        {"preset_label": "none (config default)", "model_label": "o/f (config default)"},
+    )
+    pinned = {"workflow": {"preset": "fast", "preset_from_flag": True}}
+    manifest.write_text(json.dumps({"session_id": "run-r", "mode": "run", **pinned}))
+    status, body, _ = _get(port, "/api/session/run-r/resume_defaults")
+    assert json.loads(body) == {
+        "preset_label": "fast (as recorded)",
+        "model_label": "o/f (config default)",
+    }
 
 
 def test_new_work_carries_the_picked_model(

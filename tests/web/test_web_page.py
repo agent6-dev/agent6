@@ -17,7 +17,7 @@ from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "eac6ad50e141f329aaccf8a23f5775cfeb2aa36f0d856018c9f63bce9622b2ac"
+PAGE_SHA256 = "6f08cb4c33b2cf42c472bd200c898453c40a13d5bffcca9566446a8446636462"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -66,8 +66,20 @@ def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
     cleared = refresh.index("model.value = '';")
     awaited = refresh.index("await getJSON('/api/routes")
     stale_guard = refresh.index("if (request !== routeRequest) return;")
-    populated = refresh.index("model.value = d.default || '';")
+    populated = refresh.index("el('option', null, d.default_label)")
     assert request < cleared < awaited < stale_guard < populated
+
+
+def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:
+    """The resume row's first options name what a resume without flags runs
+    under: asked when the row appears and on a preset pick, and a late answer
+    never replaces a newer one."""
+    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    composer = client[client.index("function makeComposer") :]
+    assert "'/resume_defaults?preset=' + encodeURIComponent(preset.value)" in composer
+    assert "if (request !== labelRequest) return;" in composer
+    assert "preset.onchange = relabel;" in composer
+    assert "if (finished && !rowShown) relabel();" in composer
 
 
 def test_parallel_model_completion_handles_each_whole_fragment() -> None:

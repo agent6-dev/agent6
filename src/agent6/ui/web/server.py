@@ -617,7 +617,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"values": model.config_suggestions(self.cwd, key, self.config_path)})
             return
         parts = path.strip("/").split("/")
-        # /api/session/<id>[/conversation|/restate|/events]
+        # /api/session/<id>[/conversation|/restate|/diff|/resume_defaults|/events]
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "session":
             self._route_session(parts[2], parts[3] if len(parts) > 3 else "")
             return
@@ -708,6 +708,13 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": why}, status=422)
             else:
                 self._send_json(payload)
+        elif sub == "resume_defaults":
+            preset = (parse_qs(urlsplit(self.path).query).get("preset") or [""])[0]
+            self._send_json(
+                model.resume_defaults_payload(
+                    self.cwd, self.config_path, session_dir, preset=preset
+                )
+            )
         elif sub == "events":
             self._sse_session(session_dir)
         else:

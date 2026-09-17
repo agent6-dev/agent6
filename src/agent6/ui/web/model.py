@@ -22,7 +22,14 @@ from agent6.config import ConfigError
 from agent6.config.io import format_toml_value
 from agent6.config.layer import available_preset_names, load_effective
 from agent6.git_ops import EMPTY_TREE, commit_diff, diff_range, run_ref_tips
-from agent6.models.choices import available_routes, config_value_choices, default_route
+from agent6.models.choices import (
+    available_routes,
+    config_value_choices,
+    default_label,
+    default_preset,
+    default_route,
+    resume_defaults,
+)
 from agent6.paths import state_dir
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import (
@@ -197,25 +204,36 @@ def routes_payload(
     cwd: Path, config_path: Path | None, *, mode: str, preset: str
 ) -> dict[str, Any]:
     """The new-work composer's model picker: every `provider/model` the
-    config can run, and the one a session of *mode* under *preset* runs by
-    default (the lists the TUI picker shows)."""
+    config can run, and the label of its no-flag entry, naming the route a
+    session of *mode* under *preset* runs by default (what the TUI picker
+    shows)."""
     return {
         "routes": available_routes(cwd, config_path),
-        "default": default_route(cwd, config_path, mode, preset),
+        "default_label": default_label(default_route(cwd, config_path, mode, preset)),
     }
+
+
+def resume_defaults_payload(
+    cwd: Path, config_path: Path | None, session_dir: Path, *, preset: str
+) -> dict[str, str]:
+    """The resume row's no-flag labels, the model's under a picked *preset*
+    (`models.choices.resume_defaults`)."""
+    preset_label, model_label = resume_defaults(cwd, config_path, session_dir, preset=preset)
+    return {"preset_label": preset_label, "model_label": model_label}
 
 
 def hub_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
     """The hub: every run, machine instance, and machine-create draft, plus the
     authored machine files (to run or create from), summarized for the listing,
     and the presets the new-work composer offers (the same list `--preset`
-    resolves against)."""
+    resolves against) with the label of its no-flag entry."""
     return {
         "sessions": _list_sessions(cwd),
         "machines": _list_machines(cwd),
         "machine_files": list_machine_files(cwd),
         "drafts": _list_drafts(cwd),
         "presets": available_preset_names(cwd, config_path),
+        "preset_default_label": default_label(default_preset(cwd, config_path)),
     }
 
 

@@ -239,13 +239,13 @@ function attachParallelSuggest(task, root) {
 
 // The new-work composer, docked at the bottom of the Sessions page: task text +
 // mode + preset + model + Start (Enter starts, Shift+Enter newline). `presets`
-// is the hub payload's list; the first option keeps the config's own preset.
-// The model box lists every provider/model the config can run (/api/routes)
-// and shows the one the config resolves for the mode and preset, re-resolved
-// on every change of either; a pick rides as --model, the last layer over the
-// config, and "config default" (no route resolved, or chosen) leaves the
-// model to the config.
-function newWorkDock(presets) {
+// and `presetDefault` are the hub payload's list and the label of its first
+// option, which keeps the config's own preset. The model box lists every
+// provider/model the config can run (/api/routes) under a first option that
+// names the route the config resolves for the mode and preset, relabelled and
+// picked again on every change of either. Each first option adds no flag;
+// any other pick rides as --preset / --model.
+function newWorkDock(presets, presetDefault) {
   const root = el('div', 'composer dock dock-fixed');
   const row = el('div', 'row');
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
@@ -253,7 +253,7 @@ function newWorkDock(presets) {
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
   const preset = el('select', 'field'); preset.style.flex = '0 0 auto'; preset.style.width = 'auto';
   preset.title = 'config preset for this run (a preset cannot change mid-run)';
-  const dflt = el('option', null, 'preset: config default'); dflt.value = ''; preset.appendChild(dflt);
+  const dflt = el('option', null, presetDefault); dflt.value = ''; preset.appendChild(dflt);
   for (const p of (presets || [])) { const o = el('option', null, p); o.value = p; preset.appendChild(o); }
   const model = el('select', 'field'); model.style.flex = '0 0 auto'; model.style.width = 'auto';
   model.title = 'the model for this run, over every config layer; re-resolved whenever the mode or preset changes';
@@ -270,12 +270,10 @@ function newWorkDock(presets) {
       return;
     }
     if (request !== routeRequest) return;
-    const routes = (d.routes || []).slice();
-    if (d.default && !routes.includes(d.default)) routes.unshift(d.default);
     model.textContent = '';
-    const none = el('option', null, 'model: config default'); none.value = ''; model.appendChild(none);
-    for (const r of routes) { const o = el('option', null, r); o.value = r; model.appendChild(o); }
-    model.value = d.default || '';
+    const none = el('option', null, d.default_label); none.value = ''; model.appendChild(none);
+    for (const r of (d.routes || [])) { const o = el('option', null, r); o.value = r; model.appendChild(o); }
+    model.value = '';
     model.disabled = false;
   };
   mode.onchange = fillRoutes; preset.onchange = fillRoutes; fillRoutes();
@@ -475,7 +473,7 @@ async function renderHub(focus, gen) {
   };
   let lists = build(data);
   view.appendChild(lists);
-  view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets));
+  view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label));
   // Without this the hub paints once, so a lane that finished, failed or
   // crashed keeps its "running" pill until a manual reload; clicking the
   // already-active tab does not re-enter route(). Refresh the lists only: a
@@ -840,17 +838,31 @@ function makeComposer(id) {
   // The preset and the model the next leg continues under (`agent6 resume
   // --preset`, `--model`): both change only between legs, so the row shows
   // only while the composer resumes, filled once from the lists the config
-  // editor and the new-work composer offer. Blank = as the run recorded.
+  // editor and the new-work composer offer. Each first option adds no flag and
+  // names what the resume runs under (/resume_defaults), asked again whenever
+  // the row appears (the last leg may have pinned one) and on a preset pick.
   const presetRow = el('div', 'row');
   presetRow.style.display = 'none';
   presetRow.appendChild(el('span', 'sub muted', 'continue under preset'));
   const preset = el('select', 'field'); preset.style.flex = '0 0 auto'; preset.style.width = 'auto';
-  const asRecorded = el('option', null, '(as recorded)'); asRecorded.value = ''; preset.appendChild(asRecorded);
+  const presetDefault = el('option', null, '…'); presetDefault.value = ''; preset.appendChild(presetDefault);
   presetRow.appendChild(preset);
   presetRow.appendChild(el('span', 'sub muted', 'model'));
   const model = el('select', 'field'); model.style.flex = '0 0 auto'; model.style.width = 'auto';
-  const modelRecorded = el('option', null, '(as recorded)'); modelRecorded.value = ''; model.appendChild(modelRecorded);
+  const modelDefault = el('option', null, '…'); modelDefault.value = ''; model.appendChild(modelDefault);
   presetRow.appendChild(model);
+  let labelRequest = 0;
+  const relabel = () => {
+    const request = ++labelRequest;
+    getJSON('/api/session/' + encodeURIComponent(id) + '/resume_defaults?preset=' + encodeURIComponent(preset.value))
+      .then(d => {
+        if (request !== labelRequest) return;
+        presetDefault.textContent = d.preset_label;
+        modelDefault.textContent = d.model_label;
+      }).catch(() => {});
+  };
+  preset.onchange = relabel;
+  let rowShown = false;
   let presetsFilled = false;
   const fillPresets = () => {
     if (presetsFilled) return;
@@ -873,6 +885,8 @@ function makeComposer(id) {
     ta.disabled = busy;
     presetRow.style.display = finished ? '' : 'none';
     if (finished) fillPresets();
+    if (finished && !rowShown) relabel();
+    rowShown = !!finished;
     if (busy) { hint.textContent = 'resuming…'; return; }
     if (finished && needsWork) {
       ta.placeholder = 'what should it do next…';
