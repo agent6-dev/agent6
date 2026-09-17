@@ -314,6 +314,12 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 24px); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
+  /* Config: the three columns stack, the setting over its value and source, so
+     a long key wraps at a dot instead of mid-word in a sliver of a column. */
+  .cfg tr { display: grid; grid-template-columns: 1fr auto; border-bottom: 1px solid var(--border); }
+  .cfg th:first-child, .cfg td.key { grid-column: 1 / -1; }
+  .cfg .key { word-break: normal; overflow-wrap: anywhere; }
+  .cfg td, .cfg th { border-bottom: 0; padding: 4px 8px; }
 }
 
 /* --- desktop: a persistent left nav rail (>=781px); phones keep the bottom
