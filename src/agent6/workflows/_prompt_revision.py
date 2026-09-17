@@ -15,7 +15,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from agent6.providers import Provider
+from agent6.budget import BudgetExceeded
+from agent6.prompts.revision import PROMPT_REVISION_SYSTEM_PROMPT
+from agent6.providers import Provider, ProviderError
 from agent6.types import RepoSummary
 
 # One leading list marker ("- ", "* ", "1. ", "2) "). A charset lstrip would
@@ -126,3 +128,89 @@ def format_effective_task(raw_task: str, revision: PromptRevision) -> str:
             ]
         )
     return "\n\n".join(pieces)
+
+
+def revise_prompt(
+    settings: RevisionSettings,
+    user_task: str,
+    repo: RepoSummary,
+    *,
+    log: Callable[[str], None],
+    emit: Callable[..., None],
+) -> str:
+    """The task the worker gets: *user_task* as given, or its one-shot
+    revision by the reviser (`RevisionSettings.mode`), folded with the
+    original (`format_effective_task`); in interactive mode the operator
+    chooses. Raises `PromptRevisionError` when the reviser is missing or
+    fails, `PromptRevisionDeclined` when the operator quits the choice."""
+    if settings.mode == "off":
+        return user_task
+    if settings.reviser is None:
+        raise PromptRevisionError(
+            "prompt.revise_prompt is enabled but no reviser provider is wired"
+        )
+
+    context = format_prompt_revision_context(repo)
+    user_msg = f"RAW_TASK:\n{user_task}\n\nREPO_CONTEXT:\n{context}\n\nRewrite the raw task now."
+    log(f"LOOP: prompt revision ({settings.mode})")
+    emit("loop.prompt_revision.call", mode=settings.mode)
+    try:
+        resp = settings.reviser.call(
+            system=PROMPT_REVISION_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_msg}],
+            tools=[],
+            max_tokens=settings.max_tokens,
+            temperature=settings.temperature,
+        )
+    except (ProviderError, BudgetExceeded) as exc:
+        emit("loop.prompt_revision.failed", error=str(exc)[:200])
+        raise PromptRevisionError(str(exc)) from exc
+
+    revision = parse_prompt_revision(resp.text or "")
+    if not revision.revised_task:
+        emit("loop.prompt_revision.failed", error="empty revised task")
+        raise PromptRevisionError("reviser returned an empty task")
+
+    emit(
+        "loop.prompt_revision.result",
+        raw_chars=len(user_task),
+        revised_chars=len(revision.revised_task),
+        questions=len(revision.clarifying_questions),
+    )
+    log(
+        "PROMPT REVISION\n"
+        "--- original ---\n"
+        f"{clip_text(user_task, 4000)}\n"
+        "--- revised ---\n"
+        f"{clip_text(revision.revised_task, 6000)}"
+    )
+    if revision.clarifying_questions:
+        log(
+            "PROMPT REVISION QUESTIONS\n"
+            + "\n".join(f"- {q}" for q in revision.clarifying_questions)
+        )
+
+    if settings.mode == "interactive":
+        if settings.selector is None:
+            raise PromptRevisionError(
+                "prompt.revise_prompt='interactive' needs an interactive selector"
+            )
+        selected = settings.selector(
+            user_task,
+            revision.revised_task,
+            revision.clarifying_questions,
+        )
+        if selected is None or not selected.strip():
+            raise PromptRevisionDeclined("operator quit at the revise_prompt choice")
+        selected_task = selected.strip()
+        if selected_task == user_task.strip():
+            return user_task
+        return format_effective_task(
+            user_task,
+            PromptRevision(
+                revised_task=selected_task,
+                clarifying_questions=revision.clarifying_questions,
+            ),
+        )
+
+    return format_effective_task(user_task, revision)

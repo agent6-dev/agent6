@@ -45,7 +45,6 @@ from agent6.memory import index_text as memory_index_text
 from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
 from agent6.prompts.revision import (
-    PROMPT_REVISION_SYSTEM_PROMPT,
     pinned_block,
 )
 from agent6.providers import (
@@ -74,7 +73,6 @@ from agent6.tools.schema import (
     FinishSessionInput,
     ReadBackgroundInput,
 )
-from agent6.types import RepoSummary
 from agent6.verify_infer import infer_verify_command, read_agents_md
 from agent6.workflows._advice import (
     GuardSettings,
@@ -172,14 +170,10 @@ from agent6.workflows._parallel_dispatch import (
 )
 from agent6.workflows._prompt_blocks import build_system_prompt, initial_instructions
 from agent6.workflows._prompt_revision import (
-    PromptRevision,
     PromptRevisionDeclined,
     PromptRevisionError,
     RevisionSettings,
-    clip_text,
-    format_effective_task,
-    format_prompt_revision_context,
-    parse_prompt_revision,
+    revise_prompt,
 )
 from agent6.workflows._provider_call import (
     CallSettings,
@@ -422,7 +416,9 @@ class Workflow:
         )
 
         try:
-            effective_task = self._maybe_revise_prompt(user_task, repo)
+            effective_task = revise_prompt(
+                self.revision, user_task, repo, log=self._log, emit=self._emit
+            )
         except PromptRevisionError as exc:
             declined = isinstance(exc, PromptRevisionDeclined)
             end_reason: SessionEndReason = "steer_abort" if declined else "prompt_revision_failed"
@@ -2737,82 +2733,7 @@ class Workflow:
             return []
         return open_subtasks(self.curator.nodes())
 
-    # ---- prompt revision and provider retry ------------------------------------
-
-    def _maybe_revise_prompt(self, user_task: str, repo: RepoSummary) -> str:
-        if self.revision.mode == "off":
-            return user_task
-        if self.revision.reviser is None:
-            raise PromptRevisionError(
-                "prompt.revise_prompt is enabled but no reviser provider is wired"
-            )
-
-        context = format_prompt_revision_context(repo)
-        user_msg = (
-            f"RAW_TASK:\n{user_task}\n\nREPO_CONTEXT:\n{context}\n\nRewrite the raw task now."
-        )
-        self._log(f"LOOP: prompt revision ({self.revision.mode})")
-        self._emit("loop.prompt_revision.call", mode=self.revision.mode)
-        try:
-            resp = self.revision.reviser.call(
-                system=PROMPT_REVISION_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_msg}],
-                tools=[],
-                max_tokens=self.revision.max_tokens,
-                temperature=self.revision.temperature,
-            )
-        except (ProviderError, BudgetExceeded) as exc:
-            self._emit("loop.prompt_revision.failed", error=str(exc)[:200])
-            raise PromptRevisionError(str(exc)) from exc
-
-        revision = parse_prompt_revision(resp.text or "")
-        if not revision.revised_task:
-            self._emit("loop.prompt_revision.failed", error="empty revised task")
-            raise PromptRevisionError("reviser returned an empty task")
-
-        self._emit(
-            "loop.prompt_revision.result",
-            raw_chars=len(user_task),
-            revised_chars=len(revision.revised_task),
-            questions=len(revision.clarifying_questions),
-        )
-        self._log(
-            "PROMPT REVISION\n"
-            "--- original ---\n"
-            f"{clip_text(user_task, 4000)}\n"
-            "--- revised ---\n"
-            f"{clip_text(revision.revised_task, 6000)}"
-        )
-        if revision.clarifying_questions:
-            self._log(
-                "PROMPT REVISION QUESTIONS\n"
-                + "\n".join(f"- {q}" for q in revision.clarifying_questions)
-            )
-
-        if self.revision.mode == "interactive":
-            if self.revision.selector is None:
-                raise PromptRevisionError(
-                    "prompt.revise_prompt='interactive' needs an interactive selector"
-                )
-            selected = self.revision.selector(
-                user_task,
-                revision.revised_task,
-                revision.clarifying_questions,
-            )
-            if selected is None or not selected.strip():
-                raise PromptRevisionDeclined("operator quit at the revise_prompt choice")
-            selected_task = selected.strip()
-            if selected_task == user_task.strip():
-                return user_task
-            return format_effective_task(
-                user_task,
-                PromptRevision(
-                    revised_task=selected_task,
-                    clarifying_questions=revision.clarifying_questions,
-                ),
-            )
-
-        return format_effective_task(user_task, revision)
+    # ---- the run's helpers ---------------------------------------------------
 
     @cached_property
     def compactor(self) -> Compactor:
