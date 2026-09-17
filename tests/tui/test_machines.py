@@ -944,7 +944,7 @@ def test_machines_page_lists_instances_with_their_files(
             ran = next(r for r in rows if r[0] == "tiny")
             assert ran[1] == "ok" and ran[2] == "done" and ran[5] == "valid"
             never = next(r for r in rows if r[0] == "other")
-            assert never[1] == "" and never[2] == "-" and never[3] == "-"
+            assert never[1] == "-" and never[2] == "-" and never[3] == "-"
 
     asyncio.run(scenario())
 

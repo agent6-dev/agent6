@@ -1483,9 +1483,9 @@ def test_list_joins_instances_with_their_files_and_names_the_rest(
     tiny = next(line for line in lines if "tiny.asm.toml" in line)
     assert tiny.split()[2:] == ["ok", "done", "tiny", "valid", "tiny.asm.toml"]  # [2:]: the when
     waiter = next(line for line in lines if "waiter.asm.toml" in line)
-    assert waiter.split() == ["-", "-", "waiter_delayed", "valid", "waiter.asm.toml"]
+    assert waiter.split() == ["-", "-", "-", "waiter_delayed", "valid", "waiter.asm.toml"]
     broken = next(line for line in lines if "broken.asm.toml" in line)
-    assert broken.split() == ["-", "-", "-", "invalid", "broken.asm.toml"]
+    assert broken.split() == ["-", "-", "-", "-", "invalid", "broken.asm.toml"]
     # Two unparsable files (both named "-") keep two rows.
     assert any("broken2.asm.toml" in line for line in lines)
 

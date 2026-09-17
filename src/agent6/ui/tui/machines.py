@@ -727,7 +727,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
             status = (
                 Text(status_label(row.status, row.reason), style=status_style(row.status))
                 if row.status
-                else Text("")
+                else Text("-")  # a file no instance ran, like its empty state and updated cells
             )
             table.add_row(
                 Text(row.name),

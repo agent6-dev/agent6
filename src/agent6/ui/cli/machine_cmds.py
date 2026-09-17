@@ -85,7 +85,7 @@ def _cmd_machine_list() -> int:
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str, str]] = []
     for m in machines:
-        styled, plain = styled_status(m.status, m.reason, color=color) if m.status else ("", "")
+        styled, plain = styled_status(m.status, m.reason, color=color) if m.status else ("-", "-")
         rows.append(
             (
                 format_when(m.mtime) if m.mtime else "-",
