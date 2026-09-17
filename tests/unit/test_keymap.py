@@ -63,3 +63,36 @@ def test_the_web_describes_the_shared_keys_correctly() -> None:
     assert "the CLI's `x`" not in js
     deny_all = next(e for e in APPROVAL_ANSWERS if e.answer == "session-deny")
     assert f"`{deny_all.key}` at the CLI prompt" in js
+
+
+def test_the_keymap_and_the_bridge_agree_on_the_four_values() -> None:
+    """`record_answer` is the one place an answer's meaning is decided, and it
+    cannot read `ui.keymap` (the bridge sits below every front-end). So the two
+    are pinned together instead: the letters and the values stay one set."""
+    from pathlib import Path
+    from tempfile import mkdtemp
+
+    from agent6.sessions.ipc import record_answer, session_allow_set, session_deny_set
+
+    values = [entry.answer for entry in APPROVAL_ANSWERS]
+    assert values == ["yes", "session", "no", "session-deny"]
+
+    # Which answers grant this call, and which persist for the scope.
+    grants = {v for v in values if record_answer(Path(mkdtemp()), v, scope=None)}
+    assert grants == {"yes", "session"}
+    for entry in APPROVAL_ANSWERS:
+        d = Path(mkdtemp())
+        record_answer(d, entry.answer, scope="command")
+        persisted = session_allow_set(d, "command") or session_deny_set(d, "command")
+        assert persisted == entry.standing, entry.answer
+
+
+def test_an_unrecognised_answer_denies_and_persists_nothing() -> None:
+    from pathlib import Path
+    from tempfile import mkdtemp
+
+    from agent6.sessions.ipc import record_answer, session_allow_set, session_deny_set
+
+    d = Path(mkdtemp())
+    assert not record_answer(d, "truncated", scope="command")
+    assert not session_allow_set(d, "command") and not session_deny_set(d, "command")

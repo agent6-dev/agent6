@@ -126,14 +126,15 @@ def test_enter_submits_the_available_machine_composer_verb() -> None:
 
 
 def test_the_web_approval_box_offers_every_answer() -> None:
-    """`session-deny` is a first-class answer (the CLI's `x`, the TUI's "Deny
-    all", the endpoint's own Literal); the box offered three of the four."""
+    """The box offered three of the four. The answers come from `ui.keymap`, so
+    a fifth would fail here rather than quietly go unoffered."""
+    from agent6.ui.keymap import APPROVAL_ANSWERS
     from agent6.ui.web.page import CLIENT_JS as js
 
     start = js.index("for (const ap of")
     body = js[start : js.index("for (const q of", start)]
-    for answer in ("'yes'", "'no'", "'session'", "'session-deny'"):
-        assert f"send({answer})" in body, answer
+    for entry in APPROVAL_ANSWERS:
+        assert f"send('{entry.answer}')" in body, entry.answer
 
 
 def test_a_failure_toast_holds_until_it_is_dismissed() -> None:
