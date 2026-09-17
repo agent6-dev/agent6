@@ -20,8 +20,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from agent6.graph.models import TaskNode
 from agent6.tools.results import ExecResult, ToolResult
-from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
+from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER, stuck_on_task_nudge
 from agent6.workflows._finish_gates import with_open_tasks
 from agent6.workflows._metric import (
     METRIC_PLATEAU_PATIENCE,
@@ -670,6 +671,27 @@ class FocusGuard:
             self.stuck_nudges_fired += 1
             return True
         return False
+
+
+def stuck_on_task(state: LoopState, current_id: str, node: TaskNode) -> Nudge | None:
+    """The anti-grind nudge, judged each turn the focus phase names a current
+    task: every `STUCK_ON_TASK_AFTER` consecutive turns on the same task with
+    no forward motion (a cursor advance, a task marked done or decomposed
+    changes the focus and resets the count; compaction does not), up to
+    `STUCK_NUDGE_MAX` times per task, it offers to split, pass or skip the
+    task. A standing task is exempt: it never concludes."""
+    focus = state.focus
+    if not focus.note(current_id, standing=node.standing):
+        return None
+    return Nudge(
+        stuck_on_task_nudge(current_id, node, focus.turns_on_task),
+        event="loop.task.stuck_nudge",
+        fields={"task_id": current_id, "turns": focus.turns_on_task, "n": focus.stuck_nudges_fired},
+        log=(
+            f"LOOP: stuck-on-task nudge #{focus.stuck_nudges_fired} for {current_id}"
+            f" after {focus.turns_on_task} turns"
+        ),
+    )
 
 
 @dataclass(slots=True)

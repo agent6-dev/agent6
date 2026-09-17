@@ -110,7 +110,6 @@ from agent6.workflows._dag_focus import (
     current_task_id,
     initial_dag_hint,
     ready_subtask,
-    stuck_on_task_nudge,
 )
 from agent6.workflows._finish_gates import (
     REVIEW_REJECTED,
@@ -128,6 +127,7 @@ from agent6.workflows._guards import (
     Nudge,
     Stop,
     TurnContext,
+    stuck_on_task,
     tool_error_ladder,
     unreachable_tool,
 )
@@ -2250,14 +2250,18 @@ class Workflow:
         most recent message, not the banner."""
         self._maybe_surface_current_task(conversation, state)
         for advisor in BEFORE_CALL:
-            nudge = advisor(state, ctx)
-            if nudge is None:
-                continue
-            conversation.notice(nudge.text)
-            if nudge.event:
-                self._emit(nudge.event, **nudge.fields)
-            if nudge.log:
-                self._log(nudge.log)
+            self._tell(conversation, advisor(state, ctx))
+
+    def _tell(self, conversation: Conversation, nudge: Nudge | None) -> None:
+        """Apply a before-call advisor's answer: the notice joins the
+        conversation, its event is emitted, its line logged."""
+        if nudge is None:
+            return
+        conversation.notice(nudge.text)
+        if nudge.event:
+            self._emit(nudge.event, **nudge.fields)
+        if nudge.log:
+            self._log(nudge.log)
 
     def _maybe_surface_current_task(self, conversation: Conversation, state: LoopState) -> None:
         """Surface-current-task: keep the worker on ONE task at a time.
@@ -2270,10 +2274,7 @@ class Workflow:
         marks the current task passed, the next turn's frontier recompute moves
         focus to the next ready task -- the cursor walks the frontier on its own.
 
-        Also runs the anti-grind counter: when the focus task holds for
-        `STUCK_ON_TASK_AFTER` turns with no forward motion, fire one nudge
-        offering to split / pass / skip it. A standing task is exempt: it is
-        worked for as long as nothing else is ready, and never concludes.
+        Also runs the anti-grind counter (`stuck_on_task`).
 
         Run mode only; no curator or no open subtask is a no-op (the finish-gate
         covers the empty-frontier finish). A curator mutation that fails logs
@@ -2294,25 +2295,7 @@ class Workflow:
                 self.curator.set_cursor(SetCursorIntent(id=current_id))
             except (CuratorError, OSError, ValidationError) as exc:  # advisory; never fatal
                 self._log(f"LOOP: cursor advance skipped: {exc}")
-        # Anti-grind: count consecutive turns on the same focus task. Any forward
-        # motion (cursor advance, a task marked done, or a decompose that moves the
-        # cursor to a new subtask) changes current_id and resets the count; survives
-        # compaction (last_focus_id is not reset there). Re-fire every
-        # STUCK_ON_TASK_AFTER turns, capped at STUCK_NUDGE_MAX per task.
-        if state.focus.note(current_id, standing=nodes[current_id].standing):
-            conversation.notice(
-                stuck_on_task_nudge(current_id, nodes[current_id], state.focus.turns_on_task)
-            )
-            self._log(
-                f"LOOP: stuck-on-task nudge #{state.focus.stuck_nudges_fired} for"
-                f" {current_id} after {state.focus.turns_on_task} turns"
-            )
-            self._emit(
-                "loop.task.stuck_nudge",
-                task_id=current_id,
-                turns=state.focus.turns_on_task,
-                n=state.focus.stuck_nudges_fired,
-            )
+        self._tell(conversation, stuck_on_task(state, current_id, nodes[current_id]))
         if current_id == state.focus.surfaced_task_id:
             return  # already surfaced; the banner survives tier-1 elision
         node = nodes[current_id]
