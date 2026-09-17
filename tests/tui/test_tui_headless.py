@@ -1893,3 +1893,29 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
             assert "idle" not in top
 
     asyncio.run(scenario())
+
+
+def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: Path) -> None:
+    """A long model id pushed "failed · max iterations" onto a line of its
+    own, split mid-phrase. The status leads line 1 and every header line ends
+    in an ellipsis before it would wrap."""
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _show_dashboard(pilot)
+            model = "moonshotai/kimi-k2.7-code-20260612-with-a-very-long-suffix"
+            app._handle_event(_ev(type="session.start", user_task="t " * 80, mode="run"))
+            app._handle_event(_ev(type="role.call", role="worker", model=model, provider="p"))
+            app._handle_event(_ev(type="session.end", all_passed=False, reason="max_iterations"))
+            app._tick()
+            await pilot.pause()
+            await pilot.pause()
+            top = app._dash.query_one("#top", Static)
+            lines = str(top.render()).split("\n")
+            assert lines[0].startswith("agent6  failed · max iterations")
+            assert lines[1].startswith("role: worker / moonshotai/kimi")
+            assert all(len(line) <= top.content_size.width for line in lines)
+            assert lines[1].endswith("…")
+
+    asyncio.run(scenario())

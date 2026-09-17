@@ -616,14 +616,24 @@ class DashboardScreen(ScreenChrome, Screen[None]):
                 budget += f" (run {ds.budget.plan_consumed:g}/{ds.budget.plan_cap:g}pt)"
         pct = tui.context_pct()
         ctx = f"   ctx: {pct}%" if pct is not None else ""
-        self.query_one("#top", Static).update(
-            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{as_of}{ctx}"
-            f"   {finished}\n"
-            f"task: {escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))}"
+        # The status leads line 1, where the eye lands; the role, model and task
+        # share line 2. Every line ends in an ellipsis rather than wrap, so a long
+        # model id never pushes the status onto a line of its own.
+        status = f"{finished}   " if finished else ""
+        task = escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))
+        top = self.query_one("#top", Static)
+        header = Text.from_markup(
+            f"[b]agent6[/]  {status}{step}   cost: {cost}{budget}{as_of}{ctx}\n"
+            f"role: {escape(role_line)} · task: {task}"
             f"{escape(self._lineage_top())}{escape(self._branch_top())}"
             f"{escape(self._pins_top(s))}{escape(self._serving_top())}"
             f"{escape(self._compare_top())}"
         )
+        lines = header.split("\n")
+        if width := top.content_size.width:
+            for line in lines:
+                line.truncate(width, overflow="ellipsis")
+        top.update(Text("\n").join(lines))
 
         # Live reasoning / response pane. Built as rich Text so model output is
         # never parsed as markup.
