@@ -837,6 +837,8 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: Path) -> Non
             verify_retries=2,
             verify_command=(),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(root=repo, config=config, dispatcher=_Dispatcher(), per_step=False)
@@ -920,6 +922,8 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -994,6 +998,8 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -1104,6 +1110,8 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> N
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     logs: list[str] = []
@@ -1153,6 +1161,8 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: Path) -> None
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     provider = ProviderStub()
@@ -1333,6 +1343,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(
@@ -1385,6 +1396,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     # No steer callables: the Workflow's default steer_requested() is False, so the
@@ -1456,6 +1468,8 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -1514,6 +1528,8 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: Path
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     ev = _EventCapture()
@@ -1599,6 +1615,8 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
             verify_retries=2,
             verify_command=("true",),
             metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
         prompt=SimpleNamespace(decompose=False),
     )
@@ -1644,6 +1662,8 @@ def test_worker_max_tokens_starvation_backoff() -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         )
     )
     wf = _wf(config=metric_cfg)
@@ -1668,6 +1688,8 @@ def test_worker_max_tokens_starvation_backoff() -> None:
                 verify_retries=2,
                 verify_command=("true",),
                 metric=None,
+                verify_timeout_s=60.0,
+                verify_infer=True,
             ),
         )
     )
@@ -1727,6 +1749,8 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -1802,6 +1826,8 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -1886,6 +1912,8 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -1980,6 +2008,8 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2200,6 +2230,8 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2261,6 +2293,8 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -2342,6 +2376,8 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2389,6 +2425,8 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2452,6 +2490,8 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2539,6 +2579,8 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     # Fresh budget with huge ceilings -> fraction_remaining stays ~1.0, well
@@ -2611,6 +2653,8 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0, well above the final slice.
@@ -2671,6 +2715,8 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2744,6 +2790,8 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: Path) -> Non
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2855,6 +2903,8 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="maximize", pattern=r"SCORE:\s*([\d.]+)"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard
@@ -2997,6 +3047,8 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -3018,6 +3070,8 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -3039,6 +3093,8 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -4011,6 +4067,8 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
         prompt=SimpleNamespace(decompose=False),
     )
@@ -4107,6 +4165,8 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
             verify_retries=2,
             verify_command=("true",),
             metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
         prompt=SimpleNamespace(decompose=False),
     )
@@ -4802,6 +4862,8 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
         prompt=SimpleNamespace(decompose=False),
     )
@@ -4915,6 +4977,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(
@@ -4955,6 +5018,8 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("pytest", "-q"),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -4964,6 +5029,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     assert load_session_snapshot(snap).verify_command == ("pytest", "-q")
 
     config.workflow.verify_command = ()  # gateless run -> stored as [] -> loads as ()
+    wf = _wf(resume_state_path=snap, config=config)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
@@ -5001,6 +5067,8 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
             verify_retries=2,
             verify_command=(),
             metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config, logger=logs.append)
@@ -5114,6 +5182,8 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=(),
             metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5215,6 +5285,8 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5283,6 +5355,8 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5361,6 +5435,8 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5413,6 +5489,8 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5473,6 +5551,8 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5547,6 +5627,8 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5605,6 +5687,8 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5683,6 +5767,8 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5771,6 +5857,8 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5835,6 +5923,8 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5870,7 +5960,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
     st = _state()
     turn = _turn(iteration=1)
     # dead verify: instant, "No module named pytest"
-    wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(
         st,
         turn,
         ExecResult(
@@ -5887,7 +5977,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
 
     # a second dead verify does not re-warn
     turn2 = _turn(iteration=2)
-    wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(
         st,
         turn2,
         ExecResult(
@@ -5910,7 +6000,7 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
     st = _state()
     turn = _turn(iteration=1)
     # a real test failure: took real time, ordinary assertion output
-    wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(
         st,
         turn,
         ExecResult(
@@ -5962,6 +6052,8 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6023,6 +6115,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
             verify_command=(),  # GATELESS
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -6086,6 +6179,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -6151,6 +6245,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: Path) -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -6217,6 +6312,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -6332,7 +6428,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
             original_task="t",
         )
     assert dispatcher.adopted is not None  # the dispatcher gates run_verify now
-    assert tuple(wf.config.workflow.verify_command) == dispatcher.adopted
+    assert wf.gate.command == dispatcher.adopted
     assert provider.adoption_notices >= 1  # the gate flip was said to the model
     assert result.completed is True
     # The worker then idled without ever running the adopted verify; the
@@ -6461,6 +6557,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(
@@ -6518,6 +6615,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(
@@ -6656,6 +6754,8 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -7301,7 +7401,12 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            verify_when="never", verify_retries=2, verify_command=("true",), metric=None
+            verify_when="never",
+            verify_retries=2,
+            verify_command=("true",),
+            metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -7478,7 +7583,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
     st = _state()
     st.verify.adopted = argv
     turn = _turn(iteration=4)
-    wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(
         st,
         turn,
         ExecResult(
@@ -7489,7 +7594,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
             exec_failed=False,
         ),
     )
-    assert wf.config.workflow.verify_command == ()
+    assert wf.gate.command == ()
     dispatcher.drop_verify_command.assert_called_once()
     assert st.verify.adopted == () and argv in st.verify.unadoptable
     texts = [it.text for it in turn.tool_results if isinstance(it, Notice)]
@@ -7513,7 +7618,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
     )
     st2 = _state()
     turn2 = _turn(iteration=2)
-    wf2._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+    wf2.gate.note_result(
         st2,
         turn2,
         ExecResult(
@@ -8119,6 +8224,8 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -8200,6 +8307,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: Pat
             verify_command=("true",),
             verify_infer=False,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(

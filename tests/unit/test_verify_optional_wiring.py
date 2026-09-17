@@ -173,15 +173,22 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> 
     from agent6.workflows.loop import LoopState, Workflow
 
     wf = Workflow.__new__(Workflow)
+    wf.chain = RunChain(tmp_path)
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        workflow=SimpleNamespace(verify_command=("pytest", "-q"))
+        workflow=SimpleNamespace(
+            verify_command=("pytest", "-q"),
+            verify_when="finish",
+            verify_retries=2,
+            verify_timeout_s=60.0,
+            verify_infer=True,
+        )
     )
     wf.dispatcher = MagicMock()
     wf.dispatcher.command_policy.return_value = "no"  # denied mid-run
     state = MagicMock(spec=LoopState)
     state.verify = VerifyVerdict(last_ok=False, edited_since=False)
 
-    assert wf._tree_is_verify_green(state) is False  # pyright: ignore[reportPrivateUsage]
+    assert wf.gate.tree_green(state.verify) is False
 
 
 def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: Path) -> None:
@@ -714,9 +721,9 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> Non
         logger=lambda _line: None,
     )
     turn = TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    wf._maybe_adopt_verify(MagicMock(), turn)  # pyright: ignore[reportPrivateUsage]
+    wf.gate.maybe_adopt(MagicMock(), turn)
     dispatcher.adopt_verify_command.assert_not_called()
-    assert wf.config.workflow.verify_command == ()
+    assert wf.gate.command == ()
 
 
 def test_prompt_says_nothing_commits_under_commit_per_step_off(tmp_path: Path) -> None:

@@ -29,7 +29,6 @@ from agent6.directive import DirectiveError, Segment, parse_directive, parse_pin
 from agent6.git_ops import (
     GitError,
     commit_diff,
-    tree_diff_paths,
 )
 from agent6.git_ops import status as git_status
 from agent6.graph.curator import CuratorError, GraphCurator
@@ -73,7 +72,6 @@ from agent6.tools.schema import (
     FinishSessionInput,
     ReadBackgroundInput,
 )
-from agent6.verify_infer import infer_verify_command, read_agents_md
 from agent6.workflows._advice import (
     GuardSettings,
     Nudge,
@@ -136,25 +134,12 @@ from agent6.workflows._metric import (
     metric_goal,
     metric_plateau_summary,
 )
-from agent6.workflows._nearest_tests import (
-    diff_changed_paths,
-    is_bare_pytest,
-    nearest_test_paths,
-)
 from agent6.workflows._nudges import (
-    BASELINE_RED_NOTICE,
     PLAN_ON_DISK_HEADER,
-    VERIFY_BROKEN_NUDGE,
-    VERIFY_UNADOPTED_NOTICE,
     ending_question,
-    is_test_path,
     standing_fruitless_nudge,
     standing_resume_nudge,
-    test_only_green_notice,
     tool_error_signature,
-    unrunnable_signature,
-    verify_did_not_run,
-    verify_failure_signature,
 )
 from agent6.workflows._panel import (
     review_notice,
@@ -190,7 +175,6 @@ from agent6.workflows._session_state import (
     SessionEndReason,
     SessionResult,
     SessionSnapshot,
-    Verification,
     clear_turn_marker,
     load_session_snapshot,
     write_turn_marker,
@@ -200,13 +184,7 @@ from agent6.workflows._toolset import (
     build_readonly_review_tools,
     tool_definitions,
 )
-from agent6.workflows._verify_gate import (
-    finish_red_notice,
-    gate_withheld_notice,
-    harness_verify_due,
-    harness_verify_notice,
-    scoped_verify_notice,
-)
+from agent6.workflows._verify_gate import EXIT_TIMEOUT, VerifyGate, finish_red_notice
 from agent6.workflows.subrun import (
     SubrunError,
 )
@@ -461,7 +439,7 @@ class Workflow:
         instructions = initial_instructions(
             self.mode,
             self.config.sandbox.run_commands,
-            has_gate=self._gate_present(denied=False),
+            has_gate=self.gate.present(denied=False),
         )
         initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
         conversation = Conversation()
@@ -523,7 +501,7 @@ class Workflow:
         # worker run a command nothing checks. A gate the leg dropped because
         # commands are withheld is no swap: no command can run, that one
         # included.
-        gate = tuple(self.config.workflow.verify_command)
+        gate = tuple(self.gate.command)
         withheld = (
             not gate and bool(snapshot.verify_command) and self.dispatcher.command_policy() == "no"
         )
@@ -995,118 +973,11 @@ class Workflow:
                 )
             )
         # The gate run the harness adds to the turn, after the model's calls.
-        return self._turn_harness_verify(state, turn)
-
-    # A jailed command that hit its timeout, per sandbox.jail's contract.
-    _EXIT_TIMEOUT = 124
-
-    def _judged_the_base_commit(self, state: LoopState, result: ExecResult) -> bool:
-        """True when this verify judged the commit the RUN started from.
-
-        "The model has not edited yet" is the wrong test: every reason an
-        operator resumes -- a budget stop, an iteration cap, a provider error --
-        commits the leg's work first, so leg two opens on a clean tree whose
-        HEAD already carries leg one's breakage, and reading that as the base
-        would tell the worker its own failures are inherited. `/parallel` does
-        the same by merging lane commits into the workspace.
-
-        So: HEAD must still BE the base commit, the tree must be clean, and the
-        gate must have actually produced a verdict -- a runner that was absent
-        (instant exit) or timed out (124) never judged anything, and recording
-        either would excuse every real failure for the rest of the run.
-
-        A run that has already made the gate GREEN is answerable for a later
-        red: it demonstrably could pass.
-
-        Fails CLOSED. Every other user of `RunChain.dirty` treats an
-        unreadable git as "assume clean"; here that would be a false
-        exoneration, so an unreadable git records nothing.
-        """
-        if (
-            state.verify.ever_passed
-            or result.exec_failed
-            or result.returncode == self._EXIT_TIMEOUT
-            or verify_did_not_run(result.stdout, result.stderr, result.duration_s)
-            or not self.chain.base_sha
-        ):
-            return False
         try:
-            status = git_status(self.chain.root, exclude=self.chain.untracked_at_start)
-        except (GitError, OSError):
-            return False
-        return status.is_clean and status.head_sha == self.chain.base_sha
-
-    def _note_verify_result(self, state: LoopState, turn: TurnState, result: ExecResult) -> None:
-        """Verify bookkeeping: pass/fail flags, the grounding tail, and the
-        no-progress streak (consecutive fails sharing one signature)."""
-        rc = result.returncode
-        verdict = state.verify
-        if rc == 0:
-            turn.verify_just_passed = True
-            if verdict.last_ok is False:
-                turn.verify_flipped_green = True
-                if paths := self._test_only_paths_since_red(verdict.red_tree):
-                    turn.tool_results.append(Notice(test_only_green_notice(paths)))
-                    self._log(f"  verify flipped green over test-only edits: {' '.join(paths)}")
-                    self._emit(
-                        "loop.test_only_green.notice", iteration=turn.iteration, paths=list(paths)
-                    )
-            # This verify validated the current tree; any earlier
-            # edit is now covered.
-            turn.edit_since_verify_pass = False
-        else:
-            turn.verify_just_failed = True
-            if verdict.adopted and (
-                why := unrunnable_signature(verdict.adopted, rc, result.stdout, result.stderr)
-            ):
-                # An ADOPTED gate that cannot run here: un-adopt (the run is
-                # gateless again, the argv never re-adopted) and say so. A
-                # configured gate stays a loud red.
-                cmd = " ".join(verdict.adopted)
-                verdict.unadoptable.add(verdict.adopted)
-                verdict.adopted = ()
-                # The gate produced no verdict and no longer exists: the turn
-                # is not "verify failed" (an on_verify_fail panel and the
-                # checkpoint logic key on it).
-                turn.verify_just_failed = False
-                self.config = self.config.with_verify_command(())
-                self.dispatcher.drop_verify_command()
-                self._log(f"LOOP: verify un-adopted ({why}): {cmd}")
-                self._emit(
-                    "loop.verify_inferred",
-                    command=[],
-                    source="unadopted",
-                    adopted_at=turn.iteration,
-                )
-                turn.tool_results.append(Notice(VERIFY_UNADOPTED_NOTICE.format(cmd=cmd, why=why)))
-                return
-            # A verify that exited instantly without running any tests (runner
-            # absent) is a broken verify, not a real failure: flag it once so
-            # the model does not "fix" working code or finish unchecked.
-            if not verdict.broken_warned and verify_did_not_run(
-                result.stdout, result.stderr, result.duration_s
-            ):
-                verdict.broken_warned = True
-                turn.tool_results.append(Notice(VERIFY_BROKEN_NUDGE))
-                self._emit("loop.verify_broken.nudge", iteration=turn.iteration)
-        if verdict.baseline_ok is None and self._judged_the_base_commit(state, result):
-            # This verify judged the run's BASE commit, so it IS the
-            # baseline: no second gate run is needed to learn the same answer.
-            verdict.baseline_ok = rc == 0
-            self._emit("loop.baseline", ok=rc == 0, iteration=turn.iteration)
-            if rc != 0:
-                turn.tool_results.append(Notice(BASELINE_RED_NOTICE))
-        tail = f"{result.stdout}\n{result.stderr}"
-        verdict.last_tail = tail.strip()[-2000:]
-        if rc == 0:
-            verdict.note_pass()
-            state.no_progress.nudges_used = 0
-            return
-        verdict.note_fail(verify_failure_signature(result.stdout, result.stderr))
-        verdict.red_tree = self.chain.tree_sha()
-        if verdict.fail_streak == 1:
-            # A NEW stuck point: the nudge allowance starts over with it.
-            state.no_progress.nudges_used = 0
+            self.gate.harness_verify(state, turn)
+        except OperatorCommandUnexecutable as exc:
+            return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
+        return None
 
     def _tree_before_command(self, name: str) -> str:
         """The worktree's content sha ahead of a child-process tool's call,
@@ -1154,16 +1025,16 @@ class Workflow:
             # runs nothing and the timeout is the verdict.
             if not (
                 self.mode == "run"
-                and self.config.workflow.verify_when != "never"
-                and result.returncode == self._EXIT_TIMEOUT
+                and self.gate.when != "never"
+                and result.returncode == EXIT_TIMEOUT
                 and not state.verify.scoped
-                and self._scoped_gate_followup(state, turn) is not None
+                and self.gate.scoped_followup(state, turn) is not None
             ):
                 if result.returncode == 0:
                     # The model's call runs the full argv: a green there is a
                     # full pass, so later harness gates run full again.
                     state.verify.scoped = False
-                self._note_verify_result(state, turn, result)
+                self.gate.note_result(state, turn, result)
         elif name == "run_metric_command" and isinstance(result, MetricResult):
             turn.metric_sampled = True
             # The tree this reading covers: without the stamp the auto path
@@ -1294,161 +1165,6 @@ class Workflow:
                         error=str(exc),
                     )
 
-    def _maybe_adopt_verify(self, state: LoopState, turn: TurnState) -> None:
-        """A gateless run that commits has just materialized project files the
-        preflight inference never saw (an empty repo infers nothing, then the
-        run creates a pyproject two minutes later and finishes ungated). Re-run
-        the DETERMINISTIC inference tiers (an AGENTS.md fence, repo signals;
-        never the LLM tier) at each gateless commit until one lands, then adopt
-        it for the rest of the run: the loop's gates, the dispatcher's
-        run_verify_command, and the resume snapshot all read the adopted
-        command. The model is told, so the gate flip is never silent; first
-        adoption wins (the config gaining a command ends the gateless branch).
-        `verify_infer = false` pins gatelessness: no adoption either."""
-        if not self.config.workflow.verify_infer:
-            return
-        inferred = infer_verify_command(
-            self.chain.root, read_agents_md(self.chain.root), llm_call=None
-        )
-        if inferred is None or inferred.argv in state.verify.unadoptable:
-            return
-        if not self.dispatcher.adopt_verify_command(inferred.argv):
-            # An inferred runner the jail cannot execute: adopting it would
-            # turn the honest settle into an unexecutable-verify abort. Stay
-            # gateless; re-inferred (and re-declined) at the next commit.
-            self._log(f"LOOP: verify inference declined; {inferred.argv[0]} not on the jail PATH")
-            return
-        self.config = self.config.with_verify_command(inferred.argv)
-        state.verify.adopted = inferred.argv
-        cmd = " ".join(inferred.argv)
-        self._log(f"LOOP: verify adopted from {inferred.source}: {cmd}")
-        self._emit(
-            "loop.verify_inferred",
-            command=list(inferred.argv),
-            source=inferred.source,
-            adopted_at=turn.iteration,
-        )
-        turn.tool_results.append(
-            Notice(
-                "[harness] The repo now has a recognizable project, so a verify"
-                f" command was adopted and gates the rest of this run: `{cmd}`."
-                " Run run_verify_command to check your work."
-            )
-        )
-
-    def _may_run_gate(self, *, denied: bool) -> bool:
-        """Whether anyone may run a verify command in this run: `run_commands =
-        "no"` withholds it from the harness as from the model, and so does a
-        denied gate (`denied`: an ask answered no, or the unattended
-        auto-deny)."""
-        return self.dispatcher.command_policy() != "no" and not denied
-
-    def _gate_present(self, *, denied: bool) -> bool:
-        """Whether a verify gate can judge this run's steps: a command is
-        configured (or adopted) and someone may run it. The one answer behind
-        the harness gate, the per-step commit, the nudges, the verdict and the
-        prompt's commit rule, so none of them can disagree."""
-        return bool(self.config.workflow.verify_command) and self._may_run_gate(denied=denied)
-
-    def _turn_harness_verify(
-        self, state: LoopState, turn: TurnState, *, ending: bool = False
-    ) -> SessionResult | None:
-        """Run the gate the harness owes this turn (`[workflow].verify_when`):
-        after an editing turn under `step`, and when the run is ending (a
-        finish_session, or `ending`: an end the harness declares) over a tree
-        no green run covers under `step` or `finish`. The model's own
-        run_verify_command this turn already judged the tree, so nothing runs
-        on top of it. `run_commands = "no"` withholds the gate from the
-        harness as it does from the model, and a DENIED gate (ask: a human's
-        no, or the unattended auto-deny) is withheld for the rest of the run
-        the same way. An unexecutable operator command
-        ends the run as it does on the tool path."""
-        why = harness_verify_due(
-            when=self.config.workflow.verify_when,
-            gate_present=self.mode == "run" and self._gate_present(denied=state.verify.denied),
-            # The verdict the run holds over the tree AS IT STANDS -- this
-            # turn's own verify or a standing one nothing has edited since.
-            # A red tree nothing touched is not re-judged (the finish reports
-            # the red), and its one red is counted once, not twice.
-            tree_judged=state.verify.judged_and_untouched,
-            changed_this_turn=turn.edit_since_verify_pass,
-            finishing=ending
-            or (turn.finish_signal is not None and turn.finish_kind == "finish_session"),
-        )
-        if why is None:
-            return None
-        self._log(f"LOOP: harness verify ({why}) at iter {turn.iteration}")
-        self._emit("loop.verify_harness", why=why, iteration=turn.iteration)
-        try:
-            scope = self._gate_scope_paths() if state.verify.scoped else ()
-            result = self.dispatcher.run_verify(extra_argv=scope)
-        except ToolDenied as exc:
-            state.verify.denied = True
-            turn.tool_results.append(Notice(gate_withheld_notice(f"[harness verify] {why}", exc)))
-            return None
-        except ToolError as exc:
-            turn.tool_results.append(Notice(f"[harness verify] {why}: not run: {exc}"))
-            return None
-        except OperatorCommandUnexecutable as exc:
-            return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
-        if (
-            result.returncode == self._EXIT_TIMEOUT
-            and not state.verify.scoped
-            and self._scoped_gate_followup(state, turn) is not None
-        ):
-            return None
-        self._note_verify_result(state, turn, result)
-        notice = (
-            scoped_verify_notice(
-                result, timeout_s=self.config.workflow.verify_timeout_s, paths=scope
-            )
-            if scope
-            else harness_verify_notice(result, why)
-        )
-        turn.tool_results.append(Notice(notice))
-        return None
-
-    def _gate_scope_paths(self) -> tuple[str, ...]:
-        """The scoped-gate selection: tests nearest the run's cumulative diff.
-        Empty unless the gate is a pytest argv naming no paths (the one shape
-        that takes appended test files as its selection), or when nothing
-        near the change exists to run."""
-        if not is_bare_pytest(tuple(self.config.workflow.verify_command)):
-            return ()
-        return nearest_test_paths(self.chain.root, diff_changed_paths(self.chain.diff_since_base()))
-
-    def _scoped_gate_followup(self, state: LoopState, turn: TurnState) -> ExecResult | None:
-        """The scoped re-run after a full gate overran its budget, wherever
-        that gate ran (the harness's own, or the model's run_verify_command):
-        the same command over the tests nearest the run's diff, noted and
-        noticed like any gate run. Arms `verdict.scoped`, so later harness
-        gates skip the doomed full run. None when the gate is not pytest or
-        nothing near the change exists to run."""
-        scope = self._gate_scope_paths()
-        if not scope:
-            return None
-        state.verify.scoped = True
-        self._log(f"LOOP: verify overran; gate scoped to {len(scope)} test files")
-        self._emit("loop.verify_scoped", paths=list(scope), iteration=turn.iteration)
-        try:
-            result = self.dispatcher.run_verify(extra_argv=scope)
-        except ToolDenied as exc:
-            state.verify.denied = True
-            turn.tool_results.append(Notice(gate_withheld_notice("[verify] scoped re-run", exc)))
-            return None
-        except ToolError as exc:
-            turn.tool_results.append(Notice(f"[verify] scoped re-run not run: {exc}"))
-            return None
-        self._note_verify_result(state, turn, result)
-        turn.tool_results.append(
-            Notice(
-                scoped_verify_notice(
-                    result, timeout_s=self.config.workflow.verify_timeout_s, paths=scope
-                )
-            )
-        )
-        return result
-
     def _turn_auto_commit_and_metric(
         self, state: LoopState, turn: TurnState
     ) -> SessionResult | None:
@@ -1467,14 +1183,13 @@ class Workflow:
 
         Returns a SessionResult for the REPL hook's "stop" directive or an
         unexecutable operator metric command; None otherwise."""
-        gateless = not self._gate_present(denied=state.verify.denied)
+        gateless = not self.gate.present(denied=state.verify.denied)
         # A step no gate judged commits as a checkpoint: every gateless step
         # (no command, or one nobody may run), and under `verify_when =
         # "finish"` every step the model did not verify itself (the gate
         # certifies the tree the run ends on).
         unjudged = gateless or (
-            self.config.workflow.verify_when == "finish"
-            and not (turn.verify_just_passed or turn.verify_just_failed)
+            self.gate.when == "finish" and not (turn.verify_just_passed or turn.verify_just_failed)
         )
         unjudged_changed = unjudged and (turn.edited or self.chain.dirty())
         verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
@@ -1506,12 +1221,8 @@ class Workflow:
             turn.committed = bool(sha)
             # Adoption fills an ABSENT command, for a worker who may run one:
             # a configured gate nobody may run stays the operator's.
-            if (
-                sha
-                and not self.config.workflow.verify_command
-                and self._may_run_gate(denied=state.verify.denied)
-            ):
-                self._maybe_adopt_verify(state, turn)
+            if sha and not self.gate.command and self.gate.may_run(denied=state.verify.denied):
+                self.gate.maybe_adopt(state, turn)
             if sha:
                 # Surface "what the worker just changed" to a live viewer
                 # (the TUI diff panel). Capped; best-effort.
@@ -1656,8 +1367,8 @@ class Workflow:
             iteration=iteration,
             leg_start=leg_start,
             guards=self.guards,
-            verify_when=self.config.workflow.verify_when,
-            verify_retries=self.config.workflow.verify_retries,
+            verify_when=self.gate.when,
+            verify_retries=self.gate.retries,
             finish_validator=self.finish_validator,
             metric=metric_goal(self.config.workflow.metric) is not None,
             memory_wired=self.state_dir is not None,
@@ -1667,10 +1378,10 @@ class Workflow:
             standing_absorb=lambda reason, iteration: self._standing_absorb(
                 state, reason=reason, iteration=iteration
             ),
-            gate_present=lambda: self._gate_present(denied=state.verify.denied),
-            verify_command=lambda: tuple(self.config.workflow.verify_command),
+            gate_present=lambda: self.gate.present(denied=state.verify.denied),
+            verify_command=lambda: self.gate.command,
             tree_sha=self.chain.tree_sha,
-            tree_green=lambda: self._tree_is_verify_green(state),
+            tree_green=lambda: self.gate.tree_green(state.verify),
             budget_remaining=self._budget_fraction_remaining,
             operator_wait_s=lambda: self.dispatcher.operator_wait_s,
             open_subtasks=self._open_subtasks,
@@ -1736,23 +1447,23 @@ class Workflow:
         unexecutable-command abort ends the run as it does on the tool path. The
         STANDING verdict decides the red: the harness gate is skipped over a
         tree a red already covers, so no verify fails on the ending turn itself."""
-        aborted = self._turn_harness_verify(state, turn, ending=True)
-        if aborted is not None:
-            return aborted
-        wf = self.config.workflow
+        try:
+            self.gate.harness_verify(state, turn, ending=True)
+        except OperatorCommandUnexecutable as exc:
+            return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         red_returned = state.verify.last_ok is False and red_gate_returns(
-            wf.verify_when,
-            wf.verify_retries,
+            self.gate.when,
+            self.gate.retries,
             state.verify,
             state.gates,
-            gate_present=self._gate_present(denied=state.verify.denied),
+            gate_present=self.gate.present(denied=state.verify.denied),
         )
         if red_returned:
             state.gates.verify_retries_used += 1
             turn.tool_results.append(
                 Notice(
                     finish_red_notice(
-                        used=state.gates.verify_retries_used, retries=wf.verify_retries
+                        used=state.gates.verify_retries_used, retries=self.gate.retries
                     )
                 )
             )
@@ -1895,7 +1606,7 @@ class Workflow:
             reason = finish_reason(
                 turn.finish_kind,
                 stale_gate=turn.finish_stale_gate,
-                tree_green=self._tree_is_verify_green(state),
+                tree_green=self.gate.tree_green(state.verify),
                 verify=state.verify,
             )
             self._check_decisions_recorded(state)
@@ -2240,24 +1951,6 @@ class Workflow:
             self._log(f"LOOP: failed to seed root task: {exc}")
             return None
 
-    def _test_only_paths_since_red(self, red_tree: str) -> tuple[str, ...]:
-        """Paths whose content differs between *red_tree* (the tree at the
-        last red verify) and the current tree, when every one is a test file;
-        () when either tree is unknown, nothing changed, or a non-test file did.
-        Asked of git, so a run_command edit counts like an apply_edit."""
-        if not red_tree:
-            return ()
-        tree = self.chain.tree_sha()
-        if not tree:
-            return ()
-        try:
-            paths = tree_diff_paths(self.chain.root, red_tree, tree)
-        except (GitError, OSError):
-            return ()
-        if paths and all(is_test_path(p) for p in paths):
-            return tuple(sorted(paths))
-        return ()
-
     def _dirty_tree_note(self) -> str:
         """Summary suffix naming an uncommitted worktree (`RunChain.dirty_note`),
         for a run; "" in the modes that never commit."""
@@ -2317,27 +2010,6 @@ class Workflow:
         if changed:
             self._emit_graph_snapshot()
 
-    def _verification(self, state: LoopState) -> Verification:
-        """The verify verdict for the SessionResult, grounded on what the gate
-        last saw of the tree. Not-green splits on that observation: "failed"
-        claims someone SAW a red gate, so a leg where no verify ran (or edits
-        landed after the last green) is "unverified" instead -- both exit 4,
-        but only one sends the operator chasing a red that never happened.
-
-        Only a run is gated: plan and ask finish clean whatever the tree looks
-        like (finish_planning and the ask answer both emit all_passed=True), and
-        preflight still INFERS a verify command for a plan that never runs one,
-        so grounding on the tree there would report failure against their own
-        events."""
-        if self.mode != "run":
-            return "not_applicable"
-        green = self._tree_is_verify_green(state)
-        if green is None:
-            return "not_applicable"
-        if green:
-            return "passed"
-        return "failed" if state.verify.last_ok is False else "unverified"
-
     def _finish(self, state: LoopState, end: End, *, iteration: int) -> SessionResult:
         """Record *end* (its checkpoint, the pending roots it passes, its
         `session.end`) and return the run's result.
@@ -2371,12 +2043,12 @@ class Workflow:
                 "session.end",
                 reason=end.reason,
                 iterations=iteration,
-                all_passed=self._tree_is_verify_green(state) if grounded else True,
+                all_passed=self.gate.tree_green(state.verify) if grounded else True,
                 scoped=state.verify.scoped if grounded else end.scoped,
             )
         return SessionResult(
             completed=end.completed,
-            verified=self._verification(state),
+            verified=self.gate.verification(state.verify),
             reason=end.reason,
             summary=end.summary,
             iterations=iteration,
@@ -2384,17 +2056,6 @@ class Workflow:
             finish_payload=end.finish_payload,
             stale_gate=end.stale_gate,
         )
-
-    def _tree_is_verify_green(self, state: LoopState) -> bool | None:
-        """Is the current tree in a verified-green state? None when no verify
-        command is configured (nothing to gate on); else True iff the last verify
-        was green AND nothing has been edited since, so a gate nobody may run
-        leaves the run unverified, as documented. Grounds both the honest
-        finish signal and the opt-in hard finish gate, so 'passed' can never
-        mean 'finished over a red or stale verify'."""
-        if not self.config.workflow.verify_command:
-            return None
-        return state.verify.green_and_untouched
 
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.
@@ -2527,7 +2188,7 @@ class Workflow:
             next_iteration=next_iteration,
             root_task_id=root_task_id,
             original_task=state.original_task,
-            verify_command=self.config.workflow.verify_command,
+            verify_command=self.gate.command,
             review_rejections_total=state.gates.review_total,
             verify_ever_passed=state.verify.ever_passed,
             verify_ever_failed=state.verify.ever_failed,
@@ -2734,6 +2395,24 @@ class Workflow:
         return open_subtasks(self.curator.nodes())
 
     # ---- the run's helpers ---------------------------------------------------
+
+    @cached_property
+    def gate(self) -> VerifyGate:
+        """The run's verify gate; its command is the config's until a gateless
+        run adopts one."""
+        wf = self.config.workflow
+        return VerifyGate(
+            command=tuple(wf.verify_command),
+            when=wf.verify_when,
+            retries=wf.verify_retries,
+            timeout_s=wf.verify_timeout_s,
+            infer=wf.verify_infer,
+            mode=self.mode,
+            chain=self.chain,
+            dispatcher=self.dispatcher,
+            log=self._log,
+            emit=self._emit,
+        )
 
     @cached_property
     def compactor(self) -> Compactor:

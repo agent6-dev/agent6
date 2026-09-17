@@ -33,7 +33,13 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> Workflow:
     object.__setattr__(wf, "_git_status", lambda: SimpleNamespace(is_clean=clean, head_sha=head))
     object.__setattr__(wf, "_emit", _quiet)
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        workflow=SimpleNamespace(verify_command=("pytest",))
+        workflow=SimpleNamespace(
+            verify_command=("pytest",),
+            verify_when="finish",
+            verify_retries=2,
+            verify_timeout_s=60.0,
+            verify_infer=True,
+        )
     )
     # Gate presence reads the command policy first: a gate someone may run.
     wf.dispatcher = SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
@@ -48,7 +54,7 @@ def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: Workflow) -> None:
     def _status(_root: object, **_kw: object) -> object:
         return wf._git_status()  # pyright: ignore[reportAttributeAccessIssue]
 
-    monkeypatch.setattr("agent6.workflows.loop.git_status", _status)
+    monkeypatch.setattr("agent6.workflows._verify_gate.git_status", _status)
 
 
 def _state() -> LoopState:
@@ -70,7 +76,7 @@ def test_a_verify_at_the_base_commit_is_the_baseline(
     state, turn = _state(), _turn()
     wf = _wf()
     _patch_git(monkeypatch, wf)
-    wf._note_verify_result(state, turn, _verify(rc))  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(state, turn, _verify(rc))
     assert state.verify.baseline_ok is (rc == 0)
 
 
@@ -80,7 +86,7 @@ def test_the_worker_is_told_when_it_inherited_a_red_gate(monkeypatch: pytest.Mon
     state, turn = _state(), _turn()
     wf = _wf()
     _patch_git(monkeypatch, wf)
-    wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(state, turn, _verify(1))
     assert any("already failing" in str(n) for n in turn.tool_results)
 
 
@@ -93,7 +99,7 @@ def test_a_leg_that_moved_past_the_base_claims_nothing(monkeypatch: pytest.Monke
     state, turn = _state(), _turn()
     wf = _wf(head="c" * 40)
     _patch_git(monkeypatch, wf)
-    wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(state, turn, _verify(1))
     assert state.verify.baseline_ok is None
 
 
@@ -101,7 +107,7 @@ def test_a_dirty_tree_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     state, turn = _state(), _turn()
     wf = _wf(clean=False)
     _patch_git(monkeypatch, wf)
-    wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(state, turn, _verify(1))
     assert state.verify.baseline_ok is None
 
 
@@ -114,8 +120,8 @@ def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> No
         raise GitError("index.lock held")
 
     state, turn = _state(), _turn()
-    monkeypatch.setattr("agent6.workflows.loop.git_status", _boom)
-    _wf()._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr("agent6.workflows._verify_gate.git_status", _boom)
+    _wf().gate.note_result(state, turn, _verify(1))
     assert state.verify.baseline_ok is None
 
 
@@ -126,7 +132,7 @@ def test_a_run_that_already_went_green_owns_its_later_red(monkeypatch: pytest.Mo
     state.verify.ever_passed = True
     wf = _wf()
     _patch_git(monkeypatch, wf)
-    wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(state, turn, _verify(1))
     assert state.verify.baseline_ok is None
 
 
@@ -151,13 +157,13 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
         wf.config.workflow.verify_retries,
         state.verify,
         state.gates,
-        gate_present=wf._gate_present(denied=state.verify.denied),  # pyright: ignore[reportPrivateUsage]
+        gate_present=wf.gate.present(denied=state.verify.denied),
     )
     assert (
         finish_reason(
             turn.finish_kind,
             stale_gate=turn.finish_stale_gate,
-            tree_green=wf._tree_is_verify_green(state),  # pyright: ignore[reportPrivateUsage]
+            tree_green=wf.gate.tree_green(state.verify),
             verify=state.verify,
         )
         == "finish_session"
@@ -186,7 +192,7 @@ def test_a_gate_that_never_produced_a_verdict_is_not_a_red_baseline(
     state, turn = _state(), _turn()
     wf = _wf()
     _patch_git(monkeypatch, wf)
-    wf._note_verify_result(state, turn, result)  # pyright: ignore[reportPrivateUsage]
+    wf.gate.note_result(state, turn, result)
     assert state.verify.baseline_ok is None
 
 
@@ -195,8 +201,16 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     "already red" -- and `finish_planning` would have been relabelled, turning
     a clean plan into "gate was already red"."""
     wf = Workflow.__new__(Workflow)
+    wf.chain = RunChain(Path("/nonexistent"))
+    wf.mode = "plan"
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        workflow=SimpleNamespace(verify_command=("pytest",))
+        workflow=SimpleNamespace(
+            verify_command=("pytest",),
+            verify_when="finish",
+            verify_retries=2,
+            verify_timeout_s=60.0,
+            verify_infer=True,
+        )
     )
     wf.dispatcher = SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
     state = _state()
@@ -208,7 +222,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
         finish_reason(
             turn.finish_kind,
             stale_gate=turn.finish_stale_gate,
-            tree_green=wf._tree_is_verify_green(state),  # pyright: ignore[reportPrivateUsage]
+            tree_green=wf.gate.tree_green(state.verify),
             verify=state.verify,
         )
         == "finish_planning"
@@ -248,7 +262,13 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     wf = _wf()
     wf.mode = "run"
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        workflow=SimpleNamespace(verify_command=("pytest",), verify_when="finish", verify_retries=2)
+        workflow=SimpleNamespace(
+            verify_command=("pytest",),
+            verify_when="finish",
+            verify_retries=2,
+            verify_timeout_s=60.0,
+            verify_infer=True,
+        )
     )
     state = LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False

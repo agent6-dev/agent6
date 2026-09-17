@@ -117,6 +117,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -151,6 +152,7 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: Path) -> 
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -241,6 +243,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -276,6 +279,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -369,6 +373,7 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
         ),
     )
     provider = MagicMock()
@@ -451,6 +456,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
         ),
     )
     provider = MagicMock()
@@ -532,6 +538,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
         ),
     )
     provider = MagicMock()
@@ -586,6 +593,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
         ),
     )
     provider = MagicMock()
@@ -656,6 +664,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
         ),
     )
     provider = MagicMock()
@@ -799,6 +808,8 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
             verify_retries=2,
             verify_command=("pytest", "-q"),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     emitted: list[tuple[str, dict[str, Any]]] = []
@@ -862,6 +873,8 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
             verify_retries=2,
             verify_command=("pytest",),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     head = sp.run(
@@ -905,6 +918,7 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
         ),
     )
     provider = MagicMock()
@@ -1140,6 +1154,8 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
             verify_retries=2,
             verify_command=("make", "check"),  # the operator pinned one since
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     provider = MagicMock()
@@ -1270,6 +1286,8 @@ def test_a_gate_withheld_between_legs_is_no_swap_for_the_worker(tmp_path: Path) 
             verify_retries=2,
             verify_command=(),  # dropped at leg start: commands are withheld
             metric=SimpleNamespace(goal="maximize"),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
     )
     provider = MagicMock()

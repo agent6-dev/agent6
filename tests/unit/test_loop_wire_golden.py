@@ -206,6 +206,8 @@ def _config() -> Any:
             verify_when="never",
             verify_retries=2,
             metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
         ),
         prompt=SimpleNamespace(decompose="off"),
     )

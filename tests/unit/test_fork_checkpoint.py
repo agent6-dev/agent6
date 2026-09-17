@@ -110,6 +110,8 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap, curator=curator)
@@ -151,6 +153,8 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
             verify_retries=2,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
@@ -188,6 +192,8 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -
             verify_retries=2,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
+            verify_timeout_s=60.0,
+            verify_infer=True,
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)

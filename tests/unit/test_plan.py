@@ -34,6 +34,7 @@ from agent6.tools.schema import (
 from agent6.types import RepoSummary
 from agent6.workflows import loop as loopmod
 from agent6.workflows._chain import RunChain
+from agent6.workflows._loop_state import LoopState
 from agent6.workflows._provider_call import CallSettings
 from agent6.workflows.loop import Workflow
 
@@ -712,7 +713,7 @@ def test_an_unreadable_plan_parks_the_leg(tmp_path: Path) -> None:
             logger=lambda _m: None,
         )
         got = wf._maybe_inject_plan(  # pyright: ignore[reportPrivateUsage]
-            MagicMock(), cast("Any", SimpleNamespace(plan_injected="", tool_calls=4)), iteration=3
+            MagicMock(), LoopState(original_task="t", tool_calls=4), iteration=3
         )
     finally:
         plan.chmod(0o600)
