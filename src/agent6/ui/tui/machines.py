@@ -72,6 +72,7 @@ from agent6.ui.tui.theme import (
     setup_theme,
     status_style,
 )
+from agent6.ui.tui.widgets import FORM_CSS
 from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
@@ -593,14 +594,18 @@ class CreateMachineModal(ModalScreen[str]):
     """Prompt for a natural-language task to author a machine. Result: the task text
     (or "" if cancelled)."""
 
-    DEFAULT_CSS = """
+    CSS = (
+        FORM_CSS
+        + """
     CreateMachineModal { align: center middle; }
     #create-box {
         width: 80%; max-width: 100; height: auto;
         border: round $accent; padding: 1 2; background: $surface;
     }
     #create-input { margin-top: 1; }
+    #create-hint { color: $text-muted; padding-top: 1; }
     """
+    )
 
     BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel", show=False)]
 
@@ -608,14 +613,14 @@ class CreateMachineModal(ModalScreen[str]):
         with Container(id="create-box"):
             text = Text()
             text.append("Create a machine\n\n", style="bold")
-            # Split at the clause boundary so a narrow terminal (the box is 80%
-            # wide) never wraps mid-phrase.
-            text.append("Describe the loop to author;\nagent6 drafts a .asm.toml in this repo.")
+            text.append("Describe the loop, and agent6 drafts a .asm.toml in this repo.")
             yield Static(text)
             yield Input(
                 placeholder="e.g. nightly: pull, run tests, open an issue on failure",
                 id="create-input",
+                classes="edit-input",
             )
+            yield Static("Enter drafts it · Esc cancels", id="create-hint")
 
     def on_mount(self) -> None:
         self.query_one("#create-input", Input).focus()
