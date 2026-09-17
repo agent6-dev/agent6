@@ -67,3 +67,22 @@ def test_no_flag_seeds_nothing(tmp_path: Path) -> None:
     wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
 
     assert not [n for n in curator.nodes().values() if n.standing]
+
+
+def test_a_retired_goal_leaves_room_for_a_new_one(tmp_path: Path) -> None:
+    """`/standing` retires the goal it replaces, and a retired goal keeps its
+    flag: "the run has a goal" has to mean a live one, or a later
+    `resume --standing` would find the dead one and seed nothing."""
+    from agent6.graph.models import UpdateStatusIntent
+
+    curator, root, wf = _seeded(tmp_path)
+    wf.standing_goal = "first goal"
+    wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
+    dead = next(n for n in curator.nodes().values() if n.standing)
+    curator.update_status(UpdateStatusIntent(id=dead.id, new_status="obsolete"))
+
+    wf.standing_goal = "second goal"
+    wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
+
+    live = [n.title for n in curator.nodes().values() if n.standing and n.status == "pending"]
+    assert live == ["second goal"]

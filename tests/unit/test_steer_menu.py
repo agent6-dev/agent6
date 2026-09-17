@@ -235,10 +235,12 @@ def test_pause_menu_prefixes_and_word_rule(
         json.dumps({"type": "session.start", "user_task": "t", "mode": "run"}) + "\n",
         encoding="utf-8",
     )
-    # /sta is uniquely /status; /st matches /status and /stop -> re-ask.
-    assert pause_menu(tmp_path, input_fn=_feed(["/sta", "/st", "/stop"])) == "abort"
+    # /stat is uniquely /status; shorter prefixes match /standing and /stop too,
+    # and an ambiguous one names every candidate rather than guessing.
+    assert pause_menu(tmp_path, input_fn=_feed(["/stat", "/st", "/stop"])) == "abort"
     printed = capsys.readouterr().out
-    assert "running" in printed  # /sta printed the status line
+    assert "running" in printed  # /stat printed the status line
+    assert "/status" in printed and "/standing" in printed and "/stop" in printed
     assert "ambiguous" in printed and "/status" in printed and "/stop" in printed
     # A multi-word line starting with "/" is a steer, never a command.
     assert pause_menu(tmp_path, input_fn=_feed(["/stop hammering the API"])) == (

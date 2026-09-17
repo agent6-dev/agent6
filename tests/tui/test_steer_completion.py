@@ -28,6 +28,7 @@ def test_rows_match_the_typed_prefix() -> None:
         "/undo",
         "/btw",
         "/task",
+        "/standing",
         "/now",
         "/stop",
         "/shells",

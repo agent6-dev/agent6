@@ -81,6 +81,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/parallel": STEER_COMMANDS["/parallel"],
     "/btw": STEER_COMMANDS["/btw"],
     "/task": STEER_COMMANDS["/task"],
+    "/standing": STEER_COMMANDS["/standing"],
     "/shells": STEER_COMMANDS["/shells"],
     "/restate": "restate the conversation since your last message",
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
@@ -275,7 +276,7 @@ def _run_info_command(
         print(restate(list(tail_events(session_dir / LOGS_NAME, follow=False))))
     elif cmd.startswith("/btw"):
         print(_start_btw(cmd, session_dir, btw_runner))
-    elif cmd.startswith("/task"):
+    elif cmd.startswith(("/task", "/standing")):
         # The one owner of what a composer line does; `/btw` stays local
         # because the menu spawns its side ask through a terminal-capable
         # runner rather than directly.

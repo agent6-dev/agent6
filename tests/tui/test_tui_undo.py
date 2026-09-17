@@ -397,7 +397,9 @@ def test_a_refused_btw_toasts_as_a_warning(tmp_path: Path, monkeypatch: pytest.M
     def controllable(_app: Agent6TUI) -> bool:
         return True
 
-    monkeypatch.setattr(app_mod, "open_btw", refused)
+    # The one directive owner spawns the side ask now, so the patch goes
+    # where the name is read.
+    monkeypatch.setattr("agent6.ui.directives.open_btw", refused)
     monkeypatch.setattr(Agent6TUI, "session_controllable", controllable)
     run = tmp_path / "sessions" / "runs" / "runny-two-BBBBBB"
     run.mkdir(parents=True)

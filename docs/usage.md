@@ -176,7 +176,8 @@ agent6 ask "how does the task-graph curator work?"
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
   - new work outranks it; it never passes, and only the operator retires it
-  - one per run, and the operator's: `resume --standing` and `fork --standing` give one to a session that started without it, a session that has one keeps it, and a model asking for its own gets an ordinary task
+  - one per run, and the operator's: `resume --standing` and `fork --standing` give one to a session that started without it, a session that has one keeps it, and the model's `add_task` has no such flag
+  - `/standing <text>` sets it on a live run from any composer, retiring the goal it replaces
   - budget, stop, and the iteration cap still end the run; `workflow.standing_patience` (default `-1`, never) ends it after that many re-entries in a row that ran no tool call
 - `--pin "<text>"`: an instruction re-shown verbatim after every compaction restart, so it survives compaction (`/pin` does the same mid-run)
 - `/task <text>` adds work to a live run's task graph instead of steering it: the turn in flight never sees it, and the run works it once its open tasks drain (every composer takes it, and `agent6 steer ID "/task <text>"` from a script or another machine)

@@ -55,7 +55,7 @@ from agent6.providers import (
     ToolDefinition,
     call_for_text,
 )
-from agent6.sessions.ipc import drain_queued_tasks, emit_session_start
+from agent6.sessions.ipc import drain_queued_tasks, emit_session_start, take_standing_goal
 from agent6.skills import ResolvedSkills, skill_command, skill_steer_payload
 from agent6.task_text import operator_task_text, task_headline
 from agent6.tools.dispatch import (
@@ -1666,6 +1666,7 @@ class Workflow:
         finish directive a low budget draws is the most recent message, not the
         banner."""
         self._drain_queued_tasks(state)
+        self._adopt_standing_goal(state)
         self._maybe_surface_current_task(conversation, state)
         for advisor in BEFORE_CALL:
             self._tell(conversation, advisor(state, ctx))
@@ -1715,6 +1716,41 @@ class Workflow:
             self._log(f"LOOP: operator queued task {node.id}: {title}")
             self._emit("loop.task.queued", id=node.id, title=title)
             self._emit_graph_snapshot()
+
+    def _adopt_standing_goal(self, state: LoopState) -> None:
+        """Take the goal `/standing` set, replacing any the run already has.
+
+        The operator is the only writer, and typing a goal means "this is the
+        goal now", so the one it replaces is retired rather than kept beside
+        it. Retired, not made ordinary: a goal reads as an activity ("keep
+        hunting for defects"), and an ordinary task of that shape is worked
+        once and marked passed."""
+        if self.curator is None or self.events is None or state.root_task_id is None:
+            return
+        goal = take_standing_goal(self.events.path.parent)
+        if goal is None:
+            return
+        try:
+            for node in self.curator.nodes().values():
+                if node.standing and node.status in OPEN_STATUSES:
+                    self.curator.update_status(
+                        UpdateStatusIntent(
+                            id=node.id, new_status="obsolete", note="replaced by the operator"
+                        )
+                    )
+                    self._log(f"LOOP: standing goal {node.id} retired for a new one")
+            node = self.curator.add_subtask(
+                AddSubtaskIntent(
+                    parent_id=state.root_task_id,
+                    draft=TaskNodeDraft(title=goal, standing=True, created_by="steering"),
+                )
+            )
+        except (CuratorError, OSError, ValidationError) as exc:
+            self._log(f"LOOP: standing goal not set: {exc}")
+            return
+        self._log(f"LOOP: standing goal set: {node.id}")
+        self._emit("loop.standing.set", id=node.id, title=goal)
+        self._emit_graph_snapshot()
 
     def _revised_queued_task(self, text: str) -> str:
         """A queued task through `[prompt].revise_prompt`, when the operator
@@ -2011,7 +2047,11 @@ class Workflow:
         goal = self.standing_goal.strip()
         if not goal or self.curator is None:
             return
-        if any(node.standing for node in self.curator.nodes().values()):
+        # A retired goal (replaced by `/standing`) keeps its flag and its place
+        # in the tree, so "has a goal" means a LIVE one.
+        if any(
+            node.standing and node.status in OPEN_STATUSES for node in self.curator.nodes().values()
+        ):
             self._log("LOOP: standing goal already set; --standing ignored")
             return
         try:

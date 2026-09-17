@@ -63,17 +63,17 @@ def test_tab_on_empty_line_previews_all_commands_and_cycles() -> None:
 
 def test_tab_prefix_filters_and_arrows_move_selection() -> None:
     line, out = _run([*_chars("/st"), "tab", "enter"])
-    assert line == "/status"
-    assert "/stop" in out  # both matches were previewed
+    assert line == "/status"  # the first match in menu order
+    assert "/standing" in out and "/stop" in out  # every match was previewed
     assert "/tasks" not in out  # non-matches stay out of the menu
     line, _ = _run([*_chars("/st"), "tab", "down", "enter"])
-    assert line == "/stop"
+    assert line == "/standing"
     line, _ = _run([*_chars("/st"), "tab", "down", "up", "enter"])
     assert line == "/status"
 
 
 def test_unique_prefix_completes_without_a_menu() -> None:
-    line, out = _run([*_chars("/sta"), "tab", "enter"])
+    line, out = _run([*_chars("/stat"), "tab", "enter"])
     assert line == "/status"
     assert "\x1b[7m" not in out  # no menu, no highlight
 

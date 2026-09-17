@@ -52,6 +52,7 @@ Before the first model call, the header names the role and model from the manife
 - the composer bar runs along the foot: type to steer, or to resume a finished run; the row above it picks the preset and model the next leg continues under (each first entry names what a resume without flags runs under)
 - `/` completes the steer directives; Ctrl-R searches the session's past messages
 - `/shells` lists the run's background commands and how they ended; `/restate` replays the conversation since your last message
+- `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had (`--standing` gives a leg one at its start)
 - `/task <text>` adds work to the run's task graph instead of steering it: the turn in flight never sees it, and the run works it once its open tasks drain (`agent6 steer ID "/task <text>"` does the same from a script or another machine)
 - the View menu maximizes the focused pane
 - on a terminal under 28 rows the dashboard shows one pane row at a time: the row holding focus, else the log and diff, with a summary line of the tool calls; Tab reaches the folded panes and unfolds them

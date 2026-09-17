@@ -120,6 +120,29 @@ def drain_queued_tasks(session_dir: Path) -> list[str]:
     return out
 
 
+# The goal `/standing` sets, for the run to adopt at its next turn. One slot,
+# not a queue: a second goal replaces the first, which is what the operator
+# typing it means.
+STANDING_FILE = "standing.goal"
+
+
+def set_standing_goal(session_dir: Path, goal: str) -> None:
+    """Ask the run to make *goal* its standing goal at its next turn."""
+    atomic_write(session_dir / STANDING_FILE, goal)
+
+
+def take_standing_goal(session_dir: Path) -> str | None:
+    """The goal the operator set, removed as it is read; None when none waits."""
+    path = session_dir / STANDING_FILE
+    try:
+        goal = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    with contextlib.suppress(OSError):
+        path.unlink()
+    return goal.strip() or None
+
+
 def _contained(directory: Path, filename: str, *, untrusted: str, what: str) -> Path:
     """`<directory>/<filename>`, refusing a name that is not one plain file.
 

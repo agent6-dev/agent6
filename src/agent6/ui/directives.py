@@ -2,11 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """What a composer line does when it is not a steer.
 
-`/btw`, `/task` and `/compact` act beside a live run: they open a side session,
-add to the task graph, or ask for a compaction, and none of them reaches the
-model as a message. Every entry point that takes a typed line routes it through
-here (the TUI composer, the web composer, the CLI pause menu, `agent6 steer`),
-so the same words do the same thing wherever they are typed.
+`/btw`, `/task`, `/standing` and `/compact` act beside a live run: they open a
+side session, add to or re-aim the task graph, or ask for a compaction, and
+none of them reaches the model as a message. Every entry point that takes a
+typed line routes it through here (the TUI composer, the web composer, the CLI
+pause menu, `agent6 steer`), so the same words do the same thing wherever they
+are typed.
 
 `/pin` and `/parallel` are not here: they are steers the loop parses itself.
 `/now` is not either: it is an ordinary steer carrying urgency, which each
@@ -19,8 +20,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.directive import parse_btw, parse_compact, parse_task
-from agent6.sessions.ipc import queue_task, request_compact
+from agent6.directive import parse_btw, parse_compact, parse_standing, parse_task
+from agent6.sessions.ipc import queue_task, request_compact, set_standing_goal
 from agent6.ui.btw import open_btw
 
 
@@ -44,6 +45,11 @@ def _task(session_dir: Path, text: str) -> tuple[bool, str]:
     return True, "task queued; it runs once the open tasks drain"
 
 
+def _standing(session_dir: Path, goal: str) -> tuple[bool, str]:
+    set_standing_goal(session_dir, goal)
+    return True, "standing goal set; it replaces any the run had, at the next step"
+
+
 def _compact(session_dir: Path, focus: str) -> tuple[bool, str]:
     if not request_compact(session_dir, focus=focus):
         return False, "could not write the compaction request"
@@ -53,6 +59,11 @@ def _compact(session_dir: Path, focus: str) -> tuple[bool, str]:
 _DIRECTIVES: tuple[_Directive, ...] = (
     _Directive(parse_btw, "/btw needs a question: /btw <question>", _btw),
     _Directive(parse_task, "/task needs the work: /task <text>", _task),
+    _Directive(
+        parse_standing,
+        "/standing needs the goal: /standing <text> (the task pane shows the current one)",
+        _standing,
+    ),
     _Directive(parse_compact, "", _compact),
 )
 
