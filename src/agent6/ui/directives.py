@@ -22,9 +22,25 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.directive import parse_btw, parse_compact, parse_now, parse_standing, parse_task
-from agent6.sessions.ipc import queue_task, request_compact, set_standing_goal, submit_steer
+from agent6.directive import (
+    parse_btw,
+    parse_compact,
+    parse_now,
+    parse_retire,
+    parse_standing,
+    parse_task,
+)
+from agent6.graph.storage import load_graph
+from agent6.sessions.ipc import (
+    queue_task,
+    request_compact,
+    retire_task,
+    set_standing_goal,
+    submit_steer,
+)
+from agent6.sessions.layout import layout_of
 from agent6.ui.btw import open_btw
+from agent6.viewmodel.format import SHORT_TASK_ID, short_task_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +68,26 @@ def _standing(session_dir: Path, goal: str) -> tuple[bool, str]:
     return True, "standing goal set; it replaces any the run had, at the next step"
 
 
+def _retire(session_dir: Path, named: str) -> tuple[bool, str]:
+    """Retire the task *named* names: its id, or the end of it that `/tasks`
+    prints. Ids made in one turn differ only in their last characters, so the
+    match is on the tail; an ambiguous one is refused by name, and a typo
+    matches nothing rather than a neighbour."""
+    wanted = named.strip().upper()
+    if len(wanted) < SHORT_TASK_ID:
+        return False, f"name at least {SHORT_TASK_ID} characters of the task id, as /tasks shows it"
+    nodes = load_graph(layout_of(session_dir))
+    matches = sorted(nid for nid in nodes if nid.endswith(wanted))
+    if not matches:
+        return False, f"no task here ends with {named!r}"
+    if len(matches) > 1:
+        shown = "  ".join(f"{short_task_id(nid)} {nodes[nid].title[:40]}" for nid in matches[:5])
+        return False, f"{named!r} names {len(matches)} tasks: {shown}"
+    task_id = matches[0]
+    retire_task(session_dir, task_id)
+    return True, f"retiring {nodes[task_id].title[:60]!r} at the next step"
+
+
 def _compact(session_dir: Path, focus: str) -> tuple[bool, str]:
     if not request_compact(session_dir, focus=focus):
         return False, "could not write the compaction request"
@@ -65,6 +101,11 @@ _DIRECTIVES: tuple[_Directive, ...] = (
         parse_standing,
         "/standing needs the goal: /standing <text> (the task pane shows the current one)",
         _standing,
+    ),
+    _Directive(
+        parse_retire,
+        "/retire needs the task: /retire <task id> (the short id /tasks prints)",
+        _retire,
     ),
     _Directive(parse_compact, "", _compact),
 )

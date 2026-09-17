@@ -172,7 +172,14 @@ depends_on = ["agent6.app", "agent6.config", "agent6.config.io", "agent6.config.
 # What a composer line does when it is not a steer, for every entry point that
 # takes one (the three composers and `agent6 steer`).
 path = "agent6.ui.directives"
-depends_on = ["agent6.directive", "agent6.sessions.ipc", "agent6.ui.btw"]
+depends_on = [
+  "agent6.directive",
+  "agent6.graph.storage",  # `/retire` resolves a task id prefix against the run's graph
+  "agent6.sessions.ipc",
+  "agent6.sessions.layout",
+  "agent6.ui.btw",
+  "agent6.viewmodel",  # the short task id an operator reads and types
+]
 
 [[modules]]
 # The keys every front-end answers to, as data: a leaf every surface reads.

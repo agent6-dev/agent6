@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from agent6.graph.curator import CuratorError, GraphCurator
+from agent6.graph.curator import GraphCurator
 from agent6.graph.models import (
     AddSubtaskIntent,
     NodeStatus,
@@ -22,7 +22,8 @@ from agent6.graph.models import (
     UpdateStatusIntent,
 )
 from agent6.sessions.layout import SessionLayout
-from agent6.tools._dag_tools import add_task
+from agent6.tools._dag_tools import add_task, update_task
+from agent6.tools.errors import ToolError
 from agent6.tools.schema import DagAddTaskInput
 
 
@@ -44,13 +45,18 @@ def _queued(c: GraphCurator, root: str, title: str = "add a --json flag") -> str
 def test_the_model_cannot_retire_a_task_the_operator_queued(
     tmp_path: Path, retirement: NodeStatus
 ) -> None:
+    """The model's route refuses; the curator stays permissive, because it is
+    also the operator's route (`/retire`)."""
     c, root = _curator(tmp_path)
     queued = _queued(c, root)
 
-    with pytest.raises(CuratorError, match="queued by the operator"):
-        c.update_status(UpdateStatusIntent(id=queued, new_status=retirement))
+    with pytest.raises(ToolError, match="queued by the operator"):
+        update_task(c, {"id": queued, "status": retirement})
 
     assert c.nodes()[queued].status == "pending"
+    assert c.update_status(UpdateStatusIntent(id=queued, new_status=retirement)).status == (
+        retirement
+    )
 
 
 def test_an_operator_task_still_passes(tmp_path: Path) -> None:

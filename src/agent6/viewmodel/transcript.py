@@ -340,6 +340,11 @@ def _task_queued_body(event: dict[str, Any]) -> str:
     return f"task queued: {str(event.get('title', '')).strip()}".rstrip(": ")
 
 
+def _task_retired_body(event: dict[str, Any]) -> str:
+    """The operator dropped a task from the graph."""
+    return f"task retired: {str(event.get('title', '')).strip()}".rstrip(": ")
+
+
 def _standing_set_body(event: dict[str, Any]) -> str:
     """The operator aimed the run at a new goal mid-run."""
     return f"standing goal: {str(event.get('title', '')).strip()}".rstrip(": ")
@@ -380,6 +385,7 @@ _MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     # that promised a `/compact` "applies before the next model call" is the
     # one that says it did, failed, or was refused.
     "loop.task.queued": _task_queued_body,
+    "loop.task.retired": _task_retired_body,
     "loop.standing.set": _standing_set_body,
     "loop.compact.requested": _compact_requested_body,
     "loop.compact.summarise.done": _compact_done_body,

@@ -723,6 +723,7 @@ const STEER_COMMANDS = [
   ['/btw', 'ask a question beside the run: /btw <question> (answers inline, later)'],
   ['/task', 'queue work into the task graph: /task <text> (worked when the queue drains)'],
   ['/standing', 'set the goal the run returns to when the queue drains: /standing <text>'],
+  ['/retire', 'drop a task from the graph: /retire <task id> (the short id /tasks prints)'],
   ['/now', 'steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)'],
   ['/stop', 'stop the run now, as `agent6 stop` does (resumable)'],
   ['/shells', 'background commands this run started, and how they ended'],
@@ -745,7 +746,7 @@ function attachCommandSuggest(ta, root, liveNow) {
   const render = () => {
     const w = word();
     if (w === null) { close(); return; }
-    items = STEER_COMMANDS.filter(([c]) => (liveNow() || (c !== '/compact' && c !== '/btw' && c !== '/now' && c !== '/stop' && c !== '/task' && c !== '/standing')) && c.startsWith(w));
+    items = STEER_COMMANDS.filter(([c]) => (liveNow() || (c !== '/compact' && c !== '/btw' && c !== '/now' && c !== '/stop' && c !== '/task' && c !== '/standing' && c !== '/retire')) && c.startsWith(w));
     if (!items.length) { close(); return; }
     if (active >= items.length) active = -1;
     if (!box) { box = el('div', 'ac-pop'); root.appendChild(box); }

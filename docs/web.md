@@ -45,6 +45,7 @@ Pages that take a task, a steer or a machine message dock their text entry at th
     - the docked composer steers a live run or resumes an ended one, under the preset and model picked in the row above it (blank: as the run recorded); `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages
         - Ctrl+Enter prefixes a live run's steer with `/now`, aborting the call in flight; text already starting with `/` goes as typed; `/stop` stops the run, as `agent6 stop` does
         - `/standing <text>` sets the goal the run returns to when its queue drains, replacing any it had
+        - `/retire <task id>` drops a task from the graph, named by the short id the pause menu's `/tasks` prints
         - `/task <text>` adds work to the run's task graph instead of steering it: nothing reaches the turn in flight, and the run works it once its open tasks drain
     - the Latest commit widget selects any per-step commit (cumulative toggle); the Budget and Task graph widgets then show that step's state; a model-controlled run has no chain and says so
     - stop now, or stop after step: the same stop as `agent6 stop` (the model call cut, a running command handed back, a worker that does not answer killed, the run resumable)

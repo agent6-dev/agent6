@@ -180,6 +180,7 @@ agent6 ask "how does the task-graph curator work?"
   - `/standing <text>` sets it on a live run from any composer, retiring the goal it replaces
   - budget, stop, and the iteration cap still end the run; `workflow.standing_patience` ends it after that many re-entries in a row that ran no tool call, and by default never does
 - `--pin "<text>"`: an instruction re-shown verbatim after every compaction restart, so it survives compaction (`/pin` does the same mid-run)
+- `/retire <task id>` drops a task from a live run's graph, named by the short id `/tasks` prints (the end of the id, which is what tells two tasks made in one turn apart); an ambiguous one is refused by name
 - `/task <text>` adds work to a live run's task graph instead of steering it: the turn in flight never sees it, and the run works it once its open tasks drain (every composer takes it, and `agent6 steer ID "/task <text>"` from a script or another machine)
   - the first line names the task, the whole text is its spec, and `[prompt].revise_prompt` covers it as it covers the run's own task
   - the model may finish it but not retire it, and a run that ends over one names it in its receipt

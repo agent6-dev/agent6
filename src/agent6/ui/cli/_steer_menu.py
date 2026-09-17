@@ -67,7 +67,7 @@ from agent6.viewmodel import (
     tail_events,
     task_snippet,
 )
-from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_usd, status_label
+from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_usd, short_task_id, status_label
 from agent6.viewmodel.state import SessionState, context_fill, status_facts
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
@@ -99,6 +99,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/btw": STEER_COMMANDS["/btw"],
     "/task": STEER_COMMANDS["/task"],
     "/standing": STEER_COMMANDS["/standing"],
+    "/retire": STEER_COMMANDS["/retire"],
     "/shells": STEER_COMMANDS["/shells"],
     "/restate": STEER_COMMANDS["/restate"],
     "/undo": STEER_COMMANDS["/undo"],
@@ -218,7 +219,9 @@ def _print_tasks(session_dir: Path) -> None:
     for tv in s.tasks:
         icon = TASK_STATUS_GLYPH.get(tv.status, "·")
         marker = "▸ " if tv.is_cursor else ""
-        print(f"  {'  ' * tv.depth}{marker}{icon} {tv.title}")
+        # The id's tail leads the line: it is what `/retire` takes, and what
+        # tells two tasks made in the same turn apart.
+        print(f"  {short_task_id(tv.id)}  {'  ' * tv.depth}{marker}{icon} {tv.title}")
 
 
 def _print_help(offered: dict[str, str]) -> None:
@@ -293,7 +296,7 @@ def _run_info_command(
         print(restate(list(tail_events(session_dir / LOGS_NAME, follow=False))))
     elif cmd.startswith("/btw"):
         print(_start_btw(cmd, session_dir, btw_runner))
-    elif cmd.startswith(("/task", "/standing")):
+    elif cmd.startswith(("/task", "/standing", "/retire")):
         # The one owner of what a composer line does; `/btw` stays local
         # because the menu spawns its side ask through a terminal-capable
         # runner rather than directly.

@@ -76,6 +76,18 @@ def spinner_frame(tick: int) -> str:
     return SPINNER_FRAMES[tick % len(SPINNER_FRAMES)]
 
 
+# How much of a task id an operator types or reads. A ULID is a 48-bit
+# millisecond then 80 bits that go monotonic within that millisecond, so ids
+# made in one turn share every leading character and differ in their last few:
+# the tail is the part that tells them apart.
+SHORT_TASK_ID = 6
+
+
+def short_task_id(task_id: str) -> str:
+    """The end of *task_id*, which is what distinguishes it from its siblings."""
+    return task_id[-SHORT_TASK_ID:]
+
+
 def format_when(epoch: float, *, short: bool = False) -> str:
     """A listing's `when` column: local `MM-DD HH:MM`; *short* (a narrow
     terminal) keeps only the time for today and only the date for older."""

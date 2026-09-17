@@ -65,6 +65,15 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     if args.status is not None:
         if args.status in ("skipped", "obsolete"):
             current = curator.get(args.id)
+            if current.parent_id is not None and current.created_by == "user":
+                # A task the operator queued is theirs to withdraw: pass it
+                # when it is done, or leave it open and let the run's end
+                # receipt say it went undone. The curator stays permissive,
+                # because `/retire` is the operator's own route through it.
+                raise ToolError(
+                    f"update_task: {args.id} was queued by the operator, so it is not"
+                    " yours to retire; pass it when it is done, or leave it open"
+                )
             if current.standing and current.created_by == "steering":
                 # The operator's --standing goal: the operator retires it (a
                 # steer, or stopping the run). The model retiring it converts

@@ -316,19 +316,6 @@ class GraphCurator:
                     f"{intent.id} is retired ({node.status}) and stays retired;"
                     " add_task if the work is needed after all"
                 )
-            if (
-                node.parent_id is not None
-                and node.created_by == "user"
-                and intent.new_status in ("skipped", "obsolete")
-            ):
-                # A task the operator queued is theirs to withdraw: pass it
-                # when it is done, or leave it open and let the run's end
-                # receipt say it went undone. The seeded root is "user" too,
-                # hence the parent check; an abandoned run still retires it.
-                raise CuratorError(
-                    f"{intent.id} was queued by the operator, so it is not yours to retire;"
-                    " pass it when it is done, or leave it open"
-                )
             if node.standing and intent.new_status == "passed":
                 raise CuratorError(
                     f"a standing task never passes ({intent.id}); mark it skipped or"

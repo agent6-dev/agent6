@@ -55,7 +55,12 @@ from agent6.providers import (
     ToolDefinition,
     call_for_text,
 )
-from agent6.sessions.ipc import drain_queued_tasks, emit_session_start, take_standing_goal
+from agent6.sessions.ipc import (
+    drain_queued_tasks,
+    emit_session_start,
+    take_retired_tasks,
+    take_standing_goal,
+)
 from agent6.skills import ResolvedSkills, skill_command, skill_steer_payload
 from agent6.task_text import operator_task_text, task_headline
 from agent6.tools.dispatch import (
@@ -1666,6 +1671,7 @@ class Workflow:
         finish directive a low budget draws is the most recent message, not the
         banner."""
         self._drain_queued_tasks(state)
+        self._drain_retired_tasks()
         self._adopt_standing_goal(state)
         self._maybe_surface_current_task(conversation, state)
         for advisor in BEFORE_CALL:
@@ -1715,6 +1721,28 @@ class Workflow:
                 continue
             self._log(f"LOOP: operator queued task {node.id}: {title}")
             self._emit("loop.task.queued", id=node.id, title=title)
+            self._emit_graph_snapshot()
+
+    def _drain_retired_tasks(self) -> None:
+        """Drop the tasks the operator retired (`/retire`).
+
+        Obsolete rather than skipped: the operator decided the work no longer
+        applies. Their route is the curator itself, so a task they queued is
+        retirable here even though `update_task` refuses it to the model."""
+        if self.curator is None or self.events is None:
+            return
+        for task_id in take_retired_tasks(self.events.path.parent):
+            try:
+                node = self.curator.update_status(
+                    UpdateStatusIntent(
+                        id=task_id, new_status="obsolete", note="retired by the operator"
+                    )
+                )
+            except (CuratorError, OSError, ValidationError) as exc:
+                self._log(f"LOOP: task not retired: {exc}")
+                continue
+            self._log(f"LOOP: operator retired task {node.id}")
+            self._emit("loop.task.retired", id=node.id, title=node.title)
             self._emit_graph_snapshot()
 
     def _adopt_standing_goal(self, state: LoopState) -> None:

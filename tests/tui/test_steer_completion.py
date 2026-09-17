@@ -29,6 +29,7 @@ def test_rows_match_the_typed_prefix() -> None:
         "/btw",
         "/task",
         "/standing",
+        "/retire",
         "/now",
         "/stop",
         "/shells",

@@ -143,6 +143,29 @@ def take_standing_goal(session_dir: Path) -> str | None:
     return goal.strip() or None
 
 
+# Task ids the operator retired, one per line, drained with the queue.
+RETIRE_FILE = "retire.tasks"
+
+
+def retire_task(session_dir: Path, task_id: str) -> None:
+    """Ask the run to retire *task_id* at its next turn."""
+    path = session_dir / RETIRE_FILE
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(task_id + "\n")
+
+
+def take_retired_tasks(session_dir: Path) -> list[str]:
+    """The ids the operator retired, removed as they are read."""
+    path = session_dir / RETIRE_FILE
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    with contextlib.suppress(OSError):
+        path.unlink()
+    return [line.strip() for line in lines if line.strip()]
+
+
 def _contained(directory: Path, filename: str, *, untrusted: str, what: str) -> Path:
     """`<directory>/<filename>`, refusing a name that is not one plain file.
 
