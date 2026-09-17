@@ -1919,3 +1919,33 @@ def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: Pa
             assert lines[1].endswith("…")
 
     asyncio.run(scenario())
+
+
+def test_a_short_terminal_dashboard_shows_one_pane_row_at_a_time(tmp_path: Path) -> None:
+    """At 80x24 every pane got a line or two. Below 28 rows the dashboard folds
+    to the row holding focus (the log and diff otherwise) plus a summary line,
+    and Tab still reaches a folded pane, which unfolds it."""
+    from textual.widgets import DataTable
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _show_dashboard(pilot)
+            app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
+            app._handle_event(_ev(type="tool.call", name="read_file", args={"path": "a.py"}))
+            app._tick()
+            await pilot.pause()
+            dash = app._dash
+            assert dash.has_class("-compact")
+            tools = dash.query_one("#tools", DataTable)
+            assert tools.region.height == 0 and dash.query_one("#log").region.height > 3
+            summary = str(dash.query_one("#summary", Static).render())
+            assert "1 tool call · last read_file" in summary
+            tools.focus()
+            await pilot.pause()
+            assert tools.region.height > 3 and dash.query_one("#body").region.height == 0
+            await pilot.resize_terminal(120, 40)
+            await pilot.pause()
+            assert not dash.has_class("-compact") and dash.query_one("#log").region.height > 3
+
+    asyncio.run(scenario())

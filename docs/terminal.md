@@ -48,10 +48,11 @@ A modal's buttons sit in one row; on a terminal narrower than the row the later 
 Before the first model call, the header names the role and model from the manifest and says `starting`; the spinner runs only while a model call is in flight.
 
 - the diff pane opens on the latest commit; its selector walks the run's per-step commits (newest first), `cumulative` shows the chain up to that step; the task tree and the cost line follow the selected step; a run whose model owns git has no chain and the pane says so
-- the composer bar runs along the foot: type to steer, or to resume a finished run; the row above it picks the preset and model the next leg continues under (blank: as the run recorded)
+- the composer bar runs along the foot: type to steer, or to resume a finished run; the row above it picks the preset and model the next leg continues under (each first entry names what a resume without flags runs under)
 - `/` completes the steer directives; Ctrl-R searches the session's past messages
 - `/shells` lists the run's background commands and how they ended; `/restate` replays the conversation since your last message
 - the View menu maximizes the focused pane
+- on a terminal under 28 rows the dashboard shows one pane row at a time: the row holding focus, else the log and diff, with a summary line of the tool calls; Tab reaches the folded panes and unfolds them
 - on a finished plan, Run > Run this plan starts `agent6 run --from` on it and opens the new run; the plan session stays as it was
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)

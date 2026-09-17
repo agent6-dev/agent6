@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, ClassVar, cast
 try:
     from rich.markup import escape
     from rich.text import Text
+    from textual import events
     from textual.app import ComposeResult
     from textual.binding import Binding
     from textual.containers import Horizontal, ScrollableContainer, VerticalScroll
@@ -95,6 +96,10 @@ _TASK_ICONS = TASK_STATUS_GLYPH
 # a visual row back through the same window, so both must use this one value.
 _TOOL_TABLE_ROWS = 20
 
+# Below this terminal height the dashboard is compact: one pane row at a time.
+_COMPACT_ROWS = 28
+_PANE_ROWS = ("head", "tools", "body")
+
 
 class _ScrollPane(VerticalScroll):
     """A scrollable pane that can be tabbed to and maximized (View menu).
@@ -115,6 +120,23 @@ class DashboardScreen(ScreenChrome, Screen[None]):
     /* Top row: the task graph is usually a few nodes, so it stays compact beside
        the model's live output. */
     #top { height: auto; max-height: 7; padding: 0 1; }
+    /* Compact (a short terminal): one pane row at a time, the one holding focus
+       (the log and diff otherwise), with a summary line for what is folded. A
+       folded row keeps zero height, not display: none, so Tab still reaches its
+       panes and unfolds them. */
+    #summary { display: none; height: 1; padding: 0 1; color: $text-muted; }
+    DashboardScreen.-compact #summary { display: block; }
+    DashboardScreen.-compact #head, DashboardScreen.-compact #tools,
+    DashboardScreen.-compact #body { height: 0; }
+    DashboardScreen.-compact #tools { border: none; scrollbar-size: 0 0; }
+    DashboardScreen.-compact.-show-tools #tools, DashboardScreen.-compact #tools.-maximized {
+        border: round $primary; scrollbar-size: 1 1;
+    }
+    DashboardScreen.-compact.-show-tools #tools:focus { border: round $accent; }
+    DashboardScreen.-compact.-show-head #head, DashboardScreen.-compact.-show-tools #tools,
+    DashboardScreen.-compact.-show-body #body, DashboardScreen.-compact #tools.-maximized {
+        height: 1fr;
+    }
     #head { height: 28%; }
     #plan { width: 32%; border: round $primary; }
     #stream { width: 1fr; border: round $primary; padding: 0 1; }
@@ -380,6 +402,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <run>"
         yield Static("", id="top")
+        yield Static("", id="summary")  # compact only: the folded rows in one line
         with Horizontal(id="head"):
             yield Tree("tasks", id="plan")
             with _ScrollPane(id="stream"):
@@ -418,6 +441,25 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         yield ResumeOptions(self._presets, self._routes, id="dash-resume")  # while resuming
         yield SteerInput(id="dash-input")
         yield Footer()
+
+    def on_resize(self, _event: events.Resize) -> None:
+        self.set_class(self.size.height < _COMPACT_ROWS, "-compact")
+        self._show_pane_row()
+
+    def on_descendant_focus(self, _event: events.DescendantFocus) -> None:
+        self._show_pane_row()
+
+    def _show_pane_row(self) -> None:
+        """The row a compact dashboard unfolds: the one holding focus, else the
+        log and diff."""
+        focused = self.focused
+        row = "body"
+        for name in ("head", "tools"):
+            pane = self.query_one(f"#{name}")
+            if focused is not None and (focused is pane or pane in focused.ancestors):
+                row = name
+        for name in _PANE_ROWS:
+            self.set_class(name == row, f"-show-{name}")
 
     def on_mount(self) -> None:
         self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
@@ -634,6 +676,15 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             for line in lines:
                 line.truncate(width, overflow="ellipsis")
         top.update(Text("\n").join(lines))
+        if self.has_class("-compact"):
+            calls = f"{len(s.tool_calls)} tool call{'' if len(s.tool_calls) == 1 else 's'}"
+            if s.tool_calls:
+                last = s.tool_calls[-1]
+                ok = "…" if last.ok is None else ("✓" if last.ok else "✗")
+                calls += f" · last {last.name} {ok}"
+            folded = Text(f"{calls} · Tab unfolds a pane")
+            folded.truncate(top.content_size.width or 200, overflow="ellipsis")
+            self.query_one("#summary", Static).update(folded)
 
         # Live reasoning / response pane. Built as rich Text so model output is
         # never parsed as markup.
