@@ -20,6 +20,7 @@ from pathlib import Path
 
 from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.tools.schema import ROSTER_MAX
 from agent6.types import is_side_role
 
 # What a reader needs from another session: who said what, and from which
@@ -36,7 +37,6 @@ _SPEAKER = {
 # A roster is context the model pays for on every call, so it is capped. The
 # newest sessions are the ones a reader wants; `query` is how you reach an older
 # one. Uncapped, 2000 sessions render ~70k tokens.
-ROSTER_MAX = 40
 
 
 @dataclass(frozen=True, slots=True)

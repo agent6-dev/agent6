@@ -56,6 +56,7 @@ from agent6.tools.results import (
     ToolResult,
 )
 from agent6.tools.schema import (
+    LIST_DIR_CAP,
     WHOLE_FILE_KINDS,
     Agent6DocsInput,
     ApplyEditInput,
@@ -73,7 +74,6 @@ MAX_READ_CHARS = 5_000_000
 # Upper bound on a listing: a generated or vendored directory (node_modules)
 # holds tens of thousands of entries, and uncapped every one goes into the
 # context and the transcript. Capped and marked, like every sibling result.
-LIST_DIR_CAP = 1_000
 
 
 def agent6_docs(raw: dict[str, Any]) -> ToolResult:

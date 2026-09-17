@@ -55,7 +55,7 @@ The verify command is the success gate.
 - unset `workflow.verify_command`: inferred per run and printed (AGENTS.md, a root `verify.sh`, manifest files, loose `test_*.py`, then a model call)
 - nothing inferable: the run proceeds gateless, committing each editing step
 - pin one (per-repo config or `agent6 init`) to make it deterministic
-- the harness runs it when the model finishes over an uncertified tree; a red returns to the model with the output (`workflow.verify_retries`, default 2), then the run ends red
+- the harness runs it when the model finishes over an uncertified tree; a red returns to the model with the output as many times as `workflow.verify_retries` allows, then the run ends red
 - `workflow.verify_when` moves the harness run to every editing step (`step`) or leaves every run to the model (`never`); the model can always run it itself
 
 `agent6 run` streams in your terminal.
@@ -178,7 +178,7 @@ agent6 ask "how does the task-graph curator work?"
   - new work outranks it; it never passes, and only the operator retires it
   - one per run, and the operator's: `resume --standing` and `fork --standing` give one to a session that started without it, a session that has one keeps it, and the model's `add_task` has no such flag
   - `/standing <text>` sets it on a live run from any composer, retiring the goal it replaces
-  - budget, stop, and the iteration cap still end the run; `workflow.standing_patience` (default `-1`, never) ends it after that many re-entries in a row that ran no tool call
+  - budget, stop, and the iteration cap still end the run; `workflow.standing_patience` ends it after that many re-entries in a row that ran no tool call, and by default never does
 - `--pin "<text>"`: an instruction re-shown verbatim after every compaction restart, so it survives compaction (`/pin` does the same mid-run)
 - `/task <text>` adds work to a live run's task graph instead of steering it: the turn in flight never sees it, and the run works it once its open tasks drain (every composer takes it, and `agent6 steer ID "/task <text>"` from a script or another machine)
   - the first line names the task, the whole text is its spec, and `[prompt].revise_prompt` covers it as it covers the run's own task

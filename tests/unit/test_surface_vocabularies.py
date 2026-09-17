@@ -63,3 +63,13 @@ def test_every_status_level_reaches_every_surface() -> None:
 
     css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
     assert frozenset(re.findall(r"\.pill\.([a-z]+)", css)) >= levels - {"neutral"}
+
+
+def test_a_tool_description_quotes_the_cap_it_enforces() -> None:
+    """The numbers the model reads and the numbers the handlers enforce are one
+    value: the descriptions interpolate them, so a changed cap cannot leave a
+    stale promise in every request's schema."""
+    from agent6.tools.schema import LIST_DIR_CAP, ROSTER_MAX, ListDirInput, ReadSessionInput
+
+    assert f"{LIST_DIR_CAP:,}" in ListDirInput.TOOL_DESCRIPTION
+    assert f"{ROSTER_MAX} newest" in ReadSessionInput.TOOL_DESCRIPTION

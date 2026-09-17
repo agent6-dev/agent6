@@ -32,7 +32,7 @@ async function renderMachine(name, gen) {
   cc.conv.refresh();
 
   // The machine composer, docked at the bottom: one text entry with the two
-  // machine verbs, matching the TUI machine watch (s = Steer, m = Message).
+  // machine verbs the TUI machine watch offers (ui/keymap.py names its keys).
   // Steer injects into the current agent state at its next safe boundary
   // (blank = continue); Message is a poke payload a waiting machine's next
   // tool reads (blank = a bare wake). Created once, so the input survives
@@ -59,7 +59,7 @@ async function renderMachine(name, gen) {
       else if (!msgBtn.disabled) msgBtn.click();
     }
   };
-  // Stop, as the CLI (`agent6 machine stop`) and the TUI (x) have: the machine
+  // Stop, as `agent6 machine stop` and the TUI machine watch do: the machine
   // parks at its next transition and `machine run` resumes it.
   const stopBtn = el('button', 'danger', 'Stop');
   stopBtn.onclick = async () => {

@@ -13,6 +13,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 from agent6.graph.models import NodeStatus
 from agent6.types import session_kind
 
+# Caps the tool descriptions quote, so the number the model reads and the
+# number the handler enforces cannot disagree.
+LIST_DIR_CAP = 1_000
+ROSTER_MAX = 40
+
 # Derived from the NodeStatus Literal so the task-status vocabulary has ONE
 # owner (a new status can't silently drift the tool schema). Same order, so
 # the pattern the model sees is stable; pinned in
@@ -60,8 +65,8 @@ class ListDirInput(_ToolInput):
         "List immediate entries in a directory (non-recursive). `path` is "
         "repo-root-relative; defaults to '.'. Dot-prefixed entries are listed;"
         " `hidden` counts entries the workspace boundary withholds. Returns"
-        " names with a trailing '/' for directories, at most 1,000 (`truncated`"
-        " says so)."
+        f" names with a trailing '/' for directories, at most {LIST_DIR_CAP:,}"
+        " (`truncated` says so)."
     )
 
     path: str = Field(default=".")
@@ -248,7 +253,7 @@ class ReadSessionInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read another session's transcript summary by id; with no id, list the"
         " sessions. `query` keeps the sessions whose task or journal contains"
-        " it (40 newest); `max_chars` bounds the transcript, which keeps its"
+        f" it ({ROSTER_MAX} newest); `max_chars` bounds the transcript, which keeps its"
         " tail. Read-only."
     )
 
