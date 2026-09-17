@@ -52,7 +52,7 @@ Escape
 Sleep 1.2s
 
 # Run it: confirm the dialog, which spawns the run and opens the live watch view.
-Type "r"
+Type "R"
 Sleep 2s
 Type "y"
 
