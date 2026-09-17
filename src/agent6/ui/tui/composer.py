@@ -34,7 +34,7 @@ from agent6.viewmodel.transcript import (
     operator_inputs,
 )
 
-ComposerMode = Literal["steer", "resume", "start"]
+ComposerMode = Literal["steer", "resume", "start", "draft"]
 
 
 def composer_labels(
@@ -45,10 +45,13 @@ def composer_labels(
     One conversation view serves runs, plans and asks, so it says "session".
     *continue_as* names the fork an undone run continues as (Enter resumes that
     session); *needs_new_work* is a run the agent finished green, which a bare
-    resume has nothing to do for (the web composer asks the same question).
+    resume has nothing to do for (the web composer asks the same question);
+    *draft* is the machine description the create dialog takes.
     """
     if mode == "steer":
         return ("steer this session (/pin, /compact [focus])", "Enter sends · Ctrl-J newline")
+    if mode == "draft":
+        return ("describe the machine", "Enter drafts it · Ctrl-J newline · Esc cancels")
     if mode == "resume":
         if continue_as:
             title = f"continue as {continue_as}"
@@ -66,6 +69,8 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
     understands)."""
     if not text.startswith("/") or any(ch.isspace() for ch in text):
         return []
+    if mode == "draft":
+        return []  # a machine description takes no directives
     if mode == "start":
         offered = {c: h for c, h in STEER_COMMANDS.items() if c == "/parallel"}
     elif mode == "resume":

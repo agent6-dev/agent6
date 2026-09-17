@@ -26,7 +26,7 @@ try:
     from textual.containers import Container, Horizontal, VerticalScroll
     from textual.notifications import SeverityLevel
     from textual.screen import ModalScreen, Screen
-    from textual.widgets import DataTable, Footer, Input, RichLog, Static
+    from textual.widgets import DataTable, Footer, RichLog, Static
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise ImportError(
         "agent6 TUI requires the 'textual' package (part of the base install)."
@@ -57,6 +57,7 @@ from agent6.sessions.ipc import (
 from agent6.sessions.layout import bucket_dir, machines_root
 from agent6.ui.notify import desktop_notify
 from agent6.ui.spawn import agent6_argv, spawn_and_confirm, spawn_and_locate
+from agent6.ui.tui.composer import SteerInput
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
     ConfirmModal,
@@ -602,7 +603,12 @@ class CreateMachineModal(ModalScreen[str]):
         width: 80%; max-width: 100; height: auto;
         border: round $accent; padding: 1 2; background: $surface;
     }
-    #create-input { margin-top: 1; }
+    /* The new-task composer, so a machine is described in the same box a run
+       is: multi-line, Enter drafts, Ctrl-J adds a line. */
+    #create-input {
+        height: auto; max-height: 8; margin-top: 1; border: round $primary; background: $surface;
+    }
+    #create-input:focus { border: round $accent; }
     #create-hint { color: $text-muted; padding-top: 1; }
     """
     )
@@ -615,18 +621,18 @@ class CreateMachineModal(ModalScreen[str]):
             text.append("Create a machine\n\n", style="bold")
             text.append("Describe the loop, and agent6 drafts a .asm.toml in this repo.")
             yield Static(text)
-            yield Input(
-                placeholder="e.g. nightly: pull, run tests, open an issue on failure",
-                id="create-input",
-                classes="edit-input",
+            yield SteerInput(id="create-input")
+            yield Static(
+                "e.g. nightly: pull, run tests, open an issue on failure", id="create-hint"
             )
-            yield Static("Enter drafts it · Esc cancels", id="create-hint")
 
     def on_mount(self) -> None:
-        self.query_one("#create-input", Input).focus()
+        bar = self.query_one("#create-input", SteerInput)
+        bar.set_mode(mode="draft")
+        bar.focus()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value.strip())
+    def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
+        self.dismiss(message.text.strip())
 
     def action_cancel(self) -> None:
         self.dismiss("")

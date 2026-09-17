@@ -14,6 +14,7 @@ from textual.widgets import DataTable, Input
 from agent6.machine import MachineSpec
 from agent6.paths import state_dir
 from agent6.ui.tui import machines as machmod
+from agent6.ui.tui.composer import SteerInput
 from agent6.ui.tui.machines import (
     CreateMachineModal,
     MachineDetailScreen,
@@ -700,7 +701,7 @@ def test_machine_create_spawns_with_task(tmp_path: Path, monkeypatch: object) ->
             await pilot.press("c")  # create -> task modal
             await pilot.pause()
             assert isinstance(app.screen, CreateMachineModal)
-            app.screen.query_one("#create-input", Input).value = "nightly sweep"
+            app.screen.query_one("#create-input", SteerInput).load_text("nightly sweep")
             await pilot.press("enter")  # submit
             await _spawn_settled(app)
             assert captured and captured[-1][-3:] == ["create", "--", "nightly sweep"]
