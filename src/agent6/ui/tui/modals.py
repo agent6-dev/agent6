@@ -410,6 +410,7 @@ class HistorySearchModal(ModalScreen[str | None]):
         border: round $accent; padding: 1 2; background: $surface;
     }
     #hs-field { margin-top: 1; }
+    #hs-hint { margin-top: 1; color: $text-muted; }
     """
 
     BINDINGS: ClassVar = [
@@ -423,8 +424,9 @@ class HistorySearchModal(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Container(id="hs-box"):
-            yield Static(Text("search this session's messages", style="bold"))
+            yield Static(Text("Search past messages", style="bold"))
             yield TypeaheadField("", self._entries, id="hs-field")
+            yield Static("↑↓ highlight · Enter fills the composer · Esc closes", id="hs-hint")
 
     def on_mount(self) -> None:
         self.query_one("#hs-field", TypeaheadField).focus()
