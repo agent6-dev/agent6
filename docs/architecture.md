@@ -436,7 +436,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `question.prompt` / `.answer` | `id`, `questions` (each `question`, `options`), `call_id` (null for the dirty-tree start question) / `id`, `answers` (aligned to the questions; an unanswered one is `""`), `source` (`stdin`, `frontend`, `await-frontend`, `away-wait`, `headless-default`, `headless`, `acp`): the `ask_user` tool and the start question |
 | `diff.updated` | what a chain commit changed: `sha` and its `patch`, capped at 8000 bytes; every fold counts commits and shows the latest diff from this event alone |
 | `graph.update` | the task DAG after this turn: `nodes` (title, status, parent_id, children, created_by), `cursor` |
-| `loop.task.queued` | a task the operator added to a live run (`agent6 task`, `/task`): `id`, `title` |
+| `loop.task.queued` | a task the operator added to a live run (`/task`): `id`, `title` |
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-iteration usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |

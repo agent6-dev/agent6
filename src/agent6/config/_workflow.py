@@ -348,7 +348,7 @@ class PromptConfig(BaseModel):
             "`auto` (the revision is used as written), or `interactive` (you accept, keep the "
             "original, edit, or quit, which stops the run; needs a terminal to answer at, so a "
             "run under the TUI, an ACP client or a spawned lane skips it). A task queued into a "
-            "live run (`agent6 task`) gets the same pass, revised as `auto` does."
+            "live run (`/task`) gets the same pass, revised as `auto` does."
         ),
     )
     # Front-load task decomposition (run mode). When on the worker's system

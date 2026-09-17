@@ -24,7 +24,6 @@ from agent6.ui.cli._watch_args import (
     _add_net_parsers,
     _add_steer_parser,
     _add_stop_parser,
-    _add_task_parser,
     _add_tui_parser,
     _add_web_parser,
 )
@@ -181,7 +180,7 @@ def _directories_epilog() -> str:
 # session records, the agent's context and tools, setup.
 COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("work", ("run", "plan", "ask", "resume", "fork", "review", "machine")),
-    ("control", ("attach", "steer", "task", "stop", "answer", "exec", "forward")),
+    ("control", ("attach", "steer", "stop", "answer", "exec", "forward")),
     ("front-ends", ("tui", "web", "acp")),
     ("sessions", ("sessions", "ps", "history")),
     ("context", ("prompt", "skills", "memory")),
@@ -257,7 +256,6 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_attach_parser(sub)
     _add_steer_parser(sub)
-    _add_task_parser(sub)
 
     _add_stop_parser(sub)
     _add_answer_parser(sub)
