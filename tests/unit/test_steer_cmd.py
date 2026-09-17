@@ -36,8 +36,7 @@ def test_steer_queues_for_a_live_run(
 
     assert main(["steer", "tiny-run", "land your best patch now"]) == 0
     out = capsys.readouterr().out
-    assert "steer queued for tiny-run-AAAA11" in out
-    assert "next step boundary" in out  # the ruled default: no in-flight abort
+    assert "steering for tiny-run-AAAA11" in out
     # The one shared channel: request marker + answer, exactly what the
     # composers write and the loop consumes. A plain steer never carries the
     # interrupt urgency; --now writes it into the marker.
@@ -49,7 +48,7 @@ def test_steer_queues_for_a_live_run(
 
     assert main(["steer", "tiny-run", "wrap up", "--now"]) == 0
     out = capsys.readouterr().out
-    assert "interrupted to take it" in out
+    assert "interrupting the call in flight" in out
     assert steer_interrupt_pending(d)
     assert take_steer_answer(d) == "wrap up"
 

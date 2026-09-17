@@ -48,7 +48,6 @@ from agent6.app.reporter import Reporter
 from agent6.app.stop import stop_session
 from agent6.app.undo import undo_fork
 from agent6.config.layer import available_preset_names
-from agent6.directive import parse_now
 from agent6.models.choices import available_routes, resume_defaults
 from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import (
@@ -59,7 +58,7 @@ from agent6.sessions.ipc import (
 from agent6.sessions.layout import LOGS_NAME, bucket_dir, layout_of
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.background import shells_text
-from agent6.ui.directives import act_on_directive
+from agent6.ui.directives import submit_composer_line
 from agent6.ui.spawn import (
     DETACHED_RUN_ENV,
     agent6_argv,
@@ -507,19 +506,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             action()
             return
         if self.session_controllable():
-            handled = act_on_directive(self.session_dir, text)
-            if handled is not None:
-                did, said = handled
-                self.notify(said, severity="information" if did else "warning")
-                return
-            urgent = parse_now(text)
-            if urgent == "":
-                self.notify("/now needs the instruction: /now <text>", severity="warning")
-                return
-            if submit_steer(self.session_dir, urgent or text, now=urgent is not None):
-                self.notify("steering this session now…" if urgent else "steering this session…")
-            else:
-                self.notify("could not write the steer request", severity="warning")
+            did, said = submit_composer_line(self.session_dir, text)
+            self.notify(said, severity="information" if did else "warning")
         else:
             self.resume_with_instruction(text)
 

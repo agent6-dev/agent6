@@ -687,7 +687,7 @@ def test_a_now_steer_writes_the_urgent_marker(
     (d / "logs.jsonl").write_text('{"type": "session.start", "mode": "run"}\n', encoding="utf-8")
     write_worker_pid(d, os.getpid())
     ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/now stop and report")
-    assert ok and msg == "steer requested now"
+    assert ok and msg == "steering now, interrupting the call in flight"
     assert (d / STEER_REQUEST_FILE).read_text(encoding="utf-8") == "now"
     assert (d / STEER_ANSWER_FILE).read_text(encoding="utf-8") == "stop and report"
     ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/now")

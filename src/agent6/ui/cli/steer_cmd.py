@@ -13,11 +13,9 @@ import sys
 from pathlib import Path
 
 from agent6.app.stop import stop_session
-from agent6.directive import parse_now
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.ipc import submit_steer
 from agent6.ui.cli._common import error, refuse, resolve_session_layout
-from agent6.ui.directives import act_on_directive
+from agent6.ui.directives import submit_composer_line
 from agent6.viewmodel import session_is_live
 from agent6.viewmodel.listing import summarize_session_dir
 
@@ -39,41 +37,25 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
             f" agent6 resume {layout.session_id} --steer TEXT"
         )
         return 2
-    # The same directives the composers act on, from the one owner: a line
-    # typed here does what it does in the TUI, the web and the pause menu.
-    handled = act_on_directive(layout.session_dir, text)
-    if handled is not None:
-        did, said = handled
-        print(said) if did else error(said)
-        return 0 if did else 1
-    urgent = parse_now(text)  # `/now <text>`: what --now spells
-    if urgent == "":
-        refuse("/now needs the instruction: /now <text>")
-        return 2
-    if urgent is not None:
-        text, now = urgent, True
-    queued = submit_steer(layout.session_dir, text, now=now)
-    if not queued:
-        error(f"could not write the steer request for {layout.session_id}")
-    else:
-        picked = (
-            "an in-flight model call is interrupted to take it"
-            if now
-            else "it lands at the next step boundary (--now interrupts the in-flight call)"
+    # The one owner of what a typed line does: a line here acts as it does in
+    # the TUI, the web and the pause menu.
+    did, said = submit_composer_line(layout.session_dir, text, now=now)
+    if not did:
+        error(f"{said} ({layout.session_id})")
+        return 1
+    print(f"{said} for {layout.session_id}.")
+    summary = summarize_session_dir(layout.session_dir)
+    if summary.status == "waiting" and summary.reason:
+        # Parked on an operator prompt: no boundaries arrive and no steer
+        # (--now included) can break that wait; only the answer can.
+        # `agent6 answer` takes a question; an approval needs a front-end.
+        how = (
+            f"agent6 answer {layout.session_id}"
+            if summary.reason.startswith("question")
+            else f"agent6 attach {layout.session_id}"
         )
-        print(f"steer queued for {layout.session_id}: {picked}.")
-        summary = summarize_session_dir(layout.session_dir)
-        if summary.status == "waiting" and summary.reason:
-            # Parked on an operator prompt: no boundaries arrive and no steer
-            # (--now included) can break that wait; only the answer can.
-            # `agent6 answer` takes a question; an approval needs a front-end.
-            how = (
-                f"agent6 answer {layout.session_id}"
-                if summary.reason.startswith("question")
-                else f"agent6 attach {layout.session_id}"
-            )
-            print(
-                f"note: the run is waiting ({summary.reason}); the steer stays"
-                f" queued until that is answered: {how}"
-            )
-    return 0 if queued else 1
+        print(
+            f"note: the run is waiting ({summary.reason}); what you sent stays"
+            f" queued until that is answered: {how}"
+        )
+    return 0

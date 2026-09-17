@@ -25,7 +25,7 @@ from agent6.ui.web import actions
 
 def _live_run(tmp_path: Path) -> Path:
     d = state_dir(tmp_path) / "sessions" / "runs" / "live-one-AAAAAA"
-    d.mkdir(parents=True)
+    d.mkdir(parents=True, exist_ok=True)
     (d / "logs.jsonl").write_text('{"type": "session.start", "mode": "run"}\n', encoding="utf-8")
     write_worker_pid(d, os.getpid())
     return d
@@ -164,3 +164,31 @@ def test_agent6_steer_takes_now_as_the_composers_spell_it(
 
     assert steer_interrupt_pending(d)
     assert take_steer_answer(d) == "wrap up"
+
+
+def test_now_acts_the_same_wherever_it_is_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/now` was the one composer word each surface still submitted its own
+    way, and the pause menu had none: one submitter now carries the urgency,
+    and `--now` says the same thing as the word."""
+    from agent6.sessions.ipc import steer_interrupt_pending, take_steer_answer
+    from agent6.ui.directives import submit_composer_line
+
+    monkeypatch.chdir(tmp_path)
+    for text, flag in (("/now wrap up", False), ("wrap up", True)):
+        d = _live_run(tmp_path / text.replace("/", "").replace(" ", "-"))
+
+        did, said = submit_composer_line(d, text, now=flag)
+
+        assert did and "interrupting the call in flight" in said
+        assert steer_interrupt_pending(d)
+        assert take_steer_answer(d) == "wrap up"
+
+
+def test_a_bare_now_refuses_everywhere(tmp_path: Path) -> None:
+    from agent6.ui.directives import submit_composer_line
+
+    did, said = submit_composer_line(tmp_path, "/now")
+
+    assert not did and "/now needs the instruction" in said

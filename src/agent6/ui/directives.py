@@ -9,9 +9,11 @@ typed line routes it through here (the TUI composer, the web composer, the CLI
 pause menu, `agent6 steer`), so the same words do the same thing wherever they
 are typed.
 
+`/now` is the fourth thing a line can be: an ordinary steer that interrupts the
+call in flight, so `submit_steer` takes it here too and every surface reports
+the same outcome.
+
 `/pin` and `/parallel` are not here: they are steers the loop parses itself.
-`/now` is not either: it is an ordinary steer carrying urgency, which each
-surface submits its own way.
 """
 
 from __future__ import annotations
@@ -20,8 +22,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.directive import parse_btw, parse_compact, parse_standing, parse_task
-from agent6.sessions.ipc import queue_task, request_compact, set_standing_goal
+from agent6.directive import parse_btw, parse_compact, parse_now, parse_standing, parse_task
+from agent6.sessions.ipc import queue_task, request_compact, set_standing_goal, submit_steer
 from agent6.ui.btw import open_btw
 
 
@@ -66,6 +68,22 @@ _DIRECTIVES: tuple[_Directive, ...] = (
     ),
     _Directive(parse_compact, "", _compact),
 )
+
+
+def submit_composer_line(session_dir: Path, text: str, *, now: bool = False) -> tuple[bool, str]:
+    """Act on *text* and report `(did_it, what_to_say)`: a directive if it is
+    one, else the steer it is. *now* forces the urgency `/now` spells, for the
+    flag that says the same thing (`agent6 steer --now`)."""
+    handled = act_on_directive(session_dir, text)
+    if handled is not None:
+        return handled
+    urgent = parse_now(text)
+    if urgent == "":
+        return False, "/now needs the instruction: /now <text>"
+    now = now or urgent is not None
+    if not submit_steer(session_dir, urgent or text, now=now):
+        return False, "could not write the steer request"
+    return True, "steering now, interrupting the call in flight" if now else "steering"
 
 
 def act_on_directive(session_dir: Path, text: str) -> tuple[bool, str] | None:

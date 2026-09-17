@@ -273,7 +273,6 @@ depends_on = [
     "agent6.config",
   "agent6.config.layer",
   "agent6.config.write",
-  "agent6.directive",
   "agent6.errors",
   # One branch-tips snapshot per hub poll (the listing's unmerged mark).
   "agent6.git_ops",

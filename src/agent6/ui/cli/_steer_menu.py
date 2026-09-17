@@ -363,6 +363,8 @@ def _answer_line(  # noqa: PLR0911
         # runner); every other directive belongs to the one owner every
         # composer shares. Anything else with spaces stays a verbatim steer
         # (the loop itself parses /pin and /parallel out of steer text).
+        # `/now` is meaningless here: the menu opens at a boundary with no call
+        # in flight to interrupt, so the steer it returns lands immediately.
         if word == "/btw":
             print(_start_btw(stripped, session_dir, btw_runner))
             return AGAIN

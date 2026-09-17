@@ -23,7 +23,6 @@ from agent6.app.reporter import Reporter
 from agent6.app.stop import stop_session
 from agent6.app.undo import undo_fork
 from agent6.config.write import ConfigLeafValue, set_config_leaves
-from agent6.directive import parse_now
 from agent6.errors import OperatorError
 from agent6.machine import (
     JournalError,
@@ -43,7 +42,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import bucket_dir, is_safe_session_id, machines_root
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.ui.directives import act_on_directive
+from agent6.ui.directives import submit_composer_line
 from agent6.ui.spawn import (
     DETACHED_RUN_ENV,
     agent6_argv,
@@ -171,15 +170,7 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
-    handled = act_on_directive(session_dir, text)
-    if handled is not None:
-        return handled
-    urgent = parse_now(text)  # `/now <text>`: the CLI's `steer --now`
-    if urgent == "":
-        return False, "/now needs the instruction: /now <text>"
-    queued = submit_steer(session_dir, urgent or text, now=urgent is not None)
-    message = "steer requested now" if urgent else "steer requested"
-    return (True, message) if queued else (False, "could not write the steer request")
+    return submit_composer_line(session_dir, text)
 
 
 def fork_run(
