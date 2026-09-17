@@ -12,7 +12,6 @@ from __future__ import annotations
 import itertools
 import json
 import os
-import shutil
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -129,6 +128,7 @@ from agent6.workflows._guards import (
     Stop,
     TurnContext,
     tool_error_ladder,
+    unreachable_tool,
 )
 from agent6.workflows._loop_state import (
     NEXT_TURN,
@@ -1017,7 +1017,7 @@ class Workflow:
                 # every round, and standing_patience could never engage.
                 if name not in ("finish_session", "finish_planning"):
                     state.ok_tool_calls += 1
-                self._note_jail_exec_failure(state, turn, name, tool_input, result)
+                self._take(state, turn, unreachable_tool(state, name, tool_input, result))
                 # Only a DISPATCHED finish counts: a refused finish tool (mode
                 # backstop, schema error) is an error result the model recovers
                 # from, not an end to the run.
@@ -2100,45 +2100,6 @@ class Workflow:
             content=content,
         )
         return content
-
-    def _note_jail_exec_failure(
-        self,
-        state: LoopState,
-        turn: TurnState,
-        name: str,
-        tool_input: dict[str, Any],
-        result: ToolResult,
-    ) -> None:
-        """Sandbox-reachability tracking. The one true "host-present but
-        jail-broken" signal is a run_command the jail failed to EXEC
-        (`exec_failed`; a nonzero exit is the command's own result) for a
-        binary `shutil.which` finds on the host. The second consecutive
-        exec failure of the same binary tells the model once and emits the
-        event finalize's operator warning reads. Tool errors never feed this:
-        a validation error or denial never entered the jail."""
-        if name != "run_command" or not isinstance(result, ExecResult):
-            return
-        argv = tool_input.get("argv") or []
-        binary = str(argv[0]) if isinstance(argv, list) and argv else ""
-        if not state.reach.note(binary, exec_failed=result.exec_failed):
-            return
-        if shutil.which(binary) is None:
-            return
-        state.reach.warned = True
-        self._emit("loop.sandbox_tool_unreachable", binary=binary)
-        self._log(f"LOOP: sandbox tool unreachable: {binary} exists on host, fails in jail")
-        turn.tool_results.append(
-            Notice(
-                f"NOTE: `{binary}` is installed on this machine but the sandbox"
-                " cannot execute it: a reachability problem (a per-user or"
-                " version-manager install the jail does not mount), not a problem"
-                " with your code. Tell the operator to install it into a standard"
-                " bin dir (~/.local/bin, /usr/local/bin) or grant its real"
-                " directory via sandbox.extra_read_paths; if the tool exists"
-                " inside the workspace, call it by that path. Do not keep probing"
-                " for it."
-            )
-        )
 
     def _standing_task(self) -> tuple[str, str] | None:
         """The ready standing task's (id, title), if this run has one."""

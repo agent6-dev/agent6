@@ -68,6 +68,20 @@ def loop_guard_words(tool: str, streak: int) -> str:
     )
 
 
+def unreachable_tool_notice(binary: str) -> str:
+    """The note when *binary* exists on the host but the jail cannot execute it."""
+    return (
+        f"NOTE: `{binary}` is installed on this machine but the sandbox"
+        " cannot execute it: a reachability problem (a per-user or"
+        " version-manager install the jail does not mount), not a problem"
+        " with your code. Tell the operator to install it into a standard"
+        " bin dir (~/.local/bin, /usr/local/bin) or grant its real"
+        " directory via sandbox.extra_read_paths; if the tool exists"
+        " inside the workspace, call it by that path. Do not keep probing"
+        " for it."
+    )
+
+
 # The empty turn (no text, no tool_use). A starved reasoner gets its own
 # nudge: the generic one gives it nothing actionable, so it repeats the loop.
 WENT_QUIET_NUDGE = (

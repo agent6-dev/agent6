@@ -14,11 +14,13 @@ operator granting another window. The completion-relevant subset persists
 
 from __future__ import annotations
 
+import shutil
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
+from agent6.tools.results import ExecResult, ToolResult
 from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
 from agent6.workflows._finish_gates import with_open_tasks
 from agent6.workflows._metric import (
@@ -44,6 +46,7 @@ from agent6.workflows._nudges import (
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
     loop_guard_words,
+    unreachable_tool_notice,
 )
 from agent6.workflows._session_state import End
 
@@ -594,6 +597,32 @@ class ReachabilityGuard:
             self.binary = binary
             self.streak = 1
         return self.streak >= 2 and not self.warned
+
+
+def unreachable_tool(
+    state: LoopState, name: str, tool_input: Any, result: ToolResult
+) -> Nudge | None:
+    """The sandbox-reachability note, judged after each executed call. The
+    one true "present on the host, broken in the jail" signal is a
+    run_command the jail failed to EXEC (`exec_failed`; a nonzero exit is the
+    command's own result) for a binary `shutil.which` finds on the host: the
+    second consecutive failure of the same binary tells the model once and
+    emits the event the session's finalize reads for its operator warning."""
+    if name != "run_command" or not isinstance(result, ExecResult):
+        return None
+    argv = tool_input.get("argv") if isinstance(tool_input, dict) else None
+    binary = str(argv[0]) if isinstance(argv, list) and argv else ""
+    if not state.reach.note(binary, exec_failed=result.exec_failed):
+        return None
+    if shutil.which(binary) is None:
+        return None
+    state.reach.warned = True
+    return Nudge(
+        unreachable_tool_notice(binary),
+        event="loop.sandbox_tool_unreachable",
+        fields={"binary": binary},
+        log=f"LOOP: sandbox tool unreachable: {binary} exists on host, fails in jail",
+    )
 
 
 @dataclass(slots=True)
