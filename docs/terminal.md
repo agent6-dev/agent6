@@ -105,7 +105,7 @@ A tool state re-runs the check.
 The machine routes on the result until the check is green or the attempt budget is spent.
 The agent's reasoning streams live, as in a run.
 
-- the machines screen (`M` on the hub): `v` (or Enter) opens the parsed file, `r` runs it, `w` watches its instance, `c` creates a draft, `f` refreshes
+- the machines screen (`M` on the hub): `v` (or Enter) opens the parsed file, `R` runs it, `w` watches its instance, `c` creates a draft, `r` refreshes
 - the watch screen (also `agent6 attach --tui <id>`): `s` steers the current agent state, `m` messages a waiting instance (`machine poke`), `x` stops it at the next transition
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">

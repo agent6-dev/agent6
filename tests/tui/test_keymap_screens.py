@@ -54,3 +54,11 @@ def test_one_letter_never_means_two_things_on_one_screen() -> None:
     for name, screen in SCREENS.items():
         keys = [b.key for b in screen.BINDINGS if len(b.key) == 1 and b.key.isalpha()]
         assert len(keys) == len(set(keys)), f"{name} binds a letter twice"
+
+
+def test_refresh_is_r_wherever_a_screen_refreshes() -> None:
+    """One letter, one meaning: the machines list refreshed on `f` and ran a
+    machine on `r`, against every other screen."""
+    for name, letters in SCREEN_LETTERS.items():
+        refreshers = [key for key, action in letters.items() if action in ("refresh", "reload")]
+        assert refreshers in ([], ["r"]), f"{name} refreshes on {refreshers}, not r"

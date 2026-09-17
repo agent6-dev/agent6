@@ -131,10 +131,10 @@ SCREEN_LETTERS: dict[str, dict[str, str]] = {
     },
     "machines": {
         "v": "view",
-        "r": "run",
+        "R": "run",
         "w": "watch",
         "c": "create",
-        "f": "refresh",
+        "r": "refresh",
         "q": "close",
     },
     "machine": {"q": "close"},

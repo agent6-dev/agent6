@@ -668,10 +668,10 @@ class MachinesScreen(ScreenChrome, Screen[None]):
             "Machines",
             (
                 MenuItem("View", "view", "v"),
-                MenuItem("Run", "run", "r"),
+                MenuItem("Run", "run", "R"),
                 MenuItem("Watch", "watch", "w"),
                 MenuItem("Create…", "create", "c"),
-                MenuItem("Refresh", "refresh", "f"),
+                MenuItem("Refresh", "refresh", "r"),
             ),
         ),
         Menu(
@@ -691,10 +691,12 @@ class MachinesScreen(ScreenChrome, Screen[None]):
     )
     BINDINGS: ClassVar = [
         Binding("v", "view", "View"),
-        Binding("r", "run", "Run"),
+        # `r` refreshes on every screen that refreshes, so running a machine
+        # takes the shifted letter, as `M` does for the machines screen itself.
+        Binding("R", "run", "Run"),
         Binding("w", "watch", "Watch"),
         Binding("c", "create", "Create"),
-        Binding("f", "refresh", "Refresh"),
+        Binding("r", "refresh", "Refresh"),
         Binding("question_mark", "help", "Help"),
         Binding("escape", "close", "Back", key_display="Esc/q"),
         Binding("q", "close", "Back", show=False),

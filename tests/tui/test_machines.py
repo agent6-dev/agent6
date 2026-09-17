@@ -561,7 +561,7 @@ def test_machine_run_confirms_then_spawns(tmp_path: Path, monkeypatch: object) -
             table = app.screen.query_one("#machines", DataTable)
             table.focus()
             table.move_cursor(row=0)
-            await pilot.press("r")  # run -> confirm modal
+            await pilot.press("R")  # run -> confirm modal (r refreshes, as everywhere)
             await pilot.pause()
             assert isinstance(app.screen, ConfirmModal)
             await pilot.press("y")  # confirm
@@ -588,7 +588,7 @@ def test_machine_run_refusal_notifies_and_skips_watch(tmp_path: Path, monkeypatc
             table = app.screen.query_one("#machines", DataTable)
             table.focus()
             table.move_cursor(row=0)
-            await pilot.press("r")
+            await pilot.press("R")
             await pilot.pause()
             await pilot.press("y")  # confirm the run
             await app.workers.wait_for_complete()
@@ -1081,7 +1081,7 @@ def test_machine_run_confirm_backs_out_on_q(tmp_path: Path, monkeypatch: object)
             table = app.screen.query_one("#machines", DataTable)
             table.focus()
             table.move_cursor(row=0)
-            await pilot.press("r")
+            await pilot.press("R")
             await pilot.pause()
             assert isinstance(app.screen, ConfirmModal)
             await pilot.press("q")
