@@ -38,30 +38,6 @@ class FinishGates:
     review_total: int = 0
 
 
-# The before-finish panel's rejection, by the ending it rejected; the
-# findings follow.
-REVIEW_REJECTED = {
-    "finish_session": (
-        "The review panel rejected your finish_session call. Address the"
-        " issues below before calling finish_session again.\n\n"
-    ),
-    "silent_finish": (
-        "The review panel rejected your silent finish (no tool_use, just"
-        " text). Address the issues below and continue the task.\n\n"
-    ),
-    "settled": (
-        "The review panel rejected the settled end. Address the issues"
-        " below; the run ends when it settles again or finish_session"
-        " passes.\n\n"
-    ),
-    "metric_plateau": (
-        "The review panel rejected the end at the metric plateau. Address the"
-        " issues below; the run ends when the plateau holds again or"
-        " finish_session passes.\n\n"
-    ),
-}
-
-
 def task_finish_nudge(open_tasks: Sequence[tuple[str, str]], gates: FinishGates) -> str | None:
     """The nudge to re-prompt with instead of finishing while the worker's
     own subtasks are open; None lets the end through. Capped by

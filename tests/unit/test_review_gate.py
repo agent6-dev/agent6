@@ -7,7 +7,7 @@ test_review_panel.py; here the LOOP's plumbing is the unit -- a NEEDS-WORK
 verdict revokes finish_session and injects the findings, the rejection cap
 disarms the gate, trigger "off" never runs a panel, and the periodic /
 on_verify_fail triggers fire only on their schedule. The panel is stubbed at
-the `_run_review_panel` seam."""
+the `Reviewer.critique` seam."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from agent6.tools.results import ExecResult, RawResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation, Notice
 from agent6.workflows._provider_call import CallSettings
-from agent6.workflows._review import CritiqueResult, ReviewSettings
+from agent6.workflows._review import CritiqueResult, Reviewer, ReviewSettings
 from agent6.workflows.loop import Workflow
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
@@ -108,7 +108,7 @@ def _resp_with_tool_use(text: str, tool_use: dict[str, Any]) -> ProviderResponse
 
 
 class _PanelScript:
-    """A scripted `_run_review_panel` stand-in: pops verdicts in order and
+    """A scripted `Reviewer.critique` stand-in: pops verdicts in order and
     counts how often the loop consulted the panel."""
 
     def __init__(self, verdicts: list[CritiqueResult | None]) -> None:
@@ -149,7 +149,7 @@ def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
         dispatcher=dispatcher,
         review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]),
     )
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         conversation = Conversation.from_wire(_MSGS)
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
@@ -182,7 +182,7 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
         dispatcher=dispatcher,
         review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]),
     )
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=Conversation.from_wire(_MSGS),
@@ -213,7 +213,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
             trigger="before_finish", max_consecutive_rejections=2, seats=[MagicMock()]
         ),
     )
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=Conversation.from_wire(_MSGS),
@@ -238,7 +238,7 @@ def test_trigger_off_never_runs_a_panel() -> None:
         dispatcher=dispatcher,
         review=ReviewSettings(trigger="off", seats=[MagicMock()]),
     )
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=Conversation.from_wire(_MSGS),
@@ -281,7 +281,7 @@ def test_silent_finish_panel_revokes_and_continues() -> None:
         dispatcher=dispatcher,
         review=ReviewSettings(trigger="before_finish", seats=[MagicMock()]),
     )
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         conversation = Conversation.from_wire(_MSGS)
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
@@ -335,7 +335,7 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
     # Each verify pass commits real progress (the normal success path), so the
     # verify-settled detector stays dormant and all 5 iterations run.
     with (
-        patch.object(Workflow, "_run_review_panel", panel),
+        patch.object(Reviewer, "critique", panel),
         patch("agent6.workflows._chain.chain_commit", return_value="sha"),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -368,7 +368,7 @@ def test_periodic_panel_injects_text_into_next_user_msg() -> None:
         review=ReviewSettings(trigger="periodic", period=1, seats=[MagicMock()]),
     )
     conversation = Conversation.from_wire(_MSGS)
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -407,7 +407,7 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
         review=ReviewSettings(trigger="on_verify_fail", seats=[MagicMock()]),
     )
     conversation = Conversation.from_wire(_MSGS)
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -441,7 +441,7 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
         dispatcher=dispatcher,
         review=ReviewSettings(trigger="on_verify_fail", seats=[MagicMock()]),
     )
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=Conversation.from_wire(_MSGS),
@@ -495,7 +495,7 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
             CritiqueResult(text="* fine", satisfied=True),
         ]
     )
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         state = _settled_state()
         turn = _idle_turn()
         assert _settle(wf, state, turn) is None
@@ -525,8 +525,8 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
     panel = _PanelScript([CritiqueResult(text="* one periodic finding", satisfied=True)])
     state = _settled_state()
     turn = _idle_turn()
-    with patch.object(Workflow, "_run_review_panel", panel):
-        wf._turn_review_triggers(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
+    with patch.object(Reviewer, "critique", panel):
+        wf.reviewer.triggers(state, turn)
         wf._turn_notices(state, turn)  # pyright: ignore[reportPrivateUsage]
         _settle(wf, state, turn)
     delivered = [
@@ -544,8 +544,8 @@ def test_a_rejected_plateau_end_is_named_as_one() -> None:
     wf.mode = "run"
     panel = _PanelScript([CritiqueResult(text="* the gain is unmeasured", satisfied=False)])
     turn = _idle_turn()
-    with patch.object(Workflow, "_run_review_panel", panel):
-        assert wf._end_is_reviewed(_settled_state(), turn, ending="metric_plateau")  # pyright: ignore[reportPrivateUsage]
+    with patch.object(Reviewer, "critique", panel):
+        assert wf.reviewer.end_reviewed(_settled_state(), turn, ending="metric_plateau")
     assert turn.review_text is not None
     assert turn.review_text.startswith("The review panel rejected the end at the metric plateau")
     assert "the gain is unmeasured" in turn.review_text
@@ -619,7 +619,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     state.verify.note_pass()
     state.verify.note_edit()  # green once, edited since: stale
     conv = Conversation()
-    with patch.object(Workflow, "_run_review_panel", panel):
+    with patch.object(Reviewer, "critique", panel):
         turn = TurnState(iteration=5, resp=_resp("Done."), assistant=MagicMock())
         ctx = wf._turn_context(state, iteration=5, leg_start=1)  # pyright: ignore[reportPrivateUsage]
         assert wf._handle_silent_finish("Done.", conv, state, turn, ctx) is None  # pyright: ignore[reportPrivateUsage]

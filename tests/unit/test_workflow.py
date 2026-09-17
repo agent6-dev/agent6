@@ -35,7 +35,7 @@ from agent6.workflows._provider_call import (
     reasoning_starvation,
 )
 from agent6.workflows._quiet_turns import QuietGuard
-from agent6.workflows._review import ReviewSettings
+from agent6.workflows._review import Reviewer, ReviewSettings
 from agent6.workflows._session_state import SNAPSHOT_VERSION, End
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows._verify_verdict import VerifyVerdict
@@ -8134,7 +8134,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
     )
     panels: list[str] = []
 
-    def fake_panel(self: Workflow, state: Any, *, trigger: str, iteration: int) -> CritiqueResult:
+    def fake_panel(self: Reviewer, state: Any, *, trigger: str, iteration: int) -> CritiqueResult:
         del self, state, iteration
         panels.append(trigger)
         return CritiqueResult(text="No blocking findings.", satisfied=True)
@@ -8144,7 +8144,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
         patch(
             "agent6.workflows._chain.chain_commit", side_effect=[f"sha{i}" for i in range(1, 20)]
         ),
-        patch.object(Workflow, "_run_review_panel", fake_panel),
+        patch.object(Reviewer, "critique", fake_panel),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",

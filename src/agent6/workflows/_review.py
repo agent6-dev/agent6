@@ -19,8 +19,9 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
+from agent6.budget import BudgetExceeded
 from agent6.config import ReviewTier
 from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT
 from agent6.providers import (
@@ -31,6 +32,8 @@ from agent6.providers import (
     output_cap_truncated,
 )
 from agent6.tools.results import ToolResult
+from agent6.workflows._chain import RunChain
+from agent6.workflows._context import agents_md_text
 from agent6.workflows._llm_json import extract_json
 from agent6.workflows._panel import (
     ALL_CATEGORIES,
@@ -40,7 +43,13 @@ from agent6.workflows._panel import (
     ReviewDecision,
     ReviewVerdict,
     aggregate_verdicts,
+    inconclusive_note,
+    panel_is_inconclusive,
+    render_findings,
 )
+
+if TYPE_CHECKING:
+    from agent6.workflows._loop_state import LoopState, TurnState
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,3 +363,226 @@ __all__ = [
     "run_panel",
     "structured_review",
 ]
+
+
+# The before-finish panel's rejection, by the ending it rejected; the
+# findings follow.
+REVIEW_REJECTED = {
+    "finish_session": (
+        "The review panel rejected your finish_session call. Address the"
+        " issues below before calling finish_session again.\n\n"
+    ),
+    "silent_finish": (
+        "The review panel rejected your silent finish (no tool_use, just"
+        " text). Address the issues below and continue the task.\n\n"
+    ),
+    "settled": (
+        "The review panel rejected the settled end. Address the issues"
+        " below; the run ends when it settles again or finish_session"
+        " passes.\n\n"
+    ),
+    "metric_plateau": (
+        "The review panel rejected the end at the metric plateau. Address the"
+        " issues below; the run ends when the plateau holds again or"
+        " finish_session passes.\n\n"
+    ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Reviewer:
+    """The in-loop review panel for one run: its settings, the run's chain
+    (the diff it grounds on, the AGENTS.md it reads), the read-only tools an
+    explore seat gets, and the run's budget, log and event callables.
+    `critique` runs the panel over the run diff; `triggers` is the
+    observe-only schedule; `end_reviewed` the before-finish verdict over an
+    end."""
+
+    settings: ReviewSettings
+    chain: RunChain
+    review_tools: Callable[[], tuple[list[ToolDefinition], ReviewDispatch]]
+    budget_remaining: Callable[[], float | None]
+    log: Callable[[str], None]
+    emit: Callable[..., None]
+
+    def triggers(self, state: LoopState, turn: TurnState) -> None:
+        """The observe-only review triggers (before_finish, which can revoke a
+        finish, is `end_reviewed`):
+
+          on_verify_fail - the verify just failed; surface a critique
+                           alongside the failure so the worker has a second
+                           opinion before its next edit.
+          periodic       - every ReviewSettings.period iterations.
+        """
+        if (
+            self.settings.trigger == "on_verify_fail"
+            and turn.verify_just_failed
+            and self.available()
+        ):
+            critique = self.critique(state, trigger="verify_failed", iteration=turn.iteration)
+            if critique is not None:
+                turn.review_text = critique.text
+        elif (
+            self.settings.trigger == "periodic"
+            and self.available()
+            and turn.iteration % max(1, self.settings.period) == 0
+        ):
+            critique = self.critique(state, trigger="periodic", iteration=turn.iteration)
+            if critique is not None:
+                turn.review_text = critique.text
+
+    def end_reviewed(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
+        """The before-finish panel over an end (`finish_session`, a silent
+        finish, or the settled stop or metric plateau the harness declares):
+        True when the panel rejected it
+        and the run carries on with the findings injected. After
+        `ReviewSettings.max_consecutive_rejections` back-to-back rejections the end
+        goes through (findings still injected) so the worker can't bounce
+        indefinitely. False when there is no panel or it approved. One turn
+        can declare two ends (a finish a gate revokes, then the plateau or
+        settled stop): the panel sits once and its verdict covers both."""
+        if turn.end_reviewed is None:
+            turn.end_reviewed = self._judge_end(state, turn, ending=ending)
+        return turn.end_reviewed
+
+    def _judge_end(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
+        if not (self.settings.trigger == "before_finish" and self.available()):
+            return False
+        critique = self.critique(state, trigger="before_finish", iteration=turn.iteration)
+        if critique is None:
+            return False
+        cap = self.settings.max_consecutive_rejections
+        cap_reached = cap > 0 and state.gates.review_consecutive >= cap
+        if not critique.satisfied and not cap_reached:
+            self.log(f"  review rejected {ending} at iter {turn.iteration}")
+            self.emit("loop.review.rejected_finish", iteration=turn.iteration, ending=ending)
+            state.gates.review_consecutive += 1
+            turn.review_text = REVIEW_REJECTED[ending] + critique.text
+            return True
+        if not critique.satisfied:
+            self.log(
+                f"  review rejected {ending} at iter {turn.iteration} but"
+                f" rejection cap ({cap}) reached - letting the end through"
+            )
+            self.emit(
+                "loop.review.rejection_cap_reached",
+                iteration=turn.iteration,
+                rejections=state.gates.review_consecutive,
+            )
+            turn.review_text = (
+                "The review panel flagged issues but the rejection cap was"
+                " reached; the end stands. Findings:\n\n" + critique.text
+            )
+        else:
+            self.log(f"  review approved {ending}")
+        state.gates.review_consecutive = 0
+        return False
+
+    def available(self) -> bool:
+        """A second opinion is available: the review panel has seats. Gates
+        every in-loop review trigger."""
+        return bool(self.settings.seats)
+
+    def critique(self, state: LoopState, *, trigger: str, iteration: int) -> CritiqueResult | None:
+        """Run the grounded review panel over the run diff. Returns a
+        `CritiqueResult` (`satisfied=False` only when the panel BLOCKS and
+        the gate is still armed). Per-seat + panel events are emitted in seat
+        order; the per-run rejection counter decays on a pass and disarms the gate
+        once it hits the cap so a gating panel can never stall the run."""
+        diff = self.chain.diff_since_base()
+        if not diff.strip():
+            # No diff to ground against (nothing changed, or base_sha missing on a
+            # pre-field resume). Can't review -> approve, but make the skip visible
+            # so a "gate didn't run" is never silent.
+            self.emit("loop.review.skipped", iteration=iteration, trigger=trigger, reason="no_diff")
+            return None
+        # Skip the panel once the run's remaining token budget falls below
+        # ReviewSettings.budget_fraction: reviewing is most expensive (esp. explore-tier
+        # seats) exactly when budget is scarcest, and a skipped panel is
+        # approve-and-proceed (the before_finish gate only blocks on an explicit
+        # unsatisfied critique, so returning None here lets finish through). This
+        # is the sole read site for ReviewSettings.budget_fraction.
+        remaining = self.budget_remaining()
+        if remaining is not None and remaining < self.settings.budget_fraction:
+            self.emit(
+                "loop.review.skipped",
+                iteration=iteration,
+                trigger=trigger,
+                reason="budget_fraction",
+                remaining=round(remaining, 3),
+            )
+            return None
+        # on_verify_fail/periodic never gate (advisory text only); only
+        # before_finish consumes .satisfied + the rejection counter.
+        decision: ReviewDecision = (
+            self.settings.decision if trigger == "before_finish" else "advisory"
+        )
+        ctx = ReviewContext(
+            task=state.original_task,
+            # The same text the run prompt injects (repo root's file included on
+            # a subdirectory start), so review and worker see one set of conventions.
+            agents_md=agents_md_text(self.chain.root),
+            diff=diff,
+            verify_ok=state.verify.last_ok,
+            verify_output=state.verify.last_tail,
+        )
+        self.emit(
+            "loop.review.start",
+            iteration=iteration,
+            trigger=trigger,
+            seats=len(self.settings.seats),
+        )
+        tools: list[ToolDefinition] | None = None
+        dispatch: ReviewDispatch | None = None
+        if any(s.tier == "explore" for s in self.settings.seats):
+            tools, dispatch = self.review_tools()
+        try:
+            result = run_panel(
+                self.settings.seats,
+                ctx,
+                decision=decision,
+                quorum=self.settings.quorum,
+                panel_id=f"{trigger}-{iteration}",
+                concurrency=self.settings.concurrency,
+                tools=tools,
+                dispatch=dispatch,
+            )
+        except BudgetExceeded:
+            self.emit("loop.review.skipped", iteration=iteration, reason="budget")
+            return None
+        for v in result.per_seat:
+            self.emit(
+                "loop.review.seat",
+                iteration=iteration,
+                seat=v.seat,
+                model=v.model,
+                verdict="abstain" if v.error else v.verdict,
+                findings=len(v.findings),
+            )
+        disarmed = state.gates.review_total >= self.settings.max_total_rejections
+        effective_blocked = result.blocked and not disarmed
+        self.emit(
+            "loop.review.panel",
+            iteration=iteration,
+            trigger=trigger,
+            decision=decision,
+            blocked=effective_blocked,
+            raw_blocked=result.blocked,
+            disarmed=disarmed,
+            n_block=result.n_block,
+            n_abstain=result.n_abstain,
+        )
+        if trigger == "before_finish":
+            if effective_blocked:
+                state.gates.review_total += 1
+            else:
+                state.gates.review_total = max(0, state.gates.review_total - 1)
+        # An all-abstain panel reviewed nothing: name that in the critique text
+        # (the model reads it) instead of "No blocking findings.". The gate still
+        # lets the finish through -- a panel must never deadlock a run -- so
+        # `satisfied` is unchanged.
+        if panel_is_inconclusive(result):
+            text = inconclusive_note(result)
+        else:
+            text = render_findings(result.merged_findings) or "No blocking findings."
+        return CritiqueResult(text=text, satisfied=not effective_blocked)

@@ -73,8 +73,8 @@ def _drive(wf: Workflow, messages: list[dict[str, Any]]) -> Any:
 
 def test_has_reviewer_true_with_seats() -> None:
     wf = _wf(review=ReviewSettings(seats=[_seat(MagicMock())]))
-    assert wf._has_reviewer() is True  # pyright: ignore[reportPrivateUsage]
-    assert _wf(review=ReviewSettings(seats=[]))._has_reviewer() is False  # pyright: ignore[reportPrivateUsage]
+    assert wf.reviewer.available() is True
+    assert _wf(review=ReviewSettings(seats=[])).reviewer.available() is False
 
 
 def test_panel_blocks_finish_under_veto_then_accepts() -> None:
@@ -200,7 +200,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     'No blocking findings.' (the CLI verdict was fixed for the same reason).
     Uses the shared panel_is_inconclusive/inconclusive_note owner; the gate
     still lets the finish through (a panel never deadlocks a run)."""
-    import agent6.workflows.loop as loop_mod
+    import agent6.workflows._review as review_mod
     from agent6.workflows._panel import PanelResult, ReviewVerdict
     from agent6.workflows.loop import LoopState
 
@@ -223,11 +223,9 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     state = LoopState(original_task="t", tool_calls=0)
     with (
         patch.object(RunChain, "diff_since_base", return_value=_DIFF),
-        patch.object(loop_mod, "run_panel", return_value=res),
+        patch.object(review_mod, "run_panel", return_value=res),
     ):
-        out = wf._run_review_panel(  # pyright: ignore[reportPrivateUsage]
-            state, trigger="periodic", iteration=1
-        )
+        out = wf.reviewer.critique(state, trigger="periodic", iteration=1)
     assert out is not None
     assert "inconclusive" in out.text and "abstained" in out.text
     assert "No blocking findings" not in out.text
