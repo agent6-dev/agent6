@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Every transcript style name reaches every surface.
+"""Every name a surface has to know reaches every surface.
 
-`StyleName` is the vocabulary `item_lines` emits; each surface renders it in
-its own language (Rich markup, ANSI escapes, CSS classes), which is three
-spellings of one list. Merging them would abstract three genuinely different
-string vocabularies, so the list is pinned instead: a new name here fails until
-all three know it.
+Two vocabularies work this way: the transcript styles `item_lines` emits, and
+the status levels `status_level` picks. Each surface renders them in its own
+language (Rich markup, ANSI escapes, CSS classes), so the list is spelled three
+times and merging them would abstract three different string vocabularies.
+Coverage is pinned instead: a new name fails until all three know it.
 
-A name with no colour anywhere carries no CSS rule either, which is why the
+A name that carries no colour anywhere carries no CSS rule either, so each
 exemption is derived from the palettes rather than written down twice.
 """
 
@@ -46,3 +46,20 @@ def test_the_web_styles_every_name_the_terminals_colour() -> None:
 def test_the_unstyled_names_are_the_same_two_everywhere() -> None:
     assert frozenset(name for name, style in _STYLE_ANSI.items() if not style) == UNSTYLED
     assert frozenset({"text", "body"}) == UNSTYLED
+
+
+def test_every_status_level_reaches_every_surface() -> None:
+    """The second vocabulary with three spellings: `status_level` picks a level,
+    the CLI paints it with SGR, the TUI with a Rich style, the web with a pill
+    class. `neutral` is plain by design, so it carries no pill."""
+    from agent6.ui.cli._common import _LEVEL_SGR  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.tui.theme import STATUS_LEVEL_STYLE
+    from agent6.viewmodel.format import STATUS_LEVEL, StatusLevel
+
+    levels = frozenset(get_args(StatusLevel))
+    assert frozenset(STATUS_LEVEL.values()) <= levels
+    assert frozenset(_LEVEL_SGR) == levels
+    assert frozenset(STATUS_LEVEL_STYLE) == levels
+
+    css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
+    assert frozenset(re.findall(r"\.pill\.([a-z]+)", css)) >= levels - {"neutral"}

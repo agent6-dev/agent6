@@ -24,6 +24,7 @@ from agent6.sessions.layout import (
     bucket_dir,
     layout_of,
 )
+from agent6.viewmodel.format import StatusLevel
 
 
 def _sub(
@@ -356,7 +357,7 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
 
 # The ANSI SGR for each `viewmodel.format.status_level`, tty only. The TUI's
 # Rich map and the web's pill classes are the siblings.
-_LEVEL_SGR: dict[str, str] = {
+_LEVEL_SGR: dict[StatusLevel, str] = {
     "ok": "32",
     "info": "35",  # magenta (mauve on the TUI/web)
     "active": "1;36",
