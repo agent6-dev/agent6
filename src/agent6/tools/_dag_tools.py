@@ -42,7 +42,6 @@ def add_task(
         acceptance=args.acceptance,
         relevant_paths=args.relevant_paths,
         depends_on=args.depends_on,
-        standing=args.standing,
         created_by="worker",
     )
     intent = AddSubtaskIntent(parent_id=parent_id, draft=draft, after=args.after)
@@ -52,11 +51,6 @@ def add_task(
         parent_id=node.parent_id,
         title=node.title,
         status=node.status,
-        note=(
-            "standing is the operator's to set (--standing), so this was added as an ordinary task"
-            if args.standing and not node.standing
-            else ""
-        ),
     )
 
 

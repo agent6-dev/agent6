@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import (
@@ -22,6 +23,7 @@ from agent6.graph.models import (
 )
 from agent6.sessions.layout import SessionLayout
 from agent6.tools._dag_tools import add_task
+from agent6.tools.schema import DagAddTaskInput
 
 
 def _curator(tmp_path: Path) -> tuple[GraphCurator, str]:
@@ -68,8 +70,8 @@ def test_the_root_is_retirable_though_the_operator_owns_it(tmp_path: Path) -> No
 
 def test_the_models_standing_task_lands_as_an_ordinary_one(tmp_path: Path) -> None:
     """`--standing` is the one way to set a standing goal, so there is exactly
-    one and it is the operator's. A model asking for another keeps the task and
-    loses only the flag."""
+    one and it is the operator's. The curator owns that: a draft from any other
+    actor keeps its task and loses the flag, whatever route built it."""
     c, root = _curator(tmp_path)
 
     node = c.add_subtask(
@@ -84,14 +86,18 @@ def test_the_models_standing_task_lands_as_an_ordinary_one(tmp_path: Path) -> No
     assert node.status == "pending"
 
 
-def test_add_task_says_the_standing_flag_was_dropped(tmp_path: Path) -> None:
-    """An argument silently ignored is hidden state: the tool result names it."""
+def test_add_task_offers_no_standing_flag(tmp_path: Path) -> None:
+    """The model's tool carries no argument the graph will not honour: the
+    standing goal is `--standing`, so add_task does not mention it and a stale
+    call naming it is refused rather than quietly downgraded."""
     c, root = _curator(tmp_path)
 
-    result = add_task(c, root, {"title": "keep hunting defects", "standing": True})
+    assert "standing" not in DagAddTaskInput.TOOL_DESCRIPTION
+    assert "standing" not in DagAddTaskInput.model_fields
+    with pytest.raises(ValidationError):
+        add_task(c, root, {"title": "keep hunting defects", "standing": True})
 
-    assert result.to_wire()["note"].startswith("standing is the operator's to set")
-    assert "note" not in add_task(c, root, {"title": "ordinary"}).to_wire()
+    assert add_task(c, root, {"title": "ordinary"}).to_wire()["status"] == "pending"
 
 
 def test_a_new_sibling_lands_before_the_standing_goal(tmp_path: Path) -> None:

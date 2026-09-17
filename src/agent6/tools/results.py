@@ -461,20 +461,14 @@ class AddTaskResult(ToolResult):
     parent_id: str | None
     title: str
     status: str
-    # What the graph did differently from what was asked, when it did: an
-    # argument quietly dropped would be hidden state.
-    note: str = ""
 
     def to_wire(self) -> dict[str, Any]:
-        wire: dict[str, Any] = {
+        return {
             "id": self.id,
             "parent_id": self.parent_id,
             "title": self.title,
             "status": self.status,
         }
-        if self.note:
-            wire["note"] = self.note
-        return wire
 
     def summary(self) -> str:
         return f"{self.status}: {str(self.title)[:60]}"

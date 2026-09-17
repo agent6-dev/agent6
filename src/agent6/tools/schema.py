@@ -368,9 +368,7 @@ class DagAddTaskInput(_ToolInput):
         " is a short imperative; acceptance the verifiable condition. after"
         " inserts directly after that sibling. relevant_paths is an array of the"
         " repo paths the task touches; depends_on an array of task ULIDs"
-        " that must pass first. standing=true marks the run's never-finishing"
-        " fallback goal: worked when nothing else is ready, never passes,"
-        " retired with skipped/obsolete. Returns the new task's ULID."
+        " that must pass first. Returns the new task's ULID."
     )
 
     title: str = Field(min_length=1)
@@ -383,7 +381,6 @@ class DagAddTaskInput(_ToolInput):
     acceptance: str = ""
     relevant_paths: tuple[str, ...] = ()
     depends_on: tuple[Ulid, ...] = ()
-    standing: bool = False
 
 
 class DagUpdateTaskInput(_ToolInput):
