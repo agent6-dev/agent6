@@ -209,10 +209,10 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         nav.display = True
         if len(s.steps) != self._nav_steps:
             self._nav_steps = len(s.steps)
-            options = [("latest commit", "")] + [
-                (f"iter {st.iteration} · {st.sha[:7]} · {st.subject[:40]}", st.sha)
-                for st in reversed(s.steps)
-            ]
+            options = [("latest commit", "")]
+            for st in reversed(s.steps):
+                parts = (f"iter {st.iteration}", st.sha[:7], st.subject[:40])
+                options.append((" · ".join(p for p in parts if p), st.sha))
             select = self.query_one("#diff-step", Select)
             select.set_options(options)
             select.value = self._step_sel if any(v == self._step_sel for _, v in options) else ""

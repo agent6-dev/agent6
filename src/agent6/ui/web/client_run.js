@@ -530,7 +530,7 @@ function paintRun(cards, s) {
     const nav = el('div', 'form-row');
     const sel = document.createElement('select');
     sel.appendChild(new Option('latest commit', ''));
-    for (const st of steps) sel.appendChild(new Option('iter ' + st.iteration + ' · ' + st.sha.slice(0, 7) + ' · ' + st.subject, st.sha));
+    for (const st of steps) sel.appendChild(new Option(['iter ' + st.iteration, st.sha.slice(0, 7), st.subject].filter(Boolean).join(' · '), st.sha));
     const cum = document.createElement('input'); cum.type = 'checkbox'; cum.id = 'diff-cumulative';
     const cumLabel = el('label', 'muted', ' cumulative'); cumLabel.htmlFor = 'diff-cumulative';
     const pick = cards._diffPick || { sha: '', cumulative: false };
