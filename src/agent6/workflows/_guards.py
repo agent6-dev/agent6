@@ -25,6 +25,8 @@ from agent6.workflows._nudges import (
     LOOP_GUARD_NOTICE_AFTER,
     MEMORY_FLIP_NUDGE,
     NO_PROGRESS_ESCALATE_AFTER,
+    NO_PROGRESS_ESCALATION,
+    NO_PROGRESS_NUDGE,
     NO_PROGRESS_NUDGE_AFTER,
     NO_PROGRESS_STOP_AFTER,
     STAGNATION_NUDGE,
@@ -160,6 +162,36 @@ class NoProgressGuard:
         elif rung == "escalate":
             self.nudges_used = 2
         return rung
+
+
+def no_progress(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
+    """Nudge, escalate, then stop on a plain run's streak of identical verify
+    failures (`NoProgressGuard.climb`, judged on a turn whose verify failed).
+    A metric run is left to its plateau, ceiling and early-finish rules: a
+    failing verify while it searches for an optimisation is expected there."""
+    if ctx.mode != "run" or ctx.metric or not turn.verify_just_failed:
+        return None
+    streak = state.verify.fail_streak
+    rung = state.no_progress.climb(streak)
+    if rung is None:
+        return None
+    if rung == "stop":
+        return Stop(
+            End(
+                "no_progress",
+                f"stopped: the same verify failure persisted through {streak} consecutive"
+                " runs despite two harness interventions; resume with a new approach or"
+                " a bigger budget",
+            ),
+            soft="no_progress",
+            log=f"LOOP: no_progress stop at iter {turn.iteration} (streak {streak})",
+        )
+    level = 2 if rung == "escalate" else 1
+    return Nudge(
+        NO_PROGRESS_ESCALATION if rung == "escalate" else NO_PROGRESS_NUDGE,
+        event="loop.no_progress.nudge",
+        fields={"iteration": turn.iteration, "streak": streak, "level": level},
+    )
 
 
 @dataclass(slots=True)
@@ -462,4 +494,4 @@ class BudgetNudges:
 
 # The advisors that run once a turn's tools have run, in the order their
 # notices reach the model.
-AFTER_TOOLS: tuple[Advisor, ...] = (memory_flip, loop_guard_notice, stagnation)
+AFTER_TOOLS: tuple[Advisor, ...] = (memory_flip, loop_guard_notice, stagnation, no_progress)

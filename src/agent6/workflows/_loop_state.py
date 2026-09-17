@@ -184,7 +184,6 @@ class TurnState:
     end_reviewed: bool | None = None
     plateau_should_stop: bool = False
     verify_settled_stop: bool = False
-    no_progress_stop: bool = False
     # The advisors' decisions to end the run, in the order they were made;
     # the stop checks honour the first one left after a standing task's absorb.
     stops: list[Stop] = field(default_factory=list)

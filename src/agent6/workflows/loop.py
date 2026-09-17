@@ -160,8 +160,6 @@ from agent6.workflows._nearest_tests import (
 from agent6.workflows._nudges import (
     BASELINE_RED_NOTICE,
     MEMORY_FINISH_NUDGE,
-    NO_PROGRESS_ESCALATION,
-    NO_PROGRESS_NUDGE,
     PLAN_BUDGET_NUDGE,
     PLAN_BUDGET_NUDGE_BELOW,
     PLAN_NUDGE_AFTER_ITERS,
@@ -784,7 +782,6 @@ class Workflow:
             result = self._turn_verify_settled(state, turn)
             if result is not None:
                 return result
-            self._turn_no_progress(state, turn)
             conversation.results(turn.tool_results)
             # Snapshot AFTER the executed tools (assistant turn + tool_results
             # are in the conversation) so a crash before iteration N+1's
@@ -2277,33 +2274,6 @@ class Workflow:
             )
         )
 
-    def _turn_no_progress(self, state: LoopState, turn: TurnState) -> None:
-        """Inject the spiral-guard nudges: fires only on a PLAIN run-mode
-        streak of identical verify failures (see _nudges rationale). Metric
-        runs are excluded: repeated verify failures while searching for an
-        optimization are expected there, and the metric plateau / early-finish
-        / ceiling machinery owns when such a run stops -- firing here would
-        truncate the budgeted search and end the run completed=false."""
-        non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
-        if not non_metric_run or not turn.verify_just_failed:
-            return
-        streak = state.verify.fail_streak
-        rung = state.no_progress.climb(streak)
-        if rung == "stop":
-            # Both nudges delivered and the identical failure persists: stop in
-            # the stop checks rather than burn the rest of the budget.
-            turn.no_progress_stop = True
-        elif rung is not None:
-            turn.tool_results.append(
-                Notice(NO_PROGRESS_ESCALATION if rung == "escalate" else NO_PROGRESS_NUDGE)
-            )
-            self._emit(
-                "loop.no_progress.nudge",
-                iteration=turn.iteration,
-                streak=streak,
-                level=2 if rung == "escalate" else 1,
-            )
-
     def _standing_task(self) -> tuple[str, str] | None:
         """The ready standing task's (id, title), if this run has one."""
         if self.curator is None:
@@ -2360,11 +2330,9 @@ class Workflow:
         soft = (
             "verify_settled"
             if turn.verify_settled_stop
-            else "no_progress"
-            if turn.no_progress_stop
             else "metric_plateau"
             if turn.plateau_should_stop
-            else None
+            else next((stop.soft for stop in turn.stops if stop.soft), None)
         )
         if soft is None or any(not stop.soft for stop in turn.stops):
             return
@@ -2372,8 +2340,8 @@ class Workflow:
         if nudge is None:
             return
         turn.verify_settled_stop = False
-        turn.no_progress_stop = False
         turn.plateau_should_stop = False
+        turn.stops = [stop for stop in turn.stops if not stop.soft]
         state.settled.restart()
         state.verify.fail_streak = 0
         state.no_progress.nudges_used = 0
@@ -2382,7 +2350,7 @@ class Workflow:
 
     # ---- stop checks, silent finish, went-quiet --------------------------------
 
-    def _turn_stop_checks(  # noqa: PLR0911 - a flat precedence ladder of terminal checks
+    def _turn_stop_checks(
         self, state: LoopState, turn: TurnState, conversation: Conversation
     ) -> SessionResult | None:
         """Terminal checks, run after the turn's tool_results are in
@@ -2395,22 +2363,6 @@ class Workflow:
             if stop.log:
                 self._log(stop.log)
             return self._finish(state, stop.end, iteration=turn.iteration)
-        if turn.no_progress_stop:
-            self._log(
-                f"LOOP: no_progress stop at iter {turn.iteration}"
-                f" (streak {state.verify.fail_streak})"
-            )
-            return self._finish(
-                state,
-                End(
-                    "no_progress",
-                    "stopped: the same verify failure persisted through"
-                    f" {state.verify.fail_streak} consecutive runs despite two"
-                    " harness interventions; resume with a new approach or a"
-                    " bigger budget",
-                ),
-                iteration=turn.iteration,
-            )
         if turn.verify_settled_stop:
             self._log(f"LOOP: verify_settled at iter {turn.iteration} (idle {state.settled.idle})")
             self._final_checkpoint(turn.iteration)
