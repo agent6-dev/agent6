@@ -31,14 +31,10 @@ class PromptDispatcher:
         answerable: Callable[[], bool],
         lost: str,
         inline_approvals: Callable[[], bool] = lambda: False,
-        typing: Callable[[], bool] = lambda: False,
     ) -> None:
         self._app = app
         self._answerable = answerable
         self._lost = lost
-        # True while the operator is typing in a composer: a modal waits for the
-        # pause, so it never takes focus (and the next letters) mid-sentence.
-        self._typing = typing
         # True while the active screen renders approvals itself (the
         # conversation's inline item + key row), so no modal is pushed.
         self._inline_approvals = inline_approvals
@@ -48,8 +44,6 @@ class PromptDispatcher:
         self._seen.clear()
 
     def dispatch(self, session_dir: Path, state: SessionState) -> None:
-        if self._typing():
-            return  # unclaimed, so the next dispatch after the pause pops them
         for ap in state.pending_approvals:
             if ap.answered or self._inline_approvals():
                 continue

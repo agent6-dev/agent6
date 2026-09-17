@@ -72,7 +72,6 @@ from agent6.ui.tui.composer import SteerInput
 from agent6.ui.tui.conversation import ConversationScreen
 from agent6.ui.tui.dashboard import DashboardScreen
 from agent6.ui.tui.modals import (
-    ANSWER_ARM_S,
     ConfirmModal,
     TextModal,
 )
@@ -184,8 +183,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             self,
             answerable=self.session_controllable,
             lost=_ANSWER_LOST,
-            inline_approvals=lambda: isinstance(self._screen_or_none(), ConversationScreen),
-            typing=self._typing,
+            inline_approvals=lambda: isinstance(
+                self._screen_or_none(), (ConversationScreen, DashboardScreen)
+            ),
         )
         self._seen_steer = 0
         self._dirty = False  # a structural event arrived; _tick coalesces the repaint
@@ -239,7 +239,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self.resume_model = ""
         presets = available_preset_names(Path.cwd(), config_path)
         routes = available_routes(Path.cwd(), config_path)
-        self._dash = DashboardScreen(presets=presets, routes=routes)
+        self._dash = DashboardScreen(presets=presets, routes=routes, prompts=self._prompts)
         self._conv = ConversationScreen(
             self.logs_path,
             title=self.screen_title,
@@ -415,12 +415,6 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             self.dir_status = status
             self._dirty = True
             self._conv.refresh_liveness()
-
-    def _typing(self) -> bool:
-        """Whether either run view's composer took a key within ANSWER_ARM_S."""
-        now = time.monotonic()
-        bars = [*self._conv.query(SteerInput), *self._dash.query(SteerInput)]
-        return any(now - bar.last_key_at < ANSWER_ARM_S for bar in bars)
 
     def _screen_or_none(self) -> Screen[object] | None:
         """The active screen, or None while the stack is empty (startup,

@@ -49,10 +49,12 @@ from agent6.types import SESSION_KINDS
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     RUN_MENU,
+    ApprovalRow,
     ComposerMode,
     ResumeOptions,
     SteerInput,
     SteerSuggest,
+    deliver_answer,
     open_history_search,
 )
 from agent6.ui.tui.logview import LogScreen
@@ -60,6 +62,7 @@ from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
     ToolCallDetailModal,
 )
+from agent6.ui.tui.prompts import PromptDispatcher
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import (
@@ -283,11 +286,19 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             self.render_state()
 
     def __init__(
-        self, *, presets: list[str] | None = None, routes: list[str] | None = None
+        self,
+        *,
+        presets: list[str] | None = None,
+        routes: list[str] | None = None,
+        prompts: PromptDispatcher | None = None,
     ) -> None:
         super().__init__()
         self._presets = presets if presets is not None else []
         self._routes = routes if routes is not None else []
+        self._prompts = prompts
+        self._row: ApprovalRow | None = None  # the open approval, docked above the composer
+        self._row_id = ""
+        self._answered_from_row = False  # the focus stayed on the approval
         # Select a task in the #plan tree to filter tools/log/diff to it; re-select
         # to clear. _log_filter tracks what the RichLog currently shows so a filter
         # change forces one full re-render (it is append-only otherwise).
@@ -448,6 +459,48 @@ class DashboardScreen(ScreenChrome, Screen[None]):
 
     def on_descendant_focus(self, _event: events.DescendantFocus) -> None:
         self._show_pane_row()
+
+    def _render_approval(self) -> None:
+        """The open approval, docked above the composer: the row the
+        conversation shows, carrying the command too, since the dashboard has
+        no transcript to carry it. Never a modal: nothing takes the focus."""
+        tui = self._tui
+        live = tui.session_controllable()
+        current = next((ap for ap in tui.state.pending_approvals if not ap.answered), None)
+        if current is None or not live:
+            if self._row is not None:
+                self._row.remove()
+                self._row, self._row_id = None, ""
+            return
+        if self._row is not None and self._row_id == current.id:
+            return
+        if self._row is not None:
+            self._row.remove()
+        self._row = ApprovalRow(standing=current.standing, prompt=current.prompt)
+        self._row_id = current.id
+        self.mount(self._row, before=self.query_one("#dash-suggest"))
+        if self._answered_from_row:
+            # The last answer came from the row and the composer never took the
+            # focus back: keep it there, so this one answers too.
+            self._row.call_after_refresh(self._row.focus_answers)
+
+    def on_approval_row_answered(self, message: ApprovalRow.Answered) -> None:
+        """An answer, from a label's click or its key."""
+        if self._row is None:
+            return
+        self._answered_from_row = self._row.holds_focus()
+        verdict = deliver_answer(
+            self,
+            session_dir=self._tui.session_dir,
+            prompt_id=self._row_id,
+            answer=message.answer,
+            prompts=self._prompts,
+            live=self._tui.session_controllable(),
+        )
+        if verdict:
+            self._render_approval()
+            if self._answered_from_row:
+                self.query_one("#stream", _ScrollPane).focus()
 
     def _show_pane_row(self) -> None:
         """The row a compact dashboard unfolds: the one holding focus, else the
@@ -626,6 +679,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             needs_new_work=tui.finished_green(),
         )
         self.query_one("#dash-resume", ResumeOptions).show(mode == "resume")
+        self._render_approval()
         role = s.last_role
         # A spinner + seconds since the last event belongs only to a model call
         # awaiting its result. A live worker before or between calls is not

@@ -37,7 +37,6 @@ from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
-from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_answer
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     RUN_MENU,
@@ -46,6 +45,7 @@ from agent6.ui.tui.composer import (
     ResumeOptions,
     SteerInput,
     SteerSuggest,
+    deliver_answer,
     open_history_search,
 )
 from agent6.ui.tui.logview import LogScreen
@@ -300,6 +300,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._approval: tuple[str, str, bool] | None = None  # (id, prompt, standing)
         self._approval_done: str | None = None
         self._row: ApprovalRow | None = None
+        self._answered_from_row = False  # the focus stayed on the approval
         self._row_id = ""
         self._live_think: list[str] = []
         self._live_text: list[str] = []
@@ -503,6 +504,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
                 self._row = ApprovalRow(standing=standing)
                 self._row_id = aid
                 self.mount(self._row, before=self.query_one("#conv-suggest"))
+                if self._answered_from_row:
+                    # The last answer came from the row and the composer never
+                    # took the focus back: keep it there, so this one answers too.
+                    self._row.call_after_refresh(self._row.focus_answers)
             return
         if self._row is not None:
             self._row.remove()
@@ -517,25 +522,28 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             item.display = False
 
     def on_approval_row_answered(self, message: ApprovalRow.Answered) -> None:
-        """An answer, from a label's click or the composer's key."""
-        answer = message.answer
+        """An answer, from a label's click or its key."""
         if self._approval is None:
             return
         aid = self._approval[0]
-        if not self._host_live():
-            self.notify("the run is gone: the answer reached nothing", severity="warning")
+        # Answering from the row keeps the focus out of the composer (on the
+        # transcript, where the command is), so the next approval answers too.
+        self._answered_from_row = self._row is not None and self._row.holds_focus()
+        verdict = deliver_answer(
+            self,
+            session_dir=self._logs_path.parent,
+            prompt_id=aid,
+            answer=message.answer,
+            prompts=self._prompts,
+            live=self._host_live(),
+        )
+        if not verdict:
             return
-        if self._prompts is not None:
-            self._prompts.claim(self._logs_path.parent, aid)
-        if write_answer(self._logs_path.parent, aid, answer):
-            self._note_answered("allowed" if answer in ("yes", "session") else "denied")
-            self.notify(f"answered: {answer}")
-        else:
-            self._note_answered("answered elsewhere")
-            self.notify(ANSWERED_ELSEWHERE, severity="warning")
+        self._note_answered(verdict)
         self._render_approval()
-        with contextlib.suppress(NoMatches):
-            self.query_one("#conv-input", SteerInput).focus()
+        if self._answered_from_row:
+            with contextlib.suppress(NoMatches):
+                self.query_one("#conv-scroll").focus()
 
     def _render_live(self) -> None:
         self._render_approval()

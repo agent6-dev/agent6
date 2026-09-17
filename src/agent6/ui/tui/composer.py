@@ -7,7 +7,6 @@ history search, and the inline approval row."""
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol, cast
 
@@ -16,18 +15,20 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Select, Static, TextArea
 
 from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS
+from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_answer
 from agent6.ui.tui.menubar import (
     Menu,
     MenuItem,
 )
-from agent6.ui.tui.modals import ANSWER_ARM_S, HistorySearchModal
+from agent6.ui.tui.modals import HistorySearchModal
 from agent6.ui.tui.widgets import Picker
+from agent6.viewmodel import approval_parts
 from agent6.viewmodel.tail import tail_events
 from agent6.viewmodel.transcript import (
     operator_inputs,
@@ -250,21 +251,14 @@ class SteerInput(TextArea):
     """The bottom composer bar: a TextArea that submits on Enter (Ctrl+J /
     Shift+Enter insert a newline instead) and grows with its content up to
     _INPUT_MAX_ROWS. Two modes (set_mode): steer a live run, or type the
-    follow-up instruction a finished run is resumed with. While an approval
-    row is on the screen and the composer is empty, the row's keys answer it
-    (check_action), once typing has paused (ANSWER_ARM_S); anything typed
-    makes them letters again."""
+    follow-up instruction a finished run is resumed with. An open approval
+    never takes the keys: they answer only with the focus moved into its row."""
 
     ALLOW_MAXIMIZE = False  # a full-screen composer is never what Maximize means
 
     BINDINGS: ClassVar = [
         # TextArea's own undo stack; ctrl+z is the app's Detach (see Agent6TUI).
         Binding("ctrl+underscore", "undo", "Undo", show=False),
-        # Priority: a plain letter is otherwise text before any binding runs.
-        *(
-            Binding(key, f"answer('{answer}')", label, priority=True, show=False)
-            for key, answer, label, _style in APPROVAL_ANSWERS
-        ),
     ]
 
     class Submitted(Message):
@@ -277,7 +271,6 @@ class SteerInput(TextArea):
         self._resize()
 
     policy = ""  # viewmodel.session_policy(...).short(), set once the run dir is known
-    last_key_at = 0.0  # monotonic time of the last key this composer took
     mode: ComposerMode = "steer"  # which directives apply (see steer_suggestion_rows)
 
     def set_mode(
@@ -310,7 +303,6 @@ class SteerInput(TextArea):
             self.border_subtitle = subtitle
 
     def on_key(self, event: events.Key) -> None:
-        self.last_key_at = time.monotonic()
         if event.key == "enter":
             event.prevent_default()
             event.stop()
@@ -330,20 +322,6 @@ class SteerInput(TextArea):
                 if completed != self.text:
                     self.load_text(completed)
                     self.move_cursor(self.document.end)
-
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if action == "answer":
-            # A declined key falls through as the letter it is.
-            rows = self.screen.query(ApprovalRow)
-            if not rows or self.text or not rows.first().offers(str(parameters[0])):
-                return False
-            typed_at = max(rows.first().shown_at, self.last_key_at)
-            return time.monotonic() - typed_at >= ANSWER_ARM_S
-
-        return True
-
-    def action_answer(self, answer: str) -> None:
-        self.post_message(ApprovalRow.Answered(answer))
 
     def on_text_area_changed(self, _event: TextArea.Changed) -> None:
         self._resize()
@@ -379,8 +357,14 @@ def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path)
     screen.app.push_screen(HistorySearchModal(entries), fill)
 
 
-class _AnswerLabel(Static):
-    """One answer of the row: `[key] label`; a click answers."""
+class _AnswerLabel(Static, can_focus=True):
+    """One answer of the row: `[key] label`. A click answers from any focus;
+    Tab reaches it and Enter or Space answers, like a button."""
+
+    BINDINGS: ClassVar = [
+        Binding("enter", "answer", "Answer", show=False),
+        Binding("space", "answer", "Answer", show=False),
+    ]
 
     def __init__(self, key: str, answer: str, label: str, style: str) -> None:
         super().__init__(Text(f"[{key}] {label}", style=style), classes=f"answer-{answer}")
@@ -389,33 +373,99 @@ class _AnswerLabel(Static):
     def on_click(self) -> None:
         self.post_message(ApprovalRow.Answered(self.answer))
 
+    def action_answer(self) -> None:
+        self.post_message(ApprovalRow.Answered(self.answer))
 
-class ApprovalRow(Horizontal):
-    """The answer row docked above the composer while an approval is open.
-    A label answers on click from any focus; its key answers from the
-    composer, which keeps focus, while the composer is empty (SteerInput's
-    bindings), so a typed message never answers."""
+
+class ApprovalRow(Vertical):
+    """The open approval, docked above the composer: the command under judgment
+    (when the screen does not show it itself) over the answers.
+
+    Nothing here takes focus: the composer keeps it, and a message typed as an
+    approval arrives is a message. Tab (or a click) moves focus into the row,
+    where every answer is a tab stop and its key answers; answering leaves the
+    focus there, so the next approval is answerable at once."""
 
     DEFAULT_CSS = """
     ApprovalRow { height: auto; padding: 0 1; background: $surface; }
+    ApprovalRow #approval-answers { height: auto; }
     ApprovalRow Static { width: auto; padding: 0 2 0 0; }
+    ApprovalRow _AnswerLabel:focus { background: $primary; color: $text; text-style: bold; }
+    ApprovalRow _AnswerLabel:hover { background: $primary 30%; }
     """
+
+    BINDINGS: ClassVar = [
+        *(
+            Binding(key, f"answer('{answer}')", label, show=False)
+            for key, answer, label, _style in APPROVAL_ANSWERS
+        ),
+    ]
 
     class Answered(Message):
         def __init__(self, answer: str) -> None:
             super().__init__()
             self.answer = answer
 
-    def __init__(self, *, standing: bool) -> None:
+    def __init__(self, *, standing: bool, prompt: str = "") -> None:
         super().__init__()  # no fixed id: a superseded row may still be unmounting
         self._standing = standing
-        self.shown_at = time.monotonic()  # its keys arm ANSWER_ARM_S after this
+        self._prompt = prompt
 
     def compose(self) -> ComposeResult:
-        for key, answer, label, style in APPROVAL_ANSWERS:
-            if self.offers(answer):
-                yield _AnswerLabel(key, answer, label, style)
-        yield Static(Text("(keys work while the composer is empty; or click)", style="dim"))
+        if self._prompt:
+            head, payload = approval_parts(self._prompt)
+            body = Text("? ", style="bold yellow")
+            body.append(f"{head}: approval needed", style="bold")
+            if payload:
+                body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
+            yield Static(body)
+        with Horizontal(id="approval-answers"):
+            for key, answer, label, style in APPROVAL_ANSWERS:
+                if self.offers(answer):
+                    yield _AnswerLabel(key, answer, label, style)
+            yield Static(Text("(Tab here for the keys; or click)", style="dim"))
 
     def offers(self, answer: str) -> bool:
         return self._standing or answer not in _STANDING_ANSWERS
+
+    def action_answer(self, answer: str) -> None:
+        self.post_message(self.Answered(answer))
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """A prompt with no scope offers no session answer, key included."""
+        return self.offers(str(parameters[0])) if action == "answer" else True
+
+    def focus_answers(self) -> None:
+        """Put the focus on the first answer, where the keys work."""
+        labels = self.query(_AnswerLabel)
+        if labels:
+            labels.first().focus()
+
+    def holds_focus(self) -> bool:
+        screen = self.screen if self.is_attached else None
+        focused = screen.focused if screen is not None else None
+        return focused is not None and (focused is self or self in focused.ancestors)
+
+
+def deliver_answer(
+    screen: Screen[Any],
+    *,
+    session_dir: Path,
+    prompt_id: str,
+    answer: str,
+    prompts: Any = None,
+    live: bool = True,
+) -> str:
+    """Write an approval answer a row collected, notify the screen, and say what
+    happened: "allowed", "denied", "answered elsewhere", or "" for a run that
+    can no longer take it. One owner, so both run views answer alike."""
+    if not live:
+        screen.notify("the run is gone: the answer reached nothing", severity="warning")
+        return ""
+    if prompts is not None:
+        prompts.claim(session_dir, prompt_id)
+    if write_answer(session_dir, prompt_id, answer):
+        screen.notify(f"answered: {answer}")
+        return "allowed" if answer in ("yes", "session") else "denied"
+    screen.notify(ANSWERED_ELSEWHERE, severity="warning")
+    return "answered elsewhere"

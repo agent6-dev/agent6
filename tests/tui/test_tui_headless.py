@@ -28,7 +28,6 @@ from agent6.sessions.ipc import clear_answer
 from agent6.ui.tui.app import Agent6TUI, TuiExit
 from agent6.ui.tui.composer import ApprovalRow
 from agent6.ui.tui.modals import (
-    ANSWER_ARM_S,
     ApprovalModal,
     ConfirmModal,
     QuestionModal,
@@ -212,7 +211,6 @@ def test_each_consequential_modal_delivers_one_result() -> None:
     async def scenario() -> None:
         approval = _ModalHost(ApprovalModal("a", "allow?"))
         async with approval.run_test() as pilot:
-            await pilot.pause(ANSWER_ARM_S)
             await pilot.press("a")
             await pilot.pause()
             assert approval.results == ["session"]
@@ -394,20 +392,23 @@ def test_render_and_modals(tmp_path: Path) -> None:
             app._tick()  # the coalesced repaint happens in the tick, not per event
             await pilot.pause()
 
-            # Approval modal: keyboard 'y' must reach the modal (routing bug).
+            # The dashboard answers inline (never a modal): focus the row, key.
             app._handle_event(_ev(type="approval.prompt", id="ap1", prompt="run_command(['ls'])"))
             app._tick()
             await pilot.pause()
-            assert isinstance(app.screen, ApprovalModal)
-            await pilot.pause(ANSWER_ARM_S)
+            assert not isinstance(app.screen, ApprovalModal)
+            app._dash.query(ApprovalRow).first().focus_answers()
+            await pilot.pause()
             await pilot.press("y")
             await pilot.pause()
             assert (tmp_path / "approvals" / "ap1.answer").read_text(encoding="utf-8") == "yes"
 
-            # Approval modal: keyboard 'n'.
+            app._handle_event(_ev(type="approval.answer", id="ap1", approved=True))
             app._handle_event(_ev(type="approval.prompt", id="ap2", prompt="rm -rf"))
             app._tick()
-            await pilot.pause(ANSWER_ARM_S)
+            await pilot.pause()
+            app._dash.query(ApprovalRow).first().focus_answers()
+            await pilot.pause()
             await pilot.press("n")
             await pilot.pause()
             assert (tmp_path / "approvals" / "ap2.answer").read_text(encoding="utf-8") == "no"
@@ -425,7 +426,6 @@ def test_render_and_modals(tmp_path: Path) -> None:
             await pilot.press("enter")
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "fix"
-            await pilot.pause(ANSWER_ARM_S)  # a prompt modal waits for typing to pause
 
             # Question modal (ask_user): markup-hostile options render; clicking an
             # option fills its answer field, and ctrl+s writes the bridge file (a
@@ -735,7 +735,8 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> N
             app._conv._poll()
             await pilot.pause()
             assert app._conv.query(ApprovalRow)
-            await pilot.pause(ANSWER_ARM_S)
+            app._conv.query(ApprovalRow).first().focus_answers()
+            await pilot.pause()
             await pilot.press("y")
             await pilot.pause()
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
@@ -752,7 +753,8 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> N
             app._conv._poll()
             await pilot.pause()
             assert app._conv.query(ApprovalRow)  # re-shown, not swallowed
-            await pilot.pause(ANSWER_ARM_S)
+            app._conv.query(ApprovalRow).first().focus_answers()
+            await pilot.pause()
             await pilot.press("n")
             await pilot.pause()
             answer = (tmp_path / "approvals" / "approval-1.answer").read_text(encoding="utf-8")
@@ -1684,7 +1686,6 @@ def test_a_prompt_with_no_scope_shows_no_allow_session_button() -> None:
             labels = [str(b.label) for b in modal.query(Button)]
             assert labels == ["Allow (y)", "Deny (n)"]
             assert modal.check_action("approve_session", ()) is False
-            await pilot.pause(ANSWER_ARM_S)
             await pilot.press("a")  # the removed binding must not answer
             await pilot.pause()
             assert app.screen is modal, "'a' dismissed a modal that offers no session answer"
@@ -1761,7 +1762,6 @@ def test_the_approval_modal_offers_every_answer_and_focuses_the_safe_one() -> No
             assert labels == ["Allow (y)", "Allow all (a)", "Deny (n)", "Deny all (d)"]
             focused = modal.focused
             assert isinstance(focused, Button) and focused.id == "no"
-            await pilot.pause(ANSWER_ARM_S)
             await pilot.press("d")
             await pilot.pause()
             assert app.screen is not modal, "'d' answered nothing"

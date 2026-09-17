@@ -18,7 +18,7 @@ from textual.widgets import Static
 
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow, SteerInput
-from agent6.ui.tui.modals import ANSWER_ARM_S, ApprovalModal
+from agent6.ui.tui.modals import ApprovalModal
 
 
 def _live_run(d: Path) -> None:
@@ -66,7 +66,8 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
             assert "approval needed" in text and "pytest -q tests/unit/test_x.py" in text
             # The composer keeps focus: an empty one lets the row's keys answer.
             assert app.focused is app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
-            await pilot.pause(ANSWER_ARM_S)
+            app._conv.query(ApprovalRow).first().focus_answers()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
             await pilot.press("y")
             assert await _answer_written(run, pilot) == "yes"
             _append(run, {"type": "approval.answer", "id": "ap1", "approved": True})
@@ -126,7 +127,6 @@ def test_a_typed_message_never_answers_the_approval(tmp_path: Path) -> None:
         app = Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
-            await pilot.pause(ANSWER_ARM_S)
             await pilot.press("slash", "b", "t", "w", "space", "y", "e", "s", "space", "a", "n")
             await pilot.pause()
             assert not (run / "approvals" / "ap1.answer").exists()
@@ -182,7 +182,8 @@ def test_an_answered_approval_stays_closed_on_reload(tmp_path: Path) -> None:
         app = Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
-            await pilot.pause(ANSWER_ARM_S)
+            app._conv.query(ApprovalRow).first().focus_answers()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
             await pilot.press("y")
             await pilot.pause()
             assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
@@ -316,7 +317,6 @@ def test_a_non_standing_approvals_session_keys_type_the_letter(tmp_path: Path) -
             await pilot.pause()
             await pilot.pause()
             assert await _row_shown(app, pilot)
-            await pilot.pause(ANSWER_ARM_S)
             await pilot.press("a", "d")
             await pilot.pause()
             assert not (run / "approvals" / "ap1.answer").exists()
@@ -337,7 +337,7 @@ def test_a_key_off_the_composer_answers_nothing(tmp_path: Path) -> None:
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
             app._conv.query_one("#conv-scroll").focus()  # pyright: ignore[reportPrivateUsage]
-            await pilot.pause(ANSWER_ARM_S)
+            await pilot.pause()
             await pilot.press("y")
             await pilot.pause()
             assert not (run / "approvals" / "ap1.answer").exists()
@@ -349,9 +349,8 @@ def test_a_key_off_the_composer_answers_nothing(tmp_path: Path) -> None:
 
 
 def test_a_letter_typed_as_the_approval_appears_types(tmp_path: Path) -> None:
-    """The row's keys answered the instant it mounted, so the first letter of
-    a message started as the approval arrived (`yes...` into an empty composer)
-    allowed the command. Keys arm once typing has paused: the letters land."""
+    """An approval takes neither the focus nor the keys: a message started as
+    it arrives (`yes…` into an empty composer) is a message, not an answer."""
     run = tmp_path / "live-run-JJJJJJ"
     _live_run(run)
 
@@ -368,10 +367,34 @@ def test_a_letter_typed_as_the_approval_appears_types(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_an_approval_modal_waits_while_the_composer_is_typed_in(tmp_path: Path) -> None:
-    """On the dashboard an approval is a modal, and it took focus mid-sentence:
-    the next letters answered it. It opens once typing pauses, and its own keys
-    answer nothing until then."""
+def test_tab_reaches_the_answers_and_enter_answers(tmp_path: Path) -> None:
+    """The answers are tab stops, like buttons: Tab from the composer walks to
+    one and Enter answers it, and its key answers once the focus is there."""
+    run = tmp_path / "live-run-LLLLLL"
+    _live_run(run)
+
+    async def scenario() -> None:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_approval(app, pilot, run)
+            bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+            assert app.focused is bar
+            for _ in range(8):  # Tab walks the screen; stop on the first answer
+                await pilot.press("tab")
+                await pilot.pause()
+                if isinstance(app.focused, Static) and "answer-yes" in app.focused.classes:
+                    break
+            assert app.focused is not None and "answer-yes" in app.focused.classes
+            await pilot.press("enter")
+            assert await _answer_written(run, pilot) == "yes"
+
+    asyncio.run(scenario())
+
+
+def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(tmp_path: Path) -> None:
+    """The dashboard popped a modal, which took the focus mid-sentence. It
+    shows the same row, with the command (it has no transcript), and answering
+    from the row leaves the focus there, so the next approval answers too."""
     run = tmp_path / "live-run-KKKKKK"
     _live_run(run)
 
@@ -383,35 +406,35 @@ def test_an_approval_modal_waits_while_the_composer_is_typed_in(tmp_path: Path) 
             await pilot.pause()
             bar = app._dash.query_one("#dash-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
             bar.focus()
-            prompt: dict[str, object] = {
-                "type": "approval.prompt",
-                "id": "ap1",
-                "prompt": "Allow run_command: ls",
-            }
-            _append(run, prompt)
-            typed = ""
-            for _ in range(80):  # keep typing until the prompt has folded, then a while longer
-                await pilot.press("o")
-                typed += "o"
-                app._tick()  # pyright: ignore[reportPrivateUsage]
-                await pilot.pause(0.05)
-                if app.state.pending_approvals and len(typed) > 10:
-                    break
-            assert app.state.pending_approvals
-            assert not isinstance(app.screen, ApprovalModal)
-            await pilot.press("y")
-            assert bar.text == typed + "y" and app.focused is bar
+            _append(
+                run, {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: ls"}
+            )
             for _ in range(80):
                 app._tick()  # pyright: ignore[reportPrivateUsage]
                 await pilot.pause(0.05)
-                if isinstance(app.screen, ApprovalModal):
+                if app._dash.query(ApprovalRow):  # pyright: ignore[reportPrivateUsage]
                     break
-            assert isinstance(app.screen, ApprovalModal)
-            await pilot.press("y")  # typed the instant it opened: answers nothing
+            row = app._dash.query(ApprovalRow).first()  # pyright: ignore[reportPrivateUsage]
+            assert not isinstance(app.screen, ApprovalModal)
+            assert app.focused is bar  # the row took nothing
+            shown = str(row.query_one(Static).render())
+            assert "Allow run_command" in shown and "ls" in shown
+            row.focus_answers()
             await pilot.pause()
-            assert not (run / "approvals" / "ap1.answer").exists()
-            await pilot.pause(ANSWER_ARM_S)
             await pilot.press("y")
             assert await _answer_written(run, pilot) == "yes"
+            _append(run, {"type": "approval.answer", "id": "ap1", "approved": True})
+            _append(
+                run, {"type": "approval.prompt", "id": "ap2", "prompt": "Allow run_command: rm"}
+            )
+            for _ in range(80):
+                app._tick()  # pyright: ignore[reportPrivateUsage]
+                await pilot.pause(0.05)
+                focused = app.focused
+                if focused is not None and "answer-yes" in focused.classes:
+                    break
+            assert app.focused is not None and "answer-yes" in app.focused.classes
+            await pilot.press("n")
+            assert await _answer_written(run, pilot, "ap2") == "no"
 
     asyncio.run(scenario())
