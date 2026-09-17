@@ -27,13 +27,12 @@ from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
 from agent6.workflows._finish_gates import FinishGates, task_finish_nudge, with_open_tasks
 from agent6.workflows._guards import (
-    MetricGuard,
     QuietGuard,
     SettledGuard,
-    metric_plateau,
     settled_end,
     verify_settled,
 )
+from agent6.workflows._metric import MetricGuard, metric_plateau
 from agent6.workflows._provider_call import (
     CallSettings,
     ProviderCaller,

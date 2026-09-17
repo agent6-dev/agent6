@@ -24,12 +24,7 @@ from agent6.tools.results import ExecResult, ToolResult
 from agent6.workflows._advice import Advisor, BeforeCallAdvisor, Nudge, Stop, TurnContext
 from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER, stuck_on_task_nudge
 from agent6.workflows._finish_gates import with_open_tasks
-from agent6.workflows._metric import (
-    METRIC_PLATEAU_PATIENCE,
-    METRIC_PLATEAU_STOP_BELOW_BUDGET,
-    MetricSample,
-    metric_plateau_nudge,
-)
+from agent6.workflows._metric import metric_plateau
 from agent6.workflows._nudges import (
     LOOP_GUARD_NOTICE_AFTER,
     MEMORY_FLIP_NUDGE,
@@ -244,83 +239,6 @@ def verify_settled(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
             fields={"iteration": turn.iteration, "idle": guard.idle},
         )
     return None
-
-
-@dataclass(slots=True)
-class MetricGuard:
-    """A metric run's readings and its two patience counters: `plateau_nudges_used`
-    counts final-slice plateau nudges, `finish_nudges_used` early finishes
-    rejected while runway remains. `tree` is the worktree the metric was
-    last sampled on (one reading per state of the tree); `denied` withholds
-    the automatic metric for the rest of the run after the operator's no."""
-
-    history: list[MetricSample] = field(default_factory=list)
-    tree: str = ""
-    denied: bool = False
-    plateau_nudges_used: int = 0
-    finish_nudges_used: int = 0
-
-    def at_ceiling(self) -> bool:
-        """Whether any verified sample reached the metric's provable ceiling
-        (`SCORE: 27/27`): a metric that cannot improve, so an early finish is
-        honoured and the nudging stops."""
-        return any(sample.at_ceiling for sample in self.history)
-
-
-def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
-    """The metric run's end. A verified reading that only ties the best
-    (`turn.metric_plateau_finish`) draws the plateau notice while the run
-    has runway; in the final budget slice (or with no budget signal) the
-    notice counts against `METRIC_PLATEAU_PATIENCE`, and past it the run
-    stops. A metric at its provable ceiling stops at once: nothing is left
-    to find. The stop is an ending the end gates judge and a standing task
-    may absorb; its end grounds on the tree like a finish_session does."""
-    finish = turn.metric_plateau_finish
-    if finish is None:
-        return None
-    remaining = ctx.budget_remaining()
-    in_final_slice = remaining is None or remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET
-    guard = state.metric
-
-    def end() -> End:
-        return End(
-            "metric_plateau",
-            with_open_tasks(finish, ctx.open_subtasks()),
-            completed=True,
-            verdict="grounded",
-        )
-
-    log = f"LOOP: metric_plateau at iter {turn.iteration}"
-    if guard.at_ceiling():
-        return Stop(
-            end,
-            soft="metric_plateau",
-            declared="metric_plateau",
-            event="loop.metric_ceiling.stop",
-            fields={"iteration": turn.iteration},
-            log=log,
-        )
-    if in_final_slice and guard.plateau_nudges_used >= METRIC_PLATEAU_PATIENCE:
-        return Stop(end, soft="metric_plateau", declared="metric_plateau", log=log)
-    # Patience counts final-slice notices only: a tie with runway left is a
-    # local optimum to pivot from, and counting it would end the run the
-    # moment the budget crossed the threshold.
-    if in_final_slice:
-        guard.plateau_nudges_used += 1
-    budget_note = "n/a" if remaining is None else f"{remaining:.0%} left"
-    return Nudge(
-        metric_plateau_nudge(remaining),
-        event="loop.metric_plateau.nudge",
-        fields={
-            "iteration": turn.iteration,
-            "nudges_used": guard.plateau_nudges_used,
-            "budget_remaining": remaining,
-        },
-        log=(
-            f"  metric_plateau notice at iter {turn.iteration} (budget {budget_note};"
-            f" final-slice patience {guard.plateau_nudges_used}/{METRIC_PLATEAU_PATIENCE})"
-        ),
-    )
 
 
 @dataclass(slots=True)

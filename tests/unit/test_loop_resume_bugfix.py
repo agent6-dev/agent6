@@ -23,7 +23,7 @@ from agent6.config import Config
 from agent6.tools.results import ExecResult, RawResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation
-from agent6.workflows._guards import MetricGuard
+from agent6.workflows._metric import MetricGuard
 from agent6.workflows._metric import MetricSample as _MetricSample
 from agent6.workflows._provider_call import CallSettings
 from agent6.workflows._session_state import (
