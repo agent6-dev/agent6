@@ -268,7 +268,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     steer: str = "",
     interactive: bool = False,
     model: str = "",
-    standing_goal: str = "",
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
@@ -783,7 +782,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 resuming=True,
-                standing_goal=standing_goal,
                 worktree_git_dir=manifest.worktree_git_dir,
             ),
             frontend=frontend,

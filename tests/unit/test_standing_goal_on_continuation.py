@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`--standing` is not a run-only flag.
+"""One way to set a standing goal at a run's start, one way to change it after.
 
-A fork carries the source's task graph, so forking keeps the unfinished tasks
-but inherited whatever standing goal the source had, with no way to give one to
-a session that started without it. Resume and fork take the flag now, and the
-one-per-run invariant decides what happens when there is already one.
+`run --standing` seeds the goal a fresh run returns to. A continuation takes no
+such flag: a fork carries the source's graph, goal included, and `/standing`
+is what replaces a goal on a run already going. Two flags for one decision is
+what this pins against.
 """
 
 from __future__ import annotations
@@ -17,7 +17,9 @@ from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli.parser import build_parser
 from agent6.workflows.loop import Workflow
-from tests.unit.test_task_queue_drain import _workflow  # pyright: ignore[reportPrivateUsage]
+from tests.unit.test_task_queue_drain import (
+    _workflow,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 def _seeded(tmp_path: Path) -> tuple[GraphCurator, str, Workflow]:
@@ -31,34 +33,25 @@ def _seeded(tmp_path: Path) -> tuple[GraphCurator, str, Workflow]:
     return curator, root, _workflow(curator, EventSink(layout.session_dir / "logs.jsonl"))
 
 
-def test_resume_and_fork_take_the_flag() -> None:
+def test_only_a_fresh_run_takes_the_flag() -> None:
+    """A continuation offered `--standing` and then kept the goal it already
+    had, which is a flag that does nothing on a session that has one."""
     parser = build_parser()
 
-    assert parser.parse_args(["resume", "id", "--standing", "keep it green"]).standing
-    assert parser.parse_args(["fork", "id", "--standing", "keep it green"]).standing
+    assert parser.parse_args(["run", "do it", "--standing", "keep it green"]).standing
+    for verb in ("resume", "fork"):
+        args = parser.parse_args([verb, "id"])
+        assert not hasattr(args, "standing"), f"{verb} still offers --standing"
 
 
-def test_a_continuation_seeds_the_goal_the_run_never_had(tmp_path: Path) -> None:
+def test_a_fresh_run_seeds_the_goal(tmp_path: Path) -> None:
     curator, root, wf = _seeded(tmp_path)
     wf.standing_goal = "keep the suite green"
 
     wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
 
     standing = [n for n in curator.nodes().values() if n.standing]
-    assert [n.title for n in standing] == ["keep the suite green"]
-    assert standing[0].created_by == "steering"
-
-
-def test_a_run_that_has_one_keeps_it(tmp_path: Path) -> None:
-    """One standing goal per run: a resume naming another changes nothing."""
-    curator, root, wf = _seeded(tmp_path)
-    wf.standing_goal = "first goal"
-    wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
-    wf.standing_goal = "second goal"
-
-    wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
-
-    assert [n.title for n in curator.nodes().values() if n.standing] == ["first goal"]
+    assert [(n.title, n.created_by) for n in standing] == [("keep the suite green", "steering")]
 
 
 def test_no_flag_seeds_nothing(tmp_path: Path) -> None:
@@ -67,22 +60,3 @@ def test_no_flag_seeds_nothing(tmp_path: Path) -> None:
     wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
 
     assert not [n for n in curator.nodes().values() if n.standing]
-
-
-def test_a_retired_goal_leaves_room_for_a_new_one(tmp_path: Path) -> None:
-    """`/standing` retires the goal it replaces, and a retired goal keeps its
-    flag: "the run has a goal" has to mean a live one, or a later
-    `resume --standing` would find the dead one and seed nothing."""
-    from agent6.graph.models import UpdateStatusIntent
-
-    curator, root, wf = _seeded(tmp_path)
-    wf.standing_goal = "first goal"
-    wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
-    dead = next(n for n in curator.nodes().values() if n.standing)
-    curator.update_status(UpdateStatusIntent(id=dead.id, new_status="obsolete"))
-
-    wf.standing_goal = "second goal"
-    wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
-
-    live = [n.title for n in curator.nodes().values() if n.standing and n.status == "pending"]
-    assert live == ["second goal"]

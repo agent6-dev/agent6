@@ -488,9 +488,6 @@ class Workflow:
         if snapshot.root_task_id is not None:
             self.dispatcher.set_run_root_node_id(snapshot.root_task_id)
             self._log(f"LOOP: DAG root task restored: {snapshot.root_task_id}")
-            # `--standing` reaches a continuation too: a resumed or forked leg
-            # takes the goal when the run has none.
-            self._seed_standing_goal(snapshot.root_task_id)
 
         # The system prompt is the run's, frozen: config that gained (or lost) a
         # verify command between legs swaps what judges the work while the
@@ -2067,20 +2064,12 @@ class Workflow:
             return None
 
     def _seed_standing_goal(self, root_id: str) -> None:
-        """The operator's `--standing` goal, as the run's last-resort task.
+        """The operator's `run --standing` goal, as the run's last-resort task.
 
-        One per run and the operator's: a run that already has one keeps it, so
-        a resume naming a different goal changes nothing (the caller refuses
-        that up front; this is the engine's half of the invariant)."""
+        Only a fresh run seeds one, so there is never a second to weigh against
+        it; `/standing` is what changes the goal of a run already going."""
         goal = self.standing_goal.strip()
         if not goal or self.curator is None:
-            return
-        # A retired goal (replaced by `/standing`) keeps its flag and its place
-        # in the tree, so "has a goal" means a LIVE one.
-        if any(
-            node.standing and node.status in OPEN_STATUSES for node in self.curator.nodes().values()
-        ):
-            self._log("LOOP: standing goal already set; --standing ignored")
             return
         try:
             node = self.curator.add_subtask(

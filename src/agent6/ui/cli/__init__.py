@@ -582,7 +582,6 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         steer=args.steer,
         interactive=getattr(args, "interactive", False),
         model=getattr(args, "model", ""),
-        standing_goal=getattr(args, "standing", ""),
     )
     # A resumed leg ends the way a fresh one does: asking for the next input
     # (the TUI owns its screen).
@@ -603,7 +602,6 @@ def _dispatch_fork(args: argparse.Namespace) -> int:
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
         steer=args.steer,
-        standing_goal=getattr(args, "standing", ""),
     )
 
 
