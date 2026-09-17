@@ -2213,42 +2213,13 @@ class Workflow:
     ) -> SessionResult | None:
         """Terminal checks, run after the turn's tool_results are in
         `messages` and the post-tools snapshot is written, in precedence
-        order: the advisors' stops as decided, the loop-guard kill, then
-        honouring a finish call that survived the gates."""
+        order: the advisors' stops as decided, then honouring a finish call
+        that survived the gates."""
         self._absorb_soft_stop(state, turn, conversation)
         for stop in turn.stops:
             if stop.log:
                 self._log(stop.log)
             return self._finish(state, stop.end(), iteration=turn.iteration)
-        # loop-guard escalation. The notice in _turn_notices is advisory; if
-        # the worker keeps issuing the same call past loop_guard_kill_threshold,
-        # terminate the run before it burns the rest of the budget circling.
-        # Threshold of 0 disables (notice-only behaviour). The kill happens
-        # AFTER the tool_results were appended so the transcript on disk
-        # reflects exactly what the model produced up to the kill, which is
-        # essential when triaging "why did my run die at iter N".
-        if (
-            self.guards.loop_guard_kill_threshold > 0
-            and state.spiral.call_streak >= self.guards.loop_guard_kill_threshold
-        ):
-            latched_name = (state.spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
-            self._log(
-                f"LOOP: loop_guard_killed at iter {turn.iteration} -"
-                f" {latched_name} called {state.spiral.call_streak}x in a row"
-                f" (threshold={self.guards.loop_guard_kill_threshold})"
-            )
-            return self._finish(
-                state,
-                End(
-                    "loop_guard_killed",
-                    f"loop-guard killed run: `{latched_name}`"
-                    f" called {state.spiral.call_streak}x in a row with"
-                    f" identical arguments (threshold"
-                    f" {self.guards.loop_guard_kill_threshold})",
-                    fields={"tool": latched_name, "streak": state.spiral.call_streak},
-                ),
-                iteration=turn.iteration,
-            )
         if turn.finish_signal is not None:
             self._log(f"LOOP: {turn.finish_kind} called at iter {turn.iteration}")
             self._final_checkpoint(turn.iteration)

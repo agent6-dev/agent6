@@ -724,3 +724,35 @@ def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_iteration() -> None
     state.spiral.note_call('read_file:{"path": "x.txt"}')
     again = loop_guard_notice(turn(5), state, ctx)
     assert again is not None and "5 times" in again.text
+
+
+def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
+    """The advisor itself: at the threshold the stop names the tool and the
+    streak, in its summary, its event fields and its log line; below it, or
+    with the knob at 0, nothing."""
+    from agent6.workflows._conversation import AssistantTurn
+    from agent6.workflows._guards import loop_guard_kill
+    from agent6.workflows._loop_state import LoopState, TurnState
+    from tests.unit.turn_context import turn_context
+
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = TurnState(iteration=5, resp=MagicMock(), assistant=AssistantTurn((), ()))
+    ctx = turn_context(guards=GuardSettings(loop_guard_kill_threshold=5))
+    for _ in range(4):
+        state.spiral.note_call('read_file:{"path": "x.txt"}')
+    assert loop_guard_kill(turn, state, ctx) is None
+    state.spiral.note_call('read_file:{"path": "x.txt"}')
+    stop = loop_guard_kill(turn, state, ctx)
+    assert stop is not None and stop.soft == "" and stop.declared == ""
+    end = stop.end()
+    assert end.reason == "loop_guard_killed" and end.completed is False
+    assert end.summary == (
+        "loop-guard killed run: `read_file` called 5x in a row with identical"
+        " arguments (threshold 5)"
+    )
+    assert end.fields == {"tool": "read_file", "streak": 5}
+    assert stop.log == (
+        "LOOP: loop_guard_killed at iter 5 - read_file called 5x in a row (threshold=5)"
+    )
+    off = turn_context(guards=GuardSettings(loop_guard_kill_threshold=0))
+    assert loop_guard_kill(turn, state, off) is None

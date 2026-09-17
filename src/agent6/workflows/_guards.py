@@ -470,6 +470,31 @@ def loop_guard_notice(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nu
     )
 
 
+def loop_guard_kill(turn: TurnState, state: LoopState, ctx: TurnContext) -> Stop | None:
+    """The same (tool, args) call `loop_guard_kill_threshold` times in a row
+    ends the run: the notice was advisory, and a worker still circling would
+    spend the rest of the budget on it. 0 leaves the notice alone. Observed
+    last, so a turn's other stops outrank it."""
+    threshold = ctx.guards.loop_guard_kill_threshold
+    streak = state.spiral.call_streak
+    if not (threshold > 0 and streak >= threshold):
+        return None
+    tool = (state.spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
+    end = End(
+        "loop_guard_killed",
+        f"loop-guard killed run: `{tool}` called {streak}x in a row with identical"
+        f" arguments (threshold {threshold})",
+        fields={"tool": tool, "streak": streak},
+    )
+    return Stop(
+        lambda: end,
+        log=(
+            f"LOOP: loop_guard_killed at iter {turn.iteration} - {tool} called {streak}x"
+            f" in a row (threshold={threshold})"
+        ),
+    )
+
+
 def stagnation(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
     """One notice when `stagnation_notice_after_s` of wall clock passed on a
     run with no edit and no verify yet; time blocked on the operator is not
@@ -627,4 +652,5 @@ AFTER_TOOLS: tuple[Advisor, ...] = (
     metric_plateau,
     verify_settled,
     no_progress,
+    loop_guard_kill,
 )
