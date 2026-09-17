@@ -17,7 +17,7 @@ from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "b34b21a632efb2c86c3c9eed7b17dceaee216d7c0b22fcbcceb5077332c4dc87"
+PAGE_SHA256 = "9658e561e71de7ff5c1325f708c7d5c7cec3a93e96e9d6490513483ec4c0a4f0"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -84,13 +84,22 @@ def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
 
 
 def test_the_commit_step_row_is_a_picker_row() -> None:
-    """The Latest commit card's dropdown and checkbox share the picker rows'
-    style, so neither shows the browser's light default on the dark page."""
+    """The Latest commit card's dropdown shares the picker rows' style, so it
+    does not show the browser's light default on the dark page."""
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const nav = el('div', 'row pickers');" in run
     assert "const sel = el('select', 'field');" in run
+
+
+def test_native_controls_take_the_page_theme() -> None:
+    """A checkbox (the config editor's "set for this repo only") and an open
+    dropdown's option list rendered in the browser's light default on the dark
+    page: the page declares its colour scheme per theme."""
     css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
-    assert ".pickers input[type=checkbox] {" in css and "accent-color: var(--accent)" in css
+    root, light = css.index(":root {"), css.index(":root.light {")
+    assert "color-scheme: dark;" in css[root:light]
+    assert "color-scheme: light;" in css[light : css.index("}", light)]
+    assert "input[type=checkbox] { accent-color: var(--accent); }" in css
 
 
 def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:

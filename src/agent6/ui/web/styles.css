@@ -1,16 +1,21 @@
+/* color-scheme: the browser draws its own controls (checkboxes, an open
+   dropdown's option list, scrollbars) in the page's theme, not its light default. */
 :root {
+  color-scheme: dark;
   --bg: #0e1116; --surface: #161b22; --surface2: #1c2230; --border: #2a3140;
   --text: #d7dde5; --muted: #8b95a5; --accent: #6ea8fe; --accent2: #b48ead;
   --ok: #4ec9a5; --warn: #e2c08d; --err: #f07178; --nav-h: 56px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 :root.light {
+  color-scheme: light;
   --bg: #f6f8fa; --surface: #ffffff; --surface2: #eef1f5; --border: #d5dae1;
   --text: #1b2028; --muted: #5a6472; --accent: #2d6fe0; --accent2: #8250df;
   /* darker semantic colours: the dark-theme pastels wash out on white */
   --ok: #187a5b; --warn: #8a6100; --err: #c62f3d;
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+input[type=checkbox] { accent-color: var(--accent); }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -180,16 +185,14 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 .composer .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 /* Picker rows (pickerRow above a composer, the Latest commit card's step row):
    compact dropdowns sized to their value, each beside its label; on a narrow
-   screen the pairs wrap whole. The checkbox takes the theme's colours, not the
-   browser's light default. */
+   screen the pairs wrap whole. */
 .pickers { flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; font-size: 13px; }
 .pickers .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .pickers select.field {
   width: auto; min-width: 0; max-width: 100%; min-height: 30px; padding: 4px 8px;
   border-radius: 6px; font-size: 13px;
 }
-.pickers input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); color-scheme: dark; }
-:root.light .pickers input[type=checkbox] { color-scheme: light; }
+.pickers input[type=checkbox] { width: 16px; height: 16px; margin: 0; }
 /* /parallel model-id autocomplete popup (a textarea can't carry a native
    datalist, so this is the composer analogue of the config editor's list). */
 .ac-pop { position: absolute; left: 12px; bottom: 100%; margin-bottom: 6px; z-index: 40;
