@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import itertools
 import json
-import os
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -160,16 +159,10 @@ from agent6.workflows._nearest_tests import (
 from agent6.workflows._nudges import (
     BASELINE_RED_NOTICE,
     PLAN_ON_DISK_HEADER,
-    QUESTION_NUDGE,
-    SILENT_NO_WORK_NUDGE,
-    SILENT_NO_WORK_PATIENCE,
     VERIFY_BROKEN_NUDGE,
     VERIFY_UNADOPTED_NOTICE,
-    WENT_QUIET_NUDGE,
     ending_question,
-    ends_with_question,
     is_test_path,
-    reasoning_starved_nudge,
     standing_fruitless_nudge,
     standing_resume_nudge,
     test_only_green_notice,
@@ -212,6 +205,7 @@ from agent6.workflows._provider_call import (
     provider_error_hint,
     reasoning_starvation,
 )
+from agent6.workflows._quiet_turns import question_in_prose, silent_no_work, went_quiet
 from agent6.workflows._review import (
     CritiqueResult,
     ReviewDispatch,
@@ -2169,7 +2163,7 @@ class Workflow:
             state.quiet.went_quiet_nudges_used = 0
             turn = TurnState(iteration=ctx.iteration, resp=resp, assistant=assistant)
             return self._handle_silent_finish(text, conversation, state, turn, ctx)
-        return self._handle_went_quiet(resp, conversation, state, iteration=ctx.iteration)
+        return self._handle_went_quiet(resp, conversation, state, ctx)
 
     def _silent_end_gates(
         self, state: LoopState, turn: TurnState, conversation: Conversation
@@ -2196,29 +2190,8 @@ class Workflow:
         a nudge appended to the conversation) when a gate sends the worker back to
         work; the silent_finish SessionResult once every gate lets it through."""
         iteration = turn.iteration
-        # An EARLY prose turn on an untouched tree is a stall, not an
-        # implicit finish (observed: kimi answering a SWE-bench problem in
-        # prose at iteration 2, ending the run patchless). Bounded to the
-        # first iterations: an engaged run that read its fill and answers in
-        # prose is a legitimate implicit finish and must not be taxed.
-        if (
-            self.mode == "run"
-            and iteration <= 3
-            and not state.ever_edited
-            and not state.verify.ever_passed
-            and state.quiet.silent_no_work_nudges_used < SILENT_NO_WORK_PATIENCE
-        ):
-            state.quiet.silent_no_work_nudges_used += 1
-            conversation.notice(SILENT_NO_WORK_NUDGE)
-            self._log(
-                f"  silent finish rejected: no work yet (nudge"
-                f" #{state.quiet.silent_no_work_nudges_used}) at iter {iteration}"
-            )
-            self._emit(
-                "loop.silent_no_work.nudge",
-                iteration=iteration,
-                nudges_used=state.quiet.silent_no_work_nudges_used,
-            )
+        if (stall := silent_no_work(state, ctx)) is not None:
+            self._tell(conversation, stall)
             return None
         aborted = self._silent_end_gates(state, turn, conversation)
         if aborted is not None or turn.end_returned:
@@ -2232,16 +2205,8 @@ class Workflow:
             nudge = Nudge(refusal.text, refusal.event, refusal.fields, refusal.log)
             self._tell(conversation, nudge)
             return None
-        # Question-nudge (run mode, once): the model ended by asking the
-        # operator something in prose without calling ask_user, so the run
-        # would silently finish with an unanswered question. Nudge once to
-        # call ask_user / finish_session; if it asks again, accept the finish
-        # (bounded, so a stubborn model cannot loop the run).
-        if self.mode == "run" and not state.quiet.question_nudged and ends_with_question(text):
-            state.quiet.question_nudged = True
-            self._log(f"  silent_finish nudged: ended on a question at iter {iteration}")
-            self._emit("loop.question_nudge", iteration=iteration)
-            conversation.notice(QUESTION_NUDGE)
+        if (asked := question_in_prose(state, ctx, text)) is not None:
+            self._tell(conversation, asked)
             return None
         # A quiet run does not have to end: a standing goal re-enters, else an
         # interactive run parks for a steer (never in ask mode, where the
@@ -2284,12 +2249,11 @@ class Workflow:
         resp: ProviderResponse,
         conversation: Conversation,
         state: LoopState,
-        *,
-        iteration: int,
+        ctx: TurnContext,
     ) -> SessionResult | None:
         """A fully-empty turn (no text, no tool_use): surface reasoning
         starvation explicitly, then nudge-and-retry up to the per-streak cap
-        before ending the run as went_quiet.
+        (`went_quiet`) before ending the run as went_quiet.
 
         The nudge is cheap (~50 input tokens vs aborting the entire run) and
         almost always gets a weak open-weights model back on track. The empty
@@ -2297,8 +2261,8 @@ class Workflow:
         assistant message with empty content, a THINKING-ONLY turn (reasoning
         starvation: blocks but no text/tool_use) translates to one with no
         content and no tool_calls that strict OpenAI-compatible backends reject
-        with a non-retryable 400, and either way it is dead context.
-        AGENT6_WENT_QUIET_MAX_NUDGES overrides the cap."""
+        with a non-retryable 400, and either way it is dead context."""
+        iteration = ctx.iteration
         reasoning_chars = reasoning_starvation(resp)
         starved = reasoning_chars > 0
         if starved:
@@ -2336,26 +2300,12 @@ class Workflow:
         self._log(
             f"LOOP: went_quiet at iter {iteration} - agent emitted no text and no tool_use{billed}"
         )
-        env_max = os.environ.get("AGENT6_WENT_QUIET_MAX_NUDGES", "").strip()
-        effective_max_nudges = (
-            int(env_max) if env_max.isdigit() else self.guards.went_quiet_max_nudges
-        )
         # Drop the dead turn before any exit: a provider rejects an assistant
         # message with empty content, and every path below either calls again
         # (nudge, standing goal, park) or snapshots the conversation for resume.
         conversation.pop_quiet_assistant()
-        if state.quiet.went_quiet_nudges_used < effective_max_nudges:
-            state.quiet.went_quiet_nudges_used += 1
-            conversation.notice(
-                reasoning_starved_nudge(resp.output_tokens) if starved else WENT_QUIET_NUDGE
-            )
-            self._emit(
-                "loop.went_quiet.nudge",
-                iteration=iteration,
-                nudges_used=state.quiet.went_quiet_nudges_used,
-                nudges_max=effective_max_nudges,
-                output_tokens=resp.output_tokens,
-            )
+        if (nudge := went_quiet(state, ctx, resp)) is not None:
+            self._tell(conversation, nudge)
             return None
         cont = self._quiet_continuation(
             conversation, state, iteration=iteration, reason="went_quiet"

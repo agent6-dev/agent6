@@ -22,7 +22,6 @@ from agent6.workflows._guards import (
     FocusGuard,
     MemoryNudges,
     NoProgressGuard,
-    QuietGuard,
     ReachabilityGuard,
     SettledGuard,
     StagnationGuard,
@@ -30,6 +29,7 @@ from agent6.workflows._guards import (
     Stop,
 )
 from agent6.workflows._metric import MetricGuard, MetricSample
+from agent6.workflows._quiet_turns import QuietGuard
 from agent6.workflows._session_state import SessionSnapshot
 from agent6.workflows._spiral_guards import SpiralGuard
 from agent6.workflows._verify_verdict import VerifyVerdict

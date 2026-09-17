@@ -248,19 +248,6 @@ def verify_settled(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
 
 
 @dataclass(slots=True)
-class QuietGuard:
-    """The turns that say nothing: an empty turn draws a nudge up to the cap
-    per streak (`went_quiet_nudges_used`, reset by any non-empty turn); an
-    early prose turn on an untouched tree draws `SILENT_NO_WORK_PATIENCE`
-    nudges; a prose turn ending on a question draws one nudge to call
-    ask_user."""
-
-    went_quiet_nudges_used: int = 0
-    silent_no_work_nudges_used: int = 0
-    question_nudged: bool = False
-
-
-@dataclass(slots=True)
 class StagnationGuard:
     """One notice when the wall clock passes `stagnation_notice_after_s` with
     no edit and no verify. Monotonic time is process-relative, so neither

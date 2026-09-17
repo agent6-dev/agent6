@@ -26,12 +26,7 @@ from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
 from agent6.workflows._finish_gates import FinishGates, task_finish_nudge
-from agent6.workflows._guards import (
-    QuietGuard,
-    SettledGuard,
-    settled_end,
-    verify_settled,
-)
+from agent6.workflows._guards import SettledGuard, settled_end, verify_settled
 from agent6.workflows._metric import MetricGuard, metric_plateau
 from agent6.workflows._provider_call import (
     CallSettings,
@@ -39,6 +34,7 @@ from agent6.workflows._provider_call import (
     is_empty_tool_call_response,
     reasoning_starvation,
 )
+from agent6.workflows._quiet_turns import QuietGuard
 from agent6.workflows._review import ReviewSettings
 from agent6.workflows._session_state import SNAPSHOT_VERSION, End
 from agent6.workflows._steer import OperatorBridge
@@ -5155,7 +5151,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
 
 
 def test_ends_with_question_detection() -> None:
-    from agent6.workflows.loop import ends_with_question  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import ends_with_question
 
     assert ends_with_question("I found two options.\nWhich do you prefer?")
     assert not ends_with_question("Done. All tests pass.")
