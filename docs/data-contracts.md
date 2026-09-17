@@ -29,7 +29,7 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 **SessionManifest** &mdash; The typed manifest.json a session starts with (and later stamps).
 
 - **Written by:** app/manifest
-- **Read by:** app/{compare, finalize, fork, fork_worktrees, merge, parallel, preflight, resume, run, stop, undo}, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{__init__, _ask, _steer_menu, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show}, ui/tui/{app, dashboard}, ui/web/{actions, model}, viewmodel/{format, listing, policy, snapshot, state}
+- **Read by:** app/{compare, finalize, fork, fork_worktrees, merge, parallel, preflight, resume, run, stop, undo}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{__init__, _ask, _steer_menu, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show}, ui/tui/{app, dashboard}, ui/web/{actions, model}, viewmodel/{format, listing, policy, snapshot, state}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (15 test files exercise it)
 
 ## SessionSnapshot

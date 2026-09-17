@@ -14,6 +14,7 @@ from agent6.config.layer import EffectiveConfig, load_effective, preset_catalog
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import ROLES
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import session_kind
 
 
@@ -93,6 +94,39 @@ def default_route(cwd: Path, config_path: Path | None, mode: str, preset: str) -
     except ConfigError:
         return ""
     return route_for(cfg, mode)
+
+
+def default_label(name: str, *, recorded: bool = False) -> str:
+    """The label of a picker's no-flag entry: what it runs under,
+    `quick (config default)`, or `none` when nothing resolves; `as recorded`
+    in place of `config default` when a resume replays the run's own flag."""
+    return f"{name or 'none'} ({'as recorded' if recorded else 'config default'})"
+
+
+def resume_defaults(
+    cwd: Path, config_path: Path | None, session_dir: Path, *, preset: str = ""
+) -> tuple[str, str]:
+    """The (preset, model) labels of a resume row's no-flag entries: what a
+    resume of *session_dir* without `--preset` / `--model` runs under, the
+    model's under *preset* when one is picked. A preset or model the run set
+    by flag is replayed; anything else is what the config resolves now. An
+    unreadable manifest names the config's."""
+    try:
+        manifest = read_manifest(session_dir)
+        mode: str = manifest.session_mode()
+    except ManifestError:
+        replayed, driver, mode = "", None, "run"
+    else:
+        replayed, driver = manifest.workflow.replay_preset, manifest.models.replay_driver
+    route = (
+        f"{driver.provider}/{driver.model}"
+        if driver is not None
+        else default_route(cwd, config_path, mode, preset or replayed)
+    )
+    return (
+        default_label(replayed or default_preset(cwd, config_path), recorded=bool(replayed)),
+        default_label(route, recorded=driver is not None),
+    )
 
 
 def model_role_provider(eff: EffectiveConfig, key: str) -> str | None:

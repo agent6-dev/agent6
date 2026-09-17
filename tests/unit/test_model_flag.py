@@ -111,6 +111,52 @@ def test_a_hubs_picker_follows_the_preset_and_lists_every_route(repo: Path, tmp_
     assert default_preset(repo, None) == ""
 
 
+def test_a_resume_rows_defaults_name_what_a_bare_resume_runs_under(
+    repo: Path, tmp_path: Path
+) -> None:
+    """A preset or model the run set by flag is replayed, `as recorded`;
+    anything else is what the config resolves now, the model's under a picked
+    preset; an unreadable manifest names the config's."""
+    from agent6.models.choices import resume_defaults
+
+    config = tmp_path / "xdg" / "config" / "agent6" / "config.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + '\n[presets.fast.models.worker]\nmodel = "claude-fast"\n',
+        encoding="utf-8",
+    )
+    run = tmp_path / "run"
+    run.mkdir()
+
+    def manifest(**fields: object) -> None:
+        body = {"session_id": "run", "mode": "run", **fields}
+        (run / "manifest.json").write_text(json.dumps(body), encoding="utf-8")
+
+    manifest(workflow={"preset": "quick"}, models={"driver": {"provider": "o", "model": "m"}})
+    assert resume_defaults(repo, None, run) == (
+        "none (config default)",
+        "anthropic/claude-x (config default)",
+    )
+    assert resume_defaults(repo, None, run, preset="fast")[1] == (
+        "anthropic/claude-fast (config default)"
+    )
+    manifest(
+        workflow={"preset": "fast", "preset_from_flag": True},
+        models={"driver": {"provider": "o", "model": "m"}, "driver_from_flag": True},
+    )
+    assert resume_defaults(repo, None, run, preset="quick") == (
+        "fast (as recorded)",
+        "o/m (as recorded)",
+    )
+    manifest(workflow={"preset": "fast", "preset_from_flag": True})
+    assert resume_defaults(repo, None, run)[1] == "anthropic/claude-fast (config default)"
+    (run / "manifest.json").unlink()
+    assert resume_defaults(repo, None, run) == (
+        "none (config default)",
+        "anthropic/claude-x (config default)",
+    )
+
+
 def test_a_refused_flag_route_names_the_flag_not_the_config(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

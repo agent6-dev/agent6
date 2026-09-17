@@ -324,7 +324,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
 ) -> None:
     """A run that is not live shows the preset and model pickers above its
     composer (both views); the picks ride the detached resume as `--preset`
-    and `--model`, a bare resume included, and "(as recorded)" sends none. A
+    and `--model`, a bare resume included, and each first entry sends none. A
     refused spawn says why and leaves the resume composer available."""
     from textual.widgets import Select
 
@@ -411,6 +411,65 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
             assert any("the checkout is busy" in note for note in notes)
             assert dash_row.display
             assert app._dash.query_one("#dash-input", SteerInput).mode == "resume"
+
+    asyncio.run(scenario())
+
+
+def test_the_resume_rows_name_what_a_bare_resume_runs_under(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Each resume picker's first entry names what a resume without the flag
+    runs under (a bare "(as recorded)" said nothing), in both views; a preset
+    pick relabels the model's entry and keeps the model pick."""
+    from textual.widgets import Select
+    from textual.widgets._select import SelectCurrent
+
+    from agent6.ui.tui import app as app_mod
+    from agent6.ui.tui.composer import ResumeOptions
+
+    def _presets(_cwd: Path, _cp: object) -> list[str]:
+        return ["quick"]
+
+    def _routes(_cwd: Path, _cp: object) -> list[str]:
+        return ["o/a", "o/b"]
+
+    def _defaults(_cwd: Path, _cp: object, _dir: Path, *, preset: str = "") -> tuple[str, str]:
+        return "fast (as recorded)", f"o/{preset or 'a'} (config default)"
+
+    monkeypatch.setattr(app_mod, "available_preset_names", _presets)
+    monkeypatch.setattr(app_mod, "available_routes", _routes)
+    monkeypatch.setattr(app_mod, "resume_defaults", _defaults)
+    _mk_parked(tmp_path / "parked3")
+
+    def labels(row: ResumeOptions) -> tuple[str, str]:
+        """Each picker's first entry, whatever is picked."""
+        pickers = (row.query_one(f"#resume-{name}", Select) for name in ("preset", "model"))
+        first = tuple(str(p._options[0][0]) for p in pickers)  # pyright: ignore[reportPrivateUsage]
+        return first[0], first[1]
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path / "parked3")
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            row = app._conv.query_one("#conv-resume", ResumeOptions)
+            await _wait_for(pilot, lambda: row.display, "the resume row")
+            await pilot.pause()
+            assert labels(row) == ("fast (as recorded)", "o/a (config default)")
+            preset = row.query_one("#resume-preset", Select)
+            assert str(preset.query_one(SelectCurrent).label) == "fast (as recorded)"
+            row.query_one("#resume-model", Select).value = "o/b"
+            row.query_one("#resume-preset", Select).value = "quick"
+            await pilot.pause()
+            await pilot.pause()
+            assert labels(row) == ("fast (as recorded)", "o/quick (config default)")
+            assert (app.resume_preset, app.resume_model) == ("quick", "o/b")
+            assert row.query_one("#resume-model", Select).value == "o/b"
+            await _open_dash(app, pilot)
+            dash_row = app._dash.query_one("#dash-resume", ResumeOptions)
+            await _wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
+            await pilot.pause()
+            assert labels(dash_row) == ("fast (as recorded)", "o/quick (config default)")
+            assert dash_row.query_one("#resume-model", Select).value == "o/b"
 
     asyncio.run(scenario())
 

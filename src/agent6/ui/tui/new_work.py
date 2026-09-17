@@ -26,21 +26,13 @@ from textual.screen import Screen
 from textual.widgets import Footer, Select, Static, TextArea
 
 from agent6.directive import spec_fragment
-from agent6.models.choices import default_preset, default_route
+from agent6.models.choices import default_label, default_preset, default_route
 from agent6.types import OPERATOR_MODES
 from agent6.ui.spawn import spawn_new_work
 from agent6.ui.tui.composer import SteerInput, SteerSuggest
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.widgets import Picker
-
-
-def config_default(value: str) -> str:
-    """The label of a picker's first entry, the config's own choice (value
-    "", no flag): what that choice is, `quick (config default)`, or `none`
-    when the config names nothing."""
-    return f"{value or 'none'} (config default)"
-
 
 _INTRO = (
     "Describe the task (or the question, for ask). Enter starts it; Ctrl-J adds a line.\n"
@@ -141,7 +133,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
             yield Static("preset", classes="draft-label")
             preset = default_preset(self.repo_cwd, self.config_path)
             yield Picker(
-                [(config_default(preset), ""), *((p, p) for p in self._presets)],
+                [(default_label(preset), ""), *((p, p) for p in self._presets)],
                 value="",
                 allow_blank=False,
                 id="draft-preset",
@@ -161,7 +153,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
     def _model_options(self, route: str) -> list[tuple[str, str]]:
         """The model picker's rows: *route*, the config default, then every
         route the config can run."""
-        return [(config_default(route), ""), *((r, r) for r in self._routes)]
+        return [(default_label(route), ""), *((r, r) for r in self._routes)]
 
     @on(Select.Changed, "#draft-mode")
     @on(Select.Changed, "#draft-preset")

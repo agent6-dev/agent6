@@ -49,7 +49,7 @@ from agent6.app.stop import stop_session
 from agent6.app.undo import undo_fork
 from agent6.config.layer import available_preset_names
 from agent6.directive import parse_btw, parse_compact, parse_now
-from agent6.models.choices import available_routes
+from agent6.models.choices import available_routes, resume_defaults
 from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import (
     register_frontend,
@@ -232,7 +232,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self._heartbeat_at = 0.0
         self.spin = 0
         # The preset and the model a resume from a composer continues under
-        # ("" = as recorded); both run views' pickers read and write them.
+        # ("" = no flag); both run views' pickers read and write them.
         self.resume_preset = ""
         self.resume_model = ""
         presets = available_preset_names(Path.cwd(), config_path)
@@ -245,6 +245,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             routes=routes,
             prompts=self._prompts,
         )
+
+    def resume_defaults(self, preset: str) -> tuple[str, str]:
+        """The resume rows' no-flag labels (`models.choices.resume_defaults`)."""
+        return resume_defaults(Path.cwd(), self.config_path, self.session_dir, preset=preset)
 
     def _task_lead(self) -> str:
         """What names this run in a title: the task (clipped), the pet name

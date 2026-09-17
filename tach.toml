@@ -468,7 +468,8 @@ depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent
 # /parallel lane ids): one owner behind every editor's picker, the web suggest
 # route, and TAB completion.
 path = "agent6.models.choices"
-depends_on = ["agent6.config", "agent6.config.layer", "agent6.models.cache", "agent6.models.validate", "agent6.secrets", "agent6.types"]
+# sessions.manifest: a resume row names the preset and model a run replays.
+depends_on = ["agent6.config", "agent6.config.layer", "agent6.models.cache", "agent6.models.validate", "agent6.secrets", "agent6.sessions.manifest", "agent6.types"]
 
 [[modules]]
 path = "agent6.sandbox.detect"

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Protocol, cast
 
 from rich.markup import escape
 from rich.text import Text
@@ -122,18 +122,24 @@ class SteerSuggest(Static):
 
 _INPUT_MAX_ROWS = 6  # the steer bar grows to this many rows, then scrolls internally
 
-# The preset picker's first entry: "" => resume under the preset the run
-# recorded (no --preset).
-RECORDED_PRESET_LABEL = "(as recorded)"
+
+class ResumeHost(Protocol):
+    """What a resume row reads and writes on its host app (`Agent6TUI`)."""
+
+    resume_preset: str
+    resume_model: str
+
+    def resume_defaults(self, preset: str) -> tuple[str, str]: ...
 
 
 class ResumeOptions(Horizontal):
     """The row above a resume composer: the config preset and the model the
     next leg continues under (`agent6 resume --preset`, `--model`). Both
     change only between legs, so the row shows only while the composer
-    resumes; the choices live on the host app (`resume_preset`,
-    `resume_model`), so the conversation and the dashboard composers agree.
-    Blank = as the run recorded."""
+    resumes; the choices live on the host app, so the conversation and the
+    dashboard composers agree. Each first entry adds no flag and names what
+    the resume runs under (`ResumeHost.resume_defaults`), relabelled when the
+    row reappears and, for the model, when the preset pick changes."""
 
     DEFAULT_CSS = """
     ResumeOptions { display: none; height: 1; padding: 0 1; }
@@ -145,44 +151,67 @@ class ResumeOptions(Horizontal):
         super().__init__(**kwargs)
         self._presets = presets
         self._routes = routes
+        self._labels = ("", "")
+        self._labelled: str | None = None  # the preset pick the labels name; None = stale
 
     def compose(self) -> ComposeResult:
+        host = self._host()
+        self._labels, self._labelled = host.resume_defaults(host.resume_preset), host.resume_preset
         yield Static("continue under preset", classes="resume-label")
-        yield Picker(
-            [(RECORDED_PRESET_LABEL, ""), *((p, p) for p in self._presets)],
-            value="",
-            allow_blank=False,
-            id="resume-preset",
-        )
+        yield Picker(self._options(0), value="", allow_blank=False, id="resume-preset")
         yield Static("model", classes="resume-label")
-        yield Picker(
-            [(RECORDED_PRESET_LABEL, ""), *((r, r) for r in self._routes)],
-            value="",
-            allow_blank=False,
-            id="resume-model",
-        )
+        yield Picker(self._options(1), value="", allow_blank=False, id="resume-model")
+
+    def _host(self) -> ResumeHost:
+        return cast(ResumeHost, self.app)
+
+    def _options(self, index: int) -> list[tuple[str, str]]:
+        choices = self._routes if index else self._presets
+        return [(self._labels[index], ""), *((c, c) for c in choices)]
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        attr = "resume_model" if event.select.id == "resume-model" else "resume_preset"
-        setattr(self.app, attr, str(event.value))
+        host, value = self._host(), str(event.value)
+        if event.select.id == "resume-model":
+            host.resume_model = value
+        else:
+            host.resume_preset = value
+            self._relabel()
 
     def show(self, shown: bool) -> None:
         if self.display != shown:
             self.display = shown
-        if shown:
+        if not shown:  # a leg is running: it may pin a preset or a model
+            self._labelled = None
+        else:
             # After the refresh: on the first paint the Selects are not mounted
             # yet, and a value written before the mount leaves a label blank.
+            # Relabel after a leg, or after the other view's row moved the pick.
+            if self._labelled != self._host().resume_preset:
+                self.call_after_refresh(self._relabel)
             self.call_after_refresh(self._sync)
 
+    def _relabel(self) -> None:
+        host = self._host()
+        if self._labelled == host.resume_preset:
+            return
+        old = self._labels
+        self._labels, self._labelled = host.resume_defaults(host.resume_preset), host.resume_preset
+        with self.prevent(Select.Changed):  # a relabel is no pick
+            for index, picker_id in enumerate(("#resume-preset", "#resume-model")):
+                if self._labels[index] != old[index]:
+                    self.query_one(picker_id, Select).set_options(self._options(index))
+        self._sync()
+
     def _sync(self) -> None:
-        for attr, picker_id, choices in (
-            ("resume_preset", "#resume-preset", self._presets),
-            ("resume_model", "#resume-model", self._routes),
-        ):
-            wanted = getattr(self.app, attr, "")
-            picker = self.query_one(picker_id, Select)
-            if picker.value != wanted and wanted in ("", *choices):
-                picker.value = wanted
+        host = self._host()
+        with self.prevent(Select.Changed):
+            for wanted, picker_id, choices in (
+                (host.resume_preset, "#resume-preset", self._presets),
+                (host.resume_model, "#resume-model", self._routes),
+            ):
+                picker = self.query_one(picker_id, Select)
+                if picker.value != wanted and wanted in ("", *choices):
+                    picker.value = wanted
 
 
 # The run-control menu, shared verbatim by the two run views (this primary
