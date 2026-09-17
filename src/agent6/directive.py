@@ -247,6 +247,16 @@ _FRONT_END_TOKEN = re.compile(
 )
 
 
+def stray_directive(text: str) -> str | None:
+    """The first directive token *text* carries somewhere other than its start.
+
+    A line is a directive only when it starts with one, so a token further in
+    travels to the model as ordinary text. Naming it tells a mistyped command
+    from a sentence that happens to mention one."""
+    m = _STRAY.search(text)
+    return m.group(1) if m is not None else None
+
+
 def steer_problem(text: str) -> str | None:
     """Why *text* cannot start a leg as its steer: a malformed directive (a
     bare `/pin`, a `/parallel` with no task) or one of `_FRONT_END_COMMANDS`.
@@ -329,3 +339,12 @@ STEER_COMMANDS: dict[str, str] = {
     "/stop": "stop the run now, as `agent6 stop` does (resumable)",
     "/shells": "background commands this run started, and how they ended",
 }
+
+
+# A directive token sitting inside a line rather than starting it. `/parallel`
+# is excluded: it separates tasks by design, so a later one is meant.
+_STRAY = re.compile(
+    r"(?<=\s)("
+    + "|".join(re.escape(c) for c in sorted(STEER_COMMANDS) if c != "/parallel")
+    + r")(?=\s|\Z)"
+)

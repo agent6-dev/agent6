@@ -50,7 +50,7 @@ Before the first model call, the header names the role and model from the manife
 
 - the diff pane opens on the latest commit; its selector walks the run's per-step commits (newest first), `cumulative` shows the chain up to that step; the task tree and the cost line follow the selected step; a run whose model owns git has no chain and the pane says so
 - the composer bar runs along the foot: type to steer, or to resume a finished run; the row above it picks the preset and model the next leg continues under (each first entry names what a resume without flags runs under)
-- `/` completes the steer directives; Ctrl-R searches the session's past messages
+- `/` completes the steer directives, which act only when one starts the line (a token further in is text, and the reply says so); Ctrl-R searches the session's past messages
 - `/shells` lists the run's background commands and how they ended; `/restate` replays the conversation since your last message
 - `/retire <task id>` drops a task from the graph, named by the number `/tasks` prints
 - `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had (`--standing` gives a leg one at its start)

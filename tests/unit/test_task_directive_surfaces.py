@@ -192,3 +192,43 @@ def test_a_bare_now_refuses_everywhere(tmp_path: Path) -> None:
     did, said = submit_composer_line(tmp_path, "/now")
 
     assert not did and "/now needs the instruction" in said
+
+
+def test_a_directive_typed_mid_line_is_named_in_the_reply(tmp_path: Path) -> None:
+    """A line is a directive only when it starts with one, so a token further
+    in travels to the model as text. Saying which tells a mistyped command
+    from a sentence that mentions one, without changing what was sent."""
+    from agent6.sessions.ipc import take_steer_answer
+    from agent6.ui.directives import submit_composer_line
+
+    d = _live_run(tmp_path)
+
+    did, said = submit_composer_line(d, "carry on, then /task add a --json flag")
+
+    assert did and "`/task` mid-line is text" in said
+    assert take_steer_answer(d) == "carry on, then /task add a --json flag"
+
+
+def test_a_directive_behind_leading_space_is_not_called_text(tmp_path: Path) -> None:
+    """Every directive acts through leading whitespace, so the hint reads the
+    text that was sent, not the line as typed: `/now` was honoured, and saying
+    it travelled as text would describe the opposite of what happened."""
+    from agent6.sessions.ipc import steer_interrupt_pending, take_steer_answer
+    from agent6.ui.directives import submit_composer_line
+
+    d = _live_run(tmp_path)
+
+    did, said = submit_composer_line(d, "  /now hurry")
+
+    assert did and "mid-line" not in said
+    assert steer_interrupt_pending(d)
+    assert take_steer_answer(d) == "hurry"
+
+
+def test_an_ordinary_line_and_a_real_directive_say_nothing_extra(tmp_path: Path) -> None:
+    from agent6.ui.directives import submit_composer_line
+
+    d = _live_run(tmp_path / "plain")
+    assert submit_composer_line(d, "focus on the parser") == (True, "steering")
+    # `/parallel` separates tasks by design, so a later one is meant.
+    assert submit_composer_line(d, "/parallel a /parallel b")[1] == "steering"

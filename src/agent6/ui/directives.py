@@ -29,6 +29,7 @@ from agent6.directive import (
     parse_retire,
     parse_standing,
     parse_task,
+    stray_directive,
 )
 from agent6.graph.order import id_order
 from agent6.graph.storage import load_graph
@@ -120,9 +121,15 @@ def submit_composer_line(session_dir: Path, text: str, *, now: bool = False) -> 
     if urgent == "":
         return False, "/now needs the instruction: /now <text>"
     now = now or urgent is not None
-    if not submit_steer(session_dir, urgent or text, now=now):
+    sent = urgent or text
+    if not submit_steer(session_dir, sent, now=now):
         return False, "could not write the steer request"
-    return True, "steering now, interrupting the call in flight" if now else "steering"
+    said = "steering now, interrupting the call in flight" if now else "steering"
+    # The hint reads what was sent, so a directive that acted is never named as
+    # text. A token inside it travelled as words, in case it was meant as one.
+    if (stray := stray_directive(sent)) is not None:
+        said += f" (`{stray}` mid-line is text; a directive has to start the line)"
+    return True, said
 
 
 def act_on_directive(session_dir: Path, text: str) -> tuple[bool, str] | None:

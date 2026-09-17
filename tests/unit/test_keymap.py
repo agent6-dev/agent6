@@ -96,3 +96,26 @@ def test_an_unrecognised_answer_denies_and_persists_nothing() -> None:
     d = Path(mkdtemp())
     assert not record_answer(d, "truncated", scope="command")
     assert not session_allow_set(d, "command") and not session_deny_set(d, "command")
+
+
+def test_completion_only_fires_on_a_line_that_is_one_word() -> None:
+    """Tab completes a directive only where a directive can start: the whole
+    line is a single `/`-word. The three completers agree, each in its own
+    language, so a token typed mid-sentence never completes."""
+    import inspect
+    from importlib import resources
+
+    from agent6.ui.cli._menu_input import _Reader  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.tui.composer import steer_suggestion_rows
+
+    assert [c for c, _ in steer_suggestion_rows("/t", mode="steer")] == ["/task"]
+    for line in ("fix it /t", "please /ta", "/task already typed "):
+        assert steer_suggestion_rows(line, mode="steer") == [], line
+
+    # The pause menu rings the bell instead of opening its menu.
+    guard = inspect.getsource(_Reader.open_menu)
+    assert '" " in self.line' in guard and 'startswith("/")' in guard
+
+    # The web asks the same of the textarea's whole value.
+    js = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    assert "v.startsWith('/') && !/\\s/.test(v)" in js
