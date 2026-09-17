@@ -136,10 +136,17 @@ main { padding: 0; }
 .st-in_progress { color: var(--warn); } .st-pending { color: var(--muted); }
 .st-skipped, .st-obsolete { color: var(--muted); text-decoration: line-through; }
 
-table.tools { width: 100%; border-collapse: collapse; font-size: 13px; }
-table.tools td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-table.tools .name { font-family: var(--mono); white-space: nowrap; }
-table.tools .args { color: var(--muted); font-family: var(--mono); word-break: break-word; }
+/* Tool calls: each call's name over one clipped line of its args and result
+   (the full text on hover), so the narrow details drawer never breaks a path
+   mid-word. */
+.calls .call { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.calls .call-head { display: flex; align-items: center; gap: 8px; }
+.calls .name { font-family: var(--mono); }
+.calls .call-head .more-note { margin-left: auto; font-size: 12px; }
+.calls .args {
+  padding-left: 16px; color: var(--muted); font-family: var(--mono); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
 

@@ -473,21 +473,23 @@ function paintRun(cards, s) {
   // tools: one clipped line per call (hover shows the full args + result; the
   // conversation carries the whole story), so a long error dump can't flood it.
   cards.tools.innerHTML = '';
-  const tbl = el('table', 'tools');
+  const calls = el('div', 'calls');
   for (const tc of (s.tool_calls||[]).slice(-30)) {
-    const tr = el('tr');
-    const d = el('td'); d.appendChild(el('span', 'dot ' + (tc.ok === null ? '' : tc.ok ? 'ok' : 'bad'))); tr.appendChild(d);
-    tr.appendChild(el('td', 'name', tc.name));
-    const a = el('td', 'args');
-    a.textContent = firstLine(tc.args_preview, 90) + (tc.result_summary ? '  → ' + firstLine(tc.result_summary, 90) : '');
+    const call = el('div', 'call');
+    const head = el('div', 'call-head');
+    head.appendChild(el('span', 'dot ' + (tc.ok === null ? '' : tc.ok ? 'ok' : 'bad')));
+    head.appendChild(el('span', 'name', tc.name));
     const extra = String(tc.args_preview || '').split('\n').length - 1 + String(tc.result_summary || '').split('\n').length - 1;
-    if (extra > 0) a.appendChild(el('span', 'more-note', ` (+${extra} more line${extra === 1 ? '' : 's'})`));
+    if (extra > 0) head.appendChild(el('span', 'more-note', `+${extra} more line${extra === 1 ? '' : 's'}`));
+    call.appendChild(head);
+    const a = el('div', 'args');
+    a.textContent = firstLine(tc.args_preview, 90) + (tc.result_summary ? '  → ' + firstLine(tc.result_summary, 90) : '');
     a.title = tc.args_preview + (tc.result_summary ? '\n→ ' + tc.result_summary : '');
-    tr.appendChild(a);
-    tbl.appendChild(tr);
+    call.appendChild(a);
+    calls.appendChild(call);
   }
   if (!(s.tool_calls||[]).length) cards.tools.appendChild(el('div', 'muted', 'no tool calls yet'));
-  else cards.tools.appendChild(tbl);
+  else cards.tools.appendChild(calls);
 
   // shells: the roster every surface reads off disk, one line per command
   cards.shells.innerHTML = '';

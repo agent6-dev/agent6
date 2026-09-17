@@ -17,7 +17,7 @@ from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "9658e561e71de7ff5c1325f708c7d5c7cec3a93e96e9d6490513483ec4c0a4f0"
+PAGE_SHA256 = "90c3a9bbc6812ba81a8185cd7d2db6708cf6ec036e224eb8cac3d5d3b3ceefe2"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -89,6 +89,19 @@ def test_the_commit_step_row_is_a_picker_row() -> None:
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const nav = el('div', 'row pickers');" in run
     assert "const sel = el('select', 'field');" in run
+
+
+def test_a_tool_call_clips_its_args_instead_of_breaking_words() -> None:
+    """In the narrow details drawer the args column was a sliver, so a path
+    broke mid-word ("mylib/u" / "rl_parse.py"). Each call is its name over one
+    clipped line of args, with the full text on hover."""
+    run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
+    assert "const calls = el('div', 'calls');" in run and "const a = el('div', 'args');" in run
+    css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
+    rule = css[css.index(".calls .args {") :]
+    rule = rule[: rule.index("}")]
+    assert "white-space: nowrap" in rule and "text-overflow: ellipsis" in rule
+    assert "break-word" not in rule
 
 
 def test_native_controls_take_the_page_theme() -> None:
