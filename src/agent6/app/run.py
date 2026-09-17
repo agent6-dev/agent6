@@ -58,6 +58,7 @@ from agent6.app.preflight import (
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config
+from agent6.directive import steer_problem
 from agent6.events import EventSink
 from agent6.git_ops import (
     GitError,
@@ -171,6 +172,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     """
     role = session_kind(mode).role
     cwd = Path.cwd()
+    # A first prompt is a task, not a composer line: without this the command
+    # would become the literal task text the model works on.
+    if (problem := steer_problem(task)) is not None:
+        reporter.error(problem)
+        return 2
     if session_id:
         try:
             validate_explicit_session_id(session_id)

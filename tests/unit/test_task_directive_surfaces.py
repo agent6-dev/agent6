@@ -232,3 +232,29 @@ def test_an_ordinary_line_and_a_real_directive_say_nothing_extra(tmp_path: Path)
     assert submit_composer_line(d, "focus on the parser") == (True, "steering")
     # `/parallel` separates tasks by design, so a later one is meant.
     assert submit_composer_line(d, "/parallel a /parallel b")[1] == "steering"
+
+
+def test_a_composer_command_cannot_be_a_fresh_runs_task(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A run's first prompt is not a composer, so `/task` there would have
+    become the literal task text the model works on. The lifecycle refuses it
+    the way a leg's steer is refused, for `agent6 run` and the ACP bridge
+    alike: both reach run_task."""
+    import time
+    from unittest.mock import MagicMock
+
+    from agent6.app.run import run_task
+    from agent6.config.layer import load_effective
+
+    rc = run_task(
+        load_effective(Path.cwd(), None).config,
+        "/task fix the parser",
+        started_at=time.time(),
+        frontend=MagicMock(),
+        session_id="run-REFUSED-AAAAAA",
+        mode="run",
+    )
+
+    assert rc == 2
+    assert "composer command" in capsys.readouterr().err

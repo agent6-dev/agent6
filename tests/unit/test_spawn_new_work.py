@@ -370,3 +370,18 @@ def test_argv_carries_the_model_route(tmp_path: Path, monkeypatch: pytest.Monkey
     assert captured[-1][1:] == ["plan", "--preset", "quick", "--model", "o/m", "--", "t"]
     spawn.spawn_new_work(tmp_path, "run", "/parallel 2 t", model="o/m")
     assert captured[-1][1:] == ["run", "--model", "o/m", "--parallel", "2", "--", "t"]
+
+
+def test_a_composer_command_as_the_task_is_refused_before_any_spawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The new-work box takes a task, not a composer command: `/task` typed
+    there is named before a run starts, since the child's own refusal would
+    land on a detached process nobody reads."""
+    captured = _capture_locate(monkeypatch)
+
+    session_dir, err = spawn.spawn_new_work(tmp_path, "run", "/task fix the parser")
+
+    assert session_dir is None
+    assert "composer command" in err
+    assert captured == []
