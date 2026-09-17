@@ -258,7 +258,10 @@ def test_parse_compact_none_unless_leading_exact_token() -> None:
 def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None:
     """The one check a front-end runs before starting a leg on steer text:
     a bare /pin or a /parallel with no task is named; ordinary text and a
-    well-formed directive pass."""
+    well-formed directive pass.
+
+    The refusal reaches an operator typing into a composer, so it names the
+    category mistake and what to do, never the composer they are already in."""
     assert steer_problem("/pin") is not None and "pin needs an instruction" in (
         steer_problem("/pin") or ""
     )
@@ -275,7 +278,9 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
         "/now",
         "/stop",
     ):
-        assert "cannot start a leg" in (steer_problem(live_only) or ""), live_only
+        problem = steer_problem(live_only) or ""
+        assert "not an instruction" in problem, live_only
+        assert "type it in the composer" in problem, live_only
     assert steer_problem("/pin keep the API stable") is None
     assert steer_problem("/parallel 2 try the other design") is None
     assert steer_problem("focus on the parser") is None

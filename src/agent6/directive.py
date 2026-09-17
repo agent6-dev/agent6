@@ -264,7 +264,12 @@ def steer_problem(text: str) -> str | None:
     directive the loop can only decline reads as a silent finish and flips a
     passed run to failed."""
     if (m := _FRONT_END_TOKEN.match(text)) is not None:
-        return f"{m.group(1)} acts in a composer or the pause menu; it cannot start a leg"
+        # The operator reading this is often typing into a composer already,
+        # so the refusal names the category mistake rather than the surface.
+        return (
+            f"{m.group(1)} is a composer command, not an instruction;"
+            " start this leg, then type it in the composer"
+        )
     try:
         parse_pin(text)
         parse_directive(text)

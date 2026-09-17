@@ -470,7 +470,7 @@ def test_a_lone_slash_word_is_refused_not_sent_as_a_task(
     assert rc == 0
     assert calls == [("runny-one-AAAAAA", "now add the tests")]
     err = capsys.readouterr().err
-    assert "/shells acts in a composer or the pause menu" in err
+    assert "/shells is a composer command, not an instruction" in err
     assert "'/cost' is not sent as a task" in err
 
 
