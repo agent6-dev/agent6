@@ -41,10 +41,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent6.config.layer import load_effective
-from agent6.directive import STEER_COMMANDS, parse_btw
+from agent6.directive import STEER_COMMANDS, parse_btw, parse_task
 from agent6.graph.order import DONE_STATUSES
 from agent6.paths import data_dir
-from agent6.sessions.ipc import request_compact, steer_answer_written, take_steer_answer
+from agent6.sessions.ipc import (
+    queue_task,
+    request_compact,
+    steer_answer_written,
+    take_steer_answer,
+)
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.skills import operator_skills
@@ -75,6 +80,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/compact": "compact the context now; `/compact <focus>` steers the summary",
     "/parallel": STEER_COMMANDS["/parallel"],
     "/btw": STEER_COMMANDS["/btw"],
+    "/task": STEER_COMMANDS["/task"],
     "/shells": STEER_COMMANDS["/shells"],
     "/restate": "restate the conversation since your last message",
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
@@ -231,6 +237,16 @@ def _start_btw(cmd: str, session_dir: Path, runner: BtwRunner | None) -> str:
     return runner(question, session_dir)[1]
 
 
+def _queue_task(cmd: str, session_dir: Path) -> str:
+    """`/task <text>`: work for the run's graph, not a steer. The menu is open
+    at a step boundary, so the run drains it as soon as it goes on."""
+    text = parse_task(cmd)
+    if not text:
+        return "[agent6] a task needs text: `/task <what to do>`"
+    queue_task(session_dir, text)
+    return "[agent6] task queued; it runs once the open tasks drain"
+
+
 # Commands that end the menu, mapped to the canonical steer action.
 _ACTIONS: dict[str, str] = {
     "/continue": "",
@@ -269,6 +285,8 @@ def _run_info_command(
         print(restate(list(tail_events(session_dir / LOGS_NAME, follow=False))))
     elif cmd.startswith("/btw"):
         print(_start_btw(cmd, session_dir, btw_runner))
+    elif cmd.startswith("/task"):
+        print(_queue_task(cmd, session_dir))
 
 
 def _line_reader(

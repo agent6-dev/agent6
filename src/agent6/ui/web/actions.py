@@ -23,7 +23,7 @@ from agent6.app.reporter import Reporter
 from agent6.app.stop import stop_session
 from agent6.app.undo import undo_fork
 from agent6.config.write import ConfigLeafValue, set_config_leaves
-from agent6.directive import parse_btw, parse_compact, parse_now
+from agent6.directive import parse_btw, parse_compact, parse_now, parse_task
 from agent6.errors import OperatorError
 from agent6.machine import (
     JournalError,
@@ -35,6 +35,7 @@ from agent6.machine import (
 from agent6.paths import mkdir_for_real_user, state_dir
 from agent6.sessions.ipc import (
     ANSWERED_ELSEWHERE,
+    queue_task,
     read_worker_pid,
     request_compact,
     submit_steer,
@@ -171,25 +172,42 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
-    question = parse_btw(text)
-    if question is not None:
-        # `/btw <question>` opens a side ask beside the run (the answer lands
-        # on the run's journal); never steer text.
-        opened, line = open_btw(session_dir, question)
-        return opened, line.removeprefix("[agent6] ")
-    focus = parse_compact(text)
-    if focus is not None:
-        # `/compact [focus]` is an out-of-band request, not steer text the
-        # loop should read; /pin and /parallel stay steers the loop parses.
-        if not request_compact(session_dir, focus=focus):
-            return False, "could not write the compaction request"
-        return True, "compaction requested"
+    handled = _composer_directive(session_dir, text)
+    if handled is not None:
+        return handled
     urgent = parse_now(text)  # `/now <text>`: the CLI's `steer --now`
     if urgent == "":
         return False, "/now needs the instruction: /now <text>"
     queued = submit_steer(session_dir, urgent or text, now=urgent is not None)
     message = "steer requested now" if urgent else "steer requested"
     return (True, message) if queued else (False, "could not write the steer request")
+
+
+def _composer_directive(session_dir: Path, text: str) -> tuple[bool, str] | None:
+    """The composer directives that act beside the run instead of steering it,
+    or None when *text* is an ordinary steer. `/pin` and `/parallel` are not
+    here: they are steers the loop itself parses."""
+    question = parse_btw(text)
+    if question is not None:
+        # `/btw <question>` opens a side ask beside the run (the answer lands
+        # on the run's journal); never steer text.
+        opened, line = open_btw(session_dir, question)
+        return opened, line.removeprefix("[agent6] ")
+    queued_task = parse_task(text)
+    if queued_task is not None:
+        # `/task <text>` joins the run's task graph, so the turn in flight
+        # never sees it.
+        if not queued_task:
+            return False, "/task needs the work: /task <text>"
+        queue_task(session_dir, queued_task)
+        return True, "task queued"
+    focus = parse_compact(text)
+    if focus is not None:
+        # `/compact [focus]` is an out-of-band request, not steer text.
+        if not request_compact(session_dir, focus=focus):
+            return False, "could not write the compaction request"
+        return True, "compaction requested"
+    return None
 
 
 def fork_run(

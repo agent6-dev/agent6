@@ -48,10 +48,11 @@ from agent6.app.reporter import Reporter
 from agent6.app.stop import stop_session
 from agent6.app.undo import undo_fork
 from agent6.config.layer import available_preset_names
-from agent6.directive import parse_btw, parse_compact, parse_now
+from agent6.directive import parse_btw, parse_compact, parse_now, parse_task
 from agent6.models.choices import available_routes, resume_defaults
 from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import (
+    queue_task,
     register_frontend,
     request_compact,
     submit_steer,
@@ -512,6 +513,16 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             if question is not None:
                 opened, line = open_btw(self.session_dir, question)
                 self.notify(line, severity="information" if opened else "warning")
+                return
+            queued = parse_task(text)
+            if queued is not None:
+                # `/task <text>` joins the run's task graph, so the turn in
+                # flight never sees it.
+                if not queued:
+                    self.notify("/task needs the work: /task <text>", severity="warning")
+                    return
+                queue_task(self.session_dir, queued)
+                self.notify("task queued; it runs once the open tasks drain")
                 return
             focus = parse_compact(text)
             if focus is not None:

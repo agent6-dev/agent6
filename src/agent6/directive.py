@@ -148,6 +148,21 @@ def parse_btw(text: str) -> str | None:
     return text[m.end() :].strip()
 
 
+# A task queued into the run's graph, never steer text: it must not reach the
+# loop as a message, which is the whole point of queueing rather than steering.
+_TASK_TOKEN = re.compile(r"\A\s*/task(?=\s|\Z)")
+
+
+def parse_task(text: str) -> str | None:
+    """The task a `/task` composer message carries, or `None` when *text* is not
+    a task directive. A bare `/task` carries "": there is nothing to queue, and
+    the caller says so rather than queueing an empty node."""
+    m = _TASK_TOKEN.match(text)
+    if m is None:
+        return None
+    return text[m.end() :].strip()
+
+
 # A leading `/now` token: the urgency the CLI spells `steer --now`. Parsed by
 # the composers (web/TUI), never by the loop: the request marker carries it.
 _NOW_TOKEN = re.compile(r"\A\s*/now(?=\s|\Z)")
@@ -193,7 +208,7 @@ def spec_fragment(text: str) -> str | None:
 # `/restate` and `/shells` act in the composer that typed them, live or not.
 # The loop parses none of these, so a leg started on one would hand the token
 # to the model.
-LIVE_RUN_COMMANDS: frozenset[str] = frozenset({"/compact", "/btw", "/now", "/stop"})
+LIVE_RUN_COMMANDS: frozenset[str] = frozenset({"/compact", "/btw", "/now", "/stop", "/task"})
 _FRONT_END_COMMANDS: frozenset[str] = LIVE_RUN_COMMANDS | {"/restate", "/shells"}
 _FRONT_END_TOKEN = re.compile(
     r"\A\s*(" + "|".join(map(re.escape, sorted(_FRONT_END_COMMANDS))) + r")(?=\s|\Z)"
@@ -275,6 +290,7 @@ STEER_COMMANDS: dict[str, str] = {
     "/restate": "restate the conversation since your last message (local, no model call)",
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",
+    "/task": "queue work into the task graph: /task <text> (worked when the queue drains)",
     "/now": "steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)",
     "/stop": "stop the run now, as `agent6 stop` does (resumable)",
     "/shells": "background commands this run started, and how they ended",
