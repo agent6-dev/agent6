@@ -32,7 +32,6 @@ from agent6.workflows._guards import (
     QuietGuard,
     SettledGuard,
 )
-from agent6.workflows._loop_state import End
 from agent6.workflows._provider_call import (
     CallSettings,
     ProviderCaller,
@@ -40,7 +39,7 @@ from agent6.workflows._provider_call import (
     reasoning_starvation,
 )
 from agent6.workflows._review import ReviewSettings
-from agent6.workflows._session_state import SNAPSHOT_VERSION
+from agent6.workflows._session_state import SNAPSHOT_VERSION, End
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import LoopState, TurnState, Workflow

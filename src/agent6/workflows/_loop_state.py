@@ -11,7 +11,6 @@ The loop's phase methods live in `loop.py`; these are the shapes they take.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -31,7 +30,7 @@ from agent6.workflows._guards import (
     StandingGoal,
 )
 from agent6.workflows._metric import MetricSample
-from agent6.workflows._session_state import SessionEndReason, SessionSnapshot
+from agent6.workflows._session_state import SessionSnapshot
 from agent6.workflows._spiral_guards import SpiralGuard
 from agent6.workflows._verify_verdict import VerifyVerdict
 
@@ -119,31 +118,6 @@ def restore_completion_state(state: LoopState, snap: SessionSnapshot) -> None:
                 at_ceiling=snap.metric_at_ceiling,
             )
         )
-
-
-@dataclass(frozen=True, slots=True)
-class End:
-    """A decision to end the run, as `Workflow._finish` records it: the
-    checkpoint of a dirty worktree first (an operator's stop skips it, so
-    whoever takes over keeps the choice to discard), the `session.end` event,
-    then the result. `verdict` is what the event's `all_passed` carries:
-    `failed` (False), `grounded` (the final tree's verify tri-state, with the
-    verdict's `scoped`) or `passed` (True, with `scoped` as given); a clean
-    verdict passes the pending root tasks first, and `roots` forces that for a
-    failed one. `event=False` writes no event (a detach: the caller respawns
-    the run). `fields` ride on the event."""
-
-    reason: SessionEndReason
-    summary: str
-    completed: bool = False
-    verdict: Literal["failed", "grounded", "passed"] = "failed"
-    checkpoint: bool = True
-    event: bool = True
-    roots: bool | None = None
-    scoped: bool = False
-    finish_payload: dict[str, Any] | None = None
-    stale_gate: str = ""
-    fields: Mapping[str, object] = field(default_factory=dict)
 
 
 class NextTurn:

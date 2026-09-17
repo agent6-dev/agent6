@@ -18,7 +18,7 @@ from agent6.prompts.loop import V2_VERIFY_WHEN
 from agent6.viewmodel.listing import status_word
 from agent6.workflows._chain import RunChain
 from agent6.workflows._finish_gates import red_gate_returns
-from agent6.workflows._loop_state import End
+from agent6.workflows._session_state import End
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
     LoopState,

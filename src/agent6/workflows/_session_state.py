@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import contextlib
 import json
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -134,6 +135,31 @@ class SessionResult:
     # reads: `completed` means the agent stopped deliberately, never that the
     # work verified.
     verified: Verification = "not_applicable"
+
+
+@dataclass(frozen=True, slots=True)
+class End:
+    """A decision to end the run, as `Workflow._finish` records it: the
+    checkpoint of a dirty worktree first (an operator's stop skips it, so
+    whoever takes over keeps the choice to discard), the `session.end` event,
+    then the result. `verdict` is what the event's `all_passed` carries:
+    `failed` (False), `grounded` (the final tree's verify tri-state, with the
+    verdict's `scoped`) or `passed` (True, with `scoped` as given); a clean
+    verdict passes the pending root tasks first, and `roots` forces that for a
+    failed one. `event=False` writes no event (a detach: the caller respawns
+    the run). `fields` ride on the event."""
+
+    reason: SessionEndReason
+    summary: str
+    completed: bool = False
+    verdict: Literal["failed", "grounded", "passed"] = "failed"
+    checkpoint: bool = True
+    event: bool = True
+    roots: bool | None = None
+    scoped: bool = False
+    finish_payload: dict[str, Any] | None = None
+    stale_gate: str = ""
+    fields: Mapping[str, object] = field(default_factory=dict)
 
 
 class ResumeError(Exception):

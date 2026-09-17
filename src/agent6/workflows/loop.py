@@ -125,7 +125,6 @@ from agent6.workflows._finish_gates import (
 from agent6.workflows._guards import GuardSettings
 from agent6.workflows._loop_state import (
     NEXT_TURN,
-    End,
     LoopState,
     NextTurn,
     TurnState,
@@ -230,6 +229,7 @@ from agent6.workflows._review import (
 )
 from agent6.workflows._session_state import (
     TURN_IN_FLIGHT_NAME,
+    End,
     ResumeError,
     SessionEndReason,
     SessionResult,
