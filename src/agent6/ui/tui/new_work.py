@@ -26,7 +26,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Select, Static, TextArea
 
 from agent6.directive import spec_fragment
-from agent6.models.choices import default_route
+from agent6.models.choices import default_preset, default_route
 from agent6.types import OPERATOR_MODES
 from agent6.ui.spawn import spawn_new_work
 from agent6.ui.tui.composer import SteerInput, SteerSuggest
@@ -34,9 +34,13 @@ from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.widgets import Picker
 
-# The preset dropdown's first entry: "" => no --preset, so the run uses the
-# top-level `preset` from config (or the plain defaults).
-DEFAULT_PRESET_LABEL = "(config default)"
+
+def config_default(value: str) -> str:
+    """The label of a picker's first entry, the config's own choice (value
+    "", no flag): what that choice is, `quick (config default)`, or `none`
+    when the config names nothing."""
+    return f"{value or 'none'} (config default)"
+
 
 _INTRO = (
     "Describe the task (or the question, for ask). Enter starts it; Ctrl-J adds a line.\n"
@@ -66,11 +70,10 @@ def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> Text |
 class NewWorkScreen(ScreenChrome, Screen[None]):
     """Type a task, pick a mode, a preset and a model, Enter starts it (see the
     module docstring). Lives in the hub app: a located session dir is the
-    hub's return value, and the run view opens on it. The model picker
-    shows the route the config resolves for the mode and preset, re-resolved
-    on every change of either; a pick rides as `--model`, the last layer
-    over the config, and a blank pick (no route resolved) leaves the model
-    to the config."""
+    hub's return value, and the run view opens on it. The preset and model
+    pickers open on the config's own choice, named, which adds no flag; any
+    other pick rides as `--preset` / `--model`. A mode or preset change
+    re-resolves the model's config default and resets the model to it."""
 
     CSS = """
     NewWorkScreen { background: $surface; }
@@ -136,23 +139,16 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
                 [(m, m) for m in OPERATOR_MODES], value="run", allow_blank=False, id="draft-mode"
             )
             yield Static("preset", classes="draft-label")
-            # value="" is the "(config default)" sentinel: no --preset, so the
-            # config's own `preset` (or plain defaults) applies.
+            preset = default_preset(self.repo_cwd, self.config_path)
             yield Picker(
-                [(DEFAULT_PRESET_LABEL, ""), *((p, p) for p in self._presets)],
+                [(config_default(preset), ""), *((p, p) for p in self._presets)],
                 value="",
                 allow_blank=False,
                 id="draft-preset",
             )
             yield Static("model", classes="draft-label")
             route = default_route(self.repo_cwd, self.config_path, "run", "")
-            yield Picker(
-                self._route_options(route),
-                value=route or Select.NULL,
-                allow_blank=True,
-                prompt="(config default)",
-                id="draft-model",
-            )
+            yield Picker(self._model_options(route), value="", allow_blank=False, id="draft-model")
         yield SteerInput(id="draft-input")
         yield Footer()
 
@@ -162,28 +158,21 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         bar.set_mode(mode="start")
         bar.focus()
 
-    def _route_options(self, route: str) -> list[tuple[str, str]]:
-        """The picker's rows: the config's routes, with *route* first when
-        the listing cache lacks it (a configured model is always a choice)."""
-        routes = [route, *self._routes] if route and route not in self._routes else self._routes
-        return [(r, r) for r in routes]
+    def _model_options(self, route: str) -> list[tuple[str, str]]:
+        """The model picker's rows: *route*, the config default, then every
+        route the config can run."""
+        return [(config_default(route), ""), *((r, r) for r in self._routes)]
 
     @on(Select.Changed, "#draft-mode")
     @on(Select.Changed, "#draft-preset")
     def _follow_route(self) -> None:
-        """The model picker follows a mode or preset change: the route the
-        config resolves for the pair replaces whatever was picked, and no
-        route (a config error, an unset role) leaves it blank."""
+        """The model picker follows a mode or preset change: it resets to the
+        config default for the pair, named with the route the config resolves
+        (`none` on a config error or an unset role)."""
         mode = str(self.query_one("#draft-mode", Select).value)
         preset = str(self.query_one("#draft-preset", Select).value)
         route = default_route(self.repo_cwd, self.config_path, mode, preset)
-        picker = self.query_one("#draft-model", Select)
-        picker.set_options(self._route_options(route))
-        picker.value = route or Select.NULL
-
-    def _picked_route(self) -> str:
-        value = self.query_one("#draft-model", Select).value
-        return "" if value is Select.NULL else str(value)
+        self.query_one("#draft-model", Select).set_options(self._model_options(route))
 
     def action_close(self) -> None:
         if not self.close_open_list():
@@ -203,9 +192,10 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
             return
         mode = str(self.query_one("#draft-mode", Select).value)
         preset = str(self.query_one("#draft-preset", Select).value)
+        model = str(self.query_one("#draft-model", Select).value)
         self._starting = True
         self._notice(Text(f"starting the {mode}…", style="bold cyan"))
-        self._start(self.app, mode, message.text, preset, self._picked_route())
+        self._start(self.app, mode, message.text, preset, model)
 
     @work(thread=True, exclusive=True)
     def _start(self, app: App[object], mode: str, task: str, preset: str, model: str) -> None:

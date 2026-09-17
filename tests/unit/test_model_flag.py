@@ -86,9 +86,10 @@ def test_route_for_applies_the_worker_fallback() -> None:
 
 def test_a_hubs_picker_follows_the_preset_and_lists_every_route(repo: Path, tmp_path: Path) -> None:
     """`default_route` is the mode's role under the preset (a preset that
-    swaps the worker model moves the picker), `available_routes` every
-    configured route; both degrade to nothing on a config error."""
-    from agent6.models.choices import available_routes, default_route
+    swaps the worker model moves the picker), `default_preset` the preset the
+    config selects, `available_routes` every configured route; all degrade to
+    nothing on a config error."""
+    from agent6.models.choices import available_routes, default_preset, default_route
 
     config = tmp_path / "xdg" / "config" / "agent6" / "config.toml"
     config.write_text(
@@ -100,9 +101,14 @@ def test_a_hubs_picker_follows_the_preset_and_lists_every_route(repo: Path, tmp_
     assert default_route(repo, None, "run", "fast") == "anthropic/claude-fast"
     assert default_route(repo, None, "plan", "") == "anthropic/claude-x"
     assert available_routes(repo, None) == ["anthropic/claude-x", "openrouter/moonshotai/kimi-k2.6"]
+    assert default_preset(repo, None) == ""
+    config.write_text('preset = "fast"\n' + config.read_text(encoding="utf-8"), encoding="utf-8")
+    assert default_preset(repo, None) == "fast"
     config.write_text("[models.worker]\nprovider = 1\n", encoding="utf-8")
     assert default_route(repo, None, "run", "") == ""
     assert available_routes(repo, None) == []
+    config.write_text("preset = [\n", encoding="utf-8")
+    assert default_preset(repo, None) == ""
 
 
 def test_a_refused_flag_route_names_the_flag_not_the_config(

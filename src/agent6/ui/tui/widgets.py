@@ -8,8 +8,11 @@ accent-driven, arrow-navigable controls with no per-screen drift."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 try:
     from rich.color import Color
+    from rich.console import RenderableType
     from rich.text import Text
     from textual import events
     from textual.containers import ScrollableContainer
@@ -548,6 +551,12 @@ class Picker(Select[str]):
             # line up with the field's; above it by the list's height.
             overlay.styles.min_width = field.outer_size.width + 2
             overlay.styles.offset = (-1, -(rows + 1))
+
+    def set_options(self, options: Iterable[tuple[RenderableType, str]]) -> None:
+        super().set_options(options)
+        # Select repaints the field only when the value changes, so an entry
+        # relabelled under the same value would keep its old label.
+        self.mutate_reactive(Picker.value)
 
 
 # Shared CSS for the flat actions + inline inputs + chooser, so every form-style

@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent6.config import Config, ConfigError
-from agent6.config.layer import EffectiveConfig, load_effective
+from agent6.config.layer import EffectiveConfig, load_effective, preset_catalog
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import ROLES
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
@@ -72,6 +72,16 @@ def available_routes(cwd: Path, config_path: Path | None) -> list[str]:
     except ConfigError:
         return []
     return route_choices(cfg)
+
+
+def default_preset(cwd: Path, config_path: Path | None) -> str:
+    """The preset the config at *cwd* selects (the repo's, else the global
+    one): what a hub's preset picker names as the config default. Empty when
+    none is selected or on any config error."""
+    try:
+        return preset_catalog(cwd, config_path).selected
+    except ConfigError:
+        return ""
 
 
 def default_route(cwd: Path, config_path: Path | None, mode: str, preset: str) -> str:

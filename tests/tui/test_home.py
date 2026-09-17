@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from textual.widgets._select import SelectCurrent
 
 from agent6.paths import state_dir
 from agent6.sessions.ipc import (
@@ -1027,10 +1028,11 @@ def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: Path) -
 def test_new_task_view_model_box_follows_the_mode_and_preset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The model picker shows the route the config resolves for the mode and
-    preset, re-resolved on either change (a plan's planner, a preset's model;
-    a route the listing cache lacks is still offered), and the pick rides to
-    the spawn as `--model`."""
+    """The preset and model pickers open on the config default, named with
+    what it is (a bare "(config default)" said nothing); the model's is
+    re-resolved on a mode or preset change (a plan's planner, a preset's
+    model) and resets the pick. The default adds no flag; a pick rides to the
+    spawn as `--model`."""
     import asyncio
 
     from textual.widgets import Select
@@ -1047,7 +1049,11 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
     def _route(cwd: Path, config_path: object, mode: str, preset: str) -> str:
         return resolved.get((mode, preset), "")
 
+    def _preset(cwd: Path, config_path: object) -> str:
+        return "quick"
+
     monkeypatch.setattr(new_work, "default_route", _route)
+    monkeypatch.setattr(new_work, "default_preset", _preset)
     started: list[tuple[str, str, str, str]] = []
 
     def _spawn(
@@ -1064,7 +1070,10 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
 
     monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
-    async def scenario() -> None:
+    def label(picker: Select[str]) -> str:
+        return str(picker.query_one(SelectCurrent).label)
+
+    async def scenario(pick: str) -> None:
         app = Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
@@ -1072,15 +1081,18 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, NewWorkScreen)
+            preset = screen.query_one("#draft-preset", Select)
             picker = screen.query_one("#draft-model", Select)
-            assert picker.value == "o/a"
+            assert (preset.value, label(preset)) == ("", "quick (config default)")
+            assert (picker.value, label(picker)) == ("", "o/a (config default)")
+            picker.value = "o/b"
             screen.query_one("#draft-mode", Select).value = "plan"
             await pilot.pause()
-            assert picker.value == "o/b"
-            screen.query_one("#draft-preset", Select).value = "ultra"
+            assert (picker.value, label(picker)) == ("", "o/b (config default)")
+            preset.value = "ultra"
             await pilot.pause()
-            assert picker.value == "o/c"
-            picker.value = "o/a"
+            assert (picker.value, label(picker)) == ("", "o/c (config default)")
+            picker.value = pick
             bar = screen.query_one("#draft-input", SteerInput)
             bar.focus()
             await pilot.pause()
@@ -1088,18 +1100,19 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
             deadline = time.monotonic() + 10
             while app.return_value is None and time.monotonic() < deadline:
                 await pilot.pause(0.05)
-            assert started == [("plan", "t", "ultra", "o/a")]
 
-    asyncio.run(scenario())
+    asyncio.run(scenario("o/a"))
+    asyncio.run(scenario(""))
+    assert started == [("plan", "t", "ultra", "o/a"), ("plan", "t", "ultra", "")]
 
 
-def test_new_task_view_model_box_goes_blank_when_no_route_resolves(
+def test_new_task_view_model_box_says_none_when_no_route_resolves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No route (a preset that fails validation, a role naming no provider)
-    leaves the picker blank, "(config default)", and the spawn without
-    `--model`: never a crash on an empty list, never the first route of the
-    list passed off as the choice."""
+    names the model default `none` and spawns without `--model`: never a
+    crash on an empty list, never the first route of the list passed off as
+    the choice."""
     import asyncio
 
     from textual.widgets import Select
@@ -1133,6 +1146,9 @@ def test_new_task_view_model_box_goes_blank_when_no_route_resolves(
 
     monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
 
+    def label(picker: Select[str]) -> str:
+        return str(picker.query_one(SelectCurrent).label)
+
     async def empty_list() -> None:
         # No routes and no default (a config naming no provider) opens too.
         def _no_route(cwd: Path, config_path: object, mode: str, preset: str) -> str:
@@ -1145,7 +1161,8 @@ def test_new_task_view_model_box_goes_blank_when_no_route_resolves(
             app.push_screen(NewWorkScreen(tmp_path, presets=[], routes=[]))
             await pilot.pause()
             assert isinstance(app.screen, NewWorkScreen)
-            assert app.screen.query_one("#draft-model", Select).value is Select.NULL
+            picker = app.screen.query_one("#draft-model", Select)
+            assert (picker.value, label(picker)) == ("", "none (config default)")
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
@@ -1156,11 +1173,11 @@ def test_new_task_view_model_box_goes_blank_when_no_route_resolves(
             screen = app.screen
             assert isinstance(screen, NewWorkScreen)
             picker = screen.query_one("#draft-model", Select)
-            assert picker.value == "o/a"
+            assert label(picker) == "o/a (config default)"
             screen.query_one("#draft-preset", Select).value = "bad"
             await pilot.pause()
             await pilot.pause()
-            assert picker.value is Select.NULL
+            assert (picker.value, label(picker)) == ("", "none (config default)")
             bar = screen.query_one("#draft-input", SteerInput)
             bar.focus()
             await pilot.pause()
