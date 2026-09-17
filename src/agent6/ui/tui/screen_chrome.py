@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import Any, ClassVar, cast
 
+from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.screen import Screen
 from textual.widgets import Select
@@ -57,6 +58,18 @@ class MenuCommands(Provider):
             score = matcher.match(name)
             if score > 0:
                 yield Hit(score, matcher.highlight(name), runnable, help=help_text)
+
+
+def keys(
+    group: tuple[tuple[str, str, str], ...], *, priority: bool = False, show: bool = False
+) -> list[Binding]:
+    """One of `ui.keymap`'s key groups as textual bindings, spread into a
+    screen's BINDINGS. The keymap owns the keys, actions and labels; a screen
+    decides only whether they are priority bindings and whether the footer
+    shows them."""
+    return [
+        Binding(key, action, label, priority=priority, show=show) for key, action, label in group
+    ]
 
 
 class ScreenChrome:

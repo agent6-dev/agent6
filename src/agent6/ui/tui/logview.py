@@ -36,13 +36,14 @@ from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Static
 
+from agent6.ui.keymap import SCROLL_KEYS
 from agent6.ui.tui.menubar import (
     Menu,
     MenuBar,
     MenuItem,
     menu_bindings,
 )
-from agent6.ui.tui.screen_chrome import ScreenChrome
+from agent6.ui.tui.screen_chrome import ScreenChrome, keys
 from agent6.viewmodel.log_line import format_log_line
 from agent6.viewmodel.state import LOG_NOISE_EVENTS, STREAM_DELTA_EVENTS
 from agent6.viewmodel.tail import LogTail
@@ -83,10 +84,7 @@ class LogScreen(ScreenChrome, Screen[None]):
         # toggles it shut, so open/close is one keystroke from either side.
         Binding("l", "close", "Back", show=False),
         Binding("r", "reload", "Reload"),
-        Binding("pageup", "page_up", "Scroll up", show=False),
-        Binding("pagedown", "page_down", "Scroll down", show=False),
-        Binding("ctrl+home", "scroll_top", "Top", show=False),
-        Binding("ctrl+end", "scroll_bottom", "End", show=False),
+        *keys(SCROLL_KEYS),
         *menu_bindings(MENUS),
     ]
 

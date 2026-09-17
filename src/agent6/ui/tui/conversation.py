@@ -37,6 +37,7 @@ from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
+from agent6.ui.keymap import RUN_VIEW_KEYS, SCROLL_KEYS
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     APPROVAL_KEY_BINDINGS,
@@ -58,7 +59,7 @@ from agent6.ui.tui.menubar import (
     menu_bindings,
 )
 from agent6.ui.tui.prompts import PromptDispatcher
-from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
+from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome, keys
 from agent6.ui.tui.settings import get_copy_method
 from agent6.viewmodel import approval_parts
 from agent6.viewmodel.events import SESSION_START_EVENTS
@@ -246,15 +247,11 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     # `?` opens help too, when focus is not in the bar.
     BINDINGS: ClassVar = [
         Binding("ctrl+d", "toggle_dashboard", "Dashboard", priority=True),
-        Binding("ctrl+c", "copy", "Copy", priority=True),
+        *keys(RUN_VIEW_KEYS, priority=True, show=True),
         # The thinking/tool-detail cycle: hidden -> collapsed -> expanded.
         Binding("ctrl+t", "cycle_detail", "Detail", priority=True),
-        Binding("ctrl+r", "history_search", "History", priority=True),
         Binding("escape", "close", "Back", key_display="Esc", priority=True),
-        Binding("pageup", "page_up", "Scroll up", priority=True, show=False),
-        Binding("pagedown", "page_down", "Scroll down", priority=True, show=False),
-        Binding("ctrl+home", "scroll_top", "Top", priority=True, show=False),
-        Binding("ctrl+end", "scroll_bottom", "End", priority=True, show=False),
+        *keys(SCROLL_KEYS, priority=True),
         Binding("question_mark", "help", "Help", show=False),
         *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
         *menu_bindings(MENUS),

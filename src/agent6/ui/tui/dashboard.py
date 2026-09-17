@@ -46,6 +46,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import SESSION_KINDS
+from agent6.ui.keymap import RUN_VIEW_KEYS, SCROLL_KEYS
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.composer import (
     APPROVAL_KEY_BINDINGS,
@@ -65,7 +66,7 @@ from agent6.ui.tui.modals import (
     ToolCallDetailModal,
 )
 from agent6.ui.tui.prompts import PromptDispatcher
-from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
+from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome, keys
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import (
     status_style,
@@ -217,13 +218,9 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     # menu and the palette. `?` opens help when focus is not in the bar.
     BINDINGS: ClassVar = [
         Binding("ctrl+d", "toggle_dashboard", "Conversation", priority=True),
-        Binding("ctrl+c", "copy", "Copy", priority=True),
-        Binding("ctrl+r", "history_search", "History", priority=True),
+        *keys(RUN_VIEW_KEYS, priority=True, show=True),
         Binding("escape", "to_hub", "Back", key_display="Esc", priority=True),
-        Binding("pageup", "page_up", "Scroll up", priority=True, show=False),
-        Binding("pagedown", "page_down", "Scroll down", priority=True, show=False),
-        Binding("ctrl+home", "scroll_top", "Top", priority=True, show=False),
-        Binding("ctrl+end", "scroll_bottom", "End", priority=True, show=False),
+        *keys(SCROLL_KEYS, priority=True),
         Binding("question_mark", "help", "Help", show=False),
         *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
         *menu_bindings(MENUS),

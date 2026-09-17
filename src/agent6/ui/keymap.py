@@ -66,3 +66,77 @@ def approval_prompt_suffix(*, standing: bool) -> str:
         f"{e.key} = {e.label.removesuffix(' (session)')}" for e in APPROVAL_ANSWERS if e.standing
     )
     return f"[{letters}]  ({scoped}, this session): "
+
+
+# The scroll keys every scrollable screen carries, as (key, action, label). The
+# three screens that scroll a long body (the conversation, the dashboard, the
+# event log) offer exactly these, so they are spelled once.
+SCROLL_KEYS: tuple[tuple[str, str, str], ...] = (
+    ("pageup", "page_up", "Scroll up"),
+    ("pagedown", "page_down", "Scroll down"),
+    ("ctrl+home", "scroll_top", "Top"),
+    ("ctrl+end", "scroll_bottom", "End"),
+)
+
+# The control keys a live run's two views share. They differ only in where Esc
+# goes and in the conversation's detail cycle, which each screen adds itself.
+RUN_VIEW_KEYS: tuple[tuple[str, str, str], ...] = (
+    ("ctrl+c", "copy", "Copy"),
+    ("ctrl+r", "history_search", "History"),
+)
+
+
+# Every plain letter a TUI screen binds, by screen. Letters are scarce and
+# actions are not, so one letter means different things on different screens:
+# `d` deletes a run on the hub, unsets a setting on the config page and denies
+# an approval for the session in a run view. This table is where that is
+# visible; `tests/tui/test_keymap_screens.py` reads the screens' own BINDINGS
+# and fails if it drifts, so a new letter is chosen with the others in sight.
+#
+# A destructive letter is confirmed before it acts (the hub's `d` asks; the
+# config page's `d` is a config-file edit you undo by setting the value again).
+SCREEN_LETTERS: dict[str, dict[str, str]] = {
+    "hub": {
+        "n": "new_work",
+        "l": "view_logs",
+        "m": "merge_selected",
+        "d": "delete_selected",
+        "r": "refresh",
+        "c": "open_config",
+        "M": "open_machines",
+        "q": "quit",
+    },
+    # The two run views carry no letters of their own: the composer has the
+    # keyboard, and these four answer an open approval from any non-text focus.
+    "conversation": {
+        "y": "answer('yes')",
+        "a": "answer('session')",
+        "n": "answer('no')",
+        "d": "answer('session-deny')",
+    },
+    "dashboard": {
+        "y": "answer('yes')",
+        "a": "answer('session')",
+        "n": "answer('no')",
+        "d": "answer('session-deny')",
+    },
+    "event log": {"q": "close", "l": "close", "r": "reload"},
+    "config": {
+        "m": "toggle_modified",
+        "e": "edit",
+        "a": "add_provider",
+        "d": "reset",
+        "r": "reload",
+        "q": "close",
+    },
+    "machines": {
+        "v": "view",
+        "r": "run",
+        "w": "watch",
+        "c": "create",
+        "f": "refresh",
+        "q": "close",
+    },
+    "machine": {"q": "close"},
+    "machine watch": {"s": "steer", "m": "poke", "x": "stop", "q": "close"},
+}
