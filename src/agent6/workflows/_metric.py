@@ -17,8 +17,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.workflows._advice import Nudge, Stop, TurnContext
-from agent6.workflows._finish_gates import with_open_tasks
+from agent6.workflows._advice import Nudge, Refusal, Stop, TurnContext, with_open_tasks
 from agent6.workflows._session_state import End
 
 if TYPE_CHECKING:
@@ -393,3 +392,43 @@ def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
             f" final-slice patience {guard.plateau_nudges_used}/{METRIC_PLATEAU_PATIENCE})"
         ),
     )
+
+
+def early_finish_refusal(
+    state: LoopState, ctx: TurnContext, *, iteration: int, trigger: str = ""
+) -> Refusal | None:
+    """The metric run's early-finish rule, shared by a finish_session and a
+    silent finish (`trigger` names the silent path). An optimisation run is
+    asked to keep going up to its cap, so while runway remains above the
+    final budget slice an early finish is rejected `METRIC_EARLY_FINISH_PATIENCE`
+    times; a metric at its ceiling, a run in the final slice, or no budget
+    signal at all (the worker's own judgement stands, so a finish can never
+    deadlock) lets it through."""
+    if ctx.mode != "run" or not ctx.metric or state.metric.at_ceiling():
+        return None
+    remaining = ctx.budget_remaining()
+    if remaining is None or remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET:
+        return None
+    if state.metric.finish_nudges_used >= METRIC_EARLY_FINISH_PATIENCE:
+        return None
+    state.metric.finish_nudges_used += 1
+    used = state.metric.finish_nudges_used
+    return Refusal(
+        METRIC_FINISH_NUDGE,
+        event="loop.metric_early_finish.rejected",
+        fields={
+            "iteration": iteration,
+            "nudges_used": used,
+            "budget_remaining": remaining,
+            **({"trigger": trigger} if trigger else {}),
+        },
+        log=(
+            f"  metric early-finish{' (silent)' if trigger else ''} rejected #{used}"
+            f" at iter {iteration} (budget {remaining:.0%} left)"
+        ),
+    )
+
+
+def metric_early_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+    """A finish_session on a metric run with runway left (`early_finish_refusal`)."""
+    return early_finish_refusal(state, ctx, iteration=turn.iteration)

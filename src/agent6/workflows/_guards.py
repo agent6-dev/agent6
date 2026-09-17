@@ -21,9 +21,15 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.graph.models import TaskNode
 from agent6.tools.results import ExecResult, ToolResult
-from agent6.workflows._advice import Advisor, BeforeCallAdvisor, Nudge, Stop, TurnContext
+from agent6.workflows._advice import (
+    Advisor,
+    BeforeCallAdvisor,
+    Nudge,
+    Stop,
+    TurnContext,
+    with_open_tasks,
+)
 from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER, stuck_on_task_nudge
-from agent6.workflows._finish_gates import with_open_tasks
 from agent6.workflows._metric import metric_plateau
 from agent6.workflows._nudges import (
     LOOP_GUARD_NOTICE_AFTER,

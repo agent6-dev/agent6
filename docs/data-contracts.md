@@ -18,7 +18,7 @@ The loop-owned conversation: typed turns over the provider wire.
 
 - **Written by:** workflows/loop
 - **Read by:** workflows/{_compaction, _loop_state}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (21 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (22 test files exercise it)
 
 ## SessionManifest
 
@@ -133,7 +133,7 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 | `graph_version` | `int` | `0` |
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** graph/{order, replay}, tools/{_dag_tools, schema}, workflows/{_dag_focus, _finish_gates, _guards, _parallel_dispatch, loop}
+- **Read by:** graph/{order, replay}, tools/{_dag_tools, schema}, workflows/{_advice, _dag_focus, _guards, _parallel_dispatch, loop}
 - **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (13 test files exercise it)
 
 ## Run/machine wire snapshot

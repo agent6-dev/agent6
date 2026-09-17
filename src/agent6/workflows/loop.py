@@ -80,7 +80,15 @@ from agent6.tools.schema import (
 )
 from agent6.types import RepoSummary
 from agent6.verify_infer import infer_verify_command, read_agents_md
-from agent6.workflows._advice import Gate, GuardSettings, Nudge, Refusal, Stop, TurnContext
+from agent6.workflows._advice import (
+    GuardSettings,
+    Nudge,
+    Refusal,
+    Stop,
+    TurnContext,
+    open_subtasks,
+    with_open_tasks,
+)
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import (
     CompactionSettings,
@@ -113,16 +121,11 @@ from agent6.workflows._dag_focus import (
     ready_subtask,
 )
 from agent6.workflows._finish_gates import (
+    FINISH_GATES,
     REVIEW_REJECTED,
-    finish_contract,
     finish_reason,
-    memory_finish,
-    open_subtasks,
-    open_tasks_finish,
     red_gate_returns,
     task_finish_nudge,
-    verify_finish,
-    with_open_tasks,
 )
 from agent6.workflows._guards import (
     AFTER_TOOLS,
@@ -139,12 +142,10 @@ from agent6.workflows._loop_state import (
     restore_completion_state,
 )
 from agent6.workflows._metric import (
-    METRIC_EARLY_FINISH_PATIENCE,
-    METRIC_FINISH_NUDGE,
-    METRIC_PLATEAU_STOP_BELOW_BUDGET,
     MetricSample,
     best_metric_sample,
     coerce_metric_score,
+    early_finish_refusal,
     extract_metric_targets,
     format_metric_feedback,
     metric_at_fraction_ceiling,
@@ -717,9 +718,7 @@ class Workflow:
             # IDs (and thinking blocks) round-trip cleanly.
             assistant = conversation.assistant(got.raw.get("content") or [])
             if not assistant.tool_uses:
-                result = self._handle_no_tool_use(
-                    got, assistant, conversation, state, iteration=iteration
-                )
+                result = self._handle_no_tool_use(got, assistant, conversation, state, ctx)
                 if result is not None:
                     return result
                 # A completed prose turn is snapshotted like a tool turn, so an
@@ -1688,16 +1687,7 @@ class Workflow:
         the standing goal. The first refusal revokes the finish (`_refuse`)."""
         if turn.finish_signal is None or turn.finish_kind != "finish_session":
             return
-        gates: tuple[Gate, ...] = (
-            finish_contract,
-            self._review_gate,
-            self._metric_early_gate,
-            open_tasks_finish,
-            verify_finish,
-            memory_finish,
-            self._standing_gate,
-        )
-        for gate in gates:
+        for gate in FINISH_GATES:
             if self._refuse(state, turn, gate(turn, state, ctx)):
                 return
 
@@ -1719,13 +1709,6 @@ class Workflow:
             self._log(refusal.log)
         state.settled.restart()
         return True
-
-    def _review_gate(self, turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-        """The before-finish panel over a finish_session: a rejection revokes
-        it, the findings reaching the model with the turn's notices."""
-        if self._end_is_reviewed(state, turn, ending="finish_session"):
-            return Refusal()
-        return None
 
     def _end_is_reviewed(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
         """The before-finish panel over an end (`finish_session`, a silent
@@ -1774,65 +1757,6 @@ class Workflow:
         state.gates.review_consecutive = 0
         return False
 
-    def _metric_early_gate(
-        self, turn: TurnState, state: LoopState, ctx: TurnContext
-    ) -> Refusal | None:
-        """A finish_session on a metric run with runway left is rejected
-        (`_metric_early_finish_rejects`)."""
-        if self._metric_early_finish_rejects(state, iteration=turn.iteration):
-            return Refusal(METRIC_FINISH_NUDGE)
-        return None
-
-    def _metric_early_finish_rejects(
-        self, state: LoopState, *, iteration: int, trigger: str = ""
-    ) -> bool:
-        """Metric-run early-finish guard, shared by a finish_session and a
-        silent finish (`trigger` names the silent path). On optimisation runs
-        the worker often finishes with most of its budget unspent, even though
-        the task asks it to keep optimising up to the cap. Mirror the plateau
-        policy: while the run still has runway above the final budget slice,
-        reject an early finish a few times and nudge the worker to keep going;
-        only honour it once the run is in the final budget slice or patience
-        is exhausted. Requires a real budget signal: with none (tests / MCP)
-        the worker's own judgement stands, so a finish can never deadlock.
-        True when the finish is rejected; the caller injects the nudge into
-        its own sink."""
-        if (
-            self.mode != "run"
-            or metric_goal(self.config.workflow.metric) is None
-            or state.metric.at_ceiling()
-        ):
-            return False
-        remaining = self._budget_fraction_remaining()
-        if remaining is None or remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET:
-            return False
-        if state.metric.finish_nudges_used >= METRIC_EARLY_FINISH_PATIENCE:
-            return False
-        state.metric.finish_nudges_used += 1
-        self._log(
-            f"  metric early-finish{' (silent)' if trigger else ''} rejected"
-            f" #{state.metric.finish_nudges_used} at iter {iteration}"
-            f" (budget {remaining:.0%} left)"
-        )
-        self._emit(
-            "loop.metric_early_finish.rejected",
-            iteration=iteration,
-            nudges_used=state.metric.finish_nudges_used,
-            budget_remaining=remaining,
-            **({"trigger": trigger} if trigger else {}),
-        )
-        return True
-
-    def _standing_gate(self, turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-        """While a ready standing task exists, a run's finish_session re-enters
-        it instead of ending the run (uncapped: the goal is deliberate; the
-        absorb still refuses on spent budget or a spin, so the finish then
-        goes through)."""
-        if ctx.mode != "run":
-            return None
-        nudge = self._standing_absorb(state, reason="finish_session", iteration=turn.iteration)
-        return None if nudge is None else Refusal(nudge)
-
     # ---- the advisors ------------------------------------------------------------
 
     def _turn_context(self, state: LoopState, *, iteration: int, leg_start: int) -> TurnContext:
@@ -1847,6 +1771,10 @@ class Workflow:
             finish_validator=self.finish_validator,
             metric=metric_goal(self.config.workflow.metric) is not None,
             memory_wired=self.state_dir is not None,
+            end_reviewed=lambda turn, ending: self._end_is_reviewed(state, turn, ending=ending),
+            standing_absorb=lambda reason, iteration: self._standing_absorb(
+                state, reason=reason, iteration=iteration
+            ),
             gate_present=lambda: self._gate_present(denied=state.verify.denied),
             verify_command=lambda: tuple(self.config.workflow.verify_command),
             tree_sha=self.chain.tree_sha,
@@ -2218,8 +2146,7 @@ class Workflow:
         assistant: AssistantTurn,
         conversation: Conversation,
         state: LoopState,
-        *,
-        iteration: int,
+        ctx: TurnContext,
     ) -> SessionResult | None:
         """Handle a turn with no tool_use. Either a silent finish (the agent
         emitted text; gated like an explicit finish_session) or went-quiet (an
@@ -2240,9 +2167,9 @@ class Workflow:
             # as went_quiet with no streak at the cap, and the starvation
             # output-cap backoff stays reduced.
             state.quiet.went_quiet_nudges_used = 0
-            turn = TurnState(iteration=iteration, resp=resp, assistant=assistant)
-            return self._handle_silent_finish(text, conversation, state, turn)
-        return self._handle_went_quiet(resp, conversation, state, iteration=iteration)
+            turn = TurnState(iteration=ctx.iteration, resp=resp, assistant=assistant)
+            return self._handle_silent_finish(text, conversation, state, turn, ctx)
+        return self._handle_went_quiet(resp, conversation, state, iteration=ctx.iteration)
 
     def _silent_end_gates(
         self, state: LoopState, turn: TurnState, conversation: Conversation
@@ -2257,7 +2184,12 @@ class Workflow:
         return aborted
 
     def _handle_silent_finish(
-        self, text: str, conversation: Conversation, state: LoopState, turn: TurnState
+        self,
+        text: str,
+        conversation: Conversation,
+        state: LoopState,
+        turn: TurnState,
+        ctx: TurnContext,
     ) -> SessionResult | None:
         """A no-tool_use turn WITH text: treat it as an implicit finish and run
         it through the same gates as an explicit finish_session. Returns None (with
@@ -2295,8 +2227,10 @@ class Workflow:
         # silent finish on an optimisation run with budget to spare should be
         # nudged to keep optimising rather than accepted. Without it, dropping
         # tool_use skips the plateau/early-finish policy entirely.
-        if self._metric_early_finish_rejects(state, iteration=iteration, trigger="silent_finish"):
-            conversation.notice(METRIC_FINISH_NUDGE)
+        refusal = early_finish_refusal(state, ctx, iteration=iteration, trigger="silent_finish")
+        if refusal is not None:
+            nudge = Nudge(refusal.text, refusal.event, refusal.fields, refusal.log)
+            self._tell(conversation, nudge)
             return None
         # Question-nudge (run mode, once): the model ended by asking the
         # operator something in prose without calling ask_user, so the run

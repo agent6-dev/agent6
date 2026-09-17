@@ -8,6 +8,15 @@ from __future__ import annotations
 from typing import Any
 
 from agent6.workflows._advice import GuardSettings, TurnContext
+from agent6.workflows._loop_state import TurnState
+
+
+def _never_rejected(_turn: TurnState, _ending: str) -> bool:
+    return False
+
+
+def _no_standing_task(_reason: str, _iteration: int) -> None:
+    return None
 
 
 def turn_context(**overrides: Any) -> TurnContext:
@@ -28,6 +37,8 @@ def turn_context(**overrides: Any) -> TurnContext:
         "budget_remaining": lambda: None,
         "operator_wait_s": lambda: 0.0,
         "open_subtasks": list,
+        "end_reviewed": _never_rejected,
+        "standing_absorb": _no_standing_task,
     }
     facts.update(overrides)
     return TurnContext(**facts)

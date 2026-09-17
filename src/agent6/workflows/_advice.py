@@ -9,10 +9,12 @@ answers."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from agent6.graph.models import TaskNode
+from agent6.graph.order import OPEN_STATUSES
 from agent6.workflows._session_state import End
 
 if TYPE_CHECKING:
@@ -98,6 +100,13 @@ class TurnContext:
     budget_remaining: Callable[[], float | None]
     operator_wait_s: Callable[[], float]
     open_subtasks: Callable[[], list[tuple[str, str]]]
+    # The before-finish panel's verdict over an end declared on the turn
+    # (named by the ending it judges): True when it rejected the end. Sits
+    # once per turn; it records its own verdict.
+    end_reviewed: Callable[[TurnState, str], bool]
+    # The standing goal's re-entry nudge for a soft end (the reason and the
+    # iteration), or None when the run may end; it records the re-entry.
+    standing_absorb: Callable[[str, int], str | None]
 
 
 # An advisor: one heuristic over the turn, the run state and the context,
@@ -123,3 +132,25 @@ class Refusal:
 # A finish gate: one rule a finish_session must satisfy, judged over a turn
 # that called it; a Refusal hands the finish back.
 Gate = Callable[["TurnState", "LoopState", TurnContext], Refusal | None]
+
+
+def open_subtasks(nodes: Mapping[str, TaskNode]) -> list[tuple[str, str]]:
+    """The worker's own subtasks still open: `(id, title)` pairs. Only
+    SUBTASKS (parent_id is not None) count: the auto-root is pending until
+    the run ends, so counting it would deadlock every gate. A standing task
+    is not unfinished work: it gates the finish via its own re-entry, never
+    via the capped nudge."""
+    return [
+        (nid, node.title[:120])
+        for nid, node in nodes.items()
+        if node.parent_id is not None and node.status in OPEN_STATUSES and not node.standing
+    ]
+
+
+def with_open_tasks(summary: str, open_tasks: Sequence[tuple[str, str]]) -> str:
+    """*summary* with the open subtasks named, when an end went through over
+    them (the gate's cap): the receipt says what was left."""
+    if not open_tasks:
+        return summary
+    titles = ", ".join(title for _tid, title in open_tasks)
+    return f"{summary} ({len(open_tasks)} open task(s): {titles})"

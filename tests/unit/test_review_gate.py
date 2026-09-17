@@ -621,14 +621,15 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     conv = Conversation()
     with patch.object(Workflow, "_run_review_panel", panel):
         turn = TurnState(iteration=5, resp=_resp("Done."), assistant=MagicMock())
-        assert wf._handle_silent_finish("Done.", conv, state, turn) is None  # pyright: ignore[reportPrivateUsage]
+        ctx = wf._turn_context(state, iteration=5, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+        assert wf._handle_silent_finish("Done.", conv, state, turn, ctx) is None  # pyright: ignore[reportPrivateUsage]
         texts = [b["text"] for m in conv.to_wire() for b in m["content"] if b.get("type") == "text"]
         assert any("[harness verify] finish: verify_command exit 1" in t for t in texts)
         assert any("the next red finish ends the run" in t for t in texts)
         assert panel.calls == 0  # a red gate returns the end before the panel sits
         # The return is spent: the next silent finish stands, the panel sits and approves.
         turn = TurnState(iteration=6, resp=_resp("Done."), assistant=MagicMock())
-        ended = wf._handle_silent_finish("Done.", conv, state, turn)  # pyright: ignore[reportPrivateUsage]
+        ended = wf._handle_silent_finish("Done.", conv, state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
     assert ended.verified == "failed"
     assert panel.calls == 1

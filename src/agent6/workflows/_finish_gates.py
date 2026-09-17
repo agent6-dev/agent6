@@ -2,20 +2,19 @@
 # Copyright 2026 Eric Lesiuta
 """The finish gates: what a finish_session must satisfy before the loop
 honours it, what an end is called, and the words each refusal carries. The
-loop runs the gates in order over a turn that called finish_session and
-applies the first `Refusal` (`Workflow._turn_finish_gates`); the ends
+loop runs `FINISH_GATES` in order over a turn that called finish_session
+and applies the first `Refusal` (`Workflow._turn_finish_gates`); the ends
 the harness declares (settled, plateau, a silent finish) pass the same
 rules through `Workflow._end_gates`."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from agent6.graph.models import TaskNode
-from agent6.graph.order import OPEN_STATUSES
-from agent6.workflows._advice import Refusal, TurnContext
+from agent6.workflows._advice import Gate, Refusal, TurnContext
+from agent6.workflows._metric import metric_early_finish
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, TASK_FINISH_PATIENCE
 from agent6.workflows._session_state import SessionEndReason
 from agent6.workflows._verify_gate import finish_red_notice
@@ -61,28 +60,6 @@ REVIEW_REJECTED = {
         " finish_session passes.\n\n"
     ),
 }
-
-
-def open_subtasks(nodes: Mapping[str, TaskNode]) -> list[tuple[str, str]]:
-    """The worker's own subtasks still open: `(id, title)` pairs. Only
-    SUBTASKS (parent_id is not None) count: the auto-root is pending until
-    the run ends, so counting it would deadlock every gate. A standing task
-    is not unfinished work: it gates the finish via its own re-entry, never
-    via the capped nudge."""
-    return [
-        (nid, node.title[:120])
-        for nid, node in nodes.items()
-        if node.parent_id is not None and node.status in OPEN_STATUSES and not node.standing
-    ]
-
-
-def with_open_tasks(summary: str, open_tasks: Sequence[tuple[str, str]]) -> str:
-    """*summary* with the open subtasks named, when an end went through over
-    them (the gate's cap): the receipt says what was left."""
-    if not open_tasks:
-        return summary
-    titles = ", ".join(title for _tid, title in open_tasks)
-    return f"{summary} ({len(open_tasks)} open task(s): {titles})"
 
 
 def task_finish_nudge(open_tasks: Sequence[tuple[str, str]], gates: FinishGates) -> str | None:
@@ -174,6 +151,12 @@ def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refu
     )
 
 
+def review_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+    """The before-finish panel over a finish_session: a rejection revokes it,
+    the findings reaching the model with the turn's notices."""
+    return Refusal() if ctx.end_reviewed(turn, "finish_session") else None
+
+
 def open_tasks_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
     """A run's finish_session waits while the worker's own subtasks are open
     (`task_finish_nudge`, capped)."""
@@ -244,3 +227,25 @@ def memory_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusa
         fields={"iteration": turn.iteration},
         log=f"  finish_session deferred once: memory backstop at iter {turn.iteration}",
     )
+
+
+def standing_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+    """While a ready standing task exists, a run's finish_session re-enters
+    it instead of ending the run (uncapped: the goal is deliberate; the
+    absorb refuses on spent budget or a spin, so the finish then stands)."""
+    if ctx.mode != "run":
+        return None
+    nudge = ctx.standing_absorb("finish_session", turn.iteration)
+    return None if nudge is None else Refusal(nudge)
+
+
+# The gates over a finish_session, in precedence order.
+FINISH_GATES: tuple[Gate, ...] = (
+    finish_contract,
+    review_finish,
+    metric_early_finish,
+    open_tasks_finish,
+    verify_finish,
+    memory_finish,
+    standing_finish,
+)
