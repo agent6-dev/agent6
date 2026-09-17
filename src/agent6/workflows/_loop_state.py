@@ -16,9 +16,9 @@ from typing import Any, Literal
 
 from agent6.providers import ProviderResponse
 from agent6.workflows._conversation import AssistantTurn, Notice, ToolResultItem
+from agent6.workflows._finish_gates import FinishGates
 from agent6.workflows._guards import (
     BudgetNudges,
-    FinishGates,
     FocusGuard,
     MemoryNudges,
     MetricGuard,

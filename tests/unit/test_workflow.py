@@ -24,9 +24,8 @@ from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
-from agent6.workflows._finish_gates import task_finish_nudge, with_open_tasks
+from agent6.workflows._finish_gates import FinishGates, task_finish_nudge, with_open_tasks
 from agent6.workflows._guards import (
-    FinishGates,
     GuardSettings,
     MetricGuard,
     QuietGuard,

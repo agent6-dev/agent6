@@ -9,14 +9,29 @@ here is a pure function over the state it reads."""
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from agent6.config import WorkflowConfig
 from agent6.graph.models import TaskNode
 from agent6.graph.order import OPEN_STATUSES
-from agent6.workflows._guards import FinishGates
 from agent6.workflows._nudges import TASK_FINISH_PATIENCE
 from agent6.workflows._session_state import SessionEndReason
 from agent6.workflows._verify_verdict import VerifyVerdict
+
+
+@dataclass(slots=True)
+class FinishGates:
+    """The finish gates' counters: the open-task refusals sent
+    (`TASK_FINISH_PATIENCE` caps them), the red finish certifications
+    returned (`verify_retries` caps them), the before-finish panel's
+    consecutive rejections (its cap lets the end through) and its run-total
+    (persisted; past `max_total_rejections` the gate disarms to advisory)."""
+
+    task_nudges_used: int = 0
+    verify_retries_used: int = 0
+    review_consecutive: int = 0
+    review_total: int = 0
+
 
 # The before-finish panel's rejection, by the ending it rejected; the
 # findings follow.
