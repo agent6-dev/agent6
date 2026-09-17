@@ -694,3 +694,33 @@ def test_resume_leg_rearms_the_iteration_allowance(tmp_path: Path) -> None:
 
     assert result.completed is True
     assert provider.call.call_count == 1
+
+
+def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_iteration() -> None:
+    """The advisor itself: the third identical call draws the notice with
+    the tool's name and the streak, the next iteration is quiet, the one
+    after that hears it again; a shorter streak draws nothing."""
+    from agent6.workflows._conversation import AssistantTurn
+    from agent6.workflows._guards import loop_guard_notice
+    from agent6.workflows._loop_state import LoopState, TurnState
+    from tests.unit.turn_context import turn_context
+
+    state = LoopState(original_task="t", tool_calls=0)
+    ctx = turn_context()
+
+    def turn(iteration: int) -> TurnState:
+        return TurnState(iteration=iteration, resp=MagicMock(), assistant=AssistantTurn((), ()))
+
+    for _ in range(2):
+        state.spiral.note_call('read_file:{"path": "x.txt"}')
+    assert loop_guard_notice(turn(2), state, ctx) is None
+    state.spiral.note_call('read_file:{"path": "x.txt"}')
+    nudge = loop_guard_notice(turn(3), state, ctx)
+    assert nudge is not None and "`read_file`" in nudge.text and "3 times" in nudge.text
+    assert nudge.event == "loop.loop_guard.triggered"
+    assert nudge.fields == {"iteration": 3, "tool": "read_file", "streak": 3}
+    state.spiral.note_call('read_file:{"path": "x.txt"}')
+    assert loop_guard_notice(turn(4), state, ctx) is None
+    state.spiral.note_call('read_file:{"path": "x.txt"}')
+    again = loop_guard_notice(turn(5), state, ctx)
+    assert again is not None and "5 times" in again.text

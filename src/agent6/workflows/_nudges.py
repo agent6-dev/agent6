@@ -52,6 +52,22 @@ TOOL_DENIED_NUDGE = (
 )
 
 
+# The repeat notice: the same (tool, args) call this many times in a row.
+LOOP_GUARD_NOTICE_AFTER = 3
+
+
+def loop_guard_words(tool: str, streak: int) -> str:
+    """The notice after *streak* identical calls of *tool*."""
+    return (
+        f"[loop-guard] You have called `{tool}` with"
+        f" identical arguments {streak} times in a row."
+        " Re-issuing the same call will not move the run forward. Change"
+        " your approach: try different arguments, a different"
+        " tool, commit to an edit, or call `finish_session` if"
+        " you have already done what the task requires."
+    )
+
+
 # The empty turn (no text, no tool_use). A starved reasoner gets its own
 # nudge: the generic one gives it nothing actionable, so it repeats the loop.
 WENT_QUIET_NUDGE = (

@@ -1996,20 +1996,12 @@ class Workflow:
 
     def _turn_notices(self, state: LoopState, turn: TurnState) -> None:
         """Append the turn's advisory texts to the tool_results block: review
-        findings, metric feedback, the memory flip advisory, then the
-        degenerate-loop notice.
+        findings, metric feedback, then the memory flip advisory.
 
         The memory flip advisory fires once per run, at the first verify that
         goes green after a red one, while nothing has been recorded via
         a memory write: that is the moment a hard-won root cause is in hand (see
-        _nudges for the measurement behind it).
-
-        The loop-guard notice fires when the same (tool, args) signature has
-        been called >= 3 times in a row, and re-arms after one quiet
-        iteration, so an unbroken streak sees it every other turn until
-        `loop_guard_kill_threshold` ends the run. The repeat counter resets on
-        any new signature, so a normal re-read after an edit does not
-        trigger."""
+        _nudges for the measurement behind it)."""
         if turn.review_text:
             turn.tool_results.append(Notice(review_notice(turn.review_text)))
             turn.review_text = None
@@ -2026,33 +2018,6 @@ class Workflow:
             turn.tool_results.append(Notice(MEMORY_FLIP_NUDGE))
             self._log("  memory: verify flipped green - injecting memory advisory")
             self._emit("loop.memory_flip.nudged", iteration=turn.iteration)
-        repeat_threshold = 3
-        if (
-            state.spiral.call_streak >= repeat_threshold
-            and state.spiral.warned_at_iteration < turn.iteration - 1
-        ):
-            # Strip the args-JSON suffix for the user-facing text.
-            latched_name = (state.spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
-            notice = (
-                f"[loop-guard] You have called `{latched_name}` with"
-                f" identical arguments {state.spiral.call_streak} times in a row."
-                " Re-issuing the same call will not move the run forward. Change"
-                " your approach: try different arguments, a different"
-                " tool, commit to an edit, or call `finish_session` if"
-                " you have already done what the task requires."
-            )
-            turn.tool_results.append(Notice(notice))
-            self._emit(
-                "loop.loop_guard.triggered",
-                iteration=turn.iteration,
-                tool=latched_name,
-                streak=state.spiral.call_streak,
-            )
-            self._log(
-                f"  loop-guard: {latched_name} called"
-                f" {state.spiral.call_streak}x in a row - injecting notice"
-            )
-            state.spiral.warned_at_iteration = turn.iteration
 
     def _turn_metric_plateau(self, state: LoopState, turn: TurnState) -> SessionResult | None:
         """Metric-plateau handling. When a verified metric merely ties the

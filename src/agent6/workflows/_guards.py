@@ -23,6 +23,7 @@ from agent6.config import WorkflowConfig
 from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
 from agent6.workflows._metric import MetricSample
 from agent6.workflows._nudges import (
+    LOOP_GUARD_NOTICE_AFTER,
     NO_PROGRESS_ESCALATE_AFTER,
     NO_PROGRESS_NUDGE_AFTER,
     NO_PROGRESS_STOP_AFTER,
@@ -30,6 +31,7 @@ from agent6.workflows._nudges import (
     STAGNATION_NUDGE_GATELESS,
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
+    loop_guard_words,
 )
 
 if TYPE_CHECKING:
@@ -221,6 +223,27 @@ class StagnationGuard:
     nudged: bool = False
 
 
+def loop_guard_notice(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
+    """The repeat notice: the same (tool, args) call `LOOP_GUARD_NOTICE_AFTER`
+    times in a row (`SpiralGuard.call_streak`, reset by any other call), re-armed
+    after one quiet iteration, so an unbroken streak hears it every other turn
+    until the kill threshold ends the run."""
+    spiral = state.spiral
+    if not (
+        spiral.call_streak >= LOOP_GUARD_NOTICE_AFTER
+        and spiral.warned_at_iteration < turn.iteration - 1
+    ):
+        return None
+    spiral.warned_at_iteration = turn.iteration
+    tool = (spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
+    return Nudge(
+        loop_guard_words(tool, spiral.call_streak),
+        event="loop.loop_guard.triggered",
+        fields={"iteration": turn.iteration, "tool": tool, "streak": spiral.call_streak},
+        log=f"  loop-guard: {tool} called {spiral.call_streak}x in a row - injecting notice",
+    )
+
+
 def stagnation(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
     """One notice when `stagnation_notice_after_s` of wall clock passed on a
     run with no edit and no verify yet; time blocked on the operator is not
@@ -363,4 +386,4 @@ class BudgetNudges:
 
 # The advisors that run once a turn's tools have run, in the order their
 # notices reach the model.
-AFTER_TOOLS: tuple[Advisor, ...] = (stagnation,)
+AFTER_TOOLS: tuple[Advisor, ...] = (loop_guard_notice, stagnation)
