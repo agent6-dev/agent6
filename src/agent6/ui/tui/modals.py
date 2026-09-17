@@ -280,6 +280,8 @@ class ToolCallDetailModal(ModalScreen[None]):
     #toolcall-box TextArea {
         height: auto; max-height: 24; border: round $primary; background: $surface;
     }
+    /* Read-only: no caret, which would read as an editable field. */
+    #toolcall-box TextArea .text-area--cursor { background: transparent; color: $foreground; }
     """
 
     BINDINGS: ClassVar = [
@@ -333,6 +335,8 @@ class TextModal(ModalScreen[None]):
     #text-box TextArea {
         height: auto; max-height: 32; border: round $primary; background: $surface;
     }
+    /* Read-only: no caret, which would read as an editable field. */
+    #text-box TextArea .text-area--cursor { background: transparent; color: $foreground; }
     """
 
     BINDINGS: ClassVar = [
