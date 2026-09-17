@@ -24,6 +24,7 @@ from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
 from agent6.workflows._metric import MetricSample
 from agent6.workflows._nudges import (
     LOOP_GUARD_NOTICE_AFTER,
+    MEMORY_FLIP_NUDGE,
     NO_PROGRESS_ESCALATE_AFTER,
     NO_PROGRESS_NUDGE_AFTER,
     NO_PROGRESS_STOP_AFTER,
@@ -286,6 +287,28 @@ class MemoryNudges:
     finish_nudged: bool = False
 
 
+def memory_flip(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:
+    """The memory flip advisory: once per run, at the first verify that goes
+    green after a red one, while the worker has recorded nothing in the
+    memory store (that is the moment a hard-won root cause is in hand; see
+    `_nudges` for the measurement behind it)."""
+    if not (
+        turn.verify_flipped_green
+        and ctx.mode == "run"
+        and ctx.memory_wired
+        and not state.memory.written
+        and not state.memory.flip_nudged
+    ):
+        return None
+    state.memory.flip_nudged = True
+    return Nudge(
+        MEMORY_FLIP_NUDGE,
+        event="loop.memory_flip.nudged",
+        fields={"iteration": turn.iteration},
+        log="  memory: verify flipped green - injecting memory advisory",
+    )
+
+
 @dataclass(slots=True)
 class StandingGoal:
     """Standing-goal re-entry: `ok_tool_calls` at the last absorption (-1 =
@@ -386,4 +409,4 @@ class BudgetNudges:
 
 # The advisors that run once a turn's tools have run, in the order their
 # notices reach the model.
-AFTER_TOOLS: tuple[Advisor, ...] = (loop_guard_notice, stagnation)
+AFTER_TOOLS: tuple[Advisor, ...] = (memory_flip, loop_guard_notice, stagnation)

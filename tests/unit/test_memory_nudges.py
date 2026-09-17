@@ -15,7 +15,7 @@ from agent6.config import Config
 from agent6.tools.results import EditResult, ExecResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import AssistantTurn, Notice
-from agent6.workflows._guards import MemoryNudges
+from agent6.workflows._guards import MemoryNudges, memory_flip
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
@@ -23,6 +23,7 @@ from agent6.workflows.loop import (
     TurnState,
     Workflow,
 )
+from tests.unit.turn_context import turn_context
 
 
 def _wf(**kw: Any) -> Workflow:
@@ -59,6 +60,13 @@ def _notice_texts(turn: TurnState) -> list[str]:
     return [item.text for item in turn.tool_results if isinstance(item, Notice)]
 
 
+def _flip(wf: Workflow, state: LoopState, turn: TurnState) -> str | None:
+    """The flip advisory's text for this turn, as the advisor answers it."""
+    ctx = turn_context(mode=wf.mode, memory_wired=wf.state_dir is not None)
+    nudge = memory_flip(turn, state, ctx)
+    return None if nudge is None else nudge.text
+
+
 def test_flip_advisory_fires_once_at_first_red_green_flip() -> None:
     wf = _wf()
     state = _state()
@@ -70,8 +78,7 @@ def test_flip_advisory_fires_once_at_first_red_green_flip() -> None:
     flip = _turn(2)
     _verify(wf, state, flip, rc=0)
     assert flip.verify_flipped_green is True
-    wf._turn_notices(state, flip)  # pyright: ignore[reportPrivateUsage]
-    assert MEMORY_FLIP_NUDGE in _notice_texts(flip)
+    assert _flip(wf, state, flip) == MEMORY_FLIP_NUDGE
     assert state.memory.flip_nudged is True
 
     # A second recovery does not re-nudge.
@@ -79,8 +86,7 @@ def test_flip_advisory_fires_once_at_first_red_green_flip() -> None:
     _verify(wf, state, again, rc=1)
     _verify(wf, state, again, rc=0)
     assert again.verify_flipped_green is True
-    wf._turn_notices(state, again)  # pyright: ignore[reportPrivateUsage]
-    assert MEMORY_FLIP_NUDGE not in _notice_texts(again)
+    assert _flip(wf, state, again) is None
 
 
 def test_flip_advisory_needs_a_prior_red_verify() -> None:
@@ -89,8 +95,7 @@ def test_flip_advisory_needs_a_prior_red_verify() -> None:
     green = _turn(1)
     _verify(wf, state, green, rc=0)
     assert green.verify_flipped_green is False
-    wf._turn_notices(state, green)  # pyright: ignore[reportPrivateUsage]
-    assert _notice_texts(green) == []
+    assert _flip(wf, state, green) is None
 
 
 def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
@@ -102,8 +107,7 @@ def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
         state = _state(**state_kw, verify=VerifyVerdict(last_ok=False, ever_failed=True))
         flip = _turn(2)
         _verify(wf, state, flip, rc=0)
-        wf._turn_notices(state, flip)  # pyright: ignore[reportPrivateUsage]
-        assert _notice_texts(flip) == []
+        assert _flip(wf, state, flip) is None
 
 
 def test_memory_dir_edit_marks_memory_written() -> None:

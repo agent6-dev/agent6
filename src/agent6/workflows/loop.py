@@ -153,7 +153,6 @@ from agent6.workflows._nearest_tests import (
 from agent6.workflows._nudges import (
     BASELINE_RED_NOTICE,
     MEMORY_FINISH_NUDGE,
-    MEMORY_FLIP_NUDGE,
     NO_PROGRESS_ESCALATION,
     NO_PROGRESS_NUDGE,
     PLAN_BUDGET_NUDGE,
@@ -1995,29 +1994,13 @@ class Workflow:
     # ---- turn notices and spiral guards ----------------------------------------
 
     def _turn_notices(self, state: LoopState, turn: TurnState) -> None:
-        """Append the turn's advisory texts to the tool_results block: review
-        findings, metric feedback, then the memory flip advisory.
-
-        The memory flip advisory fires once per run, at the first verify that
-        goes green after a red one, while nothing has been recorded via
-        a memory write: that is the moment a hard-won root cause is in hand (see
-        _nudges for the measurement behind it)."""
+        """Append the turn's review findings and metric feedback to the
+        tool_results block, ahead of the advisors' notices."""
         if turn.review_text:
             turn.tool_results.append(Notice(review_notice(turn.review_text)))
             turn.review_text = None
         if turn.metric_feedback:
             turn.tool_results.append(Notice(turn.metric_feedback))
-        if (
-            turn.verify_flipped_green
-            and self.mode == "run"
-            and self.state_dir is not None
-            and not state.memory.written
-            and not state.memory.flip_nudged
-        ):
-            state.memory.flip_nudged = True
-            turn.tool_results.append(Notice(MEMORY_FLIP_NUDGE))
-            self._log("  memory: verify flipped green - injecting memory advisory")
-            self._emit("loop.memory_flip.nudged", iteration=turn.iteration)
 
     def _turn_metric_plateau(self, state: LoopState, turn: TurnState) -> SessionResult | None:
         """Metric-plateau handling. When a verified metric merely ties the
