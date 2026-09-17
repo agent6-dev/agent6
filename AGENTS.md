@@ -9,46 +9,45 @@ Two registers stay distinct, each binding only itself: how we develop agent6, an
 ### Design principles
 
 We follow the **Zen of Python** (`python -c 'import this'`).
-The agent6 concretions, and the principles the Zen doesn't cover:
+The agent6 concretions, and the principles the Zen leaves out:
 
-- **Simplicity first.** Less code beats more; build an abstraction when it is needed, never because it might be.
-  Simple and stupid beats clever, in code, shapes and interfaces: what a beginner can follow is the target, because cleverness hides bugs and raises the cost of every later read.
-  A reviewer reads a module top to bottom in one sitting: inline a one-caller helper, make a stateless class a function, delete pass-through wrappers and symmetry-for-its-own-sake.
-  Refactoring is continuous: every series leaves the shapes it touched simpler.
-- **Rip out wrong shapes.** A rename lands everywhere at once, without shims, aliases, or migrations.
+- **Simplicity first.** Less code beats more; build an abstraction the moment it is needed.
+  A beginner follows it and a reviewer reads the module top to bottom in one sitting: inline a one-caller helper, make a stateless class a function, drop pass-through wrappers.
+  Refactoring is continuous, so every series leaves the shapes it touched simpler.
+- **Rip out wrong shapes.** A rename lands everywhere in one change, the old name gone with it.
 - **Right-shaped data.** Fix the shape first and the code around it gets small.
-  Interfaces are shapes too: settle a feature's config keys, schema and payload before implementing behind them.
-  Fields that are set together belong in one frozen type; repeated conversion between shapes means the shape is wrong.
+  Settle a feature's config keys, schema and payload before implementing behind them.
+  Fields set together live in one frozen type, and repeated conversion between shapes means the shape is wrong.
   One name per thing, so a collision or a rename on import is a smell.
-- **One obvious way.** One well-named command; one knob per behaviour; one mechanism per job.
-  A second implementation of the same decision (a shadow check, a twin fold) drifts from the first: harden the one that exists.
-- **Least surprise.** A command does the boring, expected thing.
+- **One obvious way.** One well-named command, one knob per behaviour, one mechanism per job.
+  A second implementation of the same decision drifts from the first: harden the one that exists.
+  One decision has one owner every surface reads, which is what keeps them consistent and catches a mistake once; duplicated code is cheaper than an abstraction with one caller.
+- **Least surprise.** A command does the expected thing.
   Config writes land in the global config unless `--repo` or `--machine-file FILE` redirects them, the same way everywhere; set-valued config merges last-overlay-wins.
 - **Consistency.** Learning one command teaches its siblings: positional core args, `--repo`/`--machine-file` target flags, completion over every valid input.
-- **The explanation is the test.** Explain it in a sentence or two before writing it; needing a paragraph of conditions means the shape is wrong.
+- **The explanation is the test.** Explain a change in a sentence before writing it; needing a paragraph of conditions means the shape is wrong.
 - **Explicit.** Defaults are real values `agent6 config show` prints with their origin; behaviour follows visible state, and errors are loud (see Errors).
 - **Surfaces tell the truth.** A failed run reads failed, a dead pane reads dead, a truncated answer reads truncated, and an error keeps its reason.
-  Hidden or invented state is a bug wherever it appears.
-- **Fix the root cause.** A hack, a blind retry or a special case hides the defect; delete the wrong shape instead of guarding it.
-  A recurring problem has a systematic cause: correlate every occurrence before calling one "transient", and say so plainly when the cause stays unfound.
-- **Evidence over churn.** When measurement shows something is better, adopt it and delete the old shape.
-  A change claiming better model behaviour, prompts or performance ships on a measured A/B (replicates, variance); a null result is reported.
+  Every surface shows state the system actually holds, so invented or hidden state is a bug wherever it appears.
+- **Fix the root cause.** Delete the wrong shape rather than guard it.
+  A recurring problem has a systematic cause: correlate every occurrence before calling one transient, and say so plainly while the cause stays unfound.
+- **Evidence over churn.** Adopt what measurement shows is better and delete the old shape.
+  A change claiming better model behaviour, prompts or performance ships on a measured A/B (replicates, variance), and a null result is reported.
   A change that only removes or simplifies ships on no measurable regression against the old best baseline.
-  The bar is on shipping, so an experiment needs no prior justification; unmeasured tuning is superstition.
-- **Structures over scores.** A measure that becomes a target stops measuring, so counts (lines, modules, graph edges) only point at where to look.
+  The bar sits on shipping, so an experiment needs no prior justification.
+- **Structures over scores.** A measure that becomes a target stops measuring, so counts (lines, modules, graph edges) point at where to look.
   The test is reading the structure, asking "can this be simpler?", and making it so.
-- **Decompose proactively.** Past ~600 lines per module (or a few hundred per method), split before it ossifies (exemplar: `workflows/loop.py`'s `_prompt_blocks` / `_metric` / `_compaction` siblings).
+- **Decompose proactively.** Past ~600 lines per module, or a few hundred per method, split before it ossifies.
   Lift cohesive helper groups into sibling `_name.py` modules, improving names and shapes in passing; moved symbols get public names and direct call sites.
-  A large stateful method's cross-iteration bookkeeping goes in ONE mutable state dataclass, rather than a 9-parameter helper or a tuple return.
-  An extraction that shifts a module boundary records the edge in `tach.toml`.
-  One module decomposed per commit.
+  A large stateful method keeps its cross-iteration bookkeeping in ONE mutable state dataclass.
+  An extraction that shifts a module boundary records the edge in `tach.toml`, one module per commit.
 - **Secure by default, degrade or refuse.** Every knob ships with the safe default, visible in `agent6 config show`; widening is opt-in and carries a security review note.
   The operator loosens; the agent's own sandbox stays where the operator put it.
   Default-deny beats blocklisting, and a mitigation that is trivially bypassed is worse than none.
   Three cases, one rule: an AUTOMATIC setting (`auto`) takes the strongest option available and DEGRADES WITH A WARNING when it is absent; an EXPLICIT setting the host cannot honor (or that contradicts another) REFUSES, naming what is unsupported and how to change it; an explicit but DISCOURAGED widening (a path holding secrets) runs with a loud warning naming the cost.
 - **Ask when the task forks.** A behaviour tradeoff, a maybe-not-worth-it edge case, growing scope, several reasonable designs, a new dependency: a one-line question beats shipping the wrong or over-built thing.
   Take the simplest fix for the actual request and name the edges you skip.
-  When these principles already decide, act.
+  Act when these principles already decide.
   Rules bind exactly as written: enforce what the operator set, and reread the rule when unsure.
 
 ### Architecture
@@ -81,28 +80,30 @@ A green suite is structural validation, not perceptual: the operator dogfoods da
 Less is more everywhere: docs, comments, docstrings, commit messages, CLI output, run summaries, review feedback.
 The shortest version that still carries the point wins.
 
-- Everything committed is permanent and public, and the repository is the only context its reader has: write for someone holding the repo and nothing else.
-  A line needing a conversation, a person, a machine or an account to make sense does not belong, however true it is.
-  When the fact matters and its provenance does not, state the fact in the repo's terms ("the fleet stopped at its spend ceiling", not whose ceiling it was); what fails the test belongs in the untracked ledgers.
-- Lead with the point; add rationale a reader could not reconstruct.
+- The tree is the only context: write for someone holding the repo and nothing else, since everything committed is permanent and public.
+  A line that needs a conversation, a person, a machine or an account to make sense belongs in the untracked ledgers, however true it is.
+  When the fact matters and its provenance does not, state the fact in the repo's terms ("the fleet stopped at its spend ceiling", not whose ceiling it was).
+- Lead with the point, and add rationale the reader could not reconstruct.
   Cut every word a sentence works without, and every sentence that restates the one before.
-- Plain language, as ISO 24495-1:2023 defines it, for every doc, comment and surface string: the reader finds what they need, understands it on the first read, and can act on it.
-  Everyday words in the reader's terms, not the code's; a name from the code appears when the reader has to go there.
+- Plain language, as ISO 24495-1:2023 defines it, for every doc, comment and surface string: the reader finds what they need, understands it on the first read, and acts on it.
+  Everyday words in the reader's terms; a name from the code appears when the reader has to go there.
 - Plain punctuation: commas, colons, parentheses, periods.
-  An em dash flags an overstuffed sentence to recast.
+  An em dash marks an overstuffed sentence to recast.
 - Concrete over abstract: name the command, the field, the number ("retries twice, then fails the run").
 - Statements, not questions: a docstring, heading or comment asserts ("X does Y").
 - Prose that names code is a claim to verify: every symbol, default and behaviour matches the source, and when the two disagree, decide which side is wrong (sometimes the code).
   Prose someone acts on (a tool description, help text, an error, a refusal) is an interface: it states what is accepted and returned, and names the resolved fact ("default: detected zsh").
 - One idea per sentence, one topic per paragraph; short bullets over prose when listing facts.
 - Comments and docs state the current state: a constraint, an invariant, a measured number, a link to a decision.
-  "Now", "no longer", "previously", "used to" tell the story of a change, which commits own: cut them.
-  A comment earns its keep by saying what the code and a grep cannot: a narration of the next line does not.
-  Test docstrings are the exception: the regression they pin is their spec.
+  The story of a change belongs to its commit, so "now", "no longer", "previously" and "used to" go.
+  A comment earns its keep by saying what the code and a grep cannot: the why, an invariant, a gotcha, a measured number.
+  A test docstring is the exception: it names the regression the test pins.
 - Commit messages: a subject that states the change, facts only; a body only for a non-obvious why, in point form.
-- Flat documents: a heading plus short paragraphs or bullets, bold reserved for lead-in labels and caveats that carry weight.
+  Write for the next reader rather than this change's reviewer.
+- Flat documents: a heading plus short paragraphs or bullets, with bold on lead-in labels and caveats that carry weight.
   Plain words in place of intensifiers and marketing adjectives.
 - Bench findings are neutral observation: facts and tables.
+- Every fact and every real hedge stays, and none is added: "may have failed" is not "failed".
 - Padding to cut on sight: antithesis ("a lock, not a boundary"), the "N things, one X" appositive, aphorism, cleft ("what is bounded is"), anaphora, transitions, all-caps emphasis.
 - Markdown carries one bullet and one sentence per line, unwrapped, with later sentences on continuation lines.
   A bullet needing several sentences wants sub-bullets.
