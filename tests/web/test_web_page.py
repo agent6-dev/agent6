@@ -17,7 +17,7 @@ from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "90c3a9bbc6812ba81a8185cd7d2db6708cf6ec036e224eb8cac3d5d3b3ceefe2"
+PAGE_SHA256 = "5158c63ecb9226f9676234d8e924993fa77499b16a3346bf3a0312b11136cd44"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -102,6 +102,16 @@ def test_a_tool_call_clips_its_args_instead_of_breaking_words() -> None:
     rule = rule[: rule.index("}")]
     assert "white-space: nowrap" in rule and "text-overflow: ellipsis" in rule
     assert "break-word" not in rule
+
+
+def test_the_config_filter_and_its_action_share_a_row_in_the_tuis_words() -> None:
+    """The Add provider button sat under the filter's edge with no gap, and the
+    page said "key" / "filter keys…" where the TUI says "setting"."""
+    cfg = resources.files("agent6.ui.web").joinpath("client_config.js").read_text(encoding="utf-8")
+    assert "const bar = el('div', 'row cfg-bar');" in cfg
+    assert "bar.appendChild(filter); bar.appendChild(addBtn);" in cfg
+    assert "filter.placeholder = 'filter settings…'" in cfg
+    assert "['setting','value','source']" in cfg
 
 
 def test_native_controls_take_the_page_theme() -> None:

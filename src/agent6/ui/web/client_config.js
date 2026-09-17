@@ -6,14 +6,15 @@ async function renderConfig(gen) {
   view.innerHTML = '';
   const card = el('div', 'card');
   card.appendChild(el('h2', null, 'Config'));
-  const filter = el('input', 'filter'); filter.placeholder = 'filter keys…'; filter.type = 'search';
-  card.appendChild(filter);
+  // The filter and the one action share a row, in the TUI config page's words.
+  const bar = el('div', 'row cfg-bar');
+  const filter = el('input', 'filter'); filter.placeholder = 'filter settings…'; filter.type = 'search';
   const addBtn = el('button', null, 'Add provider…');
-  addBtn.style.marginLeft = '8px';
   addBtn.onclick = () => addProvider();
-  card.appendChild(addBtn);
+  bar.appendChild(filter); bar.appendChild(addBtn);
+  card.appendChild(bar);
   const tbl = el('table', 'cfg');
-  const head = el('tr'); ['key','value','source'].forEach(h => head.appendChild(el('th', null, h))); tbl.appendChild(head);
+  const head = el('tr'); ['setting','value','source'].forEach(h => head.appendChild(el('th', null, h))); tbl.appendChild(head);
   const keys = Object.keys(data).sort();
   const rows = [];
   for (const k of keys) {
