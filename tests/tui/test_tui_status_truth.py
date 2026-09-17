@@ -742,7 +742,7 @@ def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
             await _wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
-            await pilot.press("a")
+            await pilot.press("a")  # the row is gone: the key answers nothing
             await pilot.pause()
             assert not (d / "approvals" / "ap1.answer").exists()
             assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
@@ -1079,14 +1079,20 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
             # Deny the inline approval (d writes only the bridge file;
             # no answer EVENT lands, so the fold keeps the run "waiting").
             await _wait_for(pilot, lambda: _approval_ready(app), "the approval row")
+            app._conv.query(ApprovalRow).first().focus_answers()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
             await pilot.press("d")
             await _open_dash(app, pilot)
             await _wait_for(pilot, lambda: app.dir_status[0] == "waiting", "the waiting word")
-            app._tick()
-            await pilot.pause()
-            body = str(app._dash.query_one("#stream-body", Static).render())
-            assert "waiting · needs answer" in body
-            assert "working…" not in body
+
+            def pane() -> str:
+                # The fold lands in the reader thread, so the pane follows the
+                # status word by a tick or two: wait for it rather than race it.
+                app._tick()  # pyright: ignore[reportPrivateUsage]
+                return str(app._dash.query_one("#stream-body", Static).render())  # pyright: ignore[reportPrivateUsage]
+
+            await _wait_for(pilot, lambda: "waiting · needs answer" in pane(), "the waiting pane")
+            assert "working…" not in pane()
 
     asyncio.run(scenario())
 
