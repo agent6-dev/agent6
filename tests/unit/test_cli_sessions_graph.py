@@ -58,11 +58,7 @@ def _seed_tree(tmp_path: Path, session_id: str) -> None:
     layout = SessionLayout(state_dir=state_dir(tmp_path), session_id=session_id)
     layout.ensure()
     (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
-    root_id = "0" * 25 + "R"
-    s1_id = "0" * 25 + "1"
-    s2_id = "0" * 25 + "2"
-    s1a_id = "0" * 25 + "A"
-    s1b_id = "0" * 25 + "B"
+    root_id, s1_id, s1a_id, s1b_id, s2_id = "0001", "0002", "0003", "0004", "0005"
     root = _node(root_id, parent=None, title="root task", children=(s1_id, s2_id))
     s1 = _node(
         s1_id,
@@ -90,13 +86,14 @@ def test_history_graph_renders_dfs_order(
     assert rc == 0
     lines = [line for line in out.splitlines() if line and not line.startswith("Session id:")]
     # Strict DFS: root, then step1, then deep-left sub1a, then sub1b, then step2.
-    # Status is a glyph, shared with the TUI tree / web task graph / runs show.
+    # Status is a glyph, shared with the TUI tree / web task graph / runs show,
+    # and each line leads with the id `/retire` names a task by.
     assert lines == [
-        "· root task",
-        "  ✓ step 1  (abcdef1)",
-        "    · sub 1a",
-        "    · sub 1b",
-        "  ✗ step 2",
+        "  1  · root task",
+        "  2    ✓ step 1  (abcdef1)",
+        "  3      · sub 1a",
+        "  4      · sub 1b",
+        "  5    ✗ step 2",
     ]
 
 

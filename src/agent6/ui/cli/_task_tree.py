@@ -11,11 +11,11 @@ from __future__ import annotations
 from typing import Any
 
 from agent6.viewmodel import task_tree_views
-from agent6.viewmodel.format import TASK_STATUS_GLYPH
+from agent6.viewmodel.format import TASK_STATUS_GLYPH, short_task_id
 
 
 def task_tree_lines(nodes: dict[str, Any], cursor: str | None = None) -> list[str]:
-    """DFS, left-to-right, one line per node: `<indent><glyph> <title>`, plus
+    """DFS, left-to-right, one line per node: `<id> <indent><glyph> <title>`, plus
     the commit's short sha when the node carries one. Over raw node dicts (a
     `graph.update` event's, or a persisted graph's `model_dump`, in the order
     roots should read), through the read model's own walk, so this renders
@@ -29,5 +29,7 @@ def task_tree_lines(nodes: dict[str, Any], cursor: str | None = None) -> list[st
         sha = node.get("commit_sha") if isinstance(node, dict) else None
         commit = f"  ({sha[:7]})" if isinstance(sha, str) and sha else ""
         glyph = TASK_STATUS_GLYPH.get("in_progress" if view.is_cursor else view.status, "·")
-        out.append(f"{'  ' * view.depth}{glyph} {view.title}{commit}")
+        # The id leads the line: it is what `/retire` takes, and the only place
+        # an operator reads a task's number.
+        out.append(f"{short_task_id(view.id):>3}  {'  ' * view.depth}{glyph} {view.title}{commit}")
     return out

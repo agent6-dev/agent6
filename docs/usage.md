@@ -92,7 +92,7 @@ agent6 forward ID 8000        # reach a port inside the run's session network; -
 agent6 history search <text>  # search every session's persisted data; --regex
 agent6 sessions rm            # delete one run's history; --asks clears saved asks
 agent6 sessions compare <ids> # ranked comparison: >=2 runs (judged), or one fan-out id (its recorded verdict; --rejudge for a fresh call)
-agent6 sessions graph         # the persisted task graph
+agent6 sessions graph         # the persisted task graph, each line led by the id `/retire` takes
 ```
 
 `agent6 history search <query>` greps across every session's persisted transcripts and data.

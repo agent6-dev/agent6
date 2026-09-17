@@ -216,12 +216,13 @@ def _print_tasks(session_dir: Path) -> None:
     if not s.tasks:
         print("[agent6] (no tasks yet)")
         return
+    # The fold hands over views that already carry their depth, so this walks
+    # them rather than the node dicts `task_tree_lines` takes; both lead the
+    # line with the id, which is what `/retire` names a task by.
     for tv in s.tasks:
         icon = TASK_STATUS_GLYPH.get(tv.status, "·")
         marker = "▸ " if tv.is_cursor else ""
-        # The id's tail leads the line: it is what `/retire` takes, and what
-        # tells two tasks made in the same turn apart.
-        print(f"  {short_task_id(tv.id)}  {'  ' * tv.depth}{marker}{icon} {tv.title}")
+        print(f"  {short_task_id(tv.id):>3}  {'  ' * tv.depth}{marker}{icon} {tv.title}")
 
 
 def _print_help(offered: dict[str, str]) -> None:
