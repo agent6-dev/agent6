@@ -367,6 +367,12 @@ def _dispatch_steer(args: argparse.Namespace) -> int:
     return _cmd_steer(args.target, args.text, now=args.now)
 
 
+def _dispatch_task(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.task_cmd import _cmd_task  # noqa: PLC0415
+
+    return _cmd_task(args.target, args.text)
+
+
 def _dispatch_stop(args: argparse.Namespace) -> int:
     from agent6.ui.cli.stop_cmd import _cmd_stop  # noqa: PLC0415
 
@@ -868,6 +874,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "ask": _dispatch_ask,
     "attach": _dispatch_attach,
     "steer": _dispatch_steer,
+    "task": _dispatch_task,
     "stop": _dispatch_stop,
     "answer": _dispatch_answer,
     "exec": _dispatch_exec,
