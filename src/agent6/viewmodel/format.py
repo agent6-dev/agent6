@@ -4,9 +4,11 @@
 
 The single source of truth for how run/task state reads to a human, so the same
 state never renders differently across surfaces (per-front-end glyph maps
-drift). The web client reads the rendered fields the view models carry (a
-task's glyph, a state's mark, a transition's line, a cost cell); it keeps no
-copy of these.
+drift). The web client reads the rendered fields the view models carry: a
+task's glyph, a state's mark, a transition's line, a cost cell, a timestamp.
+
+`SPINNER_FRAMES` is the one constant it copies, because it animates locally
+between polls rather than per frame from the server; `tests/web` pins the copy.
 """
 
 from __future__ import annotations

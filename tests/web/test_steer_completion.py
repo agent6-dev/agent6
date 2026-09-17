@@ -32,3 +32,15 @@ def test_a_typed_stop_posts_the_one_stop() -> None:
     """`/stop` in the web composer calls the stop route, not a steer text."""
     assert "if (text === '/stop') {" in CLIENT_JS
     assert "postJSON('/api/session/' + encodeURIComponent(id) + '/stop', {})" in CLIENT_JS
+
+
+def test_the_client_copies_only_the_spinner() -> None:
+    """The web reads rendered fields rather than re-deriving them, with one
+    exception: the heartbeat animates locally between polls, so it carries the
+    frames. Pinned, since a static client cannot import them."""
+    from agent6.viewmodel.format import SPINNER_FRAMES
+
+    assert f"'{SPINNER_FRAMES}'" in CLIENT_JS
+    # The timestamp used to be re-derived here from the raw epoch, in the
+    # viewer's timezone rather than the one every other surface shows.
+    assert "function when(" not in CLIENT_JS

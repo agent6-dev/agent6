@@ -60,7 +60,7 @@ from agent6.viewmodel import (
     tail_events,
 )
 from agent6.viewmodel.config_view import render_show
-from agent6.viewmodel.format import status_label, status_level
+from agent6.viewmodel.format import format_when, status_label, status_level
 from agent6.viewmodel.listing import nested_rows, row_json
 from agent6.viewmodel.transcript_style import item_lines
 
@@ -161,6 +161,7 @@ def _machine_row(s: MachineSummary) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "name": s.name,
         "mtime": s.mtime,
+        "when": format_when(s.mtime) if s.mtime else "",
         "status": s.status,
         "level": status_level(s.status),
     }

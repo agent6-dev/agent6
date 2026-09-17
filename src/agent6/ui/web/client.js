@@ -83,11 +83,6 @@ function toast(msg, bad) {
   else { setTimeout(() => t.remove(), 4000); }
   host.appendChild(t);
 }
-function when(ts) {
-  if (!ts) return '';
-  const d = new Date(ts * 1000), p = n => String(n).padStart(2, '0');
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 function setCrumb(t) { crumb.textContent = t || ''; }
 function closeLive() {
   if (live) { live.close(); live = null; }
@@ -365,7 +360,7 @@ function paintSession(r, it, g) {
   g.appendChild(el('div', 'title', r.task_line || r.task || '(no task)'));
   const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
   // id_cell carries the winner mark the CLI and TUI id cells carry.
-  g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${when(r.mtime)}${cost}`));
+  g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${cost}`));
   it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   const lanes = r.lanes || [];
   if (!lanes.length) return;
@@ -433,7 +428,7 @@ function machinesCard(machines) {
   return listCard('Machines', machines, 'no machines yet', (m, it, g) => {
     it.onclick = () => location.hash = '#/machine/' + encodeURIComponent(m.name);
     g.appendChild(el('div', 'title', m.machine || m.name));
-    g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${when(m.mtime)}`));
+    g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${esc(m.when)}`));
     it.appendChild(pill(m.level, m.label || m.status)); // keep the reason (failed · why)
   });
 }
@@ -442,7 +437,7 @@ function draftsCard(drafts) {
   return listCard('Machine drafts', drafts, '', (d, it, g) => {
     it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.session_id);
     g.appendChild(el('div', 'title', d.task_line || d.task || d.session_id));
-    g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${when(d.mtime)}`));
+    g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${esc(d.when)}`));
     it.appendChild(pill(d.level, d.label || d.status)); // keep the reason (failed · provider_error)
   });
 }

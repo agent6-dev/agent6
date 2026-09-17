@@ -32,6 +32,7 @@ from agent6.viewmodel.format import (
     format_age,
     format_cost_cell,
     format_model_route,
+    format_when,
     listing_status_label,
     status_level,
     winner_id,
@@ -250,6 +251,7 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
         lanes=[row_json(ln, winners=winners) for ln in row.lanes],
     )
     out["mtime"] = row.mtime
+    out["when"] = format_when(row.mtime) if row.mtime else ""
     return out
 
 
@@ -277,6 +279,8 @@ def summary_row(
         "label": listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
         "level": status_level(s.status),
         "mtime": s.mtime,
+        # Rendered here, like the cost cell: every surface shows one clock.
+        "when": format_when(s.mtime) if s.mtime else "",
         "cost_usd": s.cost_usd,
         "usd_partial": s.usd_partial,
         "plan_consumed": s.plan_consumed,

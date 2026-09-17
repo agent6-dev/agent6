@@ -90,6 +90,7 @@ def test_runs_list_json_carries_the_row_facts(
         "model",
         "model_from_flag",
         "mtime",
+        "when",
         "winner",
         "task",
         "task_line",
