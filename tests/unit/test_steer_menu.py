@@ -668,3 +668,22 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
         )
     finally:
         state.restore()
+
+
+def test_the_menu_help_matches_the_owner_for_every_shared_command() -> None:
+    """`/restate` lost its "(local, no model call)" and `/compact` grew
+    backticks: the menu hand-wrote help for words the composers also offer.
+    `/pin` is the one deliberate difference, because bare `/pin` lists here."""
+    from agent6.directive import STEER_COMMANDS
+    from agent6.ui.cli._steer_menu import (  # pyright: ignore[reportPrivateUsage]
+        MENU_COMMANDS,
+        MENU_ONLY_HELP,
+    )
+
+    shared = set(STEER_COMMANDS) & set(MENU_COMMANDS)
+    differing = {c for c in shared if STEER_COMMANDS[c] != MENU_COMMANDS[c]}
+
+    assert differing == {"/pin"}
+    assert MENU_COMMANDS["/pin"] == MENU_ONLY_HELP["/pin"]
+    # Every word the menu describes itself is one no composer offers.
+    assert set(MENU_ONLY_HELP) - shared == set(MENU_ONLY_HELP) - {"/pin"}

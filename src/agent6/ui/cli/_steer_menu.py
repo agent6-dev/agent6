@@ -72,24 +72,41 @@ from agent6.viewmodel.state import SessionState, context_fill, status_facts
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
-# Command -> one-line help. The Tab preview menu and /help both read this table.
-MENU_COMMANDS: dict[str, str] = {
+# The menu's own commands: what a composer cannot offer, because it needs the
+# run paused. `/pin` is the one shared word the menu describes differently, and
+# `MENU_ONLY_HELP` names it so the shared entries below stay verbatim copies.
+MENU_ONLY_HELP: dict[str, str] = {
     "/status": "run status: tasks, tools, cost, context, preset",
     "/tasks": "the task graph with statuses",
+    # Bare `/pin` lists here; in a composer the word takes the instruction.
     "/pin": "list pinned instructions (pin one with `/pin <text>`)",
-    "/compact": "compact the context now; `/compact <focus>` steers the summary",
+    "/continue": "resume the run unchanged (same as Enter)",
+    "/exit": "stop the run and leave (no follow-up prompt; resume later)",
+    "/detach": "keep the run going in the background",
+    "/help": "this list",
+}
+
+# Command -> one-line help. The Tab preview menu and /help both read this
+# table; a word the composers also offer takes its help from the one owner
+# (`directive.STEER_COMMANDS`), so the operator reads the same line wherever
+# they type it.
+MENU_COMMANDS: dict[str, str] = {
+    "/status": MENU_ONLY_HELP["/status"],
+    "/tasks": MENU_ONLY_HELP["/tasks"],
+    "/pin": MENU_ONLY_HELP["/pin"],
+    "/compact": STEER_COMMANDS["/compact"],
     "/parallel": STEER_COMMANDS["/parallel"],
     "/btw": STEER_COMMANDS["/btw"],
     "/task": STEER_COMMANDS["/task"],
     "/standing": STEER_COMMANDS["/standing"],
     "/shells": STEER_COMMANDS["/shells"],
-    "/restate": "restate the conversation since your last message",
-    "/undo": "fork back to before your last message (the text returns to edit and resend)",
-    "/continue": "resume the run unchanged (same as Enter)",
+    "/restate": STEER_COMMANDS["/restate"],
+    "/undo": STEER_COMMANDS["/undo"],
+    "/continue": MENU_ONLY_HELP["/continue"],
     "/stop": STEER_COMMANDS["/stop"],
-    "/exit": "stop the run and leave (no follow-up prompt; resume later)",
-    "/detach": "keep the run going in the background",
-    "/help": "this list",
+    "/exit": MENU_ONLY_HELP["/exit"],
+    "/detach": MENU_ONLY_HELP["/detach"],
+    "/help": MENU_ONLY_HELP["/help"],
 }
 
 
