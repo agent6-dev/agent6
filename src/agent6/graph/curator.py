@@ -125,12 +125,21 @@ JournalEntry = (
 )
 
 
-def _place(children: tuple[str, ...], new_id: str, after: str | None) -> tuple[str, ...]:
-    """*children* with *new_id* appended, or inserted just after *after*."""
-    if after is None:
+def _place(
+    children: tuple[str, ...], new_id: str, after: str | None, *, standing_at: int | None = None
+) -> tuple[str, ...]:
+    """*children* with *new_id* inserted just after *after*, else last.
+
+    "Last" stops short of a standing sibling (*standing_at*, its index): the
+    standing goal is the run's last resort, and the tree says so by keeping it
+    at the end. A named position still wins, so the caller can place a task
+    anywhere it can name."""
+    if after is not None:
+        at = children.index(after) + 1
+        return (*children[:at], new_id, *children[at:])
+    if standing_at is None:
         return (*children, new_id)
-    at = children.index(after) + 1
-    return (*children[:at], new_id, *children[at:])
+    return (*children[:standing_at], new_id, *children[standing_at:])
 
 
 def _now() -> datetime:
@@ -265,7 +274,12 @@ class GraphCurator:
             if parent is not None:
                 updated_parent = parent.model_copy(
                     update={
-                        "children": _place(parent.children, node.id, intent.after),
+                        "children": _place(
+                            parent.children,
+                            node.id,
+                            intent.after,
+                            standing_at=self._standing_at(parent),
+                        ),
                         "updated_at": now,
                     }
                 )
@@ -276,6 +290,15 @@ class GraphCurator:
                 )
             )
             return node
+
+    def _standing_at(self, parent: TaskNode) -> int | None:
+        """Where *parent*'s standing child sits, so a new sibling lands before
+        it; None when this parent has none."""
+        for i, cid in enumerate(parent.children):
+            child = self._nodes.get(cid)
+            if child is not None and child.standing:
+                return i
+        return None
 
     def update_status(self, intent: UpdateStatusIntent) -> TaskNode:
         with self._mutating():

@@ -94,6 +94,43 @@ def test_add_task_says_the_standing_flag_was_dropped(tmp_path: Path) -> None:
     assert "note" not in add_task(c, root, {"title": "ordinary"}).to_wire()
 
 
+def test_a_new_sibling_lands_before_the_standing_goal(tmp_path: Path) -> None:
+    """The standing goal is seeded right after the root, so every later task
+    would otherwise queue behind the run's last resort. The tree reads in the
+    order the frontier works: ordinary tasks, then the standing goal."""
+    c, root = _curator(tmp_path)
+    standing = c.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root,
+            draft=TaskNodeDraft(title="keep the suite green", standing=True, created_by="steering"),
+        )
+    ).id
+    first = _queued(c, root, "first")
+    second = _queued(c, root, "second")
+
+    assert c.get(root).children == (first, second, standing)
+
+
+def test_a_named_position_still_wins_over_the_standing_goal(tmp_path: Path) -> None:
+    c, root = _curator(tmp_path)
+    first = _queued(c, root, "first")
+    c.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root,
+            draft=TaskNodeDraft(title="keep the suite green", standing=True, created_by="steering"),
+        )
+    )
+    middle = c.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root,
+            after=first,
+            draft=TaskNodeDraft(title="middle", created_by="worker"),
+        )
+    ).id
+
+    assert c.get(root).children[:2] == (first, middle)
+
+
 def test_the_operators_standing_goal_keeps_its_flag(tmp_path: Path) -> None:
     c, root = _curator(tmp_path)
 
