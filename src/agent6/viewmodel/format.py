@@ -74,9 +74,14 @@ def spinner_frame(tick: int) -> str:
     return SPINNER_FRAMES[tick % len(SPINNER_FRAMES)]
 
 
-def format_when(epoch: float) -> str:
-    """A listing's `when` column: local `MM-DD HH:MM`."""
-    return time.strftime("%m-%d %H:%M", time.localtime(epoch))
+def format_when(epoch: float, *, short: bool = False) -> str:
+    """A listing's `when` column: local `MM-DD HH:MM`; *short* (a narrow
+    terminal) keeps only the time for today and only the date for older."""
+    if not short:
+        return time.strftime("%m-%d %H:%M", time.localtime(epoch))
+    today = time.localtime().tm_yday, time.localtime().tm_year
+    then = time.localtime(epoch)
+    return time.strftime("%H:%M" if (then.tm_yday, then.tm_year) == today else "%m-%d", then)
 
 
 def format_age(seconds: float) -> str:

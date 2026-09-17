@@ -11,6 +11,7 @@ Every image is from a recorded run; click to enlarge.
 ## Hub
 
 `agent6 tui` lists every session for the repository in five columns: updated, status (the mode folded in), cost, id, and task.
+Below 100 columns `updated` keeps only the time for today's runs and only the date for older ones, and a status drops its reason; below 80, cost hides, so the task keeps its room.
 
 - Enter opens a run
 - `n`: an empty conversation to start a run, plan, or ask (mode, preset and model picked above the composer; the model box shows the model the config resolves for the mode and preset, re-resolved whenever either changes, and a pick overrides it for this run; a refusal shows there with the text kept)

@@ -821,7 +821,7 @@ def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: Path) -> 
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(120, 30)) as pilot:  # wide: the full date and time
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, HomeScreen)
@@ -1247,6 +1247,44 @@ def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: Path) 
             assert narrow.endswith("…") and len(narrow) < 60
             await pilot.resize_terminal(160, 30)
             await _wait_for(pilot, lambda: len(str(table.get_row_at(0)[4])) > len(narrow), "wider")
+            assert table.virtual_size.width <= table.scrollable_content_region.width
+
+    asyncio.run(scenario())
+
+
+def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: Path) -> None:
+    """At 80 columns the task column got 7 characters and a horizontal
+    scrollbar. A narrow hub shortens `updated` to a time or date and drops a
+    status's reason; below 80 columns, cost hides."""
+    from textual.widgets import DataTable
+
+    from agent6.ui.tui.home import Agent6HomeApp
+
+    a6 = tmp_path / ".agent6"
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "user_task": "implement the parser " * 10},
+        {"type": "session.end", "all_passed": False, "reason": "max_iterations"},
+    ]
+    _write_run(a6, "runs", "friendly-crane-1X3ER0", events)
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            table = app.screen.query_one("#sessions", DataTable)
+            await _wait_for(pilot, lambda: table.row_count == 1, "the row")
+            await pilot.pause()
+            assert [str(c.label) for c in table.columns.values()] == [
+                "updated",
+                "status",
+                "cost",
+                "id",
+                "task",
+            ]
+            assert table.virtual_size.width <= table.scrollable_content_region.width
+            row = [str(cell) for cell in table.get_row_at(0)]
+            assert row[1] == "failed" and len(row[0]) == 5 and len(row[4]) >= 24
+            await pilot.resize_terminal(79, 24)
+            await _wait_for(pilot, lambda: len(table.columns) == 4, "cost hidden")
             assert table.virtual_size.width <= table.scrollable_content_region.width
 
     asyncio.run(scenario())

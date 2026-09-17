@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 try:
     from rich.text import Text
@@ -72,10 +72,29 @@ from agent6.viewmodel.listing import ListingRow, nested_rows
 _HUB_POLL_S = 4.0
 
 
-def _status_cell(summary: SessionSummary) -> Text:
-    label = listing_status_label(
-        summary.mode, summary.status, summary.reason, unmerged=summary.unmerged
-    )
+# Below this many terminal columns the hub gives the task room: `updated`
+# shortens to a time or a date and a status drops its reason (the run's own
+# views keep it); below the second, cost hides too.
+_NARROW_COLS = 100
+_NARROWEST_COLS = 80
+
+
+def _sync_columns(table: DataTable[Any], width: int) -> tuple[str, ...]:
+    """Give the hub table its columns for a terminal *width* (cost hides below
+    _NARROWEST_COLS), rebuilt only when they change, and empty it for a refill."""
+    labels = ("updated", "status", "cost", "id", "task")
+    if width < _NARROWEST_COLS:
+        labels = ("updated", "status", "id", "task")
+    if tuple(str(c.label) for c in table.columns.values()) != labels:
+        table.clear(columns=True)
+        table.add_columns(*labels)
+    table.clear()
+    return labels
+
+
+def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> Text:
+    reason = "" if narrow else summary.reason
+    label = listing_status_label(summary.mode, summary.status, reason, unmerged=summary.unmerged)
     return Text(label, style=status_style(summary.status))
 
 
@@ -167,7 +186,6 @@ class HomeScreen(ScreenChrome, Screen[None]):
     def on_mount(self) -> None:
         table = self.query_one("#sessions", DataTable)
         table.cursor_type = "row"
-        table.add_columns("updated", "status", "cost", "id", "task")
         self.action_refresh()
         table.focus()
         self.set_interval(_HUB_POLL_S, self._poll)
@@ -197,7 +215,9 @@ class HomeScreen(ScreenChrome, Screen[None]):
         selected = ""
         if self._runs and 0 <= table.cursor_row < len(self._runs):
             selected = self._runs[table.cursor_row].name
-        table.clear()
+        # A zero width is the mount-time fill before layout: lay out as wide.
+        narrow = (self.size.width or _NARROW_COLS) < _NARROW_COLS
+        labels = _sync_columns(table, self.size.width or _NARROW_COLS)
         # Keep self._runs 1:1 with the table rows: a run dir that vanished between
         # the listing and its stat() must be dropped from both, or every
         # cursor_row-indexed selection action (open/logs/merge) maps to the wrong
@@ -210,13 +230,19 @@ class HomeScreen(ScreenChrome, Screen[None]):
         listing = nested_rows(summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values())
         self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
 
-        pending: list[tuple[str, Text, str, str, str]] = []
+        pending: list[tuple[str | Text, ...]] = []
 
         def add(row: ListingRow, id_cell: str) -> None:
             # The time is the row's (a fan-out's latest lane activity while its
             # own journal is quiet), as `sessions list` and the web hub show it.
             s = row.summary
-            pending.append((format_when(row.mtime), _status_cell(s), s.cost_cell, id_cell, s.task))
+            cells: dict[str, str | Text] = {
+                "updated": format_when(row.mtime, short=narrow),
+                "status": _status_cell(s, narrow=narrow),
+                "cost": s.cost_cell,
+                "id": Text(id_cell),
+            }
+            pending.append((*(cells[label] for label in labels[:-1]), s.task))
             survivors.append(dirs[s.session_id])
             rows[s.session_id] = s
 
@@ -243,14 +269,12 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # horizontal scroll.
         fixed = sum(
             max(len(label), max((len(str(cells[i])) for cells in pending), default=0)) + 2
-            for i, label in enumerate(("updated", "status", "cost", "id"))
+            for i, label in enumerate(labels[:-1])
         )
         task_w = max(24, table.scrollable_content_region.width - fixed - 2)
-        for when, status, cost, id_cell, task in pending:
+        for *cells, task in pending:
             # Text cells: the task is model/user input and may carry markup brackets.
-            table.add_row(
-                when, status, cost, Text(id_cell), Text(task_snippet(task, max_chars=task_w))
-            )
+            table.add_row(*cells, Text(task_snippet(str(task), max_chars=task_w)))
         self._runs = survivors
         self._summaries = rows
         if selected:
