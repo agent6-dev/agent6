@@ -103,7 +103,8 @@ A run keeps one message history with one provider and one model.
 - under `api_format = "claude_code"` the provider keeps one `claude` process per leg and replays that history as text whenever a call is not a continuation of its last round ([Config](config.md))
 
 `workflows/loop.py` holds the turn: the request, the model call, the tool dispatch, what the tools did, and the ends.
-What the turn leans on sits beside it, one module each: `_chain` (the run's commit chain), `_steer` (the operator's callables, the steer verbs, the pin cap), `_guards` (each heuristic's counters and its rule: no progress, settled, the metric plateau, quiet turns, stagnation, the memory nudges, the standing goal, reachability, focus), `_finish_gates` (what an end must satisfy and what it is called), and the settings each sibling owns (`_review`, `_compaction`, `_provider_call`, `_prompt_revision`).
+What the turn leans on sits beside it, one module each: `_chain` (the run's commit chain), `_steer` (the operator's callables, the steer verbs, the pin cap), `_advice` (what an advisor answers with, a nudge, a stop or a refusal, and the turn's context it reads), `_guards` (the advisors, one function per heuristic with its counters: no progress, settled, stagnation, the memory flip, the loop guard, the tool-error ladder, reachability, focus, the budget nudges), `_metric` (a metric run's plateau, ceiling and early-finish rules), `_quiet_turns` (the nudges an empty or prose-only turn draws), `_finish_gates` (what a finish must satisfy and what an end is called), and the settings each sibling owns (`_review`, `_compaction`, `_provider_call`, `_prompt_revision`).
+The loop runs the advisors and the gates in a declared order and applies each answer; a heuristic is one function and one test file.
 
 Drawn by hand against `workflows/loop.py`, the turn as a state machine:
 

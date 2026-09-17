@@ -4,7 +4,9 @@
 deterministic harness around it (jail, budget, verify timeout, DAG curator
 for persistence and resume). One driver: the review panel gates checkpoints
 and never steers. Green verifies auto-commit, so the chain records each tree
-a verify certified.
+a verify certified. The heuristics that nudge or end a run are advisor
+functions (`_guards`, `_metric`, `_quiet_turns`) and finish gates
+(`_finish_gates`), run in a declared order; the loop applies their answers.
 """
 
 from __future__ import annotations
