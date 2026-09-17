@@ -455,23 +455,27 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
     }
     #question-list { height: auto; }
     .q-text { margin-top: 1; text-style: bold; }
-    /* Options are chips: clicking one fills that question's answer field below.
-       A visible border + panel fill reads as pressable (a borderless full-width
-       label read as a heading); auto width so short options sit compact in
-       one row, which a narrow terminal cuts (the answer field below still
-       takes an answer). Keep the default height
-       (a borderless height:1 button collapses its label to nothing). */
-    .q-opts { height: auto; }
-    .q-opts Button {
-        width: auto; min-width: 8; margin: 0 1 0 0;
-        border: round $primary; background: $panel; color: $foreground;
+    /* One-row pieces, like the config dialogs and the pickers: options are flat
+       chips (a click fills the answer field under them), each answer a flat
+       field, Submit a flat action. */
+    .q-opts { height: auto; margin-top: 1; }
+    #question-box .q-opts Button {
+        width: auto; min-width: 0; height: 1; margin: 0 1 0 0; padding: 0 1;
+        background: $panel; color: $foreground; text-style: none;
     }
-    .q-opts Button:focus { border: round $accent; background: $primary; text-style: bold; }
-    .q-ans { margin-top: 0; }
-    #question-submit {
-        margin-top: 1; background: $primary; color: $text; text-style: bold;
+    #question-box .q-opts Button:hover { background: $primary 30%; }
+    #question-box .q-opts Button:focus { background: $primary; color: $text; text-style: bold; }
+    #question-box .q-ans {
+        height: 1; margin-top: 1; padding: 0 1; border: none; background: $panel;
     }
-    #question-submit:focus { background: $accent; }
+    #question-box .q-ans:focus { border: none; background: $primary 25%; }
+    #question-box #question-submit {
+        width: auto; min-width: 0; height: 1; margin-top: 1; padding: 0 2;
+        background: transparent; color: $accent;
+    }
+    #question-box #question-submit:hover { background: $primary 30%; }
+    #question-box #question-submit:focus { background: $primary; color: $text; text-style: bold; }
+    #question-hint { margin-top: 1; color: $text-muted; }
     """
 
     BINDINGS: ClassVar = [
@@ -509,13 +513,14 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
                         # markup parsing; pressing one fills that answer field.
                         with Horizontal(classes="q-opts"):
                             for oi, opt in enumerate(q.options):
-                                yield Button(Text(opt), id=f"opt-{qi}-{oi}")
+                                yield Button(Text(opt), id=f"opt-{qi}-{oi}", compact=True)
                     yield Input(
                         placeholder="pick above or type an answer",
                         id=f"ans-{qi}",
                         classes="q-ans",
                     )
-            yield Button("Submit (ctrl+s)", id="question-submit")
+            yield Button("Submit (ctrl+s)", id="question-submit", compact=True)
+            yield Static("Enter next field · Ctrl+S submit · Esc skip", id="question-hint")
 
     def on_mount(self) -> None:
         self.query_one("#ans-0", Input).focus()
