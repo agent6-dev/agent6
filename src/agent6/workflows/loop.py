@@ -15,7 +15,7 @@ import itertools
 import json
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -1701,14 +1701,18 @@ class Workflow:
         if self.curator is None or self.events is None or state.root_task_id is None:
             return
         for text in drain_queued_tasks(self.events.path.parent):
+            # The title stays the operator's own first line even when the
+            # revision below rewrites the body, so the task tree reads in their
+            # words.
             title = task_headline(text)[:200] or text.strip()[:200]
+            spec = self._revised_queued_task(text)
             try:
                 node = self.curator.add_subtask(
                     AddSubtaskIntent(
                         parent_id=state.root_task_id,
                         draft=TaskNodeDraft(
                             title=title,
-                            rationale=text if text.strip() != title else "",
+                            rationale=spec if spec.strip() != title else "",
                             created_by="user",
                         ),
                     )
@@ -1719,6 +1723,28 @@ class Workflow:
             self._log(f"LOOP: operator queued task {node.id}: {title}")
             self._emit("loop.task.queued", id=node.id, title=title)
             self._emit_graph_snapshot()
+
+    def _revised_queued_task(self, text: str) -> str:
+        """A queued task through `[prompt].revise_prompt`, when the operator
+        turned it on: the same one-shot pass the initial task gets, which folds
+        the revision with the original and marks the original authoritative.
+
+        Nobody is at a terminal at a turn boundary, so `interactive` revises the
+        way `auto` does, and a failed pass keeps the text as written: a queued
+        task is never lost to a reviser that could not answer."""
+        if self.revision.mode == "off":
+            return text
+        try:
+            return revise_prompt(
+                replace(self.revision, mode="auto"),
+                text,
+                load_repo_summary(self.chain.root),
+                log=self._log,
+                emit=self._emit,
+            )
+        except PromptRevisionError as exc:
+            self._log(f"LOOP: queued task kept as written: {exc}")
+            return text
 
     def _maybe_surface_current_task(self, conversation: Conversation, state: LoopState) -> None:
         """Surface-current-task: keep the worker on ONE task at a time.

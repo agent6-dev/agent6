@@ -12,16 +12,19 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNode, TaskNodeDraft
+from agent6.providers.types import ProviderError
 from agent6.sessions.ipc import queue_task
 from agent6.sessions.layout import SessionLayout
 from agent6.workflows._chain import RunChain
 from agent6.workflows._dag_focus import current_task_banner
+from agent6.workflows._prompt_revision import RevisionSettings
 from agent6.workflows.loop import LoopState, Workflow
 
 _NOW = datetime(2026, 9, 16, tzinfo=UTC)
@@ -141,3 +144,39 @@ def test_the_banner_leaves_the_models_own_tasks_alone(tmp_path: Path) -> None:
 
     assert "The operator queued this task" not in banner
     assert "my own note" not in banner
+
+
+def test_a_queued_task_inherits_prompt_revision(tmp_path: Path) -> None:
+    """`[prompt].revise_prompt` covers a queued task too, and the revision
+    folds in the operator's words as the authoritative version."""
+    curator, sink, root = _run_dir(tmp_path)
+    queue_task(sink.path.parent, SPEC)
+    reviser = MagicMock()
+    reviser.call.return_value = SimpleNamespace(
+        text="<revised_task>Add --json to `stats`, same fields as the table.</revised_task>"
+    )
+    wf = _workflow(curator, sink)
+    wf.revision = RevisionSettings(reviser=reviser, mode="interactive")
+
+    wf._drain_queued_tasks(_state(root))  # pyright: ignore[reportPrivateUsage]
+
+    node = curator.nodes()[curator.get(root).children[0]]
+    assert node.title == "Add a --json flag"  # the tree keeps the operator's words
+    assert "Add --json to `stats`" in node.rationale
+    assert "Original user task (authoritative if anything conflicts)" in node.rationale
+    assert SPEC in node.rationale
+
+
+def test_a_failed_revision_keeps_the_task_as_written(tmp_path: Path) -> None:
+    """A queued task is never lost to a reviser that could not answer."""
+    curator, sink, root = _run_dir(tmp_path)
+    queue_task(sink.path.parent, SPEC)
+    reviser = MagicMock()
+    reviser.call.side_effect = ProviderError("reviser down")
+    wf = _workflow(curator, sink)
+    wf.revision = RevisionSettings(reviser=reviser, mode="auto")
+
+    wf._drain_queued_tasks(_state(root))  # pyright: ignore[reportPrivateUsage]
+
+    node = curator.nodes()[curator.get(root).children[0]]
+    assert node.rationale == SPEC
