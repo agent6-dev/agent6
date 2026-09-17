@@ -11,6 +11,7 @@ running app.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -71,28 +72,60 @@ def test_the_web_composer_refuses_a_bare_directive(
     assert drain_queued_tasks(d) == []
 
 
+def _paused(tmp_path: Path) -> Path:
+    """A run dir mid-pause: the menu reads its state off disk."""
+    (tmp_path / "logs.jsonl").write_text(
+        '{"type": "session.start", "user_task": "t", "mode": "run"}\n', encoding="utf-8"
+    )
+    write_worker_pid(tmp_path, os.getpid())
+    return tmp_path
+
+
+def _feed(lines: list[str]) -> Callable[[str], str]:
+    it = iter(lines)
+    return lambda _prompt: next(it)
+
+
 def test_the_pause_menu_queues_and_re_prompts(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An info command: it prints and hands the prompt back, so the operator
-    can queue several without ending the pause."""
-    from agent6.ui.cli._steer_menu import _run_info_command  # pyright: ignore[reportPrivateUsage]
+    """Through the real prompt, not the handler behind it: the resolver used to
+    send `/task <text>` to the model as steer text, because `/task` shares a
+    prefix with `/tasks` and the argument branch listed its own commands."""
+    from agent6.ui.cli._steer_menu import pause_menu
 
-    _run_info_command("/task ship the changelog", tmp_path)
+    d = _paused(tmp_path)
+
+    assert pause_menu(d, input_fn=_feed(["/task ship the changelog", "/continue"])) == ""
 
     assert "task queued" in capsys.readouterr().out
-    assert drain_queued_tasks(tmp_path) == ["ship the changelog"]
+    assert drain_queued_tasks(d) == ["ship the changelog"]
 
 
 def test_the_pause_menu_refuses_a_bare_directive(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli._steer_menu import _run_info_command  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli._steer_menu import pause_menu
 
-    _run_info_command("/task", tmp_path)
+    d = _paused(tmp_path)
+
+    assert pause_menu(d, input_fn=_feed(["/task", "/continue"])) == ""
 
     assert "/task needs the work" in capsys.readouterr().out
-    assert drain_queued_tasks(tmp_path) == []
+    assert drain_queued_tasks(d) == []
+
+
+def test_a_partial_command_never_fires(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A prefix drives Tab completion, never an action: `/stat` fired
+    `/status` until `/standing` made it ambiguous, which is the drift."""
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    d = _paused(tmp_path)
+
+    assert pause_menu(d, input_fn=_feed(["/stat", "/continue"])) == ""
+
+    out = capsys.readouterr().out
+    assert "unknown command '/stat'" in out and "/status" in out
 
 
 def test_agent6_steer_acts_on_the_directive_instead_of_sending_it(

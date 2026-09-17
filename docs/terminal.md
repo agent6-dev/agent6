@@ -83,7 +83,7 @@ The config page shows every setting, its effective value, and the layer that set
 
 `agent6 run` executes in the foreground; Ctrl-C opens its pause menu to steer it.
 
-- the pause menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages
+- the pause menu Tab-completes its commands (a command is typed in full to fire; a prefix only drives Tab); Up recalls, Ctrl-R searches past messages
     - `/status`, `/tasks`, `/pin`, `/compact`, `/parallel`, `/btw`, `/task`, `/shells`, `/restate`, `/undo`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
 - a steer sent from another surface (`agent6 steer`, the web or TUI composer) while the menu is open is taken as the answer
 - `/detach` in the menu hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and stands an armed pause down, it never suspends the run (a suspended agent would lose its live provider stream)

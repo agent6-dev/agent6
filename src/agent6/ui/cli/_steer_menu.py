@@ -12,7 +12,7 @@ run's event log and re-prompt, so the operator can inspect the run before
 steering it.
 
 Parsing rule: a command fires only when it is the whole line (one `/token`;
-a unique prefix like `/sta` works, an ambiguous one re-asks). A line with a
+a command is typed in full; Tab completes a prefix). A line with a
 space is answered here when its word is `/compact`, `/btw` or a skill; the
 loop's `/pin` and `/parallel` travel with their word lowercased; any other
 line with a space, or one not starting with `/`, is sent to the run verbatim
@@ -305,8 +305,9 @@ def pause_menu(
 ) -> str | None:
     """The interactive pause menu. Returns the canonical steer action: None/''
     continue, 'abort' stop now, 'exit' stop-and-leave, 'detach' background, else
-    the instruction sent verbatim. A command must be the whole line (unique
-    prefixes fire, ambiguous ones re-ask); info commands print and re-prompt.
+    the instruction sent verbatim. A command is the whole word, typed in full
+    (Tab completes a prefix, so adding a command never re-points a habit);
+    info commands print and re-prompt.
     EOF (Ctrl-D) continues. A steer a front-end writes while the menu is open
     (the file bridge every composer uses) ends the menu and is the answer."""
     skills = skill_menu_table(config_path)
@@ -340,7 +341,7 @@ AGAIN = _Again()
 _LOOP_DIRECTIVES = ("/pin", "/parallel")
 
 
-def _answer_line(  # noqa: PLR0911, PLR0912
+def _answer_line(  # noqa: PLR0911
     line: str,
     session_dir: Path,
     btw_runner: BtwRunner | None,
@@ -358,52 +359,36 @@ def _answer_line(  # noqa: PLR0911, PLR0912
     if word in ("/h", "/?"):
         word = "/help"
     if args:
-        # /compact, /btw and skill commands take arguments; any other line
-        # with spaces stays a verbatim steer (the loop itself parses the
-        # /pin and /parallel directives out of steer text).
-        builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
-        smatches = [word] if word in skills else [c for c in skills if c.startswith(word)]
-        if builtin == ["/compact"] and not smatches:
-            if request_compact(session_dir, focus=args.strip()):
-                print(
-                    "[agent6] compaction requested (focus noted);"
-                    " applies before the next model call"
-                )
-            else:
-                print("[agent6] could not write the compaction request; nothing was requested")
-            return AGAIN
-        if builtin == ["/btw"] and not smatches:
-            # A btw is a question asked beside the run; letting it fall
-            # through would send it to the loop as steer text instead.
+        # `/btw` is the menu's own (it spawns through a terminal-capable
+        # runner); every other directive belongs to the one owner every
+        # composer shares. Anything else with spaces stays a verbatim steer
+        # (the loop itself parses /pin and /parallel out of steer text).
+        if word == "/btw":
             print(_start_btw(stripped, session_dir, btw_runner))
             return AGAIN
-        if len(smatches) == 1 and not builtin:
+        acted = act_on_directive(session_dir, stripped)
+        if acted is not None:
+            print(f"[agent6] {acted[1]}")
+            return AGAIN
+        if word in skills:
             # A skill command travels as typed; the loop expands it (the
             # one owner, so every composer's `/<skill>` means the same).
-            return f"{smatches[0]} {args.strip()}"
+            return stripped
         if word in _LOOP_DIRECTIVES:
             return f"{word} {args.strip()}"
         return stripped
-    if word in MENU_COMMANDS or word in skills:  # exact match (never both: the
-        # table builder drops skills that collide with a built-in)
-        matches = [word]
-    else:
-        builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
-        matches = builtin + [c for c in skills if c.startswith(word) and c not in builtin]
-    if len(matches) > 1:
-        print(f"[agent6] ambiguous: {'  '.join(matches)} (type more)")
+    if word not in MENU_COMMANDS and word not in skills:
+        # Exact commands only: a prefix drives Tab completion, never an
+        # action, so adding a command never re-points an operator's habit.
+        near = sorted(c for c in (*MENU_COMMANDS, *skills) if c.startswith(word) and c != word)
+        hint = f"; did you mean {'  '.join(near)}?" if near else "; /help lists them"
+        print(f"[agent6] unknown command {word!r}{hint} (a line with spaces is sent as a steer)")
         return AGAIN
-    if not matches:
-        print(
-            f"[agent6] unknown command {word!r}; /help lists them"
-            " (a line with spaces is sent as a steer)"
-        )
-        return AGAIN
-    if matches[0] in _ACTIONS:
-        return _ACTIONS[matches[0]]
-    if matches[0] in skills:
-        return matches[0]
-    _run_info_command(matches[0], session_dir, btw_runner)
+    if word in _ACTIONS:
+        return _ACTIONS[word]
+    if word in skills:
+        return word
+    _run_info_command(word, session_dir, btw_runner)
     return AGAIN
 
 

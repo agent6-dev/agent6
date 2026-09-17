@@ -201,7 +201,7 @@ def test_pause_menu_bare_parallel_explains_and_reprompts(
 
     assert "/parallel" in MENU_COMMANDS
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    assert pause_menu(tmp_path, input_fn=_feed(["/para", "go"])) == "go"
+    assert pause_menu(tmp_path, input_fn=_feed(["/parallel", "go"])) == "go"
     assert "needs a task" in capsys.readouterr().out
 
 
@@ -235,13 +235,13 @@ def test_pause_menu_prefixes_and_word_rule(
         json.dumps({"type": "session.start", "user_task": "t", "mode": "run"}) + "\n",
         encoding="utf-8",
     )
-    # /stat is uniquely /status; shorter prefixes match /standing and /stop too,
-    # and an ambiguous one names every candidate rather than guessing.
-    assert pause_menu(tmp_path, input_fn=_feed(["/stat", "/st", "/stop"])) == "abort"
+    # A command is typed in full; a prefix is for Tab, so it never fires and
+    # says what it was near.
+    assert pause_menu(tmp_path, input_fn=_feed(["/status", "/stat", "/stop"])) == "abort"
     printed = capsys.readouterr().out
-    assert "running" in printed  # /stat printed the status line
-    assert "/status" in printed and "/standing" in printed and "/stop" in printed
-    assert "ambiguous" in printed and "/status" in printed and "/stop" in printed
+    assert "running" in printed  # /status printed the status line
+    assert "unknown command '/stat'" in printed
+    assert "/status" in printed  # the did-you-mean names what it was near
     # A multi-word line starting with "/" is a steer, never a command.
     assert pause_menu(tmp_path, input_fn=_feed(["/stop hammering the API"])) == (
         "/stop hammering the API"
@@ -470,10 +470,13 @@ def test_pause_menu_compact_accepts_focus(
     assert pause_menu(tmp_path, input_fn=_feed(["/compact keep the auth decisions"])) is None
     assert read_compact_request(tmp_path) == "keep the auth decisions"
     assert "compaction requested" in capsys.readouterr().out
-    # unique prefix with args routes too
-    assert pause_menu(tmp_path, input_fn=_feed(["/comp focus on the parser"])) is None
-    assert read_compact_request(tmp_path) == "focus on the parser"
-    # /c is ambiguous (/compact, /continue): the line stays a steer
+    # A prefix with args is not the command: it stays a steer, so adding a
+    # command can never re-point a line the operator has typed for months.
+    assert (
+        pause_menu(tmp_path, input_fn=_feed(["/comp focus on the parser"]))
+        == "/comp focus on the parser"
+    )
+    assert read_compact_request(tmp_path) == "keep the auth decisions"  # unchanged
     assert pause_menu(tmp_path, input_fn=_feed(["/c keep it"])) == "/c keep it"
     # /pin with args is the loop's directive, never a menu route
     assert pause_menu(tmp_path, input_fn=_feed(["/pin keep it"])) == "/pin keep it"
