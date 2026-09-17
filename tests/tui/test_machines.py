@@ -1353,7 +1353,7 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path
     in the tick after the worker died landed in a dead state dir with no word;
     the gate is re-read at submit, as a steer's and a poke's are."""
     from agent6.ui.tui.machines import _ANSWER_LOST  # pyright: ignore[reportPrivateUsage]
-    from agent6.ui.tui.modals import ApprovalModal
+    from agent6.ui.tui.modals import ANSWER_ARM_S, ApprovalModal
 
     instance, spec = _blocked_machine(tmp_path, alive=True)
     state = instance / "states" / "0000-route"
@@ -1371,6 +1371,7 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path
                 deadline += 1
             assert isinstance(app.screen, ApprovalModal)
             (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
+            await pilot.pause(ANSWER_ARM_S)
             await pilot.press("y")
             await pilot.pause()
             assert not (state / "approvals").exists()

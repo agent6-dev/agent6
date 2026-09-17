@@ -16,6 +16,7 @@ approve/deny/answer, so dismissal is explicit (buttons / keys) only.
 
 from __future__ import annotations
 
+import time
 from typing import ClassVar
 
 from rich.text import Text
@@ -28,6 +29,12 @@ from textual.widgets import Button, Input, Static, TextArea
 
 from agent6.ui.tui.widgets import TypeaheadField
 from agent6.viewmodel.state import Question
+
+# An approval's keys answer only once this long has passed with no typing since
+# it appeared: a letter typed as a prompt arrives goes where it was typed, and
+# never answers the prompt. The same letters answer everywhere, the CLI prompt's:
+# y allow, a allow all (this session), n deny, d deny all.
+ANSWER_ARM_S = 0.8
 
 # Uniform arrow-key focus navigation for every consequential modal: Tab already
 # moves focus; these make the arrows do the same, so the dialogs navigate the way
@@ -67,13 +74,15 @@ class ApprovalModal(ModalScreen[str]):
     # Keys handled on the modal (not the app) so they reach the focused button.
     BINDINGS: ClassVar = [
         *_ARROW_NAV,
-        Binding("y", "approve", "Allow", show=True),
-        Binding("Y", "approve", "Allow", show=False),
-        Binding("a", "approve_session", "Allow session", show=True),  # dropped when not standing
-        Binding("n", "deny", "Deny", show=True),
-        Binding("N", "deny", "Deny", show=False),
-        Binding("x", "deny_session", "Deny all", show=True),  # dropped when not standing
-        Binding("escape", "deny", "Deny", show=False),
+        # Priority: checked before on_key sees the key, so a declined key (still
+        # arming, see check_action) reaches on_key and keeps the clock running.
+        Binding("y", "approve", "Allow", show=True, priority=True),
+        Binding("Y", "approve", "Allow", show=False, priority=True),
+        Binding("a", "approve_session", "Allow all", show=True, priority=True),  # not standing: off
+        Binding("n", "deny", "Deny", show=True, priority=True),
+        Binding("N", "deny", "Deny", show=False, priority=True),
+        Binding("d", "deny_session", "Deny all", show=True, priority=True),  # not standing: off
+        Binding("escape", "deny", "Deny", show=False, priority=True),
     ]
 
     def __init__(self, prompt_id: str, prompt: str, *, standing: bool = True) -> None:
@@ -81,6 +90,7 @@ class ApprovalModal(ModalScreen[str]):
         self.prompt_id = prompt_id
         self.prompt_text = prompt
         self.standing = standing
+        self._typed_at = time.monotonic()  # opening counts as typing: see ANSWER_ARM_S
 
     def compose(self) -> ComposeResult:
         with Container(id="approval-box"):
@@ -91,10 +101,10 @@ class ApprovalModal(ModalScreen[str]):
             with Horizontal(id="approval-buttons"):
                 yield Button("Allow (y)", id="yes", variant="success")
                 if self.standing:
-                    yield Button("Allow session (a)", id="session", variant="success")
+                    yield Button("Allow all (a)", id="session", variant="success")
                 yield Button("Deny (n)", id="no", variant="error")
                 if self.standing:
-                    yield Button("Deny all (x)", id="session-deny", variant="error")
+                    yield Button("Deny all (d)", id="session-deny", variant="error")
 
     def on_mount(self) -> None:
         # The safe choice takes the focus, as ConfirmModal's does: an accidental
@@ -107,10 +117,19 @@ class ApprovalModal(ModalScreen[str]):
     def action_approve(self) -> None:
         self.dismiss("yes")
 
+    def on_key(self, event: events.Key) -> None:
+        if event.is_printable:  # a letter the answer keys declined: still typing
+            self._typed_at = time.monotonic()
+
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Hides the scope bindings (footer included) on a prompt with none."""
+        """Hides the scope bindings (footer included) on a prompt with none;
+        no key answers until typing has paused (ANSWER_ARM_S)."""
         del parameters
-        return self.standing if action in ("approve_session", "deny_session") else True
+        if action not in ("approve", "approve_session", "deny", "deny_session"):
+            return True
+        if action in ("approve_session", "deny_session") and not self.standing:
+            return False
+        return time.monotonic() - self._typed_at >= ANSWER_ARM_S
 
     def action_approve_session(self) -> None:
         self.dismiss("session")

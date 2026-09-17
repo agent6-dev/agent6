@@ -48,7 +48,7 @@ Pages that take a task, a steer or a machine message dock their text entry at th
     - stop now, or stop after step: the same stop as `agent6 stop` (the model call cut, a running command handed back, a worker that does not answer killed, the run resumable)
     - compact, fork (a new run at the latest checkpoint, unstarted: its composer starts it), merge, delete history
     - run a finished plan (`run --from`, spawned detached)
-    - approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline; "Allow session" appears only where it would grant something beyond the one call it is clicked on
+    - approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline; "Allow all" appears only where it would grant something beyond the one call it is clicked on
 - **Machine view**: the state overview, the path taken, the current agent state's conversation
     - approve and answer the current state's prompts inline (same controls as a run)
     - the docked entry submits as **Steer** (into the current agent state) or **Message** (a `poke` payload a waiting machine's next tool reads)

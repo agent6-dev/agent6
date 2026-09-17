@@ -7,6 +7,7 @@ history search, and the inline approval row."""
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol, cast
 
@@ -25,7 +26,7 @@ from agent6.ui.tui.menubar import (
     Menu,
     MenuItem,
 )
-from agent6.ui.tui.modals import HistorySearchModal
+from agent6.ui.tui.modals import ANSWER_ARM_S, HistorySearchModal
 from agent6.ui.tui.widgets import Picker
 from agent6.viewmodel.tail import tail_events
 from agent6.viewmodel.transcript import (
@@ -232,14 +233,14 @@ RUN_MENU = Menu(
 )
 
 
-# The answers an open approval offers, in the vocabulary the CLI prompt and the
-# modal speak ("yes" / "no" / "session" / "session-deny"): (key, answer, label,
-# style). The row renders them and answers a click; the composer binds the keys.
+# The answers an open approval offers, with the CLI prompt's and the modal's
+# keys ("yes" / "no" / "session" / "session-deny"): (key, answer, label, style).
+# The row renders them and answers a click; the composer binds the keys.
 APPROVAL_ANSWERS: tuple[tuple[str, str, str, str], ...] = (
-    ("a", "yes", "allow", "bold green"),
-    ("s", "session", "allow all (session)", "green"),
-    ("d", "no", "deny", "bold red"),
-    ("x", "session-deny", "deny all", "red"),
+    ("y", "yes", "allow", "bold green"),
+    ("a", "session", "allow all (session)", "green"),
+    ("n", "no", "deny", "bold red"),
+    ("d", "session-deny", "deny all", "red"),
 )
 # Offered only by a standing approval (one the operator may answer for the session).
 _STANDING_ANSWERS = frozenset({"session", "session-deny"})
@@ -251,7 +252,8 @@ class SteerInput(TextArea):
     _INPUT_MAX_ROWS. Two modes (set_mode): steer a live run, or type the
     follow-up instruction a finished run is resumed with. While an approval
     row is on the screen and the composer is empty, the row's keys answer it
-    (check_action); anything typed makes them letters again."""
+    (check_action), once typing has paused (ANSWER_ARM_S); anything typed
+    makes them letters again."""
 
     ALLOW_MAXIMIZE = False  # a full-screen composer is never what Maximize means
 
@@ -275,6 +277,7 @@ class SteerInput(TextArea):
         self._resize()
 
     policy = ""  # viewmodel.session_policy(...).short(), set once the run dir is known
+    last_key_at = 0.0  # monotonic time of the last key this composer took
     mode: ComposerMode = "steer"  # which directives apply (see steer_suggestion_rows)
 
     def set_mode(
@@ -307,6 +310,7 @@ class SteerInput(TextArea):
             self.border_subtitle = subtitle
 
     def on_key(self, event: events.Key) -> None:
+        self.last_key_at = time.monotonic()
         if event.key == "enter":
             event.prevent_default()
             event.stop()
@@ -331,7 +335,10 @@ class SteerInput(TextArea):
         if action == "answer":
             # A declined key falls through as the letter it is.
             rows = self.screen.query(ApprovalRow)
-            return bool(rows) and rows.first().offers(str(parameters[0])) and not self.text
+            if not rows or self.text or not rows.first().offers(str(parameters[0])):
+                return False
+            typed_at = max(rows.first().shown_at, self.last_key_at)
+            return time.monotonic() - typed_at >= ANSWER_ARM_S
 
         return True
 
@@ -402,6 +409,7 @@ class ApprovalRow(Horizontal):
     def __init__(self, *, standing: bool) -> None:
         super().__init__()  # no fixed id: a superseded row may still be unmounting
         self._standing = standing
+        self.shown_at = time.monotonic()  # its keys arm ANSWER_ARM_S after this
 
     def compose(self) -> ComposeResult:
         for key, answer, label, style in APPROVAL_ANSWERS:

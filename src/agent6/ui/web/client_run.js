@@ -264,7 +264,7 @@ function paintPrompts(cards, s) {
       row.appendChild(yes);
       // Only when the prompt says an "allow all" would actually cover its scope:
       // a button that silently answered one call would lie about itself.
-      if (ap.standing !== false) { const sess = el('button', 'primary', 'Allow session'); sess.onclick = send('session'); row.appendChild(sess); }
+      if (ap.standing !== false) { const sess = el('button', 'primary', 'Allow all'); sess.onclick = send('session'); row.appendChild(sess); }
       row.appendChild(no);
       // The fourth answer the run understands: withhold this scope for the rest
       // of the session (the CLI's `x`, the TUI's "Deny all").
