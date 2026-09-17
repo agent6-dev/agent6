@@ -11,6 +11,7 @@ from typing import Any, ClassVar, cast
 
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.screen import Screen
+from textual.widgets import Select
 
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar
@@ -72,6 +73,22 @@ class ScreenChrome:
 
     def palette_commands(self) -> Iterator[PaletteCommand]:
         return menu_palette_commands(cast(Screen[Any], self), self.menus())
+
+    def close_open_list(self) -> bool:
+        """Close the open menu or dropdown list, if any, and say whether one
+        was open. A screen's Esc binding has priority, so it fires before the
+        list's own: Back calls this first, and leaves only when nothing closed."""
+        screen = cast(Screen[Any], self)
+        bar = screen.query_one(MenuBar)
+        if bar.opened:
+            bar.close_menu()
+            return True
+        for select in screen.query(Select):
+            if select.expanded:
+                select.expanded = False
+                select.focus()
+                return True
+        return False
 
     def action_menu(self, mnemonic: str) -> None:
         cast(Screen[Any], self).query_one(MenuBar).open(mnemonic)

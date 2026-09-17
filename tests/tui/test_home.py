@@ -176,6 +176,50 @@ def test_home_app_lists_runs_and_opens_the_new_task_view(tmp_path: Path) -> None
     asyncio.run(scenario())
 
 
+def test_new_task_view_esc_closes_an_open_list_before_the_view(tmp_path: Path) -> None:
+    """Esc with a picker's list or a menu open closes just that, keeping the
+    view and the typed task (the view's Esc binding has priority, so it left
+    the view and dropped the task)."""
+    import asyncio
+
+    from textual.widgets import Select
+
+    from agent6.ui.tui.composer import SteerInput
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.menubar import MenuBar
+    from agent6.ui.tui.new_work import NewWorkScreen
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a"]))
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, NewWorkScreen)
+            await pilot.press("k", "e", "e", "p")
+            picker = screen.query_one("#draft-preset", Select)
+            picker.focus()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert picker.expanded
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not picker.expanded and picker.has_focus
+            screen.query_one(MenuBar).open("f")
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not screen.query_one(MenuBar).opened
+            assert app.screen is screen
+            assert screen.query_one("#draft-input", SteerInput).text == "keep"
+
+    asyncio.run(scenario())
+
+
 def test_new_task_view_starts_the_chosen_mode_and_preset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

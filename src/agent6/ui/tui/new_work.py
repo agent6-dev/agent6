@@ -186,7 +186,8 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         return "" if value is Select.NULL else str(value)
 
     def action_close(self) -> None:
-        self.dismiss(None)
+        if not self.close_open_list():
+            self.dismiss(None)
 
     def action_quit_hub(self) -> None:
         self.app.exit(None)
