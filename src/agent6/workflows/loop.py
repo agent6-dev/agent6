@@ -122,7 +122,14 @@ from agent6.workflows._finish_gates import (
     task_finish_nudge,
     with_open_tasks,
 )
-from agent6.workflows._guards import AFTER_TOOLS, GuardSettings, Nudge, TurnContext
+from agent6.workflows._guards import (
+    AFTER_TOOLS,
+    GuardSettings,
+    Nudge,
+    Stop,
+    TurnContext,
+    tool_error_ladder,
+)
 from agent6.workflows._loop_state import (
     NEXT_TURN,
     LoopState,
@@ -165,9 +172,6 @@ from agent6.workflows._nudges import (
     RUN_BUDGET_NUDGE_GATELESS,
     SILENT_NO_WORK_NUDGE,
     SILENT_NO_WORK_PATIENCE,
-    TOOL_DENIED_NUDGE,
-    TOOL_ERROR_ESCALATION,
-    TOOL_ERROR_NUDGE,
     VERIFY_BROKEN_NUDGE,
     VERIFY_SETTLED_NUDGE,
     VERIFY_UNADOPTED_NOTICE,
@@ -697,6 +701,7 @@ class Workflow:
             # that only raises. Built BEFORE the context prep, which measures
             # the request the tools ride in.
             tools = tool_definitions(self.dispatcher, mode=self.mode)
+            ctx = self._turn_context(state, iteration=iteration, leg_start=start_iteration)
             wire = self._turn_pre_call(
                 system=system,
                 conversation=conversation,
@@ -758,7 +763,7 @@ class Workflow:
                     iteration,
                     tuple(tu.name for tu in assistant.tool_uses),
                 )
-            result = self._turn_dispatch_tools(state, turn)
+            result = self._turn_dispatch_tools(state, turn, ctx)
             if result is not None:
                 return result
             # One task-DAG snapshot per turn (not per mutation), so several
@@ -770,10 +775,9 @@ class Workflow:
                 return result
             self._turn_review_triggers(state, turn, conversation)
             self._turn_finish_gates(state, turn)
-            self._turn_notices(state, turn)
-            ctx = self._turn_context(state, iteration=iteration, leg_start=start_iteration)
-            for advisor in AFTER_TOOLS:
-                self._take(turn, advisor(turn, state, ctx))
+            result = self._turn_advisors(state, turn, ctx)
+            if result is not None:
+                return result
             result = self._turn_metric_plateau(state, turn)
             if result is not None:
                 return result
@@ -951,7 +955,9 @@ class Workflow:
                 iteration=iteration,
             )
 
-    def _turn_dispatch_tools(self, state: LoopState, turn: TurnState) -> SessionResult | None:
+    def _turn_dispatch_tools(
+        self, state: LoopState, turn: TurnState, ctx: TurnContext
+    ) -> SessionResult | None:
         """Dispatch each tool_use in the turn, appending one tool_result per
         call and noting effects (verify / metric / edits / DAG / finish) on
         `turn`, then the harness's own gate run when one is due. Returns a
@@ -1030,7 +1036,7 @@ class Workflow:
                 self._capture_finish(turn, name, tool_input)
             except ToolError as exc:
                 content = self._note_tool_error(state, name, tool_input, exc)
-                self._maybe_tool_error_ladder(state, turn)
+                self._take(state, turn, tool_error_ladder(turn, state, ctx))
             except OperatorCommandUnexecutable as exc:
                 return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
             turn.tool_results.append(
@@ -1967,7 +1973,6 @@ class Workflow:
             mode=self.mode,
             iteration=iteration,
             leg_start=leg_start,
-            workflow=self.config.workflow,
             guards=self.guards,
             metric=metric_goal(self.config.workflow.metric) is not None,
             memory_wired=self.state_dir is not None,
@@ -1980,16 +1985,45 @@ class Workflow:
             open_subtasks=self._open_subtasks,
         )
 
-    def _take(self, turn: TurnState, outcome: Nudge | None) -> None:
-        """Apply one advisor's answer: the notice joins the turn's results,
-        the event is emitted, the line logged."""
+    def _turn_advisors(
+        self, state: LoopState, turn: TurnState, ctx: TurnContext
+    ) -> SessionResult | None:
+        """The turn's notices (review findings, metric feedback), then the
+        after-tools advisors in order, each answer applied."""
+        self._turn_notices(state, turn)
+        for advisor in AFTER_TOOLS:
+            aborted = self._take(state, turn, advisor(turn, state, ctx))
+            if aborted is not None:
+                return aborted
+        return None
+
+    def _take(
+        self, state: LoopState, turn: TurnState, outcome: Nudge | Stop | None
+    ) -> SessionResult | None:
+        """Apply one advisor's answer. A nudge joins the turn's results, its
+        event emitted and its line logged. A stop joins `turn.stops` for the
+        stop checks; an ending the harness declares (`Stop.declared`) is
+        judged by the end gates first, unless a finish call this turn already
+        ran them, and dropped when they hand it back. Returns the abort when
+        the gates' verify could not run."""
         if outcome is None:
-            return
-        turn.tool_results.append(Notice(outcome.text))
+            return None
+        if isinstance(outcome, Nudge):
+            turn.tool_results.append(Notice(outcome.text))
         if outcome.event:
             self._emit(outcome.event, **outcome.fields)
-        if outcome.log:
-            self._log(outcome.log)
+        if isinstance(outcome, Nudge):
+            if outcome.log:
+                self._log(outcome.log)
+            return None
+        if outcome.declared and turn.finish_signal is None:
+            aborted = self._end_gates(state, turn, ending=outcome.declared)
+            if aborted is not None:
+                return aborted
+            if turn.end_returned:
+                return None
+        turn.stops.append(outcome)
+        return None
 
     # ---- turn notices and spiral guards ----------------------------------------
 
@@ -2204,33 +2238,6 @@ class Workflow:
         )
         return content
 
-    def _maybe_tool_error_ladder(self, state: LoopState, turn: TurnState) -> None:
-        """Nudge/escalate/stop on a streak of identical tool errors (a call
-        that keeps failing the same way -- malformed args, bad path). Fires
-        inside the dispatch loop, only on a plain run-mode streak; metric runs
-        defer to their own machinery, mirroring the verify no-progress guard."""
-        non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
-        if not non_metric_run:
-            return
-        streak = state.spiral.error_streak
-        rung = state.spiral.climb_error()
-        if rung == "stop":
-            turn.tool_error_stop = True
-        elif rung is not None:
-            # A denial streak is a POLICY outcome: "your call is malformed" would
-            # be false, and a refusal says nothing about jail reachability.
-            if state.spiral.last_error_was_denial:
-                text = TOOL_DENIED_NUDGE
-            else:
-                text = TOOL_ERROR_ESCALATION if rung == "escalate" else TOOL_ERROR_NUDGE
-            turn.tool_results.append(Notice(text))
-            self._emit(
-                "loop.tool_error.nudge",
-                iteration=turn.iteration,
-                streak=streak,
-                level=2 if rung == "escalate" else 1,
-            )
-
     def _note_jail_exec_failure(
         self,
         state: LoopState,
@@ -2359,7 +2366,7 @@ class Workflow:
             if turn.plateau_should_stop
             else None
         )
-        if soft is None or turn.tool_error_stop:
+        if soft is None or any(not stop.soft for stop in turn.stops):
             return
         nudge = self._standing_absorb(state, reason=soft, iteration=turn.iteration)
         if nudge is None:
@@ -2380,25 +2387,14 @@ class Workflow:
     ) -> SessionResult | None:
         """Terminal checks, run after the turn's tool_results are in
         `messages` and the post-tools snapshot is written, in precedence
-        order: verify-settled stop, metric-plateau stop, loop-guard kill, then
-        honouring a finish call that survived the gates."""
+        order: the advisors' stops as decided, the verify-settled stop, the
+        metric-plateau stop, the loop-guard kill, then honouring a finish
+        call that survived the gates."""
         self._absorb_soft_stop(state, turn, conversation)
-        if turn.tool_error_stop:
-            self._log(
-                f"LOOP: tool_error stop at iter {turn.iteration}"
-                f" (streak {state.spiral.error_streak})"
-            )
-            return self._finish(
-                state,
-                End(
-                    "tool_error_stuck",
-                    "stopped: the same tool call failed"
-                    f" {state.spiral.error_streak} times with the identical error"
-                    " despite two harness interventions; resume with a different"
-                    " approach",
-                ),
-                iteration=turn.iteration,
-            )
+        for stop in turn.stops:
+            if stop.log:
+                self._log(stop.log)
+            return self._finish(state, stop.end, iteration=turn.iteration)
         if turn.no_progress_stop:
             self._log(
                 f"LOOP: no_progress stop at iter {turn.iteration}"

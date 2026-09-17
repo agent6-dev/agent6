@@ -20,6 +20,7 @@ from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Conversation, ToolResultItem
 from agent6.workflows._loop_state import LoopState, TurnState
 from agent6.workflows.loop import Workflow
+from tests.unit.turn_context import turn_context
 
 _TOOLS = frozenset({"list_dir", "read_file"})
 _READ_FILE = ToolDefinition(
@@ -127,7 +128,7 @@ def test_unknown_tagged_call_returns_the_dispatcher_error(tmp_path: Path) -> Non
     turn = TurnState(iteration=1, resp=response, assistant=assistant)
 
     workflow._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
-        LoopState(original_task="Write a.py", tool_calls=0), turn
+        LoopState(original_task="Write a.py", tool_calls=0), turn, turn_context()
     )
 
     results = [item for item in turn.tool_results if isinstance(item, ToolResultItem)]
@@ -231,7 +232,7 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
 
     assert (
         workflow._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
-            LoopState(original_task="Read a.py", tool_calls=0), turn
+            LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
         )
         is None
     )
@@ -294,7 +295,7 @@ def test_malformed_recovered_call_returns_only_its_error(
     turn = TurnState(iteration=1, resp=response, assistant=assistant)
 
     workflow._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
-        LoopState(original_task="Read a.py", tool_calls=0), turn
+        LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
     )
 
     assert response.text == ""

@@ -19,7 +19,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from agent6.config import WorkflowConfig
 from agent6.workflows._dag_focus import STUCK_NUDGE_MAX, STUCK_ON_TASK_AFTER
 from agent6.workflows._metric import MetricSample
 from agent6.workflows._nudges import (
@@ -30,10 +29,14 @@ from agent6.workflows._nudges import (
     NO_PROGRESS_STOP_AFTER,
     STAGNATION_NUDGE,
     STAGNATION_NUDGE_GATELESS,
+    TOOL_DENIED_NUDGE,
+    TOOL_ERROR_ESCALATION,
+    TOOL_ERROR_NUDGE,
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
     loop_guard_words,
 )
+from agent6.workflows._session_state import End
 
 if TYPE_CHECKING:
     from agent6.workflows._loop_state import LoopState, TurnState
@@ -54,17 +57,33 @@ class Nudge:
 
 
 @dataclass(frozen=True, slots=True)
+class Stop:
+    """An advisor's decision to end the run, honoured once the turn's results
+    and snapshot are on disk (`Workflow._turn_stop_checks`): `end` is what
+    `_finish` records, `log` the line written then. `soft` names the reason
+    a standing task's re-entry nudge carries when it absorbs the stop ("" =
+    a hard stop nothing converts); `declared` names the ending the end gates
+    judge as soon as the stop is decided ("" = a fault no gate judges). The
+    event is emitted when the stop is decided."""
+
+    end: End
+    soft: str = ""
+    declared: str = ""
+    event: str = ""
+    fields: Mapping[str, object] = field(default_factory=dict)
+    log: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class TurnContext:
     """The run facts an advisor reads, built once per turn. A fact that can
     move within the turn (a harness verify can deny or un-adopt the gate,
-    an edit moves the tree) is a zero-arg callable read where it is needed;
-    `workflow` carries the knobs that never move mid-run."""
+    an edit moves the tree) is a zero-arg callable read where it is needed."""
 
     mode: Literal["run", "plan", "ask", "agent"]
     iteration: int
     # The leg's first iteration: a turn allowance counts from it.
     leg_start: int
-    workflow: WorkflowConfig
     guards: GuardSettings
     # A metric goal is configured: the plateau and ceiling rules own the
     # run's end, and the plain-run guards stand down.
@@ -81,8 +100,8 @@ class TurnContext:
 
 
 # An advisor: one heuristic over the turn, the run state and the context,
-# answering with what to say or nothing.
-Advisor = Callable[["TurnState", "LoopState", TurnContext], Nudge | None]
+# answering with what to say, a decision to end the run, or nothing.
+Advisor = Callable[["TurnState", "LoopState", TurnContext], Nudge | Stop | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +241,40 @@ class StagnationGuard:
 
     started_monotonic: float = field(default_factory=time.monotonic)
     nudged: bool = False
+
+
+def tool_error_ladder(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
+    """Nudge, escalate, then stop on a streak of identical tool errors (a
+    call that keeps failing the same way: malformed args, a bad path),
+    judged after each failed call (`SpiralGuard.climb_error`). A plain run's
+    guard: a metric run's own machinery owns its end. A denial streak is a
+    policy outcome, so its nudge says refused, not malformed."""
+    if ctx.mode != "run" or ctx.metric:
+        return None
+    streak = state.spiral.error_streak
+    rung = state.spiral.climb_error()
+    if rung is None:
+        return None
+    if rung == "stop":
+        return Stop(
+            End(
+                "tool_error_stuck",
+                f"stopped: the same tool call failed {streak} times with the identical"
+                " error despite two harness interventions; resume with a different"
+                " approach",
+            ),
+            log=f"LOOP: tool_error stop at iter {turn.iteration} (streak {streak})",
+        )
+    if state.spiral.last_error_was_denial:
+        text = TOOL_DENIED_NUDGE
+    else:
+        text = TOOL_ERROR_ESCALATION if rung == "escalate" else TOOL_ERROR_NUDGE
+    level = 2 if rung == "escalate" else 1
+    return Nudge(
+        text,
+        event="loop.tool_error.nudge",
+        fields={"iteration": turn.iteration, "streak": streak, "level": level},
+    )
 
 
 def loop_guard_notice(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | None:

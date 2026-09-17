@@ -43,6 +43,7 @@ from agent6.workflows._session_state import SNAPSHOT_VERSION, End
 from agent6.workflows._steer import OperatorBridge
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import LoopState, TurnState, Workflow
+from tests.unit.turn_context import turn_context
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
 # identity (`commit_identity`), which the real Config carries as empty
@@ -2003,9 +2004,9 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
     'finish now' nudge once it hits the plan turn cap -- not before, not again.
     This is the lever that makes Kimi K2.6 actually land a plan; pins the
     off-by-one (iteration - start + 1 >= cap) and the one-shot latch."""
-    from agent6.workflows.loop import (
-        PLAN_BUDGET_NUDGE,  # pyright: ignore[reportPrivateUsage]
-        PLAN_NUDGE_AFTER_ITERS,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import (
+        PLAN_BUDGET_NUDGE,
+        PLAN_NUDGE_AFTER_ITERS,
     )
 
     class ProviderStub:
@@ -2053,7 +2054,7 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
     """The nudge also fires early when the token budget runs low (not only on
     the turn cap) -- e.g. a planner reading large files burns budget fast."""
     from agent6.workflows import loop as loopmod
-    from agent6.workflows.loop import PLAN_BUDGET_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import PLAN_BUDGET_NUDGE
 
     def _low_budget(_self: object) -> float:
         return 0.2
@@ -2103,7 +2104,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
     Observed live: the worker solves the task but never re-verifies or calls
     finish_session, so the budget dies on read-only commands."""
     from agent6.workflows import loop as loopmod
-    from agent6.workflows.loop import RUN_BUDGET_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import RUN_BUDGET_NUDGE
 
     def _low_budget(_self: object) -> float:
         return 0.2
@@ -2151,7 +2152,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
     commit, no edit) gets one finish nudge, then the loop stops it with
     reason='verify_settled' — the positive completion signal a non-metric run
     otherwise lacks (Kimi K2.6 observed running 128 iters when done at ~45)."""
-    from agent6.workflows.loop import VERIFY_SETTLED_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import VERIFY_SETTLED_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2297,7 +2298,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     """The settled detector must stay dormant until verify has passed at least
     once — a worker still reading toward its first green build must not be
     stopped early."""
-    from agent6.workflows.loop import VERIFY_SETTLED_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import VERIFY_SETTLED_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5073,7 +5074,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
     """A run-mode turn that ends by asking a prose question with no tool call is
     nudged ONCE to call ask_user; if the model then acts it recovers, and if it
     keeps asking the run accepts silent_finish (bounded, no loop)."""
-    from agent6.workflows.loop import QUESTION_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import QUESTION_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5155,9 +5156,9 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
     mistral-small repeating one failure nine times) gets a root-cause nudge at
     the 4th identical consecutive failure and one escalation at the 7th; the
     signature ignores cosmetic drift like line numbers."""
-    from agent6.workflows.loop import (
-        NO_PROGRESS_ESCALATION,  # pyright: ignore[reportPrivateUsage]
-        NO_PROGRESS_NUDGE,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import (
+        NO_PROGRESS_ESCALATION,
+        NO_PROGRESS_NUDGE,
     )
 
     class ProviderStub:
@@ -5238,7 +5239,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
 def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> None:
     """Distinct failures mean real progress through the error list; the guard
     must stay quiet."""
-    from agent6.workflows.loop import NO_PROGRESS_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import NO_PROGRESS_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5386,7 +5387,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
     implicit finish (observed: kimi answering a SWE-bench problem statement
     in prose at iteration 2, ending the run patchless). Two nudges steer back
     to the tools; a third prose turn is then honored as silent_finish."""
-    from agent6.workflows.loop import SILENT_NO_WORK_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import SILENT_NO_WORK_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5436,7 +5437,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
 def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> None:
     """Once an edit has landed, a prose wrap-up is the normal implicit finish
     and must not be bounced by the no-work gate."""
-    from agent6.workflows.loop import SILENT_NO_WORK_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import SILENT_NO_WORK_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5497,7 +5498,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
     search are expected, and the metric plateau/early-finish machinery owns
     when the run stops. The no-progress guard must NOT fire (it would truncate
     the budgeted search and end the run completed=false)."""
-    from agent6.workflows.loop import NO_PROGRESS_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import NO_PROGRESS_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5641,9 +5642,9 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
     grep tripping 'not valid JSON' repeatedly) is nudged, escalated, then
     stopped as reason=tool_error_stuck instead of looping to the cap
     (observed: kimi re-issuing malformed grep until timeout)."""
-    from agent6.workflows.loop import (
-        TOOL_ERROR_ESCALATION,  # pyright: ignore[reportPrivateUsage]
-        TOOL_ERROR_NUDGE,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import (
+        TOOL_ERROR_ESCALATION,
+        TOOL_ERROR_NUDGE,
     )
 
     class ProviderStub:
@@ -5711,9 +5712,9 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
     exec failure recorded first (git at streak 1; the note fires at 2) must
     not be resurfaced by what is pure policy."""
     from agent6.tools.errors import ToolDenied as _TD
-    from agent6.workflows.loop import (
-        TOOL_DENIED_NUDGE,  # pyright: ignore[reportPrivateUsage]
-        TOOL_ERROR_NUDGE,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import (
+        TOOL_DENIED_NUDGE,
+        TOOL_ERROR_NUDGE,
     )
 
     class ProviderStub:
@@ -5796,7 +5797,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
     """A successful tool call between errors clears the streak, so intermittent
     errors never trip the ladder."""
     from agent6.tools.errors import ToolError as _TE
-    from agent6.workflows.loop import TOOL_ERROR_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import TOOL_ERROR_NUDGE
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -5859,7 +5860,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
     flagged once with the verify-broken nudge (observed: sympy `python -m
     pytest` with pytest missing, exit 1 in 0.0s); a legitimate slow test
     failure is not flagged."""
-    from agent6.workflows.loop import VERIFY_BROKEN_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import VERIFY_BROKEN_NUDGE
 
     wf = _wf(root=tmp_path, config=MagicMock(), provider=MagicMock(), dispatcher=MagicMock())
     st = _state()
@@ -5899,7 +5900,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
 
 
 def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
-    from agent6.workflows.loop import VERIFY_BROKEN_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import VERIFY_BROKEN_NUDGE
 
     wf = _wf(root=tmp_path, config=MagicMock(), provider=MagicMock(), dispatcher=MagicMock())
     st = _state()
@@ -6578,7 +6579,7 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
             ),
         ),
     )
-    out = wf._turn_dispatch_tools(_state(), turn)  # pyright: ignore[reportPrivateUsage]
+    out = wf._turn_dispatch_tools(_state(), turn, turn_context())  # pyright: ignore[reportPrivateUsage]
     assert out is None  # the refusal is served as an error result, not an abort
     assert turn.finish_signal is None  # and never captured as a finish
 
@@ -6604,7 +6605,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
             tool_uses=(ToolUse(id="tu1", name="finish_session", input={"summary": "done"}),),
         ),
     )
-    wf._turn_dispatch_tools(state, turn)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_dispatch_tools(state, turn, turn_context())  # pyright: ignore[reportPrivateUsage]
     assert state.ok_tool_calls == 0  # a control verb is not work
 
     worked = TurnState(
@@ -6615,7 +6616,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
             tool_uses=(ToolUse(id="tu2", name="read_file", input={"path": "x"}),),
         ),
     )
-    wf._turn_dispatch_tools(state, worked)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_dispatch_tools(state, worked, turn_context())  # pyright: ignore[reportPrivateUsage]
     assert state.ok_tool_calls == 1
 
 
@@ -7448,7 +7449,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
     missing) drops the gate again, tells the model, re-pins the manifest
     gateless, and never re-adopts that argv; a configured gate stays red."""
     from agent6.config import Config
-    from agent6.workflows.loop import VERIFY_UNADOPTED_NOTICE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._nudges import VERIFY_UNADOPTED_NOTICE
 
     argv = ("python3", "-m", "pytest", "-q")
     events: list[dict[str, Any]] = []

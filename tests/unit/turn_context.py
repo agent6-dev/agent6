@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.config import WorkflowConfig
 from agent6.workflows._guards import GuardSettings, TurnContext
 
 
@@ -16,7 +15,6 @@ def turn_context(**overrides: Any) -> TurnContext:
         "mode": "run",
         "iteration": 1,
         "leg_start": 1,
-        "workflow": WorkflowConfig(),
         "guards": GuardSettings(),
         "metric": False,
         "memory_wired": False,

@@ -28,6 +28,7 @@ from agent6.workflows._guards import (
     SettledGuard,
     StagnationGuard,
     StandingGoal,
+    Stop,
 )
 from agent6.workflows._metric import MetricSample
 from agent6.workflows._session_state import SessionSnapshot
@@ -184,4 +185,6 @@ class TurnState:
     plateau_should_stop: bool = False
     verify_settled_stop: bool = False
     no_progress_stop: bool = False
-    tool_error_stop: bool = False
+    # The advisors' decisions to end the run, in the order they were made;
+    # the stop checks honour the first one left after a standing task's absorb.
+    stops: list[Stop] = field(default_factory=list)
