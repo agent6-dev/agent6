@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""What the loop's advisors answer with, and what they read: a `Nudge` (a
-notice for the model, recorded), a `Stop` (an end of the run), the frozen
-`TurnContext` of run facts, and the operator's `GuardSettings`. The advisors
-live in `_guards` and `_metric`; the loop applies their answers."""
+"""What the loop's advisors and finish gates answer with, and what they
+read: a `Nudge` (a notice for the model, recorded), a `Stop` (an end of the
+run), a `Refusal` (a finish handed back), the frozen `TurnContext` of run
+facts, and the operator's `GuardSettings`. The advisors live in `_guards`
+and `_metric`, the gates in `_finish_gates`; the loop applies their
+answers."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.workflows._session_state import End
 
@@ -77,6 +79,13 @@ class TurnContext:
     # The leg's first iteration: a turn allowance counts from it.
     leg_start: int
     guards: GuardSettings
+    # `[workflow].verify_when` and `verify_retries`: what the red-gate return
+    # rule reads (`verify_command` moves mid-run and is a callable below).
+    verify_when: Literal["finish", "step", "never"]
+    verify_retries: int
+    # A machine agent state's finish contract: the problems with a finish
+    # payload (empty = conforms); None leaves finishes ungated.
+    finish_validator: Callable[[dict[str, Any] | None], list[str]] | None
     # A metric goal is configured: the plateau and ceiling rules own the
     # run's end, and the plain-run guards stand down.
     metric: bool
@@ -97,3 +106,20 @@ Advisor = Callable[["TurnState", "LoopState", TurnContext], Nudge | Stop | None]
 # A before-call advisor speaks before the turn exists: its nudge goes to the
 # conversation ahead of the provider call.
 BeforeCallAdvisor = Callable[["LoopState", TurnContext], Nudge | None]
+
+
+@dataclass(frozen=True, slots=True)
+class Refusal:
+    """A finish gate's answer: the finish call is revoked and the model gets
+    `text` (or nothing, when the findings reach it another way), with the
+    event and the log line recorded."""
+
+    text: str = ""
+    event: str = ""
+    fields: Mapping[str, object] = field(default_factory=dict)
+    log: str = ""
+
+
+# A finish gate: one rule a finish_session must satisfy, judged over a turn
+# that called it; a Refusal hands the finish back.
+Gate = Callable[["TurnState", "LoopState", TurnContext], Refusal | None]

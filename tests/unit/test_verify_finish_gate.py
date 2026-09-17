@@ -17,7 +17,7 @@ from agent6.config import Config
 from agent6.prompts.loop import V2_VERIFY_WHEN
 from agent6.viewmodel.listing import status_word
 from agent6.workflows._chain import RunChain
-from agent6.workflows._finish_gates import red_gate_returns
+from agent6.workflows._finish_gates import red_gate_returns, verify_finish
 from agent6.workflows._session_state import End
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
@@ -78,7 +78,8 @@ def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> Non
         verify=VerifyVerdict(last_ok=False, baseline_ok=False),
     )
     assert not red_gate_returns(
-        wf.config.workflow,
+        wf.config.workflow.verify_when,
+        wf.config.workflow.verify_retries,
         state.verify,
         state.gates,
         gate_present=wf._gate_present(denied=state.verify.denied),  # pyright: ignore[reportPrivateUsage]
@@ -388,6 +389,12 @@ def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
     return turn
 
 
+def _verify_gate(wf: Workflow, state: LoopState, turn: Any) -> None:
+    """The verify gate's answer over *turn*, applied through the loop."""
+    ctx = wf._turn_context(state, iteration=turn.iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+    wf._refuse(state, turn, verify_finish(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
+
+
 def _notices(turn: Any) -> list[str]:
     from agent6.workflows._conversation import Notice
 
@@ -408,7 +415,7 @@ def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree
     dispatcher.run_verify.assert_called_once_with(extra_argv=())
     assert state.verify.green_and_untouched and turn.verify_just_passed
     assert _notices(turn) == ["[harness verify] finish: verify_command passed (1s).\n3 passed"]
-    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    _verify_gate(wf, state, turn)
     assert turn.finish_signal == "done"
 
 
@@ -423,7 +430,7 @@ def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() 
     for _ in range(3):
         turn = _turn(finishing=True, edited=True)
         wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
-        wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+        _verify_gate(wf, state, turn)
         seen.append(turn.finish_signal)
         notices.extend(_notices(turn))
     assert seen == [None, None, "done"]
@@ -439,7 +446,7 @@ def test_zero_retries_lets_the_first_red_finish_stand() -> None:
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
-    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    _verify_gate(wf, state, turn)
     assert turn.finish_signal == "done"
     assert wf._verification(state) == "failed"  # pyright: ignore[reportPrivateUsage]
 
@@ -481,7 +488,7 @@ def test_never_mode_leaves_a_finish_over_an_unverified_tree_alone() -> None:
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
-    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    _verify_gate(wf, state, turn)
     dispatcher.run_verify.assert_not_called()
     assert turn.finish_signal == "done"
     assert wf._verification(state) == "unverified"  # pyright: ignore[reportPrivateUsage]
@@ -492,7 +499,7 @@ def test_run_commands_no_withholds_the_gate_from_the_harness_too() -> None:
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
-    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    _verify_gate(wf, state, turn)
     dispatcher.run_verify.assert_not_called()
     assert turn.finish_signal == "done"
 
@@ -514,7 +521,7 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
         "[harness verify] finish: not run: run_verify_command not approved."
         " The gate is withheld for the rest of the run; the run ends unverified."
     ]
-    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    _verify_gate(wf, state, turn)
     assert turn.finish_signal == "done"  # no bounce
     assert state.gates.verify_retries_used == 0
     assert wf._verification(state) == "unverified"  # pyright: ignore[reportPrivateUsage]
@@ -789,7 +796,7 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     turn2 = _turn(finishing=True, edited=True)
     wf._turn_harness_verify(state, turn2)  # pyright: ignore[reportPrivateUsage]
     assert dispatcher.run_verify.call_count == 2
-    wf._gate_verify_finish(state, turn2)  # pyright: ignore[reportPrivateUsage]
+    _verify_gate(wf, state, turn2)
     assert turn2.finish_signal == "done"
 
 

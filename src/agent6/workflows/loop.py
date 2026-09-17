@@ -80,7 +80,7 @@ from agent6.tools.schema import (
 )
 from agent6.types import RepoSummary
 from agent6.verify_infer import infer_verify_command, read_agents_md
-from agent6.workflows._advice import GuardSettings, Nudge, Stop, TurnContext
+from agent6.workflows._advice import Gate, GuardSettings, Nudge, Refusal, Stop, TurnContext
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import (
     CompactionSettings,
@@ -114,11 +114,14 @@ from agent6.workflows._dag_focus import (
 )
 from agent6.workflows._finish_gates import (
     REVIEW_REJECTED,
-    contract_refusal,
+    finish_contract,
     finish_reason,
+    memory_finish,
     open_subtasks,
+    open_tasks_finish,
     red_gate_returns,
     task_finish_nudge,
+    verify_finish,
     with_open_tasks,
 )
 from agent6.workflows._guards import (
@@ -155,7 +158,6 @@ from agent6.workflows._nearest_tests import (
 )
 from agent6.workflows._nudges import (
     BASELINE_RED_NOTICE,
-    MEMORY_FINISH_NUDGE,
     PLAN_ON_DISK_HEADER,
     QUESTION_NUDGE,
     SILENT_NO_WORK_NUDGE,
@@ -760,7 +762,7 @@ class Workflow:
             if result is not None:
                 return result
             self._turn_review_triggers(state, turn, conversation)
-            self._turn_finish_gates(state, turn)
+            self._turn_finish_gates(state, turn, ctx)
             result = self._turn_advisors(state, turn, ctx)
             if result is not None:
                 return result
@@ -1679,39 +1681,51 @@ class Workflow:
 
     # ---- finish gates ----------------------------------------------------------
 
-    def _turn_finish_gates(self, state: LoopState, turn: TurnState) -> None:
-        """Gates that can revoke this turn's finish_session, in precedence order:
-        the finish contract (a machine state's output_schema), review
-        (before_finish), metric early-finish, open subtasks, verify
-        green, memory backstop. Each clears `turn.finish_signal` and appends
-        its nudge; later gates then see the finish as already revoked and stay
-        quiet. A revoked finish asks for work whose turns (a note written
-        outside the tree, the finish itself) are idle to the settle guard, so
-        the streak starts over."""
-        asked = turn.finish_signal is not None
-        self._gate_finish_contract(turn)
-        self._gate_before_finish_review(state, turn)
-        self._gate_metric_early_finish(state, turn)
-        self._gate_task_finish(state, turn)
-        self._gate_verify_finish(state, turn)
-        self._gate_memory_finish(state, turn)
-        self._gate_standing_finish(state, turn)
-        if asked and turn.finish_signal is None:
-            state.settled.restart()
-
-    def _gate_before_finish_review(self, state: LoopState, turn: TurnState) -> None:
-        """Gate the agent's finish_session on panel approval: an unsatisfied
-        verdict suppresses the finish (the tool_result still goes back so the
-        call isn't half-applied) and the loop carries on with the findings
-        visible."""
-        if not (
-            turn.finish_signal is not None
-            and turn.finish_kind == "finish_session"
-            and self._end_is_reviewed(state, turn, ending="finish_session")
-        ):
+    def _turn_finish_gates(self, state: LoopState, turn: TurnState, ctx: TurnContext) -> None:
+        """The gates a finish_session must pass, in precedence order: the
+        finish contract, the before-finish panel, the metric early-finish
+        rule, the open subtasks, the verify certification, the memory backstop,
+        the standing goal. The first refusal revokes the finish (`_refuse`)."""
+        if turn.finish_signal is None or turn.finish_kind != "finish_session":
             return
+        gates: tuple[Gate, ...] = (
+            finish_contract,
+            self._review_gate,
+            self._metric_early_gate,
+            open_tasks_finish,
+            verify_finish,
+            memory_finish,
+            self._standing_gate,
+        )
+        for gate in gates:
+            if self._refuse(state, turn, gate(turn, state, ctx)):
+                return
+
+    def _refuse(self, state: LoopState, turn: TurnState, refusal: Refusal | None) -> bool:
+        """Apply a gate's refusal: the finish is revoked (its tool_result
+        still goes back, so the call is not half-applied), the model gets
+        the refusal's text, the event and the line are recorded, and the
+        settle streak starts over (the work a refusal asks for is idle to
+        it). False when the gate let the finish through."""
+        if refusal is None:
+            return False
         turn.finish_signal = None
         turn.finish_payload = None
+        if refusal.text:
+            turn.tool_results.append(Notice(refusal.text))
+        if refusal.event:
+            self._emit(refusal.event, **refusal.fields)
+        if refusal.log:
+            self._log(refusal.log)
+        state.settled.restart()
+        return True
+
+    def _review_gate(self, turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+        """The before-finish panel over a finish_session: a rejection revokes
+        it, the findings reaching the model with the turn's notices."""
+        if self._end_is_reviewed(state, turn, ending="finish_session"):
+            return Refusal()
+        return None
 
     def _end_is_reviewed(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
         """The before-finish panel over an end (`finish_session`, a silent
@@ -1760,17 +1774,14 @@ class Workflow:
         state.gates.review_consecutive = 0
         return False
 
-    def _gate_metric_early_finish(self, state: LoopState, turn: TurnState) -> None:
-        """A finish_session on a metric run with runway left is rejected and
-        nudged (`_metric_early_finish_rejects`)."""
-        if (
-            turn.finish_signal is not None
-            and turn.finish_kind == "finish_session"
-            and self._metric_early_finish_rejects(state, iteration=turn.iteration)
-        ):
-            turn.finish_signal = None
-            turn.finish_payload = None
-            turn.tool_results.append(Notice(METRIC_FINISH_NUDGE))
+    def _metric_early_gate(
+        self, turn: TurnState, state: LoopState, ctx: TurnContext
+    ) -> Refusal | None:
+        """A finish_session on a metric run with runway left is rejected
+        (`_metric_early_finish_rejects`)."""
+        if self._metric_early_finish_rejects(state, iteration=turn.iteration):
+            return Refusal(METRIC_FINISH_NUDGE)
+        return None
 
     def _metric_early_finish_rejects(
         self, state: LoopState, *, iteration: int, trigger: str = ""
@@ -1812,134 +1823,15 @@ class Workflow:
         )
         return True
 
-    def _gate_task_finish(self, state: LoopState, turn: TurnState) -> None:
-        """Task finish-gate: don't let finish_session through while the worker's
-        own subtasks are still open (see task_finish_nudge)."""
-        if not (
-            turn.finish_signal is not None
-            and turn.finish_kind == "finish_session"
-            and self.mode == "run"
-        ):
-            return
-        task_nudge = task_finish_nudge(self._open_subtasks(), state.gates)
-        if task_nudge is None:
-            return
-        turn.finish_signal = None
-        turn.finish_payload = None
-        turn.tool_results.append(Notice(task_nudge))
-        self._log(
-            f"  finish_session gated: open subtasks remain (nudge"
-            f" #{state.gates.task_nudges_used}) at iter {turn.iteration}"
-        )
-        self._emit(
-            "loop.task_finish.gated",
-            iteration=turn.iteration,
-            nudges_used=state.gates.task_nudges_used,
-        )
-
-    def _gate_standing_finish(self, state: LoopState, turn: TurnState) -> None:
-        """While a ready standing task exists, finish_session re-enters it
-        instead of ending the run (uncapped -- the goal is deliberate; the
+    def _standing_gate(self, turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
+        """While a ready standing task exists, a run's finish_session re-enters
+        it instead of ending the run (uncapped: the goal is deliberate; the
         absorb still refuses on spent budget or a spin, so the finish then
         goes through)."""
-        if not (
-            turn.finish_signal is not None
-            and turn.finish_kind == "finish_session"
-            and self.mode == "run"
-        ):
-            return
+        if ctx.mode != "run":
+            return None
         nudge = self._standing_absorb(state, reason="finish_session", iteration=turn.iteration)
-        if nudge is None:
-            return
-        turn.finish_signal = None
-        turn.finish_payload = None
-        turn.tool_results.append(Notice(nudge))
-
-    def _gate_finish_contract(self, turn: TurnState) -> None:
-        """A finish_session whose `result` does not satisfy the machine state's
-        output_schema returns to the model with the problems, so the retry
-        happens in-leg instead of the leg ending failed over correct work.
-        Unbounded on purpose: the budget and max_iterations backstops end a
-        model that never conforms, and the engine records that truthfully."""
-        if (
-            self.finish_validator is None
-            or turn.finish_signal is None
-            or turn.finish_kind != "finish_session"
-        ):
-            return
-        problems = self.finish_validator(turn.finish_payload)
-        if not problems:
-            return
-        turn.finish_signal = None
-        turn.finish_payload = None
-        turn.tool_results.append(Notice(contract_refusal(problems)))
-        self._log(
-            f"  finish_session returned: result violates the contract at iter {turn.iteration}"
-        )
-        self._emit("loop.finish_contract.refused", iteration=turn.iteration, problems=problems)
-
-    def _gate_verify_finish(self, state: LoopState, turn: TurnState) -> None:
-        """A finish over a tree the gate did not certify returns to the model
-        `verify_retries` times, then stands (reported finished, never passed;
-        the honest all_passed=False in the stop checks applies either way).
-        A gate that was red before the run touched anything is not the
-        model's to fix, so it is never returned."""
-        if not (
-            turn.finish_signal is not None
-            and turn.finish_kind == "finish_session"
-            and self.mode == "run"
-            and self._tree_is_verify_green(state) is False
-            and red_gate_returns(
-                self.config.workflow,
-                state.verify,
-                state.gates,
-                gate_present=self._gate_present(denied=state.verify.denied),
-            )
-        ):
-            return
-        wf = self.config.workflow
-        state.gates.verify_retries_used += 1
-        turn.finish_signal = None
-        turn.finish_payload = None
-        turn.tool_results.append(
-            Notice(
-                finish_red_notice(used=state.gates.verify_retries_used, retries=wf.verify_retries)
-            )
-        )
-        self._log(
-            f"  finish_session returned: verify not green (return"
-            f" #{state.gates.verify_retries_used} of {wf.verify_retries}) at iter"
-            f" {turn.iteration}"
-        )
-        self._emit(
-            "loop.verify_finish.gated",
-            iteration=turn.iteration,
-            nudges_used=state.gates.verify_retries_used,
-        )
-
-    def _gate_memory_finish(self, state: LoopState, turn: TurnState) -> None:
-        """Memory write-side backstop: defer the first finish_session ONCE when the
-        run recovered from a red verify to green and recorded nothing via
-        a memory write - the nudge asks for the root cause or an immediate re-finish
-        (see _nudges for the measurement behind it). Explicit finish_session only: a
-        went-quiet worker is never bounced here."""
-        if not (
-            turn.finish_signal is not None
-            and turn.finish_kind == "finish_session"
-            and self.mode == "run"
-            and self.state_dir is not None
-            and state.verify.ever_failed
-            and state.verify.last_ok is True
-            and not state.memory.written
-            and not state.memory.finish_nudged
-        ):
-            return
-        state.memory.finish_nudged = True
-        turn.finish_signal = None
-        turn.finish_payload = None
-        turn.tool_results.append(Notice(MEMORY_FINISH_NUDGE))
-        self._log(f"  finish_session deferred once: memory backstop at iter {turn.iteration}")
-        self._emit("loop.memory_finish.gated", iteration=turn.iteration)
+        return None if nudge is None else Refusal(nudge)
 
     # ---- the advisors ------------------------------------------------------------
 
@@ -1950,6 +1842,9 @@ class Workflow:
             iteration=iteration,
             leg_start=leg_start,
             guards=self.guards,
+            verify_when=self.config.workflow.verify_when,
+            verify_retries=self.config.workflow.verify_retries,
+            finish_validator=self.finish_validator,
             metric=metric_goal(self.config.workflow.metric) is not None,
             memory_wired=self.state_dir is not None,
             gate_present=lambda: self._gate_present(denied=state.verify.denied),
@@ -2026,7 +1921,8 @@ class Workflow:
             return aborted
         wf = self.config.workflow
         red_returned = state.verify.last_ok is False and red_gate_returns(
-            self.config.workflow,
+            wf.verify_when,
+            wf.verify_retries,
             state.verify,
             state.gates,
             gate_present=self._gate_present(denied=state.verify.denied),

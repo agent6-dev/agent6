@@ -16,12 +16,13 @@ import pytest
 
 from agent6.tools.results import ExecResult
 from agent6.workflows._chain import RunChain
-from agent6.workflows._finish_gates import finish_reason, red_gate_returns
+from agent6.workflows._finish_gates import finish_reason, red_gate_returns, verify_finish
 from agent6.workflows.loop import (
     LoopState,
     TurnState,
     Workflow,
 )
+from tests.unit.turn_context import turn_context
 
 _BASE = "b" * 40
 
@@ -146,7 +147,8 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     turn.finish_kind = "finish_session"
 
     assert red_gate_returns(
-        wf.config.workflow,
+        wf.config.workflow.verify_when,
+        wf.config.workflow.verify_retries,
         state.verify,
         state.gates,
         gate_present=wf._gate_present(denied=state.verify.denied),  # pyright: ignore[reportPrivateUsage]
@@ -255,6 +257,6 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     turn.finish_signal = MagicMock()
     turn.finish_kind = "finish_session"
 
-    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
-
-    assert turn.finish_signal is not None, "the finish was bounced over an inherited failure"
+    ctx = turn_context(tree_green=lambda: False, gate_present=lambda: True)
+    bounced = verify_finish(turn, state, ctx) is not None
+    assert not bounced, "the finish was bounced over an inherited failure"

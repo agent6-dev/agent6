@@ -24,10 +24,13 @@ from agent6.machine import AgentRequest
 from agent6.machine.model import FieldSpec
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Notice
+from agent6.workflows._finish_gates import finish_contract
+from agent6.workflows._loop_state import LoopState
 from agent6.workflows.loop import (
     TurnState,
     Workflow,
 )
+from tests.unit.turn_context import turn_context
 
 _SCHEMAS = {
     "verdict": {
@@ -85,21 +88,22 @@ def test_a_nonconforming_finish_is_refused_with_the_problems() -> None:
     validator = _finish_validator(_request("verdict"))
     assert validator is not None
     wf = _wf(validator)
+    state = LoopState(original_task="t", tool_calls=0)
     turn = _finishing_turn(None)
-    wf._gate_finish_contract(turn)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, iteration=3, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+    refusal = finish_contract(turn, state, ctx)
+    assert refusal is not None and refusal.event == "loop.finish_contract.refused"
+    assert refusal.fields["iteration"] == 3 and refusal.fields["problems"]
+    wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     assert turn.finish_signal is None and turn.finish_payload is None
     notices = [r.text for r in turn.tool_results if isinstance(r, Notice)]
     assert any("finish_session refused" in n and "verdict" in n for n in notices)
 
     # The retry with a conforming payload stands.
     turn2 = _finishing_turn({"ok": True})
-    wf._gate_finish_contract(turn2)  # pyright: ignore[reportPrivateUsage]
-    assert turn2.finish_signal == "done"
-    assert turn2.tool_results == []
+    assert finish_contract(turn2, state, ctx) is None
 
 
 def test_a_run_without_a_contract_is_never_gated() -> None:
-    wf = _wf(None)
     turn = _finishing_turn(None)
-    wf._gate_finish_contract(turn)  # pyright: ignore[reportPrivateUsage]
-    assert turn.finish_signal == "done"
+    assert finish_contract(turn, LoopState(original_task="t", tool_calls=0), turn_context()) is None

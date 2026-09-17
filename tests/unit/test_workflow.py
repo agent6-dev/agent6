@@ -7054,7 +7054,7 @@ def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     turn = _turn(iteration=2)
     turn.finish_signal = "all done"
     turn.finish_kind = "finish_session"
-    wf._gate_standing_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_finish_gates(state, turn, _ctx(wf, state, 2))  # pyright: ignore[reportPrivateUsage]
     assert turn.finish_signal is None  # revoked: the goal continues
     assert any("standing task" in getattr(n, "text", "") for n in turn.tool_results)
     # Soft stop: verify_settled absorbs and clears its streak.
