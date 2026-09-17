@@ -74,7 +74,7 @@ The verify command is the success gate.
 
 ```sh
 agent6 attach                 # follow the conversation live; --raw, --tui, --json
-agent6 steer ID "focus on X"  # steer a live run at its next step boundary (--now, or /now <text>, interrupts the in-flight call; it takes the composer directives too: /task, /btw, /compact; /stop is `agent6 stop`)
+agent6 steer ID "focus on X"  # steer a live run at its next step boundary; --now interrupts the call in flight, and the composer directives (/task, /standing, /retire, /btw, /compact) work here too
 agent6 answer ID "yes"        # answer a live run's ask_user question (bare: print the question)
 agent6 sessions show          # status, iteration, elapsed, cost, where the changes are; --json to script
 agent6 sessions diff          # the git diff the run produced; --stat for the summary, --path P to narrow
@@ -176,10 +176,10 @@ agent6 ask "how does the task-graph curator work?"
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
   - new work outranks it; it never passes, and only the operator retires it
-  - one per run, and the operator's: `run --standing` seeds it, `/standing <text>` replaces it on a live run from any composer (retiring the one it replaces), and the model's `add_task` has no such flag
+  - one per run, and yours to set: `run --standing` seeds it and `/standing <text>` replaces it on a live run
   - budget, stop, and the iteration cap still end the run; `workflow.standing_patience` ends it after that many re-entries in a row that ran no tool call, and by default never does
 - `--pin "<text>"`: an instruction re-shown verbatim after every compaction restart, so it survives compaction (`/pin` does the same mid-run)
-- `/retire <task id>` drops a task from a live run's graph, named by the number `/tasks` prints; an id the run does not hold is refused with the ones it does
+- `/retire <task id>` drops a task from a live run's graph, named by the number `/tasks` prints
 - `/task <text>` adds work to a live run's task graph instead of steering it: the turn in flight never sees it, and the run works it once its open tasks drain (every composer takes it, and `agent6 steer ID "/task <text>"` from a script or another machine)
   - the first line names the task, the whole text is its spec, and `[prompt].revise_prompt` covers it as it covers the run's own task
   - the model may finish it but not retire it, and a run that ends over one names it in its receipt
