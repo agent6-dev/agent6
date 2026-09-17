@@ -17,7 +17,7 @@ from agent6.ui.web.page import CLIENT_JS, PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "2550358494b4460ba4340a5656f8e107dca9bf39b32caa7f9850ce8773b94350"
+PAGE_SHA256 = "b94c03c0a4f3710e56084f594310c93ae6ce24290d39cddd2139b2d452cb2154"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -68,6 +68,19 @@ def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
     stale_guard = refresh.index("if (request !== routeRequest) return;")
     populated = refresh.index("el('option', null, d.default_label)")
     assert request < cleared < awaited < stale_guard < populated
+
+
+def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
+    """New work and resume both put their dropdowns in one labelled row above
+    the text (beside it, the model dropdown squeezed the task box)."""
+    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    dock = client[client.index("function newWorkDock") : client.index("// The create-machine")]
+    assert "row.appendChild(task); row.appendChild(go);" in dock
+    picks = dock.index("pickerRow([['mode', mode], ['preset', preset], ['model', model]])")
+    assert picks < dock.index("root.appendChild(row);")
+    composer = client[client.index("function makeComposer") :]
+    assert "pickerRow([['continue under preset', preset], ['model', model]])" in composer
+    assert "root.appendChild(presetRow); root.appendChild(ta);" in composer
 
 
 def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:

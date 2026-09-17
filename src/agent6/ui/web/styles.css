@@ -178,6 +178,14 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
    the sizing lives here (not an inline flex the phone rule must override). */
 .composer .row > textarea.field { flex: 1 1 0; min-width: 0; }
 .composer .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+/* The picker rows above a composer (pickerRow): compact dropdowns sized to their
+   value, each beside its label; on a narrow screen the pairs wrap whole. */
+.composer .pickers { flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; font-size: 13px; }
+.composer .pickers .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.composer .pickers select.field {
+  width: auto; min-width: 0; max-width: 100%; min-height: 30px; padding: 4px 8px;
+  border-radius: 6px; font-size: 13px;
+}
 /* /parallel model-id autocomplete popup (a textarea can't carry a native
    datalist, so this is the composer analogue of the config editor's list). */
 .ac-pop { position: absolute; left: 12px; bottom: 100%; margin-bottom: 6px; z-index: 40;
@@ -348,7 +356,7 @@ aside.rail { display: none; }
    bottom; app-pane views (run, conversation) dock it as their last flex child. */
 @media (min-width: 781px) {
   .dock-fixed { position: fixed; left: var(--rail-w); right: 0; bottom: 0; z-index: 15; }
-  main:has(.dock-fixed) { padding-bottom: 150px; }
+  main:has(.dock-fixed) { padding-bottom: 180px; }
 }
 @media (min-width: 781px) {
   .run-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
@@ -390,7 +398,7 @@ aside.rail { display: none; }
   .composer.dock .row { flex-wrap: wrap; }
   .composer.dock .row > textarea.field { flex-basis: 100%; }
   .composer.dock .row > button { flex: 1 1 auto; }
-  main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + 140px); }
+  main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + 220px); }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,
      so every card flows at natural height and the page is the one scroller. */
   .card.scroll, .conv-box { max-height: none !important; overflow: visible; }

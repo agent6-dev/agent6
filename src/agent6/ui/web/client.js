@@ -237,8 +237,21 @@ function attachParallelSuggest(task, root) {
   } };
 }
 
-// The new-work composer, docked at the bottom of the Sessions page: task text +
-// mode + preset + model + Start (Enter starts, Shift+Enter newline). `presets`
+// A row of labelled dropdowns above a composer, the TUI's picker row: mode,
+// preset and model over new work, preset and model over a resume.
+function pickerRow(pairs) {
+  const row = el('div', 'row pickers');
+  for (const [text, select] of pairs) {
+    const pick = el('label', 'pick'); // wraps as one piece: a label never strands from its dropdown
+    pick.appendChild(el('span', 'muted', text)); pick.appendChild(select);
+    row.appendChild(pick);
+  }
+  return row;
+}
+
+// The new-work composer, docked at the bottom of the Sessions page: the mode,
+// preset and model row above task text + Start (Enter starts, Shift+Enter
+// newline). `presets`
 // and `presetDefault` are the hub payload's list and the label of its first
 // option, which keeps the config's own preset. The model box lists every
 // provider/model the config can run (/api/routes) under a first option that
@@ -249,13 +262,13 @@ function newWorkDock(presets, presetDefault) {
   const root = el('div', 'composer dock dock-fixed');
   const row = el('div', 'row');
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
-  const mode = el('select', 'field'); mode.style.flex = '0 0 auto'; mode.style.width = 'auto';
+  const mode = el('select', 'field');
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
-  const preset = el('select', 'field'); preset.style.flex = '0 0 auto'; preset.style.width = 'auto';
+  const preset = el('select', 'field');
   preset.title = 'config preset for this run (a preset cannot change mid-run)';
   const dflt = el('option', null, presetDefault); dflt.value = ''; preset.appendChild(dflt);
   for (const p of (presets || [])) { const o = el('option', null, p); o.value = p; preset.appendChild(o); }
-  const model = el('select', 'field'); model.style.flex = '0 0 auto'; model.style.width = 'auto';
+  const model = el('select', 'field');
   model.title = 'the model for this run, over every config layer; re-resolved whenever the mode or preset changes';
   let routeRequest = 0;
   const fillRoutes = async () => {
@@ -292,8 +305,9 @@ function newWorkDock(presets, presetDefault) {
     if (ac.onKeyDown(e)) return;   // the /parallel suggestion popup took the key
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); }
   };
-  row.appendChild(task); row.appendChild(mode); row.appendChild(preset); row.appendChild(model); row.appendChild(go);
+  row.appendChild(task); row.appendChild(go);
   root.appendChild(growGrip(task));
+  root.appendChild(pickerRow([['mode', mode], ['preset', preset], ['model', model]]));
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask · Shift+Enter newline · '
     + '/parallel [N|models] <task> fans out lanes (repeat to queue more)'));
@@ -841,16 +855,12 @@ function makeComposer(id) {
   // editor and the new-work composer offer. Each first option adds no flag and
   // names what the resume runs under (/resume_defaults), asked again whenever
   // the row appears (the last leg may have pinned one) and on a preset pick.
-  const presetRow = el('div', 'row');
-  presetRow.style.display = 'none';
-  presetRow.appendChild(el('span', 'sub muted', 'continue under preset'));
-  const preset = el('select', 'field'); preset.style.flex = '0 0 auto'; preset.style.width = 'auto';
+  const preset = el('select', 'field');
   const presetDefault = el('option', null, '…'); presetDefault.value = ''; preset.appendChild(presetDefault);
-  presetRow.appendChild(preset);
-  presetRow.appendChild(el('span', 'sub muted', 'model'));
-  const model = el('select', 'field'); model.style.flex = '0 0 auto'; model.style.width = 'auto';
+  const model = el('select', 'field');
   const modelDefault = el('option', null, '…'); modelDefault.value = ''; model.appendChild(modelDefault);
-  presetRow.appendChild(model);
+  const presetRow = pickerRow([['continue under preset', preset], ['model', model]]);
+  presetRow.style.display = 'none';
   let labelRequest = 0;
   const relabel = () => {
     const request = ++labelRequest;
