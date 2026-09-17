@@ -123,7 +123,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
     )
     BINDINGS: ClassVar = [
         # Footer order: run-list actions, then Config, then meta (Help, Quit, Menu).
-        Binding("n", "new_work", "New run/plan/ask"),
+        Binding("n", "new_work", "New task"),
         Binding("enter", "open_selected", "Open"),
         Binding("l", "view_logs", "View logs", show=False),
         Binding("space", "toggle_lanes", "Lanes"),
