@@ -22,6 +22,7 @@ import pytest
 from agent6.config import Config
 from agent6.tools.results import ExecResult, RawResult
 from agent6.workflows._chain import RunChain
+from agent6.workflows._compactor import Compactor
 from agent6.workflows._conversation import Conversation
 from agent6.workflows._metric import MetricGuard
 from agent6.workflows._metric import MetricSample as _MetricSample
@@ -715,7 +716,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     )
     orig_save = wf._save_resume_snapshot  # pyright: ignore[reportPrivateUsage]
     orig_call = provider.call
-    orig_compact = wf._maybe_compact  # pyright: ignore[reportPrivateUsage]
+    orig_compact = Compactor.compact
 
     def _spy_save(**kw: Any) -> None:
         orig_save(**kw)
@@ -731,13 +732,14 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         events.append({"kind": "provider_call"})
         return orig_call(**kw)
 
-    def _spy_compact(msgs: Any, state: Any, **kw: Any) -> bool:
+    def _spy_compact(compactor: Compactor, msgs: Any, state: Any, **kw: Any) -> bool:
         events.append({"kind": "compact"})
-        return orig_compact(msgs, state, **kw)
+        return orig_compact(compactor, msgs, state, **kw)
 
     wf._save_resume_snapshot = _spy_save  # type: ignore[method-assign]
     provider.call = _spy_call
-    wf._maybe_compact = _spy_compact  # type: ignore[method-assign]
+    compact_spy = mock.patch.object(Compactor, "compact", _spy_compact)
+    compact_spy.start()
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(
@@ -748,6 +750,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         root_task_id=None,
         original_task="go",
     )
+    compact_spy.stop()
 
     # The KEY guarantee: a snapshot advancing to next_iteration=2 (with the
     # executed iter-1 turn) must be written at the END of iter 1 -- i.e. AFTER

@@ -831,7 +831,7 @@ def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: Path) -> None:
         ' "new_tasks": ["a newly discovered task"]}\n```\n'
     )
 
-    wf._apply_compaction_checkoff(summary, valid_ids=valid)  # pyright: ignore[reportPrivateUsage]
+    wf.compactor.apply_checkoff(summary, valid_ids=valid)
 
     nodes = curator.nodes()
     assert nodes[container.id].status != "passed"  # the container refusal stands

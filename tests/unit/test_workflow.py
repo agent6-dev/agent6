@@ -3080,17 +3080,13 @@ def _long_history(n_pairs: int) -> list[dict[str, Any]]:
 
 def _restart_via_wire(wf: Workflow, messages: list[dict[str, Any]], *, state: Any = None) -> None:
     conversation = Conversation.from_wire(messages)
-    wf._summarise_and_restart(  # pyright: ignore[reportPrivateUsage]
-        conversation, state if state is not None else _state()
-    )
+    wf.compactor.summarise_and_restart(conversation, state if state is not None else _state())
     messages[:] = conversation.to_wire()
 
 
 def _compact_via_wire(wf: Workflow, messages: list[dict[str, Any]], *, state: Any = None) -> bool:
     conversation = Conversation.from_wire(messages)
-    out = wf._maybe_compact(  # pyright: ignore[reportPrivateUsage]
-        conversation, state if state is not None else _state()
-    )
+    out = wf.compactor.compact(conversation, state if state is not None else _state())
     messages[:] = conversation.to_wire()
     return out
 
@@ -3894,7 +3890,7 @@ def test_surface_decompose_resets_grind_counter() -> None:
 
 
 def test_maybe_compact_returns_restart_signal() -> None:
-    """_maybe_compact returns True only when a tier-2 restart actually replaced
+    """compact returns True only when a tier-2 restart actually replaced
     the history (the loop's cue to re-surface the focus banner)."""
     summariser = MagicMock()
     summariser.call.return_value = _resp("progress summary")
@@ -3940,17 +3936,11 @@ def test_a_restart_does_not_re_fire_on_the_next_iteration() -> None:
     prefix = 100_000
 
     conversation = Conversation.from_wire(msgs)
-    assert (
-        wf._maybe_compact(conversation, st, prefix_chars=prefix)  # pyright: ignore[reportPrivateUsage]
-        is True
-    )
+    assert wf.compactor.compact(conversation, st, prefix_chars=prefix) is True
     assert summariser.call.call_count == 1
 
     # Same conversation, one iteration later, nothing added.
-    assert (
-        wf._maybe_compact(conversation, st, prefix_chars=prefix)  # pyright: ignore[reportPrivateUsage]
-        is False
-    )
+    assert wf.compactor.compact(conversation, st, prefix_chars=prefix) is False
     assert summariser.call.call_count == 1
 
 
@@ -4055,9 +4045,9 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
 
 def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> None:
     """Integration: a tier-2 restart mid-run wipes the focus banner, and the loop's
-    `if self._maybe_compact(messages): state.focus.surfaced_task_id = None` edge makes the
+    `if self.compactor.compact(messages): state.focus.surfaced_task_id = None` edge makes the
     next nudge pass RE-SURFACE the current task into the fresh context. Pins that
-    edge -- dropping the reset (or inverting the _maybe_compact bool) leaves no
+    edge -- dropping the reset (or inverting the compact bool) leaves no
     loop.task.surfaced after the restart, which is exactly the regression the
     surface/check-off/finish-gate trio exists to prevent."""
     import json
@@ -4200,9 +4190,7 @@ def test_summarise_and_restart_rejects_checkoff_without_a_summary() -> None:
     conversation = Conversation.from_wire(_long_history(5))
     before = conversation.to_wire()
 
-    restarted = wf._summarise_and_restart(  # pyright: ignore[reportPrivateUsage]
-        conversation, _state()
-    )
+    restarted = wf.compactor.summarise_and_restart(conversation, _state())
 
     assert restarted is False
     assert conversation.to_wire() == before
@@ -5044,7 +5032,7 @@ def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
         }
     )
     wf = _wf(curator=curator)
-    ids = {nid for nid, _ in wf._open_tasks_for_checkoff()}  # pyright: ignore[reportPrivateUsage]
+    ids = {nid for nid, _ in wf.compactor.open_tasks_for_checkoff()}
     assert ids == {"01A", "01B"}  # root excluded; passed subtask excluded
 
 
