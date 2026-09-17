@@ -26,6 +26,7 @@ from agent6.ui.tui.menubar import (
     MenuItem,
 )
 from agent6.ui.tui.modals import HistorySearchModal
+from agent6.ui.tui.widgets import Picker
 from agent6.viewmodel.tail import tail_events
 from agent6.viewmodel.transcript import (
     operator_inputs,
@@ -135,11 +136,9 @@ class ResumeOptions(Horizontal):
     Blank = as the run recorded."""
 
     DEFAULT_CSS = """
-    ResumeOptions { display: none; height: 3; padding: 0 1; }
-    ResumeOptions .resume-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
-    ResumeOptions #resume-preset { width: 1fr; max-width: 24; }
-    ResumeOptions #resume-model { width: 1fr; max-width: 44; }
-    ResumeOptions SelectCurrent Static#label { text-wrap: nowrap; text-overflow: ellipsis; }
+    ResumeOptions { display: none; height: 1; padding: 0 1; }
+    ResumeOptions .resume-label { width: auto; padding: 0 1 0 0; color: $text-muted; }
+    ResumeOptions Picker { margin-right: 2; }
     """
 
     def __init__(self, presets: list[str], routes: list[str], **kwargs: Any) -> None:
@@ -149,14 +148,14 @@ class ResumeOptions(Horizontal):
 
     def compose(self) -> ComposeResult:
         yield Static("continue under preset", classes="resume-label")
-        yield Select(
+        yield Picker(
             [(RECORDED_PRESET_LABEL, ""), *((p, p) for p in self._presets)],
             value="",
             allow_blank=False,
             id="resume-preset",
         )
         yield Static("model", classes="resume-label")
-        yield Select(
+        yield Picker(
             [(RECORDED_PRESET_LABEL, ""), *((r, r) for r in self._routes)],
             value="",
             allow_blank=False,

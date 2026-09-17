@@ -7,10 +7,11 @@ from __future__ import annotations
 import asyncio
 
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Static
+from textual.widgets._select import SelectCurrent, SelectOverlay
 
-from agent6.ui.tui.widgets import ChoiceField, TypeaheadField
+from agent6.ui.tui.widgets import ChoiceField, Picker, TypeaheadField
 
 
 class _ChoiceScrollHost(App[None]):
@@ -270,5 +271,57 @@ def test_typeahead_rows_sit_under_the_text_line() -> None:
             lines = field.render().plain.splitlines()
             assert lines[0].startswith("gpt▌")
             assert [line.rstrip() for line in lines[1:]] == ["gpt-5", "gpt-6"]
+
+    asyncio.run(scenario())
+
+
+class _PickerRowHost(App[None]):
+    CSS = "#row { dock: bottom; height: 1; margin-bottom: 3; padding: 0 1; }"
+
+    def compose(self) -> ComposeResult:
+        modes = [("run", "run"), ("plan", "plan"), ("ask", "ask")]
+        with Horizontal(id="row"):
+            yield Picker(modes, value="run", allow_blank=False, id="a")
+            yield Picker([(_LONG, _LONG), ("o/b", "o/b")], value=_LONG, allow_blank=False, id="b")
+
+
+_LONG = "provider/a-model-name-far-too-long-for-the-row"
+
+
+def test_picker_list_opens_above_its_field() -> None:
+    """The list opens upward, clear of the field and the composer under it,
+    with its values in the field's column (it covered the field and the
+    composer)."""
+
+    async def scenario() -> None:
+        app = _PickerRowHost()
+        async with app.run_test(size=(80, 20)) as pilot:
+            picker = app.query_one("#a", Picker)
+            picker.focus()
+            await pilot.press("enter")
+            await pilot.pause()
+            field = picker.query_one(SelectCurrent).region
+            overlay = picker.query_one(SelectOverlay).region
+            assert overlay.bottom == field.y
+            assert overlay.height == 3 + 2
+            assert overlay.x == field.x - 1
+            assert overlay.width >= field.width + 2
+
+    asyncio.run(scenario())
+
+
+def test_the_last_picker_in_a_row_ends_its_value_in_an_ellipsis() -> None:
+    """A value too long for what is left of the row shortens with its arrow
+    still shown (it ran off the edge, arrow and all)."""
+
+    async def scenario() -> None:
+        app = _PickerRowHost()
+        async with app.run_test(size=(40, 20)) as pilot:
+            await pilot.pause()
+            picker = app.query_one("#b", Picker)
+            field = picker.query_one(SelectCurrent).region
+            arrow = picker.query_one(".down-arrow").region
+            assert field.right <= 40
+            assert field.x < arrow.x and arrow.right <= field.right
 
     asyncio.run(scenario())

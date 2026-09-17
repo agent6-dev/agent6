@@ -32,6 +32,7 @@ from agent6.ui.spawn import spawn_new_work
 from agent6.ui.tui.composer import SteerInput, SteerSuggest
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
+from agent6.ui.tui.widgets import Picker
 
 # The preset dropdown's first entry: "" => no --preset, so the run uses the
 # top-level `preset` from config (or the plain defaults).
@@ -76,12 +77,9 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
     #draft-main { height: 1fr; }
     #draft-scroll { height: 1fr; }
     #draft-notice { height: auto; padding: 0 1; pointer: text; }
-    #draft-options { height: 3; padding: 0 1; }
-    .draft-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
-    #draft-mode { width: 12; }
-    #draft-preset { width: 1fr; max-width: 24; }
-    #draft-model { width: 1fr; max-width: 44; }
-    #draft-options SelectCurrent Static#label { text-wrap: nowrap; text-overflow: ellipsis; }
+    #draft-options { height: 1; padding: 0 1; }
+    .draft-label { width: auto; padding: 0 1 0 0; color: $text-muted; }
+    #draft-options Picker { margin-right: 2; }
     #draft-input { height: auto; max-height: 8; border: round $primary; background: $surface; }
     #draft-input:focus { border: round $accent; }
     """
@@ -134,13 +132,13 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         yield SteerSuggest(id="draft-suggest")
         with Horizontal(id="draft-options"):
             yield Static("mode", classes="draft-label")
-            yield Select(
+            yield Picker(
                 [(m, m) for m in OPERATOR_MODES], value="run", allow_blank=False, id="draft-mode"
             )
             yield Static("preset", classes="draft-label")
             # value="" is the "(config default)" sentinel: no --preset, so the
             # config's own `preset` (or plain defaults) applies.
-            yield Select(
+            yield Picker(
                 [(DEFAULT_PRESET_LABEL, ""), *((p, p) for p in self._presets)],
                 value="",
                 allow_blank=False,
@@ -148,7 +146,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
             )
             yield Static("model", classes="draft-label")
             route = default_route(self.repo_cwd, self.config_path, "run", "")
-            yield Select(
+            yield Picker(
                 self._route_options(route),
                 value=route or Select.NULL,
                 allow_blank=True,

@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Shared TUI form widgets: the `[x]`/`[ ]` chooser (:class:`ChoiceField`)
-and the flat action label (:class:`ActionItem`). Kept in their own module so
+"""Shared TUI form widgets: the `[x]`/`[ ]` chooser (:class:`ChoiceField`),
+the flat action label (:class:`ActionItem`) and the one-row dropdown
+(:class:`Picker`). Kept in their own module so
 every dialog (config editor, provider form, theme picker) uses the exact same
 accent-driven, arrow-navigable controls with no per-screen drift."""
 
@@ -15,7 +16,8 @@ try:
     from textual.geometry import Region
     from textual.message import Message
     from textual.widget import Widget
-    from textual.widgets import Input, Static
+    from textual.widgets import Input, Select, Static
+    from textual.widgets._select import SelectCurrent, SelectOverlay
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The TUI widgets need textual: pip install 'agent6[tui]'") from e
 
@@ -507,6 +509,45 @@ class ActionItem(Static):
         if event.key == "enter":
             event.stop()
             self.post_message(self.Activated(self._action))
+
+
+_PICKER_ROWS = 10  # options a Picker's list shows before it scrolls
+
+
+class Picker(Select[str]):
+    """A one-row dropdown for the options row above a composer: a flat field
+    like `.edit-input`, sized to its value. Its list opens upward, with the
+    menus' round accent border, so the field and the composer stay visible.
+    The last picker in a row takes what is left of it, and a value too long
+    for that ends in an ellipsis."""
+
+    DEFAULT_CSS = f"""
+    Picker {{ width: auto; }}
+    Picker:last-child {{ width: 1fr; }}
+    Picker > SelectCurrent {{
+        width: auto; max-width: 100%; border: none; padding: 0 1; background: $panel;
+    }}
+    Picker:focus > SelectCurrent {{ border: none; background: $primary 25%; }}
+    Picker > SelectCurrent:hover {{ background: $primary 30%; }}
+    Picker > SelectCurrent > Static#label {{
+        width: auto; max-width: 100%; text-wrap: nowrap; text-overflow: ellipsis;
+    }}
+    Picker > SelectCurrent > .arrow {{ dock: right; }}
+    Picker > SelectOverlay, Picker > SelectOverlay:focus {{
+        width: auto; max-width: 60; max-height: {_PICKER_ROWS + 2}; constrain: inside inside;
+        border: round $accent; padding: 0;
+    }}
+    """
+
+    def watch_expanded(self, expanded: bool) -> None:
+        if expanded:
+            field = self.query_one(SelectCurrent)
+            overlay = self.query_one(SelectOverlay)
+            rows = min(overlay.option_count, _PICKER_ROWS) + 2
+            # Over the field, its border one cell out, so the listed values
+            # line up with the field's; above it by the list's height.
+            overlay.styles.min_width = field.outer_size.width + 2
+            overlay.styles.offset = (-1, -(rows + 1))
 
 
 # Shared CSS for the flat actions + inline inputs + chooser, so every form-style
