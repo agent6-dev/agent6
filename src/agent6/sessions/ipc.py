@@ -45,6 +45,10 @@ from agent6.portable import atomic_write, fsync_dir
 
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
+# Tasks the operator queued into the run's graph, one file each, named so they
+# sort oldest first. Unlike the answer and steer bridges this one survives a leg
+# boundary: a task queued while the run was between legs is still wanted.
+QUEUE_DIR_NAME = "queue"
 FRONTENDS_DIR = "frontends"
 WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 sessions show` liveness
 # The run's session-network holder. A separate process can only name a namespace
@@ -74,6 +78,46 @@ def approvals_dir(session_dir: Path) -> Path:
 def approvals_path(session_dir: Path) -> Path:
     """Where the approvals dir would be; never created."""
     return session_dir / APPROVAL_DIR_NAME
+
+
+def queue_dir(session_dir: Path) -> Path:
+    """The queued-task dir, created."""
+    p = session_dir / QUEUE_DIR_NAME
+    mkdir_for_real_user(p)
+    return p
+
+
+def queue_path(session_dir: Path) -> Path:
+    """Where the queued-task dir would be; never created."""
+    return session_dir / QUEUE_DIR_NAME
+
+
+def queue_task(session_dir: Path, text: str) -> None:
+    """Queue *text* as a task for the run to add to its graph at its next turn
+    boundary. The name carries the clock, so the drain takes them in the order
+    they were written; the curator assigns the real id on insert."""
+    target = queue_dir(session_dir) / f"{time.time_ns():020d}-{os.getpid()}.task"
+    atomic_write(target, text)
+
+
+def drain_queued_tasks(session_dir: Path) -> list[str]:
+    """Every queued task, oldest first, removed as it is read. A file that
+    vanishes under the read was drained by someone else; one that cannot be
+    read is dropped rather than left to be re-read forever."""
+    directory = queue_path(session_dir)
+    if not directory.is_dir():
+        return []
+    out: list[str] = []
+    for path in sorted(directory.glob("*.task")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        with contextlib.suppress(OSError):
+            path.unlink()
+        if text.strip():
+            out.append(text)
+    return out
 
 
 def _contained(directory: Path, filename: str, *, untrusted: str, what: str) -> Path:
