@@ -124,8 +124,8 @@ The task-graph nodes and the intents that mutate them.
 | `depends_on` | `tuple[str, ...]` | `()` |
 | `children` | `tuple[str, ...]` | `()` |
 | `status` | `NodeStatus` | `'pending'` |
-| `created_at` | `datetime` | required |
-| `updated_at` | `datetime` | required |
+| `created_at` | `datetime.datetime` | required |
+| `updated_at` | `datetime.datetime` | required |
 | `created_by` | `NodeActor` | required |
 | `commit_sha` | `str` | `''` |
 | `notes` | `str` | `''` |

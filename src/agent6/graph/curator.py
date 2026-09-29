@@ -12,42 +12,24 @@ re-raising, so a later read never sees a node that was never persisted.
 
 from __future__ import annotations
 
+import contextlib
+import datetime
 import json
 import sys
 from collections.abc import Generator
-from contextlib import contextmanager
-from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+import pydantic
 
-from agent6.graph.models import (
-    AddDependencyIntent,
-    AddSubtaskIntent,
-    NodeActor,
-    NodeStatus,
-    RecordCommitIntent,
-    SetCursorIntent,
-    TaskNode,
-    UpdateStatusIntent,
-)
-from agent6.graph.order import unresolved_children
-from agent6.graph.storage import (
-    SessionLayout,
-    flock,
-    load_graph,
-    read_cursor,
-    write_cursor,
-    write_journal,
-    write_node,
-)
+from agent6.graph import models, order, storage
+from agent6.sessions import layout as sessions_layout
 
 
 class CuratorError(Exception):
     """A curator intent was rejected by validation, before anything was applied."""
 
 
-class _JournalBase(BaseModel):
+class _JournalBase(pydantic.BaseModel):
     """The base of the typed journal entries.
 
     The node files are the source of truth; the journal is read back for `graph_version`
@@ -57,7 +39,7 @@ class _JournalBase(BaseModel):
         graph_version: The version the mutation produced, stamped by `_post_mutation`.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     graph_version: int = 0
 
@@ -75,7 +57,7 @@ class AddSubtaskJournal(_JournalBase):
     op: Literal["add_subtask"] = "add_subtask"
     id: str
     parent_id: str | None
-    by: NodeActor
+    by: models.NodeActor
 
 
 class UpdateStatusJournal(_JournalBase):
@@ -83,7 +65,7 @@ class UpdateStatusJournal(_JournalBase):
 
     op: Literal["update_status"] = "update_status"
     id: str
-    new_status: NodeStatus
+    new_status: models.NodeStatus
 
 
 class AddDependencyJournal(_JournalBase):
@@ -148,7 +130,7 @@ def _place(
 TASK_ID_WIDTH = 4
 
 
-def _next_task_id(nodes: dict[str, TaskNode]) -> str:
+def _next_task_id(nodes: dict[str, models.TaskNode]) -> str:
     """Return the next task id: the highest number plus one, zero-padded.
 
     Nothing deletes a node and the flock serialises every mutation, so the number is free
@@ -164,19 +146,19 @@ def _next_task_id(nodes: dict[str, TaskNode]) -> str:
     return f"{highest + 1:0{TASK_ID_WIDTH}d}"
 
 
-def _now() -> datetime:
+def _now() -> datetime.datetime:
     """Return the current UTC time.
 
     Returns:
         An aware datetime.
     """
-    return datetime.now(tz=UTC)
+    return datetime.datetime.now(tz=datetime.UTC)
 
 
 class GraphCurator:
     """One session's graph, in memory and on disk."""
 
-    def __init__(self, layout: SessionLayout) -> None:
+    def __init__(self, layout: sessions_layout.SessionLayout) -> None:
         """Load the graph and resync the version counter to a journal that lost its tail.
 
         A node stamped newer than the journal's max version is a death between the node
@@ -188,7 +170,7 @@ class GraphCurator:
         """
         self._layout = layout
         layout.ensure()
-        self._nodes: dict[str, TaskNode] = load_graph(layout)
+        self._nodes: dict[str, models.TaskNode] = storage.load_graph(layout)
         self._graph_version = self._compute_graph_version()
         node_max = max((n.graph_version for n in self._nodes.values()), default=0)
         if node_max > self._graph_version:
@@ -216,7 +198,7 @@ class GraphCurator:
         )
 
     @property
-    def layout(self) -> SessionLayout:
+    def layout(self) -> sessions_layout.SessionLayout:
         """The session layout."""
         return self._layout
 
@@ -225,7 +207,7 @@ class GraphCurator:
         """The version of the last mutation."""
         return self._graph_version
 
-    def nodes(self) -> dict[str, TaskNode]:
+    def nodes(self) -> dict[str, models.TaskNode]:
         """Return a copy of the graph.
 
         Returns:
@@ -233,7 +215,7 @@ class GraphCurator:
         """
         return dict(self._nodes)
 
-    def get(self, node_id: str) -> TaskNode:
+    def get(self, node_id: str) -> models.TaskNode:
         """Return one node.
 
         Args:
@@ -255,9 +237,9 @@ class GraphCurator:
         Returns:
             The id, or None.
         """
-        return read_cursor(self._layout)
+        return storage.read_cursor(self._layout)
 
-    @contextmanager
+    @contextlib.contextmanager
     def _mutating(self) -> Generator[None]:
         """Hold the graph flock for one mutation, reloading from disk on a write fault.
 
@@ -271,17 +253,17 @@ class GraphCurator:
         Raises:
             CuratorError: The block rejected its intent; re-raised without a reload.
         """
-        with flock(self._layout.lock_path):
+        with storage.flock(self._layout.lock_path):
             try:
                 yield
             except CuratorError:
                 raise
             except Exception:
-                self._nodes = load_graph(self._layout)
+                self._nodes = storage.load_graph(self._layout)
                 self._graph_version = self._compute_graph_version()
                 raise
 
-    def _write(self, node: TaskNode) -> TaskNode:
+    def _write(self, node: models.TaskNode) -> models.TaskNode:
         """Stamp a node with the version this mutation will journal, cache it and write it.
 
         Every write inside one mutation carries the number `_post_mutation` then records.
@@ -294,10 +276,10 @@ class GraphCurator:
         """
         stamped = node.model_copy(update={"graph_version": self._graph_version + 1})
         self._nodes[stamped.id] = stamped
-        write_node(self._layout, self._nodes, stamped)
+        storage.write_node(self._layout, self._nodes, stamped)
         return stamped
 
-    def add_subtask(self, intent: AddSubtaskIntent) -> TaskNode:
+    def add_subtask(self, intent: models.AddSubtaskIntent) -> models.TaskNode:
         """Add a node under a parent.
 
         The child is written before the parent's link, so a crash between leaves at worst an
@@ -326,7 +308,7 @@ class GraphCurator:
                 if dep not in self._nodes:
                     raise CuratorError(f"add_subtask: unknown dep {dep!r}")
             now = _now()
-            node = TaskNode(
+            node = models.TaskNode(
                 id=_next_task_id(self._nodes),
                 parent_id=intent.parent_id,
                 title=intent.draft.title,
@@ -362,7 +344,7 @@ class GraphCurator:
             )
             return node
 
-    def _standing_at(self, parent: TaskNode) -> int | None:
+    def _standing_at(self, parent: models.TaskNode) -> int | None:
         """Return the index of the parent's standing child, so a new sibling lands before it.
 
         Args:
@@ -377,7 +359,7 @@ class GraphCurator:
                 return i
         return None
 
-    def update_status(self, intent: UpdateStatusIntent) -> TaskNode:
+    def update_status(self, intent: models.UpdateStatusIntent) -> models.TaskNode:
         """Set a node's status, appending the note.
 
         An end is final: a passed task may only be retired, and a retired one stays retired,
@@ -413,7 +395,7 @@ class GraphCurator:
             if (
                 intent.new_status == "passed"
                 and node.parent_id is not None
-                and (unresolved := unresolved_children(self._nodes, node))
+                and (unresolved := order.unresolved_children(self._nodes, node))
             ):
                 # The root is exempt: nothing depends on it.
                 raise CuratorError(
@@ -432,11 +414,11 @@ class GraphCurator:
             updated = self._write(updated)
             if intent.new_status == "in_progress":
                 # The frontier honours the cursor while it points at a focusable subtask.
-                write_cursor(self._layout, updated.id)
+                storage.write_cursor(self._layout, updated.id)
             self._post_mutation(UpdateStatusJournal(id=updated.id, new_status=intent.new_status))
             return updated
 
-    def add_dependency(self, intent: AddDependencyIntent) -> TaskNode:
+    def add_dependency(self, intent: models.AddDependencyIntent) -> models.TaskNode:
         """Make a node wait on another; a dependency already present is a no-op.
 
         Args:
@@ -468,7 +450,7 @@ class GraphCurator:
             self._post_mutation(AddDependencyJournal(id=updated.id, depends_on=intent.depends_on))
             return updated
 
-    def record_commit(self, intent: RecordCommitIntent) -> TaskNode:
+    def record_commit(self, intent: models.RecordCommitIntent) -> models.TaskNode:
         """Record the commit that landed a node.
 
         Args:
@@ -487,7 +469,7 @@ class GraphCurator:
             self._post_mutation(RecordCommitJournal(id=updated.id, sha=intent.sha))
             return updated
 
-    def set_cursor(self, intent: SetCursorIntent) -> None:
+    def set_cursor(self, intent: models.SetCursorIntent) -> None:
         """Move the focus.
 
         Args:
@@ -499,7 +481,7 @@ class GraphCurator:
         with self._mutating():
             if intent.id is not None and intent.id not in self._nodes:
                 raise CuratorError(f"set_cursor: unknown node {intent.id!r}")
-            write_cursor(self._layout, intent.id)
+            storage.write_cursor(self._layout, intent.id)
             self._post_mutation(SetCursorJournal(id=intent.id))
 
     def _post_mutation(self, entry: JournalEntry) -> None:
@@ -510,7 +492,7 @@ class GraphCurator:
         """
         self._graph_version += 1
         stamped = entry.model_copy(update={"graph_version": self._graph_version})
-        write_journal(self._layout, stamped.model_dump(mode="json"))
+        storage.write_journal(self._layout, stamped.model_dump(mode="json"))
 
     def _iter_recent_journal(self) -> list[dict[str, object]]:
         """Read the journal, skipping a torn line with a note on stderr.

@@ -13,6 +13,7 @@ import pathlib
 
 import pytest
 
+from agent6 import portable
 from agent6.graph import curator, models, storage
 from agent6.sessions import layout as sessions_layout
 
@@ -40,7 +41,7 @@ def test_mutation_write_fault_reraises_and_reloads(
     def boom(*_a: object, **_k: object) -> None:
         raise OSError("ENOSPC during status write")
 
-    monkeypatch.setattr("agent6.graph.curator.write_node", boom)
+    monkeypatch.setattr("agent6.graph.storage.write_node", boom)
     with pytest.raises(OSError, match="ENOSPC"):
         c.update_status(models.UpdateStatusIntent(id=node.id, new_status="in_progress"))
     monkeypatch.undo()
@@ -61,7 +62,7 @@ def test_mutation_non_oserror_fault_also_reloads(
     def boom(*_a: object, **_k: object) -> None:
         raise ValueError("serialization glitch")
 
-    monkeypatch.setattr("agent6.graph.curator.write_node", boom)
+    monkeypatch.setattr("agent6.graph.storage.write_node", boom)
     with pytest.raises(ValueError, match="serialization glitch"):
         c.update_status(models.UpdateStatusIntent(id=node.id, new_status="passed"))
     monkeypatch.undo()
@@ -81,7 +82,7 @@ def test_curator_error_reject_does_not_reload(
         calls["n"] += 1
         return real(lyt)
 
-    monkeypatch.setattr("agent6.graph.curator.load_graph", counting_load)
+    monkeypatch.setattr("agent6.graph.storage.load_graph", counting_load)
     with pytest.raises(curator.CuratorError, match="unknown node"):
         c.update_status(models.UpdateStatusIntent(id="01" + "Z" * 24, new_status="passed"))
     assert calls["n"] == 0  # no reload on a clean validation reject
@@ -132,7 +133,7 @@ def test_add_subtask_writes_child_before_parent_link(
             raise OSError("simulated ENOSPC during parent link write")
         return real_write_node(layout_, nodes_, node_)
 
-    monkeypatch.setattr("agent6.graph.curator.write_node", crashing_write_node)
+    monkeypatch.setattr("agent6.graph.storage.write_node", crashing_write_node)
 
     with pytest.raises(OSError, match="simulated ENOSPC"):
         c.add_subtask(models.AddSubtaskIntent(parent_id=parent.id, draft=_draft("child")))
@@ -233,7 +234,7 @@ def test_rerooted_node_mutation_leaves_single_md_file(
 
     # write_node now targets the root path and prunes the stale nested file.
     fsynced_dirs: list[pathlib.Path] = []
-    monkeypatch.setattr(storage, "fsync_dir", fsynced_dirs.append)
+    monkeypatch.setattr(portable, "fsync_dir", fsynced_dirs.append)
     c2.update_status(models.UpdateStatusIntent(id=child.id, new_status="in_progress"))
 
     root_path = layout.graph_dir / f"{child.id}.md"

@@ -7,7 +7,7 @@ One owner for every surface.
 
 from __future__ import annotations
 
-from agent6.graph.models import TaskNode
+from agent6.graph import models
 
 # A task nobody has finished with; a parent with one is a container, its children the work.
 OPEN_STATUSES = frozenset({"pending", "in_progress"})
@@ -16,7 +16,7 @@ OPEN_STATUSES = frozenset({"pending", "in_progress"})
 DONE_STATUSES = frozenset({"passed", "skipped", "obsolete"})
 
 
-def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
+def has_open_child(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> bool:
     """Return whether any child of the node is still open.
 
     A failed child is not open, so its parent is the unit of work again until the child is
@@ -34,7 +34,7 @@ def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     )
 
 
-def unresolved_children(nodes: dict[str, TaskNode], node: TaskNode) -> list[str]:
+def unresolved_children(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> list[str]:
     """Return the children that are open, or failed and never retired.
 
     `passed` on the parent would claim work no one did or that failed; the refusal names
@@ -54,7 +54,7 @@ def unresolved_children(nodes: dict[str, TaskNode], node: TaskNode) -> list[str]
     ]
 
 
-def ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
+def ready_subtask(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> bool:
     """Return whether the node is an open subtask with its dependencies done and no open child.
 
     Args:
@@ -73,7 +73,7 @@ def ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     return not has_open_child(nodes, node)
 
 
-def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
+def is_focusable_subtask(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> bool:
     """Return whether the node is a ready ordinary subtask.
 
     A standing task is the fallback, selected only when nothing ordinary is ready.
@@ -88,7 +88,7 @@ def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     return not node.standing and ready_subtask(nodes, node)
 
 
-def tree_order(nodes: dict[str, TaskNode]) -> list[str]:
+def tree_order(nodes: dict[str, models.TaskNode]) -> list[str]:
     """Return every node id depth-first through `children`, roots in id order.
 
     The children list is the order the frontier executes, so every surface shows this order;

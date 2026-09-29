@@ -12,21 +12,19 @@ mapping of scalars and lists of strings, parsed by hand.
 from __future__ import annotations
 
 import contextlib
+import datetime
 import json
 import os
+import pathlib
 import sys
 from collections.abc import Generator
-from contextlib import contextmanager
-from datetime import UTC, datetime
-from pathlib import Path
 
-from agent6.graph.models import TaskNode
-from agent6.paths import mkdir_for_real_user
-from agent6.portable import atomic_write, fsync_dir, lock_exclusive, unlock
-from agent6.sessions.layout import SessionLayout
+from agent6 import paths, portable
+from agent6.graph import models
+from agent6.sessions import layout as sessions_layout
 
 
-def _append_line(path: Path, line: str) -> None:
+def _append_line(path: pathlib.Path, line: str) -> None:
     """Append one line durably.
 
     Args:
@@ -36,7 +34,7 @@ def _append_line(path: Path, line: str) -> None:
     Raises:
         OSError: A short write, rather than lost bytes.
     """
-    mkdir_for_real_user(path.parent)
+    paths.mkdir_for_real_user(path.parent)
     payload = (line if line.endswith("\n") else line + "\n").encode("utf-8")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     try:
@@ -51,7 +49,7 @@ def _append_line(path: Path, line: str) -> None:
         os.close(fd)
 
 
-def append_jsonl(path: Path, entry: dict[str, object]) -> None:
+def append_jsonl(path: pathlib.Path, entry: dict[str, object]) -> None:
     """Append one JSON object as a line, durably.
 
     The caller supplies the whole entry, timestamp included.
@@ -63,8 +61,8 @@ def append_jsonl(path: Path, entry: dict[str, object]) -> None:
     _append_line(path, json.dumps(entry, sort_keys=True))
 
 
-@contextmanager
-def flock(path: Path) -> Generator[None]:
+@contextlib.contextmanager
+def flock(path: pathlib.Path) -> Generator[None]:
     """Hold an exclusive flock on a file, created when missing.
 
     Args:
@@ -73,14 +71,14 @@ def flock(path: Path) -> Generator[None]:
     Yields:
         Nothing; the lock is held for the block.
     """
-    mkdir_for_real_user(path.parent)
+    paths.mkdir_for_real_user(path.parent)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o644)
     try:
-        lock_exclusive(fd, blocking=True)
+        portable.lock_exclusive(fd, blocking=True)
         yield
     finally:
         try:
-            unlock(fd)
+            portable.unlock(fd)
         finally:
             os.close(fd)
 
@@ -136,7 +134,7 @@ def _yaml_unquote(s: str) -> str:
     return s
 
 
-def _dump_frontmatter(node: TaskNode) -> str:
+def _dump_frontmatter(node: models.TaskNode) -> str:
     """Render a node as its frontmatter and notes body.
 
     Args:
@@ -174,7 +172,7 @@ def _dump_frontmatter(node: TaskNode) -> str:
     return "\n".join(fm) + "\n"
 
 
-def _parse_frontmatter(text: str) -> TaskNode:
+def _parse_frontmatter(text: str) -> models.TaskNode:
     """Parse a node file back into a TaskNode.
 
     Args:
@@ -247,10 +245,10 @@ def _parse_frontmatter(text: str) -> TaskNode:
             return tuple(v)
         return ()
 
-    created_at = datetime.fromisoformat(_str("created_at"))
-    updated_at = datetime.fromisoformat(_str("updated_at"))
+    created_at = datetime.datetime.fromisoformat(_str("created_at"))
+    updated_at = datetime.datetime.fromisoformat(_str("updated_at"))
     # `status` and `created_by` are validated by pydantic on construction.
-    return TaskNode(
+    return models.TaskNode(
         id=_str("id"),
         parent_id=_opt("parent_id"),
         title=_str("title"),
@@ -270,7 +268,7 @@ def _parse_frontmatter(text: str) -> TaskNode:
     )
 
 
-def _ancestor_chain(nodes: dict[str, TaskNode], node_id: str) -> list[str]:
+def _ancestor_chain(nodes: dict[str, models.TaskNode], node_id: str) -> list[str]:
     """Return the ids from the root down to a node, following parent pointers.
 
     Args:
@@ -299,7 +297,9 @@ def _ancestor_chain(nodes: dict[str, TaskNode], node_id: str) -> list[str]:
     return chain
 
 
-def node_md_path(layout: SessionLayout, nodes: dict[str, TaskNode], node_id: str) -> Path:
+def node_md_path(
+    layout: sessions_layout.SessionLayout, nodes: dict[str, models.TaskNode], node_id: str
+) -> pathlib.Path:
     """Return a node's canonical file path, its ancestors as directory components.
 
     Args:
@@ -314,11 +314,13 @@ def node_md_path(layout: SessionLayout, nodes: dict[str, TaskNode], node_id: str
         ValueError: The parent chain has a cycle.
     """
     chain = _ancestor_chain(nodes, node_id)
-    rel = Path(*chain[:-1]) / f"{chain[-1]}.md"
+    rel = pathlib.Path(*chain[:-1]) / f"{chain[-1]}.md"
     return layout.graph_dir / rel
 
 
-def write_node(layout: SessionLayout, nodes: dict[str, TaskNode], node: TaskNode) -> None:
+def write_node(
+    layout: sessions_layout.SessionLayout, nodes: dict[str, models.TaskNode], node: models.TaskNode
+) -> None:
     """Write a node's file atomically at its canonical path, then drop any stale copy.
 
     The canonical path moves when `load_graph` re-roots an orphan; the new file is durable
@@ -331,15 +333,17 @@ def write_node(layout: SessionLayout, nodes: dict[str, TaskNode], node: TaskNode
         node: The node.
     """
     path = node_md_path(layout, nodes, node.id)
-    mkdir_for_real_user(path.parent)
+    paths.mkdir_for_real_user(path.parent)
     if node.children:
         child_dir = path.with_suffix("")
-        mkdir_for_real_user(child_dir)
-    atomic_write(path, _dump_frontmatter(node))
+        paths.mkdir_for_real_user(child_dir)
+    portable.atomic_write(path, _dump_frontmatter(node))
     _prune_stale_node_files(layout, node.id, keep=path)
 
 
-def _prune_stale_node_files(layout: SessionLayout, node_id: str, *, keep: Path) -> None:
+def _prune_stale_node_files(
+    layout: sessions_layout.SessionLayout, node_id: str, *, keep: pathlib.Path
+) -> None:
     """Delete every other `<node_id>.md` under the graph dir.
 
     Args:
@@ -355,10 +359,10 @@ def _prune_stale_node_files(layout: SessionLayout, node_id: str, *, keep: Path) 
             continue
         with contextlib.suppress(OSError):
             stale.unlink()
-            fsync_dir(stale.parent)
+            portable.fsync_dir(stale.parent)
 
 
-def load_graph(layout: SessionLayout) -> dict[str, TaskNode]:
+def load_graph(layout: sessions_layout.SessionLayout) -> dict[str, models.TaskNode]:
     """Read every node file under the graph dir.
 
     A malformed or torn file is skipped with a note on stderr rather than bricking resume,
@@ -370,7 +374,7 @@ def load_graph(layout: SessionLayout) -> dict[str, TaskNode]:
     Returns:
         The nodes by id; empty without a graph dir.
     """
-    nodes: dict[str, TaskNode] = {}
+    nodes: dict[str, models.TaskNode] = {}
     if not layout.graph_dir.is_dir():
         return nodes
     for md in layout.graph_dir.rglob("*.md"):
@@ -389,7 +393,7 @@ def load_graph(layout: SessionLayout) -> dict[str, TaskNode]:
     return nodes
 
 
-def write_journal(layout: SessionLayout, entry: dict[str, object]) -> None:
+def write_journal(layout: sessions_layout.SessionLayout, entry: dict[str, object]) -> None:
     """Append one entry to the journal, stamped with the time when it carries none.
 
     Args:
@@ -397,11 +401,11 @@ def write_journal(layout: SessionLayout, entry: dict[str, object]) -> None:
         entry: The entry.
     """
     payload = dict(entry)
-    payload.setdefault("ts", datetime.now(tz=UTC).isoformat())
+    payload.setdefault("ts", datetime.datetime.now(tz=datetime.UTC).isoformat())
     _append_line(layout.journal_path, json.dumps(payload, sort_keys=True))
 
 
-def write_cursor(layout: SessionLayout, node_id: str | None) -> None:
+def write_cursor(layout: sessions_layout.SessionLayout, node_id: str | None) -> None:
     """Record the focused node.
 
     Args:
@@ -409,10 +413,10 @@ def write_cursor(layout: SessionLayout, node_id: str | None) -> None:
         node_id: The node, or None for no focus.
     """
     payload = json.dumps({"node_id": node_id})
-    atomic_write(layout.cursor_path, payload)
+    portable.atomic_write(layout.cursor_path, payload)
 
 
-def read_cursor(layout: SessionLayout) -> str | None:
+def read_cursor(layout: sessions_layout.SessionLayout) -> str | None:
     """Read the focused node's id.
 
     A malformed or unreadable cursor reads as none, said on stderr: a torn pointer must not
@@ -455,7 +459,7 @@ def _cursor_of(raw: object) -> str | None:
     raise ValueError(f"node_id is {cursor!r}")
 
 
-def list_checkpoint_turns(layout: SessionLayout) -> list[int]:
+def list_checkpoint_turns(layout: sessions_layout.SessionLayout) -> list[int]:
     """Return the recorded checkpoint turns, ascending.
 
     Args:

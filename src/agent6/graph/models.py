@@ -9,14 +9,14 @@ The tree is doubly linked: a parent lists each child in `children` and each chil
 
 from __future__ import annotations
 
-from datetime import datetime
+import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+import pydantic
 
-from agent6.graph.ulid import CROCKFORD
+from agent6.graph import ulid
 
-_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
+_MODEL_CONFIG = pydantic.ConfigDict(extra="forbid", frozen=True)
 
 NodeStatus = Literal[
     "pending",
@@ -70,7 +70,7 @@ def queued_by_operator(node: TaskNode) -> bool:
     return owner_note(created_by=node.created_by, parent_id=node.parent_id, standing=False) != ""
 
 
-class TaskNodeDraft(BaseModel):
+class TaskNodeDraft(pydantic.BaseModel):
     """A new node before the curator assigns its id.
 
     Attributes:
@@ -86,7 +86,7 @@ class TaskNodeDraft(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    title: str = Field(min_length=1)
+    title: str = pydantic.Field(min_length=1)
     rationale: str = ""
     acceptance: str = ""
     relevant_paths: tuple[str, ...] = ()
@@ -95,7 +95,7 @@ class TaskNodeDraft(BaseModel):
     standing: bool = False
 
 
-class TaskNode(BaseModel):
+class TaskNode(pydantic.BaseModel):
     """A persisted task-graph node.
 
     Attributes:
@@ -121,24 +121,24 @@ class TaskNode(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    id: str = Field(min_length=1, max_length=26)
+    id: str = pydantic.Field(min_length=1, max_length=26)
     parent_id: str | None
-    title: str = Field(min_length=1)
+    title: str = pydantic.Field(min_length=1)
     rationale: str = ""
     acceptance: str = ""
     relevant_paths: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
     children: tuple[str, ...] = ()
     status: NodeStatus = "pending"
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
     created_by: NodeActor
     commit_sha: str = ""
     notes: str = ""
     standing: bool = False
     graph_version: int = 0
 
-    @field_validator("id")
+    @pydantic.field_validator("id")
     @classmethod
     def _id_is_crockford(cls, v: str) -> str:
         """Refuse an id outside the Crockford alphabet at the reload trust boundary.
@@ -156,12 +156,12 @@ class TaskNode(BaseModel):
         Raises:
             ValueError: A character is outside the alphabet.
         """
-        if any(ch not in CROCKFORD for ch in v):
+        if any(ch not in ulid.CROCKFORD for ch in v):
             raise ValueError(f"node id is not Crockford base32: {v!r}")
         return v
 
 
-class AddSubtaskIntent(BaseModel):
+class AddSubtaskIntent(pydantic.BaseModel):
     """Add a node under a parent.
 
     Attributes:
@@ -180,7 +180,7 @@ class AddSubtaskIntent(BaseModel):
     after: str | None = None
 
 
-class UpdateStatusIntent(BaseModel):
+class UpdateStatusIntent(pydantic.BaseModel):
     """Set a node's status, with an optional note."""
 
     model_config = _MODEL_CONFIG
@@ -191,7 +191,7 @@ class UpdateStatusIntent(BaseModel):
     note: str = ""
 
 
-class AddDependencyIntent(BaseModel):
+class AddDependencyIntent(pydantic.BaseModel):
     """Make a node wait on another."""
 
     model_config = _MODEL_CONFIG
@@ -201,7 +201,7 @@ class AddDependencyIntent(BaseModel):
     depends_on: str
 
 
-class RecordCommitIntent(BaseModel):
+class RecordCommitIntent(pydantic.BaseModel):
     """Record the commit that landed a node."""
 
     model_config = _MODEL_CONFIG
@@ -211,7 +211,7 @@ class RecordCommitIntent(BaseModel):
     sha: str
 
 
-class SetCursorIntent(BaseModel):
+class SetCursorIntent(pydantic.BaseModel):
     """Focus a node, or clear the focus with None."""
 
     model_config = _MODEL_CONFIG

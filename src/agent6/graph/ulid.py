@@ -8,16 +8,16 @@ the standard ULID rule. In-tree, so no runtime dependency on `python-ulid`.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import threading
 import time
-from dataclasses import dataclass
 
 # TaskNode's id validator enforces the alphabet where an id becomes a path component.
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
-@dataclass
+@dataclasses.dataclass
 class _Monotonic:
     """The last id minted, under a lock.
 

@@ -11,14 +11,14 @@ lost to a crash has nothing to undo and stays visible in every replayed version.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterable
-from dataclasses import dataclass
 from typing import Any
 
-from agent6.graph.models import TaskNode
+from agent6.graph import models
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReplayedGraph:
     """A graph as of one `graph_version`.
 
@@ -27,7 +27,7 @@ class ReplayedGraph:
         cursor: The focused id at that version, or None.
     """
 
-    nodes: dict[str, TaskNode]
+    nodes: dict[str, models.TaskNode]
     cursor: str | None
 
 
@@ -79,7 +79,7 @@ def _str_field(entry: dict[str, Any], key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _children_at(current: tuple[str, ...], kept: dict[str, TaskNode]) -> tuple[str, ...]:
+def _children_at(current: tuple[str, ...], kept: dict[str, models.TaskNode]) -> tuple[str, ...]:
     """Return the parent's surviving children in the order the parent holds them.
 
     Args:
@@ -93,7 +93,7 @@ def _children_at(current: tuple[str, ...], kept: dict[str, TaskNode]) -> tuple[s
 
 
 def graph_at_version(
-    nodes: dict[str, TaskNode],
+    nodes: dict[str, models.TaskNode],
     journal: Iterable[dict[str, Any]],
     version: int,
     *,

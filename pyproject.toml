@@ -482,7 +482,6 @@ banned-from = [
 # `*` crosses `/` here, so a package's own modules are listed by name.
 "src/agent6/{__init__,budget,child_env,commit_message,directive,errors,events,git_ops,init,kinds,memory,paths,portable,secrets,skills,task_text,verify_infer}.py" = ["ICN003"]
 "src/agent6/_data/**" = ["ICN003"]
-"src/agent6/graph/**" = ["ICN003"]
 "src/agent6/machine/**" = ["ICN003"]
 "src/agent6/models/**" = ["ICN003"]
 "src/agent6/prompts/**" = ["ICN003"]
