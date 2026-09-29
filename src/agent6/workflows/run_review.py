@@ -17,7 +17,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass, field
 
-from agent6.memory import index_text, read_use
+from agent6.memory import clipped_index, index_text, read_use
 from agent6.prompts.review import RUN_REVIEW_SYSTEM_PROMPT
 from agent6.providers import Provider, ProviderError, ProviderResponse
 from agent6.sessions.layout import SessionLayout
@@ -223,7 +223,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         first_errors=tuple(first_errors),
         notices=tuple(sorted(notices.items())),
         memory_wrote=wrote,
-        memory_index=index_text(layout.state_dir),
+        memory_index=clipped_index(index_text(layout.state_dir)),
         conversation=conversation(layout, max_chars=max_chars),
         dropped={k: v for k, v in dropped.items() if v},
     )

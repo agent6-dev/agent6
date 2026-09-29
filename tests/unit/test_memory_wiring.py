@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config
-from agent6.memory import add, memory_dir
+from agent6.memory import INDEX_INJECT_CAP, add, memory_dir
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.errors import ToolError
 from agent6.types import RepoSummary
@@ -59,17 +59,17 @@ def test_index_content_renders_and_clips(tmp_path: Path) -> None:
     out = _build("run", big, tmp_path)
     assert "index clipped" in out
     body = out.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
-    assert len(body) <= pb.INDEX_INJECT_CAP
+    assert len(body) <= INDEX_INJECT_CAP
 
 
 def test_an_index_of_one_long_line_keeps_its_head(tmp_path: Path) -> None:
     """A single index line longer than the cap rendered the clip marker alone."""
-    big = "- fact: " + "x" * (pb.INDEX_INJECT_CAP + 500)
+    big = "- fact: " + "x" * (INDEX_INJECT_CAP + 500)
     out = _build("run", big, tmp_path)
     assert "index clipped" in out
     assert "- fact: " + "x" * 100 in out
     body = out.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
-    assert len(body) <= pb.INDEX_INJECT_CAP
+    assert len(body) <= INDEX_INJECT_CAP
 
 
 def test_readonly_modes_render_only_with_content(tmp_path: Path) -> None:

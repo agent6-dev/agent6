@@ -184,6 +184,19 @@ def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: Path) -> None:
     assert "verify not gated" in d.render()
 
 
+def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: Path) -> None:
+    """The index reaches the reviewer under the same cap the prompt applies,
+    with the same marker, so one runaway index cannot flood a review call."""
+    from agent6.memory import INDEX_INJECT_CAP
+
+    layout = _write_session(repo)
+    for i in range(120):
+        add(layout.state_dir, f"fact-{i:03d}", "x" * 60)
+    d = run_digest(layout)
+    assert len(d.memory_index) <= INDEX_INJECT_CAP
+    assert d.memory_index.endswith("... (index clipped; read MEMORY.md for the rest)")
+
+
 def test_the_caps_are_named_not_silent(repo: Path) -> None:
     many = [{"type": "loop.steer.injected", "chars": 1, "text": f"steer {i}"} for i in range(25)]
     layout = _write_session(repo, events=many)

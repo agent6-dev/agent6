@@ -442,6 +442,19 @@ def decisions_text(state_dir: Path) -> str:
     return marker + ("\n" + "\n".join(reversed(kept)) if kept else "")
 
 
+def clipped_index(index: str) -> str:
+    """*index* as a prompt or a review carries it: whole under
+    `INDEX_INJECT_CAP`, else its head to a line boundary and a marker, so a
+    runaway index cannot flood every call on the repo."""
+    body = index.strip()
+    if len(body) <= INDEX_INJECT_CAP:
+        return body
+    marker = "... (index clipped; read MEMORY.md for the rest)"
+    head = body[: INDEX_INJECT_CAP - len(marker) - 1]
+    head = head.rsplit("\n", 1)[0] if "\n" in head else head
+    return f"{head}\n{marker}" if head else marker
+
+
 def index_text(state_dir: Path) -> str:
     """The index body for prompt injection; "" when absent or unreadable
     (memory is context, one stray byte must not kill every run).
