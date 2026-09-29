@@ -20,7 +20,7 @@ from agent6.config import (
     parse_seat_spec,
 )
 from agent6.events import EventSink
-from agent6.harness.review import ReviewSeat
+from agent6.harness._reviewer import ReviewSeat
 from agent6.models import registry as models_registry
 from agent6.providers import (
     AnthropicProvider,

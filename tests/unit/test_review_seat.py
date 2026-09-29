@@ -12,7 +12,7 @@ import pytest
 
 from agent6.harness._llm_json import extract_json
 from agent6.harness._panel import ReviewContext
-from agent6.harness._review import (
+from agent6.harness._reviewer import (
     ReviewSeat,
     _coerce_findings,  # pyright: ignore[reportPrivateUsage]
     run_panel,
@@ -343,7 +343,7 @@ class _ExploreProvider:
 
 
 def test_explore_review_uses_tools_then_verdicts() -> None:
-    from agent6.harness._review import explore_review
+    from agent6.harness._reviewer import explore_review
 
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "read_doc"}}
     provider = _ExploreProvider(
@@ -366,7 +366,7 @@ def test_explore_review_uses_tools_then_verdicts() -> None:
 
 
 def test_explore_review_abstains_when_no_verdict_in_budget() -> None:
-    from agent6.harness._review import explore_review
+    from agent6.harness._reviewer import explore_review
 
     tu = {"name": "list_dir", "id": "t1", "input": {"path": "."}}
     # provider keeps calling tools, never emits a verdict -> abstain after max_iters
@@ -389,7 +389,7 @@ def test_explore_review_abstains_when_no_verdict_in_budget() -> None:
 
 
 def test_explore_review_skips_dispatch_on_final_iteration() -> None:
-    from agent6.harness._review import explore_review
+    from agent6.harness._reviewer import explore_review
 
     # The last allowed model call returns tool_uses and no verdict: the seat is
     # about to abstain, and no model call follows to consume the results, so the
@@ -462,7 +462,7 @@ def test_extract_json_ignores_braces_inside_strings() -> None:
 
 
 def test_explore_review_honors_verdict_alongside_tool_use_on_last_iter() -> None:
-    from agent6.harness._review import explore_review
+    from agent6.harness._reviewer import explore_review
 
     # On the FINAL allowed iteration the model emits a tool_use AND a verdict in
     # the same turn; the verdict must be honored (not wasted into an abstain).

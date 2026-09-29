@@ -21,8 +21,7 @@ Any layer may also use the shared substrate: <!-- generated: substrate-names -->
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
     - never imports `agent6.ui`
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
-- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`) and `review` (the read-only pass behind `agent6 review`).
-  The single-turn `code_review` call shape lives here too; the agent loop makes its own provider calls inline.
+- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `code_review` (the single call behind `agent6 review`), `run_review` (the read-only pass behind `agent6 sessions review`) and the review panel (`_panel`, `_reviewer`); the agent loop makes its own provider calls inline.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
   `harness/_toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
 - **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): the `agent6-jail` launcher and its policy.
@@ -429,7 +428,7 @@ A `run_command` approval publishes as `approval.prompt`.
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |
 | Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (pure strings the loop, review, judge, and machine assemble; `revision.py` holds the loop's prompt-revision, summariser, gist and restart-notice prompts) |
-| Review pass | [harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py); `harness/review.py` re-exports it with the panel, so `ui/cli` imports one module |
+| Review pass | [harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py); the panel is `harness/_panel.py` and `harness/_reviewer.py` |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
 | Git policy | [git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py) |
 | Subordinate-run primitive | [harness/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py) |

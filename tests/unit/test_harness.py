@@ -38,7 +38,7 @@ from agent6.harness._provider_call import (
     reasoning_starvation,
 )
 from agent6.harness._quiet_turns import QuietGuard
-from agent6.harness._review import Reviewer, ReviewSettings
+from agent6.harness._reviewer import Reviewer, ReviewSettings
 from agent6.harness._snapshot import SNAPSHOT_VERSION, End
 from agent6.harness._verify_verdict import VerifyVerdict
 from agent6.harness.loop import Harness, LoopState, TurnState
@@ -8369,7 +8369,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: Path) -> None:
     without the plateau's end gates running too."""
     from unittest.mock import patch
 
-    from agent6.harness._review import CritiqueResult
+    from agent6.harness._reviewer import CritiqueResult
     from agent6.tools.results import FinishSessionResult
 
     def _tool_use(name: str, call_id: str, args: dict[str, Any]) -> ProviderResponse:

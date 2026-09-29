@@ -13,7 +13,7 @@ from agent6.harness._context import load_repo_summary
 from agent6.harness._dag_focus import initial_dag_hint
 from agent6.harness._prompt_blocks import build_system_prompt, initial_instructions
 from agent6.harness._toolset import tool_definitions
-from agent6.harness.review import CodeReviewError, code_review
+from agent6.harness.code_review import CodeReviewError, code_review
 from agent6.memory import decisions_path, decisions_text, memory_dir
 from agent6.memory import index_text as memory_index_text
 from agent6.providers import ToolDefinition

@@ -669,14 +669,14 @@ def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
     """`agent6 review` runs no verify command, and the loop has none to run
     when none is configured; the prompt told the seats "none configured" in
     both cases, wrong for a review of a repo that has one."""
-    from agent6.harness._review import _build_user_message  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness._reviewer import _build_user_message  # pyright: ignore[reportPrivateUsage]
 
     prompt = _build_user_message(ReviewContext(task="t"))
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
 
 
 def test_the_seat_prompt_carries_the_whole_large_diff() -> None:
-    from agent6.harness._review import _build_user_message  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness._reviewer import _build_user_message  # pyright: ignore[reportPrivateUsage]
 
     diff = "start\n" + "x" * 200_000 + "\nend"
     prompt = _build_user_message(ReviewContext(task="t", diff=diff))

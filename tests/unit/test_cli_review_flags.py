@@ -317,7 +317,7 @@ def _explore_review(
 
     from agent6.config import Config
     from agent6.harness._panel import PanelResult
-    from agent6.harness._review import ReviewSeat
+    from agent6.harness._reviewer import ReviewSeat
     from agent6.ui.cli import review_cmds
 
     monkeypatch.chdir(tmp_path)

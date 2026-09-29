@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from agent6.harness._chain import RunChain
 from agent6.harness._conversation import Conversation
-from agent6.harness._review import ReviewSeat, ReviewSettings
+from agent6.harness._reviewer import ReviewSeat, ReviewSettings
 from agent6.harness.loop import Harness
 from agent6.tools.results import RawResult
 from tests.unit.test_review_gate import (
@@ -200,7 +200,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     'No blocking findings.' (the CLI verdict was fixed for the same reason).
     Uses the shared panel_is_inconclusive/inconclusive_note owner; the gate
     still lets the finish through (a panel never deadlocks a run)."""
-    import agent6.harness._review as review_mod
+    import agent6.harness._reviewer as review_mod
     from agent6.harness._panel import PanelResult, ReviewVerdict
     from agent6.harness.loop import LoopState
 

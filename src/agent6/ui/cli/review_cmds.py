@@ -25,16 +25,15 @@ from agent6.config import (
 from agent6.config.layer import load_effective
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, chain_tip, git_hardening_flags
 from agent6.harness._context import agents_md_text
-from agent6.harness.loop import build_readonly_review_tools
-from agent6.harness.review import (
-    CodeReviewError,
+from agent6.harness._panel import (
     ReviewContext,
-    code_review,
     inconclusive_note,
     panel_is_inconclusive,
     render_findings,
-    run_panel,
 )
+from agent6.harness._reviewer import run_panel
+from agent6.harness.code_review import CodeReviewError, code_review
+from agent6.harness.loop import build_readonly_review_tools
 from agent6.paths import mkdir_for_real_user, state_dir
 from agent6.providers import (
     ProviderError,

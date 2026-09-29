@@ -40,7 +40,7 @@ from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.harness._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
-from agent6.harness.review import ReviewSeat
+from agent6.harness._reviewer import ReviewSeat
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox.detect import Environment, IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError, SessionNetwork

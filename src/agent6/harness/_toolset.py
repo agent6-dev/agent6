@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from agent6.harness._review import ReviewDispatch
+from agent6.harness._reviewer import ReviewDispatch
 from agent6.providers import ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.results import ToolResult

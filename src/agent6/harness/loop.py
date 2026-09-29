@@ -116,7 +116,7 @@ from agent6.harness._provider_call import (
     reasoning_starvation,
 )
 from agent6.harness._quiet_turns import question_in_prose, silent_no_work, went_quiet
-from agent6.harness._review import Reviewer, ReviewSettings
+from agent6.harness._reviewer import Reviewer, ReviewSettings
 from agent6.harness._snapshot import (
     TURN_IN_FLIGHT_NAME,
     End,

@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 from agent6.harness._chain import RunChain
 from agent6.harness._conversation import Conversation, Notice
 from agent6.harness._provider_call import CallSettings
-from agent6.harness._review import CritiqueResult, Reviewer, ReviewSettings
+from agent6.harness._reviewer import CritiqueResult, Reviewer, ReviewSettings
 from agent6.harness.loop import Harness
 from agent6.providers import ProviderResponse
 from agent6.tools.results import ExecResult, RawResult
