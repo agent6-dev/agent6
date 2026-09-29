@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-import agent6.prompts.loop as loop_prompts
+from agent6.prompts import loop
 from agent6.tools import schema
 
 _CALL = re.compile(r"\b([a-z_][a-z0-9_]*)\(\s*([a-z_][^()]*)\)")
@@ -27,8 +27,8 @@ def test_prompt_tool_call_examples_use_schema_field_names() -> None:
     }
     bad: list[str] = []
     checked = 0
-    for attr in dir(loop_prompts):
-        value = getattr(loop_prompts, attr)
+    for attr in dir(loop):
+        value = getattr(loop, attr)
         if not isinstance(value, str):
             continue
         for call in _CALL.finditer(value):

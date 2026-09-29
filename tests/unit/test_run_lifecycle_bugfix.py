@@ -15,9 +15,8 @@ from typing import Any
 
 import pytest
 
-import agent6.app._session as session_mod
 from agent6 import budget, paths
-from agent6.app import providers
+from agent6.app import _session, providers
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 
@@ -146,8 +145,8 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     sp.run(["git", "add", "a.py"], cwd=repo, check=True)
     sp.run(["git", "commit", "-q", "-m", "seed"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(session_mod, "select_isolation", _none_isolation)
-    monkeypatch.setattr(session_mod, "select_isolation", _none_isolation)
+    monkeypatch.setattr(_session, "select_isolation", _none_isolation)
+    monkeypatch.setattr(_session, "select_isolation", _none_isolation)
     return repo
 
 

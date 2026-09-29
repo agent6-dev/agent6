@@ -174,7 +174,7 @@ def test_open_btw_serves_every_composer(
 
     The run's own journal is the answer channel; a bare `/btw` is told what to type.
     """
-    import agent6.ui.btw as btw_mod
+    from agent6.ui import btw as btw_mod
 
     session_dir = tmp_path / "sessions" / "runs" / "parent-BBBBBB"
     session_dir.mkdir(parents=True)

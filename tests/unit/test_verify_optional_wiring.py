@@ -14,12 +14,11 @@ from unittest import mock
 
 import pytest
 
-import agent6.app.preflight as preflight_mod
 from agent6 import git_ops, kinds, paths
 from agent6.app import _execution as app__execution
 from agent6.app import _session as app__session
 from agent6.app import _setup as app__setup
-from agent6.app import confine, stamps
+from agent6.app import confine, preflight, stamps
 from agent6.app import providers as app_providers
 from agent6.config import Config, layer
 from agent6.harness import _chain, _prompt_blocks, _snapshot, _verify_verdict
@@ -138,7 +137,7 @@ def test_a_execution_that_cannot_run_commands_is_gateless_wherever_it_starts(
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
     gated = Config.model_validate({"harness": {"verify_command": ["pytest", "-q"]}})
 
-    assert preflight_mod.drop_gate_if_unrunnable(
+    assert preflight.drop_gate_if_unrunnable(
         gated, session_dir=session_dir, reporter=reporter
     ).harness.verify_command == (
         "pytest",
@@ -148,7 +147,7 @@ def test_a_execution_that_cannot_run_commands_is_gateless_wherever_it_starts(
         {"harness": {"verify_command": ["pytest", "-q"]}, "sandbox": {"run_commands": "no"}}
     )
     assert (
-        preflight_mod.drop_gate_if_unrunnable(
+        preflight.drop_gate_if_unrunnable(
             withheld, session_dir=session_dir, reporter=reporter
         ).harness.verify_command
         == ()
@@ -159,7 +158,7 @@ def test_a_execution_that_cannot_run_commands_is_gateless_wherever_it_starts(
     # just the configured knob.
     ipc.set_away_mode(session_dir, "deny")
     assert (
-        preflight_mod.drop_gate_if_unrunnable(
+        preflight.drop_gate_if_unrunnable(
             gated, session_dir=session_dir, reporter=reporter
         ).harness.verify_command
         == ()
@@ -299,8 +298,8 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     A crash in that window leaves the snapshot's gate stale in either direction; resume must keep
     the newer pin rather than undoing adoption or un-adoption.
     """
-    import agent6.app.resume as resume_mod
     from agent6.app import _execution as app__execution
+    from agent6.app import resume
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -361,7 +360,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
 
     monkeypatch.setattr(app__execution, "run_execution", _execution)
     assert (
-        resume_mod.resume_task(
+        resume.resume_task(
             None, "crashed-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
         == 0
@@ -381,8 +380,8 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     contradictory preamble lines, committed nothing all execution, and exited 4 over a gate that
     never ran.
     """
-    import agent6.app.resume as resume_mod
     from agent6.app import reporter as app_reporter
+    from agent6.app import resume
     from agent6.ui.cli import run as cli_run
 
     repo = tmp_path / "repo"
@@ -438,7 +437,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     monkeypatch.setattr(detect, "resolve_isolation", _strict)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)
-    monkeypatch.setattr(preflight_mod, "budget_preflight", _none)
+    monkeypatch.setattr(preflight, "budget_preflight", _none)
     monkeypatch.setattr(app_providers, "build_role_provider", _provider)
     monkeypatch.setattr(app__setup, "check_provider_keys", _none)
     monkeypatch.setattr(git_ops, "verify_git_identity", _none)
@@ -447,7 +446,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     said: list[str] = []
     frontend = dataclasses.replace(cli_run.session_frontend(), confirm_unconfined_autorun=_yes)
     with pytest.raises(_Stop):
-        resume_mod.resume_task(
+        resume.resume_task(
             None,
             "withheld-AAAA11",
             started_at=time.time(),
@@ -466,9 +465,9 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
 
     The pin labelled the inferred command "configured".
     """
-    import agent6.app.preflight as preflight_mod
-    import agent6.app.run as run_mod
+    from agent6.app import preflight
     from agent6.app import reporter as app_reporter
+    from agent6.app import run as run_mod
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -498,7 +497,7 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     monkeypatch.setattr(detect, "resolve_isolation", _strict)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)
-    monkeypatch.setattr(preflight_mod, "budget_preflight", _none)
+    monkeypatch.setattr(preflight, "budget_preflight", _none)
     monkeypatch.setattr(app_providers, "build_role_provider", _provider)
     monkeypatch.setattr(git_ops, "verify_git_identity", _none)
     monkeypatch.setattr(stamps, "pin_gate", _capture_pin(pinned))
@@ -689,7 +688,7 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Pat
     )
     budget = agent6_budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=-1.0)
 
-    cfg_on = preflight_mod.infer_verify_if_unset(
+    cfg_on = preflight.infer_verify_if_unset(
         Config(),
         tmp_path,
         mode="run",
@@ -700,7 +699,7 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Pat
     assert cfg_on.harness.verify_command, "the fence must infer when the knob is on"
 
     off_log = tmp_path / "off.jsonl"
-    cfg_off = preflight_mod.infer_verify_if_unset(
+    cfg_off = preflight.infer_verify_if_unset(
         Config.model_validate({"harness": {"verify_infer": False}}),
         tmp_path,
         mode="run",
@@ -812,7 +811,7 @@ def test_a_resumes_key_check_precedes_isolation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A resume runs the fresh run's preflight in the same place, pricing the model too."""
-    import agent6.app.resume as resume_mod
+    from agent6.app import resume
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -857,10 +856,10 @@ def test_a_resumes_key_check_precedes_isolation(
         raise _Stop
 
     monkeypatch.setattr(layer, "load_effective", _effective)
-    monkeypatch.setattr(preflight_mod, "route_preflight", _route)
+    monkeypatch.setattr(preflight, "route_preflight", _route)
     monkeypatch.setattr(app__session, "select_isolation", _isolation)
     with pytest.raises(_Stop):
-        resume_mod.resume_task(
+        resume.resume_task(
             None, "order-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
     assert seen == ["route_preflight", "select_isolation"]
@@ -877,15 +876,15 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
 
     One cause was reported up to three times, kilobytes of argv each time.
     """
-    import agent6.app.resume as resume_mod
     from agent6.app import _execution as app__execution
+    from agent6.app import resume
 
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
     gate = ("pytest", "-q", *(f"--deselect=tests/test_{i}.py::test_case" for i in range(40)))
-    assert len(" ".join(gate)) > 4 * preflight_mod.GATE_TEXT_WIDTH
+    assert len(" ".join(gate)) > 4 * preflight.GATE_TEXT_WIDTH
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "withheld-AAAA11"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
@@ -940,7 +939,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
         return app__execution.ExecutionEnd(0)
 
     monkeypatch.setattr(app__execution, "run_execution", _execution)
-    rc = resume_mod.resume_task(
+    rc = resume.resume_task(
         None, "withheld-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
     assert rc == 0
@@ -951,4 +950,4 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     (line,) = gate_lines
     assert "commands are withheld" in line and "(pytest -q --deselect" in line
     argv_text = line[line.index("(") + 1 : line.rindex("):")]
-    assert argv_text.endswith("\u2026") and len(argv_text) == preflight_mod.GATE_TEXT_WIDTH
+    assert argv_text.endswith("\u2026") and len(argv_text) == preflight.GATE_TEXT_WIDTH

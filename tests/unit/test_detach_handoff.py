@@ -14,9 +14,8 @@ from typing import Any
 
 import pytest
 
-import agent6.app._execution as execution_mod
 from agent6 import event_log
-from agent6.app import _session, _setup, frontend, providers, reporter
+from agent6.app import _execution, _session, _setup, frontend, providers, reporter
 from agent6.config import Config
 from agent6.harness import _snapshot
 from agent6.harness import loop as harness_loop
@@ -51,7 +50,7 @@ def test_ask_policy_is_asked_before_the_spawn_and_the_flags_ride_along(
     said: list[str] = []
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
-    execution_mod.detach_to_background(
+    _execution.detach_to_background(
         frontend=_frontend(calls),
         cfg=Config(),  # run_commands = ask, nothing granted
         layout=layout,
@@ -72,7 +71,7 @@ def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: pa
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    execution_mod.detach_to_background(
+    _execution.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
         layout=layout,
@@ -162,7 +161,7 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
     ipc.write_worker_pid(layout.session_dir, os.getpid())
 
-    execution_mod.detach_to_background(
+    _execution.detach_to_background(
         frontend=_frontend(calls),
         cfg=cfg,
         layout=layout,
@@ -172,7 +171,7 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
     )
     assert ipc.read_worker_pid(layout.session_dir) == os.getpid()  # the child overwrites it
 
-    execution_mod.detach_to_background(
+    _execution.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
         layout=layout,
@@ -259,10 +258,10 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
     cwd.mkdir()
 
     with pytest.raises(RuntimeError, match="provider stream broke"):
-        execution_mod.run_execution(
+        _execution.run_execution(
             Config(),
             layout,
-            execution_mod.ExecutionInputs(
+            _execution.ExecutionInputs(
                 session_id=layout.session_id,
                 mode="run",
                 role="worker",
@@ -329,10 +328,10 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
     cwd = tmp_path / "repo"
     cwd.mkdir()
 
-    end = execution_mod.run_execution(
+    end = _execution.run_execution(
         Config(),
         layout,
-        execution_mod.ExecutionInputs(
+        _execution.ExecutionInputs(
             session_id=layout.session_id,
             mode="ask",
             role="worker",
@@ -399,10 +398,10 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
     cwd = tmp_path / "repo"
     cwd.mkdir()
 
-    end = execution_mod.run_execution(
+    end = _execution.run_execution(
         Config(),
         layout,
-        execution_mod.ExecutionInputs(
+        _execution.ExecutionInputs(
             session_id=layout.session_id,
             mode="ask",
             role="worker",
@@ -460,10 +459,10 @@ def test_a_surface_without_the_revise_choice_skips_revision(
     cwd = tmp_path / "repo"
     cwd.mkdir()
 
-    end = execution_mod.run_execution(
+    end = _execution.run_execution(
         Config.model_validate({"prompt": {"revise_prompt": "interactive"}}),
         layout,
-        execution_mod.ExecutionInputs(
+        _execution.ExecutionInputs(
             session_id=layout.session_id,
             mode="run",
             role="worker",

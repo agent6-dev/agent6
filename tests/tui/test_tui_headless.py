@@ -878,7 +878,7 @@ def test_stop_now_aborts_via_bridge(
     """Run > Stop now on a live run confirms, then lands the abort steer and the stop marker."""
     import os
 
-    import agent6.app.stop as stop_mod
+    from agent6.app import stop as stop_mod
 
     monkeypatch.setattr(stop_mod, "STOP_WAIT_S", 0.5)
     monkeypatch.setattr(stop_mod, "_kill", _no_kill)  # never this process

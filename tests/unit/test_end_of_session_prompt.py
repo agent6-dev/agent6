@@ -440,13 +440,13 @@ def test_i_with_tui_is_refused_before_a_execution_starts(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`-i` with `--tui` is refused up front for `run` and `resume`: both want the terminal."""
-    import agent6.ui.cli.resume as resume_mod
-    import agent6.ui.cli.run as run_mod
+    from agent6.ui.cli import resume as resume_mod
+    from agent6.ui.cli import run
 
     def _never(*_a: object, **_k: object) -> int:
         raise AssertionError("the execution must not start")
 
-    monkeypatch.setattr(run_mod, "_cmd_run", _never)
+    monkeypatch.setattr(run, "_cmd_run", _never)
     monkeypatch.setattr(resume_mod, "_cmd_resume", _never)
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     run_args = _run_args(
@@ -470,7 +470,7 @@ def test_i_with_tui_is_refused_before_a_execution_starts(
 
 def _plan_harness(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """A `plan` whose execution is a fake writing a finished session; returns the prompts asked."""
-    import agent6.ui.cli.run as run_mod
+    from agent6.ui.cli import run
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
@@ -488,7 +488,7 @@ def _plan_harness(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> li
         )
         return 0
 
-    monkeypatch.setattr(run_mod, "_cmd_run", fake_cmd_run)
+    monkeypatch.setattr(run, "_cmd_run", fake_cmd_run)
     monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
     monkeypatch.setattr("builtins.input", lambda p="": (asked.append(p), "/exit")[1])
     return asked

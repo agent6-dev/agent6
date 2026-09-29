@@ -1359,9 +1359,9 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
     """One poll folds the journal once and reads the newest state log incrementally."""
     import os
 
-    import agent6.ui.tui.machines as tui_mod
-    import agent6.viewmodel.machine_state as vm_mod
     from agent6.machine import load_machine
+    from agent6.ui.tui import machines
+    from agent6.viewmodel import machine_state as vm_mod
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
@@ -1395,13 +1395,13 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            tui_mod.fold_machine = counting_fold  # type: ignore[assignment]
+            machines.fold_machine = counting_fold  # type: ignore[assignment]
             vm_mod.fold_machine = counting_fold  # type: ignore[assignment]
             vm_mod.newest_agent_execution = counting_execution  # type: ignore[assignment]
             try:
                 screen._poll()  # pyright: ignore[reportPrivateUsage]
             finally:
-                tui_mod.fold_machine = real_fold
+                machines.fold_machine = real_fold
                 vm_mod.fold_machine = real_fold
                 vm_mod.newest_agent_execution = real_execution
             assert counts == {"fold": 1, "execution": 0}

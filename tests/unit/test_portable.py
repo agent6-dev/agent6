@@ -319,7 +319,7 @@ def test_locked_file_reports_acquisition(
     whole-file snapshot on failure tell a real serialized cycle from a fictional one (a stale root-
     owned .lock).
     """
-    import agent6.portable as portable_mod
+    from agent6 import portable as portable_mod
 
     target = tmp_path / "c.toml"
     with portable_mod.locked_file(target) as held:

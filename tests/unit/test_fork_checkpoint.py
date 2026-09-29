@@ -947,7 +947,7 @@ def test_resume_diverged_branch_refuses_without_checkout(
 
 def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.MonkeyPatch) -> None:
     """`fork --steer` seeds the new direction at the forked session's first safe boundary."""
-    import agent6.ui.cli.fork as fork_cli
+    from agent6.ui.cli import fork as fork_cli
 
     def _fake_fork(*_a: object, **_k: object) -> tuple[str, int]:
         return ("kid-AAAA11", 0)
@@ -974,7 +974,7 @@ def test_forking_a_finished_run_with_no_new_work_is_refused(
 
     The child's log is empty by construction, so the check runs on the source.
     """
-    import agent6.ui.cli.fork as fork_cli
+    from agent6.ui.cli import fork as fork_cli
 
     monkeypatch.chdir(tmp_path)
     layout = sessions_layout.SessionLayout(
@@ -1004,7 +1004,7 @@ def test_fork_steer_with_no_run_is_refused(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`--steer` with `--no-run` is refused up front: nothing ever runs to receive it."""
-    import agent6.ui.cli.fork as fork_cli
+    from agent6.ui.cli import fork as fork_cli
 
     def _must_not_fork(*_a: object, **_k: object) -> tuple[str, int]:
         pytest.fail("create_fork must not run when the flag combo is refused")

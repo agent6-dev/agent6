@@ -208,8 +208,8 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     shared `panel_is_inconclusive` and `inconclusive_note` owner, and the gate still lets the finish
     through, since a panel never deadlocks a run.
     """
-    import agent6.harness._reviewer as review_mod
     from agent6.harness import _loop_state, _panel
+    from agent6.harness import _reviewer as review_mod
 
     abstain = _panel.ReviewVerdict(seat="s", model="m", verdict="pass", error="output hit the cap")
     res = _panel.PanelResult(

@@ -5109,8 +5109,8 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
     import ast
     import inspect
 
-    import agent6.harness._guards as guardsmod
-    import agent6.harness.loop as loopmod
+    from agent6.harness import _guards as guardsmod
+    from agent6.harness import loop as loopmod
 
     reasons: set[str] = set()
     source = inspect.getsource(loopmod) + inspect.getsource(guardsmod)

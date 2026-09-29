@@ -914,7 +914,7 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
 
     Skipped, the last delta of a burst reached the page only with the next event.
     """
-    import agent6.ui.web._sse as sse_mod
+    from agent6.ui.web import _sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "DELTA_COALESCE_S", 2.0)
     _srv, port = server
@@ -1134,7 +1134,7 @@ def test_sse_run_closes_even_if_tailer_dies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The tail thread always enqueues its None sentinel, so a raise there closes the stream.
-    import agent6.ui.web._sse as sse_mod
+    from agent6.ui.web import _sse as sse_mod
 
     def _boom(*_a: object, **_k: object) -> object:
         raise RuntimeError("tailer died")
@@ -1164,7 +1164,7 @@ def test_sse_run_dead_worker_frame_is_terminal(
     The frame carries `stream_dead=True` and `status_label="stale"`; `finished` stays False, so
     the client closes on either signal and never reconnects forever over a dead run.
     """
-    import agent6.ui.web._sse as sse_mod
+    from agent6.ui.web import _sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
     _make_run(
@@ -1199,7 +1199,7 @@ def test_sse_run_pidless_stale_frame_is_terminal(
 
     The dir decision already calls a pid-less run silent past its window stale.
     """
-    import agent6.ui.web._sse as sse_mod
+    from agent6.ui.web import _sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
     _make_run(
@@ -1251,7 +1251,7 @@ def test_sse_run_created_frame_is_terminal(
 
     The close asks died_without_end, and the terminal frame keeps the truthful label.
     """
-    import agent6.ui.web._sse as sse_mod
+    from agent6.ui.web import _sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "created-run"
@@ -1294,7 +1294,7 @@ def test_sse_run_parked_keeps_streaming(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A parked run's stream stays open: a resumed submission logs into this same stream."""
-    import agent6.ui.web._sse as sse_mod
+    from agent6.ui.web import _sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "parked-run"
@@ -1337,7 +1337,7 @@ def test_sse_machine_frame_carries_the_idle_age(
 
     Anchored to the frame's arrival, a state wedged for forty minutes read as seconds of work.
     """
-    import agent6.ui.web._sse as sse_mod
+    from agent6.ui.web import _sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
     monkeypatch.chdir(tmp_path)
@@ -1385,7 +1385,7 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
     the tab reconnect every few seconds, each retry a fresh fold and a flap of the front-end
     claim. `ended` stays reserved for a durable MachineEnd.
     """
-    import agent6.ui.web._sse as sse_mod
+    from agent6.ui.web import _sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
     monkeypatch.chdir(tmp_path)
@@ -1794,7 +1794,7 @@ def test_steer_btw_opens_a_side_ask(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`/btw <question>` from the web composer opens the side ask; a bare `/btw` is refused."""
-    import agent6.ui.btw as btw_mod
+    from agent6.ui import btw
 
     _srv, port = server
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "btw-run"
@@ -1815,7 +1815,7 @@ def test_steer_btw_opens_a_side_ask(
         (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in lines))
         return ""
 
-    monkeypatch.setattr(btw_mod, "direct_launch", launch)
+    monkeypatch.setattr(btw, "direct_launch", launch)
     status, body = _post(port, "/api/session/btw-run/steer", {"text": "/btw"})
     assert status == 422 and "/btw needs a question" in str(body)
     status, body = _post(port, "/api/session/btw-run/steer", {"text": "/btw is it safe?"})

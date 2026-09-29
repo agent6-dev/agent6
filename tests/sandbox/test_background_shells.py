@@ -477,7 +477,7 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
     meta.json is what the out-of-process surfaces read; written before the start attempt, it
     listed the command as running while the roster and read_background knew no such id.
     """
-    import agent6.tools.background as bg
+    from agent6.tools import background as bg
 
     def refuses(*_a: object, **_k: object) -> jail.BackgroundJob:
         raise jail.JailUnavailableError("no launcher today")
@@ -500,7 +500,7 @@ def test_a_platform_without_proc_still_starts_a_background_command(
     The escapee sweep is a /proc mechanism and macOS resolves to `none`; a /proc read while
     taking the descendant snapshot must not fail the start of a command already spawned.
     """
-    import agent6.sandbox.jail as jail_mod
+    from agent6.sandbox import jail as jail_mod
 
     real_iterdir = pathlib.Path.iterdir
 
@@ -588,7 +588,7 @@ def test_an_unreadable_result_is_never_clobbered_by_a_stop(
     A failed read says nothing about what is on disk, so writing anyway would replace a real
     exit code with "stopped" on the strength of that failure.
     """
-    import agent6.sandbox.jail as jail_mod
+    from agent6.sandbox import jail as jail_mod
 
     outcome = tmp_path / "bg"
     outcome.mkdir()

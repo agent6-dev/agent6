@@ -128,7 +128,7 @@ def test_hub_spawns_stamp_the_explicit_config_into_argv(
 def test_detached_resume_reapplies_the_overlay(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    import agent6.ui.spawn as spawn_mod
+    from agent6.ui import spawn as spawn_mod
 
     seen: list[list[str]] = []
 

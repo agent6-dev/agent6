@@ -116,11 +116,10 @@ def test_a_fork_inherits_the_gate_its_source_was_judged_by(tmp_path: pathlib.Pat
 
 def test_nothing_runs_a_second_gate_at_the_end_of_a_run(tmp_path: pathlib.Path) -> None:
     """The gate is pinned at the run's start and read by every later surface; no teardown gate."""
-    import agent6.app.finalize as finalize_mod
-    import agent6.app.resume as resume_mod
-    import agent6.app.run as run_mod
+    from agent6.app import finalize as finalize_mod
+    from agent6.app import resume, run
 
-    for module in (finalize_mod, run_mod, resume_mod):
+    for module in (finalize_mod, run, resume):
         src = pathlib.Path(module.__file__ or "").read_text(encoding="utf-8")
         assert "gate_on_base" not in src, f"{module.__name__} still runs a second gate"
 

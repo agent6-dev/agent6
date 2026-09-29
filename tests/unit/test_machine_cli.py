@@ -308,8 +308,8 @@ def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The dirty-file gate fails open on a GitError but never silently.
-    import agent6.app.machine.run as machine_run
     from agent6 import git_ops
+    from agent6.app.machine import run as machine_run
 
     _git_init(tmp_path)
     f = tmp_path / "m.asm.toml"

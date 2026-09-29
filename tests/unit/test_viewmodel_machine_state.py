@@ -494,8 +494,8 @@ def test_an_unreadable_summary_keeps_its_reason_to_one_line(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A spec with several problems keeps the listing's reason cell to one line."""
-    import agent6.viewmodel.machine_state as mod
     from agent6.machine import MachineError
+    from agent6.viewmodel import machine_state as mod
 
     d = tmp_path / "inst"
     d.mkdir()

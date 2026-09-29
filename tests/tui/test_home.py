@@ -590,7 +590,7 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
     """The hub polls, so a run that dies while listed does not keep its last word."""
     from textual import widgets
 
-    import agent6.ui.tui.home as home_mod
+    from agent6.ui.tui import home as home_mod
     from agent6.ui.tui import home as tui_home
 
     monkeypatch.setattr(home_mod, "_HUB_POLL_S", 0.2)
@@ -622,7 +622,7 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
     """The poll rebuilds the table, and the selection follows the run it was on by id."""
     from textual import widgets
 
-    import agent6.ui.tui.home as home_mod
+    from agent6.ui.tui import home as home_mod
     from agent6.ui.tui import home as tui_home
 
     monkeypatch.setattr(home_mod, "_HUB_POLL_S", 3600.0)  # manual refresh only

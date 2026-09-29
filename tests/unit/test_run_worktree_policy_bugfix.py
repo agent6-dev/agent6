@@ -19,10 +19,8 @@ import subprocess
 
 import pytest
 
-import agent6.app._setup as setup_mod
-import agent6.ui.cli.run as run_mod
 from agent6 import git_ops, paths
-from agent6.app import _session
+from agent6.app import _session, _setup
 from agent6.config import (
     Config,
     GitConfig,
@@ -36,6 +34,7 @@ from agent6.models import validate
 from agent6.sessions import layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts, schema
+from agent6.ui.cli import run
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -97,7 +96,7 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
         raise _Stop
 
     monkeypatch.setattr(layer, "load_effective", _load_effective)
-    monkeypatch.setattr(setup_mod, "apply_git_ops_policy", _noop)
+    monkeypatch.setattr(_setup, "apply_git_ops_policy", _noop)
     monkeypatch.setattr(validate, "validate_configured_model", _model_ok)
     monkeypatch.setattr(git_ops, "verify_git_identity", _noop)
     if stop_after_policy:
@@ -112,7 +111,7 @@ def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[sc
     The list the asked questions land in comes with it.
     """
     asked: list[schema.UserQuestion] = []
-    real = run_mod.session_frontend
+    real = run.session_frontend
 
     def _frontend(config_path: pathlib.Path | None = None) -> object:
         fe = real(config_path)
@@ -134,7 +133,7 @@ def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[sc
             build_questioner=_questioner,
         )
 
-    monkeypatch.setattr(run_mod, "session_frontend", _frontend)
+    monkeypatch.setattr(run, "session_frontend", _frontend)
     return asked
 
 
@@ -153,7 +152,7 @@ def test_untracked_files_are_not_dirt_and_are_recorded(
     _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
 
     with pytest.raises(_Stop):
-        run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
+        run._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 
     err = capsys.readouterr().err
     assert "REFUSING" not in err and "PARKED" not in err
@@ -174,7 +173,7 @@ def test_modified_tracked_files_refuse_when_nobody_can_answer(
     # stdin is not a terminal under pytest and no away-mode is set: nobody to ask.
     _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
 
-    rc = run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
+    rc = run._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 
     assert rc == 2
     err = capsys.readouterr().err
@@ -200,7 +199,7 @@ def test_answer_stash_stashes_tracked_changes_only(
     asked = _answering_frontend(monkeypatch, answer)
 
     with pytest.raises(_Stop):
-        run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
+        run._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 
     assert len(asked) == 1
     assert asked[0].options == ("stash", "include", "cancel")
@@ -227,7 +226,7 @@ def test_answer_include_starts_with_the_changes_in_place(
     _answering_frontend(monkeypatch, "include")
 
     with pytest.raises(_Stop):
-        run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
+        run._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "edited\n"
     assert _git(repo, "stash", "list") == ""
@@ -248,7 +247,7 @@ def test_answer_cancel_parks_the_run_with_its_task(
     _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
     _answering_frontend(monkeypatch, answer)
 
-    rc = run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
+    rc = run._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 
     assert rc == 2
     err = capsys.readouterr().err
@@ -273,7 +272,7 @@ def test_auto_stash_stashes_without_asking(
     asked = _answering_frontend(monkeypatch, "cancel")
 
     with pytest.raises(_Stop):
-        run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
+        run._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 
     assert asked == []
     # auto_stash without auto_stash_pop: stashed for the run, left stashed after.
@@ -295,7 +294,7 @@ def test_dirty_tree_include_includes_without_asking(
     asked = _answering_frontend(monkeypatch, "cancel")
 
     with pytest.raises(_Stop):
-        run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
+        run._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 
     assert asked == []
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "edited\n"
@@ -325,14 +324,14 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     )
     _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
 
-    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
+    assert run._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
     err = capsys.readouterr().err
     assert "the unmerged work of run prior-run-AAAAAA, on agent6/prior-run-AAAAAA" in err
     assert "agent6 sessions merge prior-run-AAAAAA" in err
 
     # Answered "cancel", the parked message names the merge as well.
     _answering_frontend(monkeypatch, "cancel")
-    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
+    assert run._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
     parked = capsys.readouterr().err
     assert "PARKED" in parked and "agent6 sessions merge prior-run-AAAAAA" in parked, parked
 
@@ -341,10 +340,10 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     (repo / "other.txt").write_text("later\n", encoding="utf-8")
     _git(repo, "add", "other.txt")
     _git(repo, "commit", "-q", "-m", "later work on main")
-    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
+    assert run._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
     assert "the unmerged work of run prior-run-AAAAAA" in capsys.readouterr().err
 
     # A further edit of the operator's own is not the run's work.
     (repo / "seed.txt").write_text("edited by the prior run\nand by me\n", encoding="utf-8")
-    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
+    assert run._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
     assert "unmerged work" not in capsys.readouterr().err

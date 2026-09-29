@@ -18,9 +18,8 @@ from unittest import mock
 
 import pytest
 
-import agent6.app._execution as execution_mod
 from agent6 import event_log, paths
-from agent6.app import _session, _setup, finalize, reporter
+from agent6.app import _execution, _session, _setup, finalize, reporter
 from agent6.app import frontend as app_frontend
 from agent6.app import providers as app_providers
 from agent6.config import Config
@@ -74,7 +73,7 @@ def test_provider_setup_failure_journals_session_end(
     monkeypatch.setattr(_session, "build_session_providers", _fail)
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
-    inputs = execution_mod.ExecutionInputs(
+    inputs = _execution.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -94,7 +93,7 @@ def test_provider_setup_failure_journals_session_end(
 
     said: list[str] = []
     with pytest.raises(RuntimeError, match="provider setup failed"):
-        execution_mod.run_execution(
+        _execution.run_execution(
             Config(),
             layout,
             inputs,
@@ -139,7 +138,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
     monkeypatch.setattr(app_providers, "build_prompt_reviser_provider", _returning(reviser))
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
-    inputs = execution_mod.ExecutionInputs(
+    inputs = _execution.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -158,7 +157,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
     )
 
     with pytest.raises(RuntimeError, match="gate setup failed"):
-        execution_mod.run_execution(
+        _execution.run_execution(
             Config(),
             layout,
             inputs,
@@ -212,7 +211,7 @@ def test_mcp_setup_failure_journals_session_end(
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     frontend.make_steer_state.side_effect = _steer_state
-    inputs = execution_mod.ExecutionInputs(
+    inputs = _execution.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -231,7 +230,7 @@ def test_mcp_setup_failure_journals_session_end(
     )
 
     with pytest.raises(RuntimeError, match="MCP startup failed"):
-        execution_mod.run_execution(
+        _execution.run_execution(
             Config(),
             layout,
             inputs,
@@ -333,7 +332,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         ),
         make_steer_state=_steer_state,
     )
-    inputs = execution_mod.ExecutionInputs(
+    inputs = _execution.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -352,7 +351,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
     )
 
     with pytest.raises(RuntimeError, match="provider close failed"):
-        execution_mod.run_execution(
+        _execution.run_execution(
             Config(),
             layout,
             inputs,
@@ -445,7 +444,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
     monkeypatch.setattr(paths, "chown_to_real_user", _returning(None))
 
-    inputs = execution_mod.ExecutionInputs(
+    inputs = _execution.ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -464,7 +463,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         resuming=True,
     )
     said: list[str] = []
-    end = execution_mod.run_execution(
+    end = _execution.run_execution(
         Config(),
         layout,
         inputs,
@@ -578,10 +577,10 @@ def test_the_chown_runs_after_the_auto_merge_writes(
     order: list[str] = []
     cfg = Config.model_validate({"git": {"auto_merge": True}})
     frontend = _wired_frontend(monkeypatch, order, harness=_finishing_workflow(1), cfg=cfg)
-    execution_mod.run_execution(
+    _execution.run_execution(
         cfg,
         layout,
-        execution_mod.ExecutionInputs(
+        _execution.ExecutionInputs(
             session_id=layout.session_id,
             mode="run",
             role="worker",
@@ -652,10 +651,10 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
     )
     said: list[str] = []
     with pytest.raises(RuntimeError, match="dashboard teardown failed"):
-        execution_mod.run_execution(
+        _execution.run_execution(
             Config(),
             layout,
-            execution_mod.ExecutionInputs(
+            _execution.ExecutionInputs(
                 session_id=layout.session_id,
                 mode="run",
                 role="worker",
@@ -732,10 +731,10 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
 
     monkeypatch.setattr(_session, "build_session_tools", _tools)
     said: list[str] = []
-    end = execution_mod.run_execution(
+    end = _execution.run_execution(
         Config(),
         layout,
-        execution_mod.ExecutionInputs(
+        _execution.ExecutionInputs(
             session_id=layout.session_id,
             mode="run",
             role="worker",

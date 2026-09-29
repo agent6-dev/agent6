@@ -787,12 +787,12 @@ def test_no_lock_rollback_keeps_the_write_and_says_so(
 
     A whole-file restore could erase a concurrent writer's just-validated update.
     """
-    import agent6.portable as portable_mod
+    from agent6 import portable
 
     def _no_lock(_p: pathlib.Path) -> int | None:
         return None
 
-    monkeypatch.setattr(portable_mod, "_acquire_lock", _no_lock)
+    monkeypatch.setattr(portable, "_acquire_lock", _no_lock)
     err = write.set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
     assert err is not None
     assert "kept as written" in err and "lock" in err
@@ -922,12 +922,12 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A partial multi-leaf write without the lock is kept, and the refusal says so."""
-    import agent6.portable as portable_mod
+    from agent6 import portable
 
     def _no_lock(_p: pathlib.Path) -> int | None:
         return None
 
-    monkeypatch.setattr(portable_mod, "_acquire_lock", _no_lock)
+    monkeypatch.setattr(portable, "_acquire_lock", _no_lock)
     rcfg = paths_mod.repo_config_path(repo)
     before = '[providers.anthropic]\napi_format = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
