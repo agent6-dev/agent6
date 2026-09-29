@@ -24,6 +24,7 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
+from agent6 import portable
 from agent6.app import providers
 from agent6.config import Config
 from agent6.providers import (
@@ -33,6 +34,7 @@ from agent6.providers import (
     ToolDefinition,
     TranscriptSink,
     _claude_code_wire,
+    _stream,
     call_for_text,
     claude_code,
 )
@@ -248,7 +250,7 @@ def test_handshake_answers_mcp_initialize_first_and_advertises_tools_verbatim(
 def test_malformed_inline_frame_is_reported_instead_of_stranding_the_reader(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
     binary, cap = _install(tmp_path, {"malformed_initialize": True})
 
     with pytest.raises(ProviderError, match="invalid stream-json message"):
@@ -588,7 +590,7 @@ def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(
 def test_idle_child_is_killed_after_the_stream_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
+    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
     binary, cap = _install(tmp_path, {"hang_s": 10, "turns": [[_round(text="x")]]})
     provider = _provider(binary)
     with pytest.raises(ProviderError, match="produced no output") as exc:
@@ -600,7 +602,7 @@ def test_idle_child_is_killed_after_the_stream_timeout(
 def test_stream_ping_does_not_mask_an_idle_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
     binary, _ = _install(
         tmp_path,
         {"hang_s": 0.8, "while_hanging": "ping", "turns": [[_round(text="late")]]},
@@ -617,7 +619,7 @@ def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
 
     The CLI repeats it while it waits out a window.
     """
-    monkeypatch.setattr(claude_code, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
     binary, _ = _install(
         tmp_path,
         {"hang_s": 0.8, "while_hanging": "rate_limit", "turns": [[_round(text="late")]]},
@@ -770,12 +772,10 @@ def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
 
     On a loaded box the drain can be scheduled out when stdout closes and the exit status lands.
     """
-    import agent6.providers.claude_code as module
-
     binary, _ = _install(
         tmp_path, {"die_in_round": 1, "die_message": "boom late", "turns": [[_round(text="x")]]}
     )
-    real = module.drain_stderr
+    real = portable.drain_stderr
 
     def lagging(pipe: IO[bytes], keep: list[bytes], *, close: bool = False) -> None:
         # Scheduled out after the child wrote: wait for its stderr, then sleep inside the join cap.
@@ -783,7 +783,7 @@ def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
         time.sleep(0.2)
         real(pipe, keep, close=close)
 
-    monkeypatch.setattr(module, "drain_stderr", lagging)
+    monkeypatch.setattr(portable, "drain_stderr", lagging)
     with pytest.raises(ProviderError, match="exited 3: boom late"):
         _provider(binary).call(system="s", messages=USER0, tools=None)
 

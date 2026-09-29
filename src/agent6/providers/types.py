@@ -8,18 +8,17 @@ parser live in this leaf so every provider imports down to it, never sideways.
 
 from __future__ import annotations
 
+import dataclasses
+import datetime
 import json
 import math
+import pathlib
 import threading
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
-from pathlib import Path
+from email import utils
 from typing import Any, Protocol
 
-from agent6.paths import mkdir_for_real_user
-from agent6.portable import atomic_write
+from agent6 import paths, portable
 
 
 class ProviderError(Exception):
@@ -89,12 +88,12 @@ def parse_retry_after(headers: Mapping[str, str]) -> float | None:
     except ValueError:
         pass
     try:
-        when = parsedate_to_datetime(raw)
+        when = utils.parsedate_to_datetime(raw)
     except (TypeError, ValueError):
         return None
     if when.tzinfo is None:
-        when = when.replace(tzinfo=UTC)
-    delta = (when - datetime.now(tz=UTC)).total_seconds()
+        when = when.replace(tzinfo=datetime.UTC)
+    delta = (when - datetime.datetime.now(tz=datetime.UTC)).total_seconds()
     return max(0.0, delta)
 
 
@@ -135,7 +134,7 @@ def scrub_secret_values(text: str, headers: dict[str, str]) -> str:
     return text
 
 
-def _max_seq_in_dir(transcripts_dir: Path) -> int:
+def _max_seq_in_dir(transcripts_dir: pathlib.Path) -> int:
     """Return the highest seq recorded in the directory, or 0 when it holds none.
 
     The seq is the suffix of each `<ts>-<seq>.json` file; an in-flight temp file
@@ -160,7 +159,7 @@ class TranscriptRecorder(Protocol):
         request_body: dict[str, Any],
         response_status: int,
         response_body: dict[str, Any] | str,
-    ) -> Path:
+    ) -> pathlib.Path:
         """Record one round-trip.
 
         Args:
@@ -176,7 +175,7 @@ class TranscriptRecorder(Protocol):
         ...
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RoleTranscriptSink:
     """A `TranscriptSink` view that stamps one seat on every record.
 
@@ -199,7 +198,7 @@ class RoleTranscriptSink:
         request_body: dict[str, Any],
         response_status: int,
         response_body: dict[str, Any] | str,
-    ) -> Path:
+    ) -> pathlib.Path:
         """Record one round-trip through the shared sink with the seat stamped.
 
         Args:
@@ -233,9 +232,9 @@ class TranscriptSink:
 
     __slots__ = ("_dir", "_lock", "_seq")
 
-    def __init__(self, transcripts_dir: Path) -> None:
+    def __init__(self, transcripts_dir: pathlib.Path) -> None:
         """Open the sink over a directory, creating it and continuing its seq."""
-        mkdir_for_real_user(transcripts_dir)
+        paths.mkdir_for_real_user(transcripts_dir)
         self._dir = transcripts_dir
         self._lock = threading.Lock()
         self._seq = _max_seq_in_dir(transcripts_dir)
@@ -253,7 +252,7 @@ class TranscriptSink:
         response_status: int,
         response_body: dict[str, Any] | str,
         seat: str = "",
-    ) -> Path:
+    ) -> pathlib.Path:
         """Write one round-trip as the next transcript file.
 
         Args:
@@ -270,7 +269,7 @@ class TranscriptSink:
         with self._lock:
             self._seq += 1
             seq = self._seq
-        ts = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        ts = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
         path = self._dir / f"{ts}-{seq:06d}.json"
         payload = {
             "ts": ts,
@@ -289,7 +288,7 @@ class TranscriptSink:
         }
         # atomic_write's unpredictable O_EXCL temp name is not symlink-followable.
         text = scrub_secret_values(json.dumps(payload, indent=2, sort_keys=True), request_headers)
-        atomic_write(path, text)
+        portable.atomic_write(path, text)
         return path
 
 
@@ -312,7 +311,7 @@ class BearerCredential(Protocol):
         ...
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ToolDefinition:
     """One tool exposed to the model.
 
@@ -327,7 +326,7 @@ class ToolDefinition:
     input_schema: dict[str, Any]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ProviderResponse:
     """The response to one provider call.
 
@@ -355,8 +354,8 @@ class ProviderResponse:
     cache_read_tokens: int
     cache_creation_tokens: int
     cost_usd: float = 0.0
-    raw: dict[str, Any] = field(default_factory=dict)
-    refused: dict[str, str] = field(default_factory=dict)
+    raw: dict[str, Any] = dataclasses.field(default_factory=dict)
+    refused: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 # The output-cap stop reasons (OpenAI "length", Anthropic "max_tokens"), case-folded.

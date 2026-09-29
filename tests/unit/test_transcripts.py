@@ -15,6 +15,7 @@ from typing import Any
 import httpx2
 import pytest
 
+from agent6 import portable
 from agent6.providers import (
     AnthropicProvider,
     ProviderError,
@@ -191,16 +192,14 @@ def test_transcript_record_publishes_via_atomic_write(
 
     Spying the primitive is the regression: the old write_text path never called it.
     """
-    import agent6.providers.types as types_mod
-
     calls: list[pathlib.Path] = []
-    real = types_mod.atomic_write
+    real = portable.atomic_write
 
     def spy(path: pathlib.Path, data: str | bytes) -> None:
         calls.append(path)
         real(path, data)
 
-    monkeypatch.setattr(types_mod, "atomic_write", spy)
+    monkeypatch.setattr(portable, "atomic_write", spy)
     sink = TranscriptSink(tmp_path)
     path = sink.record(
         url="https://x",

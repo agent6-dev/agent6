@@ -11,22 +11,15 @@ parsing stay per provider through its hook fields.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 import httpx2
 
-from agent6.budget import BudgetTracker
-from agent6.providers.types import (
-    BearerCredential,
-    ProviderError,
-    ProviderResponse,
-    TranscriptRecorder,
-    parse_retry_after,
-    scrub_secret_values,
-)
+from agent6 import budget as agent6_budget
+from agent6.providers import types
 
 # The handshake bound; only a blackholed connect takes longer, and the watchdog cannot cut one.
 CONNECT_TIMEOUT_S = 20.0
@@ -65,7 +58,7 @@ def http_post(
         for chunk in resp.iter_bytes():
             body.extend(chunk)
             if len(body) > MAX_RESPONSE_BYTES:
-                raise ProviderError(
+                raise types.ProviderError(
                     f"provider response exceeded {MAX_RESPONSE_BYTES} bytes; refusing to buffer it"
                 )
         # The body is decoded, so the wire's representation headers no longer describe it.
@@ -153,7 +146,10 @@ def _envelope_detail(err: object) -> str:
 
 
 def meter_completion(
-    budget: BudgetTracker | None, model: str, parsed: ProviderResponse, api_label: str
+    budget: agent6_budget.BudgetTracker | None,
+    model: str,
+    parsed: types.ProviderResponse,
+    api_label: str,
 ) -> None:
     """Book the response's usage, then refuse a completion the upstream failed.
 
@@ -186,13 +182,13 @@ def meter_completion(
         and not parsed.text.strip()
         and not parsed.tool_uses
     ):
-        raise ProviderError(
+        raise types.ProviderError(
             f"{api_label} response carries finish_reason='error' with no content:"
             " the upstream failed this completion"
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ProviderCall:
     """One provider API call: the attempt loop around a built request body.
 
@@ -224,16 +220,16 @@ class ProviderCall:
     body: dict[str, Any]
     timeout_s: float
     api_key: str
-    credential: BearerCredential | None
-    transcript_sink: TranscriptRecorder | None
-    budget: BudgetTracker | None
+    credential: types.BearerCredential | None
+    transcript_sink: types.TranscriptRecorder | None
+    budget: agent6_budget.BudgetTracker | None
     model: str
     build_headers: Callable[[str], dict[str, str]]
     adapt_400: Callable[[int | None, str, dict[str, Any]], bool]
     adapt_attempts: int
     require_metered: Callable[[dict[str, Any]], None]
-    parse: Callable[[dict[str, Any]], ProviderResponse]
-    stream: Callable[[dict[str, str]], ProviderResponse] | None = None
+    parse: Callable[[dict[str, Any]], types.ProviderResponse]
+    stream: Callable[[dict[str, str]], types.ProviderResponse] | None = None
 
     def record(self, headers: dict[str, str], status: int, response: dict[str, Any] | str) -> None:
         """Write one transcript entry for this request; nothing without a sink."""
@@ -246,7 +242,7 @@ class ProviderCall:
                 response_body=response,
             )
 
-    def run(self) -> ProviderResponse:
+    def run(self) -> types.ProviderResponse:
         """Make the call, retrying once per credential refresh and per body adaptation.
 
         Returns:
@@ -265,7 +261,7 @@ class ProviderCall:
             if self.stream is not None:
                 try:
                     return self.stream(headers)
-                except ProviderError as exc:
+                except types.ProviderError as exc:
                     if attempt + 1 < max_attempts and self.adapt_400(
                         exc.status_code, str(exc), self.body
                     ):
@@ -288,9 +284,9 @@ class ProviderCall:
                 )
             except httpx2.HTTPError as exc:
                 self.record(headers, 0, f"HTTPError: {exc}")
-                raise ProviderError(
+                raise types.ProviderError(
                     f"HTTP error calling {self.url} ({self.api_format} format): "
-                    f"{scrub_secret_values(str(exc), headers)}"
+                    f"{types.scrub_secret_values(str(exc), headers)}"
                 ) from exc
             recorded = False
             if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):
@@ -306,16 +302,18 @@ class ProviderCall:
                     resp.status_code, resp.text, self.body
                 ):
                     continue
-                raise ProviderError(
+                raise types.ProviderError(
                     f"{self.api_label} API error {resp.status_code}: "
-                    f"{scrub_secret_values(resp.text, headers)[:500]}",
+                    f"{types.scrub_secret_values(resp.text, headers)[:500]}",
                     status_code=resp.status_code,
-                    retry_after_s=parse_retry_after(resp.headers),
+                    retry_after_s=types.parse_retry_after(resp.headers),
                 )
             return self._decode_success(headers, resp)
-        raise ProviderError(f"{self.api_label} auth retry exhausted")  # pragma: no cover
+        raise types.ProviderError(f"{self.api_label} auth retry exhausted")  # pragma: no cover
 
-    def _decode_success(self, headers: dict[str, str], resp: httpx2.Response) -> ProviderResponse:
+    def _decode_success(
+        self, headers: dict[str, str], resp: httpx2.Response
+    ) -> types.ProviderResponse:
         """Decode, record, check and meter a 2xx response.
 
         Args:
@@ -335,25 +333,28 @@ class ProviderCall:
         except (json.JSONDecodeError, ValueError) as exc:
             # A gateway glitch; without a status the error is retryable.
             self.record(headers, resp.status_code, resp.text[:8192])
-            raise ProviderError(
+            raise types.ProviderError(
                 f"non-JSON response from {self.api_label} "
-                f"(status {resp.status_code}): {scrub_secret_values(resp.text, headers)[:500]}"
+                f"(status {resp.status_code}): "
+                f"{types.scrub_secret_values(resp.text, headers)[:500]}"
             ) from exc
         if not isinstance(data, dict):
             self.record(headers, resp.status_code, resp.text[:8192])
-            raise ProviderError(
+            raise types.ProviderError(
                 f"{self.api_label} returned a non-object JSON body "
-                f"(status {resp.status_code}): {scrub_secret_values(resp.text, headers)[:500]}"
+                ""
+                f"(status {resp.status_code}): "
+                f"{types.scrub_secret_values(resp.text, headers)[:500]}"
             )
         self.record(headers, resp.status_code, data)
         # OpenRouter and LiteLLM deliver an upstream error in a 2xx body; refused before metering.
         err = data.get("error")
         if err and not _has_assistant_output(data):
-            raise ProviderError(
+            raise types.ProviderError(
                 f"{self.api_label} error in 2xx body: "
-                f"{scrub_secret_values(_envelope_detail(err), headers)}",
+                f"{types.scrub_secret_values(_envelope_detail(err), headers)}",
                 status_code=envelope_status(err),
-                retry_after_s=parse_retry_after(resp.headers),
+                retry_after_s=types.parse_retry_after(resp.headers),
             )
         if self.budget is not None:
             self.require_metered(data)
@@ -361,7 +362,7 @@ class ProviderCall:
             parsed = self.parse(data)
         except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
             # The one parse seam: a malformed body never bypasses the retry wrapper as a traceback.
-            raise ProviderError(
+            raise types.ProviderError(
                 f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
             ) from exc
         meter_completion(self.budget, self.model, parsed, self.api_label)

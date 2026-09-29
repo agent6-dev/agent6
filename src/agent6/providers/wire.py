@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import re
 from typing import Literal
-from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
+from urllib import parse
 
-from agent6.providers.types import ProviderError
+from agent6.providers import types
 
 ApiFormat = Literal["anthropic", "openai", "chatgpt"]
 Deployment = Literal["direct", "vertex", "azure"]
@@ -47,7 +47,7 @@ def auth_header(style: AuthStyle, token: str) -> tuple[str, str] | None:
     if style == "none" or not token:
         return None
     if not _HEADER_SAFE_VALUE.fullmatch(token):
-        raise ProviderError(
+        raise types.ProviderError(
             "provider credential is not a valid HTTP header value: it holds a"
             " control character, newline, or non-ASCII byte (a stray newline"
             " from copy-paste is the usual cause). The value is not shown, to"
@@ -66,10 +66,10 @@ def _merge_query(url: str, extra_query: dict[str, str]) -> str:
     """Return the URL with the extra query parameters merged in."""
     if not extra_query:
         return url
-    parts = urlsplit(url)
-    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    parts = parse.urlsplit(url)
+    query = dict(parse.parse_qsl(parts.query, keep_blank_values=True))
     query.update(extra_query)
-    return urlunsplit(parts._replace(query=urlencode(query)))
+    return parse.urlunsplit(parts._replace(query=parse.urlencode(query)))
 
 
 def request_url(
@@ -99,10 +99,10 @@ def request_url(
     # A path-carried id is quoted to one segment so it cannot reshape the URL off the base host.
     if deployment == "vertex" and api_format == "anthropic":
         verb = "streamRawPredict" if streaming else "rawPredict"
-        url, model_in_body = f"{base}/{quote(model, safe='')}:{verb}", False
+        url, model_in_body = f"{base}/{parse.quote(model, safe='')}:{verb}", False
     elif deployment == "azure":
         # api_format is validated to be "openai" for azure at config load.
-        seg = quote(model, safe="")
+        seg = parse.quote(model, safe="")
         url, model_in_body = f"{base}/openai/deployments/{seg}/chat/completions", False
     elif api_format == "anthropic":
         url, model_in_body = f"{base}/messages", True

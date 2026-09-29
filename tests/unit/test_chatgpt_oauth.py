@@ -392,7 +392,7 @@ def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> Non
         return _Resp(500, {"error": "boom", "received": tok})
 
     monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
-    tokens = chatgpt_oauth.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
+    tokens = secrets.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
     warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
     assert warn is not None and tok not in warn and "<REDACTED>" in warn
 
@@ -408,7 +408,7 @@ def test_revoke_warning_scrubs_a_token_split_across_the_clip(
         return _Resp(500, body)
 
     monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
-    tokens = chatgpt_oauth.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
+    tokens = secrets.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
     warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
     assert warn is not None
     assert tok[:10] not in warn
@@ -632,7 +632,7 @@ def test_unheld_refresh_lock_refuses_the_rotation(
     def unheld(_path: pathlib.Path) -> Generator[bool]:
         yield False
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth.locked_file", unheld)
+    monkeypatch.setattr("agent6.portable.locked_file", unheld)
     clock = {"now": 6000.0}
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)

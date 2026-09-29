@@ -19,25 +19,17 @@ thinking block, which streams pings only by design.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import threading
 import time
 from collections.abc import Callable, Generator, Mapping
-from dataclasses import dataclass
 from typing import Any
 
 import httpx2
 
-from agent6.budget import BudgetTracker, PlanUsage
-from agent6.providers._transport import granular_timeout
-from agent6.providers.types import (
-    ProviderAborted,
-    ProviderError,
-    ProviderInterrupted,
-    TranscriptRecorder,
-    parse_retry_after,
-    scrub_secret_values,
-)
+from agent6 import budget as agent6_budget
+from agent6.providers import _transport, types
 
 STREAM_FIRST_DATA_TIMEOUT_S = 120.0
 STREAM_IDLE_TIMEOUT_S = 45.0
@@ -68,7 +60,7 @@ def http_stream(
         The open response.
     """
     with httpx2.stream(
-        method, url, headers=headers, content=content, timeout=granular_timeout(timeout)
+        method, url, headers=headers, content=content, timeout=_transport.granular_timeout(timeout)
     ) as resp:
         yield resp
 
@@ -93,7 +85,7 @@ def bounded_lines(
     """
     for line in resp.iter_lines():
         if len(line) * 4 > max_line_bytes and len(line.encode("utf-8")) > max_line_bytes:
-            raise ProviderError(
+            raise types.ProviderError(
                 f"stream frame exceeded {max_line_bytes} bytes; refusing to buffer it"
             )
         yield line
@@ -139,7 +131,7 @@ def sse_events(
         elif field == "data":
             size += len(value)
             if size > max_event_bytes:
-                raise ProviderError(
+                raise types.ProviderError(
                     f"SSE event exceeded {max_event_bytes} bytes; refusing to buffer it"
                 )
             data.append(value)
@@ -212,7 +204,7 @@ def safe_poll(fn: Callable[[], bool] | None) -> bool:
 
 
 def record_billed_usage(
-    budget: BudgetTracker | None,
+    budget: agent6_budget.BudgetTracker | None,
     model: str,
     *,
     input_tokens: int,
@@ -220,7 +212,7 @@ def record_billed_usage(
     cache_read_tokens: int = 0,
     cache_creation_tokens: int = 0,
     cost_usd: float = 0.0,
-    plan_usage: PlanUsage | None = None,
+    plan_usage: agent6_budget.PlanUsage | None = None,
 ) -> None:
     """Record what a call that did not complete already cost.
 
@@ -258,7 +250,7 @@ def record_billed_usage(
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SseCall:
     """One provider SSE request, as the shared lifecycle needs it.
 
@@ -281,7 +273,7 @@ class SseCall:
     headers: dict[str, str]
     body: dict[str, Any]
     timeout_s: float
-    transcript_sink: TranscriptRecorder | None
+    transcript_sink: types.TranscriptRecorder | None
     should_abort: Callable[[], bool] | None
     should_interrupt: Callable[[], bool] | None
     response_headers: Callable[[Mapping[str, str]], None] | None = None
@@ -354,9 +346,9 @@ class SseCall:
 
         def _raise_watchdog(cause: Exception | None = None) -> None:
             if interrupted.is_set():
-                raise ProviderInterrupted("steer requested mid-stream") from cause
+                raise types.ProviderInterrupted("steer requested mid-stream") from cause
             if aborted.is_set():
-                raise ProviderAborted("run stopped by operator") from cause
+                raise types.ProviderAborted("run stopped by operator") from cause
             if idle_killed.is_set():
                 phase_s, where = clock.idle_budget()
                 self.record(
@@ -366,7 +358,7 @@ class SseCall:
                         f"(only heartbeats). Upstream model appears wedged."
                     ),
                 )
-                raise ProviderError(
+                raise types.ProviderError(
                     f"{self.api_label} SSE stream idle for >{phase_s:.0f}s {where} "
                     "(only heartbeats received); upstream model appears wedged."
                 ) from cause
@@ -385,16 +377,16 @@ class SseCall:
                 if not 200 <= resp.status_code < 300:
                     error_body = _error_body_prefix(resp)
                     self.record(status=resp.status_code, response=error_body)
-                    raise ProviderError(
+                    raise types.ProviderError(
                         f"{self.api_label} API error {resp.status_code}: "
-                        f"{scrub_secret_values(error_body, self.headers)[:500]}",
+                        f"{types.scrub_secret_values(error_body, self.headers)[:500]}",
                         status_code=resp.status_code,
-                        retry_after_s=parse_retry_after(resp.headers),
+                        retry_after_s=types.parse_retry_after(resp.headers),
                     )
                 try:
                     consume(resp, clock)
                 except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
-                    raise ProviderError(
+                    raise types.ProviderError(
                         f"{self.api_label} stream frame did not match the wire shape:"
                         f" {exc!r} (malformed 2xx event; retryable)"
                     ) from exc
@@ -403,7 +395,7 @@ class SseCall:
         except httpx2.HTTPError as exc:
             _raise_watchdog(exc)
             self.record(status=0, response=f"HTTPError: {exc}")
-            raise ProviderError(
+            raise types.ProviderError(
                 f"HTTP error streaming from {self.url} ({self.api_format} format): {exc}"
             ) from exc
         finally:

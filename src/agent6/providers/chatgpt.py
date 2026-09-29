@@ -13,30 +13,27 @@ called: a rating would opt the turn into provider-side training.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import math
 import re
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
 from typing import Any
 
 import httpx2
 
-from agent6.budget import BudgetTracker, PlanUsage, PlanWindow
-from agent6.providers._openai_messages import tool_result_text
-from agent6.providers._openai_recovery import lenient_json_object
-from agent6.providers._stream import SseCall, StreamClock, record_billed_usage, sse_events
-from agent6.providers._transport import ProviderCall
-from agent6.providers.chatgpt_oauth import ChatGPTCredential
-from agent6.providers.types import (
-    ProviderError,
-    ProviderResponse,
-    ToolDefinition,
-    TranscriptRecorder,
+from agent6 import budget as agent6_budget
+from agent6.providers import (
+    _openai_messages,
+    _openai_recovery,
+    _stream,
+    _transport,
+    chatgpt_oauth,
+    types,
 )
-from agent6.providers.wire import request_url
+from agent6.providers import wire as providers_wire
 
 DEFAULT_MAX_TOKENS = 8192
 
@@ -130,7 +127,7 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
                 {
                     "type": "function_call_output",
                     "call_id": str(block.get("tool_use_id", "")),
-                    "output": tool_result_text(block.get("content", "")),
+                    "output": _openai_messages.tool_result_text(block.get("content", "")),
                 }
             )
     flush()
@@ -143,7 +140,7 @@ def _message_item(role: str, text: str) -> dict[str, Any]:
     return {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}
 
 
-def tools_to_responses(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
+def tools_to_responses(tools: list[types.ToolDefinition]) -> list[dict[str, Any]]:
     """Return the tools as Responses function tools (flat, not nested)."""
     return [
         {
@@ -178,7 +175,7 @@ def _tool_use_of(item: dict[str, Any], *, n: int) -> dict[str, Any] | None:
         if not isinstance(parsed, dict):
             parsed = {"_value": parsed}
     except (json.JSONDecodeError, TypeError):
-        repaired = lenient_json_object(str(args_raw))
+        repaired = _openai_recovery.lenient_json_object(str(args_raw))
         parsed = repaired if repaired is not None else {"_raw_arguments": str(args_raw)[:500]}
     return {
         "id": str(item.get("call_id") or item.get("id") or f"call_{n}"),
@@ -200,17 +197,19 @@ def _usage_count(value: Any, field_name: str) -> int:
             raise TypeError
         count = int(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ProviderError(
+        raise types.ProviderError(
             f"ChatGPT response usage.{field_name} was not a non-negative integer"
         ) from exc
     if count < 0 or (isinstance(value, float) and not value.is_integer()):
-        raise ProviderError(f"ChatGPT response usage.{field_name} was not a non-negative integer")
+        raise types.ProviderError(
+            f"ChatGPT response usage.{field_name} was not a non-negative integer"
+        )
     return count
 
 
 def parse_output_items(
     items: list[Any], *, usage: Mapping[str, Any], stop_reason: str
-) -> ProviderResponse:
+) -> types.ProviderResponse:
     """Parse the final output items into a response.
 
     `raw["content"]` holds one block per item in wire order: a message's text, a
@@ -266,7 +265,7 @@ def parse_output_items(
     )
     prompt_total = _usage_count(usage.get("input_tokens"), "input_tokens")
     cached = min(cached, prompt_total)
-    return ProviderResponse(
+    return types.ProviderResponse(
         text=text,
         tool_uses=tuple(tool_uses),
         stop_reason=stop_reason,
@@ -291,7 +290,7 @@ def _unreachable_hook(data: dict[str, Any]) -> Any:
     Raises:
         ProviderError: Always.
     """
-    raise ProviderError("chatgpt provider is stream-only")  # pragma: no cover
+    raise types.ProviderError("chatgpt provider is stream-only")  # pragma: no cover
 
 
 _WINDOW_HEADER = re.compile(r"^x-codex-(?P<name>.+)-used-percent$")
@@ -311,7 +310,7 @@ def _window_order(name: str) -> tuple[int, str]:
     return ({"primary": 0, "secondary": 1}.get(name, 2), name)
 
 
-def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
+def _plan_usage_of(headers: Mapping[str, str]) -> agent6_budget.PlanUsage | None:
     """Read the plan windows off a response's `x-codex-*` headers.
 
     Every `x-codex-<name>-used-percent` family is one window, with its window
@@ -324,7 +323,7 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
         The plan usage, or None when the primary reading is absent or malformed.
     """
     lowered = {k.lower(): v for k, v in headers.items()}
-    windows: list[PlanWindow] = []
+    windows: list[agent6_budget.PlanWindow] = []
     for key in sorted(lowered):
         m = _WINDOW_HEADER.match(key)
         if m is None:
@@ -340,7 +339,7 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
         if not resets_at:
             resets_at = time.time() + _num(lowered.get(f"x-codex-{name}-reset-after-seconds"))
         windows.append(
-            PlanWindow(
+            agent6_budget.PlanWindow(
                 name=name,
                 used_percent=used,
                 window_minutes=int(_num(lowered.get(f"x-codex-{name}-window-minutes"))),
@@ -354,7 +353,7 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
         """Return whether a header reads true."""
         return (lowered.get(name) or "").strip().lower() == "true"
 
-    return PlanUsage(
+    return agent6_budget.PlanUsage(
         windows=tuple(sorted(windows, key=lambda w: _window_order(w.name))),
         has_credits=_flag("x-codex-credits-has-credits"),
         credits_unlimited=_flag("x-codex-credits-unlimited"),
@@ -362,7 +361,7 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
     )
 
 
-def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
+def plan_usage_from_usage_body(body: Mapping[str, Any]) -> agent6_budget.PlanUsage | None:
     """Read the account's plan state off the backend's `/usage` body.
 
     Args:
@@ -375,7 +374,7 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
     limits = body.get("rate_limit")
     if not isinstance(limits, Mapping):
         return None
-    windows: list[PlanWindow] = []
+    windows: list[agent6_budget.PlanWindow] = []
     for key, raw in limits.items():
         if not (isinstance(key, str) and key.endswith("_window") and isinstance(raw, Mapping)):
             continue
@@ -390,7 +389,7 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
         if not resets_at:
             resets_at = time.time() + _num(raw.get("reset_after_seconds"))
         windows.append(
-            PlanWindow(
+            agent6_budget.PlanWindow(
                 name=name,
                 used_percent=used,
                 window_minutes=int(_num(raw.get("limit_window_seconds")) / 60),
@@ -401,7 +400,7 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
         return None
     credits = body.get("credits")
     credits = credits if isinstance(credits, Mapping) else {}
-    return PlanUsage(
+    return agent6_budget.PlanUsage(
         windows=tuple(sorted(windows, key=lambda w: _window_order(w.name))),
         has_credits=credits.get("has_credits") is True,
         credits_unlimited=credits.get("unlimited") is True,
@@ -410,7 +409,7 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
     )
 
 
-def _stream_error(evt: dict[str, Any]) -> ProviderError:
+def _stream_error(evt: dict[str, Any]) -> types.ProviderError:
     """Return the error a `response.failed` or `error` frame carries, classified."""
     response = evt.get("response")
     err = response.get("error") if isinstance(response, dict) else evt.get("error")
@@ -422,10 +421,12 @@ def _stream_error(evt: dict[str, Any]) -> ProviderError:
     if code in _USAGE_LIMIT_CODES:
         plan = str(err.get("plan_type") or "")
         detail += f" (ChatGPT {plan} plan usage limit)" if plan else " (ChatGPT usage limit)"
-    return ProviderError(f"ChatGPT stream error: {code or 'error'}: {detail}", status_code=status)
+    return types.ProviderError(
+        f"ChatGPT stream error: {code or 'error'}: {detail}", status_code=status
+    )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ChatGPTProvider:
     """The ChatGPT provider, constructed once per run.
 
@@ -447,21 +448,21 @@ class ChatGPTProvider:
     """
 
     model: str
-    credential: ChatGPTCredential
+    credential: chatgpt_oauth.ChatGPTCredential
     account_id: str
     base_url: str
     extra_headers: tuple[tuple[str, str], ...] = ()
-    extra_body: dict[str, Any] = field(default_factory=dict)
-    extra_query: dict[str, str] = field(default_factory=dict)
+    extra_body: dict[str, Any] = dataclasses.field(default_factory=dict)
+    extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
     timeout_s: float = 600.0
-    transcript_sink: TranscriptRecorder | None = None
-    budget: BudgetTracker | None = None
+    transcript_sink: types.TranscriptRecorder | None = None
+    budget: agent6_budget.BudgetTracker | None = None
     reasoning_effort: str | None = None
-    session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str = dataclasses.field(default_factory=lambda: str(uuid.uuid4()))
     # One usage preflight per provider; a list, since the dataclass is frozen.
-    _preflighted: list[bool] = field(default_factory=lambda: [False])
+    _preflighted: list[bool] = dataclasses.field(default_factory=lambda: [False])
 
-    def preflight(self) -> PlanUsage | None:
+    def preflight(self) -> agent6_budget.PlanUsage | None:
         """Read the account's plan state off the backend's `/usage` before any call.
 
         Best effort: any failure reads as no reading, never as a block. The body
@@ -480,7 +481,7 @@ class ChatGPTProvider:
             if resp.status_code != 200:
                 return None
             body = resp.json()
-        except (ProviderError, httpx2.HTTPError, ValueError, OSError):
+        except (types.ProviderError, httpx2.HTTPError, ValueError, OSError):
             return None
         return plan_usage_from_usage_body(body) if isinstance(body, dict) else None
 
@@ -503,7 +504,7 @@ class ChatGPTProvider:
         *,
         system: str,
         messages: list[dict[str, Any]],
-        tools: list[ToolDefinition] | None = None,
+        tools: list[types.ToolDefinition] | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
         extended_thinking: dict[str, Any] | None = None,
@@ -512,7 +513,7 @@ class ChatGPTProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
-    ) -> ProviderResponse:
+    ) -> types.ProviderResponse:
         """Make one Responses call over SSE.
 
         Args:
@@ -542,7 +543,7 @@ class ChatGPTProvider:
                 if plan is not None:
                     self.budget.record_plan_preflight(self.model, plan)
             self.budget.check()
-        url, _ = request_url(
+        url, _ = providers_wire.request_url(
             api_format="chatgpt",
             deployment="direct",
             base_url=self.base_url,
@@ -583,7 +584,7 @@ class ChatGPTProvider:
             }
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
 
-        return ProviderCall(
+        return _transport.ProviderCall(
             api_label="ChatGPT",
             api_format="chatgpt",
             url=url,
@@ -621,7 +622,7 @@ class ChatGPTProvider:
         thinking_delta_callback: Callable[[str], None] | None,
         should_abort: Callable[[], bool] | None,
         should_interrupt: Callable[[], bool] | None,
-    ) -> ProviderResponse:
+    ) -> types.ProviderResponse:
         """Make the call over SSE; this method owns the Responses event shape.
 
         Each frame is a JSON object whose `type` names the event. Deltas feed the
@@ -651,7 +652,7 @@ class ChatGPTProvider:
         items: list[Any] = []
         delta_text: list[str] = []
         usage: dict[str, Any] = {}
-        plan_usage: PlanUsage | None = None
+        plan_usage: agent6_budget.PlanUsage | None = None
         stop_reason = ""
         done = False
 
@@ -660,7 +661,7 @@ class ChatGPTProvider:
             nonlocal plan_usage
             plan_usage = _plan_usage_of(response_headers)
 
-        call = SseCall(
+        call = _stream.SseCall(
             api_label="ChatGPT",
             api_format="chatgpt",
             url=url,
@@ -674,7 +675,7 @@ class ChatGPTProvider:
         )
 
         def consume(  # noqa: PLR0912, PLR0915
-            resp: httpx2.Response, clock: StreamClock
+            resp: httpx2.Response, clock: _stream.StreamClock
         ) -> None:
             """Read the stream's events into the accumulators.
 
@@ -682,7 +683,7 @@ class ChatGPTProvider:
                 ProviderError: A failed response or an unknown terminal status.
             """  # noqa: DOC501  # `_stream_error` builds the ProviderError named above
             nonlocal usage, stop_reason, done
-            for _event, data in sse_events(resp):
+            for _event, data in _stream.sse_events(resp):
                 clock.mark_data()
                 data_str = data.strip()
                 if not data_str or data_str == "[DONE]":
@@ -731,7 +732,7 @@ class ChatGPTProvider:
                         raise _stream_error(evt)
                     if status not in ("completed", "incomplete", "done"):
                         call.record(status=0, response=data_str[:8192])
-                        raise ProviderError(f"ChatGPT response ended with status {status}")
+                        raise types.ProviderError(f"ChatGPT response ended with status {status}")
                     final_items = response.get("output")
                     if isinstance(final_items, list) and final_items:
                         # The terminal response is the whole output; item.done events may be absent.
@@ -753,7 +754,7 @@ class ChatGPTProvider:
             if not usage and plan_usage is None:
                 return
             billed = parse_output_items([], usage=usage, stop_reason="")
-            record_billed_usage(
+            _stream.record_billed_usage(
                 self.budget,
                 self.model,
                 input_tokens=billed.input_tokens,
@@ -773,7 +774,7 @@ class ChatGPTProvider:
         if not done:
             _record_billed()
             call.record(status=0, response="stream ended without a terminal response event")
-            raise ProviderError(
+            raise types.ProviderError(
                 f"ChatGPT stream from {url} ended without response.completed;"
                 " upstream appears cut off."
             )
@@ -782,7 +783,7 @@ class ChatGPTProvider:
         if not parsed.text and delta_text:
             # Text deltas without a final message item keep what the operator watched arrive.
             text = "".join(delta_text)
-            parsed = replace(
+            parsed = dataclasses.replace(
                 parsed,
                 text=text,
                 raw={
@@ -801,7 +802,7 @@ class ChatGPTProvider:
         if self.budget is not None:
             if int(usage.get("input_tokens") or 0) <= 0:
                 _record_billed()
-                raise ProviderError(
+                raise types.ProviderError(
                     "ChatGPT stream reported no usage input tokens;"
                     " budgeted runs require provider usage accounting"
                 )

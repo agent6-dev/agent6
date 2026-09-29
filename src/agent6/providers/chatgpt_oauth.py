@@ -13,6 +13,7 @@ only OpenAI's hosts. Nothing a remote returns is executed. Tokens live in
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import json
 import math
@@ -20,16 +21,14 @@ import secrets as pysecrets
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit
+from urllib import parse
 
 import httpx2
 
-from agent6.paths import secrets_path
-from agent6.portable import locked_file
-from agent6.providers.types import ProviderError
-from agent6.secrets import OAuthTokens, load_oauth_tokens, save_oauth_tokens
+from agent6 import paths, portable
+from agent6 import secrets as agent6_secrets
+from agent6.providers import types
 
 CHATGPT_ISSUER = "https://auth.openai.com"
 # The Codex CLI's public client registration; its redirect is pinned to localhost:1455.
@@ -54,7 +53,7 @@ _PERMANENT_REFRESH_CODES = frozenset(
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class TokenGrant:
     """One `/oauth/token` response, from an exchange or a refresh.
 
@@ -99,7 +98,7 @@ def authorize_url(issuer: str, client_id: str, *, challenge: str, state: str) ->
     Returns:
         The authorize URL.
     """
-    query = urlencode(
+    query = parse.urlencode(
         [
             ("response_type", "code"),
             ("client_id", client_id),
@@ -131,8 +130,8 @@ def parse_callback(pasted: str, *, state: str) -> str:
             or no code; the message names which.
     """
     text = pasted.strip()
-    query = urlsplit(text).query if "?" in text else text
-    params = dict(parse_qsl(query, keep_blank_values=True))
+    query = parse.urlsplit(text).query if "?" in text else text
+    params = dict(parse.parse_qsl(query, keep_blank_values=True))
     # The state is checked first, so a callback this sign-in did not start gets nothing reflected.
     if params.get("state", "") != state:
         raise ValueError("state mismatch: this callback is not from the sign-in agent6 started")
@@ -150,7 +149,7 @@ def _post_form(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Respo
     return httpx2.post(
         url,
         headers={"content-type": "application/x-www-form-urlencoded"},
-        content=urlencode(data).encode("ascii"),
+        content=parse.urlencode(data).encode("ascii"),
         timeout=timeout_s,
     )
 
@@ -176,27 +175,31 @@ def _grant_from_response(resp: httpx2.Response, *, operation: str) -> TokenGrant
     try:
         data: Any = resp.json()
     except ValueError as exc:
-        raise ProviderError(f"ChatGPT token {operation} returned a non-JSON body") from exc
+        raise types.ProviderError(f"ChatGPT token {operation} returned a non-JSON body") from exc
     access = data.get("access_token") if isinstance(data, dict) else None
     if not isinstance(access, str) or not access:
-        raise ProviderError(f"ChatGPT token {operation} response carried no access_token")
+        raise types.ProviderError(f"ChatGPT token {operation} response carried no access_token")
     refresh = data.get("refresh_token")
     if refresh is None:
         refresh = ""
     if not isinstance(refresh, str):
-        raise ProviderError(f"ChatGPT token {operation} response carried an unusable refresh_token")
+        raise types.ProviderError(
+            f"ChatGPT token {operation} response carried an unusable refresh_token"
+        )
     identity = data.get("id_token")
     if identity is None:
         identity = ""
     if not isinstance(identity, str):
-        raise ProviderError(f"ChatGPT token {operation} response carried an unusable id_token")
+        raise types.ProviderError(
+            f"ChatGPT token {operation} response carried an unusable id_token"
+        )
     expires = data.get("expires_in", 3600.0)
     try:
         expires_in = float(expires)
         if isinstance(expires, bool) or not math.isfinite(expires_in) or expires_in <= 0:
             raise ValueError
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ProviderError(
+        raise types.ProviderError(
             f"ChatGPT token {operation} response carried an unusable expires_in"
         ) from exc
     return TokenGrant(
@@ -222,7 +225,7 @@ def _scrub(text: str, secrets: tuple[str, ...]) -> str:
 
 def _token_error(
     resp: httpx2.Response, *, operation: str, provider: str, secrets: tuple[str, ...] = ()
-) -> ProviderError:
+) -> types.ProviderError:
     """Classify a non-2xx token response.
 
     Args:
@@ -243,12 +246,12 @@ def _token_error(
     except (ValueError, AttributeError):
         pass
     if resp.status_code == 401 or code in _PERMANENT_REFRESH_CODES:
-        return ProviderError(
+        return types.ProviderError(
             f"ChatGPT sign-in is no longer valid ({code or f'HTTP {resp.status_code}'});"
             f" run `agent6 connect {provider}` to sign in again.",
             status_code=401,
         )
-    return ProviderError(
+    return types.ProviderError(
         f"ChatGPT token {operation} failed: HTTP {resp.status_code}: {body[:300]}",
         status_code=resp.status_code,
     )
@@ -296,16 +299,16 @@ def exchange_code(
             timeout_s,
         )
     except httpx2.HTTPError as exc:
-        raise ProviderError(f"could not reach {url}: {exc}") from exc
+        raise types.ProviderError(f"could not reach {url}: {exc}") from exc
     if resp.status_code >= 400:
         raise _token_error(resp, operation="exchange", provider=provider, secrets=(code, verifier))
     grant = _grant_from_response(resp, operation="exchange")
     if not grant.refresh_token.strip():
-        raise ProviderError("ChatGPT token exchange response carried no refresh_token")
+        raise types.ProviderError("ChatGPT token exchange response carried no refresh_token")
     return grant
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class DeviceAuth:
     """A started device-code sign-in.
 
@@ -338,11 +341,13 @@ def start_device_auth(issuer: str, client_id: str) -> DeviceAuth | None:
     try:
         resp = _post_json(url, {"client_id": client_id}, _TOKEN_TIMEOUT_S)
     except httpx2.HTTPError as exc:
-        raise ProviderError(f"could not reach {url}: {exc}") from exc
+        raise types.ProviderError(f"could not reach {url}: {exc}") from exc
     if resp.status_code == 404:
         return None
     if resp.status_code >= 400:
-        raise ProviderError(f"device sign-in refused: HTTP {resp.status_code}: {resp.text[:200]}")
+        raise types.ProviderError(
+            f"device sign-in refused: HTTP {resp.status_code}: {resp.text[:200]}"
+        )
     try:
         data: Any = resp.json()
         return DeviceAuth(
@@ -351,7 +356,7 @@ def start_device_auth(issuer: str, client_id: str) -> DeviceAuth | None:
             interval_s=max(5.0, float(data.get("interval") or 5.0)),
         )
     except (ValueError, KeyError, TypeError) as exc:
-        raise ProviderError(f"device sign-in response was malformed: {exc!r}") from exc
+        raise types.ProviderError(f"device sign-in response was malformed: {exc!r}") from exc
 
 
 def poll_device_auth(
@@ -394,14 +399,16 @@ def poll_device_auth(
                 _TOKEN_TIMEOUT_S,
             )
         except httpx2.HTTPError as exc:
-            raise ProviderError(f"could not reach {url}: {exc}") from exc
+            raise types.ProviderError(f"could not reach {url}: {exc}") from exc
         if resp.status_code < 400:
             try:
                 data: Any = resp.json()
                 code = str(data["authorization_code"])
                 verifier = str(data["code_verifier"])
             except (ValueError, KeyError, TypeError) as exc:
-                raise ProviderError(f"device sign-in response was malformed: {exc!r}") from exc
+                raise types.ProviderError(
+                    f"device sign-in response was malformed: {exc!r}"
+                ) from exc
             return exchange_code(
                 issuer,
                 client_id,
@@ -418,11 +425,13 @@ def poll_device_auth(
             interval += 5.0
             sleep(interval)
             continue
-        raise ProviderError(
+        raise types.ProviderError(
             "device sign-in failed: "
             f"HTTP {resp.status_code}: {_scrub(resp.text, (device.device_auth_id,))[:200]}"
         )
-    raise ProviderError("device sign-in expired before the code was entered; run connect again")
+    raise types.ProviderError(
+        "device sign-in expired before the code was entered; run connect again"
+    )
 
 
 def _error_code_of(resp: httpx2.Response) -> str:
@@ -469,13 +478,13 @@ def refresh_grant(
             timeout_s,
         )
     except httpx2.HTTPError as exc:
-        raise ProviderError(f"could not reach {url}: {exc}") from exc
+        raise types.ProviderError(f"could not reach {url}: {exc}") from exc
     if resp.status_code >= 400:
         raise _token_error(resp, operation="refresh", provider=provider, secrets=(refresh_token,))
     return _grant_from_response(resp, operation="refresh")
 
 
-def revoke_tokens(issuer: str, client_id: str, tokens: OAuthTokens) -> str | None:
+def revoke_tokens(issuer: str, client_id: str, tokens: agent6_secrets.OAuthTokens) -> str | None:
     """Revoke the grant at sign-out, best effort.
 
     The refresh token kills the whole grant; the access token is the fallback.
@@ -552,7 +561,9 @@ def plan_type_of(grant: TokenGrant) -> str:
     return ""
 
 
-def tokens_from_grant(grant: TokenGrant, *, previous: OAuthTokens | None = None) -> OAuthTokens:
+def tokens_from_grant(
+    grant: TokenGrant, *, previous: agent6_secrets.OAuthTokens | None = None
+) -> agent6_secrets.OAuthTokens:
     """Build the storable tokens for a grant.
 
     Args:
@@ -565,7 +576,7 @@ def tokens_from_grant(grant: TokenGrant, *, previous: OAuthTokens | None = None)
     """
     account = account_id_of(grant) or (previous.account_id if previous else "")
     refresh = grant.refresh_token or (previous.refresh_token if previous else "")
-    return OAuthTokens(
+    return agent6_secrets.OAuthTokens(
         access_token=grant.access_token,
         refresh_token=refresh,
         expires_at=time.time() + grant.expires_in,
@@ -610,12 +621,12 @@ class ChatGPTCredential:
         self._issuer = issuer
         self._client_id = client_id
         self._lock = threading.Lock()
-        self._tokens: OAuthTokens | None = None
+        self._tokens: agent6_secrets.OAuthTokens | None = None
         self._force_refresh = False
         self._account = ""
         self._last_returned = ""
 
-    def _stored(self) -> OAuthTokens:
+    def _stored(self) -> agent6_secrets.OAuthTokens:
         """Load the stored tokens and check them against the pinned account.
 
         Returns:
@@ -625,9 +636,9 @@ class ChatGPTCredential:
             ProviderError: No sign-in is stored, the stored account id contradicts
                 the token's own claim, or the grant belongs to another account.
         """
-        tokens = load_oauth_tokens(self._provider)
+        tokens = agent6_secrets.load_oauth_tokens(self._provider)
         if tokens is None:
-            raise ProviderError(
+            raise types.ProviderError(
                 f"No ChatGPT sign-in stored for provider {self._provider!r};"
                 f" run `agent6 connect {self._provider}`.",
                 status_code=401,
@@ -635,7 +646,7 @@ class ChatGPTCredential:
         # A stored entry can hold a user id where the account id belongs; the repair is a reconnect.
         claimed = account_id_of(TokenGrant(tokens.access_token, "", 0.0, ""))
         if claimed and tokens.account_id and claimed != tokens.account_id:
-            raise ProviderError(
+            raise types.ProviderError(
                 f"The stored ChatGPT sign-in for {self._provider!r} carries an account id"
                 f" that does not match its own token; run `agent6 connect {self._provider}`"
                 " to sign in again.",
@@ -643,7 +654,9 @@ class ChatGPTCredential:
             )
         return self._same_account(tokens, claimed=claimed)
 
-    def _same_account(self, tokens: OAuthTokens, *, claimed: str = "") -> OAuthTokens:
+    def _same_account(
+        self, tokens: agent6_secrets.OAuthTokens, *, claimed: str = ""
+    ) -> agent6_secrets.OAuthTokens:
         """Pin on the first account id seen.
 
         Args:
@@ -660,7 +673,7 @@ class ChatGPTCredential:
         if not self._account:
             self._account = account
         elif account and account != self._account:
-            raise ProviderError(
+            raise types.ProviderError(
                 f"The stored ChatGPT sign-in for {self._provider!r} now belongs to a"
                 f" different account than this run started under;"
                 f" run `agent6 connect {self._provider}` to sign in again.",
@@ -668,7 +681,7 @@ class ChatGPTCredential:
             )
         return tokens
 
-    def _adopt(self, tokens: OAuthTokens) -> str:
+    def _adopt(self, tokens: agent6_secrets.OAuthTokens) -> str:
         """Return the tokens' bearer after taking them as current."""
         self._tokens = tokens
         self._force_refresh = False
@@ -687,11 +700,11 @@ class ChatGPTCredential:
             if not self._force_refresh and time.time() < tokens.expires_at - _REFRESH_SKEW_S:
                 return self._adopt(tokens)
             # An unserialised rotation kills every process's sign-in, so an unheld lock refuses.
-            with locked_file(secrets_path()) as held:
+            with portable.locked_file(paths.secrets_path()) as held:
                 if not held:
-                    raise ProviderError(
+                    raise types.ProviderError(
                         "could not take the credential-refresh lock beside"
-                        f" {secrets_path()}; refusing to rotate the single-use"
+                        f" {paths.secrets_path()}; refusing to rotate the single-use"
                         " ChatGPT refresh token (remove a stale .lock sibling"
                         " if one is left over)"
                     )
@@ -705,7 +718,7 @@ class ChatGPTCredential:
                     grant = refresh_grant(
                         self._issuer, self._client_id, tokens.refresh_token, provider=self._provider
                     )
-                except ProviderError as exc:
+                except types.ProviderError as exc:
                     if "refresh_token_reused" not in str(exc):
                         raise
                     # The lock covers one host; a rotation from another host wins after a beat.
@@ -718,7 +731,7 @@ class ChatGPTCredential:
                         raise
                     return self._adopt(rescued)
                 fresh = self._same_account(tokens_from_grant(grant, previous=tokens))
-                save_oauth_tokens(self._provider, fresh)
+                agent6_secrets.save_oauth_tokens(self._provider, fresh)
                 return self._adopt(fresh)
 
     def invalidate(self, status: int = 401) -> bool:

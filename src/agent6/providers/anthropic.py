@@ -10,27 +10,18 @@ caching rides the `cache_control` field on system and tool entries.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import httpx2
 
-from agent6.budget import BudgetTracker
-from agent6.providers._stream import SseCall, StreamClock, record_billed_usage, sse_events
-from agent6.providers._transport import ProviderCall, envelope_status, meter_completion
-from agent6.providers.types import (
-    ProviderError,
-    ProviderResponse,
-    ToolDefinition,
-    TranscriptRecorder,
-    scrub_secret_values,
-)
-from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
+from agent6 import budget as agent6_budget
+from agent6.providers import _stream, _transport, types, wire
 
 if TYPE_CHECKING:
-    from agent6.providers.token_command import CommandToken
+    from agent6.providers import token_command
 
 ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -106,11 +97,11 @@ def _non_negative_integer(value: Any, field_name: str) -> int:
             raise TypeError
         count = int(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ProviderError(
+        raise types.ProviderError(
             f"Anthropic response {field_name} was not a non-negative integer"
         ) from exc
     if count < 0 or (isinstance(value, float) and not value.is_integer()):
-        raise ProviderError(f"Anthropic response {field_name} was not a non-negative integer")
+        raise types.ProviderError(f"Anthropic response {field_name} was not a non-negative integer")
     return count
 
 
@@ -131,7 +122,7 @@ def _usage_mapping(value: Any) -> Mapping[str, Any]:
     if value is None:
         return {}
     if not isinstance(value, Mapping):
-        raise ProviderError("Anthropic response usage was not an object")
+        raise types.ProviderError("Anthropic response usage was not an object")
     return value
 
 
@@ -148,7 +139,7 @@ def _response_string(value: Any, field_name: str, *, empty: bool = True) -> str:
     """
     if not isinstance(value, str) or (not empty and not value.strip()):
         qualifier = "a nonempty string" if not empty else "a string"
-        raise ProviderError(f"Anthropic response {field_name} was not {qualifier}")
+        raise types.ProviderError(f"Anthropic response {field_name} was not {qualifier}")
     return value
 
 
@@ -175,7 +166,7 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
         )
         if total_input > 0:
             return
-    raise ProviderError(
+    raise types.ProviderError(
         f"{source} reported no usage input tokens (usage.input_tokens missing or 0); "
         "budgeted runs require provider usage accounting"
     )
@@ -246,7 +237,7 @@ def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
             out.append(msg)
     shaped = out if changed else messages
     if not shaped:
-        raise ProviderError("Anthropic request has no nonempty messages", fatal=True)
+        raise types.ProviderError("Anthropic request has no nonempty messages", fatal=True)
     return shaped
 
 
@@ -255,7 +246,7 @@ def _is_temperature_400(status: int | None, text: str, body: dict[str, Any]) -> 
     return status == 400 and "temperature" in body and "temperature" in (text or "").lower()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class AnthropicProvider:
     """The Anthropic provider, constructed once per run.
 
@@ -280,20 +271,20 @@ class AnthropicProvider:
     api_key: str
     model: str
     base_url: str = ANTHROPIC_DEFAULT_BASE_URL
-    deployment: Deployment = "direct"
-    auth_style: AuthStyle = "x_api_key"
+    deployment: wire.Deployment = "direct"
+    auth_style: wire.AuthStyle = "x_api_key"
     prompt_caching: bool = True
     timeout_s: float = 120.0
-    transcript_sink: TranscriptRecorder | None = None
-    budget: BudgetTracker | None = None
+    transcript_sink: types.TranscriptRecorder | None = None
+    budget: agent6_budget.BudgetTracker | None = None
     effort: str | None = None
     extra_headers: tuple[tuple[str, str], ...] = ()
-    extra_body: dict[str, Any] = field(default_factory=dict)
-    extra_query: dict[str, str] = field(default_factory=dict)
-    credential: CommandToken | None = None
+    extra_body: dict[str, Any] = dataclasses.field(default_factory=dict)
+    extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
+    credential: token_command.CommandToken | None = None
     # Latched on a "temperature is deprecated" 400 so the rest of the run omits it; a list, since
     # the dataclass is frozen.
-    _omit_temperature: list[bool] = field(default_factory=lambda: [False])
+    _omit_temperature: list[bool] = dataclasses.field(default_factory=lambda: [False])
 
     def _adapt_body_for_400(self, status: int | None, text: str, body: dict[str, Any]) -> bool:
         """Drop `temperature` on a 400 that rejects it and latch the omission.
@@ -322,7 +313,7 @@ class AnthropicProvider:
             The headers, with an operator `anthropic-beta` merged into the built one.
         """
         headers: dict[str, str] = {"content-type": "application/json"}
-        authed = auth_header(self.auth_style, token)
+        authed = wire.auth_header(self.auth_style, token)
         if authed is not None:
             headers[authed[0]] = authed[1]
         version_placement, version_value = _anthropic_version(self.deployment)
@@ -344,7 +335,7 @@ class AnthropicProvider:
         *,
         system: str,
         messages: list[dict[str, Any]],
-        tools: list[ToolDefinition] | None = None,
+        tools: list[types.ToolDefinition] | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
         reasoning_effort: str | None = None,
@@ -352,7 +343,7 @@ class AnthropicProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
-    ) -> ProviderResponse:
+    ) -> types.ProviderResponse:
         """Make one Messages call, streaming when a delta callback is set.
 
         Args:
@@ -378,7 +369,7 @@ class AnthropicProvider:
         if self.budget is not None:
             self.budget.check()
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
-        url, model_in_body = request_url(
+        url, model_in_body = wire.request_url(
             api_format="anthropic",
             deployment=self.deployment,
             base_url=self.base_url,
@@ -454,15 +445,17 @@ class AnthropicProvider:
             # An extra_body max_tokens under the budget is the operator's to fix.
             configured_max = body.get("max_tokens")
             if not isinstance(configured_max, int) or isinstance(configured_max, bool):
-                raise ProviderError("Anthropic request max_tokens was not an integer", fatal=True)
+                raise types.ProviderError(
+                    "Anthropic request max_tokens was not an integer", fatal=True
+                )
             if configured_max <= thinking_budget:
-                raise ProviderError(
+                raise types.ProviderError(
                     f"extra_body.max_tokens {configured_max} is not above the thinking budget"
                     f" {thinking_budget} (effort {level}); raise it or lower the effort",
                     fatal=True,
                 )
 
-        return ProviderCall(
+        return _transport.ProviderCall(
             api_label="Anthropic",
             api_format="anthropic",
             url=url,
@@ -505,7 +498,7 @@ class AnthropicProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
-    ) -> ProviderResponse:
+    ) -> types.ProviderResponse:
         """Make the call over SSE; this method owns the Messages event shape.
 
         Deltas fan to their callbacks as they arrive; at `message_stop` the response
@@ -555,7 +548,7 @@ class AnthropicProvider:
         saw_input_usage = False
         saw_output_usage = False
 
-        call = SseCall(
+        call = _stream.SseCall(
             api_label="Anthropic",
             api_format="anthropic",
             url=url,
@@ -567,7 +560,7 @@ class AnthropicProvider:
             should_interrupt=should_interrupt,
         )
 
-        def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
+        def consume(resp: httpx2.Response, clock: _stream.StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
             """Read the stream's events into the accumulators.
 
             Raises:
@@ -575,13 +568,13 @@ class AnthropicProvider:
             """
             nonlocal stop_reason, saw_message_stop, usage_input, usage_output
             nonlocal usage_cache_read, usage_cache_creation, saw_input_usage, saw_output_usage
-            for event_type, data_str in sse_events(resp):
+            for event_type, data_str in _stream.sse_events(resp):
                 if not data_str:
                     continue
                 try:
                     evt: dict[str, Any] = json.loads(data_str)
                 except json.JSONDecodeError as exc:
-                    raise ProviderError("Anthropic stream event was not JSON") from exc
+                    raise types.ProviderError("Anthropic stream event was not JSON") from exc
                 et = event_type or str(evt.get("type", ""))
                 # `message_start` is metadata, so output is marked only once a content block starts.
                 if et != "ping":
@@ -591,7 +584,7 @@ class AnthropicProvider:
                 if et == "message_start":
                     msg = evt.get("message")
                     if not isinstance(msg, Mapping):
-                        raise ProviderError(
+                        raise types.ProviderError(
                             "Anthropic response message_start.message was not an object"
                         )
                     u = _usage_mapping(msg.get("usage"))
@@ -604,11 +597,13 @@ class AnthropicProvider:
                 elif et == "content_block_start":
                     idx = _non_negative_integer(evt.get("index", 0), "content block index")
                     if idx in open_blocks:
-                        raise ProviderError(f"Anthropic content block {idx} started twice")
+                        raise types.ProviderError(f"Anthropic content block {idx} started twice")
                     open_blocks.add(idx)
                     cb = evt.get("content_block")
                     if not isinstance(cb, Mapping):
-                        raise ProviderError("Anthropic response content block was not an object")
+                        raise types.ProviderError(
+                            "Anthropic response content block was not an object"
+                        )
                     btype = _response_string(cb.get("type"), "content block type", empty=False)
                     if btype == "text":
                         text_acc[idx] = [_response_string(cb.get("text", ""), "content text")]
@@ -634,7 +629,7 @@ class AnthropicProvider:
                     elif btype == "tool_use":
                         tool_input = cb.get("input", {})
                         if not isinstance(tool_input, dict):
-                            raise ProviderError(
+                            raise types.ProviderError(
                                 "Anthropic response content tool_use.input was not an object"
                             )
                         tool_acc[idx] = {
@@ -655,10 +650,12 @@ class AnthropicProvider:
                     idx = _non_negative_integer(evt.get("index", 0), "content block index")
                     d = evt.get("delta")
                     if not isinstance(d, Mapping):
-                        raise ProviderError("Anthropic response content delta was not an object")
+                        raise types.ProviderError(
+                            "Anthropic response content delta was not an object"
+                        )
                     dt = _response_string(d.get("type"), "content delta type", empty=False)
                     if idx in unknown_acc:
-                        raise ProviderError(
+                        raise types.ProviderError(
                             f"Anthropic content block {idx} of type"
                             f" {unknown_acc[idx].get('type')!r} streamed a {dt}"
                         )
@@ -686,7 +683,7 @@ class AnthropicProvider:
                 elif et == "content_block_stop":
                     idx = _non_negative_integer(evt.get("index", 0), "content block index")
                     if idx not in open_blocks:
-                        raise ProviderError(
+                        raise types.ProviderError(
                             f"Anthropic content block {idx} stopped before it started"
                         )
                     open_blocks.remove(idx)
@@ -705,7 +702,7 @@ class AnthropicProvider:
                         }
                         sig = "".join(signature_acc.pop(idx, []))
                         if not sig:
-                            raise ProviderError(
+                            raise types.ProviderError(
                                 "Anthropic content thinking block omitted its signature"
                             )
                         block_out["signature"] = sig
@@ -717,7 +714,7 @@ class AnthropicProvider:
                             try:
                                 tu["input"] = json.loads(partial)
                             except json.JSONDecodeError as exc:
-                                raise ProviderError(
+                                raise types.ProviderError(
                                     "Anthropic content tool_use input JSON was incomplete"
                                 ) from exc
                         content_blocks.append(tu)
@@ -726,7 +723,7 @@ class AnthropicProvider:
                 elif et == "message_delta":
                     d = evt.get("delta")
                     if not isinstance(d, Mapping):
-                        raise ProviderError(
+                        raise types.ProviderError(
                             "Anthropic response message_delta.delta was not an object"
                         )
                     if "stop_reason" in d:
@@ -740,7 +737,7 @@ class AnthropicProvider:
                 elif et == "message_stop":
                     if open_blocks:
                         idx = min(open_blocks)
-                        raise ProviderError(
+                        raise types.ProviderError(
                             f"Anthropic message stopped before content block {idx} stopped"
                         )
                     saw_message_stop = True
@@ -750,22 +747,22 @@ class AnthropicProvider:
                     if isinstance(err, Mapping):
                         label = err.get("type") or err.get("code") or "error"
                         detail = err.get("message") or err
-                        status = envelope_status(err)
+                        status = _transport.envelope_status(err)
                     else:
                         label = "error"
                         detail = err or evt.get("message") or "unknown stream error"
                         status = None
                     # The frame is recorded first; the upstream status keeps a permanent error so.
                     call.record(status=0, response=data_str[:8192])
-                    detail_text = scrub_secret_values(str(detail), headers)
-                    raise ProviderError(
+                    detail_text = types.scrub_secret_values(str(detail), headers)
+                    raise types.ProviderError(
                         f"Anthropic stream error: {label}: {detail_text}",
                         status_code=status,
                     )
 
         def _record_billed() -> None:
             """Record what the turn cost so far."""
-            record_billed_usage(
+            _stream.record_billed_usage(
                 self.budget,
                 self.model,
                 input_tokens=usage_input,
@@ -785,7 +782,7 @@ class AnthropicProvider:
         if not saw_message_stop:
             _record_billed()
             call.record(status=0, response="stream ended without message_stop (truncated)")
-            raise ProviderError(
+            raise types.ProviderError(
                 f"Anthropic SSE stream from {url} ended prematurely "
                 "(no message_stop); upstream appears cut off."
             )
@@ -806,24 +803,24 @@ class AnthropicProvider:
         if self.budget is not None:
             try:
                 if not (saw_input_usage and saw_output_usage):
-                    raise ProviderError(
+                    raise types.ProviderError(
                         "Anthropic stream omitted usage.input_tokens/output_tokens; "
                         "budgeted runs require provider usage accounting"
                     )
                 _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
-            except ProviderError:
+            except types.ProviderError:
                 _record_billed()
                 raise
         try:
             parsed = _parse_response(synthesised)
-        except ProviderError:
+        except types.ProviderError:
             _record_billed()
             raise
-        meter_completion(self.budget, self.model, parsed, "Anthropic")
+        _transport.meter_completion(self.budget, self.model, parsed, "Anthropic")
         return parsed
 
 
-def _parse_response(data: dict[str, Any]) -> ProviderResponse:
+def _parse_response(data: dict[str, Any]) -> types.ProviderResponse:
     """Parse one Messages body.
 
     Args:
@@ -837,7 +834,7 @@ def _parse_response(data: dict[str, Any]) -> ProviderResponse:
     """
     content = data.get("content") or []
     if not isinstance(content, list):
-        raise ProviderError(
+        raise types.ProviderError(
             f"Anthropic response `content` was {type(content).__name__}, not a"
             " list (malformed 2xx from upstream gateway)"
         )
@@ -846,7 +843,7 @@ def _parse_response(data: dict[str, Any]) -> ProviderResponse:
     tool_use_ids: set[str] = set()
     for block in content:
         if not isinstance(block, dict):
-            raise ProviderError(
+            raise types.ProviderError(
                 "Anthropic response content block was not an object"
                 " (malformed 2xx from upstream gateway)"
             )
@@ -856,10 +853,12 @@ def _parse_response(data: dict[str, Any]) -> ProviderResponse:
         elif block_type == "tool_use":
             tool_input = block.get("input", {})
             if not isinstance(tool_input, dict):
-                raise ProviderError("Anthropic response content tool_use.input was not an object")
+                raise types.ProviderError(
+                    "Anthropic response content tool_use.input was not an object"
+                )
             tool_use_id = _response_string(block.get("id"), "content tool_use.id", empty=False)
             if tool_use_id in tool_use_ids:
-                raise ProviderError(
+                raise types.ProviderError(
                     f"Anthropic response had duplicate content tool_use.id {tool_use_id!r}"
                 )
             tool_use_ids.add(tool_use_id)
@@ -878,7 +877,7 @@ def _parse_response(data: dict[str, Any]) -> ProviderResponse:
         elif block_type == "redacted_thinking":
             _response_string(block.get("data", ""), "content redacted_thinking data", empty=False)
     usage = _usage_mapping(data.get("usage"))
-    return ProviderResponse(
+    return types.ProviderResponse(
         text="\n\n".join(text_parts),
         tool_uses=tuple(tool_uses),
         stop_reason=_response_string(data.get("stop_reason"), "stop_reason", empty=False),

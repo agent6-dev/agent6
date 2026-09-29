@@ -13,28 +13,25 @@ are dropped (this wire caches server-side), and reasoning is the
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import os
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlsplit
+from urllib import parse
 
 import httpx2
 
-from agent6.budget import BudgetTracker
-from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
-from agent6.providers._openai_parse import parse_response, response_string
-from agent6.providers._stream import SseCall, StreamClock, record_billed_usage, sse_events
-from agent6.providers._transport import ProviderCall, envelope_status, meter_completion
-from agent6.providers.token_command import CommandToken
-from agent6.providers.types import (
-    ProviderError,
-    ProviderResponse,
-    ToolDefinition,
-    TranscriptRecorder,
+from agent6 import budget as agent6_budget
+from agent6.providers import (
+    _openai_messages,
+    _openai_parse,
+    _stream,
+    _transport,
+    token_command,
+    types,
+    wire,
 )
-from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
 
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MAX_TOKENS = 8192
@@ -80,7 +77,7 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
             prompt = 0
         if prompt > 0:
             return
-    raise ProviderError(
+    raise types.ProviderError(
         f"{source} reported no usage input tokens (usage.prompt_tokens missing or 0); "
         "budgeted runs require provider usage accounting"
     )
@@ -127,7 +124,7 @@ _EFFORT_LEVELS = ("off", "low", "medium", "high", "xhigh", "max")
 
 def is_openai_direct_host(base_url: str, deployment: str) -> bool:
     """Return whether requests go to api.openai.com itself, whose parameters differ."""
-    return deployment == "direct" and urlsplit(base_url).hostname == "api.openai.com"
+    return deployment == "direct" and parse.urlsplit(base_url).hostname == "api.openai.com"
 
 
 def sent_reasoning_effort(
@@ -156,7 +153,7 @@ def sent_reasoning_effort(
     return env_override if env_override in _EFFORT_LEVELS else "low"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class OpenAIProvider:
     """The Chat Completions provider, constructed once per run.
 
@@ -179,20 +176,20 @@ class OpenAIProvider:
     api_key: str
     model: str
     base_url: str = OPENAI_DEFAULT_BASE_URL
-    deployment: Deployment = "direct"
-    auth_style: AuthStyle = "bearer"
+    deployment: wire.Deployment = "direct"
+    auth_style: wire.AuthStyle = "bearer"
     extra_headers: tuple[tuple[str, str], ...] = ()
-    extra_body: dict[str, Any] = field(default_factory=dict)
-    extra_query: dict[str, str] = field(default_factory=dict)
+    extra_body: dict[str, Any] = dataclasses.field(default_factory=dict)
+    extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
     timeout_s: float = 120.0
-    transcript_sink: TranscriptRecorder | None = None
-    budget: BudgetTracker | None = None
+    transcript_sink: types.TranscriptRecorder | None = None
+    budget: agent6_budget.BudgetTracker | None = None
     reasoning_effort: str | None = None
-    credential: CommandToken | None = None
+    credential: token_command.CommandToken | None = None
     # Latched on a parameter-rejection 400 (an Azure reasoning deployment has an arbitrary name)
     # so the rest of the run builds the right body first; lists, since the dataclass is frozen.
-    _use_max_completion_tokens: list[bool] = field(default_factory=lambda: [False])
-    _omit_temperature: list[bool] = field(default_factory=lambda: [False])
+    _use_max_completion_tokens: list[bool] = dataclasses.field(default_factory=lambda: [False])
+    _omit_temperature: list[bool] = dataclasses.field(default_factory=lambda: [False])
 
     @property
     def endpoint(self) -> str:
@@ -227,7 +224,7 @@ class OpenAIProvider:
     def _build_headers(self, token: str) -> dict[str, str]:
         """Return one attempt's request headers, built from its token."""
         headers: dict[str, str] = {"content-type": "application/json"}
-        authed = auth_header(self.auth_style, token)
+        authed = wire.auth_header(self.auth_style, token)
         if authed is not None:
             headers[authed[0]] = authed[1]
         for k, v in self.extra_headers:
@@ -239,7 +236,7 @@ class OpenAIProvider:
         *,
         system: str,
         messages: list[dict[str, Any]],
-        tools: list[ToolDefinition] | None = None,
+        tools: list[types.ToolDefinition] | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
         extended_thinking: dict[str, Any] | None = None,
@@ -248,7 +245,7 @@ class OpenAIProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
-    ) -> ProviderResponse:
+    ) -> types.ProviderResponse:
         """Make one Chat Completions call, streaming when a delta callback is set.
 
         Args:
@@ -274,7 +271,7 @@ class OpenAIProvider:
         if self.budget is not None:
             self.budget.check()
 
-        oai_messages = anthropic_to_openai_messages(system, messages)
+        oai_messages = _openai_messages.anthropic_to_openai_messages(system, messages)
 
         effective_max_tokens = max_tokens
         if (
@@ -284,7 +281,7 @@ class OpenAIProvider:
             effective_max_tokens = REASONING_MODEL_MIN_MAX_TOKENS
 
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
-        url, model_in_body = request_url(
+        url, model_in_body = wire.request_url(
             api_format="openai",
             deployment=self.deployment,
             base_url=self.base_url,
@@ -327,7 +324,7 @@ class OpenAIProvider:
         ):
             body["temperature"] = temperature
         if tools:
-            body["tools"] = tools_to_openai(tools)
+            body["tools"] = _openai_messages.tools_to_openai(tools)
         if self.extra_body:
             # The structural keys stay agent6's; tuning keys merge last and win.
             reserved = {
@@ -346,7 +343,7 @@ class OpenAIProvider:
         tool_schemas = {t.name: t.input_schema for t in tools} if tools else {}
 
         # Streaming is the only reliable path through a gateway whose heartbeats corrupt a body.
-        return ProviderCall(
+        return _transport.ProviderCall(
             api_label="OpenAI",
             api_format="openai",
             url=url,
@@ -363,7 +360,7 @@ class OpenAIProvider:
             require_metered=lambda data: _require_metered_usage(
                 data.get("usage"), source="OpenAI response"
             ),
-            parse=lambda data: parse_response(
+            parse=lambda data: _openai_parse.parse_response(
                 data, tool_names=tool_names, tool_schemas=tool_schemas
             ),
             stream=(
@@ -395,7 +392,7 @@ class OpenAIProvider:
         should_interrupt: Callable[[], bool] | None = None,
         tool_names: frozenset[str] = frozenset(),
         tool_schemas: dict[str, dict[str, Any]] | None = None,
-    ) -> ProviderResponse:
+    ) -> types.ProviderResponse:
         """Make the call over SSE; this method owns the Chat Completions event shape.
 
         Each frame is one `data:` JSON object whose `choices[0].delta` carries text,
@@ -438,7 +435,7 @@ class OpenAIProvider:
         # A stream ending with neither `[DONE]` nor a finish_reason was cut, not completed.
         done_seen = False
 
-        call = SseCall(
+        call = _stream.SseCall(
             api_label="OpenAI",
             api_format="openai",
             url=url,
@@ -450,7 +447,7 @@ class OpenAIProvider:
             should_interrupt=should_interrupt,
         )
 
-        def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
+        def consume(resp: httpx2.Response, clock: _stream.StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
             """Read the stream's events into the accumulators.
 
             Raises:
@@ -458,7 +455,7 @@ class OpenAIProvider:
             """
             nonlocal finish_reason, usage, done_seen
             # An empty role delta arrives at once, so output is marked on the first content token.
-            for _event, data in sse_events(resp):
+            for _event, data in _stream.sse_events(resp):
                 clock.mark_data()
                 data_str = data.strip()
                 if data_str == "[DONE]":
@@ -474,9 +471,9 @@ class OpenAIProvider:
                 err = evt.get("error")
                 if isinstance(err, dict):
                     call.record(status=0, response=data_str[:8192])
-                    raise ProviderError(
+                    raise types.ProviderError(
                         f"OpenAI stream error: {err.get('code')}: {err.get('message')}",
-                        status_code=envelope_status(err),
+                        status_code=_transport.envelope_status(err),
                     )
                 evt_usage = evt.get("usage")
                 if isinstance(evt_usage, dict):
@@ -489,13 +486,13 @@ class OpenAIProvider:
                     continue
                 fr = choice.get("finish_reason")
                 if fr is not None:
-                    finish_reason = response_string(fr, "finish_reason")
+                    finish_reason = _openai_parse.response_string(fr, "finish_reason")
                 delta = choice.get("delta") or {}
                 if not isinstance(delta, dict):
                     continue
                 content = delta.get("content")
                 if content is not None and not isinstance(content, str):
-                    raise ProviderError("OpenAI response content delta was not a string")
+                    raise types.ProviderError("OpenAI response content delta was not a string")
                 if isinstance(content, str) and content:
                     clock.mark_output()
                     text_parts.append(content)
@@ -506,7 +503,7 @@ class OpenAIProvider:
                 if reasoning is None:
                     reasoning = delta.get("reasoning")
                 if reasoning is not None and not isinstance(reasoning, str):
-                    raise ProviderError("OpenAI response reasoning delta was not a string")
+                    raise types.ProviderError("OpenAI response reasoning delta was not a string")
                 if isinstance(reasoning, str) and reasoning:
                     clock.mark_output()
                     reasoning_parts.append(reasoning)
@@ -524,7 +521,9 @@ class OpenAIProvider:
                     raw_idx = tc.get("index")
                     raw_id = tc.get("id")
                     if raw_id is not None and not isinstance(raw_id, str):
-                        raise ProviderError("OpenAI response tool_call.id delta was not a string")
+                        raise types.ProviderError(
+                            "OpenAI response tool_call.id delta was not a string"
+                        )
                     tc_id = raw_id or ""
                     if raw_idx is not None:
                         idx = int(raw_idx)
@@ -549,19 +548,19 @@ class OpenAIProvider:
                     if func is None:
                         continue
                     if not isinstance(func, dict):
-                        raise ProviderError(
+                        raise types.ProviderError(
                             "OpenAI response tool_call.function delta was not an object"
                         )
                     name = func.get("name")
                     if name is not None and not isinstance(name, str):
-                        raise ProviderError(
+                        raise types.ProviderError(
                             "OpenAI response tool_call.function.name delta was not a string"
                         )
                     if name:
                         slot["function"]["name"] = name
                     args_piece = func.get("arguments")
                     if args_piece is not None and not isinstance(args_piece, str):
-                        raise ProviderError(
+                        raise types.ProviderError(
                             "OpenAI response tool_call.function.arguments delta was not a string"
                         )
                     if args_piece:
@@ -571,12 +570,12 @@ class OpenAIProvider:
             """Record what the turn cost so far, through the one owner of the usage mapping."""
             if not usage:
                 return
-            billed = parse_response(
+            billed = _openai_parse.parse_response(
                 {"choices": [], "usage": usage},
                 tool_names=tool_names,
                 tool_schemas=tool_schemas,
             )
-            record_billed_usage(
+            _stream.record_billed_usage(
                 self.budget,
                 self.model,
                 input_tokens=billed.input_tokens,
@@ -590,7 +589,7 @@ class OpenAIProvider:
             call.run(consume)
         except BaseException:
             # A usage shape the parser refuses must not replace the reason the stream ended.
-            with contextlib.suppress(ProviderError):
+            with contextlib.suppress(types.ProviderError):
                 _record_billed()
             raise
 
@@ -601,7 +600,7 @@ class OpenAIProvider:
                 status=0,
                 response="stream ended without [DONE] or finish_reason (truncated)",
             )
-            raise ProviderError(
+            raise types.ProviderError(
                 f"OpenAI stream from {url} ended prematurely "
                 "(no [DONE], no finish_reason); upstream appears cut off."
             )
@@ -636,7 +635,7 @@ class OpenAIProvider:
                 status=0,
                 response="stream cut before its usage trailer (truncated)",
             )
-            raise ProviderError(
+            raise types.ProviderError(
                 f"OpenAI stream from {url} was cut off before its usage trailer"
                 " (finish_reason seen, no [DONE], no usage); truncated response."
             )
@@ -644,9 +643,11 @@ class OpenAIProvider:
         if self.budget is not None:
             try:
                 _require_metered_usage(usage, source="OpenAI stream")
-            except ProviderError:
+            except types.ProviderError:
                 _record_billed()
                 raise
-        parsed = parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)
-        meter_completion(self.budget, self.model, parsed, "OpenAI")
+        parsed = _openai_parse.parse_response(
+            synthesised, tool_names=tool_names, tool_schemas=tool_schemas
+        )
+        _transport.meter_completion(self.budget, self.model, parsed, "OpenAI")
         return parsed

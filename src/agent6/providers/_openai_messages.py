@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent6.providers.types import ToolDefinition
+from agent6.providers import types
 
 
 def tool_result_text(tr_content: Any) -> str:
@@ -114,7 +114,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
     return out
 
 
-def tools_to_openai(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
+def tools_to_openai(tools: list[types.ToolDefinition]) -> list[dict[str, Any]]:
     """Return the tools as Chat Completions function-tool entries."""
     return [
         {

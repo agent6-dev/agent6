@@ -10,12 +10,12 @@ Anthropic-shaped messages; `claude_code` owns the process.
 from __future__ import annotations
 
 import json
+import pathlib
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
-from agent6.budget import PlanUsage, PlanWindow
-from agent6.child_env import curated_env
+from agent6 import budget
+from agent6 import child_env as agent6_child_env
 
 # Above this size Claude Code persists a tool result to disk and hands the model a 2 KB preview.
 CLAUDE_CODE_PERSIST_BYTES = 50_000
@@ -49,7 +49,7 @@ _HARNESS_REPLAY = (
 
 
 def claude_argv(
-    binary: str, model: str, effort: str | None, system_prompt_file: Path
+    binary: str, model: str, effort: str | None, system_prompt_file: pathlib.Path
 ) -> tuple[str, ...]:
     """Build the child's argv from operator config and literals only.
 
@@ -102,7 +102,9 @@ def child_env() -> dict[str, str]:
     when set, and the fixed toggles; no other `ANTHROPIC_*` or `CLAUDE*` variable
     reaches it, since a key would override the subscription login.
     """
-    return curated_env(passthrough=_PASSTHROUGH, extra=CLAUDE_CODE_ENV, desktop=False)
+    return agent6_child_env.curated_env(
+        passthrough=_PASSTHROUGH, extra=CLAUDE_CODE_ENV, desktop=False
+    )
 
 
 def bare_tool_name(name: str) -> str:
@@ -117,7 +119,7 @@ def _window_minutes(name: str) -> int:
     return 10_080 if name.startswith("seven_day") else 0
 
 
-def plan_usage_from_rate_limit(info: Mapping[str, Any]) -> PlanUsage | None:
+def plan_usage_from_rate_limit(info: Mapping[str, Any]) -> budget.PlanUsage | None:
     """Read the plan usage off one `rate_limit_event.rate_limit_info`.
 
     Args:
@@ -131,7 +133,7 @@ def plan_usage_from_rate_limit(info: Mapping[str, Any]) -> PlanUsage | None:
     raw = info.get("unifiedWindows")
     if not isinstance(raw, Mapping):
         return None
-    windows: list[PlanWindow] = []
+    windows: list[budget.PlanWindow] = []
     for name, window in raw.items():
         if not isinstance(window, Mapping):
             continue
@@ -139,11 +141,13 @@ def plan_usage_from_rate_limit(info: Mapping[str, Any]) -> PlanUsage | None:
         if not isinstance(used, (int, float)) or not isinstance(resets_at, (int, float)):
             continue
         windows.append(
-            PlanWindow(str(name), float(used) * 100.0, _window_minutes(str(name)), float(resets_at))
+            budget.PlanWindow(
+                str(name), float(used) * 100.0, _window_minutes(str(name)), float(resets_at)
+            )
         )
     if not windows:
         return None
-    return PlanUsage(
+    return budget.PlanUsage(
         windows=tuple(windows),
         has_credits=info.get("overageStatus") == "allowed" or bool(info.get("isUsingOverage")),
         limit_reached=info.get("status") == "rejected",

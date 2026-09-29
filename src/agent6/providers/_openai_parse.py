@@ -14,11 +14,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from agent6.providers._openai_recovery import (
-    coerce_text_tool_calls,
-    lenient_json_object,
-)
-from agent6.providers.types import ProviderError, ProviderResponse
+from agent6.providers import _openai_recovery, types
 
 
 def response_string(value: Any, field: str, *, empty: bool = True) -> str:
@@ -34,7 +30,7 @@ def response_string(value: Any, field: str, *, empty: bool = True) -> str:
     """
     if not isinstance(value, str) or (not empty and not value.strip()):
         qualifier = "nonempty " if not empty else ""
-        raise ProviderError(f"OpenAI response {field} was not a {qualifier}string")
+        raise types.ProviderError(f"OpenAI response {field} was not a {qualifier}string")
     return value
 
 
@@ -47,7 +43,7 @@ def usage_mapping(value: Any) -> Mapping[str, Any]:
     if value is None:
         return {}
     if not isinstance(value, Mapping):
-        raise ProviderError("OpenAI response usage was not an object")
+        raise types.ProviderError("OpenAI response usage was not an object")
     return value
 
 
@@ -74,9 +70,11 @@ def usage_count(usage: Mapping[str, Any], field: str, *, path: str = "") -> int:
             raise TypeError
         count = int(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ProviderError(f"OpenAI response usage.{name} was not a non-negative integer") from exc
+        raise types.ProviderError(
+            f"OpenAI response usage.{name} was not a non-negative integer"
+        ) from exc
     if count < 0 or (isinstance(value, float) and not value.is_integer()):
-        raise ProviderError(f"OpenAI response usage.{name} was not a non-negative integer")
+        raise types.ProviderError(f"OpenAI response usage.{name} was not a non-negative integer")
     return count
 
 
@@ -85,7 +83,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
     *,
     tool_names: frozenset[str] = frozenset(),
     tool_schemas: dict[str, dict[str, Any]] | None = None,
-) -> ProviderResponse:
+) -> types.ProviderResponse:
     """Parse one Chat Completions body.
 
     Args:
@@ -106,7 +104,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
     if choices is None:
         choices = []
     if not isinstance(choices, list):
-        raise ProviderError("OpenAI response choices was not an array")
+        raise types.ProviderError("OpenAI response choices was not an array")
     text = ""
     reasoning_text = ""
     stop_reason = ""
@@ -114,12 +112,12 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
     if choices:
         first = choices[0]
         if not isinstance(first, dict):
-            raise ProviderError(
+            raise types.ProviderError(
                 f"OpenAI choices[0] is {type(first).__name__}, not an object (malformed 2xx body)"
             )
         message = first.get("message")
         if not isinstance(message, Mapping):
-            raise ProviderError("OpenAI response choices[0].message was not an object")
+            raise types.ProviderError("OpenAI response choices[0].message was not an object")
         raw_text = message.get("content")
         text = "" if raw_text is None else response_string(raw_text, "content")
         # Kimi spells it `reasoning_content`; DeepSeek-R1 and OpenRouter spell it `reasoning`.
@@ -135,15 +133,15 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
         if raw_calls is None:
             raw_calls = []
         if not isinstance(raw_calls, list):
-            raise ProviderError("OpenAI response tool_calls was not an array")
+            raise types.ProviderError("OpenAI response tool_calls was not an array")
         parsed_calls: list[dict[str, Any]] = []
         tool_call_ids: set[str] = set()
         for i, call in enumerate(raw_calls):
             if not isinstance(call, Mapping):
-                raise ProviderError("OpenAI response tool_call was not an object")
+                raise types.ProviderError("OpenAI response tool_call was not an object")
             func = call.get("function")
             if not isinstance(func, Mapping):
-                raise ProviderError("OpenAI response tool_call.function was not an object")
+                raise types.ProviderError("OpenAI response tool_call.function was not an object")
             # A blank-name native call (some open-weight backends) never enters history.
             raw_name = func.get("name") or ""
             name = response_string(raw_name, "tool_call.function.name")
@@ -161,7 +159,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
                     parsed_input = {"_value": parsed_input}
             except (json.JSONDecodeError, TypeError):
                 # A lenient re-parse saves a round-trip; dispatch turns the sentinel into an error.
-                repaired = lenient_json_object(args_raw)
+                repaired = _openai_recovery.lenient_json_object(args_raw)
                 if repaired is not None:
                     parsed_input = repaired
                 else:
@@ -179,7 +177,9 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
                 else response_string(raw_id, "tool_call.id", empty=False)
             )
             if tool_call_id in tool_call_ids:
-                raise ProviderError(f"OpenAI response had duplicate tool_call.id {tool_call_id!r}")
+                raise types.ProviderError(
+                    f"OpenAI response had duplicate tool_call.id {tool_call_id!r}"
+                )
             tool_call_ids.add(tool_call_id)
             parsed_calls.append(
                 {
@@ -191,7 +191,9 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
         tool_uses = tuple(parsed_calls)
         # Native calls take precedence over a call leaked into the text.
         if not tool_uses and tool_names:
-            recovered, remaining_text = coerce_text_tool_calls(text, tool_names, tool_schemas)
+            recovered, remaining_text = _openai_recovery.coerce_text_tool_calls(
+                text, tool_names, tool_schemas
+            )
             if recovered:
                 tool_uses = tuple(
                     {"id": f"call_text_{i}", "name": r["name"], "input": r["input"]}
@@ -203,7 +205,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
     cached = 0
     details = usage.get("prompt_tokens_details")
     if details is not None and not isinstance(details, Mapping):
-        raise ProviderError("OpenAI response usage.prompt_tokens_details was not an object")
+        raise types.ProviderError("OpenAI response usage.prompt_tokens_details was not an object")
     if isinstance(details, Mapping):
         cached = usage_count(details, "cached_tokens", path="prompt_tokens_details.cached_tokens")
     prompt_total = usage_count(usage, "prompt_tokens")
@@ -232,7 +234,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
     raw_cost = usage.get("cost")
     if isinstance(raw_cost, int | float) and not isinstance(raw_cost, bool) and raw_cost > 0:
         reported_cost = float(raw_cost)
-    return ProviderResponse(
+    return types.ProviderResponse(
         text=text,
         tool_uses=tool_uses,
         stop_reason=stop_reason,
