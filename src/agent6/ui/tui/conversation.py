@@ -43,12 +43,11 @@ from agent6.ui.tui.composer import (
     APPROVAL_KEY_BINDINGS,
     RUN_MENU,
     ApprovalKeys,
-    ApprovalRow,
     ComposerMode,
     ResumeOptions,
     SteerInput,
     SteerSuggest,
-    deliver_answer,
+    approval_text,
     open_history_search,
 )
 from agent6.ui.tui.logview import LogScreen
@@ -61,10 +60,11 @@ from agent6.ui.tui.menubar import (
 from agent6.ui.tui.prompts import PromptDispatcher
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome, keys
 from agent6.ui.tui.settings import get_copy_method
-from agent6.viewmodel import approval_parts, open_approval_of
+from agent6.viewmodel import approval_parts
 from agent6.viewmodel.events import SESSION_START_EVENTS
 from agent6.viewmodel.format import dead_run_note, spinner_frame, status_label
 from agent6.viewmodel.policy import session_policy
+from agent6.viewmodel.state import ApprovalPrompt
 from agent6.viewmodel.tail import LogTail
 from agent6.viewmodel.transcript import (
     TranscriptFold,
@@ -256,6 +256,9 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     ]
     COMMANDS: ClassVar = {MenuCommands}
     HELP_TITLE: ClassVar = "agent6 — conversation"
+    APPROVAL_DOCK_BEFORE: ClassVar = "#conv-suggest"
+    APPROVAL_FOCUS_AFTER: ClassVar = "#conv-scroll"  # the transcript, where the command is
+    APPROVAL_ROW_SHOWS_PROMPT: ClassVar = False  # the transcript item carries it
     HELP_HINTS: ClassVar = (
         "Steer bar: Enter sends the instruction",
         "Ctrl-J or Shift+Enter inserts a newline",
@@ -297,9 +300,6 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._pending: dict[str, TranscriptItem] = {}
         self._approval: tuple[str, str, bool] | None = None  # (id, prompt, standing)
         self._approval_done: str | None = None
-        self._row: ApprovalRow | None = None
-        self._answered_from_row = False  # the focus stayed on the approval
-        self._row_id = ""
         self._live_think: list[str] = []
         self._live_text: list[str] = []
         self._spin = 0  # live-pane spinner tick, advanced by _poll
@@ -432,7 +432,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         elif etype == "role.text_delta":
             self._live_text.append(str(event.get("text", "")))
 
-    def _open_approval(self) -> tuple[str, str, bool] | None:
+    def _open_approval(self) -> ApprovalPrompt | None:
         """The approval awaiting an answer, from the host's fold (one fold,
         whatever fed it): a leg boundary the host folded withdraws what this
         screen last rendered."""
@@ -442,13 +442,14 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             answered = next((a for a in state.pending_approvals if a.id == aid), None)
             if answered is not None and answered.answered:
                 self._note_answered("allowed" if answered.approved else "denied")
-        ap = open_approval_of(state, taken=self._taken)
-        return None if ap is None else (ap.id, ap.prompt, ap.standing)
+        return self.open_approval(state)
 
-    def _taken(self, aid: str) -> bool:
-        if self._prompts is None:
-            return False
-        return self._prompts.seen(self._logs_path.parent, aid)
+    def approval_session(self) -> tuple[Path, bool]:
+        return self._logs_path.parent, self._host_live()
+
+    def approval_answered(self, verdict: str) -> None:
+        self._note_answered(verdict)
+        self._render_approval()
 
     def _note_answered(self, verdict: str) -> None:
         """Collapse the open approval to one dim line: *verdict* and the
@@ -466,77 +467,23 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         model turn."""
         item = self.query_one("#conv-approval", Static)
         current = self._open_approval()
-        if current is not None and not self._host_live():
+        live = self._host_live()
+        self.sync_approval(current if live else None)
+        if current is not None:
+            self._approval = (current.id, current.prompt, current.standing)
             # The run died with the prompt open: the fact stays visible, the
             # key row (whose answer would reach nothing) does not.
-            self._approval = current
-            head, payload = approval_parts(current[1])
-            body = Text(f"? {head}: approval pending when the run ended", style="dim")
-            if payload:
-                body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
-            item.update(body)
+            note = "approval needed" if live else "approval pending when the run ended"
+            item.update(approval_text(current.prompt, note, dim=not live))
             item.display = True
-            current = None
-        if current is not None:
-            self._approval = current
-            aid, prompt, standing = current
-            head, payload = approval_parts(prompt)
-            body = Text()
-            body.append("? ", style="bold yellow")
-            body.append(f"{head}: approval needed", style="bold")
-            if payload:
-                body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
-            item.update(body)
-            item.display = True
-            if self._row is None or self._row_id != aid:
-                # One row per approval: a resumed leg reuses prompt ids, so a
-                # new prompt always gets a fresh row (the old one may still be
-                # unmounting).
-                if self._row is not None:
-                    self._row.remove()
-                self._row = ApprovalRow(standing=standing)
-                self._row_id = aid
-                self.mount(self._row, before=self.query_one("#conv-suggest"))
-                if self._answered_from_row:
-                    # The last answer came from the row and the composer never
-                    # took the focus back: keep it there, so this one answers too.
-                    self._row.call_after_refresh(self._row.focus_answers)
             return
-        if self._row is not None:
-            self._row.remove()
-            self._row = None
-            self._row_id = ""
         if self._approval is not None:
-            return  # the dead run's prompt, rendered above
+            return  # answered here before the worker journaled it: as rendered
         if self._approval_done:
             item.update(Text(f"? {self._approval_done}", style="dim"))
             item.display = True
         else:
             item.display = False
-
-    def on_approval_row_answered(self, message: ApprovalRow.Answered) -> None:
-        """An answer, from a label's click or its key."""
-        if self._approval is None:
-            return
-        aid = self._approval[0]
-        # Answering from the row keeps the focus out of the composer (on the
-        # transcript, where the command is), so the next approval answers too.
-        self._answered_from_row = self._row is not None and self._row.holds_focus()
-        verdict = deliver_answer(
-            self,
-            session_dir=self._logs_path.parent,
-            prompt_id=aid,
-            answer=message.answer,
-            prompts=self._prompts,
-            live=self._host_live(),
-        )
-        if not verdict:
-            return
-        self._note_answered(verdict)
-        self._render_approval()
-        if self._answered_from_row:
-            with contextlib.suppress(NoMatches):
-                self.query_one("#conv-scroll").focus()
 
     def _render_live(self) -> None:
         self._render_approval()

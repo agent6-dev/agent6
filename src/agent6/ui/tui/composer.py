@@ -6,9 +6,10 @@ history search, and the inline approval row."""
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
 from rich.markup import escape
 from rich.text import Text
@@ -16,6 +17,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Input, Select, Static, TextArea
@@ -33,10 +35,14 @@ from agent6.ui.tui.menubar import (
 from agent6.ui.tui.modals import HistorySearchModal
 from agent6.ui.tui.widgets import Picker
 from agent6.viewmodel import approval_parts
+from agent6.viewmodel.state import ApprovalPrompt, SessionState, open_approval_of
 from agent6.viewmodel.tail import tail_events
 from agent6.viewmodel.transcript import (
     operator_inputs,
 )
+
+if TYPE_CHECKING:
+    from agent6.ui.tui.prompts import PromptDispatcher
 
 ComposerMode = Literal["steer", "resume", "start", "draft"]
 
@@ -264,13 +270,93 @@ APPROVAL_KEY_BINDINGS: tuple[Binding, ...] = tuple(
 
 
 class ApprovalKeys:
-    """Mix into a run view (before its Screen base), with APPROVAL_KEY_BINDINGS
-    in its BINDINGS: while an approval is open, its letters answer from
-    anywhere on the screen except a text field.
+    """Mix into a view of a session (before its Screen base), with
+    APPROVAL_KEY_BINDINGS in its BINDINGS. The open approval docks as an
+    ApprovalRow before the widget `APPROVAL_DOCK_BEFORE` names, its letters
+    answer from anywhere on the screen except a text field, and the answer is
+    written through `deliver_answer`. The host supplies `approval_session`
+    and may extend `approval_answered`.
 
     Tab out of the composer and the keys work wherever the focus lands (the
     transcript, a pane); keep tabbing and each answer is a tab stop of its own,
     where Enter answers it. The composer keeps every letter it is given."""
+
+    APPROVAL_DOCK_BEFORE: ClassVar[str] = ""
+    # Where the focus goes after an answer given from the row, so the next
+    # approval answers too; "" leaves it on the row.
+    APPROVAL_FOCUS_AFTER: ClassVar[str] = ""
+    # The row carries the command when the screen shows it nowhere else.
+    APPROVAL_ROW_SHOWS_PROMPT: ClassVar[bool] = True
+
+    _prompts: PromptDispatcher | None = None
+    _row: ApprovalRow | None = None
+    _row_id: str = ""
+    _answered_from_row: bool = False  # the focus stayed on the approval
+
+    def approval_session(self) -> tuple[Path, bool]:
+        """The session dir an answer is written to, and whether the run still
+        takes one."""
+        raise NotImplementedError
+
+    def approval_answered(self, verdict: str) -> None:
+        """After a written answer ("allowed", "denied", "answered elsewhere")."""
+
+    def open_approval(self, state: SessionState) -> ApprovalPrompt | None:
+        """The approval this view answers now: the oldest unanswered one it has
+        not answered already (an answer given here is not re-offered before the
+        worker journals it)."""
+        prompts = self._prompts
+        if prompts is None:
+            return open_approval_of(state)
+        session_dir, _live = self.approval_session()
+        return open_approval_of(state, taken=lambda aid: prompts.seen(session_dir, aid))
+
+    def sync_approval(self, current: ApprovalPrompt | None) -> None:
+        """One row per open approval, docked; none when nothing is open (the
+        host passes None for a run that takes no answer). A new id gets a
+        fresh row: a resumed leg reuses prompt ids, and the old row may still
+        be unmounting. When the last answer came from the row and the composer
+        never took the focus back, the focus goes to this row too."""
+        screen = cast(Screen[Any], self)
+        if current is None:
+            if self._row is not None:
+                self._row.remove()
+                self._row, self._row_id = None, ""
+            return
+        if self._row is not None and self._row_id == current.id:
+            return
+        if self._row is not None:
+            self._row.remove()
+        prompt = current.prompt if self.APPROVAL_ROW_SHOWS_PROMPT else ""
+        self._row = ApprovalRow(standing=current.standing, prompt=prompt)
+        self._row_id = current.id
+        screen.mount(self._row, before=screen.query_one(self.APPROVAL_DOCK_BEFORE))
+        if self._answered_from_row:
+            self._row.call_after_refresh(self._row.focus_answers)
+
+    def on_approval_row_answered(self, message: ApprovalRow.Answered) -> None:
+        """An answer, from a label's click or its key."""
+        if self._row is None:
+            return
+        # Answering from the row keeps the focus out of the composer, so the
+        # next approval answers too.
+        self._answered_from_row = self._row.holds_focus()
+        screen = cast(Screen[Any], self)
+        session_dir, live = self.approval_session()
+        verdict = deliver_answer(
+            screen,
+            session_dir=session_dir,
+            prompt_id=self._row_id,
+            answer=message.answer,
+            prompts=self._prompts,
+            live=live,
+        )
+        if not verdict:
+            return
+        self.approval_answered(verdict)
+        if self._answered_from_row and self.APPROVAL_FOCUS_AFTER:
+            with contextlib.suppress(NoMatches):
+                screen.query_one(self.APPROVAL_FOCUS_AFTER).focus()
 
     def action_answer(self, answer: str) -> None:
         cast(Screen[Any], self).post_message(ApprovalRow.Answered(answer))
@@ -405,6 +491,20 @@ def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path)
     screen.app.push_screen(HistorySearchModal(entries), fill)
 
 
+def approval_text(prompt: str, note: str = "approval needed", *, dim: bool = False) -> Text:
+    """`? <head>: <note>` over the payload's lines: the command under
+    judgment, as every view shows it. Dim for one nobody can answer."""
+    head, payload = approval_parts(prompt)
+    if dim:
+        body = Text(f"? {head}: {note}", style="dim")
+    else:
+        body = Text("? ", style="bold yellow")
+        body.append(f"{head}: {note}", style="bold")
+    if payload:
+        body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
+    return body
+
+
 class _AnswerLabel(Static, can_focus=True):
     """One answer of the row: `[key] label`. A click answers from any focus;
     Tab reaches it and Enter or Space answers, like a button."""
@@ -454,12 +554,7 @@ class ApprovalRow(Vertical):
 
     def compose(self) -> ComposeResult:
         if self._prompt:
-            head, payload = approval_parts(self._prompt)
-            body = Text("? ", style="bold yellow")
-            body.append(f"{head}: approval needed", style="bold")
-            if payload:
-                body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
-            yield Static(body)
+            yield Static(approval_text(self._prompt))
         with Horizontal(id="approval-answers"):
             for entry in APPROVAL_ANSWERS:
                 if self.offers(entry.answer):

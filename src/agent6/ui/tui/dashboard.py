@@ -52,12 +52,10 @@ from agent6.ui.tui.composer import (
     APPROVAL_KEY_BINDINGS,
     RUN_MENU,
     ApprovalKeys,
-    ApprovalRow,
     ComposerMode,
     ResumeOptions,
     SteerInput,
     SteerSuggest,
-    deliver_answer,
     open_history_search,
 )
 from agent6.ui.tui.logview import LogScreen
@@ -72,7 +70,7 @@ from agent6.ui.tui.theme import (
     status_style,
 )
 from agent6.ui.tui.widgets import Picker
-from agent6.viewmodel import manifest_branches, manifest_header, open_approval_of, session_compare
+from agent6.viewmodel import manifest_branches, manifest_header, session_compare
 from agent6.viewmodel.format import (
     clip_cell,
     dead_run_note,
@@ -175,6 +173,8 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     """
 
     COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
+    APPROVAL_DOCK_BEFORE: ClassVar = "#dash-suggest"
+    APPROVAL_FOCUS_AFTER: ClassVar = "#stream"
     HELP_HINTS: ClassVar = (
         "Tab focuses a pane · PgUp/PgDn, Home/End scroll it",
         "Enter on a tool row opens its full detail",
@@ -301,9 +301,6 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._presets = presets if presets is not None else []
         self._routes = routes if routes is not None else []
         self._prompts = prompts
-        self._row: ApprovalRow | None = None  # the open approval, docked above the composer
-        self._row_id = ""
-        self._answered_from_row = False  # the focus stayed on the approval
         # Select a task in the #plan tree to filter tools/log/diff to it; re-select
         # to clear. _log_filter tracks what the RichLog currently shows so a filter
         # change forces one full re-render (it is append-only otherwise).
@@ -465,47 +462,18 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     def on_descendant_focus(self, _event: events.DescendantFocus) -> None:
         self._show_pane_row()
 
+    def approval_session(self) -> tuple[Path, bool]:
+        return self._tui.session_dir, self._tui.session_controllable()
+
+    def approval_answered(self, verdict: str) -> None:
+        self._render_approval()
+
     def _render_approval(self) -> None:
         """The open approval, docked above the composer: the row the
         conversation shows, carrying the command too, since the dashboard has
         no transcript to carry it. Never a modal: nothing takes the focus."""
         tui = self._tui
-        live = tui.session_controllable()
-        current = open_approval_of(tui.state)
-        if current is None or not live:
-            if self._row is not None:
-                self._row.remove()
-                self._row, self._row_id = None, ""
-            return
-        if self._row is not None and self._row_id == current.id:
-            return
-        if self._row is not None:
-            self._row.remove()
-        self._row = ApprovalRow(standing=current.standing, prompt=current.prompt)
-        self._row_id = current.id
-        self.mount(self._row, before=self.query_one("#dash-suggest"))
-        if self._answered_from_row:
-            # The last answer came from the row and the composer never took the
-            # focus back: keep it there, so this one answers too.
-            self._row.call_after_refresh(self._row.focus_answers)
-
-    def on_approval_row_answered(self, message: ApprovalRow.Answered) -> None:
-        """An answer, from a label's click or its key."""
-        if self._row is None:
-            return
-        self._answered_from_row = self._row.holds_focus()
-        verdict = deliver_answer(
-            self,
-            session_dir=self._tui.session_dir,
-            prompt_id=self._row_id,
-            answer=message.answer,
-            prompts=self._prompts,
-            live=self._tui.session_controllable(),
-        )
-        if verdict:
-            self._render_approval()
-            if self._answered_from_row:
-                self.query_one("#stream", _ScrollPane).focus()
+        self.sync_approval(self.open_approval(tui.state) if tui.session_controllable() else None)
 
     def _show_pane_row(self) -> None:
         """The row a compact dashboard unfolds: the one holding focus, else the
