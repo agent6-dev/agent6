@@ -188,14 +188,16 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
             passed = event.get("all_passed")
             all_passed = passed if isinstance(passed, bool) else None
             iterations = _int(event.get("iterations")) if "iterations" in event else iterations
-    if all_passed is True:
-        verify = "passed"
-    elif all_passed is False and gated:
-        verify = "failed" if any(v.exit_code != 0 for v in verify_runs[-1:]) else "unverified"
-    elif gated:
-        verify = "unverified"
-    else:
+    # A plan's and an ask's end carries all_passed=True (nothing gated them):
+    # the gate word follows the verify runs the journal holds, not the flag.
+    if not gated or summary.mode != "run":
         verify = "not gated"
+    elif all_passed is True:
+        verify = "passed"
+    elif all_passed is False:
+        verify = "failed" if any(v.exit_code != 0 for v in verify_runs[-1:]) else "unverified"
+    else:
+        verify = "unverified"
     use = read_use(layout.state_dir)
     wrote = tuple(sorted(n for n, u in use.items() if layout.session_id in u.writers))
     dropped = {

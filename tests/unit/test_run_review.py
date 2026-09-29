@@ -165,6 +165,25 @@ def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: Path) -> None:
     assert "conversation (tail):" in d.render()
 
 
+def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: Path) -> None:
+    """A plan's and an ask's `session.end` carries `all_passed: true` (nothing
+    gated them), and the digest read that as "verify passed": a plan that ran
+    no verify was reviewed as green."""
+    plan = [
+        {"type": "session.start", "session_id": "plan-1", "mode": "plan", "user_task": "plan it"},
+        {"type": "session.end", "reason": "finish_planning", "iterations": 3, "all_passed": True},
+    ]
+    layout = _write_session(repo, session_id="plan-1", events=plan)
+    layout.manifest_path.write_text(
+        json.dumps({"version": 2, "session_id": "plan-1", "mode": "plan", "user_task": "plan it"})
+        + "\n",
+        encoding="utf-8",
+    )
+    d = run_digest(layout)
+    assert (d.mode, d.verify) == ("plan", "not gated")
+    assert "verify not gated" in d.render()
+
+
 def test_the_caps_are_named_not_silent(repo: Path) -> None:
     many = [{"type": "loop.steer.injected", "chars": 1, "text": f"steer {i}"} for i in range(25)]
     layout = _write_session(repo, events=many)
