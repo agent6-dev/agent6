@@ -247,3 +247,18 @@ def test_steer_names_the_answer_verb_for_a_question(
     set_away_mode(d, "wait")
     assert main(["steer", "tiny-run-DDDD44", "hello"]) == 0
     assert "agent6 answer tiny-run-DDDD44" in capsys.readouterr().out
+
+
+def test_steer_refuses_a_view_only_word(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 steer ID /shells` sent the word to the model as text; a view
+    acts on it, and a steer from a script has no view."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = _run_session(tmp_path, "tiny-run-AAAA11")
+    write_worker_pid(d, os.getpid())
+
+    assert main(["steer", "tiny-run", "/shells"]) == 2
+    assert "acts on a view of the run" in capsys.readouterr().err
+    assert not steer_request_pending(d)

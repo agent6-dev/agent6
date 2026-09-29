@@ -333,3 +333,13 @@ def test_parse_now_carries_the_steer_and_the_urgency() -> None:
     assert parse_now("/now") == ""  # bare: nothing to steer with, the caller says so
     assert parse_now("/nowhere") is None and parse_now("now please") is None
     assert "/now" in STEER_COMMANDS
+
+
+def test_directive_words_fold_case_once() -> None:
+    """The pause menu lowercased the word while the composers did not, so
+    `/Pin x` pinned at the menu and reached the model as text elsewhere."""
+    from agent6.directive import parse_compact, parse_pin, parse_task
+
+    assert parse_pin("/Pin keep the tests green") == "keep the tests green"
+    assert parse_task("/TASK add a flag") == "add a flag"
+    assert parse_compact("/Compact") == ""

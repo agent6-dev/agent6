@@ -2103,24 +2103,18 @@ class Workflow:
             return None
 
     def _seed_standing_goal(self, root_id: str) -> None:
-        """The operator's `run --standing` goal, as the run's last-resort task.
-
-        Only a fresh run seeds one, so there is never a second to weigh against
-        it; `/standing` is what changes the goal of a run already going."""
+        """The operator's `run --standing` goal, set as `/standing` sets one.
+        Only a fresh run seeds one, so there is never a second to weigh
+        against it; `/standing` is what changes the goal of a run already
+        going."""
         goal = self.standing_goal.strip()
         if not goal or self.curator is None:
             return
         try:
-            node = self.curator.add_subtask(
-                AddSubtaskIntent(
-                    parent_id=root_id,
-                    draft=TaskNodeDraft(title=goal, standing=True, created_by="steering"),
-                )
-            )
+            self._set_standing_goal(root_id, goal)
         except (CuratorError, OSError, ValidationError) as exc:
             self._log(f"LOOP: standing goal not seeded: {exc}")
             return
-        self._log(f"LOOP: standing goal seeded: {node.id}")
         self._emit_graph_snapshot()
 
     def _dirty_tree_note(self) -> str:

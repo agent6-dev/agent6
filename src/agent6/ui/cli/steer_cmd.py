@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from agent6.app.stop import stop_session
+from agent6.directive import VIEW_COMMANDS
 from agent6.sessions.id import SessionIdError
 from agent6.ui.cli._common import error, refuse, resolve_session_layout
 from agent6.ui.directives import submit_composer_line
@@ -30,6 +31,12 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
         out = stop_session(layout.session_dir)
         print(f"[agent6] {out.message}.", file=sys.stdout if out.ok else sys.stderr)
         return 0 if out.ok or out.how == "not_live" else 1
+    if text.strip().lower() in VIEW_COMMANDS:
+        refuse(
+            f"{text.strip()} acts on a view of the run, which a steer has none of:"
+            f" type it in `agent6 attach {layout.session_id}`, the TUI or the web"
+        )
+        return 2
     if not session_is_live(layout.session_dir):
         refuse(
             f"session {layout.session_id} is not running; a steer needs a"

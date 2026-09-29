@@ -141,7 +141,13 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     )
     steer_target = steer_p.add_argument("target", help=f"{SESSION_ID}.")
     steer_target.completer = _complete_live_session_ids  # type: ignore[attr-defined]
-    steer_p.add_argument("text", help="The instruction; rides verbatim.")
+    steer_p.add_argument(
+        "text",
+        help=(
+            "The instruction, or a composer directive (/pin, /compact, /task, /standing,"
+            " /retire, /btw, /now)."
+        ),
+    )
     steer_p.add_argument(
         "--now",
         action="store_true",

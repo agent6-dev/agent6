@@ -45,7 +45,6 @@ from agent6.directive import STEER_COMMANDS, parse_btw
 from agent6.graph.order import DONE_STATUSES
 from agent6.paths import data_dir
 from agent6.sessions.ipc import (
-    request_compact,
     steer_answer_written,
     take_steer_answer,
 )
@@ -284,11 +283,6 @@ def _run_info_command(
         _print_tasks(session_dir)
     elif cmd == "/pin":
         _print_pins(session_dir)
-    elif cmd == "/compact":
-        if request_compact(session_dir):
-            print("[agent6] compaction requested; applies before the next model call")
-        else:
-            print("[agent6] could not write the compaction request; nothing was requested")
     elif cmd == "/parallel":
         print("[agent6] fan out needs a task: `/parallel [N|models] <task>`")
     elif cmd == "/shells":
@@ -362,7 +356,7 @@ AGAIN = _Again()
 _LOOP_DIRECTIVES = ("/pin", "/parallel")
 
 
-def _answer_line(  # noqa: PLR0911
+def _answer_line(  # noqa: PLR0911, PLR0912
     line: str,
     session_dir: Path,
     btw_runner: BtwRunner | None,
@@ -399,7 +393,17 @@ def _answer_line(  # noqa: PLR0911
             return stripped
         if word in _LOOP_DIRECTIVES:
             return f"{word} {args.strip()}"
+        if word == "/now":
+            # The menu opens at a boundary with no call in flight to interrupt:
+            # the steer lands at once, so the word adds nothing.
+            return args.strip()
         return stripped
+    if word == "/compact":
+        # Complete on its own: the one owner every composer shares acts on it.
+        acted = act_on_directive(session_dir, stripped)
+        assert acted is not None
+        print(f"[agent6] {acted[1]}")
+        return AGAIN
     if word not in MENU_COMMANDS and word not in skills:
         # Exact commands only: a prefix drives Tab completion, never an
         # action, so adding a command never re-points an operator's habit.

@@ -39,7 +39,7 @@ from dataclasses import dataclass
 # is task text; `\s` already covers it, so a bare whitespace-delimited /parallel
 # is a separator while `foo/parallel/bar` (in a path) is not. `\A`/`\Z` anchor to
 # the whole string, never to line boundaries.
-_SEPARATOR = re.compile(r"(?:\A|(?<=\s))/parallel(?=\s|\Z)")
+_SEPARATOR = re.compile(r"(?:\A|(?<=\s))/parallel(?=\s|\Z)", re.IGNORECASE)
 
 
 class DirectiveError(ValueError):
@@ -103,7 +103,7 @@ def _over_limit(requested: int, limit: int) -> str:
 # then the exact token, then whitespace or end. Same discipline as _SEPARATOR
 # (mid-text or glued tokens are ordinary steer text), but /pin never splits a
 # message: everything after the token is one pinned instruction.
-_PIN_TOKEN = re.compile(r"\A\s*/pin(?=\s|\Z)")
+_PIN_TOKEN = re.compile(r"\A\s*/pin(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_pin(text: str) -> str | None:
@@ -122,7 +122,7 @@ def parse_pin(text: str) -> str | None:
 # A leading `/compact` token, same discipline as _PIN_TOKEN. Parsed by the
 # composers (web/TUI) and the CLI pause menu, never by the loop: a compact
 # request is an out-of-band marker, not steer text.
-_COMPACT_TOKEN = re.compile(r"\A\s*/compact(?=\s|\Z)")
+_COMPACT_TOKEN = re.compile(r"\A\s*/compact(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_compact(text: str) -> str | None:
@@ -136,7 +136,7 @@ def parse_compact(text: str) -> str | None:
 
 # A leading `/btw` token, same discipline as the two above. A btw is a
 # question asked beside the run, never steer text: it must not reach the loop.
-_BTW_TOKEN = re.compile(r"\A\s*/btw(?=\s|\Z)")
+_BTW_TOKEN = re.compile(r"\A\s*/btw(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_btw(text: str) -> str | None:
@@ -151,7 +151,7 @@ def parse_btw(text: str) -> str | None:
 
 # A task queued into the run's graph, never steer text: it must not reach the
 # loop as a message, which is the whole point of queueing rather than steering.
-_TASK_TOKEN = re.compile(r"\A\s*/task(?=\s|\Z)")
+_TASK_TOKEN = re.compile(r"\A\s*/task(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_task(text: str) -> str | None:
@@ -166,7 +166,7 @@ def parse_task(text: str) -> str | None:
 
 # The run's standing goal, set by the operator alone: `--standing` at a leg's
 # start, this directive while it runs. Never steer text.
-_STANDING_TOKEN = re.compile(r"\A\s*/standing(?=\s|\Z)")
+_STANDING_TOKEN = re.compile(r"\A\s*/standing(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_standing(text: str) -> str | None:
@@ -180,7 +180,7 @@ def parse_standing(text: str) -> str | None:
 
 
 # A task the operator retires, named by the id every task tree leads with.
-_RETIRE_TOKEN = re.compile(r"\A\s*/retire(?=\s|\Z)")
+_RETIRE_TOKEN = re.compile(r"\A\s*/retire(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_retire(text: str) -> str | None:
@@ -194,7 +194,7 @@ def parse_retire(text: str) -> str | None:
 
 # A leading `/now` token: the urgency the CLI spells `steer --now`. Parsed by
 # the composers (web/TUI), never by the loop: the request marker carries it.
-_NOW_TOKEN = re.compile(r"\A\s*/now(?=\s|\Z)")
+_NOW_TOKEN = re.compile(r"\A\s*/now(?=\s|\Z)", re.IGNORECASE)
 
 
 def parse_now(text: str) -> str | None:
@@ -329,6 +329,11 @@ def _parse_segment(raw: str) -> Segment:
 # TUI/web composers and the loop parse out of steer text (the CLI pause menu
 # adds its own menu-only commands). The web client mirrors these strings
 # verbatim, drift-pinned by tests/web.
+# The words a view acts on itself (its transcript, its shells, its undo): a
+# steer from a script has no view, so `agent6 steer` refuses them and names
+# the surfaces that take them.
+VIEW_COMMANDS: frozenset[str] = frozenset({"/restate", "/shells", "/undo"})
+
 STEER_COMMANDS: dict[str, str] = {
     "/pin": "pin an instruction that survives compaction: /pin <text>",
     "/compact": "compact the context now; /compact <focus> steers the summary",
