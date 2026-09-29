@@ -10,7 +10,7 @@
 # agent6 is, loop clean. Time compression is honest: the UI's own durations
 # and costs stay visible.
 #
-#   tui  conversation streaming -> approval modal over the dashboard (ask) ->
+#   tui  conversation streaming -> the approval row on the dashboard (ask) ->
 #        verify ✓ auto-commit + diff pane -> hub receipt -> config: sandbox.
 #   cli  the failing suite -> one command, the run streams -> /exit ->
 #        sessions diff (the fix) -> sessions show (the receipt).

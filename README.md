@@ -8,7 +8,7 @@ Each command the model runs goes through a sandbox, each step commits to the run
 <table>
   <tr>
     <td align="center" width="34%" valign="top">
-      <a href="https://agent6.dev/screenshots/out/hero-tui.gif"><img src="https://agent6.dev/screenshots/out/hero-tui.gif" alt="the run TUI: conversation streaming, an approval modal, verify + auto-commit, the hub receipt"></a>
+      <a href="https://agent6.dev/screenshots/out/hero-tui.gif"><img src="https://agent6.dev/screenshots/out/hero-tui.gif" alt="the run TUI: conversation streaming, an approval answered inline, verify + auto-commit, the hub receipt"></a>
       <br><sub><b>the TUI</b><br>the full agent, as a live dashboard</sub>
     </td>
     <td align="center" width="33%" valign="top">

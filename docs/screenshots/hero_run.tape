@@ -3,10 +3,10 @@
 # buggy stats repo, starts the proxy, and records this; hero.sh cuts it.
 #
 # Arc: conversation with detail on (reasoning streams live) -> dashboard ->
-# approval modal for the verify command (run_commands=ask; y allows) -> verify
+# the approval row for the verify command (run_commands=ask; Tab, then y allows) -> verify
 # passes, auto-commit, the diff pane fills -> the run ends and the TUI exits ->
 # back in via `agent6 tui`: the hub lists the finished run -> config, filtered
-# to sandbox. The approval pauses the run until y, so the beats after it are
+# to sandbox. The approval pauses the run until the answer, so the beats after it are
 # tape-timed, not race-timed.
 #
 # 1600x900 at FontSize 17: the hero is read at README width, so fewer, larger
@@ -43,9 +43,11 @@ Ctrl+T
 Sleep 10.5s
 Ctrl+D
 Sleep 10.5s
-# The approval modal for run_verify_command pops ~6s after the dashboard flip
-# and pauses the run; let it rest well settled, then allow. (Answering the
-# instant it mounts has killed the TUI once; settled, it never has.)
+# The approval row for run_verify_command docks ~6s after the dashboard flip
+# and pauses the run; let it rest well settled, then Tab out of the composer
+# (a letter typed there is text) and allow.
+Tab
+Sleep 500ms
 Type "y"
 Sleep 13s
 

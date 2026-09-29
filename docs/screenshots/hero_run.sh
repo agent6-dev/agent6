@@ -39,8 +39,8 @@ export XDG_STATE_HOME="$TMP/state"
 export AGENT6_DEMO_REPO="$DEMO_REPO"
 mkdir -p "$XDG_CONFIG_HOME/agent6"
 
-# run_commands=ask so the verify command raises the TUI's approval modal: the
-# permission story on film, and a deterministic pause the tape answers with y.
+# run_commands=ask so the verify command docks the TUI's approval row: the
+# permission story on film, and a deterministic pause the tape answers with Tab, y.
 cat > "$XDG_CONFIG_HOME/agent6/config.toml" <<EOF
 [sandbox]
 network = "session"
