@@ -847,12 +847,12 @@ function makeComposer(id) {
   const root = el('div', 'composer');
   const ta = el('textarea', 'field');
   const hint = el('div', 'hint');
-  // The preset and the model the next leg continues under (`agent6 resume
-  // --preset`, `--model`): both change only between legs, so the row shows
+  // The preset and the model the next execution continues under (`agent6 resume
+  // --preset`, `--model`): both change only between executions, so the row shows
   // only while the composer resumes, filled once from the lists the config
   // editor and the new-work composer offer. Each first option adds no flag and
   // names what the resume runs under (/resume_defaults), asked again whenever
-  // the row appears (the last leg may have pinned one) and on a preset pick.
+  // the row appears (the last execution may have pinned one) and on a preset pick.
   const preset = el('select', 'field');
   const presetDefault = el('option', null, '…'); presetDefault.value = ''; preset.appendChild(presetDefault);
   const model = el('select', 'field');

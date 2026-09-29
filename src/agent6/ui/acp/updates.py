@@ -75,7 +75,7 @@ def updates_for(
 
     A tool call is announced once (`tool_call`, from its first in-flight item)
     and updated after that (`tool_call_update`: awaiting approval, running
-    again, settled), paired by *wire_id* (`tool_call_id`; the leg's own stamp
+    again, settled), paired by *wire_id* (`tool_call_id`; the execution's own stamp
     when none is given); *announced* says the editor already has the call.
     ACP models a tool call as a thing with a lifecycle, and an editor that
     only sees the finished one cannot show work in progress, which for a
@@ -100,7 +100,7 @@ def updates_for(
             )
         ]
     if item.kind == "tool":
-        wire_id = wire_id or _leg_call_id(item)
+        wire_id = wire_id or _execution_call_id(item)
         if item.ok is None and not announced:
             return [
                 _update(acp_session_id, {"sessionUpdate": "tool_call", **_tool_call(item, wire_id)})
@@ -225,15 +225,15 @@ def _tool_locations(paths: tuple[str, ...], cwd: Path) -> list[dict[str, str]]:
     return [{"path": str(path)} for path in dict.fromkeys(resolved)]
 
 
-def wire_call_id(session_id: str, turn: int, within_leg: str) -> str:
+def wire_call_id(session_id: str, turn: int, within_execution: str) -> str:
     """One tool call's id on the wire, `<run>:<turn>:<call>`: unique for the
     life of the ACP session, which is what an editor keys a call's lifecycle
-    on. *within_leg* is the dispatcher's stamp, a per-leg counter that starts
+    on. *within_execution* is the dispatcher's stamp, a per-execution counter that starts
     at 1 in every turn, so the run id and the turn join it."""
-    return f"{session_id}:{turn}:{within_leg}" if session_id else within_leg
+    return f"{session_id}:{turn}:{within_execution}" if session_id else within_execution
 
 
-def _leg_call_id(item: TranscriptItem) -> str:
+def _execution_call_id(item: TranscriptItem) -> str:
     """A fold item's stamped call id, which makes every call its own entity
     (two identical calls share a name+arg key); the name+arg fall-back is for
     historical events with no stamp."""
@@ -242,7 +242,7 @@ def _leg_call_id(item: TranscriptItem) -> str:
 
 def tool_call_id(item: TranscriptItem, session_id: str, turn: int) -> str:
     """`wire_call_id` for a fold item."""
-    return wire_call_id(session_id, turn, _leg_call_id(item))
+    return wire_call_id(session_id, turn, _execution_call_id(item))
 
 
 def _tool_call(item: TranscriptItem, wire_id: str) -> dict[str, Any]:

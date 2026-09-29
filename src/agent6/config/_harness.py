@@ -125,13 +125,13 @@ class HarnessConfig(BaseModel):
             "model-chosen `run_command` is not bounded (see `command_checkin_s`)."
         ),
     )
-    # Bounds one leg: a resume gets a fresh allowance (numbering continues),
-    # so a standing run is not capped by the sum of its legs.
+    # Bounds one execution: a resume gets a fresh allowance (numbering continues),
+    # so a standing run is not capped by the sum of its executions.
     max_iterations: int = Field(
         default=200,
         description=(
-            "Assistant turns one leg may take before the run stops with reason "
-            "`max_iterations`; -1 is unlimited. A resumed leg gets a fresh allowance."
+            "Assistant turns one execution may take before the run stops with reason "
+            "`max_iterations`; -1 is unlimited. A resumed execution gets a fresh allowance."
         ),
     )
 
@@ -563,7 +563,7 @@ class BudgetConfig(BaseModel):
     rule: `-1` = unlimited,
     `0` = refuse calls in that ledger up front (`max_tokens_fallback = 0`
     means never run an unmeterable model), `> 0` = the cap. Hitting a cap
-    ends the run resumably (`budget_exhausted`); each resumed leg gets a
+    ends the run resumably (`budget_exhausted`); each resumed execution gets a
     fresh budget. The `--max-usd` / `--max-tokens-fallback` flags override
     per run."""
 
@@ -574,8 +574,8 @@ class BudgetConfig(BaseModel):
         description=(
             "Cap on the metered spend of one run (provider-reported cost, else price times tokens "
             "at the model's fetched rates, cache-aware). Hitting it ends the run resumably "
-            "(`budget_exhausted`); each resumed leg gets a fresh budget. `-1`: unlimited; `0`: "
-            "refuse every metered call. `--max-usd` overrides per run."
+            "(`budget_exhausted`); each resumed execution gets a fresh budget. `-1`: unlimited; "
+            "`0`: refuse every metered call. `--max-usd` overrides per run."
         ),
     )
     max_tokens_fallback: int = Field(

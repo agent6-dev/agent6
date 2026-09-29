@@ -71,7 +71,7 @@ def build_repl_hook(
     so Harness stays agnostic of the CLI's extra state. `/undo` is the
     loop's own undo (take back the last message: the tree goes back and a
     fork holds the state before it), returned as a directive. *steer_cell*
-    holds the leg's steer state once it exists: a Ctrl-C pause armed during
+    holds the execution's steer state once it exists: a Ctrl-C pause armed during
     the committing step opens its menu only after this prompt, so the banner
     says so.
     """

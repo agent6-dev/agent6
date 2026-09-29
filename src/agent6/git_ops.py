@@ -639,7 +639,7 @@ def branch_tip_sha(path: Path, branch: str) -> str | None:
 def merge_stamp_holds(path: Path, session_id: str, run_branch: str, merged_tip: str) -> bool:
     """Does a run's merged stamp still describe everything it committed?
 
-    A resumed run keeps committing under a prior leg's stamp: "merged" holds
+    A resumed run keeps committing under a prior execution's stamp: "merged" holds
     while the stamp's tip is the chain's or the run branch's (the operator's
     own commits on the branch are what a merge took), the predicate the
     listing's unmerged mark reads, so every surface answers alike. A gone
@@ -1337,7 +1337,7 @@ def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) ->
     onto a reverted checkout would leave the files behind. A worktree that
     already holds the new content (as after every run) needs and gets no
     writes. The checkout is whichever worktree of the repository has *target*
-    checked out (a fork's leg merges from its own linked worktree); none, or
+    checked out (a fork's execution merges from its own linked worktree); none, or
     one git still records but whose directory is gone, means nothing to
     bring forward. Returns the paths the checkout keeps a third version of,
     which the move did not reach."""

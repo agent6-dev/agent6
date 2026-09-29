@@ -49,17 +49,17 @@ class LoopState:
     # reads this, so a refused call (a malformed edit, a retirement the
     # curator rejects) is not "work since the last re-entry".
     ok_tool_calls: int = 0
-    # Rulings this leg appended to DECISIONS.md, for the finish-time check.
+    # Rulings this execution appended to DECISIONS.md, for the finish-time check.
     decisions_recorded: list[str] = field(default_factory=list)
     # Tier-2 re-fires only after the context grew 25% past the last restart's
     # size: a restart that lands near the threshold must not summarise every
-    # other iteration. Leg-local: a resumed leg rebuilds a small context anyway.
+    # other iteration. Execution-local: a resumed execution rebuilds a small context anyway.
     tier2_floor_chars: int = 0
     # The verify verdict: the one object every "is the run green" consumer
     # reads (gates, review grounding, snapshot, notices).
     verify: VerifyVerdict = field(default_factory=VerifyVerdict)
     ever_edited: bool = False
-    # plan mode: the plan.md text the planner was last shown. Fresh per leg, so a
+    # plan mode: the plan.md text the planner was last shown. Fresh per execution, so a
     # resumed planner is always re-shown the file the operator may have edited.
     plan_injected: str = ""
     # The DAG root task id and the system prompt (set once by _drive_loop), so

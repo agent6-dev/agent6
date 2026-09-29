@@ -114,7 +114,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
 
 
 # The modes an operator starts from a hub or the CLI and resumes; machine and
-# agent legs are driven by the machine agent.
+# agent executions are driven by the machine agent.
 OPERATOR_MODES: tuple[str, ...] = tuple(k.name for k in SESSION_KINDS.values() if k.resumable)
 
 # The roles whose output is the session talking; everything else is a side
@@ -152,12 +152,14 @@ def session_bucket(name: str) -> str:
     Derived, never stored, so a record cannot disagree with where its sessions
     actually go. The buckets sit under one `sessions/` root, which
     is what leaves the state dir's own `machines/` to live machine instances.
-    An `agent` leg lives inside its machine instance's directory and has no
+    An `agent` execution lives inside its machine instance's directory and has no
     bucket.
     """
     kind = session_kind(name)
     if kind.name == "agent":
-        raise UnknownSessionKind("an agent leg lives under its machine instance, not sessions/")
+        raise UnknownSessionKind(
+            "an agent execution lives under its machine instance, not sessions/"
+        )
     return f"{kind.name}s"
 
 

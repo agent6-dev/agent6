@@ -23,7 +23,7 @@ def turn_context(**overrides: Any) -> TurnContext:
     facts: dict[str, Any] = {
         "mode": "run",
         "iteration": 1,
-        "leg_start": 1,
+        "execution_start": 1,
         "went_quiet_max_nudges": 4,
         "loop_guard_kill_threshold": 10,
         "stagnation_notice_after_s": 300.0,

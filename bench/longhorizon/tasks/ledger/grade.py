@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Authoritative hidden grader for ledger. Not shipped into the agent's repo.
-Usage: python3 grade.py <worktree-dir> <leg>    # leg: fix | split | convert | report | import
+Usage: python3 grade.py <worktree-dir> <session>    # session: fix | split | convert | report | import
 
-Grades semantics, not diffs. Every leg has a `regen` component: the worktree is
-copied, ledger/_commands.py is DELETED, tools/gen_cli.py runs, and the leg's
+Grades semantics, not diffs. Every session has a `regen` component: the worktree is
+copied, ledger/_commands.py is DELETED, tools/gen_cli.py runs, and the session's
 command must still work (a hand-edited table scores zero there, as
 ./verify.sh would have clobbered it). `api` probes the CLI in a subprocess
 with a fresh book. `rounding` probes values where half-up, banker's and
@@ -77,10 +77,10 @@ def fresh(tmp: Path, name: str) -> Path:
     return d / "book.jsonl"
 
 
-def grade(worktree: Path, leg: str, tmp: Path) -> dict[str, list[bool]]:
+def grade(worktree: Path, session: str, tmp: Path) -> dict[str, list[bool]]:
     comp: dict[str, list[bool]] = {}
     regen = regen_copy(worktree, tmp)
-    if leg == "fix":
+    if session == "fix":
         b = fresh(tmp, "r")
         comp["regen"] = [
             regen is not None
@@ -96,7 +96,7 @@ def grade(worktree: Path, leg: str, tmp: Path) -> dict[str, list[bool]]:
             "lunch" in out(worktree, b, "show"),
             out(worktree, b, "balance", "nothing:here") == "0.00\n",
         ]
-    elif leg == "split":
+    elif session == "split":
         b = fresh(tmp, "r")
         comp["regen"] = [
             regen is not None
@@ -130,7 +130,7 @@ def grade(worktree: Path, leg: str, tmp: Path) -> dict[str, list[bool]]:
             ok and (b.read_bytes() if b.exists() else b"") == before,
             ok and balanced(b),
         ]
-    elif leg == "convert":
+    elif session == "convert":
         b = fresh(tmp, "r")
         comp["regen"] = [regen is not None and out(regen, b, "convert", "10.00", "2") == "20.00\n"]
         comp["api"] = [
@@ -143,7 +143,7 @@ def grade(worktree: Path, leg: str, tmp: Path) -> dict[str, list[bool]]:
             out(worktree, b, "convert", "0.01", "0.5") == "0.01\n",
             out(worktree, b, "convert", "10.07", "1.5") == "15.11\n",
         ]
-    elif leg == "report":
+    elif session == "report":
         b = fresh(tmp, "r")
         cli(regen or worktree, b, "add", "2026-03-02", "assets:cash", "expenses:food", "10.00")
         comp["regen"] = [
@@ -170,7 +170,7 @@ def grade(worktree: Path, leg: str, tmp: Path) -> dict[str, list[bool]]:
             out(worktree, b, "report", "2026-06")
             == "assets:cash -0.05 -0.03\nexpenses:x 0.05 0.03\n"
         ]
-    elif leg == "import":
+    elif session == "import":
         samples = worktree / "samples"
         b = fresh(tmp, "r")
         comp["regen"] = [
@@ -211,17 +211,17 @@ def grade(worktree: Path, leg: str, tmp: Path) -> dict[str, list[bool]]:
             ok and cli(worktree, b, "import-csv", str(badw))[0] != 0 and not b.exists(),
         ]
     else:
-        raise SystemExit(f"unknown leg {leg!r}")
+        raise SystemExit(f"unknown session {session!r}")
     return comp
 
 
 def main() -> None:
     worktree = Path(sys.argv[1]).resolve()
-    leg = sys.argv[2]
+    session = sys.argv[2]
     result: dict[str, object]
     with tempfile.TemporaryDirectory() as d:
         try:
-            comp = grade(worktree, leg, Path(d))
+            comp = grade(worktree, session, Path(d))
         except Exception as exc:  # the grader never crashes the harness
             print(json.dumps({"score": 0.0, "grade_error": f"{type(exc).__name__}: {exc}"[:300]}))
             return

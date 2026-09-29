@@ -124,7 +124,7 @@ agent6 fork <session-id> --at-turn 7 # new run from turn 7 (--steer seeds it)
     - the fork's tree is the turn's committed content; the files its commits leave out are the ones untracked in its own checkout when it was created (a fresh worktree usually has none)
     - a `--steer`ed fork takes that steer as its own task: its listing row and its squashed merge subject name the work you sent it to do
     - a run the agent finished resumes only with `--steer`; it takes the steer as its task the same way, so its row and its next squash name the new work
-    - a run that was squash-merged merges again from its landed tip (a resumed leg, or a fork continuing its chain), so the work the target already holds is not merged twice
+    - a run that was squash-merged merges again from its landed tip (a resumed execution, or a fork continuing its chain), so the work the target already holds is not merged twice
 - `/undo` takes back the last message in place, from the TUI and web composers, the `agent6 run` pause menu, or the `run -i` REPL; the TUI and web session views offer it on a finished run too
     - the tree as it stands is committed on the run's chain ref (and branch)
     - every tracked path that differs from the turn before is put back

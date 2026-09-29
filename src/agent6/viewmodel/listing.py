@@ -151,7 +151,7 @@ class SessionSummary:
     status: str
     reason: str  # detail: the end reason when "failed", "needs answer" when "waiting", else ""
     cost_usd: float
-    usd_partial: bool  # sticky: cost_usd is a lower bound (unpriced spend in some leg)
+    usd_partial: bool  # sticky: cost_usd is a lower bound (unpriced spend in some execution)
     mtime: float
     # The run branch holds commits its base does not (per the merge stamp and
     # the caller's branch-tips snapshot); False when unknowable (no snapshot),
@@ -167,11 +167,11 @@ class SessionSummary:
     coordinator: str = ""
     lane: int | None = None
     # A plan-metered provider charges subscription points rather than USD.
-    # The figures are current-leg, like LogScan's counters.
+    # The figures are current-execution, like LogScan's counters.
     plan_consumed: float = 0.0
     plan_cap: float = 0.0
     plan_used_percent: float = 0.0  # the account's reading; 0 unless a plan provider answered
-    model: str = ""  # the manifest's provider/model route for this leg
+    model: str = ""  # the manifest's provider/model route for this execution
     model_from_flag: bool = False
 
     @property
@@ -326,7 +326,7 @@ def status_word(
     reads "failed". `scoped` qualifies a pass: the gate that certified the
     tree ran scoped to the tests nearest the run's diff, so it reads
     "passed · scoped gate", never a bare "passed". `gate_red` is the
-    observation itself (this leg's last verify ran and failed): False also
+    observation itself (this execution's last verify ran and failed): False also
     covers a stale green and a gate nothing ever ran, which are not red.
     """
     if not finished:
@@ -387,7 +387,7 @@ class StatusFacts:
     finished: bool = False
     all_passed: bool | None = False  # None = the end was ungated (no verify command)
     verify_scoped: bool = False  # the judging gate ran scoped (qualifies a pass)
-    gate_red: bool = False  # this leg's last verify ran and failed (an observed red)
+    gate_red: bool = False  # this execution's last verify ran and failed (an observed red)
     end_reason: str = ""
     operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
     blocked_kind: str = ""  # "approval" | "question" | "" (oldest unanswered prompt)
@@ -518,17 +518,17 @@ def session_is_live(session_dir: Path) -> bool:
 class LogScan:
     """One tolerant pass over a session's `logs.jsonl`: the shared scan behind the
     hub listing and `sessions show`. One owner, so the resume rules (bank cost
-    legs, un-finish) and the torn-line tolerances cannot drift between
+    executions, un-finish) and the torn-line tolerances cannot drift between
     consumers.
 
-    Token counters are the current leg's; `cost_usd` is cumulative across
-    resume legs (None = no budget.update ever), matching the typed fold's
-    BudgetView so no two surfaces can disagree on what a run cost. `legs`
+    Token counters are the current execution's; `cost_usd` is cumulative across
+    resume executions (None = no budget.update ever), matching the typed fold's
+    BudgetView so no two surfaces can disagree on what a run cost. `executions`
     lets a renderer say which scope a figure describes when they differ.
     """
 
     saw_start: bool = (
-        False  # session.start OR loop.resume.start seen (a leg began); neither = unstarted
+        False  # session.start OR loop.resume.start seen (an execution began); neither = unstarted
     )
     mode: str = "?"
     task: str = ""
@@ -537,13 +537,13 @@ class LogScan:
     verify_scoped: bool = False  # session.end scoped: the judging gate ran scoped
     end_reason: str = ""
     cost_usd: float | None = None
-    usd_partial: bool = False  # sticky: unpriced spend in any leg -> under-estimate
-    legs: int = 1  # 1 + completed resume legs
+    usd_partial: bool = False  # sticky: unpriced spend in any execution -> under-estimate
+    executions: int = 1  # 1 + completed resume executions
     input_tokens: int | None = None
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
-    # The plan points this leg consumed and [budget].max_percent (the typed
+    # The plan points this execution consumed and [budget].max_percent (the typed
     # fold's BudgetView rule: 0.0 until a percent-metered call runs).
     plan_consumed: float = 0.0
     plan_cap: float = 0.0
@@ -554,18 +554,18 @@ class LogScan:
     start_ep: float | None = None
     last_ep: float | None = None  # last event with a parseable ts
     last_type: str | None = None  # last event's type
-    operator_blocked: bool = False  # a prompt is still unanswered on this leg
+    operator_blocked: bool = False  # a prompt is still unanswered on this execution
     blocked_kind: str = ""  # oldest unanswered prompt's kind ("approval"/"question")
     blocked_since_ep: float | None = None  # its asked-at epoch
-    last_verify_rc: int | None = None  # this leg's last verify.end exit code
+    last_verify_rc: int | None = None  # this execution's last verify.end exit code
     pins: tuple[str, ...] = ()  # the operator's pinned instructions in force
     unattended_questions: int = 0  # questions answered empty because nobody was attached
 
     def verify_verdict(self) -> bool | None:
         """The gate verdict from the gate facts, for judging candidates: True =
         the run ended all-passed (the gate vouched for the final tree), False =
-        this leg's last verify ran and failed, None = nothing observed the
-        final tree (gateless, no verify this leg, or a green made stale by
+        this execution's last verify ran and failed, None = nothing observed the
+        final tree (gateless, no verify this execution, or a green made stale by
         later edits). The folded status word cannot answer it: finish_session
         over a red gate folds to "finished"."""
         if self.mode != "run":
@@ -597,7 +597,7 @@ class LogScan:
 def _figure(ev: Mapping[str, object], key: str, last_good: float) -> float:
     """A budget.update figure as the typed fold reads it: absent is 0.0 (an
     event summing a machine's attempts or a judge's seats carries only what
-    it summed, and a kept value would be another leg's); present, the
+    it summed, and a kept value would be another execution's); present, the
     tolerant read below."""
     return _tolerant_float(ev[key], last_good) if key in ev else 0.0
 
@@ -620,7 +620,7 @@ def needs_new_work(*, finished: bool, end_reason: str, all_passed: bool | None) 
     """Whether a bare resume of a run in this state would have nothing to do.
 
     True only when the agent ended it by calling `finish_session` over a tree
-    the gate certified green, or with no gate at all: the resumed leg spends
+    the gate certified green, or with no gate at all: the resumed execution spends
     a call, answers in prose with no tool use, records a silent_finish, and
     leaves a run that passed reading as failed for a tree nobody touched.
     Every other ending is exactly what resume is for: budget_exhausted,
@@ -652,7 +652,7 @@ def needs_new_work_refusal(session_id: str) -> str:
 
 def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold, like build_parser)
     """Fold `logs.jsonl` into a :class:`LogScan`: session.start (mode/task), the
-    last session.end (un-finished again by a later resume), the running per-leg
+    last session.end (un-finished again by a later resume), the running per-execution
     budget banked across resumes into a cumulative total, and the liveness
     anchors (timestamps, iteration, last event type) `sessions show` reads.
 
@@ -664,11 +664,11 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     all_passed: bool | None = False
     verify_scoped = False
     saw_start = False
-    usd_leg = 0.0  # latest leg's running total
-    usd_prior_legs = 0.0  # summed totals of completed (resumed-past) legs
+    usd_execution = 0.0  # latest execution's running total
+    usd_prior_executions = 0.0  # summed totals of completed (resumed-past) executions
     saw_budget = False
     usd_partial = False
-    legs = 1
+    executions = 1
     input_tokens: int | None = None
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
@@ -717,10 +717,10 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         unattended_questions += 1
                 if etype == "session.start":
                     saw_start = True
-                    finished = False  # a leg is starting (ask REPL re-runs in place)
+                    finished = False  # an execution is starting (ask REPL re-runs in place)
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
-                    # A leg boundary invalidates unanswered prompts: the new leg
+                    # An execution boundary invalidates unanswered prompts: the new execution
                     # re-asks with restarted ids, so a held-over entry would keep
                     # the run "waiting" forever (the typed fold's rule too).
                     pending_prompts.clear()
@@ -739,24 +739,24 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     end_reason = str(ev.get("reason", ""))
                 elif etype == "loop.resume.start":
                     if saw_start:
-                        # A prior leg exists: bank its budget and count a new
-                        # leg. Each resume leg starts a fresh budget (usd_total
-                        # resets to 0), so bank the finished leg's total before
+                        # A prior execution exists: bank its budget and count a new
+                        # execution. Each resume execution starts a fresh budget (usd_total
+                        # resets to 0), so bank the finished execution's total before
                         # it does: the displayed cost is then the true
-                        # cumulative spend across all legs (per-leg budgets stay
+                        # cumulative spend across all executions (per-execution budgets stay
                         # the enforcement mechanism). The typed fold applies the
                         # same rule (state.BudgetView), so the hub row and the
                         # run view can never disagree. Token counters reset too:
-                        # they are documented as the current leg's. A fork's log
-                        # opens with this event, which begins leg 1.
-                        usd_prior_legs += usd_leg
-                        usd_leg = 0.0
+                        # they are documented as the current execution's. A fork's log
+                        # opens with this event, which begins execution 1.
+                        usd_prior_executions += usd_execution
+                        usd_execution = 0.0
                         input_tokens = output_tokens = None
                         cache_read_tokens = cache_creation_tokens = None
                         plan_consumed = plan_cap = plan_used_percent = 0.0
-                        last_verify_rc = None  # leg-scoped, like the token counters
-                        legs += 1
-                    saw_start = True  # a leg has begun; a fork's log has only this
+                        last_verify_rc = None  # execution-scoped, like the token counters
+                        executions += 1
+                    saw_start = True  # an execution has begun; a fork's log has only this
                     mode = str(ev.get("mode", mode))  # stamped like session.start
                     finished = False  # a resume un-finishes the run
                     pending_prompts.clear()  # see session.start
@@ -767,12 +767,12 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                 elif etype == "loop.pin.added":
                     pins.append(str(ev.get("text", "")))
                 elif etype == "loop.pin.restored":
-                    # The full list in force at leg start (the typed fold's rule).
+                    # The full list in force at execution start (the typed fold's rule).
                     raw_pins = ev.get("pins")
                     pins = [str(p) for p in raw_pins] if isinstance(raw_pins, list) else []
                 elif etype == "budget.update":
                     saw_budget = True
-                    usd_leg = _figure(ev, "usd_total", usd_leg)
+                    usd_execution = _figure(ev, "usd_total", usd_execution)
                     usd_partial = bool(ev.get("usd_partial")) or usd_partial
                     ti, to = ev.get("input_total"), ev.get("output_total")
                     if isinstance(ti, int):
@@ -798,9 +798,9 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         all_passed=all_passed,
         verify_scoped=verify_scoped,
         end_reason=end_reason,
-        cost_usd=(usd_prior_legs + usd_leg) if saw_budget else None,
+        cost_usd=(usd_prior_executions + usd_execution) if saw_budget else None,
         usd_partial=usd_partial,
-        legs=legs,
+        executions=executions,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         cache_read_tokens=cache_read_tokens,
@@ -852,8 +852,8 @@ def summarize_session_dir(
         # The mode falls back to the manifest's for a log with no session.start:
         # a launching run still in preflight (verify inference is a ~80s LLM
         # call before the loop's first turn), a manifest-only `fork --no-run`,
-        # or a forked/resumed leg whose log opens with loop.resume.start (which
-        # begins a leg but records no mode).
+        # or a forked/resumed execution whose log opens with loop.resume.start (which
+        # begins an execution but records no mode).
         task = manifest.user_task or task
         if mode == "?":
             mode = manifest.mode or mode

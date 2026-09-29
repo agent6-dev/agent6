@@ -279,7 +279,7 @@ def build_system_prompt(
     base = base.replace("__HARDENED_FS_RULE__", hardened_rule if carved else "")
     # The .git read-only bind exists under strict with protect_git on
     # (policy.py), and in a fork's linked worktree under any jail: its `.git`
-    # is a pointer file into the repository's, which the leg grants read-only.
+    # is a pointer file into the repository's, which the execution grants read-only.
     # Elsewhere (hardened, none) the claim would be false.
     git_read_only = (isolation == "strict" and config.sandbox.protect_git) or (
         isolation != "none" and (repo.root / ".git").is_file()

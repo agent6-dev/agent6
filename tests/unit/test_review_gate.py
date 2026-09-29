@@ -485,7 +485,7 @@ def _settle(wf: Harness, state: Any, turn: Any) -> Any:
     the end gates at once)."""
     from agent6.harness._guards import verify_settled
 
-    ctx = wf._turn_context(state, iteration=turn.iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     return wf._take(state, turn, ctx, verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
@@ -629,7 +629,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     conv = Conversation()
     with patch.object(Reviewer, "critique", panel):
         turn = TurnState(iteration=5, resp=_resp("Done."), assistant=MagicMock())
-        ctx = wf._turn_context(state, iteration=5, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+        ctx = wf._turn_context(state, iteration=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
         assert wf._handle_silent_finish("Done.", conv, state, turn, ctx) is None  # pyright: ignore[reportPrivateUsage]
         texts = [b["text"] for m in conv.to_wire() for b in m["content"] if b.get("type") == "text"]
         assert any("[harness verify] finish: verify_command exit 1" in t for t in texts)

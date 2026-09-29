@@ -195,9 +195,9 @@ def spawn_detached_resume(
     follow-up starting with `-` cannot read as an option): the resume injects
     it as the first steering instruction. Operator-typed text, never LLM output.
     A malformed directive as *steer* is refused here, with the message the
-    child would print. A non-empty *preset* is the `--preset` the leg
+    child would print. A non-empty *preset* is the `--preset` the execution
     continues under and *model* its `--model`; *flags* are further `resume`
-    options the leg runs under
+    options the execution runs under
     (the detaching invocation's own overrides). argv is the agent6 exe + the
     run id (never LLM output)."""
     if steer and (problem := steer_problem(steer)) is not None:

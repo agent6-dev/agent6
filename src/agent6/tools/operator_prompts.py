@@ -139,7 +139,7 @@ def _default_questioner(request: QuestionRequest, /) -> QuestionAnswer:  # pragm
 
 
 class OperatorPrompts:
-    """Every prompt to the operator for one leg, journaled once.
+    """Every prompt to the operator for one execution, journaled once.
 
     `journal` takes every event the gate writes (a run's `EventSink.emit`).
     `session_dir` is where the file bridge lives (`sessions.ipc`: the answer

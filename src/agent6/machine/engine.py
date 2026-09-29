@@ -164,11 +164,11 @@ class AgentRequest(BaseModel):
     # like a run. Empty/0 for the `machine create` authoring agent (no state).
     state_name: str = ""
     step_seq: int = 0
-    # The state's finish contract: the leg refuses a non-conforming
+    # The state's finish contract: the execution refuses a non-conforming
     # finish_session `result` in-run (the model retries with the problems),
     # and the engine's own validation stays the authority on the recorded
     # fact. `schemas` is the spec's schema table verbatim, so nested records
-    # resolve leg-side with the same validator.
+    # resolve execution-side with the same validator.
     output_schema: str | None = None
     schemas: dict[str, dict[str, FieldSpec]] = PydanticField(default_factory=dict)
 

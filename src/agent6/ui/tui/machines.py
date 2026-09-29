@@ -77,7 +77,7 @@ from agent6.ui.tui.widgets import FORM_CSS
 from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
-    NewestLegFold,
+    NewestExecutionFold,
     fold_machine,
     machine_spend,
     machine_verb_refusal,
@@ -208,7 +208,7 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._refusals = machine_verb_refusals(self._root, self._root.name)
         # The newest state log, folded incrementally: the refusals and the
         # prompt dispatch read one fold per poll.
-        self._leg_fold = NewestLegFold()
+        self._execution_fold = NewestExecutionFold()
         self._prompts = PromptDispatcher(self.app, answerable=self._answerable, lost=_ANSWER_LOST)
         self._end_notified = False
         self._steer_open = False
@@ -419,8 +419,8 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         # a park or a worker death flips a verb with no MachineEnd, a wait can
         # close while steer stays refused, and a lit key otherwise offers a
         # verb nothing reads.
-        self._leg_fold.refresh(self._root)
-        probes = probe_instance(self._root, ms, leg=self._leg_fold.leg())
+        self._execution_fold.refresh(self._root)
+        probes = probe_instance(self._root, ms, execution=self._execution_fold.execution())
         self._set_refusals(probes.refusals(self._root.name, ms))
         # Header + state-table markers. A parked (--exit-on-wait) instance reads
         # "waiting", not "running", so a paused machine never looks busy.
@@ -498,18 +498,18 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         prompt but nothing would poll the answer. Offering a live-looking
         Allow/Deny (a destructive-command approval among them) over a dead
         machine is the machine twin of the run views' liveness gate."""
-        state_log = self._leg_fold.log
+        state_log = self._execution_fold.log
         if not live or state_log is None:
             self.sync_approval(None)
             return
-        self.sync_approval(self.open_approval(self._leg_fold.state))
+        self.sync_approval(self.open_approval(self._execution_fold.state))
         prompts = self._prompts
         if prompts is not None:
-            prompts.dispatch(state_log.parent, self._leg_fold.state)
+            prompts.dispatch(state_log.parent, self._execution_fold.state)
 
     def approval_dir(self) -> Path:
         """The newest agent state's dir."""
-        state_log = self._leg_fold.log
+        state_log = self._execution_fold.log
         return state_log.parent if state_log is not None else self._root
 
     def approval_live(self) -> bool:

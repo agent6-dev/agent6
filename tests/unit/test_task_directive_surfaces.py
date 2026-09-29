@@ -239,7 +239,7 @@ def test_a_composer_command_cannot_be_a_fresh_runs_task(
 ) -> None:
     """A run's first prompt is not a composer, so `/task` there would have
     become the literal task text the model works on. The lifecycle refuses it
-    the way a leg's steer is refused, for `agent6 run` and the ACP bridge
+    the way an execution's steer is refused, for `agent6 run` and the ACP bridge
     alike: both reach run_task."""
     import time
     from unittest.mock import MagicMock

@@ -357,7 +357,7 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: Path)
     finish_session over a red gate folds to "finished": the compare table and
     the judge called a RED gate "no verify", so an all-red fan-out crowned a
     rank 1 and exited 0. The verdict now reads the gate facts: the last
-    verify.end this leg, and the end's all_passed."""
+    verify.end this execution, and the end's all_passed."""
     red_finish: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
@@ -387,15 +387,15 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: Path)
     ]
     assert summarize_session_dir(_write_run(tmp_path, "plans", "p1", plan)).verify_ok is None
 
-    # A prior leg's red is not this leg's: the observation is leg-scoped, like
-    # the token counters (the resumed leg may never run the gate at all).
+    # A prior execution's red is not this execution's: the observation is execution-scoped, like
+    # the token counters (the resumed execution may never run the gate at all).
     resumed: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
         {"type": "loop.resume.start"},
         {"type": "session.end", "all_passed": False, "reason": "finish_session"},
     ]
-    rd = _write_run(tmp_path, "runs", "r-legs", resumed)
+    rd = _write_run(tmp_path, "runs", "r-executions", resumed)
     assert summarize_session_dir(rd).verify_ok is None
 
 
@@ -887,11 +887,11 @@ def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: Path) ->
     assert summarize_session_dir(never_launched).status == "created"
 
 
-def test_a_forks_single_leg_is_one_leg(tmp_path: Path) -> None:
+def test_a_forks_single_execution_is_one_execution(tmp_path: Path) -> None:
     """A fork's log OPENS with loop.resume.start (resume() drives it; no
-    session.start ever lands), and the unconditional leg increment counted its
-    single leg as two: `sessions show` labelled its cost "(all 2 legs)" and its
-    tokens "(latest leg)". The first leg-start of any kind begins leg 1."""
+    session.start ever lands), and the unconditional execution increment counted its
+    single execution as two: `sessions show` labelled its cost "(all 2 executions)" and its
+    tokens "(latest execution)". The first execution-start of any kind begins execution 1."""
     from agent6.viewmodel.listing import scan_session_log
 
     rd = _write_run(
@@ -905,10 +905,10 @@ def test_a_forks_single_leg_is_one_leg(tmp_path: Path) -> None:
         ],
     )
     scan = scan_session_log(rd / "logs.jsonl")
-    assert scan.legs == 1
+    assert scan.executions == 1
     assert scan.cost_usd == 0.05
 
-    # A real second leg still counts (and banks the first leg's spend).
+    # A real second execution still counts (and banks the first execution's spend).
     rd2 = _write_run(
         tmp_path,
         "runs",
@@ -921,7 +921,7 @@ def test_a_forks_single_leg_is_one_leg(tmp_path: Path) -> None:
         ],
     )
     scan2 = scan_session_log(rd2 / "logs.jsonl")
-    assert scan2.legs == 2
+    assert scan2.executions == 2
     assert scan2.cost_usd == pytest.approx(0.06)
 
 
@@ -954,9 +954,9 @@ def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: Path
     assert summary_row(summarize_session_dir(rd))["verify_ok"] is True
 
 
-def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
-    # Each resume leg starts a fresh budget (usd_total resets to 0). The listing
-    # total must be the cumulative spend across legs, not just the latest leg's.
+def test_summary_cost_sums_across_resume_executions(tmp_path: Path) -> None:
+    # Each resume execution starts a fresh budget (usd_total resets to 0). The listing
+    # total must be the cumulative spend across executions, not just the latest execution's.
     rd = _write_run(
         tmp_path,
         "runs",
@@ -964,16 +964,16 @@ def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.01},
-            {"type": "budget.update", "usd_total": 0.02},  # leg 1 ends at $0.02
+            {"type": "budget.update", "usd_total": 0.02},  # execution 1 ends at $0.02
             {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"},
             {"type": "loop.resume.start", "iteration": 3},
             {"type": "budget.update", "usd_total": 0.003},
-            {"type": "budget.update", "usd_total": 0.007},  # leg 2 ends at $0.007
+            {"type": "budget.update", "usd_total": 0.007},  # execution 2 ends at $0.007
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
     s = summarize_session_dir(rd)
-    assert abs(s.cost_usd - 0.027) < 1e-9  # 0.02 (leg 1) + 0.007 (leg 2), not 0.007
+    assert abs(s.cost_usd - 0.027) < 1e-9  # 0.02 (execution 1) + 0.007 (execution 2), not 0.007
 
 
 def test_is_run_husk(tmp_path: Path) -> None:
@@ -1089,8 +1089,8 @@ def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: Path) -> None:
 
 def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
     """An ask REPL follow-up re-runs on the same log via a plain session.start; the
-    hub row must read "running" while the follow-up leg streams, not the prior
-    leg's "answered"."""
+    hub row must read "running" while the follow-up execution streams, not the prior
+    execution's "answered"."""
     rd = _write_run(
         tmp_path,
         "asks",
@@ -1128,8 +1128,8 @@ def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> Non
     assert newest_session_dir([bucket]) == real
 
 
-def test_summary_forked_leg_reads_mode_and_task_from_manifest(tmp_path: Path) -> None:
-    """A fork/resumed leg's log holds only loop.resume.start, which sets
+def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: Path) -> None:
+    """A fork/resumed execution's log holds only loop.resume.start, which sets
     saw_start=True but records no mode/task (only session.start carries them). Gating
     the manifest fallback on saw_start therefore blanked the row to "? (no logs)";
     gate on the missing mode instead so the row shows the run's real work."""

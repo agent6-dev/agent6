@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Long-horizon benchmark orchestrator.
 
-Drives the installed agent6 binary through multi-leg task SEQUENCES for a
+Drives the installed agent6 binary through multi-session task SEQUENCES for a
 (model x condition x task x rep) matrix. Each sequence runs all of a task's
-legs in ONE workdir, in order; a leg may overlay extra files first (new
-requirements landing mid-project). Legs share the per-repo agent6 state dir
+sessions in ONE workdir, in order; a session may overlay extra files first (new
+requirements landing mid-project). Sessions share the per-repo agent6 state dir
 by default, so cross-run channels (the <memories> block) carry over; the
-`fresh_state` condition gives every leg a private state dir instead, which is
-the memory-value A/B. Each leg is graded by the task's authoritative HIDDEN
+`fresh_state` condition gives every session a private state dir instead, which is
+the memory-value A/B. Each session is graded by the task's authoritative HIDDEN
 grader (``tasks/<name>/grade.py``, never shipped into the agent's repo) and
 recorded as one JSON line.
 
@@ -21,7 +21,7 @@ Usage:
       --tasks stylebook --conditions baseline,window32k --reps 3 \
       --parallel 3 --label wave1
 
-Results: results/<label>.jsonl (append, one record per LEG). Summarize with
+Results: results/<label>.jsonl (append, one record per SESSION). Summarize with
 stats.py.
 """
 
@@ -52,17 +52,17 @@ EDIT_TOOLS = {"apply_edit", "apply_patch"}
 
 
 @dataclass(frozen=True)
-class Leg:
+class Session:
     name: str
     prompt: str
-    inject: str | None = None  # task-dir subdir overlaid onto the workdir before this leg
+    inject: str | None = None  # task-dir subdir overlaid onto the workdir before this session
     timeout_s: int = 2400
     max_usd: float = 1.50
 
 
 @dataclass(frozen=True)
 class Task:
-    legs: tuple[Leg, ...]
+    sessions: tuple[Session, ...]
     protected: tuple[str, ...]  # agent must not modify these (tamper check)
     # Substrings of an edit-tool TARGET worth counting (the built-artifact
     # trap). Matched against the call's `path` arg when present, else the
@@ -71,8 +71,8 @@ class Task:
     # from counting as a trap edit.
     trap_patterns: tuple[str, ...] = ()
     # Stale memories (name, body) the `poisoned` condition plants into the
-    # shared state dir before leg 2: plausible, wrong, and contradicted by the
-    # repo. Whether later legs verify before trusting is what it measures.
+    # shared state dir before session 2: plausible, wrong, and contradicted by the
+    # repo. Whether later sessions verify before trusting is what it measures.
     poison: tuple[tuple[str, str], ...] = ()
 
 
@@ -80,8 +80,8 @@ class Task:
 # whether the agent uses those channels is part of what the bench measures.
 TASKS: dict[str, Task] = {
     "stylebook": Task(
-        legs=(
-            Leg(
+        sessions=(
+            Session(
                 name="main",
                 prompt=(
                     "Read spec.md, then read ALL ten rule files under rules/ (each one"
@@ -96,8 +96,8 @@ TASKS: dict[str, Task] = {
         protected=("test_audit.py", "verify.sh"),
     ),
     "relay": Task(
-        legs=(
-            Leg(
+        sessions=(
+            Session(
                 name="main",
                 prompt=(
                     "Read spec.md and the six stage specs under specs/. Implement all"
@@ -116,8 +116,8 @@ TASKS: dict[str, Task] = {
         protected=("test_relay.py", "verify.sh"),
     ),
     "orchard": Task(
-        legs=(
-            Leg(
+        sessions=(
+            Session(
                 name="fix",
                 prompt=(
                     "The test suite is red: SKU B-204's shelf price should be 1299"
@@ -128,7 +128,7 @@ TASKS: dict[str, Task] = {
                 timeout_s=1500,
                 max_usd=1.00,
             ),
-            Leg(
+            Session(
                 name="weekend",
                 prompt=(
                     "A new requirement landed: implement the WEEKEND pricing tier"
@@ -144,9 +144,9 @@ TASKS: dict[str, Task] = {
             # conventions (data/ files are built artifacts; money rounds
             # half-up on the cent) with fresh discriminator values, and a spec
             # that deliberately does NOT point at docs/NOTES.md. An agent
-            # whose <memories> carry the leg-1/leg-2 trap facts can apply
+            # whose <memories> carry the session-1/session-2 trap facts can apply
             # them; a fresh-state agent must rediscover or fall.
-            Leg(
+            Session(
                 name="clearance",
                 prompt=(
                     "Another requirement landed: implement the CLEARANCE feed"
@@ -176,8 +176,8 @@ TASKS: dict[str, Task] = {
         ),
     ),
     "ledger": Task(
-        legs=(
-            Leg(
+        sessions=(
+            Session(
                 name="fix",
                 prompt=(
                     "The test suite is red: `ledger add` drops the memo"
@@ -188,7 +188,7 @@ TASKS: dict[str, Task] = {
                 timeout_s=1500,
                 max_usd=1.00,
             ),
-            Leg(
+            Session(
                 name="split",
                 prompt=(
                     "A new requirement landed: implement the `split` command described in"
@@ -199,7 +199,7 @@ TASKS: dict[str, Task] = {
                 timeout_s=1500,
                 max_usd=1.00,
             ),
-            Leg(
+            Session(
                 name="convert",
                 prompt=(
                     "Another requirement: implement the `convert` command described in"
@@ -210,7 +210,7 @@ TASKS: dict[str, Task] = {
                 timeout_s=1500,
                 max_usd=1.00,
             ),
-            Leg(
+            Session(
                 name="report",
                 prompt=(
                     "Next: implement the `report` command described in specs/report.md so"
@@ -221,7 +221,7 @@ TASKS: dict[str, Task] = {
                 timeout_s=1500,
                 max_usd=1.00,
             ),
-            Leg(
+            Session(
                 name="import",
                 prompt=(
                     "Last: implement the `import-csv` command described in specs/import.md"
@@ -263,8 +263,8 @@ TASKS: dict[str, Task] = {
 @dataclass(frozen=True)
 class Condition:
     toml: str = ""
-    fresh_state_per_leg: bool = False
-    poison: bool = False  # plant the task's stale memories before leg 2 (shared state)
+    fresh_state_per_session: bool = False
+    poison: bool = False  # plant the task's stale memories before session 2 (shared state)
 
 
 # windowNNk conditions pin the tiered thresholds to what the shipped ADAPTIVE
@@ -292,7 +292,7 @@ CONDITIONS: dict[str, Condition] = {
             "keep_recent_chars = 26000\nelision_gists = false\n"
         )
     ),
-    "fresh_state": Condition(fresh_state_per_leg=True),
+    "fresh_state": Condition(fresh_state_per_session=True),
     "poisoned": Condition(poison=True),
 }
 
@@ -341,7 +341,7 @@ def _find_logs(state_home: Path, session_id: str) -> Path | None:
 
 
 def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) -> dict[str, Any]:
-    """Pull one leg's metrics from its run's logs.jsonl under the state home."""
+    """Pull one session's metrics from its run's logs.jsonl under the state home."""
     m: dict[str, Any] = {
         "run_found": False,
         "iterations": None,
@@ -377,7 +377,7 @@ def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) 
         "deps_added": 0,
         "memory_writes": 0,
         "memory_reads": 0,
-        "memory_invalidations": 0,  # memory files changed or removed by the leg (file diff)
+        "memory_invalidations": 0,  # memory files changed or removed by the session (file diff)
         # Write-side nudges the loop fired (flip advisory / deferred finish);
         # with memory_writes they show which surface converts models.
         "memory_flip_nudges": 0,
@@ -496,11 +496,11 @@ def _memory_delta(before: dict[str, str], after: dict[str, str]) -> dict[str, An
     }
 
 
-def _grade(task: str, workdir: Path, leg: str) -> dict[str, Any]:
+def _grade(task: str, workdir: Path, session: str) -> dict[str, Any]:
     grader = TASKS_DIR / task / "grade.py"
     try:
         proc = subprocess.run(
-            [sys.executable, str(grader), str(workdir), leg],
+            [sys.executable, str(grader), str(workdir), session],
             capture_output=True,
             text=True,
             timeout=120,
@@ -512,23 +512,23 @@ def _grade(task: str, workdir: Path, leg: str) -> dict[str, Any]:
         return {"score": 0.0, "grade_error": f"{type(exc).__name__}: {exc}"[:200]}
 
 
-def _protected_source(task: str, spec: Task, upto_leg: int, fname: str) -> bytes | None:
-    """The seeded content of a protected file at leg `upto_leg`: the latest
+def _protected_source(task: str, spec: Task, upto_session: int, fname: str) -> bytes | None:
+    """The seeded content of a protected file at session `upto_session`: the latest
     version among repo/ and the inject overlays applied so far."""
-    for leg in reversed(spec.legs[: upto_leg + 1]):
-        if leg.inject:
-            cand = TASKS_DIR / task / leg.inject / fname
+    for session in reversed(spec.sessions[: upto_session + 1]):
+        if session.inject:
+            cand = TASKS_DIR / task / session.inject / fname
             if cand.exists():
                 return cand.read_bytes()
     cand = TASKS_DIR / task / "repo" / fname
     return cand.read_bytes() if cand.exists() else None
 
 
-def _tampered(task: str, spec: Task, upto_leg: int, workdir: Path) -> bool:
+def _tampered(task: str, spec: Task, upto_session: int, workdir: Path) -> bool:
     for fname in spec.protected:
-        want = _protected_source(task, spec, upto_leg, fname)
+        want = _protected_source(task, spec, upto_session, fname)
         if want is None:
-            continue  # not seeded yet at this leg
+            continue  # not seeded yet at this session
         got = workdir / fname
         if not got.exists() or got.read_bytes() != want:
             return True
@@ -545,7 +545,7 @@ def one_sequence(
     budget_scale: float,
     timeout_scale: float,
     label: str,
-    leg_memory_max: str = "",
+    session_memory_max: str = "",
 ) -> list[dict[str, Any]]:
     spec = TASKS[task]
     cond = CONDITIONS[condition]
@@ -577,14 +577,16 @@ def one_sequence(
     # State homes sit BESIDE the workdir: agent6 refuses a private dir inside
     # the workspace it edits.
     shared_state = workdir.parent / f"{seq}.state"
-    for i, leg in enumerate(spec.legs):
-        if leg.inject:
-            shutil.copytree(TASKS_DIR / task / leg.inject, workdir, dirs_exist_ok=True)
+    for i, session in enumerate(spec.sessions):
+        if session.inject:
+            shutil.copytree(TASKS_DIR / task / session.inject, workdir, dirs_exist_ok=True)
             _git(workdir, "add", "-A")
-            _git(workdir, "commit", "-qm", f"inject {leg.name}", check=False)
+            _git(workdir, "commit", "-qm", f"inject {session.name}", check=False)
 
         state_home = (
-            workdir.parent / f"{seq}.state-leg{i}" if cond.fresh_state_per_leg else shared_state
+            workdir.parent / f"{seq}.state-session{i}"
+            if cond.fresh_state_per_session
+            else shared_state
         )
         state_home.mkdir(parents=True, exist_ok=True)
         session_id = f"{seq}-L{i}"
@@ -604,33 +606,33 @@ def one_sequence(
 
         budget_flags: list[str]
         if provider == "anthropic":
-            # Anthropic has no price data, so the token ledger bounds these legs.
-            # 2.2M in+out per leg is generous for these tasks yet caps a haiku leg
+            # Anthropic has no price data, so the token ledger bounds these sessions.
+            # 2.2M in+out per session is generous for these tasks yet caps a haiku session
             # near $3 worst-case ($1/M in + $5/M out); prompt caching and early
             # finishes land well under. budget_scale dials the wave.
             budget_flags = ["--max-tokens-fallback", str(int(2_200_000 * budget_scale))]
         else:
-            budget_flags = ["--max-usd", str(round(leg.max_usd * budget_scale, 2))]
+            budget_flags = ["--max-usd", str(round(session.max_usd * budget_scale, 2))]
 
         mem_before = _memory_files(state_home)
         cmd = [
             AGENT6_BIN,
             "run",
-            leg.prompt,
+            session.prompt,
             "--config",
             str(cfg),
             "--session-id",
             session_id,
             *budget_flags,
         ]
-        if leg_memory_max:
-            # One capped transient scope per session: an OOM kills the leg, never the driver.
+        if session_memory_max:
+            # One capped transient scope per session: an OOM kills the session, never the driver.
             cmd = [
                 "systemd-run",
                 "--user",
                 "--scope",
                 "--quiet",
-                f"-pMemoryMax={leg_memory_max}",
+                f"-pMemoryMax={session_memory_max}",
                 *cmd,
             ]
         t0 = time.time()
@@ -643,26 +645,26 @@ def one_sequence(
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=int(leg.timeout_s * timeout_scale),
+                timeout=int(session.timeout_s * timeout_scale),
                 check=False,
             )
             status = proc.returncode
             log = (proc.stdout or "") + (proc.stderr or "")
-            (workdir / f"agent-{leg.name}.log").write_text(log, "utf-8")
+            (workdir / f"agent-{session.name}.log").write_text(log, "utf-8")
         except subprocess.TimeoutExpired:
             timed_out = True
             status = -9
         wall = round(time.time() - t0, 1)
 
-        grade = _grade(task, workdir, leg.name)
+        grade = _grade(task, workdir, session.name)
         metrics = _extract_metrics(state_home, session_id, spec.trap_patterns)
         delta = _memory_delta(mem_before, _memory_files(state_home))
         records.append(
             {
                 "label": label,
                 "task": task,
-                "leg": leg.name,
-                "leg_index": i,
+                "session": session.name,
+                "session_index": i,
                 "seq": seq,
                 "model": model,
                 "provider": provider,
@@ -707,11 +709,11 @@ def main() -> None:
         "--timeout-scale",
         type=float,
         default=1.0,
-        help="Multiply every leg's timeout_s (raise for slow single-turn models like kimi).",
+        help="Multiply every session's timeout_s (raise for slow single-turn models like kimi).",
     )
     ap.add_argument("--label", required=True)
     ap.add_argument(
-        "--leg-memory-max",
+        "--session-memory-max",
         default="",
         help="run each session in its own systemd-run scope with this MemoryMax (e.g. 8G)",
     )
@@ -728,12 +730,12 @@ def main() -> None:
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out_path = RESULTS_DIR / f"{args.label}.jsonl"
-    # Resumable: a cell (task, condition, rep) with every leg already recorded
+    # Resumable: a cell (task, condition, rep) with every session already recorded
     # under this label is skipped; a partial cell reruns whole and is named.
     have: dict[tuple[str, str, int], set[str]] = {}
     if out_path.exists():
         for rec in _read_jsonl(out_path):
-            have.setdefault((rec["task"], rec["condition"], rec["rep"]), set()).add(rec["leg"])
+            have.setdefault((rec["task"], rec["condition"], rec["rep"]), set()).add(rec["session"])
     jobs = [
         dict(
             task=t,
@@ -744,7 +746,7 @@ def main() -> None:
             budget_scale=args.budget_scale,
             timeout_scale=args.timeout_scale,
             label=args.label,
-            leg_memory_max=args.leg_memory_max,
+            session_memory_max=args.session_memory_max,
         )
         for t in tasks
         for c in conditions
@@ -752,9 +754,9 @@ def main() -> None:
     ]
     kept: list[dict[str, Any]] = []
     for j in jobs:
-        legs = {leg.name for leg in TASKS[j["task"]].legs}
+        sessions = {session.name for session in TASKS[j["task"]].sessions}
         seen = have.get((j["task"], j["condition"], j["rep"]), set())
-        if legs <= seen:
+        if sessions <= seen:
             continue
         if seen:
             print(
@@ -764,8 +766,8 @@ def main() -> None:
     if len(kept) < len(jobs):
         print(f"[longhorizon] resume: {len(jobs) - len(kept)} complete cell(s) skipped")
     jobs = kept
-    n_legs = sum(len(TASKS[j["task"]].legs) for j in jobs)
-    print(f"[longhorizon] {len(jobs)} sequences ({n_legs} legs), parallel={args.parallel}")
+    n_sessions = sum(len(TASKS[j["task"]].sessions) for j in jobs)
+    print(f"[longhorizon] {len(jobs)} sequences ({n_sessions} sessions), parallel={args.parallel}")
     print(f"[longhorizon] model={args.model} -> {out_path}")
     done = 0
     with cf.ThreadPoolExecutor(max_workers=args.parallel) as ex:
@@ -784,7 +786,7 @@ def main() -> None:
                 for rec in recs:
                     print(
                         f"[{done}/{len(jobs)}] {rec.get('task')}/{rec.get('condition')}"
-                        f" r{rec.get('rep')} {rec.get('leg', '?')}"
+                        f" r{rec.get('rep')} {rec.get('session', '?')}"
                         f" score={rec.get('score')} drops={rec.get('drops_total')}"
                         f" rr={rec.get('redundant_reads')} memw={rec.get('memory_writes')}"
                         f" nudges={rec.get('memory_flip_nudges')}/{rec.get('memory_finish_nudges')}"

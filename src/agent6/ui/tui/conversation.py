@@ -407,8 +407,8 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         streaming buffers of the turn in flight."""
         etype = event.get("type")
         if etype in SESSION_START_EVENTS:
-            # An unanswered approval belongs to the leg that ended; the new
-            # leg re-asks it if needed.
+            # An unanswered approval belongs to the execution that ended; the new
+            # execution re-asks it if needed.
             self._approval = None
             self._approval_done = None
         if etype == "approval.prompt":
@@ -432,7 +432,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
 
     def _open_approval(self) -> ApprovalPrompt | None:
         """The approval awaiting an answer, from the host's fold (one fold,
-        whatever fed it): a leg boundary the host folded withdraws what this
+        whatever fed it): an execution boundary the host folded withdraws what this
         screen last rendered."""
         state = self._host.state
         if self._approval is not None:

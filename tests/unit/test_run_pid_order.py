@@ -52,11 +52,11 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     monkeypatch.setattr(run_mod, "write_worker_pid", _pid)
     monkeypatch.setattr(run_mod, "select_isolation", _isolation)
 
-    def _leg(*_a: object, **_k: object) -> object:
-        order.append("leg")
+    def _execution(*_a: object, **_k: object) -> object:
+        order.append("execution")
         raise RuntimeError("stop here")
 
-    monkeypatch.setattr(run_mod, "run_leg", _leg)
+    monkeypatch.setattr(run_mod, "run_execution", _execution)
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
 
     def _cancel(_request: QuestionRequest, /) -> QuestionAnswer:
@@ -71,7 +71,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
     assert run_mod.run_task(cfg, "t", started_at=time.time(), frontend=frontend, mode="run") == 2
     assert order == ["pid", "ask"]
-    # A passing preflight writes the pid, then runs the leg -- in every mode:
+    # A passing preflight writes the pid, then runs the execution -- in every mode:
     # an ask blocks on questions too, and `agent6 ps` and `steer` gate on the
     # same file. Only run mode took the checkout lock the write sat behind.
     sp.run(["git", "checkout", "-q", "--", "a.py"], cwd=repo, check=True)
@@ -79,7 +79,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
         order.clear()
         with pytest.raises(RuntimeError, match="stop here"):
             run_mod.run_task(cfg, "t", started_at=time.time(), frontend=frontend, mode=mode)
-        assert order == ["pid", "leg"], mode
+        assert order == ["pid", "execution"], mode
 
 
 def test_a_cancelled_start_question_leaves_no_pid_behind(
@@ -127,7 +127,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
 ) -> None:
     """An in-process frontend outlives the run, so its PID must not remain the
     session's worker identity when closing its console view fails."""
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -137,11 +137,11 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
     def _strict(*_args: object, **_kwargs: object) -> str:
         return "strict"
 
-    def _finished(*_args: object, **_kwargs: object) -> LegEnd:
-        return LegEnd(0)
+    def _finished(*_args: object, **_kwargs: object) -> ExecutionEnd:
+        return ExecutionEnd(0)
 
     monkeypatch.setattr(run_mod, "select_isolation", _strict)
-    monkeypatch.setattr(run_mod, "run_leg", _finished)
+    monkeypatch.setattr(run_mod, "run_execution", _finished)
     frontend = MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
 
@@ -165,7 +165,7 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     """The stash pop shares the teardown with the pid clear: a console
     teardown that raises must not leave the operator's pre-run changes
     stashed with nothing said."""
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -176,11 +176,11 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     def _strict(*_args: object, **_kwargs: object) -> str:
         return "strict"
 
-    def _finished(*_args: object, **_kwargs: object) -> LegEnd:
-        return LegEnd(0)
+    def _finished(*_args: object, **_kwargs: object) -> ExecutionEnd:
+        return ExecutionEnd(0)
 
     monkeypatch.setattr(run_mod, "select_isolation", _strict)
-    monkeypatch.setattr(run_mod, "run_leg", _finished)
+    monkeypatch.setattr(run_mod, "run_execution", _finished)
     frontend = MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
     cfg = Config.model_validate(

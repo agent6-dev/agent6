@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The one leg body a fresh run and a resumed leg share.
+"""The one execution body a fresh run and a resumed execution share.
 
 From the provider session to the end block: prompt revision, providers, the
-gate step (per lifecycle: a fresh leg infers, a resumed one reuses the
+gate step (per lifecycle: a fresh execution infers, a resumed one reuses the
 snapshot's), steer state, the session network and MCP servers, the tool set,
 the Harness, its teardown, the auto-merge, and the end report. `app/run.py`
 and `app/resume.py` keep only what differs before it (id, manifest, dirty
-tree, snapshot, guards) and after it (the stash, the locks) and hand the leg
-its `LegInputs`. One body, so a knob wired into one lifecycle cannot be
+tree, snapshot, guards) and after it (the stash, the locks) and hand the execution
+its `ExecutionInputs`. One body, so a knob wired into one lifecycle cannot be
 missing from the other.
 """
 
@@ -80,8 +80,8 @@ from agent6.types import AutoCommitDirective, IsolationLevel, ResumableMode
 
 
 @dataclass(frozen=True, slots=True)
-class LegInputs:
-    """What a fresh leg and a resumed one hand the leg body differently.
+class ExecutionInputs:
+    """What a fresh execution and a resumed one hand the execution body differently.
     Everything else the body derives itself."""
 
     session_id: str
@@ -90,24 +90,24 @@ class LegInputs:
     isolation: IsolationLevel
     tui_enabled: bool
     interactive: bool
-    # A fresh leg drives `wf.run(task)` (or the ask REPL); a resumed leg,
+    # A fresh execution drives `wf.run(task)` (or the ask REPL); a resumed execution,
     # `task=None`, drives `wf.resume()`.
     task: str | None
-    # The gate step, per lifecycle: a fresh leg infers one from the repo, a
+    # The gate step, per lifecycle: a fresh execution infers one from the repo, a
     # resumed one reuses the snapshot's; both drop an unrunnable gate and pin
     # the result. Runs once the budget exists (inference may call a model).
     gate: Callable[[Config, BudgetTracker], Config]
-    # The chain the leg's commits advance, and the base the review panel and
+    # The chain the execution's commits advance, and the base the review panel and
     # an unborn chain start from ("" when the repo had no head).
     chain_branch: str | None
     base_sha: str
     untracked_at_start: frozenset[str]
     resume_state_path: Path
     # `/undo` from the composer or the pause menu: forks back before the last
-    # message and rewinds the checkout; the leg body records the outcome for
+    # message and rewinds the checkout; the execution body records the outcome for
     # its end block.
     undo_forker: Callable[[], tuple[str, str] | None]
-    # The leg's one gate to the operator: built by the lifecycle, so a question
+    # The execution's one gate to the operator: built by the lifecycle, so a question
     # it asks before the loop (the dirty-tree start question) and the
     # dispatcher's approvals share one journal and one id sequence.
     prompts: OperatorPrompts
@@ -120,14 +120,14 @@ class LegInputs:
     standing_goal: str = ""
     pins: tuple[str, ...] = ()
     resuming: bool = False
-    # A fork leg's checkout is a linked worktree: the repository git dir agent6
+    # A fork execution's checkout is a linked worktree: the repository git dir agent6
     # recorded for it, the one grant its jail makes beyond the workspace.
     worktree_git_dir: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class LegEnd:
-    """How the leg ended: the process exit code, and whether the operator
+class ExecutionEnd:
+    """How the execution ended: the process exit code, and whether the operator
     detached (the caller then releases its locks and spawns the continuation)."""
 
     rc: int
@@ -143,7 +143,7 @@ def detach_to_background(
     flags: Sequence[str],
     reporter: Reporter,
 ) -> None:
-    """Hand a detached leg to a background `resume` under this invocation's
+    """Hand a detached execution to a background `resume` under this invocation's
     *flags*, once the caller has released the run's locks: first ask how
     approvals are answered while nothing watches (`run_commands = "ask"` with
     no session-wide grant), then spawn, then print the reattach line, so
@@ -178,10 +178,10 @@ def _journal_escape(events: EventSink, exc: BaseException, *, iterations: int) -
     return reason
 
 
-def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per ending
+def run_execution(  # noqa: PLR0911, PLR0912, PLR0915 - one execution body, one return per ending
     cfg: Config,
     layout: SessionLayout,
-    inputs: LegInputs,
+    inputs: ExecutionInputs,
     *,
     frontend: SessionFrontend,
     reporter: Reporter,
@@ -189,8 +189,8 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     transcript_sink: TranscriptSink,
     cwd: Path,
     state_dir: Path,
-) -> LegEnd:
-    """Drive one leg to its end block. See the module docstring."""
+) -> ExecutionEnd:
+    """Drive one execution to its end block. See the module docstring."""
     mode, role = inputs.mode, inputs.role
     label = "resume" if inputs.resuming else "run"
     session: SessionProviders | None = None
@@ -198,7 +198,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     try:
         # The interactive revision prompt reads the terminal; with the TUI owning
         # it the prompt would land invisibly in the console log and contend for
-        # stdin. Skip revision for this leg instead.
+        # stdin. Skip revision for this execution instead.
         effective_revise_prompt = cfg.prompt.revise_prompt
         if effective_revise_prompt == "interactive" and (
             inputs.tui_enabled or frontend.select_revised_prompt is None
@@ -206,7 +206,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             owner = "the TUI owns it" if inputs.tui_enabled else "this surface has none"
             reporter.note(
                 f"prompt.revise_prompt='interactive' needs the terminal; {owner}."
-                " Skipping prompt revision for this leg."
+                " Skipping prompt revision for this execution."
             )
             effective_revise_prompt = "off"
         stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)
@@ -239,7 +239,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     except (KeyboardInterrupt, Exception) as exc:
         # A parked run whose start crashes here never ran (unpark is past this
         # block): it stays parked, so no session.end is journaled and it does
-        # not read "crashed". Every other start is a real leg and journals one.
+        # not read "crashed". Every other start is a real execution and journals one.
         if parked_stamp(layout.session_dir) is not None:
             reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         else:
@@ -407,7 +407,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             ),
         )
         if inputs.task is not None:
-            # The leg begins: a parked submission is a run from here.
+            # The execution begins: a parked submission is a run from here.
             unpark(layout.session_dir, run_branch=inputs.chain_branch)
         try:
             with frontend.tui_session(layout.session_dir, inputs.tui_enabled):
@@ -438,7 +438,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
         except ResumeError as exc:
             reporter.error(str(exc))
             reporter.err(f"\n[agent6] {label} crashed")
-            return LegEnd(1)
+            return ExecutionEnd(1)
         except KeyboardInterrupt:
             if result is not None:
                 # After the run's own end an interrupt cuts only the
@@ -450,7 +450,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     except (KeyboardInterrupt, Exception) as exc:
         # The loop's own handler journaled its escape; one before the loop
         # is journaled here; one from the dashboard scope after the run
-        # ended is the leg's failure, not the run's, so the run's end stays
+        # ended is the execution's failure, not the run's, so the run's end stays
         # its last. A parked start that failed before the loop stays parked:
         # nothing ran. Every escape prints its one line here.
         if not escape_handled and result is None and parked_stamp(layout.session_dir) is None:
@@ -467,7 +467,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
         # Registered in reverse teardown order. ExitStack runs every close
         # even when an earlier one raises, so a provider close cannot strand a
         # command, MCP server or network namespace; a raising close still
-        # re-raises after them, so no merge lands on a leg whose teardown
+        # re-raises after them, so no merge lands on an execution whose teardown
         # failed.
         try:
             with contextlib.ExitStack() as cleanup:
@@ -484,7 +484,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
                 cleanup.callback(session.close)
                 cleanup.callback(steer_state.restore)
                 # A stop that landed mid-call and was never read at a boundary
-                # (the leg ended first) would stop the next leg at its first.
+                # (the execution ended first) would stop the next execution at its first.
                 cleanup.callback(clear_stop_request, layout.session_dir)
             if (
                 not interrupted
@@ -502,21 +502,21 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
 
     if interrupted:
         print_interrupt_end(layout=layout, cwd=cwd, budget=budget, reporter=reporter)
-        return LegEnd(130)
+        return ExecutionEnd(130)
     if result is None:
-        return LegEnd(1)
+        return ExecutionEnd(1)
 
     # The operator's own ends come first: `/undo` and `/detach` at the pause
-    # menu end an ask leg as they end a run.
+    # menu end an ask execution as they end a run.
     if result.reason == "undone" and undo_outcome:
         new_id, undone_text = undo_outcome[-1]
         reporter.out(f"\n[agent6] undone: continue as {new_id} with your message back to edit:")
         reporter.out(f"    agent6 resume {new_id} --steer {undone_text!r}")
-        return LegEnd(0)
+        return ExecutionEnd(0)
     if result.reason == "detached":
         # Keep going in the background: the caller releases this run's worker
         # lock, then hands the run to `detach_to_background`.
-        return LegEnd(0, detach_requested=True)
+        return ExecutionEnd(0, detach_requested=True)
 
     if mode == "ask":
         # The answer IS result.summary (kept whole in ask mode). stdout gets
@@ -528,7 +528,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)
             reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
         reporter.err(budget.format_summary())
-        return LegEnd(session_exit_code(result))
+        return ExecutionEnd(session_exit_code(result))
 
     print_session_end(
         result,
@@ -547,4 +547,4 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
         verified=result.verified,
         reporter=reporter,
     )
-    return LegEnd(session_exit_code(result, stranded=stranded_edits(result, layout, cwd)))
+    return ExecutionEnd(session_exit_code(result, stranded=stranded_edits(result, layout, cwd)))

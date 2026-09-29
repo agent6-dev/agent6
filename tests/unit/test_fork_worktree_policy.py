@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A fork's leg runs in a linked worktree whose `.git` is a pointer into the
+"""A fork's execution runs in a linked worktree whose `.git` is a pointer into the
 repository's git dir. The jail grants that dir from what agent6 recorded
 when it added the worktree (the manifest's `worktree_git_dir`), never from
 the pointer file: under hardened the pointer sits in the writable workspace,

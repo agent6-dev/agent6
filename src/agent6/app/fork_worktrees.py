@@ -35,7 +35,7 @@ from agent6.viewmodel import session_dirs
 
 def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> tuple[bool, str]:
     """Delete a fork's worktree (only a linked worktree of *repo*, see
-    `git_ops.remove_worktree`) and the checkout lock its legs took, unless it
+    `git_ops.remove_worktree`) and the checkout lock its executions took, unless it
     holds work none of *tips* (the commits its sessions landed) has. Returns
     `(removed, note)`: removed is False when *worktree* is not one, could not
     be deleted, or holds such work, and the note then says which; "" on

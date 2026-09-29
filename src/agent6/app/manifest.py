@@ -36,7 +36,7 @@ from agent6.types import ModelRoute, session_kind
 
 
 def _policy_stamp(cfg: Config, isolation: str) -> PolicyStamp:
-    """The policy a leg runs under. `isolation` is what the run RESOLVED to,
+    """The policy an execution runs under. `isolation` is what the run RESOLVED to,
     not the knob: `auto` degrades, and a surface printing "auto" says nothing
     about whether the run was confined."""
     return PolicyStamp(
@@ -119,8 +119,8 @@ def write_session_manifest(
     """
     lineage = _parallel_lineage()
     # A fork passes the source's pin; a fresh run carries the configured gate
-    # as such (a parked run keeps this stamp, no leg having run) until
-    # `pin_gate` stamps the pair the leg resolved.
+    # as such (a parked run keeps this stamp, no execution having run) until
+    # `pin_gate` stamps the pair the execution resolved.
     verify_command, verify_origin = gate or (
         cfg.harness.verify_command,
         "configured" if cfg.harness.verify_command else "",
@@ -192,7 +192,7 @@ def _parallel_lineage() -> ParallelLineage | None:
 def stamp_parked(session_dir: Path, *, task: str, reason: str) -> None:
     """Record that this run was submitted and never started: the verbatim
     task (resume starts it fresh), why it waits, and no run branch (none was
-    cut). The leg's start (`unpark`) replaces all three."""
+    cut). The execution's start (`unpark`) replaces all three."""
     m = read_manifest(session_dir)
     write_manifest(
         session_dir / MANIFEST_NAME,
@@ -211,7 +211,7 @@ def parked_stamp(session_dir: Path) -> tuple[str, str] | None:
 
 
 def unpark(session_dir: Path, *, run_branch: str | None) -> None:
-    """The leg is starting: the park is over and *run_branch* (the branch the
+    """The execution is starting: the park is over and *run_branch* (the branch the
     start cut) is the run's. A manifest carrying no park (or none readable, an
     embedder that wrote no manifest) is left alone."""
     try:
@@ -226,12 +226,12 @@ def unpark(session_dir: Path, *, run_branch: str | None) -> None:
     )
 
 
-def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None:
-    """Re-stamp the facts a LEG owns: the models driving it and the policy it
+def stamp_execution(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None:
+    """Re-stamp the facts a EXECUTION owns: the models driving it and the policy it
     runs under.
 
     `agent6 exec` joins the recorded policy's jail and `sessions show` reads
-    the recorded model, so both must describe the leg that is live."""
+    the recorded model, so both must describe the execution that is live."""
     m = read_manifest(session_dir)
     harness = m.harness
     if not harness.preset_from_flag:
@@ -253,7 +253,7 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
 
 
 def stamp_preset(session_dir: Path, name: str) -> None:
-    """Record the preset a resumed leg was started under with `--preset`: from
+    """Record the preset a resumed execution was started under with `--preset`: from
     here the run runs under it, and a later resume without a flag replays it
     (`HarnessStamp.replay_preset`)."""
     m = read_manifest(session_dir)
@@ -262,7 +262,7 @@ def stamp_preset(session_dir: Path, name: str) -> None:
 
 
 def stamp_model(session_dir: Path, route: ModelRoute) -> None:
-    """Record the route a resumed leg's `--model` set as the run's driver:
+    """Record the route a resumed execution's `--model` set as the run's driver:
     from here the run runs on it, and a later resume without the flag
     replays it."""
     m = read_manifest(session_dir)
@@ -323,7 +323,7 @@ def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> No
 
     Written after resolution rather than at run start because inference runs
     later; from here on the pair is the run's, so a mid-run edit to AGENTS.md
-    cannot move the gate under it, on this leg or a resumed one.
+    cannot move the gate under it, on this execution or a resumed one.
     """
     m = read_manifest(session_dir)
     harness = m.harness.model_copy(update={"verify_command": tuple(argv), "verify_origin": origin})
@@ -338,12 +338,12 @@ def pin_gate(
     events: EventSink,
     reporter: Reporter,
 ) -> None:
-    """Pin this leg's gate and KEEP it pinned when the loop adopts one mid-run.
+    """Pin this execution's gate and KEEP it pinned when the loop adopts one mid-run.
 
-    Every lifecycle that starts a leg calls this, so a leg that adopts a gate
+    Every lifecycle that starts an execution calls this, so an execution that adopts a gate
     mid-run never leaves a manifest reading gateless. A failure is reported
-    rather than raised (a leg is still worth running) and never swallowed: the
-    manifest is what every viewer, the baseline and the next leg read the gate
+    rather than raised (an execution is still worth running) and never swallowed: the
+    manifest is what every viewer, the baseline and the next execution read the gate
     from.
     """
 

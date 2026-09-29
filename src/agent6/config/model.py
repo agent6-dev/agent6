@@ -244,7 +244,7 @@ class Config(BaseModel):
             "`ultra` (a three-seat panel that advises and vetoes before finish), `paranoid` (five "
             "explore-tier seats), or a `[presets.<name>]` of your own. Fills many settings at once "
             "and overrides every section of the layer that selects it; `--preset` overrides per "
-            "run, `resume --preset` per resumed leg. Empty: no preset."
+            "run, `resume --preset` per resumed execution. Empty: no preset."
         ),
     )
 

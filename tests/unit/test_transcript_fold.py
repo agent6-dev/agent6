@@ -294,7 +294,7 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
 
 def test_pins_render_once_as_operator_items() -> None:
     """A pin is the operator's own instruction, shown like a steer where it
-    enters the conversation: the leg-start announcement (a --pin run, a fork)
+    enters the conversation: the execution-start announcement (a --pin run, a fork)
     and each /pin. A resume boundary restating the same list adds nothing;
     the conversation carried no pin at all before."""
     from agent6.viewmodel.transcript import TranscriptFold
@@ -542,7 +542,7 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
     run = [{**ask[0], "mode": "run"}, *ask[1:]]
     done = next(it for it in fold_transcript(run) if it.kind == "done")
     assert done.detail == "1 tool · 0 commits"
-    # A resumed leg starts with loop.resume.start (never a second
+    # A resumed execution starts with loop.resume.start (never a second
     # session.start): the mode rides on it too, or the resumed plan's receipt
     # reads "0 commits".
     resumed_plan = [
@@ -606,10 +606,10 @@ def test_every_end_reason_has_a_done_line_label() -> None:
         assert done.name == label, reason
 
 
-def test_a_resumed_legs_receipt_is_its_own() -> None:
-    """The done item of a resumed leg carries that leg's wall clock and
-    counts, as it already carried its cost; the first leg's 45 s, tool and
-    commit do not ride on a 3 s leg that did nothing."""
+def test_a_resumed_executions_receipt_is_its_own() -> None:
+    """The done item of a resumed execution carries that execution's wall clock and
+    counts, as it already carried its cost; the first execution's 45 s, tool and
+    commit do not ride on a 3 s execution that did nothing."""
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
         {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
@@ -632,10 +632,10 @@ def test_a_resumed_legs_receipt_is_its_own() -> None:
     assert dones[-1].detail == "$0.0020 · 3s · 0 tools · 0 commits"
 
 
-def test_a_resumed_leg_that_stops_before_spending_has_no_stale_cost() -> None:
-    """A resumed leg can honor a queued stop before its first provider call,
-    so no budget.update resets the leg's receipt; its prior leg's cost must not
-    be presented as spend by the zero-call resumed leg."""
+def test_a_resumed_execution_that_stops_before_spending_has_no_stale_cost() -> None:
+    """A resumed execution can honor a queued stop before its first provider call,
+    so no budget.update resets the execution's receipt; its prior execution's cost must not
+    be presented as spend by the zero-call resumed execution."""
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "mode": "run"},
         {"type": "budget.update", "usd_total": 0.01},
@@ -794,8 +794,8 @@ def test_a_second_id_less_call_under_one_name_supersedes_the_first() -> None:
     ]
 
 
-def test_a_leg_boundary_settles_a_call_that_never_returned() -> None:
-    """A call still open at session.end (a crash, a kill) or at the next leg's
+def test_a_execution_boundary_settles_a_call_that_never_returned() -> None:
+    """A call still open at session.end (a crash, a kill) or at the next execution's
     start (a resume over one) did not return: it settles as such instead of
     reading "running" for the rest of time."""
     call = {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 3}

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Run/resume lifecycle regressions: a parked start's task survives a failed
-first start, a leg discards a stop it never honored, a resumed plan makes no
+first start, an execution discards a stop it never honored, a resumed plan makes no
 commit notes, and an ask out of budget exits by the shared code map."""
 
 from __future__ import annotations
@@ -152,10 +152,10 @@ def _setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_a_failed_first_start_keeps_the_parked_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """run_task's manifest rewrite once un-parked the run before the leg ran, so
+    """run_task's manifest rewrite once un-parked the run before the execution ran, so
     a crash during the first start left it with no parked_task and no snapshot:
     the operator's saved words were unreachable. The park now survives until the
-    leg has actually started."""
+    execution has actually started."""
     repo = _setup(tmp_path, monkeypatch)
     sd = state_dir(repo) / "sessions" / "runs" / "pin-PARK01"
     sd.mkdir(parents=True)
@@ -233,12 +233,12 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
     assert "crashed" not in err and "traceback" not in err
 
 
-def test_a_leg_discards_a_stop_it_never_honored(
+def test_a_execution_discards_a_stop_it_never_honored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A stop that lands after the last boundary poll (here, during the finish
-    turn) is never honored by the ending leg; its teardown discards it, so it
-    cannot leak into and abort the next leg."""
+    turn) is never honored by the ending execution; its teardown discards it, so it
+    cannot leak into and abort the next execution."""
     from agent6.sessions.ipc import request_stop, stop_request_pending
 
     repo = _setup(tmp_path, monkeypatch)
@@ -252,14 +252,14 @@ def test_a_leg_discards_a_stop_it_never_honored(
     monkeypatch.setattr(session_mod, "build_role_provider", _use(prov))
     assert cli_main(["run", "--session-id", "pin-STOP01", "task"]) == 0
     capsys.readouterr()
-    assert not stop_request_pending(sd), "a stop the leg never honored must not survive it"
+    assert not stop_request_pending(sd), "a stop the execution never honored must not survive it"
 
 
-def test_a_resumed_plan_leg_makes_no_commit_notes(
+def test_a_resumed_plan_execution_makes_no_commit_notes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A plan leg commits nothing (its chain ref is None), so the run-only
-    between-legs notes ("left out of this run's commits", "the tree holds
+    """A plan execution commits nothing (its chain ref is None), so the run-only
+    between-executions notes ("left out of this run's commits", "the tree holds
     changes no commit has") are false there, and untracked-at-start must not be
     written into a plan dir nothing reads."""
     from agent6.git_ops import chain_ref_for, chain_tip
@@ -270,7 +270,7 @@ def test_a_resumed_plan_leg_makes_no_commit_notes(
     assert cli_main(["plan", "--session-id", "p-PLAN01", "figure it out"]) == 0
     capsys.readouterr()
 
-    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # tracked, modified between legs
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # tracked, modified between executions
     (repo / "scratch.md").write_text("notes\n", encoding="utf-8")  # untracked
 
     prov2 = _Scripted([_plan("# Plan: p\n\n1. one\n2. two\n")])
@@ -286,7 +286,7 @@ def test_a_resumed_plan_leg_makes_no_commit_notes(
 def test_an_ask_out_of_budget_exits_three(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The ask leg mapped its own exit code (`0 if completed else 1`), so a
+    """The ask execution mapped its own exit code (`0 if completed else 1`), so a
     budget-exhausted ask exited 1 where `run`/`resume` and the docs promise 3.
     It now returns through the one code map every mode shares."""
     _setup(tmp_path, monkeypatch)

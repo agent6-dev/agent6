@@ -67,13 +67,13 @@ class RunHeader(Static):
         done_n = sum(1 for t in ds.tasks if t.status in DONE_STATUSES)
         step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
         cost = f"[b]{format_usd(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
-        # Consumption of the binding ledger: this leg's metered spend vs its
+        # Consumption of the binding ledger: this execution's metered spend vs its
         # usd_cap (resume re-arms the cap while usd_total stays cumulative),
         # plus the unmetered-token fraction when that ledger has traffic.
         budget = ""
         if ds.budget.usd_cap > 0:
-            leg_usd = ds.budget.usd_total - ds.budget.usd_prior_legs
-            budget = f"   budget: {min(leg_usd / ds.budget.usd_cap, 1.0):.0%}"
+            execution_usd = ds.budget.usd_total - ds.budget.usd_prior_executions
+            budget = f"   budget: {min(execution_usd / ds.budget.usd_cap, 1.0):.0%}"
         if ds.budget.tokens_unmetered and ds.budget.tokens_fallback_cap > 0:
             unmet = min(ds.budget.tokens_unmetered / ds.budget.tokens_fallback_cap, 1.0)
             budget += f"   unmetered: {unmet:.0%}"
@@ -156,7 +156,7 @@ class RunHeader(Static):
         branch and cached while the run lives; a finished run re-reads it every
         few seconds, since the auto-merge lands after session.end while a held
         screen keeps repainting, and a resume in place (finished again False)
-        drops the cache, since a leg committing past the stamp unmakes the
+        drops the cache, since an execution committing past the stamp unmakes the
         merge."""
         finished = self._tui.state.finished
         if finished != self._branch_finished:

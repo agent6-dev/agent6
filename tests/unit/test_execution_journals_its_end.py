@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A leg that dies before the loop starts journals session.end BEFORE the
+"""An execution that dies before the loop starts journals session.end BEFORE the
 tui_session scope closes: that scope's exit is `_live.tui_session`'s
 `proc.wait()`, which blocks on a dashboard that leaves only on a session.end.
 """
@@ -18,8 +18,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import agent6.app._leg as leg_mod
-from agent6.app._leg import LegInputs, run_leg
+import agent6.app._execution as execution_mod
+from agent6.app._execution import ExecutionInputs, run_execution
 from agent6.app.frontend import FrontendCapabilities
 from agent6.app.reporter import Reporter
 from agent6.config import Config
@@ -31,7 +31,7 @@ from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.steer import SteerState
 
 # The snapshot resume.py's preflight accepts (load_session_snapshot passes) and
-# Conversation.from_wire rejects one leg deeper: a tool_result with no tool_use.
+# Conversation.from_wire rejects one execution deeper: a tool_result with no tool_use.
 TORN = {
     "version": SNAPSHOT_VERSION,
     "system": "s",
@@ -70,10 +70,10 @@ def test_provider_setup_failure_journals_session_end(
     def _fail(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("provider setup failed")
 
-    monkeypatch.setattr(leg_mod, "build_session_providers", _fail)
+    monkeypatch.setattr(execution_mod, "build_session_providers", _fail)
     frontend = MagicMock()
     frontend.stream_modes.return_value = (False, False)
-    inputs = LegInputs(
+    inputs = ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -93,7 +93,7 @@ def test_provider_setup_failure_journals_session_end(
 
     said: list[str] = []
     with pytest.raises(RuntimeError, match="provider setup failed"):
-        run_leg(
+        run_execution(
             Config(),
             layout,
             inputs,
@@ -134,11 +134,11 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
     def _fail_gate(_cfg: Config, _budget: object) -> Config:
         raise RuntimeError("gate setup failed")
 
-    monkeypatch.setattr(leg_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(leg_mod, "build_prompt_reviser_provider", _returning(reviser))
+    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
+    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(reviser))
     frontend = MagicMock()
     frontend.stream_modes.return_value = (False, False)
-    inputs = LegInputs(
+    inputs = ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -157,7 +157,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
     )
 
     with pytest.raises(RuntimeError, match="gate setup failed"):
-        run_leg(
+        run_execution(
             Config(),
             layout,
             inputs,
@@ -175,7 +175,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
 def test_mcp_setup_failure_journals_session_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """MCP startup is part of a live leg even though the harness does not exist yet."""
+    """MCP startup is part of a live execution even though the harness does not exist yet."""
     state = tmp_path / "state"
     layout = SessionLayout(state_dir=state, session_id="sess-MCPSET")
     layout.ensure()
@@ -203,15 +203,15 @@ def test_mcp_setup_failure_journals_session_end(
             reset_stage=lambda: None,
         )
 
-    monkeypatch.setattr(leg_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(leg_mod, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(leg_mod, "wants_session_network", _returning(False))
-    monkeypatch.setattr(leg_mod, "start_mcp_manager_if_enabled", _fail)
-    monkeypatch.setattr(leg_mod, "chown_to_real_user", _returning(None))
+    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
+    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(None))
+    monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
+    monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _fail)
+    monkeypatch.setattr(execution_mod, "chown_to_real_user", _returning(None))
     frontend = MagicMock()
     frontend.stream_modes.return_value = (False, False)
     frontend.make_steer_state.side_effect = _steer_state
-    inputs = LegInputs(
+    inputs = ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -230,7 +230,7 @@ def test_mcp_setup_failure_journals_session_end(
     )
 
     with pytest.raises(RuntimeError, match="MCP startup failed"):
-        run_leg(
+        run_execution(
             Config(),
             layout,
             inputs,
@@ -248,7 +248,7 @@ def test_mcp_setup_failure_journals_session_end(
     assert ended["iterations"] == 0
 
 
-def test_a_cleanup_failure_does_not_skip_the_rest_of_the_leg_teardown(
+def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failed provider close must not strand commands, MCP servers, or ownership work."""
@@ -312,17 +312,17 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_leg_teardown(
             reset_stage=lambda: None,
         )
 
-    monkeypatch.setattr(leg_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(leg_mod, "build_prompt_reviser_provider", _returning(reviser))
-    monkeypatch.setattr(leg_mod, "build_session_tools", _returning(tools))
-    monkeypatch.setattr(leg_mod, "start_mcp_manager_if_enabled", _returning(mcp))
-    monkeypatch.setattr(leg_mod, "wants_session_network", _returning(False))
-    monkeypatch.setattr(leg_mod, "Harness", _Workflow)
+    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
+    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(reviser))
+    monkeypatch.setattr(execution_mod, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _returning(mcp))
+    monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
+    monkeypatch.setattr(execution_mod, "Harness", _Workflow)
 
     def _chown(_path: Path) -> None:
         closed.append("chown")
 
-    monkeypatch.setattr(leg_mod, "chown_to_real_user", _chown)
+    monkeypatch.setattr(execution_mod, "chown_to_real_user", _chown)
     frontend = replace(
         acp_frontend(
             ask=lambda _p, _o, _s, _c, _u=None: None,
@@ -332,7 +332,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_leg_teardown(
         ),
         make_steer_state=_steer_state,
     )
-    inputs = LegInputs(
+    inputs = ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -351,7 +351,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_leg_teardown(
     )
 
     with pytest.raises(RuntimeError, match="provider close failed"):
-        run_leg(
+        run_execution(
             Config(),
             layout,
             inputs,
@@ -438,21 +438,21 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         keep_recent_chars=1,
         cfg=Config(),
     )
-    monkeypatch.setattr(leg_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(leg_mod, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(leg_mod, "build_session_tools", _returning(tools))
-    monkeypatch.setattr(leg_mod, "start_mcp_manager_if_enabled", _returning(None))
-    monkeypatch.setattr(leg_mod, "wants_session_network", _returning(False))
-    monkeypatch.setattr(leg_mod, "chown_to_real_user", _returning(None))
+    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
+    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(None))
+    monkeypatch.setattr(execution_mod, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _returning(None))
+    monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
+    monkeypatch.setattr(execution_mod, "chown_to_real_user", _returning(None))
 
-    inputs = LegInputs(
+    inputs = ExecutionInputs(
         session_id=layout.session_id,
         mode="run",
         role="worker",
         isolation="hardened",
         tui_enabled=True,
         interactive=False,
-        task=None,  # a resumed leg: wf.resume()
+        task=None,  # a resumed execution: wf.resume()
         gate=lambda c, _b: c,
         chain_branch=None,
         base_sha="",
@@ -464,7 +464,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         resuming=True,
     )
     said: list[str] = []
-    end = run_leg(
+    end = run_execution(
         Config(),
         layout,
         inputs,
@@ -489,7 +489,7 @@ def _wired_frontend(
     cfg: Config,
     tui_session: Callable[[Path, bool], contextlib.AbstractContextManager[None]] | None = None,
 ) -> Any:
-    """A leg whose providers, tools and merge are recorders: `order` names
+    """An execution whose providers, tools and merge are recorders: `order` names
     each teardown step as it runs."""
     session = SimpleNamespace(
         budget=MagicMock(),
@@ -510,11 +510,11 @@ def _wired_frontend(
         keep_recent_chars=1,
         cfg=cfg,
     )
-    monkeypatch.setattr(leg_mod, "build_session_providers", _returning(session))
-    monkeypatch.setattr(leg_mod, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(leg_mod, "build_session_tools", _returning(tools))
-    monkeypatch.setattr(leg_mod, "start_mcp_manager_if_enabled", _returning(None))
-    monkeypatch.setattr(leg_mod, "wants_session_network", _returning(False))
+    monkeypatch.setattr(execution_mod, "build_session_providers", _returning(session))
+    monkeypatch.setattr(execution_mod, "build_prompt_reviser_provider", _returning(None))
+    monkeypatch.setattr(execution_mod, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(execution_mod, "start_mcp_manager_if_enabled", _returning(None))
+    monkeypatch.setattr(execution_mod, "wants_session_network", _returning(False))
 
     def _chown(_path: Path) -> None:
         order.append("chown")
@@ -522,9 +522,9 @@ def _wired_frontend(
     def _merge(*_args: object, **_kwargs: object) -> None:
         order.append("auto_merge")
 
-    monkeypatch.setattr(leg_mod, "chown_to_real_user", _chown)
-    monkeypatch.setattr(leg_mod, "finalize_auto_merge", _merge)
-    monkeypatch.setattr(leg_mod, "Harness", harness)
+    monkeypatch.setattr(execution_mod, "chown_to_real_user", _chown)
+    monkeypatch.setattr(execution_mod, "finalize_auto_merge", _merge)
+    monkeypatch.setattr(execution_mod, "Harness", harness)
 
     def _steer_state(*_args: object) -> SteerState:
         return SteerState(
@@ -579,10 +579,10 @@ def test_the_chown_runs_after_the_auto_merge_writes(
     order: list[str] = []
     cfg = Config.model_validate({"git": {"auto_merge": True}})
     frontend = _wired_frontend(monkeypatch, order, harness=_finishing_workflow(1), cfg=cfg)
-    run_leg(
+    run_execution(
         cfg,
         layout,
-        LegInputs(
+        ExecutionInputs(
             session_id=layout.session_id,
             mode="run",
             role="worker",
@@ -612,7 +612,7 @@ def test_the_chown_runs_after_the_auto_merge_writes(
 def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The dashboard scope raising after a finished run is the leg's failure,
+    """The dashboard scope raising after a finished run is the execution's failure,
     not the run's: one crash line, and the run's own end stays its last."""
     state = tmp_path / "state"
     layout = SessionLayout(state_dir=state, session_id="sess-TUIRAI")
@@ -649,10 +649,10 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
     )
     said: list[str] = []
     with pytest.raises(RuntimeError, match="dashboard teardown failed"):
-        run_leg(
+        run_execution(
             Config(),
             layout,
-            LegInputs(
+            ExecutionInputs(
                 session_id=layout.session_id,
                 mode="run",
                 role="worker",
@@ -716,7 +716,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
             )
 
     frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
-    stubbed_build = leg_mod.build_session_tools
+    stubbed_build = execution_mod.build_session_tools
 
     def _boom() -> None:
         raise KeyboardInterrupt
@@ -726,12 +726,12 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
         tools.dispatcher.settle_background = _boom
         return tools
 
-    monkeypatch.setattr(leg_mod, "build_session_tools", _tools)
+    monkeypatch.setattr(execution_mod, "build_session_tools", _tools)
     said: list[str] = []
-    end = run_leg(
+    end = run_execution(
         Config(),
         layout,
-        LegInputs(
+        ExecutionInputs(
             session_id=layout.session_id,
             mode="run",
             role="worker",

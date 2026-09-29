@@ -133,12 +133,12 @@ def test_attach_replay_does_not_reask_an_answered_prompt(tmp_path: Path, monkeyp
     assert asked == []  # the answered prompt is history, not a question
 
 
-def test_resumed_leg_reuses_prompt_ids_and_is_still_answered(
+def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Prompt ids are per-leg counters, so a resumed leg re-emits approval-1 /
+    """Prompt ids are per-execution counters, so a resumed execution re-emits approval-1 /
     question-1. The answered-set must clear at the session boundary: it did not,
-    so an attached CLI silently dropped the new leg's first prompt and the run
+    so an attached CLI silently dropped the new execution's first prompt and the run
     hung forever on a front-end that would never answer (the TUI already resets
     its seen-set on SESSION_START_EVENTS)."""
     asked: list[str] = []
@@ -156,7 +156,7 @@ def test_resumed_leg_reuses_prompt_ids_and_is_still_answered(
     log = tmp_path / "logs.jsonl"
     leg1: list[dict[str, Any]] = [
         {"type": "session.start"},
-        {"type": "approval.prompt", "id": "approval-1", "prompt": "leg 1 ok?"},
+        {"type": "approval.prompt", "id": "approval-1", "prompt": "execution 1 ok?"},
         {"type": "approval.answer", "id": "approval-1", "approved": True},
         {"type": "question.prompt", "id": "question-1", "questions": [{"question": "q?"}]},
         {"type": "question.answer", "id": "question-1", "answers": ["x"]},
@@ -164,20 +164,20 @@ def test_resumed_leg_reuses_prompt_ids_and_is_still_answered(
     ]
     _write_log(log, leg1)
     fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
-    assert fe.open_prompts_at_attach(log) == []  # leg 1 is fully answered
+    assert fe.open_prompts_at_attach(log) == []  # execution 1 is fully answered
     for ev in leg1:  # the follow loop replays the whole log first
         fe.react(ev)
     assert asked == []  # nothing historical is re-asked
 
-    # The resumed leg restarts the id counters and prompts again, live.
+    # The resumed execution restarts the id counters and prompts again, live.
     leg2: tuple[dict[str, object], ...] = (
         {"type": "loop.resume.start", "iteration": 2},
-        {"type": "approval.prompt", "id": "approval-1", "prompt": "leg 2 ok?"},
+        {"type": "approval.prompt", "id": "approval-1", "prompt": "execution 2 ok?"},
         {"type": "question.prompt", "id": "question-1", "questions": [{"question": "q2?"}]},
     )
     for ev in leg2:
         fe.react(ev)
-    assert asked == ["leg 2 ok?", "question"]  # both prompted, neither swallowed
+    assert asked == ["execution 2 ok?", "question"]  # both prompted, neither swallowed
     assert (approvals_dir(tmp_path) / "approval-1.answer").read_text(encoding="utf-8") == "yes"
     assert (questions_dir(tmp_path) / "question-1.answer").exists()
 

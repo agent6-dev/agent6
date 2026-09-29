@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The manifest's gate pin: who writes it, and what keeps it true.
 
-Every viewer, the baseline check and the next leg read the gate from here, so a
+Every viewer, the baseline check and the next execution read the gate from here, so a
 pin that goes stale is a surface that lies about what judged the run.
 """
 
@@ -44,9 +44,9 @@ def _quiet() -> tuple[Reporter, list[str]]:
     return Reporter(out=said.append, err=said.append), said
 
 
-def test_a_gate_adopted_mid_leg_re_pins(tmp_path: Path) -> None:
+def test_a_gate_adopted_mid_execution_re_pins(tmp_path: Path) -> None:
     """The stamp and the re-stamp were separate wiring, present only on a fresh
-    run: a RESUMED leg that adopted a gate left a manifest reading gateless
+    run: a RESUMED execution that adopted a gate left a manifest reading gateless
     while a gate was live."""
     layout = _layout(tmp_path)
     events = _sink(tmp_path)
@@ -206,7 +206,7 @@ def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: Path) -> No
 
 def test_an_empty_gate_never_carries_an_origin(tmp_path: Path) -> None:
     """`configured` beside `()` is self-contradictory on disk, and the next
-    leg reads that origin back."""
+    execution reads that origin back."""
     layout = _layout(tmp_path)
     reporter, _said = _quiet()
     pin_gate(layout.session_dir, (), "", events=_sink(tmp_path), reporter=reporter)

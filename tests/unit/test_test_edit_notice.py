@@ -4,7 +4,7 @@
 every file changed in between is a test file, gets a notice naming them and
 an event that counts it. Decided by a git tree diff between the red and the
 green, so a run_command edit is seen like an apply_edit. In the SWE-rebench
-autopsy, 7 of 8 broke-P2P legs greened a red gate by editing the failing
+autopsy, 7 of 8 broke-P2P executions greened a red gate by editing the failing
 test; the flip rendered as an ordinary success."""
 
 from __future__ import annotations

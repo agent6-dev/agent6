@@ -460,7 +460,7 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The watch read "finished" off the journal's LAST line while every other
-    surface reads the listing fold, which only a resumed leg un-finishes. A
+    surface reads the listing fold, which only a resumed execution un-finishes. A
     side answer journaled after session.end made the replay follow a finished
     run until its watcher's own pid died."""
     import os

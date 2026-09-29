@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """Authoritative hidden grader for orchard. Not shipped into the agent's repo.
 
-Usage: python3 grade.py <worktree-dir> <leg>    # leg: fix | weekend | clearance
+Usage: python3 grade.py <worktree-dir> <session>    # session: fix | weekend | clearance
 
 Grades semantics, not diffs: the `regen` component copies the worktree,
 DELETES data/*.tsv, runs every tools/gen_*.py THEY left behind, and checks
 the feeds the build reproduces against the reference tables (a hand-written
 feed no generator can rebuild scores zero); the `api` component probes src/
-in a subprocess. Leg `weekend` adds the `rounding` component (half-up vs
+in a subprocess. Session `weekend` adds the `rounding` component (half-up vs
 banker's divergence, F-310: shelf 790 -> weekend 909, float round() gives
-908). Leg `clearance` re-probes both conventions with fresh values: the
+908). Session `clearance` re-probes both conventions with fresh values: the
 discount rounds half-up on the cent before subtracting, so A-140 448 /
 E-905 1858 catch round() (449/1859) and B-204 649 catches int() truncation
-(650). Leg `clearance` does not grade the weekend column: a leg-2 failure
-already paid in leg-2's record, and re-billing it here would conflate the
-legs.
+(650). Session `clearance` does not grade the weekend column: a session-2 failure
+already paid in session-2's record, and re-billing it here would conflate the
+sessions.
 """
 
 from __future__ import annotations
@@ -214,11 +214,11 @@ def _int_of(row: dict[str, str] | None, col: str) -> int | None:
 _PROBES = {"fix": FIX_PROBE, "weekend": WEEKEND_PROBE, "clearance": CLEARANCE_PROBE}
 
 
-def grade(workdir: str, leg: str) -> dict[str, Any]:
+def grade(workdir: str, session: str) -> dict[str, Any]:
     tree = _copy_tree(workdir)
     _regen(tree)
     header, rows = _read_feed(tree, "catalog.tsv")
-    probe = _probe(tree, _PROBES[leg])
+    probe = _probe(tree, _PROBES[session])
 
     components: dict[str, dict[str, bool]] = {"regen": {}, "api": {}}
     regen = components["regen"]
@@ -229,14 +229,14 @@ def grade(workdir: str, leg: str) -> dict[str, Any]:
     for sku, want in EXPECTED_SHELF.items():
         regen[f"shelf_{sku}"] = _int_of(rows.get(sku), "shelf_cents") == want
 
-    if leg == "fix":
+    if session == "fix":
         api["a101_name"] = probe.get("a101_name") == "almond biscotti"
         api["unknown_raises"] = probe.get("zzz") == "raised:KeyError"
         api["inactive_raises"] = probe.get("d550") == "raised:KeyError"
         api["shelf_c250"] = probe.get("c250") == 313
         api["shelf_b204"] = probe.get("b204") == 1299
         api["cart"] = probe.get("cart") == 969
-    elif leg == "weekend":
+    elif session == "weekend":
         regen["weekend_column"] = "weekend_cents" in header
         for sku, want in EXPECTED_WEEKEND.items():
             regen[f"weekend_{sku}"] = _int_of(rows.get(sku), "weekend_cents") == want
@@ -291,7 +291,7 @@ def grade(workdir: str, leg: str) -> dict[str, Any]:
 
     return {
         "task": "orchard",
-        "leg": leg,
+        "session": session,
         "cases_passed": cases_passed,
         "cases_total": cases_total,
         "score": round(cases_passed / cases_total, 4) if cases_total else 0.0,
@@ -304,5 +304,5 @@ def grade(workdir: str, leg: str) -> dict[str, Any]:
 
 if __name__ == "__main__":
     wt = sys.argv[1] if len(sys.argv) > 1 else "."
-    leg = sys.argv[2] if len(sys.argv) > 2 else "fix"
-    print(json.dumps(grade(wt, leg)))
+    session = sys.argv[2] if len(sys.argv) > 2 else "fix"
+    print(json.dumps(grade(wt, session)))

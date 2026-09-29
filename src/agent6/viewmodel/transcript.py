@@ -128,7 +128,7 @@ def worker_models(events: Iterable[dict[str, Any]]) -> tuple[str, ...]:
 
 def operator_inputs(events: Iterable[dict[str, Any]]) -> list[str]:
     """The operator's typed messages, oldest first, consecutive repeats
-    collapsed. Fed from the on-disk journal, so it spans resume legs and every
+    collapsed. Fed from the on-disk journal, so it spans resume executions and every
     surface's steers; input-history recall and search read it."""
     out: list[str] = []
     for event in events:
@@ -418,7 +418,7 @@ class TranscriptFold:
     last: in flight at `tool.call` (`ok=None`), marked awaiting while the
     prompt naming it (`approval.prompt` / `question.prompt`, by `call_id`) is
     open, settled at `tool.result`. A consumer keeping a list drops the
-    superseded one (`fold_transcript` does). A leg boundary settles every
+    superseded one (`fold_transcript` does). An execution boundary settles every
     call still open; a reader that knows the worker died calls
     `settle_open_calls` itself.
     """
@@ -449,7 +449,7 @@ class TranscriptFold:
         self._last_ep: float | None = None
         self._commit_subject = ""
         # Pins already shown: a pin renders once, where it enters the
-        # conversation (a /pin, a --pin at leg start), never again at a resume
+        # conversation (a /pin, a --pin at execution start), never again at a resume
         # boundary that restates the list.
         self._pins_shown: set[str] = set()
 
@@ -462,7 +462,7 @@ class TranscriptFold:
                 self._first_ep = ep
         if etype in SESSION_START_EVENTS:
             self._mode = str(event.get("mode", "")) or self._mode
-            # The receipt is the leg's: a resumed leg's wall clock and counts
+            # The receipt is the execution's: a resumed execution's wall clock and counts
             # start at its own start event, its cost included.
             self._first_ep = ep
             self._tools = 0
@@ -529,7 +529,7 @@ class TranscriptFold:
             return []
         if etype == "role.result":
             # The settled text, used only when no deltas arrived: a streaming
-            # leg already has the same prose in `self._text`.
+            # execution already has the same prose in `self._text`.
             #
             # Only the role driving the session speaks. agent6 makes side calls
             # with their own roles (the verify-command inferer runs before the
@@ -615,7 +615,7 @@ class TranscriptFold:
         return []
 
     def _is_side_call(self, event: dict[str, Any]) -> bool:
-        """Whether this result is a side call's (a streamed leg keeps its own
+        """Whether this result is a side call's (a streamed execution keeps its own
         prose in the deltas anyway)."""
         return is_side_role(str(event.get("role", "")))
 
@@ -714,7 +714,7 @@ class TranscriptFold:
 
     def settle_open_calls(self, why: str) -> list[TranscriptItem]:
         """Every call still in flight settled as one that never returned,
-        with *why* ("the run ended" at a leg boundary; "the run died" from a
+        with *why* ("the run ended" at an execution boundary; "the run died" from a
         reader whose worker probe found the worker gone)."""
         out = [
             replace(pending, ok=False, detail=f"no result ({why})")

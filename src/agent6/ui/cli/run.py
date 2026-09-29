@@ -97,7 +97,7 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
 
 
 def _remember_steer(cell: list[SteerState | None], state: SteerState) -> SteerState:
-    """Publish the leg's SteerState for the approver's late-bound read."""
+    """Publish the execution's SteerState for the approver's late-bound read."""
     cell[0] = state
     return state
 
@@ -110,7 +110,7 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
     owns egress (`app.egress`) itself; only the two exe-spawn primitives it
     can't reach (`ui.spawn`) are injected."""
     # Both late-bound: the lifecycle builds the approver and questioner before
-    # the leg attaches the console view or the steer state exists; they read
+    # the execution attaches the console view or the steer state exists; they read
     # the cells at prompt time (an operator prompt pauses the view's heartbeat
     # and counts as a Ctrl-C boundary, see build_approver).
     console_cell: list[ConsoleView | None] = [None]

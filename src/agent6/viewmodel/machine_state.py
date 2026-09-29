@@ -198,10 +198,10 @@ def machine_status_word(
 
 
 @dataclass(frozen=True, slots=True)
-class AgentLeg:
-    """The newest agent state's leg as the operator verbs see it.
+class AgentExecution:
+    """The newest agent state's execution as the operator verbs see it.
 
-    `open`: the leg has begun and not ended, so a steer has a reader.
+    `open`: the execution has begun and not ended, so a steer has a reader.
     `blocked_in`: the state dir (`0001-attempt`) holding an unanswered approval
     or question, else "" (the machine waits on the operator there)."""
 
@@ -209,25 +209,25 @@ class AgentLeg:
     blocked_in: str = ""
 
 
-def leg_of(state: SessionState, log: Path) -> AgentLeg:
-    """The :class:`AgentLeg` a folded state log *log* describes."""
+def execution_of(state: SessionState, log: Path) -> AgentExecution:
+    """The :class:`AgentExecution` a folded state log *log* describes."""
     open_prompts = [*state.pending_approvals, *state.pending_questions]
-    return AgentLeg(
+    return AgentExecution(
         open=state.started and not state.finished,
         blocked_in=log.parent.name if any(not p.answered for p in open_prompts) else "",
     )
 
 
-def newest_agent_leg(machine_dir: Path) -> AgentLeg:
-    """The :class:`AgentLeg` of the newest state log (one fold of that log); a
-    poll loop holds a :class:`NewestLegFold` instead."""
+def newest_agent_execution(machine_dir: Path) -> AgentExecution:
+    """The :class:`AgentExecution` of the newest state log (one fold of that log); a
+    poll loop holds a :class:`NewestExecutionFold` instead."""
     log = newest_state_log(machine_dir)
     if log is None:
-        return AgentLeg()
-    return leg_of(fold_session(tail_events(log, follow=False)), log)
+        return AgentExecution()
+    return execution_of(fold_session(tail_events(log, follow=False)), log)
 
 
-class NewestLegFold:
+class NewestExecutionFold:
     """The newest state log folded across a poll loop: each `refresh` reads the
     bytes appended since the last one and folds them into the held state, and
     starts a fresh fold when the machine has entered a newer agent state or
@@ -259,9 +259,9 @@ class NewestLegFold:
         """The state log the held fold describes, None before any exists."""
         return self._log
 
-    def leg(self) -> AgentLeg:
-        """The :class:`AgentLeg` of the held fold."""
-        return leg_of(self.state, self._log) if self._log is not None else AgentLeg()
+    def execution(self) -> AgentExecution:
+        """The :class:`AgentExecution` of the held fold."""
+        return execution_of(self.state, self._log) if self._log is not None else AgentExecution()
 
 
 def armed_wait(machine_dir: Path, ms: MachineState) -> PendingWait | None:
@@ -278,8 +278,8 @@ def armed_wait(machine_dir: Path, ms: MachineState) -> PendingWait | None:
 @dataclass(frozen=True, slots=True)
 class InstanceProbes:
     """What an instance dir says beside its fold: the worker, the armed wait
-    and the newest agent leg (folded only for a live, unended machine, the one
-    whose leg could read a steer or an answer). Under --exit-on-wait
+    and the newest agent execution (folded only for a live, unended machine, the one
+    whose execution could read a steer or an answer). Under --exit-on-wait
     scheduling a parked machine legitimately has no live process, so a dead
     pid reads as parked, never as crashed, while a wait is armed. A corrupt
     wait record reads as parked (keep streaming) and names itself in
@@ -287,13 +287,13 @@ class InstanceProbes:
 
     alive: bool
     parked: bool
-    leg: AgentLeg
+    execution: AgentExecution
     wait_error: str = ""
 
     def status_word(self, ms: MachineState) -> str:
         """:func:`machine_status_word` fed these probes."""
         return machine_status_word(
-            ms, parked=self.parked, alive=self.alive, blocked=bool(self.leg.blocked_in)
+            ms, parked=self.parked, alive=self.alive, blocked=bool(self.execution.blocked_in)
         )
 
     def refusals(self, name: str, ms: MachineState) -> dict[MachineVerb, str]:
@@ -306,25 +306,27 @@ class InstanceProbes:
             ended=ms.ended,
             alive=self.alive,
             open_wait=self.parked,
-            agent_open=self.leg.open,
-            prompt_open=bool(self.leg.blocked_in),
+            agent_open=self.execution.open,
+            prompt_open=bool(self.execution.blocked_in),
         )
 
 
 def probe_instance(
-    machine_dir: Path, ms: MachineState, *, leg: AgentLeg | None = None
+    machine_dir: Path, ms: MachineState, *, execution: AgentExecution | None = None
 ) -> InstanceProbes:
     """The :class:`InstanceProbes` of *machine_dir* for its fold *ms*. A caller
-    holding the newest leg's fold (:class:`NewestLegFold`) passes its *leg*;
+    holding the newest execution's fold (:class:`NewestExecutionFold`) passes its *execution*;
     else the log is folded here, for a live, unended machine."""
     alive = worker_is_alive(machine_dir)
-    if leg is None:
-        leg = newest_agent_leg(machine_dir) if ms.ended is None and alive else AgentLeg()
+    if execution is None:
+        execution = (
+            newest_agent_execution(machine_dir) if ms.ended is None and alive else AgentExecution()
+        )
     try:
         parked = armed_wait(machine_dir, ms) is not None
     except JournalError as exc:
-        return InstanceProbes(alive=alive, parked=True, leg=leg, wait_error=str(exc))
-    return InstanceProbes(alive=alive, parked=parked, leg=leg)
+        return InstanceProbes(alive=alive, parked=True, execution=execution, wait_error=str(exc))
+    return InstanceProbes(alive=alive, parked=parked, execution=execution)
 
 
 @dataclass(frozen=True, slots=True)
@@ -491,8 +493,8 @@ def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
         return MachineSummary(machine_dir.name, "", "", "unreadable", first_line, mtime)
     probes = probe_instance(machine_dir, ms)
     reason = ms.ended.reason if ms.ended is not None and ms.ended.status == "failed" else ""
-    if probes.leg.blocked_in:
-        reason = f"waiting on an answer in {probes.leg.blocked_in}"
+    if probes.execution.blocked_in:
+        reason = f"waiting on an answer in {probes.execution.blocked_in}"
     return MachineSummary(
         name=machine_dir.name,
         machine=ms.machine,
@@ -577,7 +579,7 @@ def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str
     A front-end paints every verb at once, so it asks once; the CLI asks for the
     one verb it is about to run through :func:`machine_verb_refusal`. The
     newest state log is folded only for a live, unended machine, the one whose
-    leg could read a steer or an answer (every instance dir is asked on a TAB)."""
+    execution could read a steer or an answer (every instance dir is asked on a TAB)."""
     if not machine_dir.is_dir():
         return dict.fromkeys(MACHINE_VERBS, f"no machine {name!r}")
     try:
@@ -732,7 +734,7 @@ class MachineWatchCursor:
 
 
 def machine_state_as_dict(
-    ms: MachineState, machine_dir: Path | None = None, *, leg: AgentLeg | None = None
+    ms: MachineState, machine_dir: Path | None = None, *, execution: AgentExecution | None = None
 ) -> dict[str, Any]:
     """The JSON-able wire form of a MachineState, stable field names: what
     `agent6 attach --json` and a web client serialize.
@@ -743,7 +745,7 @@ def machine_state_as_dict(
     liveness signal is `ended`, and Steer on a parked machine reads as live."""
     d = asdict(ms)
     if machine_dir is not None:
-        probes = probe_instance(machine_dir, ms, leg=leg)
+        probes = probe_instance(machine_dir, ms, execution=execution)
         d["status"] = probes.status_word(ms)
         d["level"] = status_level(d["status"])  # the hub row's level, for the page's pill
         if d["status"] == "stopped":

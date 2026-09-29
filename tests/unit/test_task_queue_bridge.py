@@ -3,7 +3,7 @@
 """The queued-task bridge: the file a `/task` writes and the run drains.
 
 Unlike the answer and steer bridges, this one is a queue: many entries, taken
-oldest first, and none of it is cleared at a leg boundary.
+oldest first, and none of it is cleared at an execution boundary.
 """
 
 from __future__ import annotations
@@ -54,17 +54,17 @@ def test_draining_an_untouched_run_makes_no_directory(tmp_path: Path) -> None:
     assert not queue_path(tmp_path).exists()
 
 
-def test_a_queued_task_survives_a_leg_boundary(tmp_path: Path) -> None:
+def test_a_queued_task_survives_a_execution_boundary(tmp_path: Path) -> None:
     """A task queued during the run's last turn is still wanted, so the
-    leg-start sweep that drops answers and markers older than the leg's start
+    execution-start sweep that drops answers and markers older than the execution's start
     leaves the queue alone."""
-    queue_request(tmp_path, "task", "queued between legs")
+    queue_request(tmp_path, "task", "queued between executions")
     (tmp_path / "steer.answer").write_text("stale", encoding="utf-8")
 
     clear_pending_answers(tmp_path, started_at=time.time() + 600)
 
     assert not (tmp_path / "steer.answer").exists()  # the sweep did run
-    assert [r.text for r in drain_requests(tmp_path)] == ["queued between legs"]
+    assert [r.text for r in drain_requests(tmp_path)] == ["queued between executions"]
 
 
 def test_every_request_keeps_its_kind_and_order(tmp_path: Path) -> None:

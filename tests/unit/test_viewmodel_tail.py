@@ -243,10 +243,10 @@ def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> Non
 
 
 def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: Path) -> None:
-    """The caller measures the offset before its leg starts; a line the leg
+    """The caller measures the offset before its execution starts; a line the execution
     appends before the tail opens the file follows the offset and is yielded.
     Measured at attach time instead, that line was skipped with the prior
-    legs, and a resumed ACP turn's first tool call never reached the editor."""
+    executions, and a resumed ACP turn's first tool call never reached the editor."""
     path = tmp_path / "logs.jsonl"
     path.write_text(
         '{"type": "session.start"}\n{"type": "tool.call", "call_id": 1}\n', encoding="utf-8"
@@ -262,9 +262,9 @@ def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: Path
 
 
 def test_start_at_skips_the_lines_before_the_offset(tmp_path: Path) -> None:
-    """A resumed run appends to a journal whose prior legs the viewer already
+    """A resumed run appends to a journal whose prior executions the viewer already
     rendered: start_at yields only what follows the measured offset --
-    including past a prior leg's session.end, which must not stop it."""
+    including past a prior execution's session.end, which must not stop it."""
     path = tmp_path / "logs.jsonl"
     path.write_text(
         '{"type": "old"}\n{"type": "session.end"}\n',
@@ -274,7 +274,7 @@ def test_start_at_skips_the_lines_before_the_offset(tmp_path: Path) -> None:
 
     def _should_stop() -> bool:
         stop["n"] += 1
-        if stop["n"] == 2:  # first poll found nothing new; append the new leg
+        if stop["n"] == 2:  # first poll found nothing new; append the new execution
             with path.open("a", encoding="utf-8") as fh:
                 fh.write('{"type": "fresh"}\n{"type": "session.end"}\n')
         return stop["n"] > 10

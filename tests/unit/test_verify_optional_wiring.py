@@ -115,11 +115,13 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
         assert "Ignore any" not in b
 
 
-def test_a_leg_that_cannot_run_commands_is_gateless_wherever_it_starts(tmp_path: Path) -> None:
-    """The rule lived only in preflight's fresh-run path, so a RESUMED leg was
-    re-gated with every command tool withheld: nothing could go green, the leg
+def test_a_execution_that_cannot_run_commands_is_gateless_wherever_it_starts(
+    tmp_path: Path,
+) -> None:
+    """The rule lived only in preflight's fresh-run path, so a RESUMED execution was
+    re-gated with every command tool withheld: nothing could go green, the execution
     committed nothing, and the manifest was re-pinned to claim a gate that
-    never judged anything. Both lifecycles make the decision now, once, at leg
+    never judged anything. Both lifecycles make the decision now, once, at execution
     start -- with the system prompt, which is frozen from the same config."""
     from agent6.app.preflight import drop_gate_if_unrunnable
     from agent6.app.reporter import Reporter
@@ -163,7 +165,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> 
     """Reading the LIVE policy for the verdict made a mid-run "deny for the
     rest of the run" erase a gate that had already run and failed: verified
     flipped to not_applicable, the exit code to 0, and `git.auto_merge` merged
-    the red branch. Gatedness is frozen at leg start; a later deny withdraws
+    the red branch. Gatedness is frozen at execution start; a later deny withdraws
     the tools, never the verdict."""
     from types import SimpleNamespace
     from unittest.mock import MagicMock
@@ -195,7 +197,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> 
 
 def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: Path) -> None:
     """`deny for the rest of the run` and an away-mode of deny both flip the
-    EFFECTIVE policy to "no" while the config still names a gate. The leg kept
+    EFFECTIVE policy to "no" while the config still names a gate. The execution kept
     the gate, lost the tool, and ended red."""
     from agent6.config import Config
     from agent6.sessions.ipc import set_away_mode
@@ -226,7 +228,7 @@ def test_a_gate_is_never_adopted_when_the_worker_cannot_run_one(tmp_path: Path) 
 
 
 def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: Path) -> None:
-    """The tool list was built once per leg. A gateless run that adopted a gate
+    """The tool list was built once per execution. A gateless run that adopted a gate
     was TOLD to run run_verify_command while that tool was absent from every
     remaining call: commits stopped, the finish was graded failed, exit 4."""
     from agent6.config import Config
@@ -243,7 +245,7 @@ def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: Path) -> 
 
 
 class _Stop(Exception):
-    """Sentinel: the lifecycle reached pin_gate with this leg's final gate."""
+    """Sentinel: the lifecycle reached pin_gate with this execution's final gate."""
 
 
 def _git_repo(path: Path) -> None:
@@ -294,7 +296,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     resume must keep the newer pin rather than undoing adoption or un-adoption."""
     import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
-    from agent6.app._leg import LegEnd, LegInputs
+    from agent6.app._execution import ExecutionInputs, ExecutionEnd
     from agent6.config.layer import EffectiveConfig
 
     repo = tmp_path / "repo"
@@ -348,11 +350,11 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
     used: list[tuple[str, ...]] = []
 
-    def _leg(_cfg: Config, _layout: object, inputs: LegInputs, **_kw: object) -> LegEnd:
+    def _execution(_cfg: Config, _layout: object, inputs: ExecutionInputs, **_kw: object) -> ExecutionEnd:
         used.append(inputs.gate(_cfg, MagicMock()).harness.verify_command)
-        return LegEnd(0)
+        return ExecutionEnd(0)
 
-    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _execution)
     assert (
         resume_mod.resume_task(
             None, "crashed-AAAA11", started_at=time.time(), frontend=MagicMock(), force=False
@@ -364,13 +366,13 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     assert tuple(persisted["harness"]["verify_command"]) == manifest_gate
 
 
-def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
+def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The drop must have the last word at leg start. With commands withheld,
+    """The drop must have the last word at execution start. With commands withheld,
     the snapshot-reuse block ran AFTER drop_gate_if_unrunnable and handed the
-    dropped gate straight back: the leg resumed gated-but-unwinnable, printed
-    two contradictory preamble lines, committed nothing all leg, and exited 4
+    dropped gate straight back: the execution resumed gated-but-unwinnable, printed
+    two contradictory preamble lines, committed nothing all execution, and exited 4
     over a gate that never ran."""
     import agent6.app._session as session_mod
     import agent6.app._setup as setup_mod
@@ -448,15 +450,15 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
             force=False,
             reporter=Reporter(out=said.append, err=said.append),
         )
-    assert pinned == [((), "")], f"the withheld leg was re-gated: {pinned}"
+    assert pinned == [((), "")], f"the withheld execution was re-gated: {pinned}"
     assert any("running gateless" in line for line in said)
 
 
-def test_a_withheld_fresh_leg_is_not_regated_by_inference(
+def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The same rule at the other lifecycle: with commands withheld, inference
-    ran AFTER the drop, re-gated the leg from AGENTS.md, and the pin labelled
+    ran AFTER the drop, re-gated the execution from AGENTS.md, and the pin labelled
     the inferred command "configured"."""
     import agent6.app._session as session_mod
     import agent6.app.preflight as preflight_mod
@@ -509,7 +511,7 @@ def test_a_withheld_fresh_leg_is_not_regated_by_inference(
             mode="run",
             reporter=Reporter(out=said.append, err=said.append),
         )
-    assert pinned == [((), "")], f"the withheld leg was re-gated: {pinned}"
+    assert pinned == [((), "")], f"the withheld execution was re-gated: {pinned}"
     assert any("running gateless" in line for line in said)
 
 
@@ -865,7 +867,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     argv each time. One line, the argv clipped."""
     import agent6.app._setup as setup_mod
     import agent6.app.resume as resume_mod
-    from agent6.app._leg import LegEnd, LegInputs
+    from agent6.app._execution import ExecutionInputs, ExecutionEnd
     from agent6.app.preflight import GATE_TEXT_WIDTH
 
     repo = tmp_path / "repo"
@@ -921,11 +923,11 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
 
-    def _leg(_cfg: Config, _layout: object, inputs: LegInputs, **_kw: object) -> LegEnd:
+    def _execution(_cfg: Config, _layout: object, inputs: ExecutionInputs, **_kw: object) -> ExecutionEnd:
         inputs.gate(_cfg, MagicMock())
-        return LegEnd(0)
+        return ExecutionEnd(0)
 
-    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _execution)
     rc = resume_mod.resume_task(
         None, "withheld-AAAA11", started_at=time.time(), frontend=MagicMock(), force=False
     )

@@ -219,18 +219,23 @@ _DISPATCH_TIER = (
 
 
 def _run_lifecycle_mermaid() -> str:
-    """`run_task`'s stages as one chain, in the order it calls them; the leg
-    body it hands off to (`_leg.run_leg`, shared with resume) is spliced in
+    """`run_task`'s stages as one chain, in the order it calls them; the execution
+    body it hands off to (`_execution.run_execution`, shared with resume) is spliced in
     where the hand-off happens."""
     outer = _calls_in_order(
-        "src/agent6/app/run.py", "run_task", (*_RUN_LIFECYCLE_TIER, "run_leg"), own_body_only=True
+        "src/agent6/app/run.py",
+        "run_task",
+        (*_RUN_LIFECYCLE_TIER, "run_execution"),
+        own_body_only=True,
     )
-    # The leg calls the lifecycle's gate step (`inputs.gate`) between the
+    # The execution calls the lifecycle's gate step (`inputs.gate`) between the
     # providers and the tools; run's is the `_gate` closure in run_task.
     gate = _calls_in_order("src/agent6/app/run.py", "_gate", _RUN_LIFECYCLE_TIER)
-    leg = _calls_in_order("src/agent6/app/_leg.py", "run_leg", (*_RUN_LIFECYCLE_TIER, "gate"))
-    body = [stage for name in leg for stage in (gate if name == "gate" else [name])]
-    stages = [stage for name in outer for stage in (body if name == "run_leg" else [name])]
+    execution = _calls_in_order(
+        "src/agent6/app/_execution.py", "run_execution", (*_RUN_LIFECYCLE_TIER, "gate")
+    )
+    body = [stage for name in execution for stage in (gate if name == "gate" else [name])]
+    stages = [stage for name in outer for stage in (body if name == "run_execution" else [name])]
     lines = ["graph TD", '    n_run_task["run_task"]']
     lines += [f'    {_nid(name)}["{name}"]' for name in stages]
     chain = ["run_task", *stages]

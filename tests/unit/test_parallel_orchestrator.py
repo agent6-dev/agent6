@@ -102,7 +102,7 @@ def _write_fake_run(
         # Died without a session.end (OOM/SIGKILL): a recorded pid that is gone.
         (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     elif status == "gated_fail":
-        # A deliberate finish whose OWN verify ran this leg and failed (unlike
+        # A deliberate finish whose OWN verify ran this execution and failed (unlike
         # "finished", which never ran one): the compare must never crown it.
         events.append({"type": "verify.end", "exit_code": 1})
         events.append({"type": "session.end", "reason": "finish_session", "all_passed": False})
@@ -1967,7 +1967,7 @@ def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
     """Both lanes finished deliberately, but each one's own verify gate ran
-    and failed this leg: mechanical ranking still orders them by cost, and the
+    and failed this execution: mechanical ranking still orders them by cost, and the
     cheaper one was stamped compare.winner=true even though nobody's gate
     passed -- the fan-out's own exit code (4) says the opposite."""
     from agent6.paths import state_dir
@@ -2474,7 +2474,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
 ) -> None:
     """An escape after the fan-out's record opens (a spawner fault, Ctrl+C
     during the judge) still ends the journal (`crashed` / `interrupted`) and
-    clears the pid, the way every other leg does; without the end the
+    clears the pid, the way every other execution does; without the end the
     operator's own interrupt read as a lost worker ("stale")."""
     from agent6.viewmodel.listing import scan_session_log
 

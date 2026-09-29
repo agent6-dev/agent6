@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`/standing <text>`: the operator sets a live run's standing goal.
 
-`--standing` starts a leg with one, and only the CLI has flags, so before this
+`--standing` starts an execution with one, and only the CLI has flags, so before this
 the TUI and web could not set a goal at all and no surface could change one
 mid-run. The directive replaces the goal the run has, because an operator
 typing one means "this is the goal now".

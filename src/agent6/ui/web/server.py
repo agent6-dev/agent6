@@ -115,7 +115,7 @@ class StopBody(_Body):
 class ResumeBody(_Body):
     # The follow-up instruction a finished run is resumed with; empty = plain resume.
     text: str = ""
-    # The config preset and the model the leg continues under; empty = as the
+    # The config preset and the model the execution continues under; empty = as the
     # run recorded.
     preset: str = ""
     model: str = ""

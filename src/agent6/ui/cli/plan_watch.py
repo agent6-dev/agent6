@@ -337,9 +337,9 @@ class _CliFrontEnd:
         self._handled.add(prompt_id)
 
     def _new_session(self) -> None:
-        """A session boundary (a fresh run, or a resumed leg) restarts the prompt
-        id counters at approval-1/question-1, so the prior leg's ids say nothing
-        about the new leg's."""
+        """A session boundary (a fresh run, or a resumed execution) restarts the prompt
+        id counters at approval-1/question-1, so the prior execution's ids say nothing
+        about the new execution's."""
         self._answered.clear()
         self._handled.clear()
 
@@ -353,7 +353,7 @@ class _CliFrontEnd:
             # back events `open_prompts_at_attach` already ruled on, so keep the
             # bookkeeping in step but never prompt: deciding them live would
             # re-ask every prompt the run has already answered, since the
-            # leg-boundary clear below discards what the pre-scan knew.
+            # execution-boundary clear below discards what the pre-scan knew.
             self._replayed -= 1
             if etype in SESSION_START_EVENTS:
                 self._new_session()
@@ -491,7 +491,7 @@ def _watch_transcript(target: Path) -> int:
 
 def _line_is_session_end(raw: bytes | str) -> bool:
     """True if a logs.jsonl line is a `session.end` event: the follower stops
-    at the leg's end as it streams (the fold answers for a whole journal)."""
+    at the execution's end as it streams (the fold answers for a whole journal)."""
     text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
     try:
         obj = json.loads(text)

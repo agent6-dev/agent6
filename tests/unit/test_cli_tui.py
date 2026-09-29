@@ -607,7 +607,7 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
 def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The lifecycle builds the gate before the leg attaches the live console
+    """The lifecycle builds the gate before the execution attaches the live console
     view, so the approver and questioner read the view at prompt time: with it
     captured at build time they paused nothing, and the heartbeat's per-tick
     line-erase wiped the tty prompt and the operator's keystrokes."""
@@ -638,13 +638,13 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
         journal=events.emit,
         session_dir=tmp_path,
     )
-    fe.attach_console_view(events)  # the leg attaches the view after the gate exists
+    fe.attach_console_view(events)  # the execution attaches the view after the gate exists
     try:
         assert prompts.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
         assert prompts.ask((UserQuestion(question="pick?", options=("a", "b")),)).answers == ("a",)
     finally:
         fe.close_console_view()
-    assert len(paused) == 2, "both prompts pause the view the leg attached"
+    assert len(paused) == 2, "both prompts pause the view the execution attached"
 
 
 def test_a_dashboard_that_dies_before_the_run_ends_is_reported(

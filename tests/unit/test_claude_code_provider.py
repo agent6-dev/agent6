@@ -976,7 +976,7 @@ def test_instrumented_provider_close_forwards_to_the_inner_close() -> None:
 
 
 def test_close_terminates_a_child_blocked_on_a_tool_call(tmp_path: Path) -> None:
-    """A leg ends on an unanswered tools/call, where the CLI ignores stdin EOF;
+    """An execution ends on an unanswered tools/call, where the CLI ignores stdin EOF;
     close() sends SIGTERM, which the CLI handles (exit 143, socket removed),
     before any SIGKILL."""
     marker = tmp_path / "up"

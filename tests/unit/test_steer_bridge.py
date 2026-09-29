@@ -251,10 +251,10 @@ def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.Monkey
 
 
 def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> None:
-    """A stage armed in one leg must not leak into the next (phantom pause
-    menu; stage 2 aborts the next leg's first call). reset_stage zeroes ONLY
+    """A stage armed in one execution must not leak into the next (phantom pause
+    menu; stage 2 aborts the next execution's first call). reset_stage zeroes ONLY
     the SIGINT stage: the steer marker files stay, because resume --steer
-    seeds the next leg through them."""
+    seeds the next execution through them."""
     import signal
 
     from agent6.sessions.ipc import request_steer, steer_request_pending, write_steer_answer
@@ -270,8 +270,8 @@ def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> Non
         steer.reset_stage()
         assert not steer.requested()  # the armed stage is gone
         # A front-end marker steer is the OTHER requested() source and must
-        # survive a leg boundary (a web steer typed near leg end reaches the
-        # next leg); reset_stage leaves both files alone.
+        # survive an execution boundary (a web steer typed near execution end reaches the
+        # next execution); reset_stage leaves both files alone.
         write_steer_answer(tmp_path, "carry on")
         request_steer(tmp_path)
         steer.reset_stage()
@@ -282,10 +282,10 @@ def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> Non
         steer.restore()
 
 
-def test_workflow_run_resets_the_steer_stage_at_leg_entry() -> None:
-    """Each wf.run() leg starts with no armed Ctrl-C (the ask REPL re-enters
+def test_workflow_run_resets_the_steer_stage_at_execution_entry() -> None:
+    """Each wf.run() execution starts with no armed Ctrl-C (the ask REPL re-enters
     run() per follow-up under one installed handler): the reset fires at the
-    very top of run(), before any other leg work."""
+    very top of run(), before any other execution work."""
     import contextlib
 
     from agent6.harness.loop import Harness
@@ -304,7 +304,7 @@ def test_workflow_run_resets_the_steer_stage_at_leg_entry() -> None:
         bridge=OperatorBridge(steer_reset=spy),
     )
     for expected in (1, 2):
-        with contextlib.suppress(Exception):  # mocks explode later in the leg
+        with contextlib.suppress(Exception):  # mocks explode later in the execution
             wf.run("q")
         assert len(resets) == expected
 
@@ -460,7 +460,7 @@ def test_edit_survives_an_unparsable_editor(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An $EDITOR with unbalanced quoting is a choose-again, like a missing
-    binary: shlex.split's ValueError escaped every guard up to the leg's
+    binary: shlex.split's ValueError escaped every guard up to the execution's
     `except Exception`, ending the run as crashed."""
     import io
     import sys
@@ -496,7 +496,7 @@ def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One Ctrl-C leaves the revise_prompt choice, as at every other idle CLI
-    prompt. The leg installs the run's escalating steer handler before the
+    prompt. The execution installs the run's escalating steer handler before the
     loop reaches this prompt, so without `idle_prompt_sigint` the press was
     absorbed by the retried input(): three presses to leave, a "pausing after
     this step" line with no step in flight, and an armed stage that opened a

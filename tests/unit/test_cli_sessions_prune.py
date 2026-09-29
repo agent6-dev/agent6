@@ -202,7 +202,7 @@ def test_a_deleted_branch_with_a_stale_stamp_names_the_chain_ref(
     _git(tmp_path, "checkout", "-q", "agent6/stale11")
     (tmp_path / "b.txt").write_text("later\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-q", "-m", "a later leg")
+    _git(tmp_path, "commit", "-q", "-m", "a later execution")
     _git(tmp_path, "checkout", "-q", "main")
     _git(tmp_path, "update-ref", chain_ref_for("stale11"), "agent6/stale11")
     _git(tmp_path, "branch", "-D", "agent6/stale11")
@@ -210,7 +210,7 @@ def test_a_deleted_branch_with_a_stale_stamp_names_the_chain_ref(
 
     assert main(["sessions", "commits", "stale11"]) == 0
     out, err = capsys.readouterr()
-    assert "work stale11" in out and "a later leg" in out
+    assert "work stale11" in out and "a later execution" in out
     assert chain_ref_for("stale11") in err
     assert "was pruned" not in out
 
@@ -975,7 +975,7 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     moved = _fork_with_worktree(tmp_path, "fork-moved011", merged=True)
     (moved / "later.txt").write_text("after the merge\n", encoding="utf-8")
     base = _git(tmp_path, "rev-parse", "HEAD")
-    after = _git(tmp_path, "commit-tree", f"{base}^{{tree}}", "-p", base, "-m", "a later leg")
+    after = _git(tmp_path, "commit-tree", f"{base}^{{tree}}", "-p", base, "-m", "a later execution")
     _git(tmp_path, "update-ref", "refs/heads/agent6/fork-moved011", after)
     live = _fork_with_worktree(tmp_path, "fork-live0011", merged=True)
     write_worker_pid(
@@ -1002,7 +1002,7 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
 def test_removing_a_worktree_deletes_only_its_checkout_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fork's worktree is its repository's project, so its leg's checkout
+    """A fork's worktree is its repository's project, so its execution's checkout
     lock sits under the repository's state dir. Removing the worktree removes
     that lock and nothing else there: a session dir beside it stays."""
     from agent6.paths import state_dir
@@ -1286,7 +1286,7 @@ def test_prune_names_a_chain_ref_that_advanced_since_its_squash_merge(
     base = _git(tmp_path, "rev-parse", "HEAD")
     _make_branch(tmp_path, "moved1", "m.txt")
     tip = _git(tmp_path, "rev-parse", "agent6/moved1")
-    later = _git(tmp_path, "commit-tree", f"{tip}^{{tree}}", "-p", tip, "-m", "a later leg")
+    later = _git(tmp_path, "commit-tree", f"{tip}^{{tree}}", "-p", tip, "-m", "a later execution")
     _git(tmp_path, "update-ref", chain_ref_for("moved1"), later)
     _git(tmp_path, "branch", "-D", "agent6/moved1")
     _git(tmp_path, "merge", "--squash", tip)

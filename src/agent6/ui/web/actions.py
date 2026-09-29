@@ -359,8 +359,8 @@ def _state_dir_for_verb(
     cwd: Path, name: str, verb: MachineVerb, state: str
 ) -> Path | tuple[bool, str]:
     """The agent-state dir a prompt answer or a steer lands in, or the refusal.
-    *state* names the leg the client rendered; a leg the machine has left reads
-    nothing, and its prompt ids repeat in the next leg, so it is refused rather
+    *state* names the execution the client rendered; an execution the machine has left reads
+    nothing, and its prompt ids repeat in the next execution, so it is refused rather
     than rerouted."""
     machine_dir = _machine_dir_or_missing(cwd, name)
     ok, refusal = verb_answer(machine_dir, name, verb)

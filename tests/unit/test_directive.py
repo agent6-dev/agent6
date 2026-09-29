@@ -256,7 +256,7 @@ def test_parse_compact_none_unless_leading_exact_token() -> None:
 
 
 def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None:
-    """The one check a front-end runs before starting a leg on steer text:
+    """The one check a front-end runs before starting an execution on steer text:
     a bare /pin or a /parallel with no task is named; ordinary text and a
     well-formed directive pass.
 
@@ -266,7 +266,7 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
         steer_problem("/pin") or ""
     )
     assert steer_problem("/parallel 2") is not None
-    # /now included: the composers parse it and the loop never does, so a leg
+    # /now included: the composers parse it and the loop never does, so an execution
     # started on it handed "OPERATOR STEERING ... /now hurry up" to the model.
     for live_only in (
         "/compact",

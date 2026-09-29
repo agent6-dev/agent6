@@ -912,7 +912,7 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: Path) 
 
 
 def test_a_merge_stamp_stops_holding_once_the_run_commits_past_it(tmp_path: Path) -> None:
-    """A resumed run keeps committing under a prior leg's stamp, and the run's
+    """A resumed run keeps committing under a prior execution's stamp, and the run's
     record is its chain: read from the branch alone, a branchless run
     (`branch_per_run` off) had nothing to compare and every stamp read as
     holding, so prune called it merged and the later commits went unnoticed."""
@@ -1045,7 +1045,7 @@ def test_add_worktree_is_detached_shares_refs_and_is_removed_alone(tmp_path: Pat
 def test_plumb_merge_from_a_linked_worktree_brings_the_main_checkout_forward(
     tmp_path: Path,
 ) -> None:
-    """A merge run from a linked worktree (a fork's leg auto-merging) moves
+    """A merge run from a linked worktree (a fork's execution auto-merging) moves
     the shared target ref; the checkout that HAS the target checked out is the
     main one, so its index and files are brought forward there. Checking HEAD
     in the worktree (detached) skipped the bring-forward and left the main

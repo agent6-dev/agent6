@@ -165,7 +165,7 @@ def landed_base(
     cwd: Path, layout: SessionLayout, manifest: SessionManifest, target: str, tip: str
 ) -> str | None:
     """The merge base for a run whose chain *target* already holds as a squash,
-    from its own stamp (a resumed leg merging again) or an ancestor's (a fork),
+    from its own stamp (a resumed execution merging again) or an ancestor's (a fork),
     or None where git's own base serves.
 
     A squash commit is content git cannot relate to the chain it came from, so

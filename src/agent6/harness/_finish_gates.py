@@ -175,7 +175,7 @@ def finish_reason(
 def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
     """A finish_session whose `result` does not satisfy the machine state's
     output_schema returns to the model with the problems, so the retry
-    happens in-leg instead of the leg ending failed over correct work.
+    happens in-execution instead of the execution ending failed over correct work.
     Unbounded on purpose: the budget and iteration backstops end a model
     that never conforms, and the engine records that truthfully."""
     if ctx.finish_validator is None:

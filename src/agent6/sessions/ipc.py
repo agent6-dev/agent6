@@ -48,8 +48,8 @@ APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
 # What the operator asked of the run (`/task`, `/standing`, `/retire`), one
 # file each, named so they sort oldest first. Unlike the answer and steer
-# bridges this one survives a leg boundary: a request written while the run
-# was between legs is still wanted.
+# bridges this one survives an execution boundary: a request written while the run
+# was between executions is still wanted.
 QUEUE_DIR_NAME = "queue"
 FRONTENDS_DIR = "frontends"
 WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 sessions show` liveness
@@ -162,19 +162,19 @@ def _answer_path(directory: Path, answer_id: str) -> Path:
 
 
 # File timestamps come from the kernel's tick clock, up to one tick behind
-# `time.time()` (4 ms at HZ=250): a bridge file within this slack of a leg's
+# `time.time()` (4 ms at HZ=250): a bridge file within this slack of an execution's
 # start was written for it.
 TIMESTAMP_SLACK_S = 0.01
 
 
 def clear_pending_answers(session_dir: Path, *, started_at: float) -> None:
-    """Drop the bridge state a leg inherits, at its START: `*.answer` files
+    """Drop the bridge state an execution inherits, at its START: `*.answer` files
     (tidiness: a prompt clears its own slot before asking, so a stale answer
     is never read), the steer answer and marker (a phantom steer prompt no
     live front-end answers), the stop and compact markers (an instant re-stop
-    or re-compact). Only files older than *started_at* (this leg's start, less
-    `TIMESTAMP_SLACK_S`) go: one written between legs was never honored, and
-    one written since belongs to the leg that is starting (an editor's cancel
+    or re-compact). Only files older than *started_at* (this execution's start, less
+    `TIMESTAMP_SLACK_S`) go: one written between executions was never honored, and
+    one written since belongs to the execution that is starting (an editor's cancel
     that landed while the run was coming up). ACP passes its turn's start,
     which precedes the lifecycle by the queue wait; a machine's crash recovery
     passes now, its per-state dir being this execution's own. Best-effort.

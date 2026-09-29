@@ -1010,7 +1010,7 @@ def test_a_fresh_instance_over_a_stale_chain_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A machine chain ref outlives an archived instance dir; a fresh instance
-    silently continued the dead instance's tree (a live leg saw its fix and
+    silently continued the dead instance's tree (a live execution saw its fix and
     reported tests passed over a broken repo). The run refuses instead, naming
     the branch and both remedies."""
     import subprocess
@@ -1518,9 +1518,9 @@ def test_status_and_list_name_a_parked_approval(
     root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     MachineJournal(root).clear_pending_wait()
     write_worker_pid(root, os.getpid())
-    leg = root / "states" / "0001-attempt"
-    leg.mkdir(parents=True)
-    (leg / "logs.jsonl").write_text(
+    execution = root / "states" / "0001-attempt"
+    execution.mkdir(parents=True)
+    (execution / "logs.jsonl").write_text(
         json.dumps({"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: x"})
         + "\n",
         encoding="utf-8",

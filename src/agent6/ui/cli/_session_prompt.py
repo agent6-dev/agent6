@@ -16,7 +16,7 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.cli.resume import _cmd_resume
 from agent6.viewmodel.listing import scan_session_log
 
-# Free text is the next leg's operator instruction (what `--steer` carries);
+# Free text is the next execution's operator instruction (what `--steer` carries);
 # `/exit` finishes. No other verbs until a second one earns its place.
 _NEXT_PROMPT = "next (/exit to finish): "
 EXIT_COMMAND = "/exit"
@@ -44,8 +44,8 @@ def prompting_is_possible() -> bool:
 
 
 def follow_up_on_offer(session_dir: Path) -> bool:
-    """Whether the run in *session_dir* can take a follow-up leg from here: its
-    last leg ended (a detached run went on in the background; its reattach line
+    """Whether the run in *session_dir* can take a follow-up execution from here: its
+    last execution ended (a detached run went on in the background; its reattach line
     was printed) and not by /undo (the fork it named is the continuation; its
     resume line was printed) or /exit (the operator asked to stop and leave;
     asking "next:" would re-open exactly what they closed)."""
@@ -66,12 +66,12 @@ def end_of_session_prompt(
 ) -> int:
     """Keep the session going from the terminal until `/exit`.
 
-    Each answer runs one resume leg carrying that text as the operator's
+    Each answer runs one resume execution carrying that text as the operator's
     instruction, under the invocation's own flag overrides, so continuing needs
     no `agent6 resume <id>` retyping. `/exit` (or EOF) stops asking and prints
     the line that picks the session back up: nothing is sealed, and a finished
-    session stays resumable like any other. A leg that refuses returns its own
-    code rather than re-prompting over the failure; a leg that detached or
+    session stays resumable like any other. An execution that refuses returns its own
+    code rather than re-prompting over the failure; an execution that detached or
     undid the run (see `follow_up_on_offer`, checked when *session_dir* is
     given) ends the asking, its own line already printed.
     """
@@ -89,12 +89,12 @@ def end_of_session_prompt(
             print(f"[agent6] {problem}", file=sys.stderr)
             continue
         if answer.startswith("/") and len(answer.split()) == 1 and answer != "/undo":
-            # A lone slash word (other than /undo, a verb the leg honours) is a
+            # A lone slash word (other than /undo, a verb the execution honours) is a
             # composer command or a typo, not a follow-up task: sending it
             # would spend a model call answering the literal text.
             print(
                 f"[agent6] {answer!r} is not sent as a task: this prompt takes a"
-                " follow-up instruction (a new leg), /undo, or /exit; slash"
+                " follow-up instruction (a new execution), /undo, or /exit; slash"
                 " commands work in the pause menu and the TUI/web composers.",
                 file=sys.stderr,
             )

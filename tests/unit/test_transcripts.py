@@ -166,12 +166,12 @@ def test_redact_headers_unit() -> None:
     assert out["Other"] == "keep"
 
 
-def test_seq_continues_across_resume_legs(tmp_path: Path) -> None:
+def test_seq_continues_across_resume_executions(tmp_path: Path) -> None:
     """seq is per-RUN, not per-sink: a resume builds a fresh TranscriptSink over
     the same <run>/transcripts/ dir, and restarting at 1 produced duplicate seqs
-    whose seq-primary sort interleaved the legs -- `sessions transcript` rendered a
+    whose seq-primary sort interleaved the executions -- `sessions transcript` rendered a
     scrambled conversation with a false 'context summarised' marker and ended on
-    stale leg-1 content. A new sink must continue from the highest seq present."""
+    stale execution-1 content. A new sink must continue from the highest seq present."""
     d = tmp_path / "transcripts"
     leg1 = TranscriptSink(d)
     for _ in range(2):

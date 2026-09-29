@@ -90,11 +90,11 @@ def _find_dead_pid() -> int:
     return 2_000_000
 
 
-def test_clear_pending_keeps_a_file_written_within_the_tick_of_the_legs_start(
+def test_clear_pending_keeps_a_file_written_within_the_tick_of_the_executions_start(
     tmp_path: Path,
 ) -> None:
     """File timestamps run up to a scheduler tick behind `time.time()`, so a
-    cancel written right after the leg's start can carry a timestamp before
+    cancel written right after the execution's start can carry a timestamp before
     it; the sweep keeps what falls within that slack and drops what is older."""
     from agent6.sessions.ipc import request_stop, stop_request_pending, write_answer
 

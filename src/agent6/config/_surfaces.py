@@ -118,8 +118,8 @@ class MachineConfig(BaseModel):
         default=50,
         description=(
             "How many per-state log dirs a machine instance keeps under `<instance>/states/` (the "
-            "watchable logs of each state's leg; the journal keeps the full transition history "
-            "regardless). `0` keeps all."
+            "watchable logs of each state's execution; the journal keeps the full transition "
+            "history regardless). `0` keeps all."
         ),
     )
     notify: MachineNotifyConfig = Field(default_factory=MachineNotifyConfig)

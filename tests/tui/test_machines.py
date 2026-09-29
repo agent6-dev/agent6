@@ -1379,7 +1379,7 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path
     asyncio.run(scenario())
 
 
-def test_the_watch_poll_folds_the_machine_and_its_leg_once(tmp_path: Path) -> None:
+def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: Path) -> None:
     """One poll read and folded the journal twice (the refusals, then the
     render) and folded the newest state log twice; the render's fold feeds the
     refusals, and the newest state log is read incrementally (no fold from
@@ -1401,16 +1401,16 @@ def test_the_watch_poll_folds_the_machine_and_its_leg_once(tmp_path: Path) -> No
     log.parent.mkdir(parents=True)
     log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
     (instance / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
-    counts = {"fold": 0, "leg": 0}
-    real_fold, real_leg = vm_mod.fold_machine, vm_mod.newest_agent_leg
+    counts = {"fold": 0, "execution": 0}
+    real_fold, real_execution = vm_mod.fold_machine, vm_mod.newest_agent_execution
 
     def counting_fold(*args: object, **kwargs: object) -> object:
         counts["fold"] += 1
         return real_fold(*args, **kwargs)  # pyright: ignore[reportArgumentType]
 
-    def counting_leg(*args: object, **kwargs: object) -> object:
-        counts["leg"] += 1
-        return real_leg(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+    def counting_execution(*args: object, **kwargs: object) -> object:
+        counts["execution"] += 1
+        return real_execution(*args, **kwargs)  # pyright: ignore[reportArgumentType]
 
     class _Host(App[None]):
         def on_mount(self) -> None:
@@ -1424,14 +1424,14 @@ def test_the_watch_poll_folds_the_machine_and_its_leg_once(tmp_path: Path) -> No
             assert isinstance(screen, MachineWatchScreen)
             tui_mod.fold_machine = counting_fold  # type: ignore[assignment]
             vm_mod.fold_machine = counting_fold  # type: ignore[assignment]
-            vm_mod.newest_agent_leg = counting_leg  # type: ignore[assignment]
+            vm_mod.newest_agent_execution = counting_execution  # type: ignore[assignment]
             try:
                 screen._poll()  # pyright: ignore[reportPrivateUsage]
             finally:
                 tui_mod.fold_machine = real_fold
                 vm_mod.fold_machine = real_fold
-                vm_mod.newest_agent_leg = real_leg
-            assert counts == {"fold": 1, "leg": 0}
+                vm_mod.newest_agent_execution = real_execution
+            assert counts == {"fold": 1, "execution": 0}
 
     asyncio.run(scenario())
 

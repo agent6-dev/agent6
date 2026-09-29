@@ -184,7 +184,7 @@ def test_tier2_measures_the_request_not_just_the_conversation() -> None:
     """The model's window bounds the WHOLE request. Measured on the
     conversation alone, the threshold left a band exactly the size of the
     system prompt and tool definitions where the loop saw room and the
-    provider answered 400 -- and a resumed leg re-issued the same request."""
+    provider answered 400 -- and a resumed execution re-issued the same request."""
     from agent6.harness._compaction import request_prefix_chars
     from agent6.providers.types import ToolDefinition
 

@@ -63,7 +63,7 @@ from agent6.viewmodel import (
     event_epoch,
     fold_machine,
     machine_word_for_dir,
-    newest_agent_leg,
+    newest_agent_execution,
 )
 from agent6.viewmodel.format import (
     format_transition,
@@ -305,7 +305,7 @@ def _cmd_machine_status(machine_id: str) -> int:
             + (
                 f" (an approval open in {blocked_in}: answer it in the TUI machine view"
                 " or the web page)"
-                if alive and (blocked_in := newest_agent_leg(root).blocked_in)
+                if alive and (blocked_in := newest_agent_execution(root).blocked_in)
                 else ""
             )
         )

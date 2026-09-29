@@ -121,7 +121,7 @@ def format_transition(seq: int, state: str, label: str, goto: str, detail: str =
 
 
 def format_cost_cell(usd: float, *, partial: bool = False, plan_points: float | None = None) -> str:
-    """A listing's cost cell: plan points for a subscription-metered leg,
+    """A listing's cost cell: plan points for a subscription-metered execution,
     otherwise blank for a genuinely clean $0 or `format_usd`."""
     if plan_points is not None:
         return f"{plan_points:g}pt"
@@ -131,17 +131,17 @@ def format_cost_cell(usd: float, *, partial: bool = False, plan_points: float | 
 
 
 def budget_usd_text(
-    usd_total: float, *, partial: bool, usd_cap: float, usd_prior_legs: float
+    usd_total: float, *, partial: bool, usd_cap: float, usd_prior_executions: float
 ) -> str:
-    """The run view's cost line: the cumulative figure, then this leg's spend
-    against its cap (the cap re-arms on every resume leg while the figure stays
+    """The run view's cost line: the cumulative figure, then this execution's spend
+    against its cap (the cap re-arms on every resume execution while the figure stays
     cumulative); `(unlimited)` for a cap of -1."""
     text = format_usd(usd_total, partial=partial)
     if usd_cap > 0:
         cap = format_usd(usd_cap)
-        if usd_prior_legs > 0:
-            leg = format_usd(max(0.0, usd_total - usd_prior_legs), partial=partial)
-            return f"{text} · leg {leg} / {cap}"
+        if usd_prior_executions > 0:
+            execution = format_usd(max(0.0, usd_total - usd_prior_executions), partial=partial)
+            return f"{text} · execution {execution} / {cap}"
         return f"{text} / {cap}"
     return f"{text} (unlimited)" if usd_cap == -1 else text
 

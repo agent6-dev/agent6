@@ -58,10 +58,10 @@ def _seen_resumes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     return calls
 
 
-def test_follow_up_legs_run_under_the_invocations_flags(
+def test_follow_up_executions_run_under_the_invocations_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`agent6 run --max-usd 0.10 ...` then a follow-up at "next:": the leg
+    """`agent6 run --max-usd 0.10 ...` then a follow-up at "next:": the execution
     carries the same overrides. Dropping them ran the follow-up under the
     config's $10 default, silently, after the operator capped the run."""
     from agent6.ui import cli
@@ -80,13 +80,13 @@ def test_follow_up_legs_run_under_the_invocations_flags(
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
     args = _run_args(max_usd=0.10, auto_approve=True)
     assert cli._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
-    (leg,) = seen
-    assert leg["steer"] == "and a test"
-    assert leg["budget_overrides"] == BudgetOverrides.from_args(args)
-    assert leg["sandbox_overrides"] == SandboxOverrides.from_args(args)
+    (execution,) = seen
+    assert execution["steer"] == "and a test"
+    assert execution["budget_overrides"] == BudgetOverrides.from_args(args)
+    assert execution["sandbox_overrides"] == SandboxOverrides.from_args(args)
 
 
-def test_free_text_becomes_the_next_leg_then_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_free_text_becomes_the_next_execution_then_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     """Each answer is the next turn's operator instruction -- exactly what
     --steer carries -- so the session continues without retyping `resume`."""
     calls = _seen_resumes(monkeypatch)
@@ -98,10 +98,10 @@ def test_free_text_becomes_the_next_leg_then_exit(monkeypatch: pytest.MonkeyPatc
     assert calls == [("runny-one-AAAAAA", "now add the tests")]
 
 
-def test_a_malformed_directive_re_prompts_instead_of_spending_a_leg(
+def test_a_malformed_directive_re_prompts_instead_of_spending_a_execution(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A bare `/pin` typed here started a resume leg the loop could only
+    """A bare `/pin` typed here started a resume execution the loop could only
     decline; the model answered without tools and the passed run read
     "failed · silent finish". The prompt names the problem and asks again."""
     calls = _seen_resumes(monkeypatch)
@@ -138,7 +138,7 @@ def test_eof_ends_like_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not calls
 
 
-def test_a_failing_leg_stops_the_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_failing_execution_stops_the_loop(monkeypatch: pytest.MonkeyPatch) -> None:
     """A resume that refuses (bad config, dirty tree) returns its own code
     rather than re-prompting over the failure."""
 
@@ -230,7 +230,7 @@ def test_a_refused_runs_discarded_id_ends_quietly(
 
 
 @pytest.mark.parametrize(("mode", "asks"), [("run", True), ("plan", True), ("ask", False)])
-def test_a_resumed_leg_ends_by_asking_like_a_fresh_one(
+def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, asks: bool
 ) -> None:
     """`agent6 resume <id>` ended without the "next:" prompt a run ends with;
@@ -268,7 +268,7 @@ def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
 ) -> None:
     """A concurrent session can become newest or make a prefix ambiguous while
-    a resumed leg runs; the follow-up still belongs to the selected session."""
+    a resumed execution runs; the follow-up still belongs to the selected session."""
     from agent6.ui import cli
 
     selected = _seed_session(tmp_path, monkeypatch, session_id="resumed-run-AAAAAA")
@@ -292,11 +292,11 @@ def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
     assert prompted == [selected.session_id]
 
 
-def test_a_refused_leg_does_not_prompt_on_an_existing_session(
+def test_a_refused_execution_does_not_prompt_on_an_existing_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refused run can leave its explicit id pointing at an older session;
-    that session is not a completed leg of this invocation to follow up."""
+    that session is not a completed execution of this invocation to follow up."""
     from agent6.ui import cli
 
     layout = _seed_session(tmp_path, monkeypatch, session_id="existing-run-AAAAAA")
@@ -310,7 +310,7 @@ def test_a_refused_leg_does_not_prompt_on_an_existing_session(
     monkeypatch.setattr("agent6.ui.cli.resume._cmd_resume", refused)
 
     def must_not_prompt(**_kwargs: object) -> int:
-        pytest.fail("prompted after a refused leg")
+        pytest.fail("prompted after a refused execution")
 
     monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", must_not_prompt)
     common = {
@@ -337,10 +337,10 @@ def test_a_refused_leg_does_not_prompt_on_an_existing_session(
     assert cli._dispatch_resume(resume_args) == 2  # pyright: ignore[reportPrivateUsage]
 
 
-def test_a_leg_that_undoes_or_detaches_ends_the_asking(
+def test_a_execution_that_undoes_or_detaches_ends_the_asking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Inside the prompt loop a follow-up leg can end by /undo (the fork it
+    """Inside the prompt loop a follow-up execution can end by /undo (the fork it
     named is the continuation) or by /detach (the run went on in the
     background); the loop asked "next:" again for a run that takes no
     follow-up here, and an answer would have collided or been refused."""
@@ -349,7 +349,7 @@ def test_a_leg_that_undoes_or_detaches_ends_the_asking(
     asked: list[str] = []
 
     def fake_resume(_cfg: Path | None, _sid: str, **kw: object) -> int:
-        # The leg forks back and ends the run as undone.
+        # The execution forks back and ends the run as undone.
         (layout.session_dir / "logs.jsonl").write_text(
             '{"type": "session.start"}\n{"type": "session.end", "reason": "undone"}\n',
             encoding="utf-8",
@@ -372,8 +372,8 @@ def test_a_detached_run_is_not_followed_by_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`/detach` hands the run to a background resume (its reattach line was
-    printed); the leg here did not end, so there is nothing to follow up on.
-    Asking "next:" offered a leg that would collide with the live one."""
+    printed); the execution here did not end, so there is nothing to follow up on.
+    Asking "next:" offered an execution that would collide with the live one."""
     from agent6.ui import cli
 
     layout = _seed_session(tmp_path, monkeypatch, session_id="detached-run-AAAAAA")
@@ -398,7 +398,7 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
 ) -> None:
     """A start that parked (busy checkout, uncommitted changes) never ran; the
     resume line it printed is the next step. Asking "next:" there offered a
-    follow-up to a leg that does not exist and re-parked on the same cause."""
+    follow-up to an execution that does not exist and re-parked on the same cause."""
     import json
 
     from agent6.ui import cli
@@ -458,9 +458,9 @@ def test_a_lone_slash_word_is_refused_not_sent_as_a_task(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`/shells` typed here spent a model call answering the literal text as a
-    new leg's task; a live-run command re-prompts with steer_problem's pointer,
+    new execution's task; a live-run command re-prompts with steer_problem's pointer,
     an unknown lone slash word (a typo, a REPL verb) with the prompt's own.
-    Multi-word slash input still rides as the leg's instruction (directives
+    Multi-word slash input still rides as the execution's instruction (directives
     like `/pin <text>` are the loop's to parse)."""
     calls = _seen_resumes(monkeypatch)
     answers = iter(["/shells", "/cost", "now add the tests", "/exit"])
@@ -474,7 +474,7 @@ def test_a_lone_slash_word_is_refused_not_sent_as_a_task(
     assert "'/cost' is not sent as a task" in err
 
 
-def test_i_with_tui_is_refused_before_a_leg_starts(
+def test_i_with_tui_is_refused_before_a_execution_starts(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`-i` and `--tui` both want the terminal: the pair is refused up front,
@@ -486,7 +486,7 @@ def test_i_with_tui_is_refused_before_a_leg_starts(
     from agent6.ui import cli
 
     def _never(*_a: object, **_k: object) -> int:
-        raise AssertionError("the leg must not start")
+        raise AssertionError("the execution must not start")
 
     monkeypatch.setattr(run_mod, "_cmd_run", _never)
     monkeypatch.setattr(resume_mod, "_cmd_resume", _never)
@@ -511,7 +511,7 @@ def test_i_with_tui_is_refused_before_a_leg_starts(
 
 
 def _plan_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """A `plan` whose leg is a fake that writes a finished session; returns
+    """A `plan` whose execution is a fake that writes a finished session; returns
     the prompts the end-of-session prompt asked."""
     import agent6.ui.cli.run as run_mod
 

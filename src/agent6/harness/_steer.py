@@ -50,8 +50,8 @@ class OperatorBridge:
     steer_requested: Callable[[], bool] = field(default=lambda: False)
     steer_clear: Callable[[], None] = field(default=lambda: None)
     steer_prompt: Callable[[], str | None] = field(default=lambda: None)
-    # Called at each leg entry (run/resume): disarms a SIGINT stage the prior
-    # leg never consumed, without touching the steer marker files.
+    # Called at each execution entry (run/resume): disarms a SIGINT stage the prior
+    # execution never consumed, without touching the steer marker files.
     steer_reset: Callable[[], None] = field(default=lambda: None)
     # "Compact now" from a front-end: polled at the same pre-call boundary as
     # the tiered thresholds; a positive forces the tier-2 summarise-and-restart.

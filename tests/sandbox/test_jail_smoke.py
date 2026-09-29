@@ -1013,7 +1013,7 @@ def test_jail_home_exists_in_the_private_tmpfs(jail_bin: Path, tmp_path: Path) -
 
 
 def test_jail_fork_worktree_reads_the_repository_git(jail_bin: Path, tmp_path: Path) -> None:
-    """A fork's leg runs in a linked worktree whose `.git` is a pointer into
+    """A fork's execution runs in a linked worktree whose `.git` is a pointer into
     the repository's; the policy grants the git dir agent6 recorded for the
     worktree read-only, so `git` works there under strict and cannot write
     it. A policy without the grant cannot even find the repository."""

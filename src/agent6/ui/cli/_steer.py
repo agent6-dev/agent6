@@ -49,7 +49,7 @@ def idle_prompt_sigint() -> Generator[None]:
     escalating steer handler would lie ("pausing after this step"), PEP 475
     would retry the interrupted input() (three presses to leave), and the
     armed stage would open a phantom pause menu on the next question. The
-    escalation applies only while a leg runs; at the prompt one Ctrl-C simply
+    escalation applies only while an execution runs; at the prompt one Ctrl-C simply
     raises."""
     prev = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, signal.default_int_handler)
@@ -244,7 +244,7 @@ def format_session_facts(facts: SessionFacts) -> str:
 
 def _status_suffix(session_facts: Callable[[], SessionFacts] | None) -> str:
     """The indented status line under the pause banner, or nothing when the
-    lifecycle passed no facts (a detached leg has no terminal anyway)."""
+    lifecycle passed no facts (a detached execution has no terminal anyway)."""
     if session_facts is None:
         return ""
     return f"          {format_session_facts(session_facts())}\n"
@@ -267,7 +267,7 @@ def _install_status_signal(
         return None
 
     def _handler(_signum: int, _frame: Any) -> None:
-        line = _status_suffix(session_facts).strip() or "no live facts for this leg"
+        line = _status_suffix(session_facts).strip() or "no live facts for this execution"
         # An open pause menu stands on stage 1 (its action is the steer answer
         # the next boundary consumes while requested() holds); only a pause
         # that has not opened its menu is stood down.

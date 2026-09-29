@@ -363,17 +363,17 @@ def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: Path) 
 def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: Path) -> None:
     """The newest state log's unanswered approval names the state the machine
     waits on; an answered one does not, and a live blocked worker is "waiting"."""
-    from agent6.viewmodel.machine_state import machine_status_word, newest_agent_leg
+    from agent6.viewmodel.machine_state import machine_status_word, newest_agent_execution
 
     states = tmp_path / "states"
     (states / "0001-attempt").mkdir(parents=True)
     log = states / "0001-attempt" / "logs.jsonl"
     prompt = {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"}
     log.write_text(json.dumps(prompt) + "\n", encoding="utf-8")
-    assert newest_agent_leg(tmp_path).blocked_in == "0001-attempt"
+    assert newest_agent_execution(tmp_path).blocked_in == "0001-attempt"
     answer = {"type": "approval.answer", "id": "a1", "approved": True}
     log.write_text(json.dumps(prompt) + "\n" + json.dumps(answer) + "\n", encoding="utf-8")
-    assert newest_agent_leg(tmp_path).blocked_in == ""
+    assert newest_agent_execution(tmp_path).blocked_in == ""
     ms = fold_machine(_spec(tmp_path), [])
     assert machine_status_word(ms, parked=False, alive=True, blocked=True) == "waiting"
     assert machine_status_word(ms, parked=False, alive=True) == "running"
@@ -392,7 +392,7 @@ def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: Path
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     assert summarize_machine_dir(tmp_path).reason == "waiting on an answer in 0001-attempt"
-    # A stopped machine's prompt has no reader (its leg restarts on resume).
+    # A stopped machine's prompt has no reader (its execution restarts on resume).
     (tmp_path / "worker.pid").unlink()
     assert summarize_machine_dir(tmp_path).reason == ""
 
@@ -427,10 +427,10 @@ def test_a_wait_record_of_another_occurrence_is_not_an_open_wait(
     assert machine_state_as_dict(live, d)["status"] == "waiting"
 
 
-def test_verb_refusals_fold_no_state_log_unless_a_live_leg_could_read(tmp_path: Path) -> None:
+def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(tmp_path: Path) -> None:
     """The refusals folded the newest state log for every instance asked, an
     ended or stopped one included (a TAB over the instance dirs, the machine
-    screen's poll), though only a live, unended machine has a leg to read a
+    screen's poll), though only a live, unended machine has an execution to read a
     steer or an answer."""
     import agent6.viewmodel.machine_state as mod
     from agent6.viewmodel.machine_state import machine_verb_refusals
@@ -508,22 +508,22 @@ def test_the_wire_form_carries_the_status_level(tmp_path: Path) -> None:
     assert (ended["status"], ended["level"]) == ("failed", status_level("failed"))
 
 
-def test_the_newest_leg_fold_reads_only_what_the_log_gained(tmp_path: Path) -> None:
+def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: Path) -> None:
     """A poll loop folded the newest state log from scratch on every tick, once
     for the refusals and once for the prompts or the reasoning; the held fold
     reads the appended bytes only, follows the machine into a newer agent
     state, and starts over when a log was rewritten."""
     import agent6.viewmodel.machine_state as mod
-    from agent6.viewmodel.machine_state import AgentLeg, NewestLegFold
+    from agent6.viewmodel.machine_state import AgentExecution, NewestExecutionFold
     from agent6.viewmodel.tail import tail_events
 
     d = tmp_path / "inst"
     log = d / "states" / "0000-route" / "logs.jsonl"
     log.parent.mkdir(parents=True)
     log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
-    fold = NewestLegFold()
+    fold = NewestExecutionFold()
     assert fold.refresh(d) == log
-    assert fold.leg() == AgentLeg(open=True, blocked_in="")
+    assert fold.execution() == AgentExecution(open=True, blocked_in="")
 
     def no_full_read(*_a: object, **_k: object) -> Any:
         raise AssertionError("the whole log was read again")
@@ -533,7 +533,7 @@ def test_the_newest_leg_fold_reads_only_what_the_log_gained(tmp_path: Path) -> N
         with log.open("a", encoding="utf-8") as fh:
             fh.write('{"type":"question.prompt","id":"q1","questions":[{"question":"?"}]}\n')
         fold.refresh(d)
-        assert fold.leg() == AgentLeg(open=True, blocked_in="0000-route")
+        assert fold.execution() == AgentExecution(open=True, blocked_in="0000-route")
         # A newer agent state: the fold moves to its log.
         newer = d / "states" / "0001-work" / "logs.jsonl"
         newer.parent.mkdir(parents=True)
@@ -541,12 +541,12 @@ def test_the_newest_leg_fold_reads_only_what_the_log_gained(tmp_path: Path) -> N
             '{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8"
         )
         assert fold.refresh(d) == newer
-        assert fold.leg() == AgentLeg(open=True, blocked_in="")
+        assert fold.execution() == AgentExecution(open=True, blocked_in="")
         # A rewritten (shorter) log: the fold starts over rather than folding
         # the new bytes onto the old state.
         newer.write_text('{"type":"session.end","reason":"finish_session"}\n', encoding="utf-8")
         fold.refresh(d)
-        assert fold.leg() == AgentLeg(open=False, blocked_in="")
+        assert fold.execution() == AgentExecution(open=False, blocked_in="")
     finally:
         mod.tail_events = tail_events
 

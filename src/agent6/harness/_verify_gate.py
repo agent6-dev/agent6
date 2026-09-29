@@ -155,8 +155,8 @@ class VerifyGate:
 
         "The model has not edited yet" is the wrong test: every reason an
         operator resumes -- a budget stop, an iteration cap, a provider error --
-        commits the leg's work first, so leg two opens on a clean tree whose
-        HEAD already carries leg one's breakage, and reading that as the base
+        commits the execution's work first, so execution two opens on a clean tree whose
+        HEAD already carries execution one's breakage, and reading that as the base
         would tell the worker its own failures are inherited. `/parallel` does
         the same by merging lane commits into the workspace.
 
@@ -435,7 +435,7 @@ class VerifyGate:
     def verification(self, verdict: VerifyVerdict) -> Verification:
         """The verify verdict for the SessionResult, grounded on what the gate
         last saw of the tree. Not-green splits on that observation: "failed"
-        claims someone SAW a red gate, so a leg where no verify ran (or edits
+        claims someone SAW a red gate, so an execution where no verify ran (or edits
         landed after the last green) is "unverified" instead -- both exit 4,
         but only one sends the operator chasing a red that never happened.
 

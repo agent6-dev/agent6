@@ -242,7 +242,7 @@ def save_ask_transcript(layout: SessionLayout, *, question: str, answer: str) ->
     """Write the human-readable `ask` transcript (question + markdown answer).
 
     A resumed ask appends its own Q&A: the file exists only because an earlier
-    leg wrote it, and overwriting would drop the answer the operator already
+    execution wrote it, and overwriting would drop the answer the operator already
     has. Both halves are appended, since an answer alone under the first
     question reads as a continuation of that answer.
     """

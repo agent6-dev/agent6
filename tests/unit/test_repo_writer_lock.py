@@ -504,7 +504,7 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     """A front-end teardown failure must not strand either resume flock in an
     in-process editor server; later runs must not wait for a process restart."""
     from agent6.app import resume as resume_mod
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
     from agent6.harness._session_state import SessionSnapshot
 
     state = state_dir(repo)
@@ -543,12 +543,12 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     def _strict(*_a: object, **_k: object) -> str:
         return "strict"
 
-    def _leg(*_a: object, **_k: object) -> LegEnd:
-        return LegEnd(0)
+    def _execution(*_a: object, **_k: object) -> ExecutionEnd:
+        return ExecutionEnd(0)
 
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)
     monkeypatch.setattr(resume_mod, "select_isolation", _strict)
-    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _execution)
     frontend = MagicMock()
     frontend.close_console_view.side_effect = OSError("resume teardown raise")
     with pytest.raises(OSError, match="resume teardown raise"):
@@ -564,12 +564,12 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     release_single_writer(session_fd)
 
 
-def test_resume_drops_a_stop_written_between_legs(
+def test_resume_drops_a_stop_written_between_executions(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The sweep kept every marker younger than the journal's last line, so a
-    stop that landed after the previous leg ended (nobody honored it) stopped
-    the next leg at its first step. This leg's start is the threshold: a
+    stop that landed after the previous execution ended (nobody honored it) stopped
+    the next execution at its first step. This execution's start is the threshold: a
     marker older than it is stale, whatever the journal says."""
     import os
 
@@ -599,12 +599,12 @@ def test_resume_drops_a_stop_written_between_legs(
         '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
         encoding="utf-8",
     )
-    leg_end = time.time() - 20
-    os.utime(layout.logs_path, (leg_end, leg_end))
+    execution_end = time.time() - 20
+    os.utime(layout.logs_path, (execution_end, execution_end))
     (layout.session_dir / "steer.request").write_text("", encoding="utf-8")
-    os.utime(layout.session_dir / "steer.request", (leg_end - 10, leg_end - 10))
+    os.utime(layout.session_dir / "steer.request", (execution_end - 10, execution_end - 10))
     request_stop(layout.session_dir)
-    os.utime(layout.session_dir / "stop.request", (leg_end + 10, leg_end + 10))
+    os.utime(layout.session_dir / "stop.request", (execution_end + 10, execution_end + 10))
     holder_fd = acquire_repo_writer(state, repo, "run-A")
     try:
         rc = resume_mod.resume_task(
@@ -618,18 +618,18 @@ def test_resume_drops_a_stop_written_between_legs(
     assert not (layout.session_dir / "steer.request").exists()
 
 
-def test_a_reused_ask_dir_drops_the_previous_legs_markers_and_keeps_this_legs(
+def test_a_reused_ask_dir_drops_the_previous_executions_markers_and_keeps_this_executions(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An ask session reuses its dir under the same id (transient Q&A), so a
-    run_task that sweeps nothing starts the second leg on the first leg's
-    leftover markers. A marker older than this leg's start is stale, even one
-    younger than the journal (a steer typed after the leg ended); one written
-    since the leg began (an editor's cancel while it came up) is this leg's."""
+    run_task that sweeps nothing starts the second execution on the first execution's
+    leftover markers. A marker older than this execution's start is stale, even one
+    younger than the journal (a steer typed after the execution ended); one written
+    since the execution began (an editor's cancel while it came up) is this execution's."""
     import os
 
     from agent6.app import run as run_mod
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
     from agent6.sessions.ipc import request_stop, steer_request_pending, stop_request_pending
 
     state = state_dir(repo)
@@ -640,20 +640,20 @@ def test_a_reused_ask_dir_drops_the_previous_legs_markers_and_keeps_this_legs(
         '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
         encoding="utf-8",
     )
-    leg_end = time.time() - 20
-    os.utime(layout.logs_path, (leg_end, leg_end))
+    execution_end = time.time() - 20
+    os.utime(layout.logs_path, (execution_end, execution_end))
     (layout.session_dir / "steer.request").write_text("", encoding="utf-8")
-    os.utime(layout.session_dir / "steer.request", (leg_end + 10, leg_end + 10))
+    os.utime(layout.session_dir / "steer.request", (execution_end + 10, execution_end + 10))
     started_at = time.time() - 5
-    request_stop(layout.session_dir)  # the cancel, after the leg began
+    request_stop(layout.session_dir)  # the cancel, after the execution began
     seen: list[tuple[bool, bool]] = []
 
-    def _leg(*_a: object, **_k: object) -> LegEnd:
+    def _execution(*_a: object, **_k: object) -> ExecutionEnd:
         d = layout.session_dir
         seen.append((steer_request_pending(d), stop_request_pending(d)))
-        return LegEnd(rc=0)
+        return ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(run_mod, "run_leg", _leg)
+    monkeypatch.setattr(run_mod, "run_execution", _execution)
     rc = run_mod.run_task(
         _load_cfg(),
         "again?",
@@ -666,22 +666,22 @@ def test_a_reused_ask_dir_drops_the_previous_legs_markers_and_keeps_this_legs(
     assert seen == [(False, True)]
 
 
-def test_resume_treats_a_file_that_arrived_between_legs_as_the_operators(
+def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The untracked set was recorded once, at the run's first leg, so a log or
-    note the operator wrote between legs was untracked at the resume's start
-    yet absent from the set, and the resumed leg's first checkpoint committed
+    """The untracked set was recorded once, at the run's first execution, so a log or
+    note the operator wrote between executions was untracked at the resume's start
+    yet absent from the set, and the resumed execution's first checkpoint committed
     it. At resume, every file untracked now that no tool call of the run
     wrote joins the set; the run's own uncommitted file stays its own."""
-    from agent6.app import _leg as leg_mod
+    from agent6.app import _execution as execution_mod
     from agent6.app import resume as resume_mod
-    from agent6.app._leg import LegEnd, LegInputs
+    from agent6.app._execution import ExecutionInputs, ExecutionEnd
     from agent6.harness._session_state import SessionSnapshot
     from agent6.secrets import save_secret
     from agent6.sessions.layout import read_untracked_at_start
 
-    save_secret("anthropic", "x")  # the provider preflight runs before the leg
+    save_secret("anthropic", "x")  # the provider preflight runs before the execution
     state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-U")
     layout.ensure()
@@ -727,12 +727,12 @@ def test_resume_treats_a_file_that_arrived_between_legs_as_the_operators(
     (repo / "note.md").write_text("the operator's\n", encoding="utf-8")
     seen: list[frozenset[str]] = []
 
-    def _leg(cfg: object, layout: object, inputs: LegInputs, **_k: object) -> LegEnd:
+    def _execution(cfg: object, layout: object, inputs: ExecutionInputs, **_k: object) -> ExecutionEnd:
         seen.append(inputs.untracked_at_start)
-        return LegEnd(rc=0)
+        return ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(resume_mod, "run_leg", _leg)
-    monkeypatch.setattr(leg_mod, "run_leg", _leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _execution)
+    monkeypatch.setattr(execution_mod, "run_execution", _execution)
     rc = resume_mod.resume_task(
         None, "run-U", started_at=time.time(), frontend=MagicMock(), force=False
     )

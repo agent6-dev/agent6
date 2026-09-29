@@ -710,9 +710,9 @@ def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: Path) -> None:
     assert final.count("which store?") == 2  # the finish_planning arg, plus ONE injection
 
 
-def test_an_unreadable_plan_parks_the_leg(tmp_path: Path) -> None:
+def test_an_unreadable_plan_parks_the_execution(tmp_path: Path) -> None:
     """Continuing on the planner's own copy burns budget on direction the
-    operator may have superseded; the leg ends with the remedy instead."""
+    operator may have superseded; the execution ends with the remedy instead."""
     from agent6.harness.loop import SessionResult
 
     plan = tmp_path / "plan.md"

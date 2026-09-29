@@ -791,7 +791,7 @@ def test_the_manager_hands_back_every_survivor_of_its_servers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A server's escapee the sweep could not kill was dropped on the floor by
-    the client's close; the leg records what the manager hands back as a jail
+    the client's close; the execution records what the manager hands back as a jail
     degradation, the way the run's own session close does. Driven through the
     real client: a stand-in with a `close()` of its own pinned only the union."""
     from agent6.sandbox.jail import JailedProcess

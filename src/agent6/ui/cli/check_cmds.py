@@ -453,10 +453,10 @@ def _home_line(cfg: Config, selected: IsolationLevel) -> str:
 
 def _fork_git_grant(cfg: Config, ws: Workspace, selected: IsolationLevel) -> Path | None:
     """The repository git dir a jailed command reaches when the workspace is
-    a fork's worktree, as the fork's leg grants it, else None: the
+    a fork's worktree, as the fork's execution grants it, else None: the
     `worktree_git_dir` of the fork manifest naming the workspace, under the
     repository's state dir (the repository is the worktree's git common
-    dir's parent), through the leg's own policy builder, which grants it
+    dir's parent), through the execution's own policy builder, which grants it
     once the worktree's `.git` pointer still names it and raises
     JailUnavailableError otherwise."""
     if selected == "none":

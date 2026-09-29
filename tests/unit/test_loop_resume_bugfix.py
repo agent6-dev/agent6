@@ -468,7 +468,7 @@ class _EventCapture:
 
 
 def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
-    """A resumed leg emits loop.pin.restored with the snapshot's pins: a fork's
+    """A resumed execution emits loop.pin.restored with the snapshot's pins: a fork's
     fresh logs.jsonl has no pin.added events, so without this the surfaces show
     zero pins while the engine still re-injects them at every restart."""
     config = SimpleNamespace(
@@ -535,10 +535,10 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     assert restored[0]["count"] == 2
 
 
-def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
-    """loop.resume.start opens a resumed/forked leg's log; it stamps session_id and
-    mode like session.start so the leg's log identifies itself (the manifest owns
-    the task). An identity-less leg log left every fold empty and each consumer
+def test_resume_start_carries_the_execution_identity(tmp_path: Path) -> None:
+    """loop.resume.start opens a resumed/forked execution's log; it stamps session_id and
+    mode like session.start so the execution's log identifies itself (the manifest owns
+    the task). An identity-less execution log left every fold empty and each consumer
     patching its own copy."""
     from agent6.harness._session_state import SessionSnapshot as _Snap
 
@@ -612,7 +612,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
 def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     """A pin added and then lost to a crash (loop.pin.added reached logs.jsonl,
     the snapshot that would carry it never did) leaves the fold holding a pin the
-    engine does not have: the resumed leg appends to the SAME log, so /status and
+    engine does not have: the resumed execution appends to the SAME log, so /status and
     /pin keep listing it while no restart will ever re-inject it. The corrective
     event (which the fold REPLACES on) must fire even when the snapshot is
     empty -- guarding it on a non-empty list is what let the stale one stand."""
@@ -950,7 +950,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
     )
 
 
-def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
+def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
     """A fork copies the checkpoint but NOT logs.jsonl, so the child's log has no
     compact.dropped events to fold: /status reported "0 elided" over a restored
     context full of elision markers, contradicting the field's own "markers in
@@ -1192,9 +1192,9 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     assert len(refused) == 3  # the empty, the over-cap, and the blank
 
 
-def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) -> None:
+def test_a_gate_swapped_between_executions_is_announced_to_the_worker(tmp_path: Path) -> None:
     """The system prompt is the RUN's, frozen at its start. Config that gains a
-    verify command between legs swaps what judges the work while the
+    verify command between executions swaps what judges the work while the
     instructions still name the old gate, so the worker runs one command and is
     graded on another. Silence there is the worst case: it looks like it worked."""
     from agent6.harness._session_state import SessionSnapshot as _Snap
@@ -1269,9 +1269,9 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     assert "was `pytest -q`" in told and "now `make check`" in told
 
 
-def test_an_adopted_gate_carries_into_the_next_leg(tmp_path: Path) -> None:
+def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: Path) -> None:
     """A gateless run adopts a verify command at its first commit; a resumed
-    leg started with nothing adopted, so the swap notice named the gate as
+    execution started with nothing adopted, so the swap notice named the gate as
     lost and the run re-adopted it one commit later."""
     from agent6.harness._session_state import SessionSnapshot as _Snap
 
@@ -1286,7 +1286,7 @@ def test_an_adopted_gate_carries_into_the_next_leg(tmp_path: Path) -> None:
             next_iteration=3,
             root_task_id=None,
             original_task="go",
-            verify_command=("pytest", "-q"),  # adopted in leg one; the config names none
+            verify_command=("pytest", "-q"),  # adopted in execution one; the config names none
         ).model_dump_json(),
         encoding="utf-8",
     )
@@ -1343,7 +1343,7 @@ def test_an_adopted_gate_carries_into_the_next_leg(tmp_path: Path) -> None:
     assert [e for e in ev.events if e["type"] == "loop.verify_swapped"] == []
     (carried,) = [e for e in ev.events if e["type"] == "loop.verify_inferred"]
     assert carried["command"] == ["pytest", "-q"] and carried["source"] == "resumed"
-    # The leg's own snapshot names the carried gate as the one in force.
+    # The execution's own snapshot names the carried gate as the one in force.
     written = json.loads(snap_path.read_text(encoding="utf-8"))
     assert tuple(written["verify_command"]) == ("pytest", "-q")
 
@@ -1381,7 +1381,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
         ref=chain,
         fallback_parent=base,
     )
-    # Leg one: the worker edits, the gate goes green, the harness chain-commits.
+    # Execution one: the worker edits, the gate goes green, the harness chain-commits.
     (repo / "x.txt").write_text("the run's work\n", encoding="utf-8")
     assert chain_commit(repo, "iter 1", ref=chain, fallback_parent=base) is not None
     snap = SessionSnapshot.model_validate(
@@ -1407,10 +1407,10 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Pat
     assert state.verify.green_and_untouched is True
 
 
-def test_a_gate_withheld_between_legs_is_no_swap_for_the_worker(tmp_path: Path) -> None:
-    """A leg that cannot run commands drops its gate before the loop sees the
-    config, and the resume told the worker the gate "changed between legs ...
-    now `none`" over a gate the leg withheld, not swapped. No notice and no
+def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(tmp_path: Path) -> None:
+    """An execution that cannot run commands drops its gate before the loop sees the
+    config, and the resume told the worker the gate "changed between executions ...
+    now `none`" over a gate the execution withheld, not swapped. No notice and no
     swap event: no command can run, that one included."""
     from agent6.harness._session_state import SessionSnapshot as _Snap
 
@@ -1439,7 +1439,7 @@ def test_a_gate_withheld_between_legs_is_no_swap_for_the_worker(tmp_path: Path) 
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
-            verify_command=(),  # dropped at leg start: commands are withheld
+            verify_command=(),  # dropped at execution start: commands are withheld
             metric=SimpleNamespace(goal="maximize"),
             verify_timeout_s=60.0,
             verify_infer=True,
@@ -1480,4 +1480,4 @@ def test_a_gate_withheld_between_legs_is_no_swap_for_the_worker(tmp_path: Path) 
 
     assert not [e for e in ev.events if e["type"] == "loop.verify_swapped"]
     told = json.dumps(provider.call.call_args.kwargs["messages"])
-    assert "changed between legs" not in told
+    assert "changed between executions" not in told

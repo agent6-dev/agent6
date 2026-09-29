@@ -76,11 +76,11 @@ def test_status_json_is_machine_readable(
     assert obj["elapsed_s"] >= 4
 
 
-def test_status_elapsed_of_a_fork_leg_runs_from_its_first_event(
+def test_status_elapsed_of_a_fork_execution_runs_from_its_first_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fork's log opens with loop.resume.start and never carries a
-    session.start, so its finished leg read `elapsed: -`. With no
+    session.start, so its finished execution read `elapsed: -`. With no
     session.start the scan's start is the first event's timestamp."""
     _make_run(
         tmp_path,
@@ -416,7 +416,7 @@ def test_status_names_the_pins_in_force(
 ) -> None:
     """A run's pinned instructions (--pin, /pin) bind for the whole run; the
     show page names them, one per line, and the JSON carries the list. The
-    leg-start announcement replaces the list, /pin appends (the fold's rule)."""
+    execution-start announcement replaces the list, /pin appends (the fold's rule)."""
     _make_run(
         tmp_path,
         monkeypatch,
@@ -439,9 +439,9 @@ def test_status_names_the_pins_in_force(
 def test_status_cost_cumulative_and_unfinished_across_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A resume leg restarts the budget from 0 and un-finishes the run; `runs
-    # show` banks legs (same rule as `sessions list` and the run view) and must
-    # not report leg 1's session.end for a run that is live again. A valid-JSON
+    # A resume execution restarts the budget from 0 and un-finishes the run; `runs
+    # show` banks executions (same rule as `sessions list` and the run view) and must
+    # not report execution 1's session.end for a run that is live again. A valid-JSON
     # non-object line is skipped, not a crash.
     d = _make_run(
         tmp_path,
@@ -476,10 +476,10 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
     _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
     assert obj["cost_usd"] == pytest.approx(0.025)
-    assert obj["usd_partial"] is True  # sticky: leg 1's unpriced spend
-    assert obj["status"] == "running"  # not leg 1's "passed (finish_session)"
-    assert obj["input_tokens"] == 300  # token gauges stay per-leg
-    assert obj["cache_read_tokens"] is None  # leg 1's cached side does not carry over
+    assert obj["usd_partial"] is True  # sticky: execution 1's unpriced spend
+    assert obj["status"] == "running"  # not execution 1's "passed (finish_session)"
+    assert obj["input_tokens"] == 300  # token gauges stay per-execution
+    assert obj["cache_read_tokens"] is None  # execution 1's cached side does not carry over
 
 
 def test_status_missing_id_and_empty_state_speak_human(
@@ -499,10 +499,10 @@ def test_status_missing_id_and_empty_state_speak_human(
     assert 'no sessions yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err
 
 
-def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
+def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Cost is banked across legs, token counters are the latest leg's; the
+    # Cost is banked across executions, token counters are the latest execution's; the
     # usage line must say which scope each figure describes once they differ.
     d = _make_run(
         tmp_path,
@@ -531,8 +531,8 @@ def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
     write_worker_pid(d, 999999999)
     _cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
-    assert "in=300 out=50 (latest leg)" in out
-    assert "cost $0.03 (all 2 legs)" in out
+    assert "in=300 out=50 (latest execution)" in out
+    assert "cost $0.03 (all 2 executions)" in out
 
 
 def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(

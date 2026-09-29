@@ -65,7 +65,7 @@ def test_exit_code_verified_finish_is_zero() -> None:
 
 def test_exit_code_unverified_finish_is_four() -> None:
     """4 means "the tree is not green": a gated finish nothing observed (no
-    verify ran this leg, or edits landed after the last green) exits 4 like a
+    verify ran this execution, or edits landed after the last green) exits 4 like a
     red one -- exiting 0 would let a worker pass by never running the gate."""
     assert (
         session_exit_code(_result(completed=True, reason="finish_session", verified="unverified"))

@@ -24,7 +24,7 @@ from agent6.machine import MachineError
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.web import model
 from agent6.viewmodel import (
-    NewestLegFold,
+    NewestExecutionFold,
     apply_event,
     died_without_end,
     initial_state,
@@ -96,7 +96,7 @@ def stream_session(chan: SseChannel, session_dir: Path, *, repo: Path) -> None: 
             # Not stop_when_finished: a finished run resumed from any other
             # surface logs into this same file, and a stream closing at
             # session.end would freeze the page on "stopped" while the hub
-            # says "running". The TUI follows across legs the same way; the
+            # says "running". The TUI follows across executions the same way; the
             # client closes only on stream_dead (or navigation).
             for ev in tail_events(
                 src, follow=True, stop_when_finished=False, should_stop=stop.is_set
@@ -206,12 +206,12 @@ def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
     on a journaled end or a dead worker."""
     prev = ""
     idle = 0.0
-    fold = NewestLegFold()  # the newest state log, read once per poll for both halves
+    fold = NewestExecutionFold()  # the newest state log, read once per poll for both halves
     while True:
         try:
             reasoning = model.machine_reasoning_snapshot(machine_dir, fold=fold)
             payload = {
-                "machine": machine_snapshot(machine_dir, leg=fold.leg()),
+                "machine": machine_snapshot(machine_dir, execution=fold.execution()),
                 "reasoning": reasoning,
             }
         except MachineError as exc:

@@ -174,7 +174,7 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> Non
 
 
 def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: Path) -> None:
-    """The run card took the raw first line of the task, so a resumed leg whose
+    """The run card took the raw first line of the task, so a resumed execution whose
     task the manifest filled showed a seed block's opener, and a TASK.md task its
     heading marks. The snapshot carries the same task_line the hub rows read."""
     d = _bucket(tmp_path, "runs") / "titled1"
@@ -544,7 +544,7 @@ def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
 
 def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: Path) -> None:
     """A fresh manifest carried the configured verify command with no origin
-    (the leg's pin fills it in), so a run parked before its leg read
+    (the execution's pin fills it in), so a run parked before its execution read
     `python3 -m pytest -q (unknown origin)` in every header."""
     from agent6.app.manifest import stamp_parked, write_session_manifest
     from agent6.config import Config
@@ -565,7 +565,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: Path) 
     snap = session_snapshot(layout.session_dir)
     assert snap["status_label"] == "parked · checkout busy"
     assert snap["policy"].endswith("python3 -m pytest (configured)")
-    # A gateless config stays gateless until the leg infers or adopts one.
+    # A gateless config stays gateless until the execution infers or adopts one.
     write_session_manifest(
         layout,
         session_id=layout.session_id,

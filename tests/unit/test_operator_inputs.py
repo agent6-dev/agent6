@@ -7,7 +7,7 @@ from __future__ import annotations
 from agent6.viewmodel import operator_inputs
 
 
-def test_task_then_steers_in_order_across_legs() -> None:
+def test_task_then_steers_in_order_across_executions() -> None:
     events = [
         {"type": "session.start", "user_task": "polish the TUI", "mode": "run"},
         {"type": "role.result", "text": "done"},

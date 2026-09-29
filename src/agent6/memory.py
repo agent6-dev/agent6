@@ -206,7 +206,7 @@ def _record_use_unlocked(
         use[name] = replace(prior, created=made, writes=(*prior.writes, touch))
     for name, count in read.items():
         if name in deleted and name not in wrote:
-            continue  # a read of a life that ended this leg brings no entry back
+            continue  # a read of a life that ended this execution brings no entry back
         prior = use.get(name, MemoryUse())
         use[name] = replace(prior, reads=prior.reads + count, last_read=touch)
     _write_use(state_dir, use)

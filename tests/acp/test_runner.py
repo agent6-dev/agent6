@@ -274,9 +274,9 @@ def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
 ) -> None:
     """`_run` trusted the journal's LAST `session.end` whenever the file grew
     at all, but `session.start`/`loop.resume.start` never clear `end_reason`:
-    a leg that appends only a `loop.resume.start` before dying (its own
-    provider crash, exit 1) inherited an EARLIER, already-finished leg's
-    reason. A leg that really did hit `max_iterations` two turns ago made
+    an execution that appends only a `loop.resume.start` before dying (its own
+    provider crash, exit 1) inherited an EARLIER, already-finished execution's
+    reason. An execution that really did hit `max_iterations` two turns ago made
     every later provider-crashed turn report itself as `max_turn_requests`
     to the editor instead of `refusal`."""
     from agent6.paths import state_dir
@@ -312,7 +312,7 @@ def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
     reason = bridge.run(session, "keep going")
 
     assert reason == "refusal", (
-        f"got {reason!r}: the crash borrowed the old leg's max_iterations ending"
+        f"got {reason!r}: the crash borrowed the old execution's max_iterations ending"
     )
 
 
@@ -950,7 +950,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
         layouts.append(layout)
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = EventSink(layout.logs_path)
-        prompts = OperatorPrompts(  # built before the loop, as the leg does
+        prompts = OperatorPrompts(  # built before the loop, as the execution does
             approver=kw["frontend"].build_approver(layout.session_dir),
             journal=events.emit,
             session_dir=layout.session_dir,
@@ -1686,7 +1686,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: Path) 
 def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The lifecycle sweeps bridge files older than the leg's start, and the
+    """The lifecycle sweeps bridge files older than the execution's start, and the
     bridge passes its turn's start: a cancel written after the turn began and
     before that sweep (during the lifecycle's own startup) survives it and
     stops the run at its first step. Keyed on the lifecycle's own clock, the
@@ -1694,7 +1694,7 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
     "cancelled"."""
     from agent6.app import preflight as preflight_mod
     from agent6.app import run as run_mod
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
     from agent6.paths import state_dir
     from agent6.sessions.ipc import TIMESTAMP_SLACK_S, request_stop, stop_request_pending
 
@@ -1724,11 +1724,11 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
         time.sleep(2 * TIMESTAMP_SLACK_S)  # the lifecycle's entry is not the turn's start
         return real_run_task(cfg, text, **kw)
 
-    def _leg(*_a: object, **_k: object) -> LegEnd:
+    def _execution(*_a: object, **_k: object) -> ExecutionEnd:
         seen.append(stop_request_pending(session.layout(state_dir(repo)).session_dir))
-        return LegEnd(rc=0)
+        return ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(run_mod, "run_leg", _leg)
+    monkeypatch.setattr(run_mod, "run_execution", _execution)
     monkeypatch.setattr(runner, "run_task", _cancelled_while_starting)
     bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
 

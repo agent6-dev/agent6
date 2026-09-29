@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 @dataclass(slots=True)
 class VerifyVerdict:
-    """Mutable verify bookkeeping for one run leg.
+    """Mutable verify bookkeeping for one run execution.
 
     `last_ok` is the last verify's result (None = no verify yet).
     `baseline_ok` answers "was the gate already failing before this run

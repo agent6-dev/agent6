@@ -138,7 +138,7 @@ agent6 model worker claude/claude-sonnet-4-5
   Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).
 - Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude/claude-haiku-4-5`).
   Each side call is one short-lived `claude` process.
-- One `claude` process serves a worker leg.
+- One `claude` process serves a worker execution.
   It restarts, replaying the conversation as one text message, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.
   Tier-1 compaction shrinks the model's context at that next restart, not before.
 - Claude Code appends the account email to every system prompt it sends; agent6 replaces it with `<operator-email>` in the model's returned text.
@@ -242,7 +242,7 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 
 | Field | Default | Meaning |
 |---|---|---|
-| `preset` | `""` | The strategy preset in force: `standard` (plain defaults), `quick` (no review panel), `ultra` (a three-seat panel that advises and vetoes before finish), `paranoid` (five explore-tier seats), or a `[presets.<name>]` of your own. Fills many settings at once and overrides every section of the layer that selects it; `--preset` overrides per run, `resume --preset` per resumed leg. Empty: no preset. |
+| `preset` | `""` | The strategy preset in force: `standard` (plain defaults), `quick` (no review panel), `ultra` (a three-seat panel that advises and vetoes before finish), `paranoid` (five explore-tier seats), or a `[presets.<name>]` of your own. Fills many settings at once and overrides every section of the layer that selects it; `--preset` overrides per run, `resume --preset` per resumed execution. Empty: no preset. |
 
 ## `[harness]`
 
@@ -251,7 +251,7 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 | `verify_command` | `[]` | The command that decides whether a step succeeded, as argv (no shell; wrap a pipeline as `["sh", "-c", "a && b"]`). Set it to pin the gate. Unset: each run infers one and prints it (an AGENTS.md `## Verify command` block first, then a root `verify.sh`, the repo's manifest files, and loose `test_*.py` files, then a model call over those manifests); a run that can infer none starts gateless and adopts the first gate a recognizable project created mid-run yields. |
 | `verify_infer` | `true` | Infer a verify command when `verify_command` is unset (AGENTS.md fence, repo signals, a model call), and adopt one mid-run when a gateless run materializes a recognizable project; an adopted gate that cannot run (exit 127, or the module its `-m` names is missing) is dropped again, never re-adopted. false: such a run stays gateless, no inference and no adoption; a set `verify_command` is unaffected. |
 | `verify_timeout_s` | `600.0` | Seconds one `verify_command` or `metric.command` call may take before it is killed and counted as failed. A pytest gate naming no paths that overruns this budget (the harness's run or the model's own `run_verify_command`) re-runs scoped to the test files nearest the run's diff, and harness gates run scoped until a full run of the gate passes; a scoped green ends the run `passed · scoped gate`. A model-chosen `run_command` is not bounded (see `command_checkin_s`). |
-| `max_iterations` | `200` | Assistant turns one leg may take before the run stops with reason `max_iterations`; -1 is unlimited. A resumed leg gets a fresh allowance. |
+| `max_iterations` | `200` | Assistant turns one execution may take before the run stops with reason `max_iterations`; -1 is unlimited. A resumed execution gets a fresh allowance. |
 | `went_quiet_max_nudges` | `4` | Empty turns (no text, no tool call) re-asked per streak, reasoning-starvation bursts included; 0 ends the run on the first. |
 | `loop_guard_kill_threshold` | `10` | The same (tool, args) call this many times in a row ends the run as `loop_guard_killed` (the notice fires from three, every other turn); 0 leaves the notice alone. |
 | `stagnation_notice_after_s` | `300.0` | Seconds of wall clock with no edit and no verify before one notice (a recall spiral makes few calls with long reasoning between them); 0 disables. |
@@ -363,7 +363,7 @@ All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `max_usd` | `10.0` | Cap on the metered spend of one run (provider-reported cost, else price times tokens at the model's fetched rates, cache-aware). Hitting it ends the run resumably (`budget_exhausted`); each resumed leg gets a fresh budget. `-1`: unlimited; `0`: refuse every metered call. `--max-usd` overrides per run. |
+| `max_usd` | `10.0` | Cap on the metered spend of one run (provider-reported cost, else price times tokens at the model's fetched rates, cache-aware). Hitting it ends the run resumably (`budget_exhausted`); each resumed execution gets a fresh budget. `-1`: unlimited; `0`: refuse every metered call. `--max-usd` overrides per run. |
 | `max_tokens_fallback` | `2000000` | Token cap (input plus output) for the calls the run cannot price: local models, a model with no price data. `-1`: unlimited; `0`: never run an unmeterable model. `--max-tokens-fallback` overrides per run. |
 | `max_percent` | `-1.0` | Cap on the plan percentage points one run may consume on a subscription provider: the rise in the account's reported used-percent across the run, added up across window resets (so a value above 100 is meaningful; with several windows, the one that moved most). The account reports whole percents and every tick counts as a full point, so the cap ends a run early, never late; the call in flight still finishes. The reading is account-global: a concurrent run's spend counts toward whichever run observes it next. `-1`: unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per run. |
 | `allow_paid_credits` | `false` | Allow plan-metered calls (`chatgpt`, `claude_code`) to spend purchased credits or extra usage once the included plan window is exhausted (auto top-up can buy more with the saved payment method). `false` is a circuit breaker, not a guarantee: the backend's usage readings (a chatgpt preflight and every response's headers, every claude_code round's rate-limit event) report the account's windows and credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes. `true`: a chatgpt credit balance's drop across the run is read as dollars and meters against `max_usd`; a claude_code run reads no credit balance, so the extra usage it spends is not metered by `max_usd`. Included-plan usage is unaffected. |
@@ -376,7 +376,7 @@ Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/
 | Field | Default | Meaning |
 |---|---|---|
 | `snapshot_keep` | `5` | How many blackboard snapshots a machine instance keeps (`machine status` reads the latest; recovery and `machine replay` fold the journal). `0` keeps all. |
-| `state_log_keep` | `50` | How many per-state log dirs a machine instance keeps under `<instance>/states/` (the watchable logs of each state's leg; the journal keeps the full transition history regardless). `0` keeps all. |
+| `state_log_keep` | `50` | How many per-state log dirs a machine instance keeps under `<instance>/states/` (the watchable logs of each state's execution; the journal keeps the full transition history regardless). `0` keeps all. |
 | `pass_env` | `[]` | Environment variable names a machine's `tool` state may receive from the operator's environment when its own `pass_env` names them; a state naming one not listed here refuses the run at startup. Global/repo config only (a machine `[config]` overlay setting it is rejected); a provider's `api_key_env` is never allowed. |
 
 ### `[machine.notify]` (optional)

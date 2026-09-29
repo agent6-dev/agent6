@@ -702,11 +702,11 @@ def test_unlimited_iterations_is_minus_one(tmp_path: Path) -> None:
     assert provider.call.call_count == 13
 
 
-def test_resume_leg_rearms_the_iteration_allowance(tmp_path: Path) -> None:
-    """A resumed leg gets a fresh max_iterations window relative to its own
+def test_resume_execution_rearms_the_iteration_allowance(tmp_path: Path) -> None:
+    """A resumed execution gets a fresh max_iterations window relative to its own
     start. The counter used to be absolute: a run capped at max_iterations
     resumed into range(cap+1, cap+1) and made ZERO provider calls (observed
-    live: a standing run's resume leg ended instantly)."""
+    live: a standing run's resume execution ended instantly)."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = MagicMock()

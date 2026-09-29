@@ -5,7 +5,7 @@ JailUnavailableError with the launcher's stderr, the child is reaped, and
 every pipe is closed at the failure site. Abandoning the Popen instead left
 the stdin writer to garbage collection, which retried the flush against the
 dead peer and raised unraisable BrokenPipeError noise into run logs (seen in
-two bench legs), plus a zombie launcher for the rest of the process."""
+two bench executions), plus a zombie launcher for the rest of the process."""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The memory use record: the loop counts each fact a leg writes and reads
-through the in-process tools (the jail never sees the store), and the leg's
+"""The memory use record: the loop counts each fact an execution writes and reads
+through the in-process tools (the jail never sees the store), and the execution's
 end persists them to `<state-dir>/memory-use.json`, the record
 `agent6 memory list` shows under each entry."""
 
@@ -136,14 +136,14 @@ def test_a_deletion_ends_the_fact_for_the_record(tmp_path: Path) -> None:
     assert (state.memory.wrote, state.memory.created) == ([], [])
     assert state.memory.deleted == ["quirk", "fresh"]
     # The read before the delete belonged to the fact's old life: a live run
-    # read a fact, deleted it, and the leg's end put an entry back for it.
+    # read a fact, deleted it, and the execution's end put an entry back for it.
     assert state.memory.read == {}
     _edit(wf, state, str(store / "quirk.md"), created=True)
     assert (state.memory.wrote, state.memory.created) == (["quirk"], ["quirk"])
     assert state.memory.deleted == ["quirk", "fresh"]
 
 
-def test_the_leg_end_drops_a_deleted_fact_and_starts_a_recreated_one_afresh(
+def test_the_execution_end_drops_a_deleted_fact_and_starts_a_recreated_one_afresh(
     tmp_path: Path,
 ) -> None:
     record_use(
@@ -201,7 +201,7 @@ def test_no_store_means_nothing_is_counted() -> None:
     assert state.memory.read == {}
 
 
-def test_the_leg_end_persists_what_it_wrote_and_read(tmp_path: Path) -> None:
+def test_the_execution_end_persists_what_it_wrote_and_read(tmp_path: Path) -> None:
     wf = _wf(tmp_path)
     state = _state()
     state.memory = MemoryState(
@@ -219,15 +219,15 @@ def test_the_leg_end_persists_what_it_wrote_and_read(tmp_path: Path) -> None:
     assert use["other"].reads == 1
 
 
-def test_a_leg_that_touched_nothing_writes_no_record(tmp_path: Path) -> None:
+def test_a_execution_that_touched_nothing_writes_no_record(tmp_path: Path) -> None:
     wf = _wf(tmp_path)
     wf._record_memory_use(_state())  # pyright: ignore[reportPrivateUsage]
     assert not use_path(tmp_path).exists()
 
 
-def test_a_resumed_leg_starts_its_own_count_with_the_nudge_flags_carried() -> None:
+def test_a_resumed_execution_starts_its_own_count_with_the_nudge_flags_carried() -> None:
     """The nudge flags are run-lifetime (the snapshot); the touched facts are
-    leg-local: a resumed leg records only what it touches itself."""
+    execution-local: a resumed execution records only what it touches itself."""
     from agent6.harness._loop_state import restore_completion_state
     from agent6.harness._session_state import SessionSnapshot
 
@@ -247,7 +247,7 @@ def test_a_resumed_leg_starts_its_own_count_with_the_nudge_flags_carried() -> No
     assert (state.memory.written, state.memory.flip_nudged) == (True, True)
     assert (state.memory.wrote, state.memory.read) == ([], {})
     # The shape itself: the snapshot carries the three flags and nothing
-    # else of the memory bookkeeping, so no restore can bring a leg's
+    # else of the memory bookkeeping, so no restore can bring an execution's
     # touched facts into the next one.
     assert {f for f in SessionSnapshot.model_fields if f.startswith("memory_")} == {
         "memory_written",
@@ -258,7 +258,7 @@ def test_a_resumed_leg_starts_its_own_count_with_the_nudge_flags_carried() -> No
 
 def test_finish_records_the_use(tmp_path: Path) -> None:
     """Every end goes through `_finish`, so the record lands whichever way a
-    leg ends; a write fault there must not break the end."""
+    execution ends; a write fault there must not break the end."""
     wf = _wf(tmp_path)
     state = _state()
     state.memory = MemoryState(read={"quirk": 1})

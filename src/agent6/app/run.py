@@ -14,7 +14,7 @@ import shutil
 from collections.abc import Sequence
 from pathlib import Path
 
-from agent6.app._leg import LegInputs, detach_to_background, run_leg
+from agent6.app._execution import ExecutionInputs, detach_to_background, run_execution
 from agent6.app._session import (
     select_isolation,
     warn_install_inside_workspace,
@@ -147,7 +147,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     boundary, seeded AFTER this function's own stale-state clear: the
     parked-resume delegation passes `resume --steer` through it, and a
     pre-seeded bridge file would be wiped by that clear and silently lost.
-    *started_at* is the instant this leg began: the clear keeps what was
+    *started_at* is the instant this execution began: the clear keeps what was
     written since (an ACP turn's start precedes this call by its queue wait).
 
     The CLI (`ui/cli/run.py`) has already built *cfg* (config + overrides),
@@ -161,7 +161,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     `--preset` flag but must record the ORIGINAL submission's stamp so a
     later resume/fork replays the same precedence (fork carries it likewise);
     deriving it from the empty *preset* would drop the stamp, and the flag's
-    veto with it, on the next leg.
+    veto with it, on the next execution.
 
     When `mode="plan"` the same harness drives a planning
     pass instead of an execution pass: planning system prompt,
@@ -266,7 +266,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # graph/checkpoints/transcripts (mixed state). Refuse and point at resume.
     # (ask sessions are transient Q&A, so reusing their dir is fine.) The one
     # reusable dir is a PARKED run (manifest carries parked_task, nothing else
-    # ever ran): starting it IS its fresh start, and the leg's start un-parks
+    # ever ran): starting it IS its fresh start, and the execution's start un-parks
     # it.
     if session_id and mode != "ask" and layout.manifest_path.exists():
         try:
@@ -313,7 +313,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
     try:
         # A reused dir (an ask under its id again, a parked run) carries the
-        # previous leg's bridge state; a marker written since this leg began
+        # previous execution's bridge state; a marker written since this execution began
         # is this run's (an editor's cancel while it came up).
         clear_pending_answers(layout.session_dir, started_at=started_at)
         if initial_steer.strip() and not submit_steer(layout.session_dir, initial_steer.strip()):
@@ -349,7 +349,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
-        # The leg's one gate to the operator: every prompt journals and takes
+        # The execution's one gate to the operator: every prompt journals and takes
         # its id here, whichever front-end answers.
         prompts = OperatorPrompts(
             approver=frontend.build_approver(layout.session_dir),
@@ -368,8 +368,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # any future tooling that wants to reproduce a run reads from here.
         # Written before the gates below, which PARK rather than refuse: a
         # parked run keeps its dir and manifest, and `agent6 resume <id>` starts
-        # it fresh. The rewrite keeps the park, which the leg's start clears
-        # (`unpark` in run_leg): a start that fails before the loop leaves the
+        # it fresh. The rewrite keeps the park, which the execution's start clears
+        # (`unpark` in run_execution): a start that fails before the loop leaves the
         # run parked, its verbatim task still saved.
         parked = parked_stamp(layout.session_dir)
         write_session_manifest(
@@ -469,7 +469,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Verify is optional: if unset, infer one for this run (AGENTS.md
             # -> repo signals -> a cheap LLM call) and inject it in-memory.
             # Never persisted. The drop comes LAST so nothing hands the gate
-            # back: a leg that cannot run a command is gateless, whatever
+            # back: an execution that cannot run a command is gateless, whatever
             # inference found.
             configured_gate = bool(cfg.harness.verify_command)
             cfg = infer_verify_if_unset(
@@ -484,7 +484,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
             # After resolution, never before: preflight can DROP the gate (a
             # run that cannot run commands), and an empty gate with an origin
-            # of "configured" is a self-contradiction the next leg reads back.
+            # of "configured" is a self-contradiction the next execution reads back.
             gate_origin = ""
             if cfg.harness.verify_command:
                 gate_origin = "configured" if configured_gate else "inferred"
@@ -504,10 +504,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.note(
                 f"run {effective_session_id!r} was parked at submission{why}; starting it now."
             )
-        end = run_leg(
+        end = run_execution(
             cfg,
             layout,
-            LegInputs(
+            ExecutionInputs(
                 session_id=effective_session_id,
                 mode=mode,
                 role=role,

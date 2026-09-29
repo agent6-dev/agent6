@@ -217,7 +217,7 @@ def test_finish_gate_defers_once_then_honours() -> None:
     state.settled.idle = 5
     state.settled.nudged = True
     first = _turn(5, finish=FinishCall("finish_session", "done", {"k": "v"}))
-    ctx = wf._turn_context(state, iteration=5, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, iteration=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._turn_finish_gates(state, first, ctx)  # pyright: ignore[reportPrivateUsage]
     assert first.finish is None
     assert MEMORY_FINISH_NUDGE in _notice_texts(first)

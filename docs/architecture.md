@@ -50,6 +50,22 @@ Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `co
 Three model roles route independently: `worker` drives `run` and `resume`, `planner` drives `plan`, `reviewer` drives `review`, the in-loop panel and the loop's side calls (the context summariser and gister, the prompt reviser).
 Unset roles fall back to `worker`.
 
+## Units of work
+
+Largest first; each unit is bounded by the one above it.
+
+| unit | what it is | bounded by |
+|---|---|---|
+| machine | a state-machine instance; each of its agent states hands one task to the harness | the `.asm.toml` and its journal |
+| fan-out | a `/parallel` group: N sessions on one task, compared and one imported | the coordinator's session |
+| session | one task's durable record: its dir, journal, task graph, chain of commits and memory use | the id; it holds several executions |
+| execution | one continuous run of the harness over a session, from a `run`, `resume` or `fork` to an end | `max_iterations` and the budget cap, re-armed per execution |
+| turn | one model call and everything the harness does with its answer: the tool dispatch, the advisors, the gates, the notices; a prose-only answer is a turn too; `iteration` is its index | one provider call |
+| tool call | one tool the model asked for inside a turn; a finish is the last one executed | one dispatch |
+
+A step is not a loop unit: it is a commit on the session's chain, taken after a turn that changed the tree (a verified step or an un-gated checkpoint), the unit `commit_per_step` and the diff pane's step picker count.
+`run` is the mode beside `plan` and `ask`, and the command that opens a session.
+
 ## The run lifecycle
 
 `app/run.py`'s `run_task` composes one stage per step.
@@ -100,7 +116,7 @@ A run keeps one message history with one provider and one model.
 - the model drives by calling tools; the harness dispatches, snapshots, tracks budget
 - multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
-- under `api_format = "claude_code"` the provider keeps one `claude` process per leg and replays that history as text whenever a call is not a continuation of its last round ([Config](config.md))
+- under `api_format = "claude_code"` the provider keeps one `claude` process per execution and replays that history as text whenever a call is not a continuation of its last round ([Config](config.md))
 
 `harness/loop.py` holds the turn: the request, the model call, the tool dispatch, what the tools did, and the ends.
 What the turn leans on sits beside it, one module each: `_chain` (the run's commit chain), `_steer` (the operator's callables, the steer verbs, the pin cap, and what a steer's text means), `_advice` (what an advisor answers with, a nudge, a stop or a refusal, and the turn's context it reads), `_guards` (the advisors, one function per heuristic with its counters: no progress, settled, stagnation, the memory flip, the loop guard, the tool-error ladder, reachability, focus, the budget nudges), `_metric` (a metric run's plateau, ceiling and early-finish rules) and `_metric_sampler` (the readings a run takes), `_quiet_turns` (the nudges an empty or prose-only turn draws), `_finish_gates` (what a finish call declares, what it must satisfy and what an end is called), `_standing` (the standing goal's re-entry), `_operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`), `_parallel_dispatch` (the `/parallel` fan-out), `_checkpoint` (the per-step commit and the final one), `_compactor` (the compaction driver over `_compaction`'s rules), `_memory_touch` (what a tool call did to the memory store), and the settings each sibling owns (`_review`, `_compaction`, `_provider_call`, `_prompt_revision`).
@@ -197,7 +213,7 @@ A finish-time check reports any ruling missing from the file.
 - run mode writes; plan and ask read; machine modes see none
 - models never write unprompted, so the loop nudges twice: an advisory when verify first recovers green, and a once-deferred `finish_session` after such a recovery with nothing recorded
 - `agent6 memory add/list/show/rm` is the operator surface over the same files
-- `<state-dir>/memory-use.json`, harness-written at each leg's end: per fact, the write that created it (when the record saw it), every write as a (session, when) touch in order, and its reads (count, last reader), the entry gone once the fact is deleted (by the model or `memory rm`); `memory list` prints it under each entry, and names the files the index does not list, so a stale, never-read or orphaned fact is visible where it is pruned
+- `<state-dir>/memory-use.json`, harness-written at each execution's end: per fact, the write that created it (when the record saw it), every write as a (session, when) touch in order, and its reads (count, last reader), the entry gone once the fact is deleted (by the model or `memory rm`); `memory list` prints it under each entry, and names the files the index does not list, so a stale, never-read or orphaned fact is visible where it is pruned
 
 **Skills** resolve at run start from `<data-dir>/skills/` plus `[skills].extra_dirs`, through one resolution: the `<skills>` index and what `use_skill` serves cannot diverge.
 
@@ -327,7 +343,7 @@ The message also offers a `/parallel 1 <task>` steer that hands it to the live r
 Plan and ask expose no edit tools and spawn freely; a `run --parallel` fan-out takes no checkout lock, and its lanes work in isolated clones.
 
 The working tree at start is the run's next gate, in the same shape.
-Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt. A resume adds the files that appeared between legs and the run cannot show it wrote, and its note names them.
+Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt. A resume adds the files that appeared between executions and the run cannot show it wrote, and its note names them.
 Uncommitted changes to tracked files are asked about over the `ask_user` channel: stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes".
 `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before writing a manifest, discarding the empty dir.
 
@@ -353,7 +369,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `frontends/` | one file per front-end registered to answer this run, named for its pid |
 | `shells/` | the roster of background commands the run started |
 | `steer.request`, `stop.request`, `compact.request` | the operator's pending asks, which the loop reads at its step boundary |
-| `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between legs and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
+| `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
 `loop_state.json` is the latest pointer for resume; `checkpoints/` is the per-turn history `fork --at-turn` addresses, kept in full.
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor.
@@ -369,7 +385,7 @@ The planner re-reads it before every turn and is shown it whenever it differs fr
 - cuts the chain ref `refs/agent6/<new>/head` at the turn's sha, and the visible `agent6/<new>` branch there too under `[git].branch_per_run`; a plan or ask fork commits nothing and cuts neither
 
 The source run and the operator's checkout are never mutated, and one fork edge per line lands in a per-repo `lineage.jsonl`.
-`agent6 resume <new>` runs the leg in that worktree; the repository's state dir and config apply there.
+`agent6 resume <new>` runs the execution in that worktree; the repository's state dir and config apply there.
 The jail policy grants the recorded `worktree_git_dir` read-only, and refuses when the worktree's `.git` pointer no longer resolves to it.
 The worktree's checkout lock is removed with the worktree.
 The worktree shares the repository's refs, so `sessions diff|commits|merge <new>` work from the repo like any run's; `sessions prune` removes the worktree once the fork is merged, and `sessions rm <new>` removes it with the record.
@@ -420,11 +436,11 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | Event | Notable fields |
 | --- | --- |
 | `session.start` | `user_task` |
-| `loop.resume.start` | the leg a `resume` opens: `session_id`, `mode`, `iteration`, `messages` |
+| `loop.resume.start` | the execution a `resume` opens: `session_id`, `mode`, `iteration`, `messages` |
 | `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail` |
 | `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
 | `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `memory/DECISIONS.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
-| `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`resumed`: an adopted gate carried into a new leg; `agents_md`; a repo signal: `verify.sh`, `package.json`, `Makefile:<target>`, `pyproject`, `Cargo.toml`, `go.mod` or `test_*.py`; `llm`; `none`; `disabled`; `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
+| `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`resumed`: an adopted gate carried into a new execution; `agents_md`; a repo signal: `verify.sh`, `package.json`, `Makefile:<target>`, `pyproject`, `Cargo.toml`, `go.mod` or `test_*.py`; `llm`; `none`; `disabled`; `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
 | `role.call` | `role`, `model`, `provider` |
 | `role.result` | `role`, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason`; a failure carries `error` (the reason, clipped) instead |
 | `role.text_delta` | streamed assistant text chunk |

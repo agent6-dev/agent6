@@ -6,8 +6,8 @@ its counters from the guard object the loop holds on `LoopState`. The loop
 runs `BEFORE_CALL` ahead of the provider call and `AFTER_TOOLS` once a turn's
 tools have run, in order, and applies each answer.
 
-Leg-local by design, like every counter not named in `SessionSnapshot`: a
-resume is operator-initiated, so a resumed leg's refreshed patience is the
+Execution-local by design, like every counter not named in `SessionSnapshot`: a
+resume is operator-initiated, so a resumed execution's refreshed patience is the
 operator granting another window. The completion-relevant subset persists
 (`restore_completion_state`).
 """
@@ -143,8 +143,8 @@ class SettledGuard:
     good state (a green verify, or an editing step on a gateless run), count
     the idle turns (no edit, no commit, an unchanged tree; a verify run is
     neutral), nudge once at `VERIFY_SETTLED_NUDGE_AFTER`, stop at
-    `VERIFY_SETTLED_STOP_AFTER`. `tree` is the last tree seen, leg-local, so
-    a resumed leg re-measures on its first turn."""
+    `VERIFY_SETTLED_STOP_AFTER`. `tree` is the last tree seen, execution-local, so
+    a resumed execution re-measures on its first turn."""
 
     tree: str = ""
     idle: int = 0
@@ -376,8 +376,8 @@ class MemoryState:
     worker recorded anything (`written`, any edit under the store). Those
     three are run-lifetime and persist in the snapshot. `wrote` (with
     `created`, the facts an edit tool made rather than changed), `deleted`
-    and `read` name the facts this leg touched, for the use record its end
-    persists (`memory.record_use`); leg-local, each leg records its own."""
+    and `read` name the facts this execution touched, for the use record its end
+    persists (`memory.record_use`); execution-local, each execution records its own."""
 
     written: bool = False
     flip_nudged: bool = False
@@ -389,8 +389,8 @@ class MemoryState:
 
     def note_write(self, fact: str, op: str) -> None:
         """Fold one write of *fact* (`create`, `edit` or `delete`): a delete
-        ends it for this leg (its reads so far with it), so its entry goes at
-        the leg's end as `memory rm` drops it; a create after that starts it
+        ends it for this execution (its reads so far with it), so its entry goes at
+        the execution's end as `memory rm` drops it; a create after that starts it
         afresh."""
         if op == "delete":
             for names in (self.wrote, self.created):
@@ -576,14 +576,14 @@ class BudgetNudges:
 
 def plan_budget_nudge(state: LoopState, ctx: TurnContext) -> Nudge | None:
     """The planner's one-shot finish directive: the budget fraction fell to
-    `PLAN_BUDGET_NUDGE_BELOW`, or the leg reached `PLAN_NUDGE_AFTER_ITERS`
+    `PLAN_BUDGET_NUDGE_BELOW`, or the execution reached `PLAN_NUDGE_AFTER_ITERS`
     turns without a plan landing (a planner takes many cheap cached turns,
     so the turn count is the lever that reaches the reads-forever case)."""
     if ctx.mode != "plan" or state.budget_nudges.plan_finish:
         return None
     remaining = ctx.budget_remaining()
     low_budget = remaining is not None and remaining <= PLAN_BUDGET_NUDGE_BELOW
-    too_many_turns = ctx.iteration - ctx.leg_start + 1 >= PLAN_NUDGE_AFTER_ITERS
+    too_many_turns = ctx.iteration - ctx.execution_start + 1 >= PLAN_NUDGE_AFTER_ITERS
     if not (low_budget or too_many_turns):
         return None
     state.budget_nudges.plan_finish = True

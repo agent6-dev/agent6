@@ -147,7 +147,7 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
     """Run inside a fork's worktree, the report lists the repository git dir a
     jailed command reaches there: the fork manifest's recorded
     `worktree_git_dir` (found under the repository's state dir), granted
-    through the leg's own policy builder. The report read no manifest, so a
+    through the execution's own policy builder. The report read no manifest, so a
     fork worktree's grants omitted the one path beyond the workspace. In the
     repository itself no such line appears."""
     import json

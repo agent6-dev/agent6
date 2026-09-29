@@ -58,23 +58,23 @@ def test_the_page_carries_no_cost_formatter_and_no_glyph_map() -> None:
 
 
 def test_the_budget_line_is_rendered_once() -> None:
-    assert budget_usd_text(0.42, partial=False, usd_cap=0.0, usd_prior_legs=0.0) == "$0.42"
-    assert budget_usd_text(0.42, partial=True, usd_cap=-1, usd_prior_legs=0.0) == (
+    assert budget_usd_text(0.42, partial=False, usd_cap=0.0, usd_prior_executions=0.0) == "$0.42"
+    assert budget_usd_text(0.42, partial=True, usd_cap=-1, usd_prior_executions=0.0) == (
         "~$0.42 (unlimited)"
     )
-    assert budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_legs=0.0) == (
+    assert budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.0) == (
         "$0.42 / $1.00"
     )
-    assert budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_legs=0.1) == (
-        "$0.42 · leg $0.32 / $1.00"
+    assert budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.1) == (
+        "$0.42 · execution $0.32 / $1.00"
     )
 
 
-def test_a_partial_total_marks_the_leg_figure_too() -> None:
-    """A resumed leg's dollar figure is sliced from the same under-estimate as
+def test_a_partial_total_marks_the_execution_figure_too() -> None:
+    """A resumed execution's dollar figure is sliced from the same under-estimate as
     the cumulative total: the `~` belongs on both, not just the total."""
-    assert budget_usd_text(0.42, partial=True, usd_cap=1.0, usd_prior_legs=0.1) == (
-        "~$0.42 · leg ~$0.32 / $1.00"
+    assert budget_usd_text(0.42, partial=True, usd_cap=1.0, usd_prior_executions=0.1) == (
+        "~$0.42 · execution ~$0.32 / $1.00"
     )
 
 

@@ -150,7 +150,7 @@ def test_runs_list_uses_plan_points_for_a_plan_metered_run(
 def test_runs_list_marks_a_partial_cost(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A cost the scanner knows is a lower bound (unpriced model in some leg)
+    """A cost the scanner knows is a lower bound (unpriced model in some execution)
     renders with the '~' marker in the listing, matching `sessions show`."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"

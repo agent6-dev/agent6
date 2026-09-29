@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Summarize longhorizon benchmark results.
 
-Per (model, task, leg, condition) cell: n, mean score +/- stderr, solved
+Per (model, task, session, condition) cell: n, mean score +/- stderr, solved
 rate, tier-1/2 compaction activity, re-reads (total and post-first-drop),
 memory/dependency tool usage, iterations, usd, wall. Then paired
 condition-vs-baseline deltas on score and iterations. `--components` prints
@@ -49,7 +49,7 @@ def _num(rs: list[dict[str, Any]], field: str) -> list[float]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("paths", nargs="+")
-    ap.add_argument("--group", default="model,task,leg,condition")
+    ap.add_argument("--group", default="model,task,session,condition")
     ap.add_argument("--components", action="store_true", help="mean per-component scores")
     args = ap.parse_args()
     keys = args.group.split(",")

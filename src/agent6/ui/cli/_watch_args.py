@@ -136,7 +136,7 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
             " `/task <text>` queues work and `/btw <question>` asks beside the run"
             " (pause-menu directives such as abort and /undo travel the same way)."
             " Live runs only: for a stopped session, `agent6 resume ID --steer TEXT`"
-            " queues one for its next leg."
+            " queues one for its next execution."
         ),
     )
     steer_target = steer_p.add_argument("target", help=f"{SESSION_ID}.")

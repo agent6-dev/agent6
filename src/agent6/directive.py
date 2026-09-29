@@ -164,7 +164,7 @@ def parse_task(text: str) -> str | None:
     return text[m.end() :].strip()
 
 
-# The run's standing goal, set by the operator alone: `--standing` at a leg's
+# The run's standing goal, set by the operator alone: `--standing` at an execution's
 # start, this directive while it runs. Never steer text.
 _STANDING_TOKEN = re.compile(r"\A\s*/standing(?=\s|\Z)", re.IGNORECASE)
 
@@ -231,11 +231,11 @@ def spec_fragment(text: str) -> str | None:
     return token.rsplit(",", 1)[-1]
 
 
-# The steer directives a front-end acts on itself, so none can start a leg:
+# The steer directives a front-end acts on itself, so none can start an execution:
 # `/compact`, `/btw`, `/now` and `/stop` need a live run (a composer or the
 # pause menu takes them, and a resume composer does not offer them);
 # `/restate` and `/shells` act in the composer that typed them, live or not.
-# The loop parses none of these, so a leg started on one would hand the token
+# The loop parses none of these, so an execution started on one would hand the token
 # to the model.
 LIVE_RUN_COMMANDS: frozenset[str] = frozenset(
     {"/compact", "/btw", "/now", "/retire", "/standing", "/stop", "/task"}
@@ -257,9 +257,9 @@ def stray_directive(text: str) -> str | None:
 
 
 def steer_problem(text: str) -> str | None:
-    """Why *text* cannot start a leg as its steer: a malformed directive (a
+    """Why *text* cannot start an execution as its steer: a malformed directive (a
     bare `/pin`, a `/parallel` with no task) or one of `_FRONT_END_COMMANDS`.
-    None for ordinary text and a well-formed directive. A leg spent on a
+    None for ordinary text and a well-formed directive. An execution spent on a
     directive the loop can only decline reads as a silent finish and flips a
     passed run to failed."""
     if (m := _FRONT_END_TOKEN.match(text)) is not None:
@@ -267,7 +267,7 @@ def steer_problem(text: str) -> str | None:
         # so the refusal names the category mistake rather than the surface.
         return (
             f"{m.group(1)} is a composer command, not an instruction;"
-            " start this leg, then type it in the composer"
+            " start this execution, then type it in the composer"
         )
     try:
         parse_pin(text)

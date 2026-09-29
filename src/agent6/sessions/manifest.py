@@ -59,7 +59,7 @@ class ModelsBrief(BaseModel):
 
     @property
     def replay_driver(self) -> ModelBrief | None:
-        """The driver a resumed or forked leg without its own `--model` must
+        """The driver a resumed or forked execution without its own `--model` must
         re-apply: only a flag-selected one (the preset's rule,
         `HarnessStamp.replay_preset`); None re-resolves from the config."""
         return self.driver if self.driver_from_flag else None
@@ -78,7 +78,7 @@ class PolicyStamp(BaseModel):
     run_commands: str = ""
     isolation: str = ""
     network: str = ""
-    # [git].commit_per_step for the live leg (`stamp_leg` re-stamps it): False
+    # [git].commit_per_step for the live execution (`stamp_execution` re-stamps it): False
     # means nothing commits by design, so a dirty tree at the end is the
     # deliverable, never a stranded commit.
     commit_per_step: bool = True
@@ -97,7 +97,7 @@ class HarnessStamp(BaseModel):
     # (repo signals / AGENTS.md, which it can), "adopted" (gained mid-run by a
     # run that started gateless), or "" for no gate at all. Pinned so a mid-run
     # edit to the source cannot move the gate under the run -- including on a
-    # resumed leg, where only operator config outranks what is recorded here.
+    # resumed execution, where only operator config outranks what is recorded here.
     verify_command: tuple[str, ...] = ()
     verify_origin: str = ""
     # Whether `preset` was chosen by --preset rather than by a config file.
@@ -107,7 +107,7 @@ class HarnessStamp(BaseModel):
 
     @property
     def replay_preset(self) -> str:
-        """The `--preset` override a resumed or forked leg must re-apply.
+        """The `--preset` override a resumed or forked execution must re-apply.
 
         Only a FLAG-selected preset: a config-selected one re-resolves
         identically from the same config files, whereas handing its name back as
@@ -258,7 +258,7 @@ class SessionManifest(BaseModel):
     # `/undo` fork names its source's.
     worktree: Path | None = None
     # The repository git dir that worktree points into, recorded when agent6
-    # added it: the one path a fork leg's jail grants beyond the workspace.
+    # added it: the one path a fork execution's jail grants beyond the workspace.
     # Never read back from the worktree's own `.git` pointer, which a jailed
     # command can rewrite under hardened.
     worktree_git_dir: Path | None = None

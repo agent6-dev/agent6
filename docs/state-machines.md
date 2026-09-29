@@ -605,7 +605,7 @@ Sizing for long-running machines:
 - a state runs, then one fsync'd `StepEvent` records its outcome and captured fact: the commit point
 - the capture validates before the StepEvent writes, so the journal never holds a fact a later `reduce` could not replay
     - a tool's malformed stdout halts the machine loudly
-    - an agent's non-conforming `finish_session` is refused in-run, so the model retries; a leg that never conforms lands outcome `failed` and routes on that edge
+    - an agent's non-conforming `finish_session` is refused in-run, so the model retries; an execution that never conforms lands outcome `failed` and routes on that edge
 - on restart the engine folds the journal and continues from the last StepEvent
     - replay holds the journal to its facts: a recorded label or goto its fact does not imply, a branch the replayed blackboard would not take, an agent payload outside its schema, a journal without its begin event, events after its end, or an end that disagrees with the replayed position refuses the instance and names the remedy (archive the directory)
 - the crash window is side-effect-done to StepEvent-on-disk: a kill there loses the fact and the step re-runs on resume
@@ -657,7 +657,7 @@ Describe a loop in plain language and get a first-cut bundle back.
 It is an ordinary agent6 run handed this document's grammar, working in a drafting workspace of its own.
 The model writes the `.asm.toml` and every `scripts/...` file there with `apply_edit`, one file at a time, and finishes when the bundle is complete.
 No new tool.
-The leg has the edit tools; `run_commands = "no"` withholds `run_command`, `run_verify_command`, `run_metric_command` and `stop_background`, and the operator's `[harness].metric` is dropped.
+The execution has the edit tools; `run_commands = "no"` withholds `run_command`, `run_verify_command`, `run_metric_command` and `stop_background`, and the operator's `[harness].metric` is dropped.
 No host is pre-allowed, so a headless `fetch` denies.
 It never sees the operator's checkout, and its writes are bounded by the workspace the way any run's are by its repo.
 

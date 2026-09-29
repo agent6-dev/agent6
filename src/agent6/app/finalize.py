@@ -210,7 +210,7 @@ def _print_unverified(result: SessionResult, *, layout: SessionLayout, reporter:
     if result.verified != "unverified":
         return
     reporter.out(
-        "\nnothing verified the final tree: no verify ran this leg, or edits landed"
+        "\nnothing verified the final tree: no verify ran this execution, or edits landed"
         " after the last green."
     )
     reporter.out(f'  resume and run the gate:  agent6 resume {layout.session_id} --steer "verify"')
@@ -299,7 +299,7 @@ def print_session_end(
     _print_unverified(result, layout=layout, reporter=reporter)
     _print_stale_gate(result, reporter=reporter)
     reporter.cost(budget.format_summary())
-    _print_run_total_across_legs(layout, reporter=reporter)
+    _print_run_total_across_executions(layout, reporter=reporter)
     _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter)
 
 
@@ -402,14 +402,14 @@ def _print_no_commit_footer(
         reporter.out("\nno changes were committed")
 
 
-def _print_run_total_across_legs(layout: SessionLayout, *, reporter: Reporter) -> None:
-    """After the leg's token+cost banner: the run's true cumulative spend when
-    resume legs precede this one. The tracker is per-leg (each resume starts a
+def _print_run_total_across_executions(layout: SessionLayout, *, reporter: Reporter) -> None:
+    """After the execution's token+cost banner: the run's true cumulative spend when
+    resume executions precede this one. The tracker is per-execution (each resume starts a
     fresh budget), so its "TOTAL" line undersells a resumed run without this."""
     scan = scan_session_log(layout.session_dir / LOGS_NAME)
-    if scan.legs > 1 and scan.cost_usd is not None:
+    if scan.executions > 1 and scan.cost_usd is not None:
         cost = format_usd(scan.cost_usd, partial=scan.usd_partial)
-        reporter.cost(f"  RUN TOTAL (all {scan.legs} legs): {cost}")
+        reporter.cost(f"  RUN TOTAL (all {scan.executions} executions): {cost}")
 
 
 def print_interrupt_end(
@@ -423,7 +423,7 @@ def print_interrupt_end(
     `print_session_end`."""
     reporter.out("")
     reporter.cost(budget.format_summary())
-    _print_run_total_across_legs(layout, reporter=reporter)
+    _print_run_total_across_executions(layout, reporter=reporter)
     reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
     run_branch = ""
     base_branch = ""

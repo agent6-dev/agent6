@@ -298,14 +298,14 @@ QUESTION_NUDGE = (
 
 
 # Cross-run memory write nudges. Measured (bench/longhorizon FINDINGS #2):
-# 46 legs across 2 models produced ZERO unprompted memory writes, so the
+# 46 executions across 2 models produced ZERO unprompted memory writes, so the
 # <memory> block alone never causes writes. Prompt at the two moments a
 # durable discovery is actually in hand: the first red-to-green verify flip
 # (advisory, free) and the first finish_session after such a recovery
 # (deferred once, the backstop). Each fires at most once per run, only in run
 # mode with a memory store wired, and only while the worker has recorded
 # nothing; a run whose verify never failed is never nudged.
-# "State the rule, not the instance": measured on orchard leg 3 (FINDINGS #2
+# "State the rule, not the instance": measured on orchard execution 3 (FINDINGS #2
 # day 3), a store that spelled the house convention in words transferred to
 # a new computation; a store carrying only the formula it was first seen in
 # did not.

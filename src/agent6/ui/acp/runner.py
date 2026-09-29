@@ -542,7 +542,7 @@ class RunBridge:
         # A refusal that returns before journaling its own session.end leaves
         # the previous turn's reason in the journal, and a resume start clears
         # the fold's `finished` but not its `end_reason`: only a journal that
-        # grew and ended this leg carries a reason of this turn.
+        # grew and ended this execution carries a reason of this turn.
         grown = journal_size(layout.logs_path) > journal_before
         scan = scan_session_log(layout.logs_path)
         end_reason = scan.end_reason if grown and scan.finished else ""
@@ -560,9 +560,9 @@ class RunBridge:
         """Project the run's journal into `session/update` as it is written,
         the lifecycle's own lines taking their place between events.
 
-        A resumed run appends to the journal its prior legs already fill, and
+        A resumed run appends to the journal its prior executions already fill, and
         the editor rendered those turns as they happened: start where the
-        journal ended before this leg (*journal_before*), or the whole
+        journal ended before this execution (*journal_before*), or the whole
         conversation replays as if new. The ending also goes to
         stderr, the editor's agent log: the editor is the live view, so the
         lifecycle prints no ending of its own."""

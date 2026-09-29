@@ -78,7 +78,7 @@ def approval_scopes(cfg: Config) -> tuple[str, ...]:
 
 
 def settle_away_mode(session_dir: Path, cfg: Config) -> None:
-    """At a leg's start: a foreground start (a controlling terminal) drops a
+    """At an execution's start: a foreground start (a controlling terminal) drops a
     stale detach answer and every approve-all grant, since the operator is
     back to answer; a spawned start honours the away marker the front-end or
     detach set (`apply_spawned_away_default`)."""
@@ -157,7 +157,7 @@ class SessionFrontend:
     # Interactive fronts prompt (default no); headless warns and proceeds.
     confirm_replay_after_crash: Callable[[int, tuple[str, ...]], bool]
     prompt_detach_away_mode: Callable[[Path, tuple[str, ...]], None]
-    # None when this surface cannot run the interactive revise choice; the leg
+    # None when this surface cannot run the interactive revise choice; the execution
     # then skips revision instead of reading a selector's None as a quit.
     select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None] | None
     # `run -i` / `ask -i`
@@ -176,6 +176,6 @@ class SessionFrontend:
     # LaneRuntime's injected spawner).
     agent6_exe: Callable[[], str]
     # (cwd, session_id, flags): the flags are this invocation's overrides as
-    # CLI options, so the detached leg runs under them (see
+    # CLI options, so the detached execution runs under them (see
     # `_setup.override_flags`).
     spawn_detached_resume: Callable[[Path, str, Sequence[str]], str]

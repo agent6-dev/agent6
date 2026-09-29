@@ -144,7 +144,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - every mount keeps the path it has outside
     - a tool dir is mounted only when its identity clears a default-deny.
       Refused: a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it
-    - a fork's leg (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `strict`, a Landlock read+exec rule under `hardened`, in both cases whatever `protect_git` says.
+    - a fork's execution (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `strict`, a Landlock read+exec rule under `hardened`, in both cases whatever `protect_git` says.
       The main checkout's `.git` is read-only only under `strict` with `protect_git`, so a fork's is the more confined of the two.
       The model's prompt says so
     - the granted dir is the one agent6 recorded when it added the worktree (the manifest's `worktree_git_dir`, taken from the repository it ran in).

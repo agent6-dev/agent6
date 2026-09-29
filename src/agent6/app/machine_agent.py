@@ -165,7 +165,7 @@ def _finish_validator(r: AgentRequest) -> Callable[[dict[str, Any] | None], list
 
 
 def _task_with_contract(r: AgentRequest) -> str:
-    """The task the leg runs: the state prompt, plus the finish contract when
+    """The task the execution runs: the state prompt, plus the finish contract when
     the state declares one, rendered as field: type lines (nested records
     included) so the model needs no guess about the accepted shape."""
     if r.output_schema is None:

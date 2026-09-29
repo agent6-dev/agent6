@@ -389,7 +389,7 @@ def validate_record_payload(
     """Strictly validate a captured *payload* against a record schema.
 
     The one runtime capture gate for an agent `finish_session` payload (engine
-    side and the leg's in-run contract check, which receives the same schemas
+    side and the execution's in-run contract check, which receives the same schemas
     over the AgentRequest wire) and a `tool` state's parsed stdout (*where*
     names which, for the error text). Stricter than the load-time placeholder
     check on variable defaults: every non-optional field must be present,

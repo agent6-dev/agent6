@@ -118,7 +118,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """ "the gate is red, and nothing checked it before this run started" fired
-    on verified="failed", which used to include legs where NO verify ran: the
+    on verified="failed", which used to include executions where NO verify ran: the
     operator was sent to run the full gate at the base commit over a failure
     nobody observed. An unverified finish now says what is missing instead."""
     manifest: dict[str, object] = {
@@ -150,14 +150,14 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
     )
     out = _end_output(tmp_path, "r-unv", unverified, capsys, manifest)
     assert "the gate is red" not in out
-    assert "no verify ran this leg" in out
+    assert "no verify ran this execution" in out
 
 
 def test_the_stale_gate_proposal_survives_an_unverified_verdict(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A worker may declare the gate stale because it CANNOT RUN AT ALL -- a
-    leg with no verify observation. Keying the proposal print on
+    execution with no verify observation. Keying the proposal print on
     verified="failed" alone would silently drop it there."""
     result = SessionResult(
         completed=True,
@@ -194,11 +194,11 @@ def test_the_stale_gate_remedy_is_a_command_that_installs_that_gate(
     assert '\'["sh", "-c", "pytest -q tests/ && ruff check"]\'' in out
 
 
-def test_end_banner_does_not_claim_merged_from_a_prior_legs_stamp(
+def test_end_banner_does_not_claim_merged_from_a_prior_executions_stamp(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resumed run keeps committing on its branch under the FIRST leg's
-    merged stamp (and this leg's auto-merge may have conflicted): the end block
+    """A resumed run keeps committing on its branch under the FIRST execution's
+    merged stamp (and this execution's auto-merge may have conflicted): the end block
     read the stamp alone, claimed "changes merged into main" over unmerged
     commits, and hid the merge command. The claim now holds only while the
     branch still points at the tip the stamp recorded -- the same comparison
@@ -215,8 +215,8 @@ def test_end_banner_does_not_claim_merged_from_a_prior_legs_stamp(
     merged_tip = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
     ).stdout.strip()
-    (repo / "a.txt").write_text("leg 2 work\n", encoding="utf-8")
-    sp.run(["git", "commit", "-qam", "leg 2"], cwd=repo, check=True)
+    (repo / "a.txt").write_text("execution 2 work\n", encoding="utf-8")
+    sp.run(["git", "commit", "-qam", "execution 2"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
 
     layout = _layout(
@@ -549,10 +549,10 @@ def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> N
     assert "failed" in out and "provider error" in out
 
 
-def test_end_banner_adds_the_run_total_across_resume_legs(
+def test_end_banner_adds_the_run_total_across_resume_executions(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The tracker's "TOTAL" line is per-leg (each resume starts a fresh budget);
+    # The tracker's "TOTAL" line is per-execution (each resume starts a fresh budget);
     # a resumed run's banner must also state the true cumulative spend.
     layout = _layout(
         tmp_path,
@@ -578,10 +578,10 @@ def test_end_banner_adds_the_run_total_across_resume_legs(
         reporter=STDIO_REPORTER,
     )
     out = capsys.readouterr().out
-    assert "RUN TOTAL (all 2 legs): $0.03" in out
+    assert "RUN TOTAL (all 2 executions): $0.03" in out
 
 
-def test_end_banner_stays_quiet_on_a_single_leg_run(
+def test_end_banner_stays_quiet_on_a_single_execution_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     layout = _layout(
@@ -1095,7 +1095,7 @@ def test_the_run_total_rides_the_receipt_channel(tmp_path: Path) -> None:
         console_stream=False,
         reporter=Reporter(out=out.append, err=out.append, receipt=receipt.append),
     )
-    assert any("RUN TOTAL (all 2 legs)" in line for line in receipt)
+    assert any("RUN TOTAL (all 2 executions)" in line for line in receipt)
     assert not any("RUN TOTAL" in line for line in out)
 
 

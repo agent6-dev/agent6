@@ -113,7 +113,7 @@ def _highest_shell_seq(root: Path) -> int:
     """The largest `bg<N>` already recorded under *root*, or 0.
 
     Both layouts are scanned: `start`/`adopt` create `<root>/bg<N>` and
-    `_open_log` creates `<root>/logs/bg<N>`, and a leg that died between them
+    `_open_log` creates `<root>/logs/bg<N>`, and an execution that died between them
     leaves only one of the two behind.
     """
     highest = 0

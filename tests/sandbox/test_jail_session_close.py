@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`JailSession.close()` must never propagate an exception at teardown.
 
-Found via the wheel CI-mirror leg on Python 3.12: close() used to `stdin.close()`
+Found via the wheel CI-mirror execution on Python 3.12: close() used to `stdin.close()`
 then `communicate()`, whose flush re-hits the now-closed pipe and raises
 `ValueError: flush of closed file`. Python 3.14 (the dev interpreter) tolerates
 that, so no gate caught it -- but AGENTS.md supports 3.12+, where it was an

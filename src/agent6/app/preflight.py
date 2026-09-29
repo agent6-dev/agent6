@@ -477,17 +477,17 @@ def gate_text(argv: tuple[str, ...]) -> str:
 
 
 def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:
-    """Empty the verify command when this LEG cannot run one.
+    """Empty the verify command when this EXECUTION cannot run one.
 
     Every command tool is withheld when the effective policy is `no` (the
     operator's configured value, a session deny, or an away-mode of deny), and
-    the gate is a command. Keeping it makes the leg unwinnable: nothing can go
+    the gate is a command. Keeping it makes the execution unwinnable: nothing can go
     green, so nothing commits, and it finishes red over work that may be fine.
 
-    Decided ONCE per leg, by whichever lifecycle starts it, because the system
-    prompt is frozen from the same config. Runs LAST at leg start (after
+    Decided ONCE per execution, by whichever lifecycle starts it, because the system
+    prompt is frozen from the same config. Runs LAST at execution start (after
     snapshot reuse and inference) so nothing hands the gate back. A deny that
-    lands MID-leg withdraws the tools (the dispatcher's own filter) but must
+    lands MID-execution withdraws the tools (the dispatcher's own filter) but must
     not retroactively make a gate that already ran red look like a run that
     never had one.
     """
@@ -521,7 +521,7 @@ def infer_verify_if_unset(
     prints what was picked + that it is per-run. If nothing can be inferred the
     run proceeds GATELESS (no verify gate; the loop commits each editing step).
 
-    `drop_gate_if_unrunnable` runs AFTER this and has the last word: a leg
+    `drop_gate_if_unrunnable` runs AFTER this and has the last word: an execution
     that cannot run commands ends gateless, whatever was inferred.
     """
     if mode not in ("run", "plan") or cfg.harness.verify_command:

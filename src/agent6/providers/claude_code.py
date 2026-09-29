@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The `claude_code` provider: agent6's worker on the operator's Claude Code login.
 
-One long-lived `claude -p` process per worker leg, driven over stream-json on
+One long-lived `claude -p` process per worker execution, driven over stream-json on
 its stdin and stdout. agent6 is the process's only tool source: it serves the
 sdk-type MCP server `agent6` on the same pipes, advertising the loop's tools
 and answering each `tools/call` with the result the loop dispatched. A round

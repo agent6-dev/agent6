@@ -441,7 +441,7 @@ def test_i_from_a_background_process_group_refuses_before_start(
     argv: list[str],
 ) -> None:
     """A background job can keep a TTY on stdin but cannot read it; starting
-    an interactive leg there suspends it with SIGTTIN at the first prompt."""
+    an interactive execution there suspends it with SIGTTIN at the first prompt."""
     from agent6.ui import cli
     from agent6.ui.cli import _session_prompt as prompt_mod
 
@@ -451,7 +451,7 @@ def test_i_from_a_background_process_group_refuses_before_start(
     monkeypatch.setattr(prompt_mod.os, "tcgetpgrp", _other_group)
 
     def _must_not_run(*_args: object, **_kwargs: object) -> int:
-        pytest.fail("the interactive leg must not start")
+        pytest.fail("the interactive execution must not start")
 
     monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _must_not_run)
     monkeypatch.setattr("agent6.ui.cli.resume._cmd_resume", _must_not_run)
@@ -484,7 +484,7 @@ def test_init_wizard_ctrl_c_aborts_init_not_the_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Ctrl-C at an /init wizard question aborts /init and returns to the
-    REPL. The prompt session is idle, so the leg's escalating steer handler
+    REPL. The prompt session is idle, so the execution's escalating steer handler
     must not own SIGINT inside the wizard's nested input(): it printed
     "pausing after this step" for a step that does not exist, and its third
     press escaped the hook and ended the whole run as interrupted."""
@@ -493,8 +493,8 @@ def test_init_wizard_ctrl_c_aborts_init_not_the_run(
 
     seen: dict[str, Any] = {}
 
-    def _leg_handler(_signum: int, _frame: Any) -> None:
-        seen["leg_handler_ran"] = True
+    def _execution_handler(_signum: int, _frame: Any) -> None:
+        seen["execution_handler_ran"] = True
 
     def _wizard(*_a: Any, **_kw: Any) -> int:
         os.kill(os.getpid(), signal.SIGINT)  # the operator's Ctrl-C at the y/n question
@@ -504,7 +504,7 @@ def test_init_wizard_ctrl_c_aborts_init_not_the_run(
     answers = iter(["/init", "/continue"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
 
-    previous = signal.signal(signal.SIGINT, _leg_handler)
+    previous = signal.signal(signal.SIGINT, _execution_handler)
     try:
         directive = build_repl_hook(tmp_path, _budget())(1, "a" * 40)
     except KeyboardInterrupt:
@@ -512,7 +512,7 @@ def test_init_wizard_ctrl_c_aborts_init_not_the_run(
     finally:
         signal.signal(signal.SIGINT, previous)
     assert directive == "continue"
-    assert "leg_handler_ran" not in seen
+    assert "execution_handler_ran" not in seen
     assert "/init cancelled." in capsys.readouterr().err
 
 
@@ -521,7 +521,7 @@ def test_diff_ctrl_c_aborts_diff_not_the_run(
 ) -> None:
     """Ctrl-C while /diff prints aborts /diff and returns to the REPL: a
     KeyboardInterrupt walked past the /diff failure handler, out of the hook,
-    and the leg journaled the run as interrupted."""
+    and the execution journaled the run as interrupted."""
     import signal
 
     def _diff(**_kw: Any) -> int:

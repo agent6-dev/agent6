@@ -732,11 +732,11 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> N
             await pilot.press("y")
             assert await answer_written(tmp_path, pilot, "approval-1") == "yes"
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
-            # The resume: a real resumed leg emits ONLY loop.resume.start (never
+            # The resume: a real resumed execution emits ONLY loop.resume.start (never
             # a second session.start -- harness/loop.py run() vs resume()), then
             # the new session's approval-1. Feeding session.start here masked the
             # bug where the seen-set was cleared only on session.start and every
-            # resumed leg's modals were swallowed forever.
+            # resumed execution's modals were swallowed forever.
             app._handle_event(_ev(type="loop.resume.start", iteration=2, messages=4))
             # The worker drops a stale answer as it emits the prompt.
             clear_answer(tmp_path, "approval-1")
@@ -847,7 +847,7 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
     asyncio.run(scenario())
 
 
-def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> None:
+def test_end_hold_follows_the_resumed_execution(tmp_path: Path, monkeypatch: Any) -> None:
     """Continuing from the foreground run's end hold keeps the same view live."""
     from agent6.ui.tui import app as app_mod
     from agent6.ui.tui.composer import ResumeOptions, SteerInput
@@ -889,7 +889,7 @@ def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> N
                 SteerInput.Submitted("also add tests")
             )
             await app.workers.wait_for_complete()
-            await wait_for(pilot, lambda: not app.state.finished, "the resumed leg")
+            await wait_for(pilot, lambda: not app.state.finished, "the resumed execution")
             assert spawned == [(tmp_path.name, "also add tests")]
             assert app.dir_status[0] == "running"
             assert not app._end_hold
@@ -1138,9 +1138,9 @@ def test_working_timer_anchors_to_the_last_events_ts_not_the_attach(tmp_path: Pa
     asyncio.run(scenario())
 
 
-def test_budget_meter_reads_this_legs_spend_not_the_runs_total(tmp_path: Path) -> None:
-    """The cap re-arms each resume leg while usd_total stays cumulative, so
-    dividing the cumulative spend by the CURRENT leg's cap showed a resumed run
+def test_budget_meter_reads_this_executions_spend_not_the_runs_total(tmp_path: Path) -> None:
+    """The cap re-arms each resume execution while usd_total stays cumulative, so
+    dividing the cumulative spend by the CURRENT execution's cap showed a resumed run
     at "budget: 100%" having used 20% of it."""
 
     async def scenario() -> None:

@@ -229,7 +229,7 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
 
     Only this invocation's session, and only once it exists on disk: the
     refusal paths above return before any session is created. Every follow-up
-    leg runs under this invocation's flags (`--max-usd`, `--auto-approve`, ...),
+    execution runs under this invocation's flags (`--max-usd`, `--auto-approve`, ...),
     the ones the operator set for the run.
     """
     if rc == 2:
@@ -257,7 +257,7 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
         return rc
     # A parked start never ran: its next step is the resume line already
     # printed (once the checkout is free or the changes settled), not a
-    # follow-up to a leg that does not exist yet. An ask stays a one-shot.
+    # follow-up to an execution that does not exist yet. An ask stays a one-shot.
     with contextlib.suppress(ManifestError):
         manifest = read_manifest(layout.session_dir)
         if manifest.parked_task or manifest.mode == "ask":
@@ -587,7 +587,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         interactive=getattr(args, "interactive", False),
         model=getattr(args, "model", ""),
     )
-    # A resumed leg ends the way a fresh one does: asking for the next input
+    # A resumed execution ends the way a fresh one does: asking for the next input
     # (the TUI owns its screen).
     return rc if args.tui else _prompt_for_the_next_input(args, rc, session_id)
 

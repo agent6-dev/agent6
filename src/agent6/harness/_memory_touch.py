@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Which facts of the memory store a tool call touched, and how: the loop's
-per-leg bookkeeping for the use record (`memory.record_use`) reads this
+per-execution bookkeeping for the use record (`memory.record_use`) reads this
 after every dispatched call."""
 
 from __future__ import annotations

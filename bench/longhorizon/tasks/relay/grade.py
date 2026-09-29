@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Authoritative hidden grader for relay. Not shipped into the agent's repo.
 
-Usage: python3 grade.py <worktree-dir> [leg]
+Usage: python3 grade.py <worktree-dir> [session]
 Loads the six stage modules from the worktree and runs per-stage case
 batteries plus end-to-end cli runs. Components: parse, parse_lines,
 validate, sessionize, metrics, report, cli. Report/cli cases compare whole
@@ -408,7 +408,7 @@ def _cli_unreadable(c: Any, tmp: Path) -> bool:
     return rc == 3 and out.startswith("cannot read: ")
 
 
-def grade(worktree: str, leg: str = "main") -> dict[str, Any]:
+def grade(worktree: str, session: str = "main") -> dict[str, Any]:
     mods = _load_modules(worktree)
     with tempfile.TemporaryDirectory() as td:
         components = build_components(mods, Path(td))
@@ -429,7 +429,7 @@ def grade(worktree: str, leg: str = "main") -> dict[str, Any]:
 
     return {
         "task": "relay",
-        "leg": leg,
+        "session": session,
         "cases_passed": cases_passed,
         "cases_total": cases_total,
         "score": round(cases_passed / cases_total, 4) if cases_total else 0.0,

@@ -119,22 +119,22 @@ class VerifyView:
 
 @dataclass(frozen=True, slots=True)
 class BudgetView:
-    # Token counters are the current leg's (they pair with the per-leg
-    # enforcement caps); usd_total is cumulative across resume legs: "cost" on
+    # Token counters are the current execution's (they pair with the per-execution
+    # enforcement caps); usd_total is cumulative across resume executions: "cost" on
     # any surface means what the run cost, and the hub scanner
-    # (listing.scan_session_log) sums legs the same way, so the surfaces agree.
+    # (listing.scan_session_log) sums executions the same way, so the surfaces agree.
     input_total: int = 0
     output_total: int = 0
-    cache_read_total: int = 0  # the cached side of the input, leg-local too
+    cache_read_total: int = 0  # the cached side of the input, execution-local too
     cache_creation_total: int = 0
     usd_total: float = 0.0
-    usd_prior_legs: float = 0.0  # banked spend of completed resume legs
+    usd_prior_executions: float = 0.0  # banked spend of completed resume executions
     usd_partial: bool = False  # True if some models had no price (under-estimate)
-    usd_cap: float = 0.0  # [budget].max_usd for this leg (-1 unlimited, 0 unknown)
+    usd_cap: float = 0.0  # [budget].max_usd for this execution (-1 unlimited, 0 unknown)
     tokens_unmetered: int = 0  # input+output tokens of calls the meter could not price
     tokens_fallback_cap: int = 0  # [budget].max_tokens_fallback (-1 unlimited, 0 unknown)
-    # Subscription plan usage (percent-metered providers), leg-local like the
-    # caps: the account's reported percent, this leg's consumed points, and
+    # Subscription plan usage (percent-metered providers), execution-local like the
+    # caps: the account's reported percent, this execution's consumed points, and
     # [budget].max_percent. 0s when no percent-metered call has run.
     plan_used_percent: float = 0.0
     plan_consumed: float = 0.0
@@ -254,7 +254,9 @@ class SessionState:
     all_passed: bool | None = None
     verify_scoped: bool = False  # session.end scoped: the judging gate ran scoped
     end_reason: str = ""  # session.end reason: finish_session | steer_abort | provider_error | ...
-    unattended_questions: int = 0  # answered empty by the harness: nobody was attached (all legs)
+    unattended_questions: int = (
+        0  # answered empty by the harness: nobody was attached (all executions)
+    )
     undone_to: str = ""  # /undo's fork: the child session id surfaces follow
     undone_text: str = ""  # the message /undo took back (composer refill)
     finish_summary: str = ""  # the finish tool's summary: the agent's closing statement
@@ -303,8 +305,8 @@ LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
 def _answered_only[PromptT: (ApprovalPrompt, QuestionPrompt)](
     prompts: tuple[PromptT, ...],
 ) -> tuple[PromptT, ...]:
-    """Drop unanswered prompts at a leg boundary: they belong to the leg that
-    died holding them, and the new leg re-asks with restarted ids (see the
+    """Drop unanswered prompts at an execution boundary: they belong to the execution that
+    died holding them, and the new execution re-asks with restarted ids (see the
     SessionStart/ResumeStart arms)."""
     return tuple(p for p in prompts if p.answered)
 
@@ -338,11 +340,11 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
 
     match events.parse_event(event):
         case events.SessionStart(user_task=task):
-            # A session.start begins a leg: by definition it is running. The ask REPL
+            # A session.start begins an execution: by definition it is running. The ask REPL
             # re-enters wf.run() per follow-up on the same log, so a second
-            # session.start must clear the prior leg's terminal state. Unlike
+            # session.start must clear the prior execution's terminal state. Unlike
             # ResumeStart, do not bank usd: the REPL reuses one BudgetTracker,
-            # so usd_total is already cumulative across legs.
+            # so usd_total is already cumulative across executions.
             return replace(
                 state,
                 user_task=task,
@@ -359,16 +361,16 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
         case events.ResumeStart():
             # A resume restarts a finished/stopped run in place (it appends to the
             # same log): it is running again, so clear the terminal state. The new
-            # leg's budget counters start fresh, so bank the cumulative spend now
-            # (usd_total keeps its value until the leg's first budget.update) and
+            # execution's budget counters start fresh, so bank the cumulative spend now
+            # (usd_total keeps its value until the execution's first budget.update) and
             # zero the token and plan counters and caps: BudgetView documents them as the
-            # current leg's, and scan_session_log resets for the same reason.
-            # Unanswered prompts are the dead leg's: the resumed leg re-asks
+            # current execution's, and scan_session_log resets for the same reason.
+            # Unanswered prompts are the dead execution's: the resumed execution re-asks
             # with restarted ids, so a held-over orphan would read "waiting"
             # forever and duplicate when the same id is re-prompted.
             return replace(
                 state,
-                # `started` = a leg has begun, not "a session.start was seen": a
+                # `started` = an execution has begun, not "a session.start was seen": a
                 # fork is driven by resume(), so its fresh log never carries one.
                 started=True,
                 finished=False,
@@ -380,7 +382,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 pending_questions=_answered_only(state.pending_questions),
                 budget=replace(
                     state.budget,
-                    usd_prior_legs=state.budget.usd_total,
+                    usd_prior_executions=state.budget.usd_total,
                     input_total=0,
                     output_total=0,
                     usd_cap=0.0,
@@ -545,9 +547,9 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             plan_cap=plan_cap,
             plan_resets_at=plan_resets,
         ):
-            # The event's usd_total is the current leg's; the view's is
+            # The event's usd_total is the current execution's; the view's is
             # cumulative. usd_partial is sticky: unpriced spend in any prior
-            # leg keeps the cumulative total an under-estimate.
+            # execution keeps the cumulative total an under-estimate.
             return replace(
                 state,
                 budget=BudgetView(
@@ -555,8 +557,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                     output_total=ot,
                     cache_read_total=cr,
                     cache_creation_total=cc,
-                    usd_total=state.budget.usd_prior_legs + usd,
-                    usd_prior_legs=state.budget.usd_prior_legs,
+                    usd_total=state.budget.usd_prior_executions + usd,
+                    usd_prior_executions=state.budget.usd_prior_executions,
                     usd_partial=partial or state.budget.usd_partial,
                     usd_cap=ucap,
                     tokens_unmetered=unmet,
@@ -595,8 +597,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 for q in state.pending_questions
             )
             # Counted per event, as the listing scan counts: prompt ids restart
-            # on every leg, so a per-prompt flag would be overwritten by the
-            # next leg's answer to the same id.
+            # on every execution, so a per-prompt flag would be overwritten by the
+            # next execution's answer to the same id.
             return replace(
                 state,
                 pending_questions=new_q,
@@ -682,7 +684,7 @@ def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNode
             visit(str(child), depth + 1)
 
     # Sorted, not the map's own iteration order: insertion order live and
-    # filesystem order after a resume would show roots (a repeat ask/run leg)
+    # filesystem order after a resume would show roots (a repeat ask/run execution)
     # in a different order than `tree_order` gives list_tasks and every other
     # surface. A node whose parent is missing follows the roots, as it does
     # there.
@@ -831,7 +833,7 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         state.budget.usd_total,
         partial=state.budget.usd_partial,
         usd_cap=state.budget.usd_cap,
-        usd_prior_legs=state.budget.usd_prior_legs,
+        usd_prior_executions=state.budget.usd_prior_executions,
     )
     for ap, row in zip(state.pending_approvals, d["pending_approvals"], strict=True):
         row["head"], row["payload"] = approval_parts(ap.prompt)
@@ -843,7 +845,7 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     if session_dir is not None:
         word, reason = status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in LIVE_STATUS_WORDS
-        # The dir is authoritative for identity: a resumed/forked leg's log can
+        # The dir is authoritative for identity: a resumed/forked execution's log can
         # start at loop.resume.start, folding session_id/user_task empty. Fill them
         # here so every consumer (web, watch, SSE) carries the same identity.
         # The same fold the CLI banner and the TUI composer read, so a web

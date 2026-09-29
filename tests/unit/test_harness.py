@@ -337,7 +337,7 @@ def _turn(**kw: Any) -> Any:
 
 
 def _ctx(wf: Harness, state: Any, iteration: int = 1) -> Any:
-    return wf._turn_context(state, iteration=iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+    return wf._turn_context(state, iteration=iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
 
 
 def _plateau_stop() -> Stop:
@@ -7444,7 +7444,7 @@ def test_session_start_carries_the_operators_words_under_a_seed() -> None:
 def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -> None:
     """G: interactively, going quiet is a TURN BOUNDARY. The run parks (same
     in-memory conversation) and the operator's steer continues it -- no
-    resume leg; an "abort" steer ends it as steer_abort."""
+    resume execution; an "abort" steer ends it as steer_abort."""
     steers = iter(["keep going: also cover sub()"])
     wf = _wf(
         mode="run",
@@ -7732,7 +7732,7 @@ def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
     assert turn_replay_allowed(tmp_path, 5, _no) is False  # matching + decline
     assert marker.exists()  # stays for the next resume to ask again
     assert turn_replay_allowed(tmp_path, 5, _yes) is True  # matching + accept
-    assert marker.exists(), "the answer is spent by the leg, not by the question"
+    assert marker.exists(), "the answer is spent by the execution, not by the question"
     assert asked == [(5, ("run_command",)), (5, ("run_command",))]
 
 
@@ -7903,7 +7903,7 @@ def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
     assert "Q: Drop the modal or keep it?\n  A: Use the inline item.\n" in text
     assert "unrelated instruction" not in text
     assert len(st.decisions_recorded) == 3
-    # The check reads the file, not the capped injection view: a leg whose
+    # The check reads the file, not the capped injection view: an execution whose
     # rulings outgrow the cap still finds every one of them on disk.
     with decisions_path(state_dir).open("a", encoding="utf-8") as fh:
         fh.write("- 2026-08-23T00:00:00Z [other] Q: pad\n  A: " + "x" * 5000 + "\n")
@@ -8192,7 +8192,7 @@ def test_a_flat_ask_user_call_records_its_ruling(tmp_path: Path) -> None:
 def test_ask_user_args_the_dispatcher_coerced_still_record_their_ruling(tmp_path: Path) -> None:
     """A model sent `questions` as a JSON string: the dispatcher coerced it and
     the operator answered, then the bookkeeping parsed the RAW input again and
-    the ValidationError escaped the loop, so the leg died after the answer was
+    the ValidationError escaped the loop, so the execution died after the answer was
     given. The result carries what was asked; nothing parses the input twice."""
     import json
 

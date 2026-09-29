@@ -34,9 +34,9 @@ def tail_events(
       True (lets a caller cancel a follow, e.g. on client disconnect).
     - If *follow* is false, yields existing lines and returns.
     - If *start_at* is given, the bytes before that offset are skipped: a
-      resumed run's journal already holds the prior legs a viewer has seen,
-      and the caller measures the end before the leg starts, so a line the
-      leg appends before the tail attaches is not lost with them.
+      resumed run's journal already holds the prior executions a viewer has seen,
+      and the caller measures the end before the execution starts, so a line the
+      execution appends before the tail attaches is not lost with them.
     - Skips malformed JSON lines silently (the writer may have a partial
       write in flight; we'll pick it up on the next poll).
 

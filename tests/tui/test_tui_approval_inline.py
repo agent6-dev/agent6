@@ -135,8 +135,8 @@ def test_a_typed_message_never_answers_the_approval(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_a_resumed_leg_drops_the_previous_legs_approval(tmp_path: Path) -> None:
-    """A leg boundary must withdraw an unanswered approval from the dead leg."""
+def test_a_resumed_execution_drops_the_previous_executions_approval(tmp_path: Path) -> None:
+    """An execution boundary must withdraw an unanswered approval from the dead execution."""
     run = tmp_path / "live-run-HHHHHH"
     _live_run(run)
 

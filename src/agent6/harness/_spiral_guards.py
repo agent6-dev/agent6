@@ -31,7 +31,7 @@ def tool_error_ladder() -> Ladder:
 
 @dataclass(slots=True)
 class SpiralGuard:
-    """Leg-local (never snapshotted): a resumed leg starts unspiralled."""
+    """Execution-local (never snapshotted): a resumed execution starts unspiralled."""
 
     last_call_sig: str | None = None
     call_streak: int = 0

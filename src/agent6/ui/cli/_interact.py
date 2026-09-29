@@ -159,7 +159,7 @@ def build_approver(
     file while it waits, so `agent6 answer`, the web, or a front-end attached
     after the question was put to the terminal answers it too.
 
-    `console_cell` and `steer_cell` are the CLI leg's late-bound console view
+    `console_cell` and `steer_cell` are the CLI execution's late-bound console view
     and SteerState, read at prompt time: the view pauses its heartbeat around
     the terminal prompt, and an operator prompt counts as a Ctrl-C boundary,
     so with a pause armed the prompt says so and the pause menu opens right

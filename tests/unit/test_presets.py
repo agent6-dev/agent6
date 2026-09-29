@@ -67,7 +67,7 @@ def test_custom_user_preset(repo: Path) -> None:
 
 
 def test_only_a_flag_selected_preset_is_replayed_on_resume(repo: Path) -> None:
-    """A resumed/forked leg re-applies --preset but must NOT hand a
+    """A resumed/forked execution re-applies --preset but must NOT hand a
     config-selected name back as an override: _select_preset would call it a
     flag, which outranks every config layer, so a run whose repo config beat a
     global preset came back from resume with the preset winning -- gaining a

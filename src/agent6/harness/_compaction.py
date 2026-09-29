@@ -445,7 +445,7 @@ def request_prefix_chars(system: str, tools: Sequence[ToolDefinition]) -> int:
     The model's window bounds the WHOLE request, so a threshold measured on the
     conversation alone leaves a band, exactly the size of this prefix, where
     the loop sees room and the provider answers 400 (prompt too long), and a
-    resumed leg re-issues the same over-window request.
+    resumed execution re-issues the same over-window request.
     The system prompt is the unbounded half: AGENTS.md rides in it whole."""
     return len(system) + sum(
         len(t.name) + len(t.description) + len(json.dumps(t.input_schema, separators=(",", ":")))
@@ -552,7 +552,7 @@ def _tool_result_pointers(
 def count_elisions(conversation: Conversation) -> tuple[int, int]:
     """The count of elision markers in the context, and of live gists among them.
 
-    A resumed or forked leg re-announces these: a fork's fresh logs.jsonl has
+    A resumed or forked execution re-announces these: a fork's fresh logs.jsonl has
     no compact.dropped events to fold, so the status surfaces would otherwise
     report zero over a restored context full of markers.
     """

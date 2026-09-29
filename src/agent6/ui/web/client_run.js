@@ -354,12 +354,12 @@ function paintDetails(cards, s, asOf) {
     const bar = el('div', 'bar' + (frac > 0.85 ? ' warn' : '')); const sp = el('span'); sp.style.width = (frac*100)+'%'; bar.appendChild(sp); w.appendChild(bar); return w;
   };
   // Metered spend vs max_usd (-1 = unlimited); unmetered tokens vs the fallback
-  // cap only when that ledger has traffic. The cap re-arms each resume leg, so
-  // the bar meters this leg's spend (usd_total - usd_prior_legs) while the cost
+  // cap only when that ledger has traffic. The cap re-arms each resume execution, so
+  // the bar meters this execution's spend (usd_total - usd_prior_executions) while the cost
   // figure stays cumulative; the text is the server's `usd_text`.
   const usdCap = b.usd_cap || 0;
-  const legUsd = Math.max(0, (b.usd_total || 0) - (b.usd_prior_legs || 0));
-  const usdFrac = usdCap > 0 ? Math.min(1, legUsd / usdCap) : 0;
+  const executionUsd = Math.max(0, (b.usd_total || 0) - (b.usd_prior_executions || 0));
+  const usdFrac = usdCap > 0 ? Math.min(1, executionUsd / usdCap) : 0;
   cards.budget.appendChild(barRow('cost', usdFrac, b.usd_text || ''));
   if (b.tokens_unmetered) {
     const fbCap = b.tokens_fallback_cap || 0;

@@ -40,7 +40,7 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
     if not session_is_live(layout.session_dir):
         refuse(
             f"session {layout.session_id} is not running; a steer needs a"
-            f" live run. Queue one for its next leg instead:"
+            f" live run. Queue one for its next execution instead:"
             f" agent6 resume {layout.session_id} --steer TEXT"
         )
         return 2

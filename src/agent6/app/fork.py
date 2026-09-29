@@ -13,7 +13,7 @@ A fork of a run is the repo at the checkpoint's committed HEAD, in its own
 worktree, plus the conversation up to that turn. `create_fork` adds a linked
 git worktree detached at that sha (under `[parallel].workdir`, beside the
 lane clones) and records it in the manifest: the fork's chain grows there,
-`agent6 resume <fork>` runs the leg there, and the source run and the
+`agent6 resume <fork>` runs the execution there, and the source run and the
 operator's checkout stay as they are. The worktree shares the repository's
 refs, so `sessions diff|commits|merge <fork>` read the fork like any run's,
 and `sessions prune` removes the worktree once the fork is merged. A plan or
@@ -212,7 +212,7 @@ def _select_checkpoint_path(
 @dataclass(frozen=True, slots=True)
 class Checkout:
     """A fork's own checkout: its linked worktree and the repository git dir
-    that worktree points into, recorded together (a fork leg's jail grants
+    that worktree points into, recorded together (a fork execution's jail grants
     the dir from this record, never from the worktree's `.git` pointer)."""
 
     worktree: Path
@@ -399,7 +399,7 @@ def create_fork(
     + DAG, the manifest, `agent6/<child>` cut at the checkpoint's committed
     HEAD, the lineage record and, for a run with *worktree* set, a linked
     worktree detached at that sha which the manifest names and `resume` runs
-    the leg in. With *worktree* off (`/undo`) the child works in *checkout*
+    the execution in. With *worktree* off (`/undo`) the child works in *checkout*
     (a worktree with its recorded git dir, or None for the operator's): the
     checkout the undone session ran in, which its source, an ancestor up the
     lineage, need not share, with *checkout_untracked* the operator's files in
@@ -436,7 +436,7 @@ def create_fork(
         path = subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
         try:
             # The git dir the worktree points into, taken from the repository
-            # agent6 runs in: the record a fork leg's jail grants from.
+            # agent6 runs in: the record a fork execution's jail grants from.
             checkout = Checkout(path, git_common_dir(cwd))
             add_worktree(cwd, path, plan.forked_from_sha)
         except GitError as exc:

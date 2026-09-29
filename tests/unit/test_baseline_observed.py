@@ -99,10 +99,12 @@ def test_the_worker_is_told_when_it_inherited_a_red_gate(monkeypatch: pytest.Mon
     assert any("already failing" in str(n) for n in turn.tool_results)
 
 
-def test_a_leg_that_moved_past_the_base_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_execution_that_moved_past_the_base_claims_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """THE resume bug: every reason an operator resumes -- a budget stop, an
-    iteration cap, a provider error -- commits the leg's work first. Leg two
-    then opens on a CLEAN tree whose HEAD already carries leg one's breakage,
+    iteration cap, a provider error -- commits the execution's work first. Execution two
+    then opens on a CLEAN tree whose HEAD already carries execution one's breakage,
     and "has the model edited yet" read that as the base. `/parallel` does the
     same by merging lane commits into the workspace."""
     state, turn = _state(), _turn()

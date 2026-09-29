@@ -76,11 +76,11 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     assert seen == [""]
 
 
-def test_resume_refuses_a_malformed_steer_directive_before_any_leg(
+def test_resume_refuses_a_malformed_steer_directive_before_any_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`resume --steer "/pin"` (every front-end's continue lands here) is
-    refused before a session is even resolved: a leg spent on a directive
+    refused before a session is even resolved: an execution spent on a directive
     the loop declines ends as a silent finish and flips a passed run to
     failed."""
     monkeypatch.chdir(tmp_path)
@@ -124,11 +124,11 @@ def _stub_start_of_run(
 def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A parked leg never ran, but its manifest recorded a FLAG-selected preset.
+    """A parked execution never ran, but its manifest recorded a FLAG-selected preset.
     Restarting it must re-stamp the SAME (name, from_flag) so a later resume/fork
     replays the flag precedence; deriving the stamp from the (empty) resume
     `preset` dropped the from_flag bit and silently downgraded a flag-selected
-    preset's blocking veto on the next leg."""
+    preset's blocking veto on the next execution."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -147,7 +147,7 @@ def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
 def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resume that DOES pass --preset is a fresh flag choice for this leg, so
+    """A resume that DOES pass --preset is a fresh flag choice for this execution, so
     it must NOT pin the manifest's old stamp -- run_task derives from `preset`."""
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -289,7 +289,7 @@ def test_plan_resume_requires_the_planner_role(
         _cmd_resume(None, "plan-AAAA11", force=False)
 
 
-def test_resume_preset_flag_is_recorded_for_later_legs(
+def test_resume_preset_flag_is_recorded_for_later_executions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`resume --preset X` continues the run under X and stamps it as the run's
@@ -309,7 +309,7 @@ def test_resume_preset_flag_is_recorded_for_later_legs(
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)  # no key in a unit test
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _nothing)
-    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _finished_execution)
     assert _cmd_resume(None, "plan-PRESET1", force=False, preset="quick") == 0
     stamp = read_manifest(session_dir).harness
     assert (stamp.preset, stamp.preset_from_flag, stamp.replay_preset) == ("quick", True, "quick")
@@ -325,7 +325,7 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     written before the preflight, every refusal past that point (the checkout
     lock, a missing snapshot, the git guards, config, isolation) still read
     "resuming" from the hub and "alive" from the listing."""
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
     from agent6.app.preflight import SessionRefused
 
     repo = tmp_path / "repo"
@@ -362,24 +362,24 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     def _none(*_a: object, **_k: object) -> None:
         return None
 
-    def _leg(*_a: object, **_k: object) -> LegEnd:
-        order.append("leg")
-        assert (session_dir / "worker.pid").is_file()  # owned before the leg runs
-        return LegEnd(rc=0)
+    def _execution(*_a: object, **_k: object) -> ExecutionEnd:
+        order.append("execution")
+        assert (session_dir / "worker.pid").is_file()  # owned before the execution runs
+        return ExecutionEnd(rc=0)
 
     order.clear()
     monkeypatch.setattr(resume_mod, "select_isolation", _select)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _none)  # no key in a unit test
-    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _execution)
     assert _cmd_resume(None, "plan-PIDORDER", force=False) == 0
-    assert order == ["isolation", "pid", "leg"]
+    assert order == ["isolation", "pid", "execution"]
 
 
 def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A pick becomes the run's recorded default only when its leg starts; a
-    later preflight refusal must leave the last running leg's choices intact."""
+    """A pick becomes the run's recorded default only when its execution starts; a
+    later preflight refusal must leave the last running execution's choices intact."""
     from agent6.app.preflight import SessionRefused
     from agent6.sessions.manifest import read_manifest
 
@@ -415,7 +415,7 @@ def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Approving a replay spends the marker only when the provider replay begins.
-    Clearing it before run_leg setup meant a provider-construction or MCP startup
+    Clearing it before run_execution setup meant a provider-construction or MCP startup
     failure made the next attempt replay the crashed turn's tools without warning."""
     from unittest.mock import MagicMock
 
@@ -440,7 +440,7 @@ def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
     def _fail_startup(*_a: object, **_k: object) -> object:
         raise _Stop()
 
-    monkeypatch.setattr(resume_mod, "run_leg", _fail_startup)
+    monkeypatch.setattr(resume_mod, "run_execution", _fail_startup)
     frontend = MagicMock()
     frontend.confirm_replay_after_crash.return_value = True
 
@@ -460,10 +460,10 @@ def _nothing(*_a: object, **_k: object) -> None:
     return None
 
 
-def _finished_leg(*_a: object, **_k: object) -> object:
-    from agent6.app._leg import LegEnd
+def _finished_execution(*_a: object, **_k: object) -> object:
+    from agent6.app._execution import ExecutionEnd
 
-    return LegEnd(0)
+    return ExecutionEnd(0)
 
 
 def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
@@ -473,7 +473,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
     the session's worker identity when closing its console view fails."""
     from unittest.mock import MagicMock
 
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -484,12 +484,12 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     session_dir = state_dir(repo) / "sessions" / "runs" / "plan-TEARDOWN"
 
-    def _leg(*_a: object, **_k: object) -> LegEnd:
-        return LegEnd(rc=0)
+    def _execution(*_a: object, **_k: object) -> ExecutionEnd:
+        return ExecutionEnd(rc=0)
 
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
-    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _execution)
     frontend = MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
 
@@ -506,7 +506,7 @@ def test_a_misspelled_away_mode_refuses_a_resume(
 ) -> None:
     """The typo refusal reads the raw launcher value on resume as on run; the
     valid-or-recorded away answer hid the typo and let the resume start."""
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -518,10 +518,10 @@ def test_a_misspelled_away_mode_refuses_a_resume(
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
 
-    def _leg(*_a: object, **_k: object) -> LegEnd:
+    def _execution(*_a: object, **_k: object) -> ExecutionEnd:
         raise AssertionError("the resume started")
 
-    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _execution)
 
     assert _cmd_resume(None, "plan-TYPO", force=False) == 2
     assert "'denny' is not an away-mode" in capsys.readouterr().err
@@ -538,7 +538,7 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     from unittest.mock import MagicMock
 
     import agent6.app.run as run_mod
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
     from agent6.sessions.ipc import read_worker_pid, write_worker_pid
 
     repo = tmp_path / "repo"
@@ -553,11 +553,11 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     child = subprocess.Popen(["sleep", "60"])
     try:
 
-        def _leg(*_a: object, events: object, **_k: object) -> LegEnd:
+        def _execution(*_a: object, events: object, **_k: object) -> ExecutionEnd:
             events.emit("session.start", session_id="parked-DETACH", mode="run", user_task="t")  # type: ignore[attr-defined]
-            return LegEnd(0, detach_requested=True)
+            return ExecutionEnd(0, detach_requested=True)
 
-        monkeypatch.setattr(run_mod, "run_leg", _leg)
+        monkeypatch.setattr(run_mod, "run_execution", _execution)
         monkeypatch.setattr(run_mod, "select_isolation", _unconfined)
         frontend = MagicMock()
 
@@ -624,7 +624,7 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
 def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ "the tree holds changes no commit has ...; this leg's next commit takes
+    """ "the tree holds changes no commit has ...; this execution's next commit takes
     them" named the operator's files untracked when the run started, which
     every chain commit leaves out."""
     from unittest.mock import MagicMock
@@ -672,11 +672,11 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     )
     write_untracked_at_start(session_dir, {"notes.md"})
     (repo / "notes.md").write_text("the operator's, since before the run\n", encoding="utf-8")
-    (repo / "seed.txt").write_text("edited between legs\n", encoding="utf-8")
+    (repo / "seed.txt").write_text("edited between executions\n", encoding="utf-8")
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
-    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _finished_execution)
     assert (
         resume_mod.resume_task(
             None, "note-UNTRACKED", started_at=time.time(), frontend=MagicMock(), force=False
@@ -686,14 +686,14 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     notes = [line for line in capsys.readouterr().err.splitlines() if "no commit has" in line]
     assert notes == [
         "[agent6] the tree holds changes no commit has (seed.txt);"
-        " this leg's next commit takes them"
+        " this execution's next commit takes them"
     ]
 
 
 def test_the_resume_note_names_the_files_it_hands_to_the_operator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A file that appeared between legs and no tool of the run wrote joins
+    """A file that appeared between executions and no tool of the run wrote joins
     the operator's set and leaves every later commit of the run, and the
     resume said nothing about it: an operator whose command-written file
     vanished from the run's commits had nothing to read. The note names
@@ -743,11 +743,11 @@ def test_the_resume_note_names_the_files_it_hands_to_the_operator(
     )
     write_untracked_at_start(session_dir, {"notes.md"})
     (repo / "notes.md").write_text("the operator's, since before the run\n", encoding="utf-8")
-    (repo / "build.log").write_text("written by a command between legs\n", encoding="utf-8")
+    (repo / "build.log").write_text("written by a command between executions\n", encoding="utf-8")
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
-    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _finished_execution)
     assert (
         resume_mod.resume_task(
             None, "note-ARRIVED", started_at=time.time(), frontend=MagicMock(), force=False
@@ -762,9 +762,9 @@ def test_the_resume_note_names_the_files_it_hands_to_the_operator(
 def test_plan_resume_builds_the_planner_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The resumed leg's DRIVING provider is the planner route: with both roles
+    """The resumed execution's DRIVING provider is the planner route: with both roles
     configured, the old path silently switched a plan run to the worker model
-    on its second leg (and stamped the transcript seat "worker")."""
+    on its second execution (and stamped the transcript seat "worker")."""
     import dataclasses
 
     import agent6.ui.cli.resume as cli_resume_mod
@@ -777,7 +777,7 @@ def test_plan_resume_builds_the_planner_provider(
     _plan_session_dir(repo, "plan-BBBB22")
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     # The default run_commands="ask" with no tty now REFUSES rather than
-    # hanging; this test is about which provider drives the leg.
+    # hanging; this test is about which provider drives the execution.
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
 
     def _yes(*_a: object) -> bool:
@@ -870,8 +870,8 @@ def test_a_resumed_ask_needs_no_repo_and_answers_where_a_fresh_one_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A fresh ask is read-only and may run outside a git repo; resuming one
-    refused with talk of branches an ask never cuts, and a leg that DID run
-    printed no answer and left transcript.md holding the first leg's."""
+    refused with talk of branches an ask never cuts, and an execution that DID run
+    printed no answer and left transcript.md holding the first execution's."""
     from agent6.ui.cli._ask import save_ask_transcript
 
     outside = tmp_path / "notarepo"
@@ -890,7 +890,7 @@ def test_a_resumed_ask_needs_no_repo_and_answers_where_a_fresh_one_does(
     save_ask_transcript(layout, question="q", answer="first")
     save_ask_transcript(layout, question="q", answer="second")
     text = (ask / "transcript.md").read_text(encoding="utf-8")
-    assert "first" in text and "second" in text, "a later leg overwrote the answer"
+    assert "first" in text and "second" in text, "a later execution overwrote the answer"
 
 
 def test_resuming_a_finished_run_without_a_steer_is_refused(
@@ -967,7 +967,7 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, ended: bool
 ) -> None:
     """A finished run resumed with `--steer` kept its original task, so its
-    listing row and the squash merge of the new leg were titled with work an
+    listing row and the squash merge of the new execution were titled with work an
     earlier merge had already landed. The steer IS the work (the fork rule,
     `stamp_fork_task`, for the only resume a finished run allows); a run that
     had not finished keeps its task, the steer being a follow-up. Stamped past
@@ -1010,7 +1010,7 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
-    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _finished_execution)
 
     # No snapshot: refused, and the task stays.
     rc = resume_mod.resume_task(
@@ -1139,11 +1139,11 @@ def test_a_parked_resume_says_it_is_starting_once_it_starts(
 ) -> None:
     """resume_task announced "starting it now" before handing the run over,
     so a refused start (no key) read as started; the lifecycle that starts
-    the leg says so, after its refusals."""
+    the execution says so, after its refusals."""
     from unittest.mock import MagicMock
 
     from agent6.app import run as run_mod
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1156,10 +1156,10 @@ def test_a_parked_resume_says_it_is_starting_once_it_starts(
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
     monkeypatch.setattr(run_mod, "select_isolation", _unconfined)
 
-    def _leg(*_a: object, **_k: object) -> LegEnd:
-        return LegEnd(0)
+    def _execution(*_a: object, **_k: object) -> ExecutionEnd:
+        return ExecutionEnd(0)
 
-    monkeypatch.setattr(run_mod, "run_leg", _leg)
+    monkeypatch.setattr(run_mod, "run_execution", _execution)
     rc = resume_mod.resume_task(
         None, "parked-STARTS", started_at=time.time(), frontend=MagicMock(), force=False
     )
@@ -1172,9 +1172,9 @@ def test_a_parked_resume_says_it_is_starting_once_it_starts(
 def test_resume_model_flag_is_recorded_and_replayed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`resume --model X` runs the leg on X and stamps it on the run, so a
+    """`resume --model X` runs the execution on X and stamps it on the run, so a
     later plain resume routes to X again; a refused route stamps nothing."""
-    from agent6.app.manifest import stamp_leg
+    from agent6.app.manifest import stamp_execution
     from agent6.config import load_config
     from agent6.sessions.manifest import read_manifest
 
@@ -1196,7 +1196,7 @@ def test_resume_model_flag_is_recorded_and_replayed(
     monkeypatch.setattr(resume_mod, "route_preflight", _route)
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _nothing)
-    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _finished_execution)
     assert _cmd_resume(None, "plan-MODEL1", force=False, model="claude-refused") == 2
     assert read_manifest(session_dir).models.driver_from_flag is False
     assert _cmd_resume(None, "plan-MODEL1", force=False, model="claude-y") == 0
@@ -1205,10 +1205,10 @@ def test_resume_model_flag_is_recorded_and_replayed(
     assert (stamped.driver.provider, stamped.driver.model) == ("anthropic", "claude-y")
     cfg = load_config(tmp_path / "cfg.toml")
     route = cfg.model_route("planner", "claude-y")
-    stamp_leg(session_dir, cfg.with_model_route("planner", route), "plan", "none")
+    stamp_execution(session_dir, cfg.with_model_route("planner", route), "plan", "none")
     assert read_manifest(session_dir).models.driver_from_flag
     assert _cmd_resume(None, "plan-MODEL1", force=False) == 0
-    # The replayed leg carries the recorded pair, spelled provider/model.
+    # The replayed execution carries the recorded pair, spelled provider/model.
     assert routes == [
         ("claude-refused", "claude-refused"),
         ("claude-y", "claude-y"),

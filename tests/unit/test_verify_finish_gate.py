@@ -103,7 +103,7 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
     truth instead of `completed` (true for any deliberate finish).
 
     "failed" means someone OBSERVED a red gate. Folding "no verify ran this
-    leg" into it printed "the gate is red" over a gate that never ran and sent
+    execution" into it printed "the gate is red" over a gate that never ran and sent
     the operator to bisect the base commit for a failure that never happened;
     those finishes are "unverified"."""
     assert _verified(_wf(verify=True), last_ok=True, edited_since=False) == "passed"
@@ -112,7 +112,7 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
     assert _verified(_wf(verify=True), last_ok=False, edited_since=True) == "failed"
     # Green but edited since: no observation covers the final tree.
     assert _verified(_wf(verify=True), last_ok=True, edited_since=True) == "unverified"
-    # Never observed this leg: not red, not green.
+    # Never observed this execution: not red, not green.
     assert _verified(_wf(verify=True), last_ok=None) == "unverified"
     # Gateless: nothing ever gated this run, so there is no verdict to claim.
     assert _verified(_wf(verify=False), last_ok=None) == "not_applicable"
@@ -298,8 +298,10 @@ def _resumed_state(wf: Harness, snap: Any) -> LoopState:
     return state
 
 
-def test_a_resumed_leg_carries_the_verify_verdict_over_an_unmoved_tree(tmp_path: Path) -> None:
-    """last_verify_ok was leg-scoped, so resuming a green-finished run and
+def test_a_resumed_execution_carries_the_verify_verdict_over_an_unmoved_tree(
+    tmp_path: Path,
+) -> None:
+    """last_verify_ok was execution-scoped, so resuming a green-finished run and
     finishing without edits read "unverified" (previously: exit 4 claiming a
     red gate) over the very tree the gate approved. The verdict carries when
     HEAD is the snapshot's and the worktree is clean; baseline_ok is about the
@@ -312,14 +314,14 @@ def test_a_resumed_leg_carries_the_verify_verdict_over_an_unmoved_tree(tmp_path:
     assert state.verify.edited_since is False
     assert state.verify.baseline_ok is False
     assert wf.gate.verification(state.verify) == "passed"
-    # A red observation carries the same way: the resumed leg stays answerable.
+    # A red observation carries the same way: the resumed execution stays answerable.
     red = _resumed_state(wf, _snap(head_sha=head, last_verify_ok=False))
     assert red.verify.last_ok is False
 
 
 def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> None:
-    """An operator commit or edit between legs means no observation covers
-    THIS tree: the leg starts unobserved (fails closed, like the baseline
+    """An operator commit or edit between executions means no observation covers
+    THIS tree: the execution starts unobserved (fails closed, like the baseline
     probe), never wrongly green or red."""
     import subprocess as sp
 
@@ -327,13 +329,13 @@ def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> N
     wf = _wf(verify=True, root=tmp_path)
     green = {"last_verify_ok": True, "edited_since_verify": False, "baseline_ok": True}
 
-    # Worktree dirtied between legs.
+    # Worktree dirtied between executions.
     (tmp_path / "a.txt").write_text("edited\n", encoding="utf-8")
     state = _resumed_state(wf, _snap(head_sha=head, **green))
     assert state.verify.last_ok is None
     assert state.verify.baseline_ok is True  # the base commit did not move
 
-    # HEAD moved forward between legs.
+    # HEAD moved forward between executions.
     sp.run(["git", "commit", "-qam", "operator work"], cwd=tmp_path, check=True)
     assert _resumed_state(wf, _snap(head_sha=head, **green)).verify.last_ok is None
 
@@ -341,10 +343,10 @@ def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> N
     assert _resumed_state(wf, _snap(head_sha="", **green)).verify.last_ok is None
 
 
-def test_a_resumed_leg_carries_the_scoped_gate(tmp_path: Path) -> None:
-    """The full gate overran once: the resumed leg goes straight to the
+def test_a_resumed_execution_carries_the_scoped_gate(tmp_path: Path) -> None:
+    """The full gate overran once: the resumed execution goes straight to the
     scoped form instead of burning the timeout again. Carried whatever the
-    tree did between legs (the fact is about the suite, not the tree), while
+    tree did between executions (the fact is about the suite, not the tree), while
     the verdict itself still drops when the tree moved."""
     _git_seed(tmp_path)
     wf = _wf(verify=True, root=tmp_path)
@@ -395,7 +397,7 @@ def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
 
 def _verify_gate(wf: Harness, state: LoopState, turn: Any) -> None:
     """The verify gate's answer over *turn*, applied through the loop."""
-    ctx = wf._turn_context(state, iteration=turn.iteration, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._refuse(state, turn, verify_finish(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
@@ -513,7 +515,7 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
     the gate is withheld for the rest of the run like `run_commands = "no"`,
     the model is told so, and the finish stands unverified. Bouncing the
     finish against a denial burned every retry on a wall nobody could open
-    (a live machine leg failed with its fix committed and tests green)."""
+    (a live machine execution failed with its fix committed and tests green)."""
     from agent6.tools.errors import ToolDenied
 
     wf, dispatcher = _harness_wf("finish", retries=2)
@@ -615,7 +617,7 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
     the same pytest command scoped to the tests nearest the run's diff, the
     verdict comes from the scoped run, and the notice names the scope. Later
     gates go straight to the scoped form instead of burning the timeout again.
-    Grounds the SWE-rebench broke-P2P class: big-repo legs finished over a
+    Grounds the SWE-rebench broke-P2P class: big-repo executions finished over a
     gate that timed out and certified nothing."""
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
@@ -713,7 +715,7 @@ def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
 ) -> None:
     """run_verify_command exit 124 from the model's OWN call gets the scoped
     follow-up too. The harness-gate fallback alone never reached this flow (a
-    self-judged turn is not re-judged), so pilot legs timed out at the full
+    self-judged turn is not re-judged), so pilot executions timed out at the full
     budget with no scoped re-run ever firing."""
     monkeypatch.setattr(RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
@@ -834,7 +836,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     wf._end_gates(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
-        wf._turn_context(state, iteration=turn.iteration, leg_start=1),  # pyright: ignore[reportPrivateUsage]
+        wf._turn_context(state, iteration=turn.iteration, execution_start=1),  # pyright: ignore[reportPrivateUsage]
         ending="silent_finish",
         gates=SILENT_END_GATES,
     )
@@ -873,7 +875,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     wf._end_gates(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
-        wf._turn_context(state, iteration=turn.iteration, leg_start=1),  # pyright: ignore[reportPrivateUsage]
+        wf._turn_context(state, iteration=turn.iteration, execution_start=1),  # pyright: ignore[reportPrivateUsage]
         ending="silent_finish",
         gates=SILENT_END_GATES,
     )

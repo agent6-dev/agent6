@@ -32,10 +32,10 @@ def test_the_planner_is_told_once_on_a_low_budget_or_too_many_turns() -> None:
     assert nudge.log == "LOOP: plan finish-nudge at iter 1 (turns=False, low_budget=True)"
     assert plan_budget_nudge(state, low) is None
 
-    late = turn_context(mode="plan", iteration=PLAN_NUDGE_AFTER_ITERS + 4, leg_start=5)
+    late = turn_context(mode="plan", iteration=PLAN_NUDGE_AFTER_ITERS + 4, execution_start=5)
     nudge = plan_budget_nudge(_state(), late)
     assert nudge is not None and "turns=True, low_budget=False" in nudge.log
-    early = turn_context(mode="plan", iteration=PLAN_NUDGE_AFTER_ITERS, leg_start=2)
+    early = turn_context(mode="plan", iteration=PLAN_NUDGE_AFTER_ITERS, execution_start=2)
     assert plan_budget_nudge(_state(), early) is None
     assert plan_budget_nudge(_state(), turn_context(budget_remaining=lambda: 0.1)) is None
 

@@ -279,7 +279,7 @@ def session_facts_provider(
     budget: BudgetTracker, model: str, run_commands: str, isolation: str
 ) -> Callable[[], SessionFacts]:
     """The live-facts thunk the front-end's pause banner reads. The fixed
-    fields bind now (they never change for the leg); spend reads live."""
+    fields bind now (they never change for the execution); spend reads live."""
 
     def facts() -> SessionFacts:
         spend, partial = budget.estimate_usd()

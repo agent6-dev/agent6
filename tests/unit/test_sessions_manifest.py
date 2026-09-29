@@ -376,20 +376,22 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: Path) -> None:
     [
         (True, True, "inferred", "configured"),  # config outranks the pin
         (False, True, "adopted", "adopted"),  # an adopted gate stays adopted
-        (False, True, "", "inferred"),  # the leg had to re-infer
-        (False, False, "inferred", ""),  # gateless leg claims nothing
+        (False, True, "", "inferred"),  # the execution had to re-infer
+        (False, False, "inferred", ""),  # gateless execution claims nothing
         (True, False, "inferred", ""),  # a dropped gate claims nothing, even over config
     ],
 )
-def test_a_resumed_leg_reports_whose_gate_it_used(
+def test_a_resumed_execution_reports_whose_gate_it_used(
     configured: bool, has_gate: bool, pinned: str, expected: str
 ) -> None:
-    """Precedence across legs: an operator's config outranks whatever the run
+    """Precedence across executions: an operator's config outranks whatever the run
     pinned, the pin outranks re-inference, and the manifest names which one
-    this leg actually ran under."""
-    from agent6.app.resume import leg_gate_origin
+    this execution actually ran under."""
+    from agent6.app.resume import execution_gate_origin
 
-    assert leg_gate_origin(configured=configured, has_gate=has_gate, pinned=pinned) == expected
+    assert (
+        execution_gate_origin(configured=configured, has_gate=has_gate, pinned=pinned) == expected
+    )
 
 
 def test_a_known_mode_is_never_reported_as_an_unknown_one(tmp_path: Path) -> None:
@@ -433,42 +435,42 @@ def test_each_mode_gets_its_own_tool_surface() -> None:
         mode_tools("wat")
 
 
-def test_a_leg_restamps_a_config_selected_preset(tmp_path: Path) -> None:
+def test_a_execution_restamps_a_config_selected_preset(tmp_path: Path) -> None:
     """A plain resume re-resolves a config-selected preset, so the manifest
-    must replace the prior leg's name with the preset this leg uses."""
-    from agent6.app.manifest import stamp_leg
+    must replace the prior execution's name with the preset this execution uses."""
+    from agent6.app.manifest import stamp_execution
     from agent6.config import Config
 
     _write(
         tmp_path,
         {
             "version": MANIFEST_VERSION,
-            "session_id": "legs-preset-A1",
+            "session_id": "executions-preset-A1",
             "mode": "run",
             "harness": {"preset": "old-config", "preset_from_flag": False},
         },
     )
 
-    stamp_leg(tmp_path, Config(preset="new-config"), "run", "strict")
+    stamp_execution(tmp_path, Config(preset="new-config"), "run", "strict")
 
     harness = read_manifest(tmp_path).harness
     assert harness.preset == "new-config"
     assert harness.preset_from_flag is False
 
 
-def test_a_leg_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> None:
-    """Written once at run start, they described leg 1 forever: `agent6 exec`
+def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> None:
+    """Written once at run start, they described execution 1 forever: `agent6 exec`
     joins the RECORDED policy, so a run started unsandboxed and resumed under
     strict ran the operator's command unconfined against a jailed agent, and
-    every policy surface named leg 1's model while another one answered."""
-    from agent6.app.manifest import stamp_leg
+    every policy surface named execution 1's model while another one answered."""
+    from agent6.app.manifest import stamp_execution
     from agent6.config import Config
 
     _write(
         tmp_path,
         {
             "version": MANIFEST_VERSION,
-            "session_id": "legs-run-A1",
+            "session_id": "executions-run-A1",
             "mode": "run",
             "user_task": "t",
             "models": {"driver": {"provider": "openai", "model": "old-model"}},
@@ -483,7 +485,7 @@ def test_a_leg_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> N
         }
     )
 
-    stamp_leg(tmp_path, cfg, "run", "strict")
+    stamp_execution(tmp_path, cfg, "run", "strict")
 
     m = read_manifest(tmp_path)
     assert m.policy.isolation == "strict"

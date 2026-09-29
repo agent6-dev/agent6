@@ -35,7 +35,7 @@ def test_an_unknown_mode_has_no_bucket() -> None:
         session_bucket("nonsense")
 
 
-def test_an_agent_leg_has_no_sessions_bucket() -> None:
+def test_an_agent_execution_has_no_sessions_bucket() -> None:
     """A machine's agent states live inside their machine instance's own
     directory. Answering "agents" here minted a bucket nothing writes, so a
     misrouted session landed somewhere no listing scans instead of failing

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Full first-findings matrix for the longhorizon bench. Run from this dir.
 # Wave 1: compaction A/B (does window32k hurt, and where does the damage show).
-# Wave 2: memory A/B (does the <memories> block make leg 2 cheaper/better).
+# Wave 2: memory A/B (does the <memories> block make session 2 cheaper/better).
 # Roughly $15-25 of OpenRouter spend at reps=3; scale with --reps/--budget-scale.
 set -euo pipefail
 cd "$(dirname "$0")"

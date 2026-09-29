@@ -97,7 +97,7 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
         "running",
         "",
     ),
-    # A crash while waiting, then a resume: the new leg re-prompts with fresh
+    # A crash while waiting, then a resume: the new execution re-prompts with fresh
     # ids, so the orphaned prompt must not read "waiting" (or duplicate) forever.
     (
         "resumed-past-orphaned-prompt",
@@ -198,9 +198,9 @@ def test_both_fact_producers_and_the_listing_agree(
 
 
 def test_resume_clears_orphaned_pending_prompts() -> None:
-    """A leg boundary invalidates unanswered prompts: the resumed leg re-asks
+    """An execution boundary invalidates unanswered prompts: the resumed execution re-asks
     with restarted ids, so a held-over pending entry would both mislabel the
-    run "waiting" and duplicate when the new leg's same-id prompt arrives."""
+    run "waiting" and duplicate when the new execution's same-id prompt arrives."""
     events = [
         _START,
         _APPROVAL,
@@ -209,7 +209,7 @@ def test_resume_clears_orphaned_pending_prompts() -> None:
         _APPROVAL,
     ]
     state = fold_session(events)
-    assert len(state.pending_approvals) == 1  # the new leg's, not the orphan + a dup
+    assert len(state.pending_approvals) == 1  # the new execution's, not the orphan + a dup
     assert state.pending_questions == ()
 
 

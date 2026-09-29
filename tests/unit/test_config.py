@@ -1045,7 +1045,7 @@ def test_max_iterations_unlimited_is_minus_one(tmp_path: Path) -> None:
 
 
 def test_max_iterations_zero_is_rejected(tmp_path: Path) -> None:
-    """0 would end every leg before its first call; the sentinel is exactly -1."""
+    """0 would end every execution before its first call; the sentinel is exactly -1."""
     body = _VALID_TOML.replace(
         'verify_command = ["true"]',
         'verify_command = ["true"]\nmax_iterations = 0',

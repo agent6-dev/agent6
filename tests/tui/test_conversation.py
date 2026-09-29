@@ -163,10 +163,10 @@ def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: Pa
     assert (run / STEER_ANSWER_FILE).read_text(encoding="utf-8") == "go left"
 
 
-def test_resumed_leg_is_live_and_steers_over_the_bridge(tmp_path: Path) -> None:
-    """A resumed leg emits ONLY loop.resume.start (never a second session.start).
+def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: Path) -> None:
+    """A resumed execution emits ONLY loop.resume.start (never a second session.start).
     The screen must read it as live, as the host's dir status does once the
-    leg's worker is up, so a submit routes to the steer bridge; a leg read as
+    execution's worker is up, so a submit routes to the steer bridge; an execution read as
     finished had Enter spawn a second resume that died on the run lock while
     the toast claimed the instruction was delivered."""
     from agent6.sessions.ipc import STEER_ANSWER_FILE, steer_request_pending
@@ -180,12 +180,12 @@ def test_resumed_leg_is_live_and_steers_over_the_bridge(tmp_path: Path) -> None:
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, ConversationScreen)
-            assert not app.session_controllable()  # finished leg
+            assert not app.session_controllable()  # finished execution
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "loop.resume.start", "iteration": 1}) + "\n")
                 fh.write(json.dumps({"type": "role.call", "role": "worker"}) + "\n")
             (run / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-            await wait_for(pilot, app.session_controllable, "the resumed leg to read live")
+            await wait_for(pilot, app.session_controllable, "the resumed execution to read live")
             bar = screen.query_one("#conv-input", SteerInput)
             bar.post_message(SteerInput.Submitted("also update docs"))
             await pilot.pause()

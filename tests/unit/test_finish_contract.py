@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A machine agent state's output_schema as an in-leg finish contract.
+"""A machine agent state's output_schema as an in-execution finish contract.
 
 A run-mode state with `output_schema`/`finish_json` could never satisfy its
-contract: the leg was never told it, finish_session accepted a payload-less
-call, and the engine then failed the leg over correct work. The request now
-carries the schema table, the leg's task states the contract, and the loop
-refuses a non-conforming finish with the problems so the retry happens in-leg.
+contract: the execution was never told it, finish_session accepted a payload-less
+call, and the engine then failed the execution over correct work. The request now
+carries the schema table, the execution's task states the contract, and the loop
+refuses a non-conforming finish with the problems so the retry happens in-execution.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ def test_a_nonconforming_finish_is_refused_with_the_problems() -> None:
     wf = _wf(validator)
     state = LoopState(original_task="t", tool_calls=0)
     turn = _finishing_turn(None)
-    ctx = wf._turn_context(state, iteration=3, leg_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, iteration=3, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     refusal = finish_contract(turn, state, ctx)
     assert refusal is not None and refusal.event == "loop.finish_contract.refused"
     assert refusal.fields["iteration"] == 3 and refusal.fields["problems"]

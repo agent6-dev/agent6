@@ -55,7 +55,7 @@ SessionEndReason = Literal[
 # deliberate finish and a verified one are different facts.
 # `failed` means a red gate was OBSERVED (the last verify ran and failed);
 # `unverified` means a gate exists but no observation covers the final tree
-# (no verify ran this leg, or edits landed after the last green).
+# (no verify ran this execution, or edits landed after the last green).
 # `not_applicable` covers both a gateless session (no verify_command) and one
 # that stopped before any verdict existed.
 Verification = Literal["passed", "failed", "unverified", "not_applicable"]
@@ -97,7 +97,7 @@ class SessionResult:
                           parked, whichever the marker reaches first; a quit
                           at the interactive revise_prompt choice ends it
                           before the worker loop starts.
-      undone            - operator sent /undo; the leg ended after forking a
+      undone            - operator sent /undo; the execution ended after forking a
                           child at the state before their last message.
       detached          - operator chose "detach"; the CLI respawns a detached
                           `resume` to continue the run in the background.
@@ -216,9 +216,9 @@ class SessionSnapshot(BaseModel):
     gateless_ever_edited: bool = False
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
-    # The last verify observation, so a resumed leg is not born amnesiac:
+    # The last verify observation, so a resumed execution is not born amnesiac:
     # without it a green finish resumed and finished untouched reads
-    # "unverified". Carried into the new leg only when
+    # "unverified". Carried into the new execution only when
     # head_sha still matches a clean worktree (see _carry_verify_verdict);
     # baseline_ok is about the BASE commit, which resume never moves. Additive
     # defaults: an older snapshot loads as "nothing observed", exactly its truth.
@@ -227,10 +227,10 @@ class SessionSnapshot(BaseModel):
     baseline_ok: bool | None = None
     # The full gate overran verify_timeout_s: harness gates run scoped until
     # a full run passes. A fact about the suite, not the tree, so a resumed
-    # leg carries it unconditionally instead of burning the timeout again.
+    # execution carries it unconditionally instead of burning the timeout again.
     verify_scoped: bool = False
     # Memory nudges and their finish deferral are once per run, not once per
-    # resume leg. Carry both what the worker wrote and which notices fired.
+    # resume execution. Carry both what the worker wrote and which notices fired.
     memory_written: bool = False
     memory_flip_nudged: bool = False
     memory_finish_nudged: bool = False
@@ -241,7 +241,7 @@ class SessionSnapshot(BaseModel):
     # snapshot restores the never-absorbed default and a fresh streak.
     standing_tools_mark: int = -1
     standing_fruitless: int = 0
-    # /parallel groups dispatched so far. Run-lifetime, not leg-lifetime: lane
+    # /parallel groups dispatched so far. Run-lifetime, not execution-lifetime: lane
     # ids and their imported branches embed the group number
     # (`<run>-p<N>-l<i>`), so a resume that restarted at p1 rebuilt a prior
     # group's exact ids and collided on its clone dirs / branches.

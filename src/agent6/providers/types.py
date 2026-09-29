@@ -206,8 +206,8 @@ class TranscriptSink:
 
     Files live under `transcripts_dir/<utc-iso>-<seq>.json`. The seq counter is
     per-RUN (not per-sink): a sink opened over a dir that already holds a prior
-    leg's transcripts continues the counter from the highest present, so seq
-    stays globally unique and monotonic across resume legs -- every consumer
+    execution's transcripts continues the counter from the highest present, so seq
+    stays globally unique and monotonic across resume executions -- every consumer
     (the load_transcripts sort, the `(seq N)` label, the `--seq` window) treats
     it as a run-global key. Monotonically increasing and thread-safe. Secrets in
     request headers are redacted, and a credential value a body echoes is

@@ -123,7 +123,7 @@ def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
 
 def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     def _load(_root: object, _explicit: object = None) -> object:
-        # A REAL Config: the authoring leg materializes it as its overlay
+        # A REAL Config: the authoring execution materializes it as its overlay
         # (`cfg.model_dump`), so a stand-in namespace would dodge that path.
         cfg = Config.model_validate(
             {
@@ -153,7 +153,7 @@ def _stub_runner(
     drafts: Iterable[tuple[dict[str, str], AgentExecResult]],
 ) -> None:
     """Each attempt writes its files into the drafting workspace, as the real
-    authoring leg does with `apply_edit`, then returns its result."""
+    authoring execution does with `apply_edit`, then returns its result."""
     seq = iter(drafts)
 
     def fake_build(
@@ -173,7 +173,7 @@ def _stub_runner(
 
 
 def _write_draft(root: Path, files: dict[str, str]) -> None:
-    """Lay a draft down in the workspace, as the authoring leg's edits do."""
+    """Lay a draft down in the workspace, as the authoring execution's edits do."""
     for rel, content in files.items():
         target = root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1165,7 +1165,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
 ) -> None:
     """The bundle is files in a workspace, not a finish payload: a ~20KB TOML
     string inside tool-call JSON defeated kimi-k2.6's emitter three times in a
-    row. The leg drafts with the edit tools and no shell -- the validators need
+    row. The execution drafts with the edit tools and no shell -- the validators need
     agent6 itself, which no jailed command can reach."""
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
@@ -1178,7 +1178,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             captured.append((request, root, cfg))
-            # Read while the leg is running: a published create removes the
+            # Read while the execution is running: a published create removes the
             # workspace, so nothing about it survives to assert on afterwards.
             seen.append((root / ".git").exists())
             for rel, content in _draft(VALID_MACHINE).items():
@@ -1204,7 +1204,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     assert isinstance(cfg, dict)
     # The operator's own settings ride as the overlay: the workspace's per-repo
     # layer is empty, so without them a repo-pinned worker model is invisible
-    # to the leg and every attempt fails.
+    # to the execution and every attempt fails.
     assert cfg["models"]["worker"]["provider"] == "openrouter"
     assert cfg["models"]["worker"]["model"] == "test-model"
     assert cfg["sandbox"]["run_commands"] == "no", "and it still carries no command tool"

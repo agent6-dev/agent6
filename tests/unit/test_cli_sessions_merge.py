@@ -954,7 +954,7 @@ def test_merge_squash_trailer_lands_once(tmp_path: Path, monkeypatch: pytest.Mon
 def test_merge_squash_trailer_names_every_code_writer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A later leg's worker wrote code on a second model: the squash trailer
+    """A later execution's worker wrote code on a second model: the squash trailer
     joins the journal's worker models first-seen order, not the manifest's
     starting driver alone, and a message-writing role never appears."""
     monkeypatch.chdir(tmp_path)
@@ -1142,16 +1142,16 @@ def test_diff_explains_an_ask_the_same_way_merge_does(
 def test_a_resumed_run_merges_again_from_its_own_landed_tip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run is squash-merged, resumed, and merged again: the second leg's
+    """A run is squash-merged, resumed, and merged again: the second execution's
     commits sit on the same chain above a tip git relates to nothing on the
-    base, so the merge read the first leg as new work and conflicted with the
+    base, so the merge read the first execution as new work and conflicted with the
     squash holding the same lines. The base is the run's own landed tip."""
     monkeypatch.chdir(tmp_path)
     guarded = "def f(x):\n    if not x:\n        return 0\n    return 1\n"
     base = _setup_run(tmp_path, "resume-run1", commits=[("f.py", guarded, "guard")])
     _git(tmp_path, "update-ref", chain_ref_for("resume-run1"), "agent6/resume-run1")
     assert main(["sessions", "merge", "resume-run1"]) == 0
-    # The resumed leg keeps committing on the same branch and chain.
+    # The resumed execution keeps committing on the same branch and chain.
     _git(tmp_path, "checkout", "-q", "agent6/resume-run1")
     documented = guarded.replace("def f(x):\n", 'def f(x):\n    """Zero for empty."""\n')
     (tmp_path / "f.py").write_text(documented, encoding="utf-8")

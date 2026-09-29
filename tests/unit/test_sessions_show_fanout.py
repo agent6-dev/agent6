@@ -214,7 +214,7 @@ def test_show_usage_and_json_carry_the_plan_points(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A run its plan cap ended showed no number for it outside the live views:
-    the usage line and the JSON carry the points this leg consumed against
+    the usage line and the JSON carry the points this execution consumed against
     [budget].max_percent; a dollar-metered run shows none."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"

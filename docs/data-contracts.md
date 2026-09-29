@@ -41,7 +41,7 @@ Session end and resume: the SessionResult the harness returns, the ResumeError i
 **SessionSnapshot** &mdash; The persisted state of an in-flight session: what `resume` re-enters and what `fork` clones.
 
 - **Written by:** harness/loop
-- **Read by:** app/{_leg, fork, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}
+- **Read by:** app/{_execution, fork, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (18 test files exercise it)
 
 ## ToolResult family

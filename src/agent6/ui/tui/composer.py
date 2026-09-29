@@ -151,8 +151,8 @@ class ResumeHost(Protocol):
 
 class ResumeOptions(PickerRow):
     """The row above a resume composer: the config preset and the model the
-    next leg continues under (`agent6 resume --preset`, `--model`). Both
-    change only between legs, so the row shows only while the composer
+    next execution continues under (`agent6 resume --preset`, `--model`). Both
+    change only between executions, so the row shows only while the composer
     resumes; the choices live on the host app, so the conversation and the
     dashboard composers agree. Each first entry adds no flag and names what
     the resume runs under (`ResumeHost.resume_defaults`), relabelled when the
@@ -195,12 +195,12 @@ class ResumeOptions(PickerRow):
     def show(self, shown: bool) -> None:
         if self.display != shown:
             self.display = shown
-        if not shown:  # a leg is running: it may pin a preset or a model
+        if not shown:  # an execution is running: it may pin a preset or a model
             self._labelled = None
         else:
             # After the refresh: on the first paint the Selects are not mounted
             # yet, and a value written before the mount leaves a label blank.
-            # Relabel after a leg, or after the other view's row moved the pick.
+            # Relabel after an execution, or after the other view's row moved the pick.
             if self._labelled != self._host().resume_preset:
                 self.call_after_refresh(self._relabel)
             self.call_after_refresh(self._sync)
@@ -319,7 +319,7 @@ class ApprovalKeys:
     def sync_approval(self, current: ApprovalPrompt | None) -> None:
         """One row per open approval, docked; none when nothing is open (the
         host passes None for a run that takes no answer). A new id gets a
-        fresh row: a resumed leg reuses prompt ids, and the old row may still
+        fresh row: a resumed execution reuses prompt ids, and the old row may still
         be unmounting. When the last answer came from the row and the composer
         never took the focus back, the focus goes to this row too."""
         screen = cast(Screen[Any], self)

@@ -273,7 +273,7 @@ def test_the_agent_seat_journals_under_a_driving_role(
 ) -> None:
     """The seat stamped `role="agent"`, a label no SessionKind carries, so a
     reader deriving the session's own words from the kind table (read_session,
-    the transcript fold) dropped a machine leg's every reply as a side call's."""
+    the transcript fold) dropped a machine execution's every reply as a side call's."""
     from unittest.mock import MagicMock
 
     from agent6.app import machine_agent

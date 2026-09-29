@@ -156,7 +156,7 @@ class _Dispatcher(_StubDispatcher):
     def __init__(self, compact_flag: list[bool]) -> None:
         self._compact_flag = compact_flag
 
-    def set_run_root_node_id(self, node_id: str) -> None:  # pragma: no cover - resume leg
+    def set_run_root_node_id(self, node_id: str) -> None:  # pragma: no cover - resume execution
         return None
 
     def resolved_skills(self) -> Any:  # pragma: no cover - not used by _drive_loop
@@ -254,7 +254,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         if compact_flag[0] and not pre_restart_state:
             # Capture the richest on-disk snapshot (post-tools iteration 4:
             # gist placeholder + interleaved notice + steer + nudge) before
-            # the forced restart replaces the history; the resume leg re-enters
+            # the forced restart replaces the history; the resume execution re-enters
             # from these bytes.
             pre_restart_state.append(snap_path.read_text(encoding="utf-8"))
         return "" if compact_flag[0] else None  # a plain /compact carries no focus
@@ -295,7 +295,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     assert len(summariser.captured) == 2
     assert len(pre_restart_state) == 1
 
-    # Resume leg: re-enter from the richest mid-run snapshot. The pre-call
+    # Resume execution: re-enter from the richest mid-run snapshot. The pre-call
     # snapshot this resume writes must reproduce the loaded messages exactly
     # (save -> load -> save stability), which the captured loop_state pins.
     resume_snap = tmp_dir / "resume" / "loop_state.json"

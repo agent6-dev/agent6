@@ -1264,16 +1264,16 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     assert not (repo / "fork.txt").exists()
 
 
-def test_resume_of_a_fork_runs_its_leg_in_the_worktree(
+def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`agent6 resume <fork>` from the repo drives the leg with the fork's
+    """`agent6 resume <fork>` from the repo drives the execution with the fork's
     worktree as its checkout (the process cwd stays the repo: its state dir
     and config are the repo's). Run in the repo instead, the fork committed
     the operator's checkout."""
 
     from agent6.app import resume as resume_mod
-    from agent6.app._leg import LegEnd, LegInputs
+    from agent6.app._execution import ExecutionInputs, ExecutionEnd
 
     global_config_dir().mkdir(parents=True, exist_ok=True)
     (global_config_dir() / "config.toml").write_text(
@@ -1292,11 +1292,11 @@ def test_resume_of_a_fork_runs_its_leg_in_the_worktree(
     worktree = Path(manifest["worktree"])
     seen: dict[str, Any] = {}
 
-    def _fake_leg(cfg: Any, layout: Any, inputs: LegInputs, **kw: Any) -> LegEnd:
+    def _fake_execution(cfg: Any, layout: Any, inputs: ExecutionInputs, **kw: Any) -> ExecutionEnd:
         seen["cwd"] = kw["cwd"]
         seen["state_dir"] = kw["state_dir"]
         seen["process_cwd"] = Path.cwd()
-        return LegEnd(0)
+        return ExecutionEnd(0)
 
     def _no_missing(_cfg: object) -> None:
         return None
@@ -1304,7 +1304,7 @@ def test_resume_of_a_fork_runs_its_leg_in_the_worktree(
     def _strict(*_a: object, **_k: object) -> str:
         return "strict"
 
-    monkeypatch.setattr(resume_mod, "run_leg", _fake_leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _fake_execution)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing)
     monkeypatch.setattr(resume_mod, "select_isolation", _strict)
     rc = resume_mod.resume_task(
@@ -1396,7 +1396,7 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
     manifest["merged"] = {"into": "main", "sha": head, "tip": turn1}
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     later = sp.run(
-        ["git", "commit-tree", f"{turn1}^{{tree}}", "-p", turn1, "-m", "a later leg"],
+        ["git", "commit-tree", f"{turn1}^{{tree}}", "-p", turn1, "-m", "a later execution"],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -1419,10 +1419,10 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
 
 
 def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A worker route in the global config and a leg that ends at once, so a
+    """A worker route in the global config and an execution that ends at once, so a
     resume runs past every refusal without a provider call."""
     import agent6.app.resume as resume_mod
-    from agent6.app._leg import LegEnd
+    from agent6.app._execution import ExecutionEnd
 
     gdir = global_config_dir()
     gdir.mkdir(parents=True, exist_ok=True)
@@ -1439,12 +1439,12 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     def _nothing(*_a: object, **_k: object) -> None:
         return None
 
-    def _finished_leg(*_a: object, **_k: object) -> LegEnd:
-        return LegEnd(0)
+    def _finished_execution(*_a: object, **_k: object) -> ExecutionEnd:
+        return ExecutionEnd(0)
 
     monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
     monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
-    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    monkeypatch.setattr(resume_mod, "run_execution", _finished_execution)
 
 
 def test_a_steered_fork_takes_the_steer_as_its_own_task(
@@ -1476,8 +1476,8 @@ def test_a_refused_resume_leaves_the_forks_task_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The steer was stamped as the fork's task before the resume's refusals,
-    so a resume refused at its providers titled the fork with work no leg ever
-    read (the queued steer itself is swept at the next leg's start)."""
+    so a resume refused at its providers titled the fork with work no execution ever
+    read (the queued steer itself is swept at the next execution's start)."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -1486,7 +1486,7 @@ def test_a_refused_resume_leaves_the_forks_task_alone(
     assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
     dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
 
-    # No providers configured: refused before any leg.
+    # No providers configured: refused before any execution.
     assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 2
 
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"

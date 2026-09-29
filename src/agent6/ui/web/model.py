@@ -42,7 +42,7 @@ from agent6.sessions.layout import (
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
     MachineSummary,
-    NewestLegFold,
+    NewestExecutionFold,
     fold_session,
     fold_transcript,
     is_session_husk,
@@ -297,7 +297,7 @@ def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
 
 
 def machine_reasoning_snapshot(
-    machine_dir: Path, *, fold: NewestLegFold | None = None
+    machine_dir: Path, *, fold: NewestExecutionFold | None = None
 ) -> dict[str, Any]:
     """The SessionState of the machine's most recent agent-state execution: the live
     reasoning + tool calls inside the state the machine is running. Empty when no

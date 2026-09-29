@@ -203,7 +203,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         # decision the hub row shows), refreshed on the ~1/s heartbeat.
         # Derived, never latched: a crash->resume flips it back to running
         # (a one-way latch would keep "worker exited" painted over the live
-        # resumed leg and drop operator steers).
+        # resumed execution and drop operator steers).
         self.dir_status: tuple[str, str] = status_for_session_dir(
             session_dir, status_facts(self.state)
         )
@@ -361,14 +361,14 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             self._fill_composers(self.state.undone_text)
             self.notify(f"undone: continue as {self.state.undone_to}; your message is back to edit")
         if event.get("type") in SESSION_START_EVENTS:
-            # A session boundary (a fresh run or a resumed leg: a resume emits
+            # A session boundary (a fresh run or a resumed execution: a resume emits
             # only loop.resume.start, never a second session.start) restarts the
             # prompt id counters at approval-1/question-1; a stale seen-set
             # would swallow the new session's first prompts and the run would
             # block forever on a modal that never opens.
             self._prompts.reset()
             self._end_hold = False
-            # The task is known once the boundary folds, and a resumed leg
+            # The task is known once the boundary folds, and a resumed execution
             # releases the end hold: retitle whichever run view is visible.
             screen = self._screen_or_none()
             if screen is self._dash:
@@ -376,7 +376,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
             elif screen is self._conv:
                 self.sub_title = self.screen_title("conversation")
         if event.get("type") in _STATUS_NOW_EVENTS:
-            # A terminal / leg-boundary / operator-blocking event changes the
+            # A terminal / execution-boundary / operator-blocking event changes the
             # status now: refresh synchronously so the chip, the label, and the
             # composer routing never serve the previous state for up to a
             # heartbeat.
@@ -423,7 +423,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
     def _tick(self) -> None:
         # Prompt modals only while the run can consume an answer: the fold
         # keeps an unanswered prompt across session.end and a worker death (it
-        # clears only on the answer event or a leg boundary), so an open would
+        # clears only on the answer event or an execution boundary), so an open would
         # otherwise pop live-looking Allow/Deny over a dead run and write the
         # answer into a file nobody polls. Skipped ids are not marked seen, so
         # a prompt that outlives a stale probe still pops on the next tick.

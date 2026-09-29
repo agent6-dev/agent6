@@ -202,7 +202,7 @@ def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: Path) -> No
 
 def test_the_gate_word_agrees_with_the_listing_scan(repo: Path) -> None:
     """Three shapes the digest got wrong against `sessions show`: a resumed
-    run whose red verify was in leg 1 and whose leg 2 ran none reads
+    run whose red verify was in execution 1 and whose execution 2 ran none reads
     "unverified" (the scan resets at the resume); a gated run whose gate never
     ran (all_passed false, no verify.end) reads "unverified", not "not
     gated"; a killed run (a green verify, no session.end) reads "unverified"."""

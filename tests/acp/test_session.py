@@ -244,7 +244,7 @@ def test_a_cancel_while_the_run_starts_reaches_its_first_boundary(tmp_path: Path
 def test_a_cancel_while_idle_does_not_poison_the_next_turn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An idle cancel wrote a stop marker after the prior leg ended, so the
+    """An idle cancel wrote a stop marker after the prior execution ended, so the
     next resume inherited it and stopped without doing the requested work."""
     stopped: list[Path] = []
 

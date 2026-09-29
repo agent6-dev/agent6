@@ -235,7 +235,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )
     # The agent writes the bundle here, file by file, exactly as a run edits a
-    # repo: an empty git repo of its own, so the leg commits its iterations and
+    # repo: an empty git repo of its own, so the execution commits its iterations and
     # nothing it writes can reach the operator's checkout. It sits where every
     # other subordinate working tree does, NOT under the state dir: the jail
     # masks that dir, so a workspace inside it is hidden from the very run that
@@ -249,15 +249,15 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         events.emit("session.end", reason="workspace_failed", iterations=0, all_passed=False)
         return 1
     # The workspace is a fresh repo, so its own per-repo config layer is empty:
-    # carry the operator's effective settings as the leg's overlay, the way a
+    # carry the operator's effective settings as the execution's overlay, the way a
     # fan-out lane materializes them into its clone. Without it a repo-pinned
-    # worker model is invisible to the leg and every attempt fails.
+    # worker model is invisible to the execution and every attempt fails.
     # Carry the complete effective config. Omitting values equal to built-in
     # defaults loses an explicit repo reset when this workspace reloads the
     # operator's non-default global layer.
     overlay = cfg.model_dump(mode="json")
     overlay.pop("preset", None)  # the overlay layer forbids a preset
-    # The leg writes files and nothing else. `run_commands = "no"` withholds
+    # The execution writes files and nothing else. `run_commands = "no"` withholds
     # the four command tools; the operator's metric goes too, since
     # `run_metric_command` runs its command in the jail and authoring has no
     # metric to chase; an unlisted host makes every `fetch` a prompt, which a
@@ -266,7 +266,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     overlay["sandbox"] = {**overlay.get("sandbox", {}), "run_commands": "no", "fetch_hosts": []}
     overlay["harness"] = {**overlay.get("harness", {}), "metric": None}
     # Resolved on the host, where the global git config is visible: the confined
-    # leg cannot read ~/.gitconfig, and its per-iteration commits are how a
+    # execution cannot read ~/.gitconfig, and its per-iteration commits are how a
     # draft survives a failure.
     try:
         name, email = verify_git_identity(

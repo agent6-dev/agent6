@@ -58,7 +58,7 @@ class RunReviewError(Exception):
 
 
 # The gate word, `LogScan.verify_verdict`'s rule in words: a plan, an ask or
-# an end nothing gated; a green final tree; this leg's own red verify; and
+# an end nothing gated; a green final tree; this execution's own red verify; and
 # everything else, a journal with no end included.
 VerifyWord = Literal["not gated", "passed", "failed", "unverified"]
 
@@ -157,8 +157,8 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     tool_calls = 0
     end_reason = ""
     all_passed: bool | None = None
-    leg_rc: int | None = (
-        None  # this leg's last verify exit, reset at a resume (as the listing scan does)
+    execution_rc: int | None = (
+        None  # this execution's last verify exit, reset at a resume (as the listing scan does)
     )
     iterations: int | None = None
     try:
@@ -178,17 +178,17 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         elif etype == "loop.decision.recorded":
             decisions.append((str(event.get("question", "")), str(event.get("answer", ""))))
         elif etype == "verify.end":
-            leg_rc = _int(event.get("exit_code"))
+            execution_rc = _int(event.get("exit_code"))
             tail = str(event.get("stderr_tail") or event.get("stdout_tail") or "")
             verify_runs.append(
                 VerifyRun(
-                    exit_code=leg_rc,
+                    exit_code=execution_rc,
                     duration_s=float(event.get("duration_s") or 0.0),
                     tail=_clip(tail.strip(), _VERIFY_TAIL_CHARS),
                 )
             )
         elif etype == "loop.resume.start":
-            leg_rc = None
+            execution_rc = None
         elif etype == "tool.call":
             tool_calls += 1
         elif etype == "tool.result" and event.get("ok") is False:
@@ -209,12 +209,12 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     # ask's end carries all_passed=True with nothing gating it; a run's end
     # says None when no gate judged it, True when the final tree was green,
     # False when it was red, stale or never judged; "failed" only on this
-    # leg's own red verify.
+    # execution's own red verify.
     if summary.mode != "run" or (end_reason and all_passed is None):
         verify = "not gated"
     elif all_passed is True:
         verify = "passed"
-    elif leg_rc not in (None, 0):
+    elif execution_rc not in (None, 0):
         verify = "failed"
     else:
         verify = "unverified"

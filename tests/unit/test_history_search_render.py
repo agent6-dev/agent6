@@ -304,7 +304,7 @@ def test_deeply_nested_json_line_degrades_instead_of_crashing() -> None:
 def test_string_walk_survives_nesting_the_parser_accepted() -> None:
     """json.loads accepts nesting right up to the stack ceiling (where that
     ceiling sits varies by interpreter and arch), so the walk over its result
-    must be iterative: one CI leg parsed the 100k-deep line the others refused,
+    must be iterative: one CI execution parsed the 100k-deep line the others refused,
     then blew the recursion limit inside the walker instead."""
     deep: dict[str, object] = {"leaf": "NEEDLE"}
     for _ in range(100_000):

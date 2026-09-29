@@ -195,25 +195,25 @@ def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
 def _usage_line(scan: LogScan) -> str:
     """The run's tokens and cost: `in`/`out`, the cached side when the journal
     recorded it (the bulk of a long run's input, the run summary's columns),
-    the plan points a percent-metered leg consumed against its cap, then the
+    the plan points a percent-metered execution consumed against its cap, then the
     cost as the listing's cell spells it (blank for a clean $0, so the two
-    surfaces agree). Token counters and plan points are per leg and the cost
-    is banked across legs, so a resumed run says which is which."""
+    surfaces agree). Token counters and plan points are per execution and the cost
+    is banked across executions, so a resumed run says which is which."""
     tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
     if scan.cache_read_tokens is not None or scan.cache_creation_tokens is not None:
         tokens += f" cache_r={scan.cache_read_tokens or 0}"
         tokens += f" cache_c={scan.cache_creation_tokens or 0}"
     if scan.plan_cap > 0:
         tokens += f" plan={scan.plan_consumed:g}/{scan.plan_cap:g}pt"
-    leg_s = " (latest leg)" if scan.legs > 1 else ""
+    execution_s = " (latest execution)" if scan.executions > 1 else ""
     cell = (
         format_cost_cell(scan.cost_usd, partial=scan.usd_partial)
         if scan.cost_usd is not None
         else ""
     )
-    legs_s = f" (all {scan.legs} legs)" if scan.legs > 1 else ""
-    cost_s = f"  cost {cell}{legs_s}" if cell else ""
-    return f"{tokens}{leg_s}{cost_s}"
+    executions_s = f" (all {scan.executions} executions)" if scan.executions > 1 else ""
+    cost_s = f"  cost {cell}{executions_s}" if cell else ""
+    return f"{tokens}{execution_s}{cost_s}"
 
 
 def _cmd_status(session_id: str, *, as_json: bool = False) -> int:

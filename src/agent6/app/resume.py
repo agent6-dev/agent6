@@ -12,7 +12,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from agent6.app._leg import LegInputs, detach_to_background, run_leg
+from agent6.app._execution import ExecutionInputs, detach_to_background, run_execution
 from agent6.app._session import (
     select_isolation,
     warn_install_inside_workspace,
@@ -31,8 +31,8 @@ from agent6.app.frontend import (
 )
 from agent6.app.manifest import (
     pin_gate,
+    stamp_execution,
     stamp_fork_task,
-    stamp_leg,
     stamp_model,
     stamp_preset,
     stamp_task,
@@ -121,7 +121,7 @@ def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
 
 def _paths_the_run_wrote(logs_path: Path) -> frozenset[str]:
     """Every path a `tool.result` of the run names as written (an edit, a
-    patch), over every leg; a torn line reads as none."""
+    patch), over every execution; a torn line reads as none."""
     paths: set[str] = set()
     try:
         with logs_path.open(encoding="utf-8", errors="replace") as lines:
@@ -242,11 +242,11 @@ def snapshot_head_mismatch(
     return (snap_head, current_head)
 
 
-def leg_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> str:
-    """Where THIS leg's gate came from: config outranks the run's pin, the pin
-    stands when the leg reused it (an adopted gate stays adopted), and a leg
-    that had to re-infer says so. A gateless leg claims nothing, even when
-    config named a gate the leg then dropped."""
+def execution_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> str:
+    """Where THIS execution's gate came from: config outranks the run's pin, the pin
+    stands when the execution reused it (an adopted gate stays adopted), and an execution
+    that had to re-infer says so. A gateless execution claims nothing, even when
+    config named a gate the execution then dropped."""
     if not has_gate:
         return ""
     if configured:
@@ -285,11 +285,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     per-invocation runaway-cost circuit breaker.
 
     Runs from the repository (the process cwd: its state dir, config, and
-    the cwd a detached continuation spawns in). A fork's leg drives the
+    the cwd a detached continuation spawns in). A fork's execution drives the
     fork's own worktree instead (`manifest.worktree`), handed to every step
     as *cwd*; the process cwd stays the repository.
 
-    *started_at* is the instant this leg began: the bridge-state clear keeps
+    *started_at* is the instant this execution began: the bridge-state clear keeps
     what was written since (an ACP turn's start precedes this call by its
     queue wait).
     """
@@ -351,7 +351,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     if worker_lock_fd is None:
         reporter.err(SINGLE_WRITER_BUSY.format(rid=session_id))
         return 2
-    # A run the agent ENDED has nothing to continue: the resumed leg spends a
+    # A run the agent ENDED has nothing to continue: the resumed execution spends a
     # call, answers in prose with no tool use, and records a silent_finish, so
     # a run that passed reads as failed afterwards, for a tree nobody touched.
     # New work is what --steer is for. Only this one reason: every other ending
@@ -365,8 +365,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     # Drop the stale bridge state (its answer files: the id counters reset on
     # resume, an old answer must not be read instead of re-prompting; a stop
-    # that landed between legs was never honored). A marker written since
-    # this leg began is this leg's (an editor's cancel during startup).
+    # that landed between executions was never honored). A marker written since
+    # this execution began is this execution's (an editor's cancel during startup).
     clear_pending_answers(layout.session_dir, started_at=started_at)
     # --steer: queue the operator's follow-up as the first steering
     # instruction. Seeded AFTER the stale-state clear (which drops steer
@@ -399,7 +399,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # start. Hand the verbatim saved task to
             # run_task under the same run id; it re-acquires both locks itself
             # (and re-parks with a fresh message if the checkout is STILL busy),
-            # so release ours first. Its leg's start clears the park.
+            # so release ours first. Its execution's start clears the park.
             try:
                 # replay_preset, not the raw stamped name: a config-selected
                 # preset re-resolves from the same files, and handing its name
@@ -578,7 +578,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
-        # The leg's one gate to the operator: every prompt journals and takes
+        # The execution's one gate to the operator: every prompt journals and takes
         # its id here, whichever front-end answers.
         prompts = OperatorPrompts(
             approver=frontend.build_approver(layout.session_dir),
@@ -629,12 +629,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 if pinned_origin in ("adopted", "unadopted")
                 else snapshot.verify_command
             )
-            leg_configured = bool(cfg.harness.verify_command)
-            reused = not leg_configured and bool(replay_gate)
+            execution_configured = bool(cfg.harness.verify_command)
+            reused = not execution_configured and bool(replay_gate)
             if reused:
                 cfg = cfg.with_verify_command(replay_gate)
-            # The same leg-start decision a fresh run makes, LAST so nothing
-            # hands the gate back: a leg that cannot run a command cannot run
+            # The same execution-start decision a fresh run makes, LAST so nothing
+            # hands the gate back: an execution that cannot run a command cannot run
             # its gate, so it is gateless rather than unwinnable. Frozen here,
             # with the system prompt.
             gate_before = cfg.harness.verify_command
@@ -644,8 +644,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             withheld = bool(gate_before) and not cfg.harness.verify_command
             if reused and not withheld:
                 reporter.note(f"reusing this run's verify command: {gate_text(replay_gate)}")
-            # Re-pin for this leg: config outranks the pin, the pin outranks a
-            # re-inference, and the manifest has to say which one this leg used.
+            # Re-pin for this execution: config outranks the pin, the pin outranks a
+            # re-inference, and the manifest has to say which one this execution used.
             if tuple(pinned_gate) != cfg.harness.verify_command and not withheld:
                 # Both directions, including none -> gate: the frozen system
                 # prompt names the OLD gate either way, so the operator has to
@@ -658,8 +658,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             pin_gate(
                 layout.session_dir,
                 cfg.harness.verify_command,
-                leg_gate_origin(
-                    configured=leg_configured,
+                execution_gate_origin(
+                    configured=execution_configured,
                     has_gate=bool(cfg.harness.verify_command),
                     pinned=pinned_origin,
                 ),
@@ -677,13 +677,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         untracked_at_start = read_untracked_at_start(layout.session_dir)
         if mode == "run":
             # A file untracked now that the run never checkpointed and no tool
-            # call of it wrote arrived between legs (the operator's log or
+            # call of it wrote arrived between executions (the operator's log or
             # note): it joins the set the run never commits. The run's own
             # files stay its own: chain commits never touch the index, so
             # every file the run created reads untracked for the whole run,
             # and the chain's tree names them; an edit not yet checkpointed
             # is named by its tool.result. A file a command wrote after the
-            # previous leg's last checkpoint is the gap. The check decides
+            # previous execution's last checkpoint is the gap. The check decides
             # what the run may commit, so a git failure here refuses.
             try:
                 arrived = (
@@ -701,13 +701,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                         shown += f", +{len(named) - 4} more"
                     reporter.note(
                         f"left out of this run's commits as yours: {shown} (arrived"
-                        " between legs, unwritten by any tool of the run)"
+                        " between executions, unwritten by any tool of the run)"
                     )
             except (GitError, OSError) as exc:
                 reporter.error(f"cannot tell the run's files from the operator's: {exc}")
                 return 2
-        # Every preflight passed: this leg and every later one run under the
-        # operator's new choices. A refused leg leaves the recorded choices untouched.
+        # Every preflight passed: this execution and every later one run under the
+        # operator's new choices. A refused execution leaves the recorded choices untouched.
         if preset:
             stamp_preset(layout.session_dir, preset)
         if (flagged := flag_route(cfg, mode, model)) is not None:
@@ -718,7 +718,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # run allows), or of a fork still carrying its source's task,
             # otherwise read as work already landed. Stamped past every
             # refusal above: a resume that did not run renames nothing (its
-            # queued steer is swept at the next leg's start too).
+            # queued steer is swept at the next execution's start too).
             if new_work:
                 stamp_task(layout.session_dir, steer.strip())
             elif manifest.parent_session_id:
@@ -732,13 +732,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # the child owning the run (`spawn_and_confirm`). `sessions show`
         # probes liveness by it while the worker sits in a long provider call.
         write_worker_pid(layout.session_dir, os.getpid())
-        # This leg's models and policy, so `agent6 exec` joins the jail the
-        # agent is in and every policy surface describes the leg that is live.
-        stamp_leg(layout.session_dir, cfg, mode, isolation)
+        # This execution's models and policy, so `agent6 exec` joins the jail the
+        # agent is in and every policy surface describes the execution that is live.
+        stamp_execution(layout.session_dir, cfg, mode, isolation)
         if mode == "run":
-            # What the tree holds that the chain does not: the previous leg's
+            # What the tree holds that the chain does not: the previous execution's
             # uncommitted tail after a crash, and any edit of the operator's
-            # between legs. The next auto-commit takes both, under the agent's
+            # between executions. The next auto-commit takes both, under the agent's
             # identity and into what `sessions diff` and `merge` present as the
             # run's work, where a fresh run asks about exactly this. The files
             # untracked at the start stay the operator's: every commit leaves
@@ -755,12 +755,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     named = ", ".join(dirty[:4]) + (", ..." if len(dirty) > 4 else "")
                     reporter.note(
                         f"the tree holds changes no commit has ({named});"
-                        " this leg's next commit takes them"
+                        " this execution's next commit takes them"
                     )
-        end = run_leg(
+        end = run_execution(
             cfg,
             layout,
-            LegInputs(
+            ExecutionInputs(
                 session_id=session_id,
                 mode=mode,
                 role=role,
@@ -775,7 +775,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 resume_state_path=snapshot_path,
                 undo_forker=_undo_forker,
                 prompts=prompts,
-                # The follow-up this leg answered, not the run's original task:
+                # The follow-up this execution answered, not the run's original task:
                 # a `--steer` question that never appears makes the second
                 # answer read as more of the answer to the first.
                 ask_transcript_task=steer.strip() or manifest.user_task,

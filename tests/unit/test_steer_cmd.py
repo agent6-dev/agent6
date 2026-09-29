@@ -74,7 +74,7 @@ def test_steer_refuses_a_session_that_is_not_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A dead session's steer would silently park; the refusal names the
-    queue-for-next-leg remedy that already exists (`resume --steer`)."""
+    queue-for-next-execution remedy that already exists (`resume --steer`)."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-BBBB22")

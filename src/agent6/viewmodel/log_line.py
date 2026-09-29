@@ -117,7 +117,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "loop.pin.refused":
             salient = f"pin refused: over the {event.get('limit')}-char cap"
         case "loop.pin.restored":
-            # The pins in force at leg start: --pin on a fresh run, or a
+            # The pins in force at execution start: --pin on a fresh run, or a
             # resume/fork's snapshot. The event never says which.
             pins = [str(p) for p in _as_list(event.get("pins"))]
             salient = (

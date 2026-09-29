@@ -234,14 +234,14 @@ class Harness:
     # dispatcher so memory-dir edits persist across runs.
     # None (bench / tests / one-off embedders) runs memory-less.
     state_dir: Path | None = None
-    # Cap on assistant turns for THIS leg (config [harness].max_iterations;
-    # -1 unlimited). Each turn = one provider.call. A resumed leg re-arms the
+    # Cap on assistant turns for THIS execution (config [harness].max_iterations;
+    # -1 unlimited). Each turn = one provider.call. A resumed execution re-arms the
     # allowance: the cap is relative to its start_iteration, so a standing
-    # run is bounded per leg, never by the sum of its history.
+    # run is bounded per execution, never by the sum of its history.
     max_iterations: int = 200
     # A machine agent state's finish contract: called on each finish_session
     # payload, returning the problems (empty = conforms). Injected by the
-    # machine leg builder from the state's output_schema; None (every plain
+    # machine execution builder from the state's output_schema; None (every plain
     # run) leaves finishes ungated. The engine's own validation of the
     # recorded fact stays the authority.
     finish_validator: Callable[[dict[str, Any] | None], list[str]] | None = None
@@ -271,8 +271,8 @@ class Harness:
     # The operator's standing goal (`run --standing`): seeded as a standing
     # task under the root at run start. "" = none.
     standing_goal: str = ""
-    # The gate a resumed leg carried from the last one (`_carry_adopted_gate`),
-    # set at the leg's start for the state the leg then builds.
+    # The gate a resumed execution carried from the last one (`_carry_adopted_gate`),
+    # set at the execution's start for the state the execution then builds.
     _adopted_on_resume: tuple[str, ...] = ()
     # An operator is watching and can steer live (a foreground CLI/TUI run or
     # an interactive resume). A quiet turn then PARKS for a steer instead of
@@ -302,7 +302,7 @@ class Harness:
 
     def run(self, user_task: str) -> SessionResult:
         """Drive the single-loop agent to completion."""
-        self.bridge.steer_reset()  # a leg starts with no armed Ctrl-C
+        self.bridge.steer_reset()  # an execution starts with no armed Ctrl-C
         if self.mode == "plan" and self.plan_output_path is None:
             raise ValueError("Harness(mode='plan') requires plan_output_path to be set")
         # The event carries the operator's own words (a seed digest or skill
@@ -392,7 +392,7 @@ class Harness:
         DAG state on disk is restored by spawning a curator against the
         same run layout in the CLI.
         """
-        self.bridge.steer_reset()  # a leg starts with no armed Ctrl-C
+        self.bridge.steer_reset()  # an execution starts with no armed Ctrl-C
         if self.resume_state_path is None:
             raise ResumeError("resume() called but resume_state_path is None")
         try:
@@ -403,7 +403,7 @@ class Harness:
                 f"failed to load resume snapshot from {self.resume_state_path}: {exc}"
             ) from exc
 
-        # The leg's log opens with this event: stamp session_id + mode like
+        # The execution's log opens with this event: stamp session_id + mode like
         # session.start so the log identifies itself (the manifest owns the task).
         self._emit_start(
             "loop.resume.start",
@@ -423,9 +423,9 @@ class Harness:
             self._log(f"LOOP: DAG root task restored: {snapshot.root_task_id}")
 
         # The system prompt is the run's, frozen: config that gained (or lost) a
-        # verify command between legs swaps what judges the work while the
+        # verify command between executions swaps what judges the work while the
         # instructions still name the old gate. Say so rather than let the
-        # worker run a command nothing checks. A gate the leg dropped because
+        # worker run a command nothing checks. A gate the execution dropped because
         # commands are withheld is no swap: no command can run, that one
         # included.
         self._adopted_on_resume = self._carry_adopted_gate(snapshot)
@@ -437,7 +437,7 @@ class Harness:
             was = " ".join(snapshot.verify_command) or "none"
             now = " ".join(gate) or "none"
             conversation.notice(
-                f"[harness] This run's verify gate changed between legs: it was `{was}`,"
+                f"[harness] This run's verify gate changed between executions: it was `{was}`,"
                 f" it is now `{now}`. The instructions above still name the old one."
             )
             self._log(f"LOOP: verify gate swapped on resume: {was} -> {now}")
@@ -458,9 +458,9 @@ class Harness:
     def _seed_carryover(
         self, state: LoopState, conversation: Conversation, resume_from: SessionSnapshot | None
     ) -> None:
-        """Seed the leg's carried state and announce it for the read model.
+        """Seed the execution's carried state and announce it for the read model.
 
-        A resumed/forked leg re-announces its restored pins and elision
+        A resumed/forked execution re-announces its restored pins and elision
         counters: a fork's fresh logs.jsonl has no pin.added or compact
         events to fold (the fold REPLACES on these events, so a plain resume
         never double-counts). Announced even when empty: a pin whose
@@ -491,14 +491,14 @@ class Harness:
                 conversation.notice(pinned_block(state.pins))
 
     def _carry_adopted_gate(self, snapshot: SessionSnapshot) -> tuple[str, ...]:
-        """The gate a gateless run adopted in an earlier leg, carried into this
+        """The gate a gateless run adopted in an earlier execution, carried into this
         one: the snapshot's command when the config names none and the jail
         can run it (the dispatcher takes it again, as the adoption did). `()`
-        otherwise, and the leg-start notice reads the gate as swapped."""
+        otherwise, and the execution-start notice reads the gate as swapped."""
         argv = tuple(snapshot.verify_command)
         if self.gate.configured or not argv or not self.dispatcher.adopt_verify_command(argv):
             return ()
-        self._log(f"LOOP: verify gate carried from the last leg: {' '.join(argv)}")
+        self._log(f"LOOP: verify gate carried from the last execution: {' '.join(argv)}")
         self._emit(
             "loop.verify_inferred",
             command=list(argv),
@@ -508,12 +508,12 @@ class Harness:
         return argv
 
     def _carry_verify_verdict(self, state: LoopState, snap: SessionSnapshot) -> None:
-        """Carry the prior leg's verify observation when it still describes THIS
+        """Carry the prior execution's verify observation when it still describes THIS
         tree: the chain tip is the snapshot's (`RunChain.checkpoint_head_sha` wrote
         it; a chain commit moves neither HEAD nor the checkout) and the
         worktree holds nothing the chain does not. An operator commit or edit
-        between legs invalidates it -- fails closed, like the baseline probe,
-        so the leg starts unobserved rather than wrongly green or red.
+        between executions invalidates it -- fails closed, like the baseline probe,
+        so the execution starts unobserved rather than wrongly green or red.
         `baseline_ok` is about the BASE commit, which resume never moves: it
         carries unconditionally."""
         state.verify.baseline_ok = snap.baseline_ok
@@ -642,8 +642,8 @@ class Harness:
             system=system,
         )
         self._seed_carryover(state, conversation, resume_from)
-        # This LEG's allowance: start..start-1+max (-1 = unbounded); a resumed
-        # leg re-arms rather than inheriting a spent absolute counter.
+        # This EXECUTION's allowance: start..start-1+max (-1 = unbounded); a resumed
+        # execution re-arms rather than inheriting a spent absolute counter.
         for iteration in (
             range(start_iteration, start_iteration + self.max_iterations)
             if self.max_iterations >= 0
@@ -654,13 +654,13 @@ class Harness:
                 seeded = self._seeded_steer(conversation, iteration, state)
                 if seeded is not None:
                     return seeded
-            # Rebuilt per turn, not per leg: a gate adopted mid-run, or a
+            # Rebuilt per turn, not per execution: a gate adopted mid-run, or a
             # policy the operator denies mid-run, changes what the worker has.
             # A frozen list offers a tool that is gone, or keeps offering one
             # that only raises. Built BEFORE the context prep, which measures
             # the request the tools ride in.
             tools = tool_definitions(self.dispatcher, mode=self.mode)
-            ctx = self._turn_context(state, iteration=iteration, leg_start=start_iteration)
+            ctx = self._turn_context(state, iteration=iteration, execution_start=start_iteration)
             wire = self._turn_pre_call(
                 conversation=conversation,
                 state=state,
@@ -815,12 +815,12 @@ class Harness:
         """Put the CURRENT plan.md in front of the planner, every turn.
 
         plan.md on disk is the plan; the conversation only ever holds a copy, and
-        `agent6 plan edit` writes the operator's answers to the file between legs.
+        `agent6 plan edit` writes the operator's answers to the file between executions.
         So the file is re-read here rather than resynced at one chosen moment, and
         injected only when it differs from what the planner was last shown -- an
         untouched plan costs nothing. finish_planning stays the only writer.
 
-        An UNREADABLE plan parks the leg (the returned SessionResult): the file
+        An UNREADABLE plan parks the execution (the returned SessionResult): the file
         may carry operator answers the planner's own copy supersedes, and
         continuing without them spends budget on stale direction. A missing
         file is normal (the first finish_planning creates it).
@@ -1461,12 +1461,14 @@ class Harness:
 
     # ---- the advisors --------------------------------------------------------
 
-    def _turn_context(self, state: LoopState, *, iteration: int, leg_start: int) -> TurnContext:
+    def _turn_context(
+        self, state: LoopState, *, iteration: int, execution_start: int
+    ) -> TurnContext:
         """The facts the advisors read this turn (`TurnContext`)."""
         return TurnContext(
             mode=self.mode,
             iteration=iteration,
-            leg_start=leg_start,
+            execution_start=execution_start,
             went_quiet_max_nudges=self.config.harness.went_quiet_max_nudges,
             loop_guard_kill_threshold=self.config.harness.loop_guard_kill_threshold,
             stagnation_notice_after_s=self.config.harness.stagnation_notice_after_s,
@@ -1838,7 +1840,7 @@ class Harness:
             self._emit_graph_snapshot()
 
     def _record_memory_use(self, state: LoopState) -> None:
-        """Persist the facts this leg wrote and read (`memory list` shows them);
+        """Persist the facts this execution wrote and read (`memory list` shows them);
         a write fault must not break the end."""
         memory = state.memory
         if self.state_dir is None or not (memory.wrote or memory.read or memory.deleted):
@@ -1963,7 +1965,7 @@ class Harness:
         self._emit("loop.decision.recorded", question=question[:200], answer=answer[:200])
 
     def _check_decisions_recorded(self, state: LoopState) -> None:
-        """The finish-time check: every ruling this leg recorded is in the
+        """The finish-time check: every ruling this execution recorded is in the
         file. A miss is reported (log + event), never a block."""
         if self.state_dir is None or not state.decisions_recorded:
             return

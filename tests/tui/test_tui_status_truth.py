@@ -7,7 +7,7 @@ the label, a one-way run_ended latch for liveness, the conversation's own
 event-tracked _live) and each lied somewhere: a parked run rendered a blank
 label over "(waiting for the model…)" with a steer composer nobody would ever
 read; a dead worker was labelled "worker exited" where the hub says "stale";
-a crash->resume kept "worker exited" painted over the live leg forever; and
+a crash->resume kept "worker exited" painted over the live execution forever; and
 the two composer bars disagreed with each other live.
 """
 
@@ -187,7 +187,7 @@ def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: Path) -> N
 
 def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: Path) -> None:
     """A rejected finish tool carries a proposed summary, not the run's end.
-    When the leg later fails, the stream pane shows the failure without
+    When the execution later fails, the stream pane shows the failure without
     presenting that abandoned summary as its closing story."""
     d = tmp_path / "failed-finish"
     d.mkdir()
@@ -524,10 +524,10 @@ def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: Path) -> Non
 
 def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
     """The dead-worker state is DERIVED, not latched: after the operator
-    resumes (new leg appends events, live worker.pid), the dashboard label
-    clears, the composers relabel to steer, and submits steer the live leg --
+    resumes (new execution appends events, live worker.pid), the dashboard label
+    clears, the composers relabel to steer, and submits steer the live execution --
     the one-way run_ended latch kept "worker exited" painted over the live
-    resumed leg and silently dropped operator input."""
+    resumed execution and silently dropped operator input."""
     d = tmp_path / "revived1"
     _mk_crashed(d)
 
@@ -536,7 +536,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
             await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
-            # The operator resumes: a new leg appends to the log and records a
+            # The operator resumes: a new execution appends to the log and records a
             # live worker pid.
             with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "loop.resume.start", "iteration": 2}) + "\n")
@@ -666,7 +666,7 @@ def _mk_blocked(d: Path, *, alive: bool) -> None:
 
 def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
     """The fold keeps an unanswered prompt past a worker death (it clears only
-    on an answer event or a leg boundary), so the dashboard popped live-looking
+    on an answer event or an execution boundary), so the dashboard popped live-looking
     Allow/Deny over a corpse and wrote the answer where nobody polls."""
     d = tmp_path / "ghost1"
     _mk_blocked(d, alive=False)
@@ -878,10 +878,12 @@ def test_a_finished_log_is_folded_before_the_first_paint(
     asyncio.run(scenario())
 
 
-def test_a_resumed_leg_drops_the_prior_legs_role_and_finish_story(tmp_path: Path) -> None:
-    """A leg boundary makes the prior call and finish summary historical. Until
-    the resumed leg calls a model, its header falls back to the manifest; if the
-    new leg then stops, its end story does not repeat the prior leg's summary."""
+def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
+    tmp_path: Path,
+) -> None:
+    """An execution boundary makes the prior call and finish summary historical. Until
+    the resumed execution calls a model, its header falls back to the manifest; if the
+    new execution then stops, its end story does not repeat the prior execution's summary."""
     d = tmp_path / "resumed-story"
     d.mkdir()
     logs = d / "logs.jsonl"
@@ -896,19 +898,21 @@ def test_a_resumed_leg_drops_the_prior_legs_role_and_finish_story(tmp_path: Path
         ),
         encoding="utf-8",
     )
-    first_leg = [
+    first_execution = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
         {"type": "role.call", "role": "worker", "model": "old-model", "provider": "p"},
         {"type": "role.result", "role": "worker", "ok": True, "text": "done"},
         {
             "type": "tool.call",
             "name": "finish_session",
-            "args": {"summary": "First leg done."},
+            "args": {"summary": "First execution done."},
         },
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "ok"},
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
-    logs.write_text("".join(json.dumps(event) + "\n" for event in first_leg), encoding="utf-8")
+    logs.write_text(
+        "".join(json.dumps(event) + "\n" for event in first_execution), encoding="utf-8"
+    )
 
     def append(*events: dict[str, object]) -> None:
         with logs.open("a", encoding="utf-8") as fh:
@@ -919,32 +923,34 @@ def test_a_resumed_leg_drops_the_prior_legs_role_and_finish_story(tmp_path: Path
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            assert "First leg done." in str(app._dash.query_one("#stream-body", Static).render())
+            assert "First execution done." in str(
+                app._dash.query_one("#stream-body", Static).render()
+            )
 
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             append({"type": "loop.resume.start", "iteration": 2, "mode": "run"})
-            await wait_for(pilot, lambda: not app.state.finished, "the resumed leg")
+            await wait_for(pilot, lambda: not app.state.finished, "the resumed execution")
             app._tick()
             await pilot.pause()
             top = str(app._dash.query_one("#top", Static).render())
             body = str(app._dash.query_one("#stream-body", Static).render())
             assert "role: worker / next-model" in top
             assert "old-model" not in top
-            assert "First leg done." not in body
+            assert "First execution done." not in body
 
             append(
                 {"type": "role.call", "role": "worker", "model": "new-model", "provider": "p"},
                 {"type": "role.result", "role": "worker", "ok": True, "text": "stopping"},
                 {"type": "session.end", "reason": "steer_abort", "all_passed": None},
             )
-            await wait_for(pilot, lambda: app.state.finished, "the resumed leg's end")
+            await wait_for(pilot, lambda: app.state.finished, "the resumed execution's end")
             app._tick()
             await pilot.pause()
             top = str(app._dash.query_one("#top", Static).render())
             body = str(app._dash.query_one("#stream-body", Static).render())
             assert "role: worker / new-model" in top
             assert "stopped" in body
-            assert "First leg done." not in body
+            assert "First execution done." not in body
 
     asyncio.run(scenario())
 
@@ -1170,7 +1176,7 @@ def test_dashboard_header_says_where_the_changes_are(
 
     async def held_header() -> tuple[str, str, str]:
         """The stamp lands while the finished screen is held: the header
-        re-reads it without a reopen (the line was cached for the leg). A
+        re-reads it without a reopen (the line was cached for the execution). A
         resume in place then commits past the stamp: the merge no longer
         holds, and the header follows."""
         app = Agent6TUI(d)

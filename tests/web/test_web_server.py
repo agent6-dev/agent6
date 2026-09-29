@@ -924,19 +924,19 @@ def test_an_action_on_a_session_that_is_not_live_names_resume(
     assert "not live" in str(data["error"]) and "resume" in str(data["error"])
 
 
-def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_leg(
+def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     """The tailer opened with stop_when_finished=True and the client closed on
     `finished`, so a run resumed from ANOTHER surface left this page frozen on
     "stopped" while the hub said "running", indefinitely. The stream now stays
-    open across a finish and paints the resumed leg (the TUI already did)."""
+    open across a finish and paints the resumed execution (the TUI already did)."""
     _srv, port = server
     _make_run(
         tmp_path,
         "resume-run",
         [
-            {"type": "session.start", "user_task": "leg one"},
+            {"type": "session.start", "user_task": "execution one"},
             {"type": "session.end", "all_passed": True},
         ],
     )
@@ -954,7 +954,7 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_leg(
                 + "\n"
             )
         snap = _read_until(resp, lambda s: s.get("finished") is False)
-        assert snap["user_task"] == "leg one"
+        assert snap["user_task"] == "execution one"
         # The frame carries a server-computed idle age so the browser's
         # "working… Ns" needs no clock agreement (and replay reads its true age).
         age = snap["last_event_age_s"]
@@ -1618,9 +1618,9 @@ def test_machine_answer_for_a_state_the_machine_left_is_refused(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     """The client names the state it rendered the prompt from. Once the machine
-    has advanced, that leg reads no answer: the POST was allowed on the newest
-    leg's open prompt and the answer landed in the old dir, unread, while the
-    page read it as answered. A prompt id repeats across legs, so routing to
+    has advanced, that execution reads no answer: the POST was allowed on the newest
+    execution's open prompt and the answer landed in the old dir, unread, while the
+    page read it as answered. A prompt id repeats across executions, so routing to
     the newest instead would answer a different prompt."""
     _srv, port = server
     inst, old_state = _make_machine_with_state(tmp_path, "adv", "0001-work", running=True)
@@ -2018,7 +2018,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: Path) -> Non
 
 def test_the_step_picker_fetches_through_the_base_it_was_rendered_with() -> None:
     """A machine-create draft renders through `/api/draft/<name>`, and its
-    drafting leg commits, so the picker paints; both of its fetches hardcoded
+    drafting execution commits, so the picker paints; both of its fetches hardcoded
     `/api/session/`, and every selection read "no session '<name>'"."""
     from agent6.ui.web.page import CLIENT_JS
 

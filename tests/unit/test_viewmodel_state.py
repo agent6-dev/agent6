@@ -119,7 +119,7 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
 
 
 def test_format_log_line_names_the_pins_in_force() -> None:
-    """loop.pin.restored announces the pins in force at leg start, whether a
+    """loop.pin.restored announces the pins in force at execution start, whether a
     fresh run's --pin or a resume's snapshot; the line said "restored from the
     snapshot" for both, false for --pin, and named none of them."""
     line = format_log_line(
@@ -203,7 +203,7 @@ def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
 
 
 def test_graph_update_orders_multiple_roots_like_tree_order() -> None:
-    """Two roots (a repeat ask/run leg, or an orphan re-rooted on resume) must
+    """Two roots (a repeat ask/run execution, or an orphan re-rooted on resume) must
     render in id order -- the order `tree_order` gives `list_tasks` and every
     other surface -- not the node map's iteration order, which is insertion
     order live and filesystem order after a resume."""
@@ -357,9 +357,9 @@ def test_budget_update_carries_usd_total() -> None:
     assert s.budget.usd_partial is True
 
 
-def test_budget_usd_cumulative_across_resume_legs() -> None:
-    # Each resume leg's budget.update restarts usd_total from 0; the view banks
-    # the finished leg on loop.resume.start so "cost" stays the cumulative
+def test_budget_usd_cumulative_across_resume_executions() -> None:
+    # Each resume execution's budget.update restarts usd_total from 0; the view banks
+    # the finished execution on loop.resume.start so "cost" stays the cumulative
     # spend -- the same rule the hub scanner applies (listing.scan_session_log),
     # keeping the hub row and the run view in agreement.
     def _update(usd: float, *, partial: bool = False) -> dict[str, object]:
@@ -368,13 +368,13 @@ def test_budget_usd_cumulative_across_resume_legs() -> None:
     s = apply_event(initial_state(), _update(0.02, partial=True))
     s = apply_event(s, {"type": "session.end", "reason": "finish_session", "all_passed": True})
     s = apply_event(s, {"type": "loop.resume.start"})
-    # Banked, and the header keeps the old total until the new leg reports.
+    # Banked, and the header keeps the old total until the new execution reports.
     assert s.budget.usd_total == 0.02
     s = apply_event(s, _update(0.005))
     assert s.budget.usd_total == pytest.approx(0.025)
-    # partial is sticky: leg 1's unpriced spend keeps the total an under-estimate.
+    # partial is sticky: execution 1's unpriced spend keeps the total an under-estimate.
     assert s.budget.usd_partial is True
-    # A second resume banks the cumulative, not just the last leg.
+    # A second resume banks the cumulative, not just the last execution.
     s = apply_event(s, {"type": "loop.resume.start"})
     s = apply_event(s, _update(0.001))
     assert s.budget.usd_total == pytest.approx(0.026)
@@ -522,7 +522,7 @@ def test_run_state_as_dict_is_json_serializable() -> None:
 
 
 def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: Path) -> None:
-    """A resumed/forked leg's log can start at loop.resume.start (no session.start),
+    """A resumed/forked execution's log can start at loop.resume.start (no session.start),
     folding session_id/user_task empty. With the dir in hand THE wire owner fills
     them (dir name + manifest task) so no consumer patches its own copy."""
     import json
@@ -648,7 +648,7 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
 
 def test_run_start_after_run_end_unfinishes_without_banking() -> None:
     """The ask REPL re-enters wf.run() per follow-up, emitting a fresh session.start
-    on the same log with no resume marker. A session.start begins a leg: it must
+    on the same log with no resume marker. A session.start begins an execution: it must
     clear the terminal state (or the streaming follow-up renders "answered").
     It must NOT bank usd like ResumeStart: the REPL reuses one BudgetTracker,
     so usd_total is already cumulative and banking would double-count."""
@@ -663,14 +663,14 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
     assert session_state_as_dict(s)["status_label"] == "running"
     s = apply_event(s, {"type": "budget.update", "usd_total": 0.03})
     assert s.budget.usd_total == pytest.approx(0.03)
-    assert s.budget.usd_prior_legs == pytest.approx(0.0)
+    assert s.budget.usd_prior_executions == pytest.approx(0.0)
 
 
-def test_resume_resets_the_leg_token_counters() -> None:
-    """ResumeStart banks usd but must also drop the dead leg's token counters
-    and caps: BudgetView documents them as the CURRENT leg's, and scan_session_log
-    already resets -- until the resumed leg's first budget.update the header
-    would otherwise render the finished leg's ~100%%."""
+def test_resume_resets_the_execution_token_counters() -> None:
+    """ResumeStart banks usd but must also drop the dead execution's token counters
+    and caps: BudgetView documents them as the CURRENT execution's, and scan_session_log
+    already resets -- until the resumed execution's first budget.update the header
+    would otherwise render the finished execution's ~100%%."""
     s = initial_state()
     s = apply_event(s, {"type": "session.start", "user_task": "t"})
     s = apply_event(
@@ -693,13 +693,13 @@ def test_resume_resets_the_leg_token_counters() -> None:
     assert s.budget.tokens_unmetered == 0
     assert s.budget.tokens_fallback_cap == 0
     assert s.budget.usd_total == pytest.approx(0.2)
-    assert s.budget.usd_prior_legs == pytest.approx(0.2)
+    assert s.budget.usd_prior_executions == pytest.approx(0.2)
 
 
-def test_resume_resets_the_leg_plan_counters() -> None:
-    """Subscription-plan usage is documented as leg-local, like the token
-    counters and caps: until the resumed leg's first budget.update, the header
-    must not keep showing the finished leg's plan percent/consumed/cap."""
+def test_resume_resets_the_execution_plan_counters() -> None:
+    """Subscription-plan usage is documented as execution-local, like the token
+    counters and caps: until the resumed execution's first budget.update, the header
+    must not keep showing the finished execution's plan percent/consumed/cap."""
     s = initial_state()
     s = apply_event(s, {"type": "session.start", "user_task": "t"})
     s = apply_event(
@@ -885,7 +885,7 @@ def test_fold_is_total_for_wrong_shaped_containers(bad: dict[str, Any]) -> None:
 
 def test_a_question_asked_while_no_model_runs_is_the_harness_s() -> None:
     """agent6 asks its own start questions (the dirty-tree gate) before
-    session.start, and again before a resumed leg starts (after the last
+    session.start, and again before a resumed execution starts (after the last
     session.end); a question while the model runs is the model's. The TUI
     modal and the web prompt box name the asker from this flag."""
     q = {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]}

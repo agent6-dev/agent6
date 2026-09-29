@@ -121,7 +121,7 @@ agent6 model worker claude/claude-sonnet-4-5
   Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).
 - Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude/claude-haiku-4-5`).
   Each side call is one short-lived `claude` process.
-- One `claude` process serves a worker leg.
+- One `claude` process serves a worker execution.
   It restarts, replaying the conversation as one text message, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.
   Tier-1 compaction shrinks the model's context at that next restart, not before.
 - Claude Code appends the account email to every system prompt it sends; agent6 replaces it with `<operator-email>` in the model's returned text.

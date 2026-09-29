@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-# A run session begins: a fresh run() emits session.start; a resumed leg emits
+# A run session begins: a fresh run() emits session.start; a resumed execution emits
 # only loop.resume.start (never a second session.start). Per-process state that
 # restarts at a session boundary (the prompt-id counters, a screen's
 # live/finished tracking, the receipt's mode) keys on both. One definition so
@@ -244,7 +244,7 @@ class PinAdded:
 
 @dataclass(frozen=True, slots=True)
 class PinsRestored:
-    """loop.pin.restored: a resume/fork leg restored the snapshot's pins. The
+    """loop.pin.restored: a resume/fork execution restored the snapshot's pins. The
     full list replaces the fold's pins (a plain resume's log already carries
     the pin.added events; a fork's fresh log carries only this)."""
 
@@ -253,7 +253,7 @@ class PinsRestored:
 
 @dataclass(frozen=True, slots=True)
 class CompactRestored:
-    """loop.compact.restored: a resume/fork leg counted the elision markers its
+    """loop.compact.restored: a resume/fork execution counted the elision markers its
     restored context actually carries. The counts replace the fold's, since a
     fork's fresh log has no compact.dropped events to fold."""
 
