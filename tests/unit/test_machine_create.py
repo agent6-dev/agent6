@@ -75,12 +75,12 @@ def test_the_authoring_prompt_asks_for_no_key_a_state_refuses() -> None:
     """The authoring prompt asks for no key the schema forbids (`summary` per state)."""
     import pydantic
 
-    from agent6.machine import spec
+    from agent6.machine import schema
 
     prompt = build_authoring_prompt("Poll a queue", attempt=1)
     assert "`summary`" not in prompt
     with pytest.raises(pydantic.ValidationError, match="summary"):
-        spec.MachineSpec.model_validate(
+        schema.MachineSpec.model_validate(
             {
                 "machine": {"name": "m", "start": "done"},
                 "states": {"done": {"kind": "terminal", "reason": "ok", "summary": "x"}},

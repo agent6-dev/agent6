@@ -2,22 +2,20 @@
 # Copyright 2026 Eric Lesiuta
 """Render a validated `MachineSpec` as a state diagram.
 
-Two renderers over the edges `agent6.machine.spec` computes: mermaid `stateDiagram-v2` (the
+Two renderers over the edges `agent6.machine.schema` computes: mermaid `stateDiagram-v2` (the
 default) and Graphviz dot.
 """
 
 from __future__ import annotations
 
-from agent6.machine import spec as machine_spec
+from agent6.machine import schema
 
 __all__ = ["render_dot", "render_mermaid"]
 
 
-def _terminals(spec: machine_spec.MachineSpec) -> list[str]:
+def _terminals(spec: schema.MachineSpec) -> list[str]:
     """Return the names of the terminal states."""
-    return [
-        name for name, state in spec.states.items() if isinstance(state, machine_spec.TerminalState)
-    ]
+    return [name for name, state in spec.states.items() if isinstance(state, schema.TerminalState)]
 
 
 def _clean_label(label: str) -> str:
@@ -25,10 +23,10 @@ def _clean_label(label: str) -> str:
     return " ".join(label.split())
 
 
-def render_mermaid(spec: machine_spec.MachineSpec) -> str:
+def render_mermaid(spec: schema.MachineSpec) -> str:
     """Return the machine as a mermaid `stateDiagram-v2` diagram."""
     lines = ["stateDiagram-v2", f"    [*] --> {spec.initial}"]
-    for edge in machine_spec.edges(spec):
+    for edge in schema.edges(spec):
         lines.append(f"    {edge.src} --> {edge.dst}: {_clean_label(edge.label)}")
     for terminal in _terminals(spec):
         lines.append(f"    {terminal} --> [*]")
@@ -40,7 +38,7 @@ def _dot_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def render_dot(spec: machine_spec.MachineSpec) -> str:
+def render_dot(spec: schema.MachineSpec) -> str:
     """Return the machine as a Graphviz dot digraph."""
     lines = [
         f'digraph "{_dot_escape(spec.machine)}" {{',
@@ -50,7 +48,7 @@ def render_dot(spec: machine_spec.MachineSpec) -> str:
     for terminal in _terminals(spec):
         lines.append(f'    "{_dot_escape(terminal)}" [shape=doublecircle];')
     lines.append(f'    __start__ -> "{_dot_escape(spec.initial)}";')
-    for edge in machine_spec.edges(spec):
+    for edge in schema.edges(spec):
         label = _dot_escape(_clean_label(edge.label))
         lines.append(
             f'    "{_dot_escape(edge.src)}" -> "{_dot_escape(edge.dst)}" [label="{label}"];'

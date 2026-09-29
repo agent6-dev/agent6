@@ -21,11 +21,11 @@ from typing import Any, Literal
 import pydantic
 
 from agent6.machine import predicate as machine_predicate
-from agent6.machine import spec as machine_spec
+from agent6.machine import schema
 from agent6.machine import template as machine_template
 
 
-def load_machine(path: pathlib.Path) -> machine_spec.MachineSpec:
+def load_machine(path: pathlib.Path) -> schema.MachineSpec:
     """Load, parse and fully validate a `.asm.toml` file.
 
     Args:
@@ -38,25 +38,25 @@ def load_machine(path: pathlib.Path) -> machine_spec.MachineSpec:
         MachineError: Every diagnostic, aggregated.
     """
     if not path.is_file():
-        raise machine_spec.MachineError([f"machine file not found: {path}"])
+        raise schema.MachineError([f"machine file not found: {path}"])
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise machine_spec.MachineError([f"not valid TOML ({path}): {exc}"]) from exc
+        raise schema.MachineError([f"not valid TOML ({path}): {exc}"]) from exc
     except UnicodeDecodeError as exc:
-        raise machine_spec.MachineError([f"not valid UTF-8 ({path}): {exc}"]) from exc
+        raise schema.MachineError([f"not valid UTF-8 ({path}): {exc}"]) from exc
     except OSError as exc:
-        raise machine_spec.MachineError([f"cannot be read ({path}): {exc}"]) from exc
+        raise schema.MachineError([f"cannot be read ({path}): {exc}"]) from exc
     precheck = _precheck(raw)
     if precheck:
-        raise machine_spec.MachineError(precheck)
+        raise schema.MachineError(precheck)
     try:
-        spec = machine_spec.MachineSpec.model_validate(raw)
+        spec = schema.MachineSpec.model_validate(raw)
     except pydantic.ValidationError as exc:
-        raise machine_spec.MachineError(_format_validation_error(exc)) from exc
+        raise schema.MachineError(_format_validation_error(exc)) from exc
     problems = validate_semantics(spec)
     if problems:
-        raise machine_spec.MachineError(problems)
+        raise schema.MachineError(problems)
     return spec
 
 
@@ -94,13 +94,13 @@ class _Env:
         schemas: The record schemas, fields resolved to types.
     """
 
-    var_types: dict[str, machine_spec.TypeRef]
+    var_types: dict[str, schema.TypeRef]
     var_owner: dict[str, str]
     var_values: dict[str, Any]
-    schemas: dict[str, dict[str, machine_spec.TypeRef]]
+    schemas: dict[str, dict[str, schema.TypeRef]]
 
 
-def _resolve_env(spec: machine_spec.MachineSpec) -> tuple[_Env, list[str]]:
+def _resolve_env(spec: schema.MachineSpec) -> tuple[_Env, list[str]]:
     """Resolve the schemas and variables.
 
     Returns:
@@ -113,7 +113,7 @@ def _resolve_env(spec: machine_spec.MachineSpec) -> tuple[_Env, list[str]]:
     return _Env(var_types, var_owner, var_values, schemas), problems
 
 
-def validate_semantics(spec: machine_spec.MachineSpec) -> list[str]:
+def validate_semantics(spec: schema.MachineSpec) -> list[str]:
     """Run every cross-cutting rule the pydantic shape cannot express.
 
     Args:
@@ -125,9 +125,9 @@ def validate_semantics(spec: machine_spec.MachineSpec) -> list[str]:
     problems: list[str] = []
 
     for sname in spec.schemas:
-        if not machine_spec.IDENT_RE.fullmatch(sname):
+        if not schema.IDENT_RE.fullmatch(sname):
             problems.append(f"schema name {sname!r} is not a valid identifier (^[a-z][a-z0-9_]*$)")
-        elif sname in machine_spec.BUILTIN_TYPE_NAMES:
+        elif sname in schema.BUILTIN_TYPE_NAMES:
             # `parse_type` resolves the built-ins first, so such a schema could never be named.
             problems.append(
                 f"schema name {sname!r} is a built-in type, so nothing could reference it"
@@ -140,7 +140,7 @@ def validate_semantics(spec: machine_spec.MachineSpec) -> list[str]:
         problems.append(f"initial state {spec.initial!r} is not a declared state")
 
     for name, state in spec.states.items():
-        if not machine_spec.IDENT_RE.fullmatch(name):
+        if not schema.IDENT_RE.fullmatch(name):
             problems.append(f"state name {name!r} is not a valid identifier (^[a-z][a-z0-9_]*$)")
         problems.extend(_validate_state(name, state, env))
 
@@ -149,23 +149,23 @@ def validate_semantics(spec: machine_spec.MachineSpec) -> list[str]:
 
 
 def _resolve_schemas(
-    spec: machine_spec.MachineSpec, schema_names: frozenset[str]
-) -> tuple[dict[str, dict[str, machine_spec.TypeRef]], list[str]]:
+    spec: schema.MachineSpec, schema_names: frozenset[str]
+) -> tuple[dict[str, dict[str, schema.TypeRef]], list[str]]:
     """Resolve each schema's field types.
 
     Returns:
         The schemas and the problems found.
     """
     problems: list[str] = []
-    resolved: dict[str, dict[str, machine_spec.TypeRef]] = {}
+    resolved: dict[str, dict[str, schema.TypeRef]] = {}
     for sname, fields in spec.schemas.items():
-        resolved_fields: dict[str, machine_spec.TypeRef] = {}
+        resolved_fields: dict[str, schema.TypeRef] = {}
         for fname, field in fields.items():
-            if not machine_spec.IDENT_RE.fullmatch(fname):
+            if not schema.IDENT_RE.fullmatch(fname):
                 problems.append(f"schema {sname!r}: field name {fname!r} is not a valid identifier")
             try:
-                ftype = machine_spec.parse_type(field.type, schema_names)
-            except machine_spec.TypeParseError as exc:
+                ftype = schema.parse_type(field.type, schema_names)
+            except schema.TypeParseError as exc:
                 problems.append(f"schema {sname!r}.{fname}: {exc}")
                 continue
             if field.enum is not None:
@@ -173,7 +173,7 @@ def _resolve_schemas(
                     problems.append(
                         f"schema {sname!r}.{fname}: `enum` must contain at least one value"
                     )
-                if ftype != machine_spec.ScalarT("str"):
+                if ftype != schema.ScalarT("str"):
                     problems.append(
                         f"schema {sname!r}.{fname}: `enum` is only valid on `str` fields"
                     )
@@ -183,7 +183,7 @@ def _resolve_schemas(
     return resolved, problems
 
 
-def _detect_schema_cycles(resolved: dict[str, dict[str, machine_spec.TypeRef]]) -> list[str]:
+def _detect_schema_cycles(resolved: dict[str, dict[str, schema.TypeRef]]) -> list[str]:
     """Return one problem per cycle among record schemas."""
     problems: list[str] = []
     visiting: set[str] = set()
@@ -199,7 +199,7 @@ def _detect_schema_cycles(resolved: dict[str, dict[str, machine_spec.TypeRef]]) 
             return
         visiting.add(name)
         for ftype in resolved[name].values():
-            if isinstance(ftype, machine_spec.RecordT):
+            if isinstance(ftype, schema.RecordT):
                 visit(ftype.name, (*trail, name))
         visiting.discard(name)
         done.add(name)
@@ -210,17 +210,17 @@ def _detect_schema_cycles(resolved: dict[str, dict[str, machine_spec.TypeRef]]) 
 
 
 def _resolve_vars(
-    spec: machine_spec.MachineSpec,
+    spec: schema.MachineSpec,
     schema_names: frozenset[str],
-    schemas: dict[str, dict[str, machine_spec.TypeRef]],
-) -> tuple[dict[str, machine_spec.TypeRef], dict[str, str], dict[str, Any], list[str]]:
+    schemas: dict[str, dict[str, schema.TypeRef]],
+) -> tuple[dict[str, schema.TypeRef], dict[str, str], dict[str, Any], list[str]]:
     """Resolve the three owner tables into one namespace.
 
     Returns:
         The types, the owners, the values and the problems found.
     """
     problems: list[str] = []
-    var_types: dict[str, machine_spec.TypeRef] = {}
+    var_types: dict[str, schema.TypeRef] = {}
     var_owner: dict[str, str] = {}
     var_values: dict[str, Any] = {}
 
@@ -232,12 +232,12 @@ def _resolve_vars(
     )
     for owner, table in owners:
         for vname, varspec in table.items():
-            if not machine_spec.IDENT_RE.fullmatch(vname):
+            if not schema.IDENT_RE.fullmatch(vname):
                 problems.append(
                     f"variable name {vname!r} in `[vars.{owner}]` is not a valid identifier"
                     " (^[a-z][a-z0-9_]*$)"
                 )
-            if vname in machine_spec.RESERVED_NAMES:
+            if vname in schema.RESERVED_NAMES:
                 problems.append(f"variable name {vname!r} is reserved and may not be used")
             if vname in declared:
                 problems.append(
@@ -248,8 +248,8 @@ def _resolve_vars(
             declared[vname] = owner
             var_owner[vname] = owner
             try:
-                vtype = machine_spec.parse_type(varspec.type, schema_names)
-            except machine_spec.TypeParseError as exc:
+                vtype = schema.parse_type(varspec.type, schema_names)
+            except schema.TypeParseError as exc:
                 problems.append(f"variable {vname!r} in `[vars.{owner}]`: {exc}")
                 continue
             var_types[vname] = vtype
@@ -267,7 +267,7 @@ def _resolve_vars(
     return var_types, var_owner, var_values, problems
 
 
-def fixture_problems(spec: machine_spec.MachineSpec, fixture: dict[str, Any]) -> list[str]:
+def fixture_problems(spec: schema.MachineSpec, fixture: dict[str, Any]) -> list[str]:
     """Return the problems in a `--blackboard` fixture.
 
     Every key names a declared variable and every value satisfies its type, the checks the
@@ -300,27 +300,27 @@ def fixture_problems(spec: machine_spec.MachineSpec, fixture: dict[str, Any]) ->
 
 def _check_value(
     value: Any,
-    t: machine_spec.TypeRef,
-    schemas: dict[str, dict[str, machine_spec.TypeRef]],
+    t: schema.TypeRef,
+    schemas: dict[str, dict[str, schema.TypeRef]],
     label: str,
     *,
-    raw_schemas: dict[str, dict[str, machine_spec.FieldSpec]] | None = None,
+    raw_schemas: dict[str, dict[str, schema.FieldSpec]] | None = None,
 ) -> list[str]:
     """Return the problems of a declared value against its type.
 
     A record value is a placeholder: presence is not required, but every present field
     must be known and well typed.
     """
-    if isinstance(t, machine_spec.ScalarT):
+    if isinstance(t, schema.ScalarT):
         return _check_scalar(value, t.name, label)
-    if isinstance(t, machine_spec.ListT):
+    if isinstance(t, schema.ListT):
         if not isinstance(value, list):
             return [f"{label}: expected list, got {_py_type(value)}"]
         problems: list[str] = []
         for index, element in enumerate(value):
             problems.extend(_check_scalar(element, t.elem, f"{label}[{index}]"))
         return problems
-    if isinstance(t, machine_spec.JsonT):
+    if isinstance(t, schema.JsonT):
         return _check_json(value, label)
     if not isinstance(value, dict):
         return [f"{label}: expected object for record {t.name!r}, got {_py_type(value)}"]
@@ -339,7 +339,7 @@ def _check_value(
     return problems
 
 
-def _enum_problems(value: Any, field: machine_spec.FieldSpec, label: str) -> list[str]:
+def _enum_problems(value: Any, field: schema.FieldSpec, label: str) -> list[str]:
     """Return the `enum` problem of a value, the check a default and a runtime field share."""
     if field.enum is None or value in field.enum:
         return []
@@ -386,7 +386,7 @@ def _py_type(value: Any) -> str:
 
 
 def validate_record_payload(
-    schemas: dict[str, dict[str, machine_spec.FieldSpec]],
+    schemas: dict[str, dict[str, schema.FieldSpec]],
     schema_name: str,
     payload: Any,
     *,
@@ -413,7 +413,7 @@ def validate_record_payload(
 def _check_record_strict(
     value: Any,
     schema_name: str,
-    raw_schemas: dict[str, dict[str, machine_spec.FieldSpec]],
+    raw_schemas: dict[str, dict[str, schema.FieldSpec]],
     schema_names: frozenset[str],
     label: str,
 ) -> list[str]:
@@ -440,24 +440,24 @@ def _check_record_strict(
 
 def _check_field_value(
     value: Any,
-    field: machine_spec.FieldSpec,
-    raw_schemas: dict[str, dict[str, machine_spec.FieldSpec]],
+    field: schema.FieldSpec,
+    raw_schemas: dict[str, dict[str, schema.FieldSpec]],
     schema_names: frozenset[str],
     label: str,
 ) -> list[str]:
     """Return the problems of one field's value, recursing into a record."""
     try:
-        ftype = machine_spec.parse_type(field.type, schema_names)
-    except machine_spec.TypeParseError as exc:  # pragma: no cover - spec already validated
+        ftype = schema.parse_type(field.type, schema_names)
+    except schema.TypeParseError as exc:  # pragma: no cover - spec already validated
         return [f"{label}: {exc}"]
-    if isinstance(ftype, machine_spec.RecordT):
+    if isinstance(ftype, schema.RecordT):
         return _check_record_strict(value, ftype.name, raw_schemas, schema_names, label)
     return _check_value(value, ftype, {}, label) or _enum_problems(value, field, label)
 
 
 def _resolve_ref_type(
-    ref: machine_predicate.Reference, env: _Env, result_type: machine_spec.TypeRef | None
-) -> tuple[machine_spec.TypeRef | None, str | None]:
+    ref: machine_predicate.Reference, env: _Env, result_type: schema.TypeRef | None
+) -> tuple[schema.TypeRef | None, str | None]:
     """Resolve a reference's type.
 
     Returns:
@@ -466,15 +466,15 @@ def _resolve_ref_type(
     if ref.root == "result":
         if result_type is None:
             return None, f"`result` is not navigable here ({ref.dotted!r})"
-        current: machine_spec.TypeRef = result_type
+        current: schema.TypeRef = result_type
     else:
         looked_up = env.var_types.get(ref.root)
         if looked_up is None:
             return None, f"unknown variable {ref.root!r}"
         current = looked_up
     for key in ref.path:
-        if not isinstance(current, machine_spec.RecordT):
-            return None, f"cannot navigate into {machine_spec.type_str(current)} at {ref.dotted!r}"
+        if not isinstance(current, schema.RecordT):
+            return None, f"cannot navigate into {schema.type_str(current)} at {ref.dotted!r}"
         fields = env.schemas.get(current.name, {})
         if key not in fields:
             return None, f"record {current.name!r} has no field {key!r} (in {ref.dotted!r})"
@@ -486,7 +486,7 @@ def _validate_template(
     text: str,
     env: _Env,
     *,
-    result_type: machine_spec.TypeRef | None,
+    result_type: schema.TypeRef | None,
     allow_splice: bool,
     where: str,
 ) -> list[str]:
@@ -507,25 +507,25 @@ def _validate_template(
         if part.filt == "json":
             continue
         if part.filt == "len":
-            if isinstance(ref_type, machine_spec.ScalarT) and ref_type.name != "str":
+            if isinstance(ref_type, schema.ScalarT) and ref_type.name != "str":
                 problems.append(
-                    f"{where}: `| len` does not apply to {machine_spec.type_str(ref_type)} "
+                    f"{where}: `| len` does not apply to {schema.type_str(ref_type)} "
                     f"({part.ref.dotted!r})"
                 )
             continue
         # A bare reference must be a scalar, unless a lone list reference is spliced into argv.
-        if isinstance(ref_type, machine_spec.ScalarT):
+        if isinstance(ref_type, schema.ScalarT):
             continue
-        if allow_splice and isinstance(ref_type, machine_spec.ListT) and template.is_lone_ref:
+        if allow_splice and isinstance(ref_type, schema.ListT) and template.is_lone_ref:
             continue
         problems.append(
-            f"{where}: bare reference to {machine_spec.type_str(ref_type)} ({part.ref.dotted!r});"
+            f"{where}: bare reference to {schema.type_str(ref_type)} ({part.ref.dotted!r});"
             " apply `| json` or, for a list in argv, splice it as a standalone element"
         )
     return problems
 
 
-def _validate_state(name: str, state: machine_spec.StateSpec, env: _Env) -> list[str]:
+def _validate_state(name: str, state: schema.StateSpec, env: _Env) -> list[str]:
     """Return one state's problems; every kind's `notify` template is checked first."""
     problems: list[str] = []
     if state.notify is not None:
@@ -538,13 +538,13 @@ def _validate_state(name: str, state: machine_spec.StateSpec, env: _Env) -> list
                 where=f"state {name!r} notify",
             )
         )
-    if isinstance(state, machine_spec.AgentState):
+    if isinstance(state, schema.AgentState):
         problems.extend(_validate_agent(name, state, env))
-    elif isinstance(state, machine_spec.ToolState):
+    elif isinstance(state, schema.ToolState):
         problems.extend(_validate_tool(name, state, env))
-    elif isinstance(state, machine_spec.WaitState):
+    elif isinstance(state, schema.WaitState):
         problems.extend(_validate_wait(name, state, env))
-    elif isinstance(state, machine_spec.BranchState):
+    elif isinstance(state, schema.BranchState):
         problems.extend(_validate_branch(name, state, env))
     return problems  # a terminal's shape is fully checked by pydantic
 
@@ -562,16 +562,16 @@ def _validate_on(name: str, on: dict[str, str], expected: frozenset[str]) -> lis
     return problems
 
 
-def _validate_agent(name: str, state: machine_spec.AgentState, env: _Env) -> list[str]:
+def _validate_agent(name: str, state: schema.AgentState, env: _Env) -> list[str]:
     """Return an agent state's problems."""
-    problems = _validate_on(name, state.on, machine_spec.AGENT_LABELS)
+    problems = _validate_on(name, state.on, schema.AGENT_LABELS)
     if state.output_schema not in env.schemas:
         problems.append(
             f"state {name!r}: output_schema {state.output_schema!r} is not a declared schema"
         )
-        result_type: machine_spec.TypeRef | None = None
+        result_type: schema.TypeRef | None = None
     else:
-        result_type = machine_spec.RecordT(state.output_schema)
+        result_type = schema.RecordT(state.output_schema)
     problems.extend(
         _validate_template(
             state.prompt,
@@ -596,17 +596,17 @@ def _validate_agent(name: str, state: machine_spec.AgentState, env: _Env) -> lis
     return problems
 
 
-def _validate_tool(name: str, state: machine_spec.ToolState, env: _Env) -> list[str]:
+def _validate_tool(name: str, state: schema.ToolState, env: _Env) -> list[str]:
     """Return a tool state's problems."""
-    problems = _validate_on(name, state.on, machine_spec.TOOL_LABELS)
-    result_type: machine_spec.TypeRef | None = None
+    problems = _validate_on(name, state.on, schema.TOOL_LABELS)
+    result_type: schema.TypeRef | None = None
     if state.output_schema is not None:
         if state.output_schema not in env.schemas:
             problems.append(
                 f"state {name!r}: output_schema {state.output_schema!r} is not a declared schema"
             )
         else:
-            result_type = machine_spec.RecordT(state.output_schema)
+            result_type = schema.RecordT(state.output_schema)
     for index, element in enumerate(state.command):
         problems.extend(
             _validate_template(
@@ -634,7 +634,7 @@ def _validate_tool(name: str, state: machine_spec.ToolState, env: _Env) -> list[
                 env,
                 owner="code",
                 result_type=result_type,
-                whole_type=machine_spec.JsonT(),
+                whole_type=schema.JsonT(),
             )
         )
     return problems
@@ -642,12 +642,12 @@ def _validate_tool(name: str, state: machine_spec.ToolState, env: _Env) -> list[
 
 def _validate_capture(
     name: str,
-    capture: machine_spec.Capture,
+    capture: schema.Capture,
     env: _Env,
     *,
     owner: str,
-    result_type: machine_spec.TypeRef | None,
-    whole_type: machine_spec.TypeRef | None,
+    result_type: schema.TypeRef | None,
+    whole_type: schema.TypeRef | None,
 ) -> list[str]:
     """Return a capture's problems: the ownership wall and the target types."""
     problems: list[str] = []
@@ -659,9 +659,9 @@ def _validate_capture(
             problems.append(
                 f"state {name!r}: capture target {whole_target!r} has "
                 "type"
-                f" {machine_spec.type_str(target_type)} but the captured value is "
-                f"{machine_spec.type_str(whole_type)};"
-                f' declare it as type = "{machine_spec.type_decl(whole_type)}"'
+                f" {schema.type_str(target_type)} but the captured value is "
+                f"{schema.type_str(whole_type)};"
+                f' declare it as type = "{schema.type_decl(whole_type)}"'
             )
     if capture.set is not None:
         for target, template in capture.set.items():
@@ -691,7 +691,7 @@ def _check_capture_target(
 
 
 def _validate_set_assignment(
-    name: str, target: str, template: str, env: _Env, *, result_type: machine_spec.TypeRef | None
+    name: str, target: str, template: str, env: _Env, *, result_type: schema.TypeRef | None
 ) -> list[str]:
     """Return a `capture.set` assignment's problems: a lone reference keeps its type, else str."""
     where = f"state {name!r} capture.set.{target}"
@@ -708,24 +708,24 @@ def _validate_set_assignment(
             return [f"{where}: {error}"]
         if target_type is not None and source_type is not None and source_type != target_type:
             return [
-                f"{where}: assigns {machine_spec.type_str(source_type)} to {target!r} of type"
-                f" {machine_spec.type_str(target_type)};"
-                f' declare it as type = "{machine_spec.type_decl(source_type)}"'
+                f"{where}: assigns {schema.type_str(source_type)} to {target!r} of type"
+                f" {schema.type_str(target_type)};"
+                f' declare it as type = "{schema.type_decl(source_type)}"'
             ]
         return []
     problems = _validate_template(
         template, env, result_type=result_type, allow_splice=False, where=where
     )
-    if target_type is not None and target_type != machine_spec.ScalarT("str"):
+    if target_type is not None and target_type != schema.ScalarT("str"):
         problems.append(
             f"{where}: a rendered template yields a string but {target!r} has type"
-            f' {machine_spec.type_str(target_type)}; declare it as type = "str"'
+            f' {schema.type_str(target_type)}; declare it as type = "str"'
             " (only a lone {{ var }} keeps a value's type)"
         )
     return problems
 
 
-def _validate_wait(name: str, state: machine_spec.WaitState, env: _Env) -> list[str]:
+def _validate_wait(name: str, state: schema.WaitState, env: _Env) -> list[str]:
     """Return a wait state's problems; a timerless wait declares only `signal`."""
     timings = [
         timing
@@ -741,9 +741,9 @@ def _validate_wait(name: str, state: machine_spec.WaitState, env: _Env) -> list[
             f" `until` (found: {timings})"
         ]
     elif not timings:
-        problems = _validate_on(name, state.on, machine_spec.WAIT_LABELS - frozenset({"tick"}))
+        problems = _validate_on(name, state.on, schema.WAIT_LABELS - frozenset({"tick"}))
     else:
-        problems = _validate_on(name, state.on, machine_spec.WAIT_LABELS)
+        problems = _validate_on(name, state.on, schema.WAIT_LABELS)
     for timing, value in (
         ("every_secs", state.every_secs),
         ("until", state.until),
@@ -838,12 +838,12 @@ def _timing_problems(
     ref_type, error = _resolve_ref_type(ref, env, None)
     if error is None:
         assert ref_type is not None
-        expected = machine_spec.ScalarT("int") if kind == "int" else machine_spec.ScalarT("str")
+        expected = schema.ScalarT("int") if kind == "int" else schema.ScalarT("str")
         if ref_type != expected:
             noun = "an int" if kind == "int" else "a str"
             problems.append(
                 f"state {name!r}: `{key}` must reference {noun} variable, not "
-                f"{machine_spec.type_str(ref_type)}"
+                f"{schema.type_str(ref_type)}"
             )
         elif env.var_owner.get(ref.root) == "operator":
             value = _static_ref_value(ref, env.var_values)
@@ -864,7 +864,7 @@ def _timing_problems(
     return problems
 
 
-def _validate_branch(name: str, state: machine_spec.BranchState, env: _Env) -> list[str]:
+def _validate_branch(name: str, state: schema.BranchState, env: _Env) -> list[str]:
     """Return a branch state's problems: each predicate, and a final `else`."""
     problems: list[str] = []
     last_index = len(state.when) - 1
@@ -921,10 +921,10 @@ def _predicate_len_problems(name: str, source: str, body: ast.expr, env: _Env) -
         )
         if ref is not None:
             ftype, error = _resolve_ref_type(ref, env, None)
-            if error is None and isinstance(ftype, machine_spec.ScalarT) and ftype.name != "str":
+            if error is None and isinstance(ftype, schema.ScalarT) and ftype.name != "str":
                 problems.append(
                     f"state {name!r}: predicate {source!r}: `len()` does not apply to"
-                    f" {machine_spec.type_str(ftype)} ({ref.dotted!r})"
+                    f" {schema.type_str(ftype)} ({ref.dotted!r})"
                 )
         elif isinstance(arg, ast.Constant) and not isinstance(arg.value, str):
             problems.append(
@@ -934,15 +934,15 @@ def _predicate_len_problems(name: str, source: str, body: ast.expr, env: _Env) -
     return problems
 
 
-def _validate_graph(spec: machine_spec.MachineSpec) -> list[str]:
+def _validate_graph(spec: schema.MachineSpec) -> list[str]:
     """Return the graph's problems: undeclared targets and unreachable states."""
     problems: list[str] = []
-    for edge in machine_spec.edges(spec):
+    for edge in schema.edges(spec):
         if edge.dst not in spec.states:
             problems.append(
                 f"state {edge.src!r}: transition target {edge.dst!r} is not a declared state"
             )
-    reachable = machine_spec.reachable_states(spec)
+    reachable = schema.reachable_states(spec)
     for name in spec.states:
         if name not in reachable:
             problems.append(f"state {name!r} is unreachable from initial state {spec.initial!r}")

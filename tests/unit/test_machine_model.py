@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.machine.spec, `.asm.toml` parse + semantic validation."""
+"""Tests for agent6.machine.schema, `.asm.toml` parse + semantic validation."""
 
 from __future__ import annotations
 
@@ -8,8 +8,7 @@ import pathlib
 
 import pytest
 
-from agent6.machine import _semantics
-from agent6.machine import spec as machine_spec
+from agent6.machine import _semantics, schema
 
 # The worked example from the state-machines page; error-case tests mutate a copy.
 VALID_MACHINE = """
@@ -96,7 +95,7 @@ def _write(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
 
 
 def _problems(tmp_path: pathlib.Path, body: str) -> list[str]:
-    with pytest.raises(machine_spec.MachineError) as excinfo:
+    with pytest.raises(schema.MachineError) as excinfo:
         _semantics.load_machine(_write(tmp_path, body))
     return excinfo.value.problems
 
@@ -121,7 +120,7 @@ def test_agent_state_model_defaults_to_inherit(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace('\nmodel = "claude-sonnet-4-5"', "")
     spec = _semantics.load_machine(_write(tmp_path, body))
     classify = spec.states["classify"]
-    assert isinstance(classify, machine_spec.AgentState)
+    assert isinstance(classify, schema.AgentState)
     assert classify.model == "inherit"
 
 
@@ -156,7 +155,7 @@ def test_non_utf8_file_raises_machine_error(tmp_path: pathlib.Path) -> None:
     # A non-UTF-8 machine file surfaces as a MachineError, not an unhandled decode error.
     path = tmp_path / "m.asm.toml"
     path.write_bytes(b"machine = \xff\xfe not utf-8")
-    with pytest.raises(machine_spec.MachineError) as excinfo:
+    with pytest.raises(schema.MachineError) as excinfo:
         _semantics.load_machine(path)
     assert any("UTF-8" in p for p in excinfo.value.problems)
 
@@ -680,7 +679,7 @@ max_tokens_fallback = 100000""",
     )
     spec = _semantics.load_machine(_write(tmp_path, body))
     state = spec.states["classify"]
-    assert isinstance(state, machine_spec.AgentState)
+    assert isinstance(state, schema.AgentState)
     assert state.provider == "anthropic"
     assert state.effort == "high"
     assert state.temperature == 0.2
@@ -691,7 +690,7 @@ max_tokens_fallback = 100000""",
 def test_agent_state_knobs_default_none(tmp_path: pathlib.Path) -> None:
     spec = _semantics.load_machine(_write(tmp_path, VALID_MACHINE))
     state = spec.states["classify"]
-    assert isinstance(state, machine_spec.AgentState)
+    assert isinstance(state, schema.AgentState)
     assert state.provider is None
     assert state.effort is None
     assert state.temperature is None
@@ -770,7 +769,7 @@ def test_agent_state_max_usd_rejects_non_finite(tmp_path: pathlib.Path) -> None:
 def test_budget_best_effort_usd_limit_is_gone(tmp_path: pathlib.Path) -> None:
     # The old soft field must fail the grammar loudly, never load as an ignored knob.
     body = VALID_MACHINE.replace("max_usd         = 25.0", "best_effort_usd_limit = 25.0")
-    with pytest.raises(machine_spec.MachineError, match="best_effort_usd_limit"):
+    with pytest.raises(schema.MachineError, match="best_effort_usd_limit"):
         _semantics.load_machine(_write(tmp_path, body))
 
 
@@ -780,7 +779,7 @@ def test_agent_state_best_effort_field_is_gone(tmp_path: pathlib.Path) -> None:
         'kind  = "agent"\nbest_effort_usd_limit = 1.0',
         1,
     )
-    with pytest.raises(machine_spec.MachineError, match="best_effort_usd_limit"):
+    with pytest.raises(schema.MachineError, match="best_effort_usd_limit"):
         _semantics.load_machine(_write(tmp_path, body))
 
 
@@ -788,18 +787,14 @@ def test_wait_every_secs_accepts_a_bare_integer() -> None:
     """`every_secs = 30` coerces to the string the template field carries; floats stay refused."""
     import pydantic
 
-    st = machine_spec.WaitState.model_validate(
-        {"kind": "wait", "every_secs": 30, "on": {"tick": "done"}}
-    )
+    st = schema.WaitState.model_validate({"kind": "wait", "every_secs": 30, "on": {"tick": "done"}})
     assert st.every_secs == "30"
-    templated = machine_spec.WaitState.model_validate(
+    templated = schema.WaitState.model_validate(
         {"kind": "wait", "every_secs": "{{ config.poll }}", "on": {"tick": "done"}}
     )
     assert templated.every_secs == "{{ config.poll }}"
     with pytest.raises(pydantic.ValidationError):
-        machine_spec.WaitState.model_validate(
-            {"kind": "wait", "every_secs": 1.5, "on": {"tick": "done"}}
-        )
+        schema.WaitState.model_validate({"kind": "wait", "every_secs": 1.5, "on": {"tick": "done"}})
 
 
 def test_a_schema_named_after_a_builtin_type_is_refused(tmp_path: pathlib.Path) -> None:
@@ -813,5 +808,5 @@ def test_a_schema_named_after_a_builtin_type_is_refused(tmp_path: pathlib.Path) 
     path = tmp_path / "m1.asm.toml"
     path.write_text(src, encoding="utf-8")
 
-    with pytest.raises(machine_spec.MachineError, match="built-in type"):
+    with pytest.raises(schema.MachineError, match="built-in type"):
         _semantics.load_machine(path)

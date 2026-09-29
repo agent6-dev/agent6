@@ -16,8 +16,7 @@ import pathlib
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from agent6.machine import MachineError, MachineResult, journal, load_machine
-from agent6.machine import spec as machine_spec
+from agent6.machine import MachineError, MachineResult, journal, load_machine, schema
 from agent6.sessions import ipc, layout
 from agent6.viewmodel import format
 from agent6.viewmodel import state as viewmodel_state
@@ -142,7 +141,7 @@ def _fact_detail(step: journal.StepEvent) -> str:
     return ""
 
 
-def fold_machine(spec: machine_spec.MachineSpec, events: Sequence[object]) -> MachineState:
+def fold_machine(spec: schema.MachineSpec, events: Sequence[object]) -> MachineState:
     """Fold a machine journal into its watch view.
 
     Args:

@@ -12,7 +12,7 @@ import pathlib
 
 from agent6 import git_ops
 from agent6.app import machine_agent
-from agent6.machine import AgentExecResult, AgentRequest, spec
+from agent6.machine import AgentExecResult, AgentRequest, schema
 
 _REQUEST = machine_agent.MachineAgentRequest(
     cwd=pathlib.Path("/work/repo"),
@@ -38,8 +38,8 @@ _REQUEST = machine_agent.MachineAgentRequest(
         output_schema="verdict",
         schemas={
             "verdict": {
-                "ok": spec.FieldSpec(type="bool"),
-                "note": spec.FieldSpec(type="str", optional=True),
+                "ok": schema.FieldSpec(type="bool"),
+                "note": schema.FieldSpec(type="str", optional=True),
             }
         },
     ),

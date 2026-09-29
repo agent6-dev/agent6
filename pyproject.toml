@@ -254,7 +254,7 @@ banned-from = [
     "agent6.machine.graph",
     "agent6.machine.journal",
     "agent6.machine.predicate",
-    "agent6.machine.spec",
+    "agent6.machine.schema",
     "agent6.machine.template",
     "agent6.memory",
     "agent6.models.cache",

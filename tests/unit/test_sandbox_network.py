@@ -20,7 +20,7 @@ from agent6.app.machine import (
 )
 from agent6.config import Config, validate_config
 from agent6.harness import loop as harness_loop
-from agent6.machine import AgentRequest, spec
+from agent6.machine import AgentRequest, schema
 from agent6.tools import dispatch
 
 
@@ -49,11 +49,11 @@ def test_check_network_support_refuses_only_explicit_states_on_hardened() -> Non
 
 # --- _machine_network_refusal ----------------------------------------------
 
-_TOOL = spec.ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"})
-_NET_TOOL = spec.ToolState(
+_TOOL = schema.ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"})
+_NET_TOOL = schema.ToolState(
     kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="host"
 )
-_BLOCK_TOOL = spec.ToolState(
+_BLOCK_TOOL = schema.ToolState(
     kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="none"
 )
 

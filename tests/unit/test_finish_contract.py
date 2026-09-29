@@ -15,15 +15,16 @@ from unittest import mock
 from agent6.app import machine_agent
 from agent6.config import Config
 from agent6.harness import _chain, _conversation, _finish_gates, _loop_state, loop
-from agent6.machine import AgentRequest, spec
+from agent6.machine import AgentRequest
+from agent6.machine import schema as machine_schema
 from tests.unit.turn_context import turn_context
 
 _SCHEMAS = {
     "verdict": {
-        "ok": spec.FieldSpec(type="bool"),
-        "detail": spec.FieldSpec(type="finding", optional=True),
+        "ok": machine_schema.FieldSpec(type="bool"),
+        "detail": machine_schema.FieldSpec(type="finding", optional=True),
     },
-    "finding": {"label": spec.FieldSpec(type="str", enum=("pass", "fail"))},
+    "finding": {"label": machine_schema.FieldSpec(type="str", enum=("pass", "fail"))},
 }
 
 

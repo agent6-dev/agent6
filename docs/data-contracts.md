@@ -72,7 +72,7 @@ Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommi
 
 ## MachineSpec
 
-[`agent6.machine.spec`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/spec.py) &middot; pydantic model + 13 nested models
+[`agent6.machine.schema`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/schema.py) &middot; pydantic model + 13 nested models
 
 The parse boundary of a `.asm.toml` machine file.
 

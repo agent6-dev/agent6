@@ -1708,7 +1708,7 @@ def test_a_captured_lone_surrogate_never_reaches_the_blackboard(tmp_path: pathli
     """A lone surrogate is scrubbed on the blackboard, so the next request payload serializes."""
     import pydantic
 
-    from agent6.machine import spec as machine_spec
+    from agent6.machine import schema
 
     class _Payload(pydantic.BaseModel):  # the agent request's shape, minimally
         task: str
@@ -1716,7 +1716,7 @@ def test_a_captured_lone_surrogate_never_reaches_the_blackboard(tmp_path: pathli
     _journal, f = _load(tmp_path, COUNTER)
     spec = _semantics.load_machine(f)
     state = spec.states["scan"]
-    assert isinstance(state, machine_spec.ToolState)
+    assert isinstance(state, schema.ToolState)
     blackboard: dict[str, Any] = {}
     # The journal sanitizes on write, so only the IN-MEMORY value matters here.
     machine_engine._apply_capture(spec, state, '{"items": ["emoji tail \\ud83d"]}', blackboard)

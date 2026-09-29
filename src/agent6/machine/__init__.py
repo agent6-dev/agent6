@@ -51,7 +51,7 @@ from agent6.machine.journal import (  # noqa: ICN003  # re-export
     write_source,
     write_stop_request,
 )
-from agent6.machine.spec import (  # noqa: ICN003  # re-export
+from agent6.machine.schema import (  # noqa: ICN003  # re-export
     PROTECTED_OVERLAY_LEAVES,
     PROTECTED_OVERLAY_TABLES,
     AgentState,

@@ -32,7 +32,7 @@ import pydantic
 import pydantic_core
 
 from agent6 import paths, portable
-from agent6.machine import spec
+from agent6.machine import schema
 
 __all__ = [
     "AgentFact",
@@ -57,7 +57,7 @@ __all__ = [
 _MODEL_CONFIG = pydantic.ConfigDict(extra="forbid", frozen=True)
 
 
-class JournalError(spec.MachineError):
+class JournalError(schema.MachineError):
     """On-disk journal state (the journal, a pending wait, the source, the lock) is unusable.
 
     A `MachineError`, so every surface degrades on a broken journal as on a broken machine

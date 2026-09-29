@@ -113,7 +113,7 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="MachineSpec",
-        module="agent6.machine.spec",
+        module="agent6.machine.schema",
         primary=("MachineSpec",),
         # load_machine constructs it from the .asm.toml at the parse boundary.
         writers=("machine/_semantics.py",),

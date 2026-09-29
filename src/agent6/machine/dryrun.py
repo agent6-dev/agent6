@@ -16,9 +16,8 @@ import json
 import re
 from typing import Any
 
-from agent6.machine import _semantics, engine, journal, template
+from agent6.machine import _semantics, engine, journal, schema, template
 from agent6.machine import predicate as machine_predicate
-from agent6.machine import spec as machine_spec
 
 __all__ = [
     "BranchCheck",
@@ -88,7 +87,7 @@ class DryRunReport:
 
 
 def synthesize_record(
-    spec: machine_spec.MachineSpec, schema_name: str, _seen: tuple[str, ...] = ()
+    spec: schema.MachineSpec, schema_name: str, _seen: tuple[str, ...] = ()
 ) -> Any:
     """Return a minimal schema-valid example object for a schema.
 
@@ -115,7 +114,7 @@ def synthesize_record(
     return out
 
 
-def _synthesize_field(spec: machine_spec.MachineSpec, field: Any, seen: tuple[str, ...]) -> Any:
+def _synthesize_field(spec: schema.MachineSpec, field: Any, seen: tuple[str, ...]) -> Any:
     """Return the example value for one field."""
     if field.enum:
         return field.enum[0]
@@ -147,9 +146,9 @@ def _capture_summary(capture: Any) -> str:
 
 
 def _check_tool(
-    spec: machine_spec.MachineSpec,
+    spec: schema.MachineSpec,
     name: str,
-    state: machine_spec.ToolState,
+    state: schema.ToolState,
     blackboard: dict[str, Any],
 ) -> StateCheck:
     """Return the check of a tool state's success path."""
@@ -169,9 +168,9 @@ def _check_tool(
 
 
 def _check_agent(
-    spec: machine_spec.MachineSpec,
+    spec: schema.MachineSpec,
     name: str,
-    state: machine_spec.AgentState,
+    state: schema.AgentState,
     blackboard: dict[str, Any],
 ) -> StateCheck:
     """Return the check of an agent state's success path."""
@@ -192,15 +191,15 @@ def _check_agent(
 
 
 def _check_state(
-    spec: machine_spec.MachineSpec, name: str, state: Any, blackboard: dict[str, Any]
+    spec: schema.MachineSpec, name: str, state: Any, blackboard: dict[str, Any]
 ) -> StateCheck:
     """Return the check of one non-branch state; a runtime error is the detail."""
     try:
-        if isinstance(state, machine_spec.ToolState):
+        if isinstance(state, schema.ToolState):
             return _check_tool(spec, name, state, blackboard)
-        if isinstance(state, machine_spec.AgentState):
+        if isinstance(state, schema.AgentState):
             return _check_agent(spec, name, state, blackboard)
-        if isinstance(state, machine_spec.WaitState):
+        if isinstance(state, schema.WaitState):
             # A wait with no timer parks until a poke (no `tick` edge).
             forever = state.every_secs is None and state.until is None
             label = "signal" if forever else "tick"
@@ -208,7 +207,7 @@ def _check_state(
             ok = goto in spec.states
             detail = f"{label} path" if ok else f"on.{label} -> {goto!r} is not a state"
             return StateCheck(name, "wait", ok, label, goto, detail)
-        if isinstance(state, machine_spec.TerminalState):
+        if isinstance(state, schema.TerminalState):
             return StateCheck(name, "terminal", True, None, None, f"{state.status}: {state.reason}")
     except (engine.EngineError, template.TemplateError, machine_predicate.PredicateError) as exc:
         return StateCheck(name, getattr(state, "kind", "?"), False, None, None, str(exc))
@@ -216,9 +215,9 @@ def _check_state(
 
 
 def _check_branch(
-    spec: machine_spec.MachineSpec,
+    spec: schema.MachineSpec,
     name: str,
-    state: machine_spec.BranchState,
+    state: schema.BranchState,
     blackboard: dict[str, Any],
 ) -> BranchCheck:
     """Return the check of a branch: the first clause that fires."""
@@ -246,7 +245,7 @@ def _check_branch(
 
 
 def dry_run(
-    spec: machine_spec.MachineSpec, blackboard_fixture: dict[str, Any] | None = None
+    spec: schema.MachineSpec, blackboard_fixture: dict[str, Any] | None = None
 ) -> DryRunReport:
     """Run the per-state and per-branch passes over a machine.
 
@@ -268,7 +267,7 @@ def dry_run(
     states: list[StateCheck] = []
     branches: list[BranchCheck] = []
     for name, state in spec.states.items():
-        if isinstance(state, machine_spec.BranchState):
+        if isinstance(state, schema.BranchState):
             branches.append(_check_branch(spec, name, state, dict(base)))
         else:
             states.append(_check_state(spec, name, state, dict(base)))
