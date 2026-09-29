@@ -12,37 +12,25 @@ A selected preset is spliced in just above the layer that selected it, per `_app
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import pathlib
 import tomllib
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ValidationError
+import pydantic
 
-from agent6.config.io import (
-    format_toml_value,
-    read_toml_file,
-    read_toml_leaf,
-    toml_key,
-)
-from agent6.config.model import (
-    Config,
-    ConfigError,
-    validate_config,
-)
-from agent6.paths import (
-    global_config_path,
-    repo_config_path,
-)
+from agent6 import paths
+from agent6.config import io
+from agent6.config import model as config_model
 
 LayerName = Literal["default", "preset", "global", "repo", "flag", "machine"]
 
 # The `config show` and `config fill` order, from the model so a new section is never omitted.
-SECTION_ORDER = tuple(Config.model_fields)
+SECTION_ORDER = tuple(config_model.Config.model_fields)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Layer:
     """One config source.
 
@@ -53,11 +41,11 @@ class Layer:
     """
 
     name: LayerName
-    path: Path | None
+    path: pathlib.Path | None
     data: dict[str, Any]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class EffectiveConfig:
     """One load: the validated config with the provenance of every leaf.
 
@@ -68,7 +56,7 @@ class EffectiveConfig:
         presets: The preset names this load knew, built-ins and `[presets.*]` tables, sorted.
     """
 
-    config: Config
+    config: config_model.Config
     sources: dict[str, str]
     layers: tuple[Layer, ...]
     presets: tuple[str, ...] = ()
@@ -79,7 +67,7 @@ class EffectiveConfig:
         return frozenset(leaf for leaf, layer in self.sources.items() if layer != "default")
 
 
-def _read_toml(path: Path) -> dict[str, Any]:
+def _read_toml(path: pathlib.Path) -> dict[str, Any]:
     """Parse a config file.
 
     Args:
@@ -96,9 +84,9 @@ def _read_toml(path: Path) -> dict[str, Any]:
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
+        raise config_model.ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
     except (OSError, UnicodeDecodeError) as exc:
-        raise ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
+        raise config_model.ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
 
 
 def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
@@ -116,14 +104,14 @@ def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
         ConfigError: The table holds a top-level `preset`.
     """
     if "preset" in data:
-        raise ConfigError(
+        raise config_model.ConfigError(
             f"top-level `preset` selects a config preset only from the global/repo"
             f" config or the --preset flag, not the {layer_name} config; use"
             f" --preset <name> or set it in your repo/global config."
         )
 
 
-def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
+def discover_layers(repo_root: pathlib.Path, explicit_path: pathlib.Path | None) -> list[Layer]:
     """Read the config files that exist, in precedence order.
 
     Args:
@@ -138,15 +126,15 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
             carries a top-level `preset`.
     """
     layers: list[Layer] = []
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     if gpath.is_file():
         layers.append(Layer("global", gpath, _read_toml(gpath)))
-    rpath = repo_config_path(repo_root)
+    rpath = paths.repo_config_path(repo_root)
     if rpath.is_file():
         layers.append(Layer("repo", rpath, _read_toml(rpath)))
     if explicit_path is not None:
         if not explicit_path.is_file():
-            raise ConfigError(f"--config file not found: {explicit_path}")
+            raise config_model.ConfigError(f"--config file not found: {explicit_path}")
         data = _read_toml(explicit_path)
         _forbid_layer_preset("--config", data)
         layers.append(Layer("flag", explicit_path, data))
@@ -213,12 +201,14 @@ def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
     if name in user_presets:
         prof = user_presets[name]
         if not isinstance(prof, dict):
-            raise ConfigError(f"[presets.{name}] must be a table, got {type(prof).__name__}")
+            raise config_model.ConfigError(
+                f"[presets.{name}] must be a table, got {type(prof).__name__}"
+            )
         return prof
     if name in BUILTIN_PRESETS:
         return BUILTIN_PRESETS[name]
     known = ", ".join(sorted({*BUILTIN_PRESETS, *user_presets}))
-    raise ConfigError(f"unknown preset {name!r}. Known presets: {known}.")
+    raise config_model.ConfigError(f"unknown preset {name!r}. Known presets: {known}.")
 
 
 def preset_names(layers: Iterable[Layer]) -> list[str]:
@@ -238,7 +228,9 @@ def preset_names(layers: Iterable[Layer]) -> list[str]:
     return sorted(names)
 
 
-def available_preset_names(repo_root: Path, explicit_path: Path | None = None) -> list[str]:
+def available_preset_names(
+    repo_root: pathlib.Path, explicit_path: pathlib.Path | None = None
+) -> list[str]:
     """Return the preset names over the repo's discovered layers.
 
     A config-read failure degrades to the built-ins alone, so a chooser never blocks on a
@@ -257,7 +249,7 @@ def available_preset_names(repo_root: Path, explicit_path: Path | None = None) -
     return preset_names(layers)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PresetInfo:
     """One preset as `config presets` shows it.
 
@@ -274,7 +266,7 @@ class PresetInfo:
     replaces_builtin: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PresetCatalog:
     """Everything `config presets` lists.
 
@@ -289,7 +281,9 @@ class PresetCatalog:
     source: str
 
 
-def preset_catalog(repo_root: Path, explicit_path: Path | None = None) -> PresetCatalog:
+def preset_catalog(
+    repo_root: pathlib.Path, explicit_path: pathlib.Path | None = None
+) -> PresetCatalog:
     """Build the `config presets` listing.
 
     A user table replaces a same-named built-in, so only the effective body is reported.
@@ -314,7 +308,9 @@ def preset_catalog(repo_root: Path, explicit_path: Path | None = None) -> Preset
             continue
         for name, body in prof.items():
             if not isinstance(body, dict):
-                raise ConfigError(f"[presets.{name}] must be a table, got {type(body).__name__}")
+                raise config_model.ConfigError(
+                    f"[presets.{name}] must be a table, got {type(body).__name__}"
+                )
             user[name] = _deep_merge(user.get(name, {}), body)
             origins[name] = f"{origins[name]}+{layer.name}" if name in origins else layer.name
     selected, source = _select_preset(layers, "")
@@ -441,7 +437,7 @@ def flatten_leaves(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     return out
 
 
-def config_leaves(config: Config) -> dict[str, Any]:
+def config_leaves(config: config_model.Config) -> dict[str, Any]:
     """Flatten a validated config to dotted leaves.
 
     A name-keyed section of models (`providers`) is traversed; a dict-typed value (a
@@ -455,16 +451,16 @@ def config_leaves(config: Config) -> dict[str, Any]:
     """
     out: dict[str, Any] = {}
 
-    def walk(model: BaseModel, prefix: str) -> None:
+    def walk(model: pydantic.BaseModel, prefix: str) -> None:
         for name in type(model).model_fields:
             value = getattr(model, name)
             path = f"{prefix}{name}"
-            if isinstance(value, BaseModel):
+            if isinstance(value, pydantic.BaseModel):
                 walk(value, f"{path}.")
             elif (
                 isinstance(value, dict)
                 and value
-                and all(isinstance(entry, BaseModel) for entry in value.values())
+                and all(isinstance(entry, pydantic.BaseModel) for entry in value.values())
             ):
                 for key, entry in value.items():
                     walk(entry, f"{path}.{key}.")
@@ -528,7 +524,9 @@ def _effective_from_layers(
         ConfigError: The merged config fails validation.
     """
     merged, source_of_leaf = _merge_layers(layers)
-    config = validate_config(merged, source=source, locate=_leaf_fix_hint(layers, source_of_leaf))
+    config = config_model.validate_config(
+        merged, source=source, locate=_leaf_fix_hint(layers, source_of_leaf)
+    )
     effective_leaves = config_leaves(config)
     layer_order = [layer.name for layer in layers]
 
@@ -563,7 +561,7 @@ def _own_preset(layer: Layer) -> str:
         return ""
     if not isinstance(raw, str):
         shape = "a [preset] table" if isinstance(raw, dict) else f"a {type(raw).__name__}"
-        raise ConfigError(
+        raise config_model.ConfigError(
             f"top-level `preset` in the {layer.name} config must be a preset name"
             f' string (e.g. preset = "ultra"), got {shape};'
             f" set it with `agent6 config set preset <name>`."
@@ -670,7 +668,7 @@ def _apply_preset(layers: list[Layer], preset_override: str) -> list[Layer]:
 
 
 def load_effective(
-    repo_root: Path, explicit_path: Path | None = None, *, preset: str = ""
+    repo_root: pathlib.Path, explicit_path: pathlib.Path | None = None, *, preset: str = ""
 ) -> EffectiveConfig:
     """Load the effective config of a repo.
 
@@ -704,14 +702,14 @@ def load_global_only() -> EffectiveConfig:
     Raises:
         ConfigError: The global config is unreadable or invalid.
     """
-    gpath = global_config_path()
+    gpath = paths.global_config_path()
     layers = [Layer("global", gpath, _read_toml(gpath))] if gpath.is_file() else []
     cleaned, _ = _strip_presets(layers)
     return _effective_from_layers(cleaned, source="(global config)", presets=preset_names(layers))
 
 
 def load_effective_with_overlay(
-    repo_root: Path, overlay: dict[str, Any], *, explicit_path: Path | None = None
+    repo_root: pathlib.Path, overlay: dict[str, Any], *, explicit_path: pathlib.Path | None = None
 ) -> EffectiveConfig:
     """Load the effective config with a machine's `[config]` table as the highest layer.
 
@@ -738,7 +736,7 @@ def load_effective_with_overlay(
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class InvalidEntry:
     """One invalid config leaf that `config fix` can drop, and where it lives.
 
@@ -756,13 +754,13 @@ class InvalidEntry:
     leaf: str
     value: Any
     layer: LayerName
-    path: Path
+    path: pathlib.Path
     file_key: str
     is_table: bool = False
     error_type: str = ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ConfigDiagnosis:
     """The `config fix` diagnosis of the on-disk config.
 
@@ -775,7 +773,7 @@ class ConfigDiagnosis:
     blocked: str | None
 
 
-def _fix_scope_layers(repo_root: Path, machine: Path | None) -> list[Layer]:
+def _fix_scope_layers(repo_root: pathlib.Path, machine: pathlib.Path | None) -> list[Layer]:
     """Return the layers `config fix` repairs, with presets applied as in a real load.
 
     Args:
@@ -790,7 +788,7 @@ def _fix_scope_layers(repo_root: Path, machine: Path | None) -> list[Layer]:
     """
     layers = discover_layers(repo_root, None)
     if machine is not None:
-        overlay = read_toml_file(machine).get("config", {})
+        overlay = io.read_toml_file(machine).get("config", {})
         if isinstance(overlay, dict) and overlay:
             _forbid_layer_preset("machine overlay", overlay)
             layers = [*layers, Layer("machine", machine, overlay)]
@@ -838,7 +836,7 @@ def _removable_for(loc: str, origin: dict[str, Layer]) -> tuple[str, Layer, bool
 
 
 def _diagnose_errors(
-    exc: ValidationError, origin: dict[str, Layer], *, only_layer: str | None
+    exc: pydantic.ValidationError, origin: dict[str, Layer], *, only_layer: str | None
 ) -> ConfigDiagnosis:
     """Turn validation errors into droppable entries and a note for the rest.
 
@@ -868,7 +866,7 @@ def _diagnose_errors(
             blocked.append(note)
             continue
         file_key = f"config.{key}" if layer.name == "machine" else key
-        value = read_toml_leaf(read_toml_file(layer.path), file_key)
+        value = io.read_toml_leaf(io.read_toml_file(layer.path), file_key)
         removable.append(
             InvalidEntry(
                 leaf=key,
@@ -895,15 +893,15 @@ def _diagnose_layers(layers: list[Layer], *, only_layer: str | None) -> ConfigDi
     """
     merged, origin = _merge_with_origin(layers)
     try:
-        Config.model_validate(merged)
-    except ConfigError as exc:
+        config_model.Config.model_validate(merged)
+    except config_model.ConfigError as exc:
         return ConfigDiagnosis((), str(exc))
-    except ValidationError as exc:
+    except pydantic.ValidationError as exc:
         return _diagnose_errors(exc, origin, only_layer=only_layer)
     return ConfigDiagnosis((), None)
 
 
-def _diagnose_presets(repo_root: Path) -> ConfigDiagnosis:
+def _diagnose_presets(repo_root: pathlib.Path) -> ConfigDiagnosis:
     """Diagnose every user preset, selected or not.
 
     Each layer prefix is validated so a repo override cannot hide a stale value in the
@@ -956,8 +954,8 @@ def _diagnose_presets(repo_root: Path) -> ConfigDiagnosis:
                 tuple(
                     InvalidEntry(
                         leaf=f"presets.{name}.{entry.leaf}",
-                        value=read_toml_leaf(
-                            read_toml_file(entry.path), f"presets.{name}.{entry.file_key}"
+                        value=io.read_toml_leaf(
+                            io.read_toml_file(entry.path), f"presets.{name}.{entry.file_key}"
                         ),
                         layer=entry.layer,
                         path=entry.path,
@@ -972,7 +970,9 @@ def _diagnose_presets(repo_root: Path) -> ConfigDiagnosis:
     return ConfigDiagnosis((), None)
 
 
-def find_invalid_entries(repo_root: Path, *, machine: Path | None = None) -> ConfigDiagnosis:
+def find_invalid_entries(
+    repo_root: pathlib.Path, *, machine: pathlib.Path | None = None
+) -> ConfigDiagnosis:
     """Diagnose the on-disk config for `agent6 config fix`.
 
     Each file-layer prefix is checked before the selected preset is inserted: a preset may
@@ -999,7 +999,7 @@ def find_invalid_entries(repo_root: Path, *, machine: Path | None = None) -> Con
                 if leaves:
                     return ConfigDiagnosis(leaves, None)
         layers = _fix_scope_layers(repo_root, machine)
-    except ConfigError as exc:
+    except config_model.ConfigError as exc:
         return ConfigDiagnosis((), str(exc))
     return _diagnose_layers(layers, only_layer=only)
 
@@ -1034,7 +1034,7 @@ def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | N
         name, leaf = parts[1], ".".join(parts[2:])
         for layer in reversed(eff.layers):
             table = _file_presets(layer.path).get(name)
-            if isinstance(table, dict) and (value := read_toml_leaf(table, leaf)) is not None:
+            if isinstance(table, dict) and (value := io.read_toml_leaf(table, leaf)) is not None:
                 return value, f"preset {name} ({layer.name})"
         if leaf in leaves:
             return None, "unset"
@@ -1066,16 +1066,16 @@ def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
     if scalars or is_leaf:
         lines.append(f"[{path}]")
         for key, value in scalars.items():
-            lines.append(f"{toml_key(key)} = {format_toml_value(value)}")
+            lines.append(f"{io.toml_key(key)} = {io.format_toml_value(value)}")
         lines.append("")
     for key, sub in subtables.items():
-        _emit_table(f"{path}.{toml_key(key)}" if path else toml_key(key), sub, lines)
+        _emit_table(f"{path}.{io.toml_key(key)}" if path else io.toml_key(key), sub, lines)
     for key, arr in arraytables.items():
         for item in arr:
-            lines.append(f"[[{path}.{toml_key(key)}]]" if path else f"[[{toml_key(key)}]]")
+            lines.append(f"[[{path}.{io.toml_key(key)}]]" if path else f"[[{io.toml_key(key)}]]")
             for k2, v2 in item.items():
                 if v2 is not None:
-                    lines.append(f"{toml_key(k2)} = {format_toml_value(v2)}")
+                    lines.append(f"{io.toml_key(k2)} = {io.format_toml_value(v2)}")
             lines.append("")
 
 
@@ -1096,9 +1096,9 @@ def _is_table_array(value: Any) -> bool:
 
 
 def materialize(
-    config: Config,
+    config: config_model.Config,
     *,
-    keep_presets_from: Path | None = None,
+    keep_presets_from: pathlib.Path | None = None,
     keep_preset_selector: bool = False,
 ) -> str:
     """Render the resolved config as a complete TOML document, every value explicit.
@@ -1128,7 +1128,7 @@ def materialize(
     for section in ordered:
         value = data[section]
         if value is not None and not isinstance(value, dict) and not _is_table_array(value):
-            lines.append(f"{section} = {format_toml_value(value)}")
+            lines.append(f"{section} = {io.format_toml_value(value)}")
     if lines[-1] != "":
         lines.append("")
     for section in ordered:
@@ -1142,14 +1142,14 @@ def materialize(
                 lines.append(f"[[{section}]]")
                 for k2, v2 in item.items():
                     if v2 is not None:
-                        lines.append(f"{toml_key(k2)} = {format_toml_value(v2)}")
+                        lines.append(f"{io.toml_key(k2)} = {io.format_toml_value(v2)}")
                 lines.append("")
     if kept := _file_presets(keep_presets_from):
         _emit_table("presets", kept, lines)
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def _file_presets(path: Path | None) -> dict[str, Any]:
+def _file_presets(path: pathlib.Path | None) -> dict[str, Any]:
     """Return the `[presets.*]` tables a file defines itself.
 
     Args:

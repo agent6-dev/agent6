@@ -163,10 +163,8 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     def _global_path(*_a: object, **_k: object) -> pathlib.Path:
         return cfg
 
-    from agent6.config import write as write_mod
-
     monkeypatch.setattr(cc, "global_config_path", _global_path)
-    monkeypatch.setattr(write_mod, "global_config_path", _global_path)
+    monkeypatch.setattr(paths, "global_config_path", _global_path)
 
     rc = cli_main(["config", "set", "sandbox.run_commands", "yes"])
     out = capsys.readouterr()
@@ -330,12 +328,11 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
 
     Every write publishes a fresh root-owned inode, the rollback of a refused value included.
     """
-    from agent6.config import write as write_mod
     from agent6.ui.cli import main
 
     handed: list[pathlib.Path] = []
-    monkeypatch.setattr(write_mod, "chown_to_real_user", handed.append)
-    monkeypatch.setattr(write_mod, "mkdir_for_real_user", handed.append)  # the dir handover
+    monkeypatch.setattr(paths, "chown_to_real_user", handed.append)
+    monkeypatch.setattr(paths, "mkdir_for_real_user", handed.append)  # the dir handover
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[budget]\nmax_usd = 5.0\n", encoding="utf-8")

@@ -7,26 +7,25 @@ They bound what a jailed child, and a spawned MCP server on top of one, may reac
 
 from __future__ import annotations
 
+import pathlib
 import re
-from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib import parse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+import pydantic
 
-from agent6.config._base import MODEL_CONFIG, Argv, StrTuple
-from agent6.config._surfaces import is_loopback_host
-from agent6.paths import private_dirs
+from agent6 import paths
+from agent6.config import _base, _surfaces
 
 
-class SandboxConfig(BaseModel):
+class SandboxConfig(pydantic.BaseModel):
     """The `[sandbox]` table."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
     # `none` is operator-only and LLM-unreachable, so writing it is the consent; the resolution
     # lives in detect.resolve_isolation.
-    isolation: Literal["auto", "strict", "hardened", "none"] = Field(
+    isolation: Literal["auto", "strict", "hardened", "none"] = pydantic.Field(
         default="auto",
         description=(
             "How jailed commands are confined: `strict` (user + mount namespaces, Landlock, "
@@ -40,7 +39,7 @@ class SandboxConfig(BaseModel):
     # A jailed child never out-reaches the process that launches it.
     # No per-command `none`: isolating commands from each other costs the dev server for no
     # security, and the model can chain them into one script anyway.
-    network: Literal["auto", "session", "only_explicit_states", "host"] = Field(
+    network: Literal["auto", "session", "only_explicit_states", "host"] = pydantic.Field(
         default="auto",
         description=(
             "Which network jailed commands join. `session`: the run's private network (commands "
@@ -51,7 +50,7 @@ class SandboxConfig(BaseModel):
             "launcher, so there is no per-command `none`."
         ),
     )
-    run_commands: Literal["yes", "no", "ask"] = Field(
+    run_commands: Literal["yes", "no", "ask"] = pydantic.Field(
         default="ask",
         description=(
             "Whether the model may run commands (`run_command`, `run_verify_command`, "
@@ -65,7 +64,7 @@ class SandboxConfig(BaseModel):
     )
     # Hosts, never URL prefixes: a prefix invites `evil.com/docs.python.org`.
     # A GET can encode data in its path, so an unlisted host is asked about.
-    fetch_hosts: StrTuple = Field(
+    fetch_hosts: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             "Hosts the `fetch` tool reads without asking; any other host prompts, and an absent "
@@ -78,7 +77,7 @@ class SandboxConfig(BaseModel):
     )
     # A read-only bind-remount; the harness's own commits run outside the jail and are unaffected.
     # Under hardened the cwd is blanket read-write: carving .git out would deny new top-level names.
-    protect_git: bool = Field(
+    protect_git: bool = pydantic.Field(
         default=True,
         description=(
             "Keep `.git/` unwritable by jailed commands, so a command cannot plant a git filter "
@@ -89,7 +88,7 @@ class SandboxConfig(BaseModel):
         ),
     )
     # The cache dir is paths.jail_cache_home.
-    home: Literal["tmp", "cache"] = Field(
+    home: Literal["tmp", "cache"] = pydantic.Field(
         default="tmp",
         description=(
             "The HOME jailed commands get under `strict`: `tmp` is `/tmp/agent6-home` inside the "
@@ -105,7 +104,7 @@ class SandboxConfig(BaseModel):
     # RLIMIT_DATA rather than RLIMIT_AS so V8, the JVM and ASAN, which reserve address space
     # without committing it, keep working. A guardrail, never a security control; set before
     # exec at every isolation level.
-    memory_limit_mb: int = Field(
+    memory_limit_mb: int = pydantic.Field(
         default=0,
         ge=0,
         description=(
@@ -115,7 +114,7 @@ class SandboxConfig(BaseModel):
         ),
     )
     # On top of /usr /bin /lib /lib64 /etc /dev and the workspace; no effect under `none`.
-    extra_read_paths: StrTuple = Field(
+    extra_read_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             "Absolute paths outside the repo the run may read and execute, at their real "
@@ -125,7 +124,7 @@ class SandboxConfig(BaseModel):
         ),
     )
 
-    @field_validator("extra_read_paths")
+    @pydantic.field_validator("extra_read_paths")
     @classmethod
     def _check_extra_read_paths(cls, v: tuple[str, ...]) -> tuple[str, ...]:
         """Refuse a relative path or one with a `..` segment.
@@ -143,12 +142,12 @@ class SandboxConfig(BaseModel):
             if not p.startswith("/"):
                 raise ValueError(f"sandbox.extra_read_paths must be absolute: {p!r}")
             # A `..` segment would let a bind mount traverse outside its apparent target.
-            if ".." in Path(p).parts:
+            if ".." in pathlib.Path(p).parts:
                 raise ValueError(f"sandbox.extra_read_paths must not contain '..': {p!r}")
         return v
 
     # No effect under `none`.
-    extra_write_paths: StrTuple = Field(
+    extra_write_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             "Absolute paths outside the repo the run may read and write, at their real locations: "
@@ -157,7 +156,7 @@ class SandboxConfig(BaseModel):
         ),
     )
 
-    @field_validator("extra_write_paths")
+    @pydantic.field_validator("extra_write_paths")
     @classmethod
     def _check_extra_write_paths(cls, v: tuple[str, ...]) -> tuple[str, ...]:
         """Refuse a relative path or one with a `..` segment.
@@ -174,11 +173,11 @@ class SandboxConfig(BaseModel):
         for p in v:
             if not p.startswith("/"):
                 raise ValueError(f"sandbox.extra_write_paths must be absolute: {p!r}")
-            if ".." in Path(p).parts:
+            if ".." in pathlib.Path(p).parts:
                 raise ValueError(f"sandbox.extra_write_paths must not contain '..': {p!r}")
         return v
 
-    extra_device_paths: StrTuple = Field(
+    extra_device_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             "Device nodes under /dev the jail exposes read-write (GPU compute: /dev/nvidiactl, "
@@ -189,7 +188,7 @@ class SandboxConfig(BaseModel):
         ),
     )
 
-    @field_validator("extra_device_paths")
+    @pydantic.field_validator("extra_device_paths")
     @classmethod
     def _check_extra_device_paths(cls, v: tuple[str, ...]) -> tuple[str, ...]:
         """Refuse a path outside /dev or one with a `..` segment.
@@ -204,12 +203,12 @@ class SandboxConfig(BaseModel):
             ValueError: A path is not under /dev or traverses with `..`.
         """
         for p in v:
-            if not p.startswith("/dev/") or ".." in Path(p).parts:
+            if not p.startswith("/dev/") or ".." in pathlib.Path(p).parts:
                 raise ValueError(f"sandbox.extra_device_paths must live under /dev: {p!r}")
         return v
 
     # Adds to the always-hidden private dirs; the masking rules are in docs/security.md.
-    hide_paths: StrTuple = Field(
+    hide_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             "Absolute paths the run may never read or write, even under a broader grant. agent6's "
@@ -223,7 +222,7 @@ class SandboxConfig(BaseModel):
         ),
     )
 
-    @field_validator("hide_paths")
+    @pydantic.field_validator("hide_paths")
     @classmethod
     def _check_hide_paths(cls, v: tuple[str, ...]) -> tuple[str, ...]:
         """Refuse a relative path or one with a `..` segment.
@@ -240,11 +239,11 @@ class SandboxConfig(BaseModel):
         for p in v:
             if not p.startswith("/"):
                 raise ValueError(f"sandbox.hide_paths must be absolute: {p!r}")
-            if ".." in Path(p).parts:
+            if ".." in pathlib.Path(p).parts:
                 raise ValueError(f"sandbox.hide_paths must not contain '..': {p!r}")
         return v
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _extra_paths_never_target_private_dirs(self) -> SandboxConfig:
         """Refuse an extra grant at or inside an agent6-private dir.
 
@@ -259,8 +258,8 @@ class SandboxConfig(BaseModel):
         """
         for p in (*self.extra_read_paths, *self.extra_write_paths):
             # Resolved on both sides: the launcher binds a symlink's target, as jail_home_refusal.
-            resolved = Path(p).resolve()
-            for d in private_dirs():
+            resolved = pathlib.Path(p).resolve()
+            for d in paths.private_dirs():
                 if resolved.is_relative_to(d.resolve()):
                     raise ValueError(
                         f"sandbox extra path {p!r} is inside the agent6-private dir"
@@ -270,16 +269,16 @@ class SandboxConfig(BaseModel):
         return self
 
 
-class MCPSandbox(BaseModel):
+class MCPSandbox(pydantic.BaseModel):
     """The extra grants one spawned MCP server gets beyond a jailed command's sandbox.
 
     A server is fed model input, so the same launcher confines it the same way; an absent
     block means exactly that sandbox.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    read_paths: StrTuple = Field(
+    read_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             "Read+execute paths for this server beyond the sandbox a jailed command gets "
@@ -287,12 +286,12 @@ class MCPSandbox(BaseModel):
             "already there, so a block names only the server's own data."
         ),
     )
-    write_paths: StrTuple = Field(
+    write_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description="Paths it may write, likewise additive.",
     )
     # Per server because servers differ: a browser server exists to reach something.
-    network: Literal["auto", "none", "session", "host"] = Field(
+    network: Literal["auto", "none", "session", "host"] = pydantic.Field(
         default="auto",
         description=(
             "Which network this server joins. `auto`: one of its own where the host can give a "
@@ -302,7 +301,7 @@ class MCPSandbox(BaseModel):
             "app under test), and still nothing off the box. `host`: the machine's network."
         ),
     )
-    unconfined: bool = Field(
+    unconfined: bool = pydantic.Field(
         default=False,
         description=(
             "No sandbox at all, for a server whose job is arbitrary host access. Contradicts every "
@@ -310,7 +309,7 @@ class MCPSandbox(BaseModel):
         ),
     )
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _escape_hatch_is_exclusive(self) -> MCPSandbox:
         """Refuse a relative or private-dir path, and any grant beside `unconfined`.
 
@@ -324,7 +323,7 @@ class MCPSandbox(BaseModel):
         if not self.unconfined:
             for group in (self.read_paths, self.write_paths):
                 for raw in group:
-                    if not Path(raw).expanduser().is_absolute():
+                    if not pathlib.Path(raw).expanduser().is_absolute():
                         raise ValueError(
                             f"sandbox paths must be absolute (or start with ~): {raw!r}."
                             " A relative one would be resolved against whatever"
@@ -332,8 +331,8 @@ class MCPSandbox(BaseModel):
                         )
             for raw in (*self.read_paths, *self.write_paths):
                 # Resolved on both sides: a symlink named here still mounts its target.
-                resolved = Path(raw).expanduser().resolve()
-                for private in private_dirs():
+                resolved = pathlib.Path(raw).expanduser().resolve()
+                for private in paths.private_dirs():
                     if resolved.is_relative_to(private.resolve()):
                         raise ValueError(
                             f"sandbox path {raw!r} is inside the agent6-private dir"
@@ -358,7 +357,7 @@ class MCPSandbox(BaseModel):
         return self
 
 
-class MCPServerEntry(BaseModel):
+class MCPServerEntry(pydantic.BaseModel):
     """One MCP (Model Context Protocol) server, spawned at run start or connected to.
 
     A spawned server speaks JSON-RPC 2.0 over stdio as a jailed child with the curated
@@ -368,16 +367,16 @@ class MCPServerEntry(BaseModel):
     them verbatim. A crash, hang or malformed reply is a tool failure, not an agent crash.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    command: Argv = Field(
+    command: _base.Argv = pydantic.Field(
         default=(),
         description=(
             "argv of a stdio MCP server agent6 spawns (jailed like a command, plus `sandbox`). "
             "Exactly one of `command` or `url`."
         ),
     )
-    url: str = Field(
+    url: str = pydantic.Field(
         default="",
         description=(
             "An http(s) MCP endpoint you run yourself; agent6 only connects, owning none of its "
@@ -385,7 +384,7 @@ class MCPServerEntry(BaseModel):
         ),
     )
     # Named, never inlined: a secret in a config file is a secret in a backup.
-    token_env: str = Field(
+    token_env: str = pydantic.Field(
         default="",
         description=(
             "For a `url` server: the environment variable holding its bearer token, named here and "
@@ -393,21 +392,21 @@ class MCPServerEntry(BaseModel):
             "readable on the wire: `mcp connect` asks first, and every run warns."
         ),
     )
-    enabled: bool = Field(
+    enabled: bool = pydantic.Field(
         default=True,
         description=(
             "`false` withholds this server's tools from the model without deleting the entry."
         ),
     )
     # A provider key reaches a server only when named here.
-    pass_env: StrTuple = Field(
+    pass_env: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             "Environment variables a spawned server needs, by name; everything else is agent6's "
             "curated base environment."
         ),
     )
-    sandbox: MCPSandbox | None = Field(
+    sandbox: MCPSandbox | None = pydantic.Field(
         default=None,
         description=(
             "Extra grants for a spawned server beyond the sandbox a jailed command gets; unset "
@@ -416,7 +415,7 @@ class MCPServerEntry(BaseModel):
         ),
     )
     # A server's tools do things agent6 cannot classify, so the default is a command's: ask.
-    approve: Literal["ask", "yes"] = Field(
+    approve: Literal["ask", "yes"] = pydantic.Field(
         default="ask",
         description=(
             "`ask` prompts before each of this server's tool calls, showing the arguments the "
@@ -426,7 +425,7 @@ class MCPServerEntry(BaseModel):
             "There is no `no`: `enabled = false` is how a server's tools are withheld."
         ),
     )
-    startup_timeout_s: float = Field(
+    startup_timeout_s: float = pydantic.Field(
         gt=0.0,
         default=10.0,
         description=(
@@ -434,7 +433,7 @@ class MCPServerEntry(BaseModel):
             "on."
         ),
     )
-    call_timeout_s: float = Field(
+    call_timeout_s: float = pydantic.Field(
         gt=0.0,
         default=60.0,
         description=(
@@ -442,7 +441,7 @@ class MCPServerEntry(BaseModel):
             "after a timeout."
         ),
     )
-    httpx_trust_env: bool = Field(
+    httpx_trust_env: bool = pydantic.Field(
         default=False,
         description=(
             "For a `url` server: honor the ambient `HTTP(S)_PROXY`, `.netrc`, and `SSL_CERT_FILE` "
@@ -451,7 +450,7 @@ class MCPServerEntry(BaseModel):
         ),
     )
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _one_transport(self) -> MCPServerEntry:
         """Refuse an entry with both or neither transport, or a field of the other transport.
 
@@ -500,7 +499,7 @@ def is_cleartext_url(url: str) -> bool:
     Returns:
         True when the scheme is http.
     """
-    return urlsplit(url).scheme == "http"
+    return parse.urlsplit(url).scheme == "http"
 
 
 def is_loopback_url(url: str) -> bool:
@@ -516,7 +515,7 @@ def is_loopback_url(url: str) -> bool:
     Returns:
         True when the host is loopback.
     """
-    return is_loopback_host(urlsplit(url).hostname or "")
+    return _surfaces.is_loopback_host(parse.urlsplit(url).hostname or "")
 
 
 def mcp_server_name_refusal(name: str) -> str:
@@ -544,7 +543,7 @@ def mcp_server_name_refusal(name: str) -> str:
     return ""
 
 
-class MCPConfig(BaseModel):
+class MCPConfig(pydantic.BaseModel):
     """The `[mcp]` table.
 
     `servers` is keyed by name like `[providers.<name>]`: duplicates are unrepresentable, a
@@ -552,16 +551,16 @@ class MCPConfig(BaseModel):
     the leaves.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    enabled: bool = Field(
+    enabled: bool = pydantic.Field(
         default=False,
         description=(
             "Master switch for MCP servers: `false` means no `mcp__*` tools reach the model, "
             "whatever `[mcp.servers]` lists."
         ),
     )
-    servers: dict[str, MCPServerEntry] = Field(
+    servers: dict[str, MCPServerEntry] = pydantic.Field(
         default_factory=dict,
         description=(
             "MCP servers by name (`[mcp.servers.<name>]`); their tools reach the model as "
@@ -569,7 +568,7 @@ class MCPConfig(BaseModel):
         ),
     )
 
-    @field_validator("servers")
+    @pydantic.field_validator("servers")
     @classmethod
     def _valid_server_names(cls, v: dict[str, MCPServerEntry]) -> dict[str, MCPServerEntry]:
         """Refuse a server key `mcp_server_name_refusal` rejects.

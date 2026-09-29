@@ -7,15 +7,15 @@
 
 from __future__ import annotations
 
-from ipaddress import ip_address
+import ipaddress
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+import pydantic
 
-from agent6.config._base import MODEL_CONFIG, Argv, StrTuple
+from agent6.config import _base
 
 
-class SkillsConfig(BaseModel):
+class SkillsConfig(pydantic.BaseModel):
     """The `[skills]` table: operator-installed SKILL.md packs (agentskills.io).
 
     Skills live under `<data-dir>/skills/<name>/` plus any `extra_dirs`; installed means
@@ -23,9 +23,9 @@ class SkillsConfig(BaseModel):
     loader executes nothing in it.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    enabled: bool = Field(
+    enabled: bool = pydantic.Field(
         default=True,
         description=(
             "Master switch for skills: `false` means no skill index in the prompt, no `use_skill` "
@@ -33,7 +33,7 @@ class SkillsConfig(BaseModel):
         ),
     )
     # Each entry may hold skill subdirectories or be a single skill dir itself.
-    extra_dirs: StrTuple = Field(
+    extra_dirs: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             "Additional directories scanned for skills, before the installed skills dir; a skill "
@@ -41,7 +41,7 @@ class SkillsConfig(BaseModel):
         ),
     )
     # One value per skill, so contradictory states are unrepresentable.
-    state: dict[str, Literal["enabled", "disabled", "always"]] = Field(
+    state: dict[str, Literal["enabled", "disabled", "always"]] = pydantic.Field(
         default_factory=dict,
         description=(
             "Per-skill state by name: `enabled` (indexed, loaded on `use_skill`), `disabled` "
@@ -51,7 +51,7 @@ class SkillsConfig(BaseModel):
     )
 
 
-class MachineNotifyConfig(BaseModel):
+class MachineNotifyConfig(pydantic.BaseModel):
     """The `[machine.notify]` table: a hook run on each `machine.notify` and at `machine.end`.
 
     The argv is operator-controlled, never carries LLM output, and runs on the host outside
@@ -66,29 +66,29 @@ class MachineNotifyConfig(BaseModel):
     - `AGENT6_MACHINE_LEVEL`: `info`, `warn` or `error` for notify; `ok` or `failed` for end
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    on_event: Argv = Field(
+    on_event: _base.Argv = pydantic.Field(
         default=(),
         description=(
             "A command run on every machine notify event and at the machine's end, as argv (no "
             "shell), with the event in `AGENT6_MACHINE_*` variables. Empty: no hook."
         ),
     )
-    timeout_s: float = Field(
+    timeout_s: float = pydantic.Field(
         gt=0.0,
         default=30.0,
         description="Seconds the hook may run before it is killed.",
     )
 
 
-class MachineConfig(BaseModel):
+class MachineConfig(pydantic.BaseModel):
     """The `[machine]` table: the `agent6 machine run` runtime knobs."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
     # Old snapshots are an audit convenience, not state: recovery reads the latest only.
-    snapshot_keep: int = Field(
+    snapshot_keep: int = pydantic.Field(
         ge=0,
         default=5,
         description=(
@@ -96,7 +96,7 @@ class MachineConfig(BaseModel):
             "latest; recovery and `machine replay` fold the journal). `0` keeps all."
         ),
     )
-    state_log_keep: int = Field(
+    state_log_keep: int = pydantic.Field(
         ge=0,
         default=50,
         description=(
@@ -105,8 +105,8 @@ class MachineConfig(BaseModel):
             "history regardless). `0` keeps all."
         ),
     )
-    notify: MachineNotifyConfig = Field(default_factory=MachineNotifyConfig)
-    pass_env: StrTuple = Field(
+    notify: MachineNotifyConfig = pydantic.Field(default_factory=MachineNotifyConfig)
+    pass_env: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             "Environment variable names a machine's `tool` state may receive from the"
@@ -136,34 +136,34 @@ def is_loopback_host(host: str) -> bool:
     if normalized.lower() == "localhost":
         return True
     try:
-        return ip_address(normalized).is_loopback
+        return ipaddress.ip_address(normalized).is_loopback
     except ValueError:
         return False
 
 
-class WebConfig(BaseModel):
+class WebConfig(pydantic.BaseModel):
     """The `[web]` table: the server bind, loopback by default.
 
     Remote access goes behind `tailscale serve` in front of the loopback bind; the tailnet
     identity is the access control, so there is no app-level auth.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    host: str = Field(
+    host: str = pydantic.Field(
         default="127.0.0.1",
         description=(
             "Address `agent6 web` binds; a non-loopback address also needs `allow_non_loopback = "
             "true`."
         ),
     )
-    port: int = Field(
+    port: int = pydantic.Field(
         ge=1,
         le=65535,
         default=7658,
         description="Port `agent6 web` listens on.",
     )
-    allow_non_loopback: bool = Field(
+    allow_non_loopback: bool = pydantic.Field(
         default=False,
         description=(
             "Allow `host` to be a non-loopback address, so a typo can never silently expose the "
@@ -171,7 +171,7 @@ class WebConfig(BaseModel):
         ),
     )
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _guard_non_loopback(self) -> WebConfig:
         """Refuse a non-loopback host without the opt-in.
 
@@ -191,7 +191,7 @@ class WebConfig(BaseModel):
         return self
 
 
-class NotifyConfig(BaseModel):
+class NotifyConfig(pydantic.BaseModel):
     """The `[notify]` table: a hook run after a run or resume ends.
 
     The argv is operator-controlled, never carries LLM output, and runs outside the jail
@@ -206,30 +206,30 @@ class NotifyConfig(BaseModel):
       `not_applicable`; a hook wanting green reads this, not `OK`
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    on_complete: Argv = Field(
+    on_complete: _base.Argv = pydantic.Field(
         default=(),
         description=(
             "A command run when a run or resume ends, as argv (no shell), with "
             "`AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON` in its environment. Empty: no hook."
         ),
     )
-    timeout_s: float = Field(
+    timeout_s: float = pydantic.Field(
         gt=0.0,
         default=30.0,
         description="Seconds the hook may run before it is killed.",
     )
 
 
-class ParallelConfig(BaseModel):
+class ParallelConfig(pydantic.BaseModel):
     """The `[parallel]` table: the bounds and placement of a `--parallel` fan-out."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
     # `le` bounds the cap itself, or a huge max_lanes re-opens the allocation parse_spec refuses.
     # Static, not CPU-derived: lanes are I/O-bound and the same config must load on every box.
-    max_lanes: int = Field(
+    max_lanes: int = pydantic.Field(
         ge=1,
         le=1024,
         default=4,
@@ -239,7 +239,7 @@ class ParallelConfig(BaseModel):
         ),
     )
     # A lane: `<workdir>/<repo-id>/<fanout-id>/lane-<i>`; a fork: `<workdir>/<repo-id>/<fork-id>`.
-    workdir: str = Field(
+    workdir: str = pydantic.Field(
         default="",
         description=(
             "Base directory for the working trees lanes, machine run states, and forks work "

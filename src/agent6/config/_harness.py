@@ -8,12 +8,12 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
+import pathlib
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+import pydantic
 
-from agent6.config._base import MODEL_CONFIG, Argv, StrTuple
+from agent6.config import _base
 
 
 def parse_seat_spec(spec: str) -> tuple[str, str, str]:
@@ -48,7 +48,7 @@ def parse_seat_spec(spec: str) -> tuple[str, str, str]:
 ReviewTier = Literal["diff", "explore"]
 
 
-class MetricConfig(BaseModel):
+class MetricConfig(pydantic.BaseModel):
     """The `[harness.metric]` table: a continuous score beside the pass/fail gate.
 
     `run_metric_command` runs `command` in the jail with `verify_command`'s environment and
@@ -56,23 +56,23 @@ class MetricConfig(BaseModel):
     stdout and stderr reads as a missing metric.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    command: Argv = Field(
+    command: _base.Argv = pydantic.Field(
         min_length=1,
         description=(
             "The command that prints the score, as argv (no shell). Runs after every "
             "verify-passing edit, and on the model's `run_metric_command` call."
         ),
     )
-    pattern: str = Field(
+    pattern: str = pydantic.Field(
         min_length=1,
         description=(
             "A regular expression over the command's output; its first capture group is the "
             'number, e.g. `"score: ([0-9.]+)"`.'
         ),
     )
-    goal: Literal["minimize", "maximize"] = Field(
+    goal: Literal["minimize", "maximize"] = pydantic.Field(
         description=(
             "Which way is better: `minimize` (a smaller number wins) or `maximize`. The run "
             "reports the trajectory and can finish once a verified edit only ties the best."
@@ -80,13 +80,13 @@ class MetricConfig(BaseModel):
     )
 
 
-class HarnessConfig(BaseModel):
+class HarnessConfig(pydantic.BaseModel):
     """The `[harness]` table."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
     # Repo-specific, so no global default; the inference lives in agent6.verify_infer.
-    verify_command: Argv = Field(
+    verify_command: _base.Argv = pydantic.Field(
         default=(),
         description=(
             "The command that decides whether a step succeeded, as argv (no shell; wrap a pipeline "
@@ -97,7 +97,7 @@ class HarnessConfig(BaseModel):
             "gate a recognizable project created mid-run yields."
         ),
     )
-    verify_infer: bool = Field(
+    verify_infer: bool = pydantic.Field(
         default=True,
         description=(
             "Infer a verify command when `verify_command` is unset (AGENTS.md fence, repo "
@@ -108,7 +108,7 @@ class HarnessConfig(BaseModel):
         ),
     )
     # Matches the jail's general 600s; a bench with a 2s gate detects a runaway edit sooner at 30.
-    verify_timeout_s: float = Field(
+    verify_timeout_s: float = pydantic.Field(
         gt=0.0,
         default=600.0,
         description=(
@@ -121,7 +121,7 @@ class HarnessConfig(BaseModel):
         ),
     )
     # Per execution: a standing run is not capped by the sum of its executions.
-    max_iterations: int = Field(
+    max_iterations: int = pydantic.Field(
         default=200,
         description=(
             "Assistant turns one execution may take before the run stops with reason "
@@ -129,7 +129,7 @@ class HarnessConfig(BaseModel):
         ),
     )
 
-    @field_validator("max_iterations")
+    @pydantic.field_validator("max_iterations")
     @classmethod
     def _iterations_unlimited_is_exactly_minus_one(cls, v: int) -> int:
         """Refuse a cap that is neither positive nor exactly -1.
@@ -148,7 +148,7 @@ class HarnessConfig(BaseModel):
         return v
 
     # The loop's guards: the empty turn, the repeated call, the long silence.
-    went_quiet_max_nudges: int = Field(
+    went_quiet_max_nudges: int = pydantic.Field(
         default=4,
         ge=0,
         description=(
@@ -156,7 +156,7 @@ class HarnessConfig(BaseModel):
             "bursts included; 0 ends the run on the first."
         ),
     )
-    loop_guard_kill_threshold: int = Field(
+    loop_guard_kill_threshold: int = pydantic.Field(
         default=10,
         ge=0,
         description=(
@@ -165,7 +165,7 @@ class HarnessConfig(BaseModel):
             "the notice alone."
         ),
     )
-    stagnation_notice_after_s: float = Field(
+    stagnation_notice_after_s: float = pydantic.Field(
         default=300.0,
         ge=0.0,
         description=(
@@ -175,7 +175,7 @@ class HarnessConfig(BaseModel):
     )
 
     # 900 because the hand-back is non-destructive: handing back early costs one poll cycle.
-    command_checkin_s: float = Field(
+    command_checkin_s: float = pydantic.Field(
         ge=0.0,
         default=900.0,
         description=(
@@ -185,7 +185,7 @@ class HarnessConfig(BaseModel):
             "`read_background`, stop it, or carry on. `0` disables the hand-back."
         ),
     )
-    standing_patience: int = Field(
+    standing_patience: int = pydantic.Field(
         ge=-1,
         default=-1,
         description=(
@@ -196,7 +196,7 @@ class HarnessConfig(BaseModel):
             "honoured. A round that lands work resets the streak."
         ),
     )
-    verify_when: Literal["finish", "step", "never"] = Field(
+    verify_when: Literal["finish", "step", "never"] = pydantic.Field(
         default="finish",
         description=(
             "When the harness runs `verify_command` itself: `finish` (when the model calls "
@@ -206,7 +206,7 @@ class HarnessConfig(BaseModel):
             "has no gate to run."
         ),
     )
-    verify_retries: int = Field(
+    verify_retries: int = pydantic.Field(
         ge=0,
         default=2,
         description=(
@@ -216,7 +216,7 @@ class HarnessConfig(BaseModel):
             "anything is not returned unless this run has since made it green."
         ),
     )
-    metric: MetricConfig | None = Field(
+    metric: MetricConfig | None = pydantic.Field(
         default=None,
         description=(
             "An optional score to iterate on beside the pass/fail gate (a benchmark, a size, a "
@@ -227,13 +227,13 @@ class HarnessConfig(BaseModel):
     )
 
 
-class ContextConfig(BaseModel):
+class ContextConfig(pydantic.BaseModel):
     """`[context]` section: tiered context-compaction thresholds."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
     # Unset thresholds are sized in models.registry.compaction_thresholds.
-    drop_at_chars: int | None = Field(
+    drop_at_chars: int | None = pydantic.Field(
         default=None,
         gt=0,
         description=(
@@ -243,7 +243,7 @@ class ContextConfig(BaseModel):
             "it); set both thresholds to pin them."
         ),
     )
-    summarise_at_chars: int | None = Field(
+    summarise_at_chars: int | None = pydantic.Field(
         default=None,
         gt=0,
         description=(
@@ -253,7 +253,7 @@ class ContextConfig(BaseModel):
             "`drop_at_chars`."
         ),
     )
-    keep_recent_chars: int = Field(
+    keep_recent_chars: int = pydantic.Field(
         ge=0,
         default=80_000,
         description=(
@@ -261,7 +261,7 @@ class ContextConfig(BaseModel):
             "the summary. `0` keeps none."
         ),
     )
-    keep_thinking_turns: int = Field(
+    keep_thinking_turns: int = pydantic.Field(
         ge=0,
         default=0,
         description=(
@@ -270,7 +270,7 @@ class ContextConfig(BaseModel):
             "blocks, ChatGPT's reasoning items) replay less; the OpenAI wire never re-sends it."
         ),
     )
-    summary_max_tokens: int = Field(
+    summary_max_tokens: int = pydantic.Field(
         gt=0,
         default=2048,
         description=(
@@ -281,7 +281,7 @@ class ContextConfig(BaseModel):
     )
     # One batched reviewer-model call per drop event.
     # Measured on the longhorizon bench: bare elision halves a retention score under a small window.
-    elision_gists: bool = Field(
+    elision_gists: bool = pydantic.Field(
         default=True,
         description=(
             "At tier 1, replace a large `read_file` result with a model-written gist before the "
@@ -290,7 +290,7 @@ class ContextConfig(BaseModel):
         ),
     )
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _check_compaction_thresholds(self) -> ContextConfig:
         """Refuse thresholds that are half set or do not escalate.
 
@@ -326,12 +326,12 @@ class ContextConfig(BaseModel):
         return self
 
 
-class PromptConfig(BaseModel):
+class PromptConfig(pydantic.BaseModel):
     """The `[prompt]` table: the system-prompt override, task revision and decomposition."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    system_prompt_file: str = Field(
+    system_prompt_file: str = pydantic.Field(
         default="",
         description=(
             "Path of a file that replaces run mode's built-in base system prompt (the dynamic "
@@ -341,7 +341,7 @@ class PromptConfig(BaseModel):
         ),
     )
     # The revision call takes no tools and counts against the budget like any provider call.
-    revise_prompt: Literal["off", "auto", "interactive"] = Field(
+    revise_prompt: Literal["off", "auto", "interactive"] = pydantic.Field(
         default="off",
         description=(
             "Rewrite the task prompt once with the reviewer model before the loop starts: `off`, "
@@ -352,7 +352,7 @@ class PromptConfig(BaseModel):
         ),
     )
     # `auto` resolves per model in models.registry.decompose_default; the engine reads only `on`.
-    decompose: Literal["auto", "on", "off"] = Field(
+    decompose: Literal["auto", "on", "off"] = pydantic.Field(
         default="auto",
         description=(
             "Front-load task decomposition in run mode: the model lays the task out as ordered DAG "
@@ -364,7 +364,7 @@ class PromptConfig(BaseModel):
         ),
     )
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _check_system_prompt_file(self) -> PromptConfig:
         """Refuse an override path that is not a file, at config time rather than at run start.
 
@@ -375,19 +375,19 @@ class PromptConfig(BaseModel):
             ValueError: `system_prompt_file` is set and is not a readable file.
         """
         if self.system_prompt_file:
-            p = Path(self.system_prompt_file).expanduser()
+            p = pathlib.Path(self.system_prompt_file).expanduser()
             if not p.is_file():
                 raise ValueError(f"prompt.system_prompt_file: not a readable file: {p}")
         return self
 
 
-class ReviewConfig(BaseModel):
+class ReviewConfig(pydantic.BaseModel):
     """The `[review]` table: the in-loop review panel and its trigger."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
     # The findings reach the model as a user message on its next turn.
-    trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = Field(
+    trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = pydantic.Field(
         default="off",
         description=(
             "When the in-loop review panel runs on the diff so far and its findings reach the "
@@ -397,12 +397,12 @@ class ReviewConfig(BaseModel):
             "panel is one reviewer seat on `[models.reviewer]`, the model `agent6 review` uses."
         ),
     )
-    period: int = Field(
+    period: int = pydantic.Field(
         ge=1,
         default=10,
         description='Iterations between panels when `trigger = "periodic"`.',
     )
-    decision: Literal["advisory", "veto", "quorum", "all"] = Field(
+    decision: Literal["advisory", "veto", "quorum", "all"] = pydantic.Field(
         default="advisory",
         description=(
             "What a panel's `block` verdicts do: `advisory` (the findings are injected as "
@@ -411,7 +411,7 @@ class ReviewConfig(BaseModel):
             "gate applies to `before_finish` only; the other triggers always advise."
         ),
     )
-    quorum: int = Field(
+    quorum: int = pydantic.Field(
         ge=1,
         default=2,
         description=(
@@ -419,7 +419,7 @@ class ReviewConfig(BaseModel):
             "seats on one model count once, so a same-model panel cannot reach it)."
         ),
     )
-    max_total_rejections: int = Field(
+    max_total_rejections: int = pydantic.Field(
         ge=1,
         default=4,
         description=(
@@ -427,7 +427,7 @@ class ReviewConfig(BaseModel):
             "for the rest of the run, so a panel can never stall a run forever."
         ),
     )
-    budget_fraction: float = Field(
+    budget_fraction: float = pydantic.Field(
         gt=0.0,
         le=1.0,
         default=0.25,
@@ -436,7 +436,7 @@ class ReviewConfig(BaseModel):
             "this fraction of the whole. `0.25`: no panel in the last quarter."
         ),
     )
-    seats: StrTuple = Field(
+    seats: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
             'The panel roster, one entry per seat: a persona name (`"security"`), routed via '
@@ -448,7 +448,7 @@ class ReviewConfig(BaseModel):
             "roster for a one-off review."
         ),
     )
-    concurrency: int = Field(
+    concurrency: int = pydantic.Field(
         ge=1,
         default=1,
         description=(
@@ -456,7 +456,7 @@ class ReviewConfig(BaseModel):
             "latency is its slowest seat). `agent6 review` always runs every seat in parallel."
         ),
     )
-    tier: ReviewTier = Field(
+    tier: ReviewTier = pydantic.Field(
         default="diff",
         description=(
             "How much a seat reads: `diff` (one call over the diff, the task, and the verify "
@@ -466,7 +466,7 @@ class ReviewConfig(BaseModel):
         ),
     )
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _check_review_seats(self) -> ReviewConfig:
         """Refuse a seat entry that is empty or does not parse.
 
@@ -485,7 +485,7 @@ class ReviewConfig(BaseModel):
                 raise ValueError(f"review.seats: {exc}") from exc
         return self
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _check_review_quorum(self) -> ReviewConfig:
         """Refuse a quorum the roster's distinct models can never reach.
 
@@ -507,7 +507,7 @@ class ReviewConfig(BaseModel):
         return self
 
 
-class BudgetConfig(BaseModel):
+class BudgetConfig(pydantic.BaseModel):
     """The `[budget]` table: every provider call is bounded in exactly one currency.
 
     A meterable call counts against `max_usd`, a plan-metered call against `max_percent`, and
@@ -515,9 +515,9 @@ class BudgetConfig(BaseModel):
     `0` as refuse up front.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    max_usd: float = Field(
+    max_usd: float = pydantic.Field(
         default=10.0,
         description=(
             "Cap on the metered spend of one run (provider-reported cost, else price times tokens "
@@ -526,7 +526,7 @@ class BudgetConfig(BaseModel):
             "`0`: refuse every metered call. `--max-usd` overrides per run."
         ),
     )
-    max_tokens_fallback: int = Field(
+    max_tokens_fallback: int = pydantic.Field(
         ge=-1,
         default=2_000_000,
         description=(
@@ -536,7 +536,7 @@ class BudgetConfig(BaseModel):
         ),
     )
 
-    max_percent: float = Field(
+    max_percent: float = pydantic.Field(
         default=-1.0,  # the float the loader validates it to, so `config fill` is idempotent
         description=(
             "Cap on the plan percentage points one run may consume on a subscription provider: "
@@ -551,7 +551,7 @@ class BudgetConfig(BaseModel):
     )
 
     # Purchased credits and extra usage are real money after the included window.
-    allow_paid_credits: bool = Field(
+    allow_paid_credits: bool = pydantic.Field(
         default=False,
         description=(
             "Allow plan-metered calls (`chatgpt`, `claude_code`) to spend purchased credits or "
@@ -567,7 +567,7 @@ class BudgetConfig(BaseModel):
         ),
     )
 
-    @field_validator("max_usd", "max_percent")
+    @pydantic.field_validator("max_usd", "max_percent")
     @classmethod
     def _usd_unlimited_is_exactly_minus_one(cls, v: float) -> float:
         """Refuse a cap that is non-finite or negative other than exactly -1.

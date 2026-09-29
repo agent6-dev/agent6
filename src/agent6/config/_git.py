@@ -11,17 +11,17 @@ import re
 import string
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+import pydantic
 
-from agent6.config._base import MODEL_CONFIG
+from agent6.config import _base
 
 
-class GitCommitCheckpointConfig(BaseModel):
+class GitCommitCheckpointConfig(pydantic.BaseModel):
     """Message style for the per-step commits a run makes on its branch."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    message: Literal["agent6", "conventional", "model"] = Field(
+    message: Literal["agent6", "conventional", "model"] = pydantic.Field(
         default="agent6",
         description=(
             "The message of each per-step commit: `agent6` (`agent6 iter N: <summary>`), "
@@ -32,12 +32,12 @@ class GitCommitCheckpointConfig(BaseModel):
     )
 
 
-class GitCommitSquashConfig(BaseModel):
+class GitCommitSquashConfig(pydantic.BaseModel):
     """Message style for the one commit a squash merge produces."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    message: Literal["agent6", "conventional", "combine", "model"] = Field(
+    message: Literal["agent6", "conventional", "combine", "model"] = pydantic.Field(
         default="agent6",
         description=(
             "The message of the one commit a squash merge produces: `agent6` (the task's first "
@@ -49,30 +49,30 @@ class GitCommitSquashConfig(BaseModel):
     )
 
 
-class GitCommitConfig(BaseModel):
+class GitCommitConfig(pydantic.BaseModel):
     """The commit identity, the provenance trailer and the per-kind message styles.
 
     `name` and `email` unset mean the project's own `git config` identity; a run with
     neither an override nor a resolvable identity refuses at startup.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    name: str | None = Field(
+    name: str | None = pydantic.Field(
         default=None,
         description=(
             "Author and committer name on the commits agent6 makes; unset uses the repo's own `git "
             "config`. A run with no resolvable identity refuses to start."
         ),
     )
-    email: str | None = Field(
+    email: str | None = pydantic.Field(
         default=None,
         description=(
             "Author and committer email on the commits agent6 makes; unset uses the repo's own "
             "`git config`. A run with no resolvable identity refuses to start."
         ),
     )
-    trailer: str = Field(
+    trailer: str = pydantic.Field(
         default="",
         description=(
             "A git trailer line (`Key: value`) appended to every commit agent6 makes, e.g. "
@@ -81,10 +81,12 @@ class GitCommitConfig(BaseModel):
             "joined with `, `). Empty: no trailer."
         ),
     )
-    checkpoint: GitCommitCheckpointConfig = Field(default_factory=GitCommitCheckpointConfig)
-    squash: GitCommitSquashConfig = Field(default_factory=GitCommitSquashConfig)
+    checkpoint: GitCommitCheckpointConfig = pydantic.Field(
+        default_factory=GitCommitCheckpointConfig
+    )
+    squash: GitCommitSquashConfig = pydantic.Field(default_factory=GitCommitSquashConfig)
 
-    @field_validator("trailer")
+    @pydantic.field_validator("trailer")
     @classmethod
     def _trailer_is_a_trailer_line(cls, v: str) -> str:
         """Refuse a trailer that is not a `Key: value` line with only `{model}` as a placeholder.
@@ -115,13 +117,13 @@ class GitCommitConfig(BaseModel):
         return v
 
 
-class GitConfig(BaseModel):
+class GitConfig(pydantic.BaseModel):
     """The `[git]` table."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
     # A run records the untracked files present at its start and never commits them.
-    dirty_tree: Literal["ask", "stash", "include"] = Field(
+    dirty_tree: Literal["ask", "stash", "include"] = pydantic.Field(
         default="ask",
         description=(
             "What a run does with tracked files' uncommitted changes at start. `ask`: ask over the "
@@ -135,7 +137,7 @@ class GitConfig(BaseModel):
         ),
     )
     # A run that edited leaves its work in the tree: this fires after auto_merge or a no-edit run.
-    auto_stash_pop: bool = Field(
+    auto_stash_pop: bool = pydantic.Field(
         default=False,
         description=(
             "Apply the pre-run stash back when the run ends and the tree is clean (a clean apply, "
@@ -144,7 +146,7 @@ class GitConfig(BaseModel):
         ),
     )
     # The chain is refs/agent6/<session>/head, parented on HEAD at run start.
-    control: Literal["agent6", "model"] = Field(
+    control: Literal["agent6", "model"] = pydantic.Field(
         default="agent6",
         description=(
             "Who manages git during a run: `agent6` records every step on the run's own commit "
@@ -154,7 +156,7 @@ class GitConfig(BaseModel):
             "`sandbox.protect_git = false`."
         ),
     )
-    branch_per_run: bool = Field(
+    branch_per_run: bool = pydantic.Field(
         default=True,
         description=(
             "Also advance a visible `agent6/<run-id>` branch to the run's chain tip; `false` keeps "
@@ -163,7 +165,7 @@ class GitConfig(BaseModel):
         ),
     )
     # Off, resume still works from snapshots; the step-history surfaces degrade.
-    commit_per_step: bool = Field(
+    commit_per_step: bool = pydantic.Field(
         default=True,
         description=(
             "Commit each editing step onto the run's detached chain (a temp index; HEAD never "
@@ -173,7 +175,7 @@ class GitConfig(BaseModel):
             "from a changed tree degrade."
         ),
     )
-    merge_strategy: Literal["squash", "merge", "ff"] = Field(
+    merge_strategy: Literal["squash", "merge", "ff"] = pydantic.Field(
         default="squash",
         description=(
             "How `agent6 sessions merge` lands a run on its base: `squash` (one commit), `merge` "
@@ -182,7 +184,7 @@ class GitConfig(BaseModel):
         ),
     )
     # With auto_stash_pop the merge lands first, then the stash goes back on top.
-    auto_merge: bool = Field(
+    auto_merge: bool = pydantic.Field(
         default=False,
         description=(
             "After a run that finished with nothing red, merge its work into its base branch "
@@ -191,7 +193,7 @@ class GitConfig(BaseModel):
         ),
     )
     # The hidden chain ref stays as the run's record until `sessions rm`.
-    auto_prune: bool = Field(
+    auto_prune: bool = pydantic.Field(
         default=False,
         description=(
             "After an `auto_merge`, delete the run branch when `git branch -d` can (a `merge` or "
@@ -201,7 +203,7 @@ class GitConfig(BaseModel):
     )
     # A hook runs on the host outside the jail: host RCE for an adversarial repo.
     # `core.fsmonitor` and `diff.external` fire on status/diff and have no legitimate use here.
-    run_repo_hooks: bool = Field(
+    run_repo_hooks: bool = pydantic.Field(
         default=False,
         description=(
             "Run the repo's own `.git/hooks/*` during agent6's git operations. `false` skips "
@@ -210,7 +212,7 @@ class GitConfig(BaseModel):
         ),
     )
     # A driver in a poisoned `.git/config` runs on the host at every stage or merge.
-    run_repo_filters: bool = Field(
+    run_repo_filters: bool = pydantic.Field(
         default=False,
         description=(
             "Honor the repo's content drivers (`filter.<name>.clean/smudge/process`, "
@@ -220,9 +222,9 @@ class GitConfig(BaseModel):
             "are these drivers)."
         ),
     )
-    commit: GitCommitConfig = Field(default_factory=GitCommitConfig)
+    commit: GitCommitConfig = pydantic.Field(default_factory=GitCommitConfig)
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _check_auto_merge(self) -> GitConfig:
         """Refuse the stash and prune settings without the setting each depends on.
 

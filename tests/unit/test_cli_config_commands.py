@@ -10,6 +10,7 @@ import tomllib
 import pytest
 
 from agent6 import paths
+from agent6.config import io
 
 
 @pytest.fixture
@@ -542,12 +543,11 @@ def test_a_write_command_bug_still_crash_reports(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An unexpected exception inside `config set` keeps the crash report at exit 1."""
-    from agent6.config import write as write_mod
 
     def _boom(*_a: object, **_k: object) -> None:
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr(write_mod, "upsert_toml_leaf", _boom)
+    monkeypatch.setattr(io, "upsert_toml_leaf", _boom)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     assert _refuse(["config", "set", "harness.max_iterations", "7"]) == 1
     err = capsys.readouterr().err

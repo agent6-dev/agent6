@@ -5,12 +5,11 @@
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
-from urllib.parse import urlsplit
+from urllib import parse
 
-from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
+import pydantic
 
-from agent6.config._base import MODEL_CONFIG, Argv
-from agent6.config._sandbox import is_cleartext_url, is_loopback_url
+from agent6.config import _base, _sandbox
 
 ApiFormat = Literal["anthropic", "openai", "chatgpt", "claude_code"]
 Deployment = Literal["direct", "vertex", "azure"]
@@ -31,7 +30,7 @@ def validate_base_url(url: str, field: str = "base_url") -> None:
         ValueError: No http(s) scheme, no host, or an out-of-range port.
     """
     try:
-        parts = urlsplit(url)
+        parts = parse.urlsplit(url)
         port = parts.port  # raises ValueError on an out-of-range port
     except ValueError as exc:
         raise ValueError(f"invalid {field} {url!r}: {exc}") from exc
@@ -117,7 +116,7 @@ def _require_json_shaped(value: Any, path: str) -> None:
     )
 
 
-class _ProviderBase(BaseModel):
+class _ProviderBase(pydantic.BaseModel):
     """The transport and auth fields every HTTP provider shares.
 
     `api_format` selects the wire dialect, `deployment` the URL profile, and the auth fields
@@ -125,11 +124,11 @@ class _ProviderBase(BaseModel):
     first two in `_fill_defaults`, so an entry naming only `api_format` is usable.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
     # Declared here so api_format leads every subclass's model_fields; each subclass narrows it.
     api_format: ApiFormat
-    deployment: Deployment = Field(
+    deployment: Deployment = pydantic.Field(
         default="direct",
         description=(
             "`direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format "
@@ -137,7 +136,7 @@ class _ProviderBase(BaseModel):
         ),
     )
     # Never empty after validation; the host also feeds the egress allow-list.
-    base_url: str = Field(
+    base_url: str = pydantic.Field(
         default="",
         description=(
             "The endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for "
@@ -145,7 +144,7 @@ class _ProviderBase(BaseModel):
             "its fixed OAuth authority."
         ),
     )
-    auth_style: AuthStyle = Field(
+    auth_style: AuthStyle = pydantic.Field(
         default="bearer",
         description=(
             "How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the "
@@ -154,7 +153,7 @@ class _ProviderBase(BaseModel):
         ),
     )
     # Secrets live here and in token_command, never in base_url, extra_headers or extra_query.
-    api_key_env: str | None = Field(
+    api_key_env: str | None = pydantic.Field(
         default=None,
         min_length=1,
         description=(
@@ -162,7 +161,7 @@ class _ProviderBase(BaseModel):
             "a key `agent6 connect` stored, or an unauthenticated local endpoint."
         ),
     )
-    token_command: Argv = Field(
+    token_command: _base.Argv = pydantic.Field(
         default=(),
         description=(
             "A command (argv) that prints a short-lived bearer token to stdout, re-run when "
@@ -170,19 +169,19 @@ class _ProviderBase(BaseModel):
             "`api_key_env`."
         ),
     )
-    token_command_ttl_s: float = Field(
+    token_command_ttl_s: float = pydantic.Field(
         gt=0.0,
         default=300.0,
         description="Seconds a `token_command` token is reused before the command runs again.",
     )
-    extra_headers: dict[str, str] = Field(
+    extra_headers: dict[str, str] = pydantic.Field(
         default_factory=dict,
         description=(
             "Extra HTTP headers on every request to this provider. Never a secret: the config file "
             "is not `0600`."
         ),
     )
-    extra_body: dict[str, Any] = Field(
+    extra_body: dict[str, Any] = pydantic.Field(
         default_factory=dict,
         description=(
             "Provider-specific JSON merged last into every request body, so tuning keys "
@@ -191,12 +190,12 @@ class _ProviderBase(BaseModel):
             "JSON-shaped (a TOML date or time is refused). OpenRouter's routing options go here."
         ),
     )
-    extra_query: dict[str, str] = Field(
+    extra_query: dict[str, str] = pydantic.Field(
         default_factory=dict,
         description="Extra URL query parameters on every request (Azure's `api-version`).",
     )
     # The connect phase is bounded by providers._transport.CONNECT_TIMEOUT_S instead.
-    http_timeout_s: float = Field(
+    http_timeout_s: float = pydantic.Field(
         gt=0.0,
         default=600.0,
         description=(
@@ -204,7 +203,7 @@ class _ProviderBase(BaseModel):
         ),
     )
 
-    @model_validator(mode="before")
+    @pydantic.model_validator(mode="before")
     @classmethod
     def _fill_defaults(cls, data: Any) -> Any:
         """Fill `base_url` and `auth_style` from the format and deployment, refusing bad pairs.
@@ -238,7 +237,7 @@ class _ProviderBase(BaseModel):
             raise ValueError("deployment 'azure' requires extra_query['api-version']")
         return data
 
-    @field_validator("base_url")
+    @pydantic.field_validator("base_url")
     @classmethod
     def _check_base_url(cls, v: str) -> str:
         """Validate a configured `base_url`.
@@ -256,7 +255,7 @@ class _ProviderBase(BaseModel):
             validate_base_url(v)
         return v
 
-    @field_validator("extra_body")
+    @pydantic.field_validator("extra_body")
     @classmethod
     def _check_extra_body_json_shaped(cls, v: dict[str, Any]) -> dict[str, Any]:
         """Refuse an `extra_body` value JSON cannot carry, at load instead of mid-request.
@@ -274,7 +273,7 @@ class _ProviderBase(BaseModel):
             _require_json_shaped(value, f".{key}")
         return v
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _none_auth_takes_no_credential(self) -> _ProviderBase:
         """Refuse a credential source beside `auth_style = "none"`, which sends no header.
 
@@ -302,9 +301,9 @@ class AnthropicProviderEntry(_ProviderBase):
 
     # The narrowing override is sound: the model is frozen, so nothing writes the wider type.
     api_format: Literal["anthropic"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        Field(description=_API_FORMAT_DESCRIPTION)
+        pydantic.Field(description=_API_FORMAT_DESCRIPTION)
     )
-    prompt_caching: bool = Field(
+    prompt_caching: bool = pydantic.Field(
         default=True,
         description=(
             "Anthropic prompt caching: the system prompt, the tools, and the growing conversation "
@@ -322,7 +321,7 @@ class OpenAIProviderEntry(_ProviderBase):
     """
 
     api_format: Literal["openai"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        Field(description=_API_FORMAT_DESCRIPTION)
+        pydantic.Field(description=_API_FORMAT_DESCRIPTION)
     )
 
 
@@ -335,10 +334,10 @@ class ChatGPTProviderEntry(_ProviderBase):
     """
 
     api_format: Literal["chatgpt"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        Field(description=_API_FORMAT_DESCRIPTION)
+        pydantic.Field(description=_API_FORMAT_DESCRIPTION)
     )
 
-    @field_validator("base_url")
+    @pydantic.field_validator("base_url")
     @classmethod
     def _chatgpt_base_url_is_https(cls, v: str) -> str:
         """Refuse a cleartext URL off loopback: the bearer and account id ride every request.
@@ -352,14 +351,14 @@ class ChatGPTProviderEntry(_ProviderBase):
         Raises:
             ValueError: The URL is plain http to a host other than loopback.
         """
-        if is_cleartext_url(v) and not is_loopback_url(v):
+        if _sandbox.is_cleartext_url(v) and not _sandbox.is_loopback_url(v):
             raise ValueError(
                 "a chatgpt base_url must use https (plain http is allowed only"
                 " for a loopback test endpoint)"
             )
         return v
 
-    @field_validator("extra_headers")
+    @pydantic.field_validator("extra_headers")
     @classmethod
     def _reserved_headers_stay_structural(cls, v: dict[str, str]) -> dict[str, str]:
         """Refuse an override of the auth headers, which would re-route or mislabel every call.
@@ -382,7 +381,7 @@ class ChatGPTProviderEntry(_ProviderBase):
             )
         return v
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _oauth_takes_no_key_source(self) -> ChatGPTProviderEntry:
         """Refuse a key source or a non-bearer auth style beside the stored OAuth tokens.
 
@@ -408,7 +407,7 @@ class ChatGPTProviderEntry(_ProviderBase):
         return self
 
 
-class ClaudeCodeProviderEntry(BaseModel):
+class ClaudeCodeProviderEntry(pydantic.BaseModel):
     """The operator's installed Claude Code binary.
 
     It dials no endpoint and holds no credential, so the transport and auth fields do not
@@ -416,10 +415,10 @@ class ClaudeCodeProviderEntry(BaseModel):
     Claude login.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    api_format: Literal["claude_code"] = Field(description=_API_FORMAT_DESCRIPTION)
-    binary: str = Field(
+    api_format: Literal["claude_code"] = pydantic.Field(description=_API_FORMAT_DESCRIPTION)
+    binary: str = pydantic.Field(
         default="claude",
         min_length=1,
         description=(
@@ -431,7 +430,7 @@ class ClaudeCodeProviderEntry(BaseModel):
 
 ProviderEntry = Annotated[
     AnthropicProviderEntry | OpenAIProviderEntry | ChatGPTProviderEntry | ClaudeCodeProviderEntry,
-    Discriminator("api_format"),
+    pydantic.Discriminator("api_format"),
 ]
 
 

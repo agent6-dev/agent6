@@ -8,15 +8,14 @@ here, so every writer preserves comments and sibling keys identically.
 
 from __future__ import annotations
 
+import pathlib
 import re
 import tomllib
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
-from agent6.config.model import ConfigError
-from agent6.errors import read_operator_file
-from agent6.portable import atomic_write, locked_file, toml_basic_string
+from agent6 import errors, portable
+from agent6.config import model
 
 
 def _header_name(line: str) -> str | None:
@@ -70,10 +69,10 @@ def _section_name(line: str) -> str | None:
 def _toml_value(value: str | bool) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
-    return toml_basic_string(value)
+    return portable.toml_basic_string(value)
 
 
-def upsert_toml_table(path: Path, table: str, fields: dict[str, ConfigLeafValue]) -> None:
+def upsert_toml_table(path: pathlib.Path, table: str, fields: dict[str, ConfigLeafValue]) -> None:
     """Insert or replace one `[table]` block, preserving the rest of the file.
 
     Only the table's span is rewritten, never a serializer round-trip. The read, surgery
@@ -95,18 +94,18 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, ConfigLeafValue]
         block_lines.append(f"{key} = {format_toml_value(val)}")
     block = "\n".join(block_lines)
 
-    with locked_file(path):
-        text = read_operator_file(path) if path.is_file() else ""
+    with portable.locked_file(path):
+        text = errors.read_operator_file(path) if path.is_file() else ""
         lines = text.splitlines()
         start = _header_line(lines, table)
         if start is None:
             prefix = text if not text or text.endswith("\n") else text + "\n"
             sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
-            atomic_write(path, prefix + sep + block + "\n")
+            portable.atomic_write(path, prefix + sep + block + "\n")
             return
         end = _region_end(lines, start + 1)
         new_lines = lines[:start] + block.splitlines() + [""] + lines[end:]
-        atomic_write(path, "\n".join(new_lines).rstrip("\n") + "\n")
+        portable.atomic_write(path, "\n".join(new_lines).rstrip("\n") + "\n")
 
 
 # Matches what `format_toml_value` serializes; None omits the leaf.
@@ -142,7 +141,7 @@ def format_toml_value(value: object) -> str:  # noqa: PLR0911
             return "{}"
         items = ", ".join(f"{toml_key(k)} = {format_toml_value(v)}" for k, v in value.items())
         return "{ " + items + " }"
-    raise ConfigError(f"cannot serialize {value!r} to TOML")
+    raise model.ConfigError(f"cannot serialize {value!r} to TOML")
 
 
 def toml_key(key: object) -> str:
@@ -190,13 +189,13 @@ def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
     """
     parts = dotted_key.split(".")
     if any(not p for p in parts):
-        raise ConfigError(
+        raise model.ConfigError(
             f"config key must be a dotted leaf path like 'sandbox.network', got {dotted_key!r}"
         )
     return ".".join(parts[:-1]), parts[-1]
 
 
-def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
+def upsert_toml_leaf(path: pathlib.Path, dotted_key: str, value: object) -> None:
     """Set one `table.leaf` key, preserving the rest of the file verbatim.
 
     The `[table]` block is created when absent. TOML forbids a bare top-level key and a
@@ -213,14 +212,14 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     """
     table, leaf = _split_dotted_key(dotted_key)
     new_line = f"{leaf} = {format_toml_value(value)}"
-    with locked_file(path):
-        text = read_operator_file(path) if path.is_file() else ""
+    with portable.locked_file(path):
+        text = errors.read_operator_file(path) if path.is_file() else ""
         lines = text.splitlines()
         if table:
             # Raised here so every writer hits it; the header the surgery would emit collides
             # with the headerless ancestor, and _drop_top_region_key would then delete it whole.
             if owner := undeclared_table_ancestor(path, dotted_key):
-                raise ConfigError(
+                raise model.ConfigError(
                     f"{dotted_key} lives inside {owner}, which is not a plain [table]"
                     " (a value, an inline table, a dotted key, or an array-of-tables),"
                     f" so it cannot be set on its own. Set {owner} as a whole, or edit"
@@ -233,7 +232,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
             if start is None:
                 text = "\n".join(lines) + "\n" if lines else ""
                 sep = "\n" if text and not text.endswith("\n\n") else ""
-                atomic_write(path, text + sep + f"[{table}]" + "\n" + new_line + "\n")
+                portable.atomic_write(path, text + sep + f"[{table}]" + "\n" + new_line + "\n")
                 return
             region = start + 1
         else:
@@ -248,7 +247,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
             if span == 1 and (comment := _line_comment(lines[j])):
                 replacement = f"{new_line}  {comment}"
             lines[j : j + span] = [replacement]
-            atomic_write(path, "\n".join(lines).rstrip("\n") + "\n")
+            portable.atomic_write(path, "\n".join(lines).rstrip("\n") + "\n")
             return
         insert_at = end
         while insert_at - 1 >= region and lines[insert_at - 1].strip() == "":
@@ -257,7 +256,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
         flush_against_header = insert_at < len(lines) and lines[insert_at].lstrip().startswith("[")
         gap = [""] if not table and flush_against_header else []
         lines[insert_at:insert_at] = [new_line, *gap]
-        atomic_write(path, "\n".join(lines).rstrip("\n") + "\n")
+        portable.atomic_write(path, "\n".join(lines).rstrip("\n") + "\n")
 
 
 def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
@@ -492,7 +491,7 @@ def _value_line_span(lines: list[str], start: int) -> int:
         text = lines[idx]
 
 
-def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
+def remove_toml_leaf(path: pathlib.Path, dotted_key: str) -> bool:
     """Delete one `table.leaf` assignment.
 
     Removing a section's last leaf drops the empty `[table]` header too; a section that
@@ -509,18 +508,18 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
         ConfigError: The key is malformed, or its ancestor is not a plain `[table]`.
     """
     table, leaf = _split_dotted_key(dotted_key)
-    with locked_file(path):
+    with portable.locked_file(path):
         if not path.is_file():
             return False
         # Without this a leaf inside an inline table reads "not found" while `config get` shows it.
         if table and (owner := undeclared_table_ancestor(path, dotted_key)):
-            raise ConfigError(
+            raise model.ConfigError(
                 f"{dotted_key} lives inside {owner}, which is not a plain [table]"
                 " (an inline table, a dotted key, or an array-of-tables), so it"
                 f" cannot be unset on its own. Set {owner} as a whole, or edit {path}"
                 " by hand."
             )
-        lines = read_operator_file(path).splitlines()
+        lines = errors.read_operator_file(path).splitlines()
         if table:
             start = _header_line(lines, table)
             if start is None:
@@ -539,12 +538,12 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
                 if all(not rest.strip() for rest in lines[start + 1 : remaining_end]):
                     del lines[start:remaining_end]
             out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
-            atomic_write(path, out)
+            portable.atomic_write(path, out)
             return True
         return False
 
 
-def remove_toml_table(path: Path, table: str) -> bool:
+def remove_toml_table(path: pathlib.Path, table: str) -> bool:
     """Delete a whole `[table]` section with its `[table.sub]` subtables.
 
     `config fix` drops an unknown top-level table this way, where deleting one leaf would
@@ -557,19 +556,19 @@ def remove_toml_table(path: Path, table: str) -> bool:
     Returns:
         True when the table was present.
     """
-    with locked_file(path):
+    with portable.locked_file(path):
         if not path.is_file():
             return False
-        lines = read_operator_file(path).splitlines()
+        lines = errors.read_operator_file(path).splitlines()
         kept, removed = _drop_table_lines(lines, table)
         if not removed:
             return False
         out = "\n".join(kept).rstrip("\n") + "\n" if any(ln.strip() for ln in kept) else ""
-        atomic_write(path, out)
+        portable.atomic_write(path, out)
         return True
 
 
-def read_toml_file(path: Path) -> dict[str, Any]:
+def read_toml_file(path: pathlib.Path) -> dict[str, Any]:
     """Parse a TOML file.
 
     Args:
@@ -587,12 +586,12 @@ def read_toml_file(path: Path) -> dict[str, Any]:
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path}: invalid TOML: {exc}") from exc
+        raise model.ConfigError(f"{path}: invalid TOML: {exc}") from exc
     except (OSError, UnicodeDecodeError) as exc:
-        raise ConfigError(f"{path}: cannot be read: {exc}") from exc
+        raise model.ConfigError(f"{path}: cannot be read: {exc}") from exc
 
 
-def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
+def undeclared_table_ancestor(path: pathlib.Path, dotted_key: str) -> str | None:
     """Return the outermost ancestor of the key that the leaf surgery cannot write under.
 
     Such an ancestor is a plain value, an inline table, a dotted key or an array-of-tables:
@@ -608,7 +607,7 @@ def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
     """
     if not path.is_file():
         return None
-    text = read_operator_file(path)
+    text = errors.read_operator_file(path)
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError:

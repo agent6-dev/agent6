@@ -9,48 +9,25 @@ are checked by `Config.require_runnable` rather than at load, so `config show` a
 
 from __future__ import annotations
 
+import pathlib
 import tomllib
 from collections.abc import Callable
-from pathlib import Path
 from typing import Literal
 
-from pydantic import (
-    BaseModel,
-    Field,
-    ValidationError,
-    model_validator,
-)
+import pydantic
 
-from agent6.config._base import MODEL_CONFIG
-from agent6.config._git import GitConfig
-from agent6.config._harness import (
-    BudgetConfig,
-    ContextConfig,
-    HarnessConfig,
-    PromptConfig,
-    ReviewConfig,
-)
-from agent6.config._providers import ClaudeCodeProviderEntry, ProviderEntry
-from agent6.config._sandbox import MCPConfig, SandboxConfig, is_cleartext_url, is_loopback_url
-from agent6.config._surfaces import (
-    MachineConfig,
-    NotifyConfig,
-    ParallelConfig,
-    SkillsConfig,
-    WebConfig,
-)
-from agent6.errors import OperatorError
-from agent6.kinds import ModelRoute, RoleName
+from agent6 import errors, kinds
+from agent6.config import _base, _git, _harness, _providers, _sandbox, _surfaces
 
 
-class ConfigError(OperatorError):
+class ConfigError(errors.OperatorError):
     """The config file is missing, malformed or invalid: the operator's file, so a refusal."""
 
 
 EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
 
 
-class RoleModel(BaseModel):
+class RoleModel(pydantic.BaseModel):
     """One role's provider and model.
 
     `temperature` defaults to 0.0: high-temperature sampling degenerates on some open-weights
@@ -58,17 +35,17 @@ class RoleModel(BaseModel):
     per-model defaults vary, so pinning is what makes a bench reproducible.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    provider: str = Field(
+    provider: str = pydantic.Field(
         min_length=1,
         description="A `[providers.<name>]` entry, by name.",
     )
-    model: str = Field(
+    model: str = pydantic.Field(
         min_length=1,
         description="Model id as that provider names it (`agent6 model` lists them).",
     )
-    temperature: float | None = Field(
+    temperature: float | None = pydantic.Field(
         default=0.0,
         ge=0.0,
         le=2.0,
@@ -80,7 +57,7 @@ class RoleModel(BaseModel):
     )
     # Per wire: `reasoning.effort` on OpenAI-family models, `output_config.effort` or a thinking
     # budget on Anthropic ones.
-    effort: EffortLevel | None = Field(
+    effort: EffortLevel | None = pydantic.Field(
         default=None,
         description=(
             "Reasoning effort: `off`, `low`, `medium`, `high`, `xhigh`, or `max` (the top tiers "
@@ -91,27 +68,27 @@ class RoleModel(BaseModel):
     )
 
 
-class ModelsConfig(BaseModel):
+class ModelsConfig(pydantic.BaseModel):
     """The `[models]` table: the provider and model per role.
 
     Every role is optional at load; `Config.require_runnable` requires the one a command
     uses. `planner` and `reviewer` fall back to `worker`.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    worker: RoleModel | None = Field(
+    worker: RoleModel | None = pydantic.Field(
         default=None,
         description="The `(provider, model)` driving `agent6 run`/`resume`.",
     )
-    reviewer: RoleModel | None = Field(
+    reviewer: RoleModel | None = pydantic.Field(
         default=None,
         description=(
             "Drives `agent6 review`, the in-loop review panel, the context summariser and"
             " gister, and the prompt reviser. Unset falls back to `worker`."
         ),
     )
-    planner: RoleModel | None = Field(
+    planner: RoleModel | None = pydantic.Field(
         default=None,
         description="Drives `agent6 plan` (the planning pass). Unset falls back to `worker`.",
     )
@@ -131,7 +108,7 @@ class ModelsConfig(BaseModel):
             out["planner"] = self.planner
         return out
 
-    def resolve(self, role: RoleName) -> RoleModel | None:
+    def resolve(self, role: kinds.RoleName) -> RoleModel | None:
         """Return the effective model for a role, with the worker fallback.
 
         Args:
@@ -148,7 +125,7 @@ class ModelsConfig(BaseModel):
             return self.reviewer or self.worker
         return None
 
-    def source_role(self, role: RoleName) -> RoleName:
+    def source_role(self, role: kinds.RoleName) -> kinds.RoleName:
         """Return the configured role `resolve` reads, so an error names the key written.
 
         Args:
@@ -160,12 +137,12 @@ class ModelsConfig(BaseModel):
         return role if role in self.configured() else "worker"
 
 
-class Agent6Section(BaseModel):
+class Agent6Section(pydantic.BaseModel):
     """The `[agent6]` table."""
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    config_version: int = Field(
+    config_version: int = pydantic.Field(
         ge=1,
         le=1,
         default=1,
@@ -173,39 +150,39 @@ class Agent6Section(BaseModel):
     )
 
 
-class Config(BaseModel):
+class Config(pydantic.BaseModel):
     """The validated effective config, one immutable object per load.
 
     Frozen at the attribute level only; every derived config goes through a `with_*` copier,
     never in-place mutation.
     """
 
-    model_config = MODEL_CONFIG
+    model_config = _base.MODEL_CONFIG
 
-    agent6: Agent6Section = Field(default_factory=Agent6Section)
-    providers: dict[str, ProviderEntry] = Field(
+    agent6: Agent6Section = pydantic.Field(default_factory=Agent6Section)
+    providers: dict[str, _providers.ProviderEntry] = pydantic.Field(
         default_factory=dict,
         description=(
             "Provider endpoints by name (`[providers.<name>]`); a `[models.*]` role names one. "
             "`agent6 connect` writes them."
         ),
     )
-    models: ModelsConfig = Field(default_factory=ModelsConfig)
-    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
-    git: GitConfig = Field(default_factory=GitConfig)
-    harness: HarnessConfig = Field(default_factory=HarnessConfig)
-    review: ReviewConfig = Field(default_factory=ReviewConfig)
-    context: ContextConfig = Field(default_factory=ContextConfig)
-    prompt: PromptConfig = Field(default_factory=PromptConfig)
-    skills: SkillsConfig = Field(default_factory=SkillsConfig)
-    budget: BudgetConfig = Field(default_factory=BudgetConfig)
-    machine: MachineConfig = Field(default_factory=MachineConfig)
-    notify: NotifyConfig = Field(default_factory=NotifyConfig)
-    mcp: MCPConfig = Field(default_factory=MCPConfig)
-    web: WebConfig = Field(default_factory=WebConfig)
-    parallel: ParallelConfig = Field(default_factory=ParallelConfig)
+    models: ModelsConfig = pydantic.Field(default_factory=ModelsConfig)
+    sandbox: _sandbox.SandboxConfig = pydantic.Field(default_factory=_sandbox.SandboxConfig)
+    git: _git.GitConfig = pydantic.Field(default_factory=_git.GitConfig)
+    harness: _harness.HarnessConfig = pydantic.Field(default_factory=_harness.HarnessConfig)
+    review: _harness.ReviewConfig = pydantic.Field(default_factory=_harness.ReviewConfig)
+    context: _harness.ContextConfig = pydantic.Field(default_factory=_harness.ContextConfig)
+    prompt: _harness.PromptConfig = pydantic.Field(default_factory=_harness.PromptConfig)
+    skills: _surfaces.SkillsConfig = pydantic.Field(default_factory=_surfaces.SkillsConfig)
+    budget: _harness.BudgetConfig = pydantic.Field(default_factory=_harness.BudgetConfig)
+    machine: _surfaces.MachineConfig = pydantic.Field(default_factory=_surfaces.MachineConfig)
+    notify: _surfaces.NotifyConfig = pydantic.Field(default_factory=_surfaces.NotifyConfig)
+    mcp: _sandbox.MCPConfig = pydantic.Field(default_factory=_sandbox.MCPConfig)
+    web: _surfaces.WebConfig = pydantic.Field(default_factory=_surfaces.WebConfig)
+    parallel: _surfaces.ParallelConfig = pydantic.Field(default_factory=_surfaces.ParallelConfig)
     # The injection order and stacking rules live in config.layer._apply_preset.
-    preset: str = Field(
+    preset: str = pydantic.Field(
         default="",
         description=(
             "The strategy preset in force: `standard` (plain defaults), `quick` (no review panel), "
@@ -216,7 +193,7 @@ class Config(BaseModel):
         ),
     )
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _cross_validate_provider_routing(self) -> Config:
         """Refuse a configured role naming a provider absent from a non-empty `[providers]`.
 
@@ -238,7 +215,7 @@ class Config(BaseModel):
                 )
         return self
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _model_git_control_needs_git_writes(self) -> Config:
         """Refuse `git.control = "model"` beside `sandbox.protect_git`: the model must write .git.
 
@@ -255,7 +232,7 @@ class Config(BaseModel):
             )
         return self
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _pass_env_excludes_provider_keys(self) -> Config:
         """Refuse a `pass_env` naming a provider's `api_key_env`.
 
@@ -271,7 +248,7 @@ class Config(BaseModel):
         keys = {
             e.api_key_env
             for e in self.providers.values()
-            if not isinstance(e, ClaudeCodeProviderEntry) and e.api_key_env
+            if not isinstance(e, _providers.ClaudeCodeProviderEntry) and e.api_key_env
         }
         lists = [
             (f"[mcp.servers.{name}].pass_env", srv.pass_env, "an MCP server")
@@ -316,7 +293,7 @@ class Config(BaseModel):
             budget["max_percent"] = max_percent
         return Config.model_validate(data)
 
-    def model_route(self, role: RoleName, spec: str) -> ModelRoute:
+    def model_route(self, role: kinds.RoleName, spec: str) -> kinds.ModelRoute:
         """Parse a `[provider/]model` value into the route it names for a role.
 
         A first segment naming a configured provider is the provider; otherwise the whole
@@ -355,9 +332,9 @@ class Config(BaseModel):
                     f" (configured providers: {known})."
                 )
             provider, model = current.provider, spec
-        return ModelRoute(provider, model)
+        return kinds.ModelRoute(provider, model)
 
-    def with_model_route(self, role: RoleName, route: ModelRoute) -> Config:
+    def with_model_route(self, role: kinds.RoleName, route: kinds.ModelRoute) -> Config:
         """Return a copy whose role runs a route, keeping the role's effort and temperature.
 
         Args:
@@ -477,14 +454,18 @@ class Config(BaseModel):
         out: list[str] = []
         for name, entry in sorted(self.providers.items()):
             if (
-                not isinstance(entry, ClaudeCodeProviderEntry)
-                and is_cleartext_url(entry.base_url)
+                not isinstance(entry, _providers.ClaudeCodeProviderEntry)
+                and _sandbox.is_cleartext_url(entry.base_url)
                 and entry.auth_style != "none"
-                and not is_loopback_url(entry.base_url)
+                and not _sandbox.is_loopback_url(entry.base_url)
             ):
                 out.append(f"[providers.{name}] {entry.base_url}")
         for name, srv in sorted(self.mcp.servers.items()):
-            if srv.token_env and is_cleartext_url(srv.url) and not is_loopback_url(srv.url):
+            if (
+                srv.token_env
+                and _sandbox.is_cleartext_url(srv.url)
+                and not _sandbox.is_loopback_url(srv.url)
+            ):
                 out.append(f"[mcp.servers.{name}] {srv.url}")
         return tuple(out)
 
@@ -516,7 +497,7 @@ class Config(BaseModel):
         data.setdefault("prompt", {})["decompose"] = value
         return Config.model_validate(data)
 
-    def require_runnable(self, role: RoleName = "worker") -> None:
+    def require_runnable(self, role: kinds.RoleName = "worker") -> None:
         """Refuse unless the role can run: a provider exists and the role resolves onto one.
 
         Each message names the command that fixes the gap. A verify command is not
@@ -556,7 +537,7 @@ _MISSING_API_FORMAT = (
 
 
 def _format_validation_error(
-    err: ValidationError,
+    err: pydantic.ValidationError,
     source: str,
     locate: Callable[[str, str], str | None] | None = None,
 ) -> str:
@@ -606,11 +587,11 @@ def validate_config(
     """
     try:
         return Config.model_validate(raw)
-    except ValidationError as exc:
+    except pydantic.ValidationError as exc:
         raise ConfigError(_format_validation_error(exc, source, locate)) from exc
 
 
-def load_config(path: Path) -> Config:
+def load_config(path: pathlib.Path) -> Config:
     """Load and validate one TOML config file.
 
     Args:

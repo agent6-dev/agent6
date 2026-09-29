@@ -8,6 +8,7 @@ import pathlib
 
 import pytest
 
+from agent6 import portable
 from agent6.config import io
 
 
@@ -22,7 +23,7 @@ def test_writers_go_through_atomic_write_and_never_truncate(
         raise RuntimeError("simulated crash during publish")
 
     # path.write_text would truncate cfg before any rename; atomic_write fails before it.
-    monkeypatch.setattr(io, "atomic_write", boom)
+    monkeypatch.setattr(portable, "atomic_write", boom)
     with pytest.raises(RuntimeError):
         io.upsert_toml_leaf(cfg, "sandbox.protect_git", False)
     assert cfg.read_text(encoding="utf-8") == original  # not truncated

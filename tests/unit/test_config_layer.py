@@ -14,6 +14,7 @@ from agent6.config import (
     AnthropicProviderEntry,
     ConfigError,
     OpenAIProviderEntry,
+    io,
     layer,
     load_config,
     write,
@@ -646,22 +647,22 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     import threading
     import time
 
-    from agent6.config import write as write_mod
-
     a_in_revalidate = threading.Event()
     b_attempted = threading.Event()
-    real_load = write_mod.load_effective
+    real_load = layer.load_effective
     calls = {"n": 0}
 
-    def gated_load(root: pathlib.Path, flag: pathlib.Path | None) -> object:
+    def gated_load(
+        root: pathlib.Path, flag: pathlib.Path | None = None, *, preset: str = ""
+    ) -> object:
         calls["n"] += 1
         if calls["n"] == 1:  # A's revalidate: hold the transaction open
             a_in_revalidate.set()
             b_attempted.wait(timeout=5)
             time.sleep(0.4)  # window for B to (old code) land / (fixed) queue
-        return real_load(root, flag)
+        return real_load(root, flag, preset=preset)
 
-    monkeypatch.setattr(write_mod, "load_effective", gated_load)
+    monkeypatch.setattr(layer, "load_effective", gated_load)
     results: dict[str, str | None] = {}
 
     def writer_a() -> None:
@@ -733,15 +734,13 @@ def test_config_write_hands_the_dir_over_before_writing(
 
     Whether or not the write succeeds.
     """
-    from agent6.config import write as write_mod
-
     handed: list[pathlib.Path] = []
-    monkeypatch.setattr(write_mod, "mkdir_for_real_user", handed.append)
+    monkeypatch.setattr(paths_mod, "mkdir_for_real_user", handed.append)
 
     def killed(*_args: object, **_kwargs: object) -> None:
         raise KeyboardInterrupt  # stands in for the operator killing the writer
 
-    monkeypatch.setattr(write_mod, "upsert_toml_leaf", killed)
+    monkeypatch.setattr(io, "upsert_toml_leaf", killed)
     with pytest.raises(KeyboardInterrupt):
         write.set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
     assert handed[0] == paths_mod.repo_config_path(repo).parent  # before the write, not after it
@@ -751,10 +750,12 @@ def test_config_write_hands_the_file_over_after_a_rejected_edit(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The file is handed over after a rejected edit too: its rollback republishes a new inode."""
-    from agent6.config import write as write_mod
-
     handed: list[pathlib.Path] = []
-    monkeypatch.setattr(write_mod, "chown_to_real_user", handed.append)
+
+    def record(path: pathlib.Path, user: object = None) -> None:
+        handed.append(path)
+
+    monkeypatch.setattr(paths_mod, "chown_to_real_user", record)
     assert (
         write.set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
         is not None
@@ -891,13 +892,11 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
 
     A later leaf's error rolls back the earlier ones.
     """
-    from agent6.config import write as write_mod
-
     rcfg = paths_mod.repo_config_path(repo)
     before = '[providers.anthropic]\napi_format = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
 
-    real = write_mod.upsert_toml_leaf
+    real = io.upsert_toml_leaf
     calls = {"n": 0}
 
     def _fail_second(path: pathlib.Path, key: str, value: object) -> None:
@@ -906,7 +905,7 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
             raise ConfigError("second leaf refused")
         real(path, key, value)
 
-    monkeypatch.setattr(write_mod, "upsert_toml_leaf", _fail_second)
+    monkeypatch.setattr(io, "upsert_toml_leaf", _fail_second)
 
     with pytest.raises(errors.OperatorError, match="second leaf refused"):
         write.set_config_leaves(
@@ -924,7 +923,6 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
 ) -> None:
     """A partial multi-leaf write without the lock is kept, and the refusal says so."""
     import agent6.portable as portable_mod
-    from agent6.config import write as write_mod
 
     def _no_lock(_p: pathlib.Path) -> int | None:
         return None
@@ -933,7 +931,7 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
     rcfg = paths_mod.repo_config_path(repo)
     before = '[providers.anthropic]\napi_format = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
-    real = write_mod.upsert_toml_leaf
+    real = io.upsert_toml_leaf
     calls = {"n": 0}
 
     def _fail_second(path: pathlib.Path, key: str, value: object) -> None:
@@ -942,7 +940,7 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
             raise ConfigError("second leaf refused")
         real(path, key, value)
 
-    monkeypatch.setattr(write_mod, "upsert_toml_leaf", _fail_second)
+    monkeypatch.setattr(io, "upsert_toml_leaf", _fail_second)
 
     with pytest.raises(errors.OperatorError, match="kept as written"):
         write.set_config_leaves(

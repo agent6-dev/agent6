@@ -12,44 +12,22 @@ revalidation (rolled back, or kept when the lock failed open).
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import difflib
+import pathlib
 from collections.abc import Generator, Sequence
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, get_args, get_origin
 
-from pydantic import BaseModel, ValidationError
-from pydantic_core import ErrorDetails
+import pydantic
+import pydantic_core
 
-from agent6.config._providers import Deployment, ProviderEntry
-from agent6.config.io import (
-    ConfigLeafValue,
-    parse_cli_value,
-    read_toml_file,
-    remove_toml_leaf,
-    remove_toml_table,
-    upsert_toml_leaf,
-    upsert_toml_table,
-)
-from agent6.config.layer import (
-    EffectiveConfig,
-    flatten_leaves,
-    leaf_keys,
-    load_effective,
-)
-from agent6.config.model import Config, ConfigError
-from agent6.errors import OperatorError, read_operator_file
-from agent6.paths import (
-    chown_to_real_user,
-    effective_user,
-    global_config_path,
-    mkdir_for_real_user,
-    repo_config_path,
-)
-from agent6.portable import atomic_write, locked_file
+from agent6 import errors as agent6_errors
+from agent6 import paths, portable
+from agent6.config import _providers, io, layer
+from agent6.config import model as config_model
 
 
-def resolved_write_path(target: Path) -> Path:
+def resolved_write_path(target: pathlib.Path) -> pathlib.Path:
     """Resolve a symlinked config path to the file a write must open.
 
     `atomic_write` publishes by rename, which would replace a dotfiles-managed symlink with
@@ -69,7 +47,7 @@ def resolved_write_path(target: Path) -> Path:
     if not target.is_symlink():
         return target
     resolved = target.resolve()
-    owner = effective_user().uid
+    owner = paths.effective_user().uid
     # A dotfiles link often precedes its file; the ownership check moves to the nearest dir.
     checked = resolved
     while not checked.exists() and checked != checked.parent:
@@ -77,17 +55,19 @@ def resolved_write_path(target: Path) -> Path:
     try:
         checked_uid = checked.stat().st_uid
     except OSError as exc:
-        raise OperatorError(f"config symlink {target} -> {resolved} is unreadable: {exc}") from exc
+        raise agent6_errors.OperatorError(
+            f"config symlink {target} -> {resolved} is unreadable: {exc}"
+        ) from exc
     if checked_uid != owner:
         whose = "" if checked == resolved else f" (its directory {checked})"
-        raise OperatorError(
+        raise agent6_errors.OperatorError(
             f"config {target} is a symlink to {resolved}{whose}, owned by uid {checked_uid},"
             f" not you (uid {owner}); agent6 will not write through it"
         )
     return resolved
 
 
-def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
+def _write_target(repo_root: pathlib.Path, *, to_repo: bool) -> pathlib.Path:
     """Return the layer's config file, resolved.
 
     Args:
@@ -97,10 +77,12 @@ def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
     Returns:
         The file to write.
     """
-    return resolved_write_path(repo_config_path(repo_root) if to_repo else global_config_path())
+    return resolved_write_path(
+        paths.repo_config_path(repo_root) if to_repo else paths.global_config_path()
+    )
 
 
-def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:
+def _prepare_write_target(repo_root: pathlib.Path, *, to_repo: bool) -> pathlib.Path:
     """Return the layer's config file with its directory created for the real operator.
 
     Under `sudo` the handover is at creation, so a killed write never strands a root-owned
@@ -114,12 +96,12 @@ def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:
         The file to write.
     """
     target = _write_target(repo_root, to_repo=to_repo)
-    mkdir_for_real_user(target.parent)
+    paths.mkdir_for_real_user(target.parent)
     return target
 
 
 @contextlib.contextmanager
-def writing_config(target: Path) -> Generator[bool]:
+def writing_config(target: pathlib.Path) -> Generator[bool]:
     """Hold the config write lock, handing the file back to the real operator on every exit.
 
     Under `sudo` every publish creates the file as root, so the handover is unconditional.
@@ -130,14 +112,14 @@ def writing_config(target: Path) -> Generator[bool]:
     Yields:
         Whether the lock is held, for `keep_or_rollback`.
     """
-    with locked_file(target) as held:
+    with portable.locked_file(target) as held:
         try:
             yield held
         finally:
-            chown_to_real_user(target)
+            paths.chown_to_real_user(target)
 
 
-def target_unparseable(target: Path) -> bool:
+def target_unparseable(target: pathlib.Path) -> bool:
     """Return whether the file itself is no longer valid TOML.
 
     Args:
@@ -147,13 +129,13 @@ def target_unparseable(target: Path) -> bool:
         True when it exists and does not parse.
     """
     try:
-        read_toml_file(target)
-    except ConfigError:
+        io.read_toml_file(target)
+    except config_model.ConfigError:
         return True
     return False
 
 
-def merged_config_error(repo_root: Path) -> str | None:
+def merged_config_error(repo_root: pathlib.Path) -> str | None:
     """Return the merged config's load error as it sits on disk, or None.
 
     Measured before a write, so `revalidate_write` tells this edit's breakage from an older
@@ -166,8 +148,8 @@ def merged_config_error(repo_root: Path) -> str | None:
         The error message, or None when the config loads.
     """
     try:
-        load_effective(repo_root, None)
-    except ConfigError as exc:
+        layer.load_effective(repo_root, None)
+    except config_model.ConfigError as exc:
         return str(exc)
     return None
 
@@ -179,7 +161,7 @@ _KEPT_NO_LOCK = (
 )
 
 
-def keep_or_rollback(target: Path, prior: str | None, err: str, *, held: bool) -> str:
+def keep_or_rollback(target: pathlib.Path, prior: str | None, err: str, *, held: bool) -> str:
     """Roll the file back to its prior text and hand the error back.
 
     Args:
@@ -197,12 +179,14 @@ def keep_or_rollback(target: Path, prior: str | None, err: str, *, held: bool) -
     if prior is None:
         target.unlink(missing_ok=True)
     else:
-        atomic_write(target, prior)
+        portable.atomic_write(target, prior)
     return err
 
 
 # Derived: a hand-listed copy would leave a new entry type validated by nothing.
-PROVIDER_MEMBERS: tuple[type[BaseModel], ...] = get_args(get_args(ProviderEntry)[0])
+PROVIDER_MEMBERS: tuple[type[pydantic.BaseModel], ...] = get_args(
+    get_args(_providers.ProviderEntry)[0]
+)
 
 
 def provider_field_error(key: str, leaf: str, value: object) -> str | None:
@@ -233,7 +217,7 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
         try:
             member.model_validate({"api_format": fmt, leaf: value})
             return None
-        except ValidationError as exc:
+        except pydantic.ValidationError as exc:
             # Only an error at the leaf or inside its value counts; a missing sibling does not.
             leaf_errs = [e["msg"] for e in exc.errors() if e["loc"] and e["loc"][0] == leaf]
             if not leaf_errs:
@@ -245,7 +229,9 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
     return f"{key}: {' / '.join(seen)}"
 
 
-def unknown_key_error(key: str, repo_root: Path, *, eff: EffectiveConfig | None = None) -> str:
+def unknown_key_error(
+    key: str, repo_root: pathlib.Path, *, eff: layer.EffectiveConfig | None = None
+) -> str:
     """Return the message for a key the schema forbids, with a did-you-mean.
 
     Args:
@@ -259,9 +245,9 @@ def unknown_key_error(key: str, repo_root: Path, *, eff: EffectiveConfig | None 
         longer loads.
     """
     try:
-        pool = leaf_keys(eff if eff is not None else load_effective(repo_root, None))
-    except ConfigError:
-        pool = sorted(flatten_leaves(Config().model_dump(mode="python")))
+        pool = layer.leaf_keys(eff if eff is not None else layer.load_effective(repo_root, None))
+    except config_model.ConfigError:
+        pool = sorted(layer.flatten_leaves(config_model.Config().model_dump(mode="python")))
     close = difflib.get_close_matches(key, pool, n=2)
     hint = f". Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
     return f"unknown config key {key!r}{hint} (see `agent6 config show`)"
@@ -292,7 +278,7 @@ def _section_leaves(doc: dict[str, Any], key: str) -> dict[str, Any]:
 
 
 def written_value_error(
-    key: str, value: object, *, repo_root: Path, section: dict[str, Any] | None = None
+    key: str, value: object, *, repo_root: pathlib.Path, section: dict[str, Any] | None = None
 ) -> str | None:
     """Validate a written `key = value` on its own, independent of the layer merge.
 
@@ -328,18 +314,20 @@ def written_value_error(
         cur = child
     cur[parts[-1]] = value
     try:
-        Config.model_validate(nested)
-    except ValidationError as exc:
+        config_model.Config.model_validate(nested)
+    except pydantic.ValidationError as exc:
         for err in exc.errors():
             message = _error_about(err, key, value, repo_root)
             if message is not None:
                 return message
-    except ConfigError as exc:
+    except config_model.ConfigError as exc:
         return str(exc)
     return None
 
 
-def _error_about(err: ErrorDetails, key: str, value: object, repo_root: Path) -> str | None:
+def _error_about(
+    err: pydantic_core.ErrorDetails, key: str, value: object, repo_root: pathlib.Path
+) -> str | None:
     """Render one validation error as a message about the key.
 
     Args:
@@ -374,8 +362,8 @@ def _error_about(err: ErrorDetails, key: str, value: object, repo_root: Path) ->
 
 
 def revalidate_write(
-    repo_root: Path,
-    target: Path,
+    repo_root: pathlib.Path,
+    target: pathlib.Path,
     prior: str | None,
     *,
     was_valid: bool,
@@ -402,8 +390,8 @@ def revalidate_write(
         The error when this edit broke the config, else None.
     """
     try:
-        doc = read_toml_file(target)
-    except ConfigError as exc:
+        doc = io.read_toml_file(target)
+    except config_model.ConfigError as exc:
         # Unparseable TOML is always this edit's doing; a raise would escape the rollback.
         return keep_or_rollback(target, prior, str(exc), held=held)
     for wkey, wvalue in written:
@@ -424,7 +412,9 @@ def revalidate_write(
     return keep_or_rollback(target, prior, err, held=held)
 
 
-def _models_at(model: type[BaseModel], part: str) -> tuple[type[BaseModel], ...] | None:
+def _models_at(
+    model: type[pydantic.BaseModel], part: str
+) -> tuple[type[pydantic.BaseModel], ...] | None:
     """Return the models a field resolves to under a model.
 
     A name-keyed table (`providers`, `mcp.servers`) resolves through its value type; an
@@ -447,7 +437,7 @@ def _models_at(model: type[BaseModel], part: str) -> tuple[type[BaseModel], ...]
     return _model_members(annotation) or None
 
 
-def _model_members(annotation: object) -> tuple[type[BaseModel], ...]:
+def _model_members(annotation: object) -> tuple[type[pydantic.BaseModel], ...]:
     """Return every BaseModel in an annotation, unwrapping `Annotated` and unions.
 
     Args:
@@ -456,7 +446,7 @@ def _model_members(annotation: object) -> tuple[type[BaseModel], ...]:
     Returns:
         The models, in declaration order.
     """
-    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+    if isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel):
         return (annotation,)
     args = get_args(annotation)
     return tuple(m for arg in args for m in _model_members(arg))
@@ -475,7 +465,7 @@ def names_a_section(dotted_key: str) -> bool:
     Returns:
         True for a section.
     """
-    models: tuple[type[BaseModel], ...] = (Config,)
+    models: tuple[type[pydantic.BaseModel], ...] = (config_model.Config,)
     keyed = False  # the previous part was a name-keyed table, so this part is a name
     for part in dotted_key.split("."):
         if keyed:
@@ -494,7 +484,7 @@ def names_a_section(dotted_key: str) -> bool:
 
 
 def set_config_value(
-    repo_root: Path, dotted_key: str, raw_value: str, *, to_repo: bool = False
+    repo_root: pathlib.Path, dotted_key: str, raw_value: str, *, to_repo: bool = False
 ) -> str | None:
     """Set one leaf in the global or repo config.
 
@@ -517,22 +507,24 @@ def set_config_value(
     """
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target) as held:
-        prior = read_operator_file(target) if target.is_file() else None
-        read_toml_file(target)  # refuse line surgery on a file that does not parse
+        prior = agent6_errors.read_operator_file(target) if target.is_file() else None
+        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
-        parsed = parse_cli_value(raw_value)
+        parsed = io.parse_cli_value(raw_value)
         if isinstance(parsed, dict) and names_a_section(dotted_key):
             if not parsed:
-                raise ConfigError(f"{dotted_key} = {{}} sets nothing; name the leaves to set")
+                raise config_model.ConfigError(
+                    f"{dotted_key} = {{}} sets nothing; name the leaves to set"
+                )
             try:
                 for leaf, val in parsed.items():
-                    upsert_toml_leaf(target, f"{dotted_key}.{leaf}", val)
-            except ConfigError as exc:
+                    io.upsert_toml_leaf(target, f"{dotted_key}.{leaf}", val)
+            except config_model.ConfigError as exc:
                 # A refusal mid-way leaves earlier leaves on disk.
                 return keep_or_rollback(target, prior, str(exc), held=held)
             written = [(f"{dotted_key}.{leaf}", v) for leaf, v in parsed.items()]
         else:
-            upsert_toml_leaf(target, dotted_key, parsed)
+            io.upsert_toml_leaf(target, dotted_key, parsed)
             written = [(dotted_key, parsed)]
         return revalidate_write(
             repo_root, target, prior, was_valid=was_valid, held=held, written=written
@@ -540,9 +532,9 @@ def set_config_value(
 
 
 def set_config_table(
-    repo_root: Path,
+    repo_root: pathlib.Path,
     table: str,
-    fields: dict[str, ConfigLeafValue],
+    fields: dict[str, io.ConfigLeafValue],
     *,
     to_repo: bool = False,
 ) -> str | None:
@@ -563,10 +555,10 @@ def set_config_table(
     """
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target) as held:
-        prior = read_operator_file(target) if target.is_file() else None
-        read_toml_file(target)  # refuse line surgery on a file that does not parse
+        prior = agent6_errors.read_operator_file(target) if target.is_file() else None
+        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
-        upsert_toml_table(target, table, fields)
+        io.upsert_toml_table(target, table, fields)
         return revalidate_write(
             repo_root,
             target,
@@ -587,7 +579,7 @@ def provider_choices() -> dict[str, list[str]]:
     formats: list[str] = []
     for model in PROVIDER_MEMBERS:
         formats.extend(get_args(model.model_fields["api_format"].annotation))
-    return {"api_format": formats, "deployment": list(get_args(Deployment))}
+    return {"api_format": formats, "deployment": list(get_args(_providers.Deployment))}
 
 
 # The well-known names `agent6 connect` and the add-provider form land on the right host;
@@ -603,9 +595,9 @@ PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
 
 
 def set_config_leaves(
-    repo_root: Path,
+    repo_root: pathlib.Path,
     table: str,
-    fields: dict[str, ConfigLeafValue],
+    fields: dict[str, io.ConfigLeafValue],
     *,
     to_repo: bool = False,
 ) -> str | None:
@@ -629,16 +621,18 @@ def set_config_leaves(
     """
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target) as held:
-        prior = read_operator_file(target) if target.is_file() else None
-        read_toml_file(target)  # refuse line surgery on a file that does not parse
+        prior = agent6_errors.read_operator_file(target) if target.is_file() else None
+        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
         try:
             for key, val in fields.items():
                 if val is not None:
-                    upsert_toml_leaf(target, f"{table}.{key}", val)
-        except ConfigError as exc:
+                    io.upsert_toml_leaf(target, f"{table}.{key}", val)
+        except config_model.ConfigError as exc:
             # Earlier leaves may already have landed.
-            raise ConfigError(keep_or_rollback(target, prior, str(exc), held=held)) from exc
+            raise config_model.ConfigError(
+                keep_or_rollback(target, prior, str(exc), held=held)
+            ) from exc
         return revalidate_write(
             repo_root,
             target,
@@ -649,7 +643,7 @@ def set_config_leaves(
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class UnsetResult:
     """How an unset ended.
 
@@ -663,7 +657,9 @@ class UnsetResult:
     error: str | None = None
 
 
-def unset_config_table(repo_root: Path, table: str, *, to_repo: bool = False) -> UnsetResult:
+def unset_config_table(
+    repo_root: pathlib.Path, table: str, *, to_repo: bool = False
+) -> UnsetResult:
     """Remove a whole `[table]` with its subtables.
 
     For a name-keyed entry that is only valid whole: dropping one key of a
@@ -686,10 +682,10 @@ def unset_config_table(repo_root: Path, table: str, *, to_repo: bool = False) ->
     if not target.is_file():
         return UnsetResult(removed=False)
     with writing_config(target) as held:
-        prior = read_operator_file(target)
-        read_toml_file(target)  # refuse line surgery on a file that does not parse
+        prior = agent6_errors.read_operator_file(target)
+        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
-        if not remove_toml_table(target, table):
+        if not io.remove_toml_table(target, table):
             return UnsetResult(removed=False)
         return UnsetResult(
             removed=True,
@@ -697,7 +693,9 @@ def unset_config_table(repo_root: Path, table: str, *, to_repo: bool = False) ->
         )
 
 
-def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> UnsetResult:
+def unset_config_value(
+    repo_root: pathlib.Path, dotted_key: str, *, to_repo: bool = False
+) -> UnsetResult:
     """Remove one leaf, so it reverts to the next layer or the built-in default.
 
     Args:
@@ -717,10 +715,10 @@ def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = Fals
     if not target.is_file():
         return UnsetResult(removed=False)
     with writing_config(target) as held:
-        prior = read_operator_file(target)
-        read_toml_file(target)  # refuse line surgery on a file that does not parse
+        prior = agent6_errors.read_operator_file(target)
+        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
-        if not remove_toml_leaf(target, dotted_key):
+        if not io.remove_toml_leaf(target, dotted_key):
             return UnsetResult(removed=False)
         return UnsetResult(
             removed=True,

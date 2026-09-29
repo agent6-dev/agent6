@@ -8,8 +8,8 @@ layering are imported from `agent6.config.io` and `agent6.config.layer`.
 
 from __future__ import annotations
 
-from agent6.config._git import GitCommitConfig, GitConfig
-from agent6.config._harness import (
+from agent6.config._git import GitCommitConfig, GitConfig  # noqa: ICN003  # re-export
+from agent6.config._harness import (  # noqa: ICN003  # re-export
     BudgetConfig,
     ContextConfig,
     HarnessConfig,
@@ -19,7 +19,7 @@ from agent6.config._harness import (
     ReviewTier,
     parse_seat_spec,
 )
-from agent6.config._providers import (
+from agent6.config._providers import (  # noqa: ICN003  # re-export
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
     ClaudeCodeProviderEntry,
@@ -28,7 +28,7 @@ from agent6.config._providers import (
     plan_metered,
     validate_base_url,
 )
-from agent6.config._sandbox import (
+from agent6.config._sandbox import (  # noqa: ICN003  # re-export
     MCPConfig,
     MCPServerEntry,
     SandboxConfig,
@@ -36,7 +36,7 @@ from agent6.config._sandbox import (
     is_loopback_url,
     mcp_server_name_refusal,
 )
-from agent6.config._surfaces import (
+from agent6.config._surfaces import (  # noqa: ICN003  # re-export
     MachineConfig,
     MachineNotifyConfig,
     NotifyConfig,
@@ -44,17 +44,17 @@ from agent6.config._surfaces import (
     WebConfig,
     is_loopback_host,
 )
-from agent6.config.model import (
+from agent6.config.model import (  # noqa: ICN003  # re-export
     Agent6Section,
     Config,
     ConfigError,
     EffortLevel,
     ModelsConfig,
     RoleModel,
-    RoleName,
     load_config,
     validate_config,
 )
+from agent6.kinds import RoleName  # noqa: ICN003  # re-export
 
 __all__ = [
     "Agent6Section",

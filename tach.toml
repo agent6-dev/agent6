@@ -386,7 +386,7 @@ depends_on = ["agent6.child_env", "agent6.commit_message", "agent6.kinds"]  # th
 [[modules]]
 # The package __init__ re-exports the models as the public API.
 path = "agent6.config"
-depends_on = ["agent6.config._git", "agent6.config._providers", "agent6.config._sandbox", "agent6.config._surfaces", "agent6.config._harness", "agent6.config.model"]
+depends_on = ["agent6.config._git", "agent6.config._providers", "agent6.config._sandbox", "agent6.config._surfaces", "agent6.config._harness", "agent6.config.model", "agent6.kinds"]
 
 [[modules]]
 # The one pydantic ConfigDict every config model shares.
