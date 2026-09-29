@@ -14,7 +14,7 @@ from typing import ClassVar
 from rich import text as rich_text
 from textual import app, binding, containers, events, screen, widgets
 
-from agent6.ui.tui import widgets as tui_widgets
+from agent6.ui.tui import forms
 from agent6.viewmodel import state
 
 # The arrows move focus like Tab; a focused Input consumes left and right for its cursor.
@@ -361,14 +361,14 @@ class HistorySearchModal(screen.ModalScreen[str | None]):
         """
         with containers.Container(id="hs-box"):
             yield widgets.Static(rich_text.Text("Search past messages", style="bold"))
-            yield tui_widgets.TypeaheadField("", self._entries, id="hs-field")
+            yield forms.TypeaheadField("", self._entries, id="hs-field")
             yield widgets.Static(
                 "↑↓ highlight · Enter fills the composer · Esc closes", id="hs-hint"
             )
 
     def on_mount(self) -> None:
         """Focus the field."""
-        self.query_one("#hs-field", tui_widgets.TypeaheadField).focus()
+        self.query_one("#hs-field", forms.TypeaheadField).focus()
 
     def on_click(self, event: events.Click) -> None:
         """Cancel on a click outside the box."""
@@ -377,7 +377,7 @@ class HistorySearchModal(screen.ModalScreen[str | None]):
 
     def action_submit(self) -> None:
         """Dismiss with the field's value, or None when empty."""
-        self.dismiss(self.query_one("#hs-field", tui_widgets.TypeaheadField).value or None)
+        self.dismiss(self.query_one("#hs-field", forms.TypeaheadField).value or None)
 
     def action_cancel(self) -> None:
         """Dismiss with None."""

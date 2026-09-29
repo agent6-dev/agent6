@@ -42,7 +42,7 @@ from agent6.machine import (
 )
 from agent6.sessions import ipc, layout
 from agent6.ui import notify, spawn
-from agent6.ui.tui import composer, menubar, modals, screen_chrome, theme, widgets
+from agent6.ui.tui import composer, forms, menubar, modals, screen_chrome, theme
 from agent6.ui.tui import prompts as tui_prompts
 from agent6.viewmodel import (
     MachineState,
@@ -565,7 +565,7 @@ class CreateMachineModal(screen.ModalScreen[str]):
     """Ask for the task a machine is authored from; the result is the text, "" on cancel."""
 
     CSS = (
-        widgets.FORM_CSS
+        forms.FORM_CSS
         + """
     CreateMachineModal { align: center middle; }
     #create-box {

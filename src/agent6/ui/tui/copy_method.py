@@ -20,7 +20,7 @@ try:
 except ImportError as e:  # pragma: no cover
     raise SystemExit("The TUI needs textual: pip install 'agent6[tui]'") from e
 
-from agent6.ui.tui import clipboard, settings, widgets
+from agent6.ui.tui import clipboard, forms, settings
 
 
 def open_copy_method_picker(app: textual_app.App[Any]) -> None:
@@ -36,7 +36,7 @@ class CopyMethodPicker(screen.ModalScreen[None]):
         binding.Binding("enter", "confirm", "Use"),
     ]
     CSS = (
-        widgets.FORM_CSS
+        forms.FORM_CSS
         + """
     CopyMethodPicker { align: center middle; }
     #copy-box {
@@ -51,7 +51,7 @@ class CopyMethodPicker(screen.ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Focus the choice list."""
-        self.query_one(widgets.ChoiceField).focus(scroll_visible=False)
+        self.query_one(forms.ChoiceField).focus(scroll_visible=False)
 
     def compose(self) -> textual_app.ComposeResult:
         """Lay out the picker.
@@ -67,7 +67,7 @@ class CopyMethodPicker(screen.ModalScreen[None]):
         with containers.Vertical(id="copy-box"):
             yield textual_widgets.Static("Copy method", id="copy-title")
             with containers.VerticalScroll(id="copy-scroll"):
-                yield widgets.ChoiceField(choices, current, id="copy-list")
+                yield forms.ChoiceField(choices, current, id="copy-list")
             # Split by hand: the box is 58 cells inside, so one line would wrap mid-phrase.
             yield textual_widgets.Static(
                 text.Text(
@@ -79,8 +79,8 @@ class CopyMethodPicker(screen.ModalScreen[None]):
                 id="copy-hint",
             )
 
-    @textual.on(widgets.ChoiceField.Changed)
-    def _save(self, event: widgets.ChoiceField.Changed) -> None:
+    @textual.on(forms.ChoiceField.Changed)
+    def _save(self, event: forms.ChoiceField.Changed) -> None:
         settings.save_copy_method(event.field.value)
 
     def action_confirm(self) -> None:

@@ -17,11 +17,11 @@ from textual import app, message, widgets
 
 from agent6 import git_ops
 from agent6.sessions import manifest
-from agent6.ui.tui import widgets as tui_widgets
+from agent6.ui.tui import forms
 from agent6.viewmodel import format, state
 
 
-class DiffPane(tui_widgets.ScrollPane):
+class DiffPane(forms.ScrollPane):
     """The diff pane; a picker change posts `StepChanged`, since the header follows the step.
 
     Attributes:
@@ -55,8 +55,8 @@ class DiffPane(tui_widgets.ScrollPane):
         Yields:
             The picker row and the body.
         """
-        with tui_widgets.PickerRow(id="diff-nav"):
-            yield tui_widgets.Picker(
+        with forms.PickerRow(id="diff-nav"):
+            yield forms.Picker(
                 [("latest commit", "")],
                 value="",
                 allow_blank=False,
@@ -78,7 +78,7 @@ class DiffPane(tui_widgets.ScrollPane):
         Hidden while nothing is committed, and under `[git].control = "model"`, which
         has no chain to select from.
         """
-        nav = self.query_one("#diff-nav", tui_widgets.PickerRow)
+        nav = self.query_one("#diff-nav", forms.PickerRow)
         if self.git_control() == "model" or not s.steps:
             nav.display = False
             return

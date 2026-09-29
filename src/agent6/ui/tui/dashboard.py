@@ -31,13 +31,13 @@ from agent6.ui.tui import (
     _diff_pane,
     clipboard,
     composer,
+    forms,
     logview,
     menubar,
     modals,
     screen_chrome,
     settings,
     theme,
-    widgets,
 )
 from agent6.ui.tui import prompts as tui_prompts
 from agent6.viewmodel import format, state, tail
@@ -222,7 +222,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         yield textual_widgets.Static("", id="summary")  # compact only: the folded rows in one line
         with containers.Horizontal(id="head"):
             yield textual_widgets.Tree("tasks", id="plan")
-            with widgets.ScrollPane(id="stream"):
+            with forms.ScrollPane(id="stream"):
                 yield textual_widgets.Static("", id="stream-body")
         yield textual_widgets.DataTable(id="tools", cursor_type="row")
         with containers.Horizontal(id="body"):

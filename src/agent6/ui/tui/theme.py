@@ -30,7 +30,7 @@ except ImportError as e:  # pragma: no cover
         "The TUI theme support needs textual, a required dependency; reinstall agent6."
     ) from e
 
-from agent6.ui.tui import clipboard, settings, widgets
+from agent6.ui.tui import clipboard, forms, settings
 from agent6.viewmodel import format
 
 # The branded pair: a deep, low-saturation dark and a soft light.
@@ -337,7 +337,7 @@ class ThemePicker(screen.ModalScreen[None]):
         binding.Binding("enter", "confirm", "Use theme"),
     ]
     CSS = (
-        widgets.FORM_CSS
+        forms.FORM_CSS
         + """
     ThemePicker { align: center middle; }
     #theme-box {
@@ -353,7 +353,7 @@ class ThemePicker(screen.ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Focus the list without scrolling it, so it opens at the top."""
-        self.query_one(widgets.ChoiceField).focus(scroll_visible=False)
+        self.query_one(forms.ChoiceField).focus(scroll_visible=False)
 
     def compose(self) -> textual_app.ComposeResult:
         """Lay out the picker over every registered theme, sorted.
@@ -370,15 +370,15 @@ class ThemePicker(screen.ModalScreen[None]):
             with containers.VerticalScroll(
                 id="theme-scroll"
             ):  # no button: it would add a focus stop
-                yield widgets.ChoiceField(tuple(names), current, id="theme-list")
+                yield forms.ChoiceField(tuple(names), current, id="theme-list")
             # Two lines: the 44-wide box would wrap one mid-phrase.
             yield textual_widgets.Static(
                 text.Text("↑↓ highlight · Space select\nEsc or click outside closes", style="dim"),
                 id="theme-hint",
             )
 
-    @textual.on(widgets.ChoiceField.Changed)
-    def _preview(self, event: widgets.ChoiceField.Changed) -> None:
+    @textual.on(forms.ChoiceField.Changed)
+    def _preview(self, event: forms.ChoiceField.Changed) -> None:
         self.app.theme = event.field.value
 
     def action_confirm(self) -> None:

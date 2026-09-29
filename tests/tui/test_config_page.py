@@ -170,7 +170,7 @@ def test_config_page_edit_persists(repo: pathlib.Path) -> None:
     """Select a row, Edit, the chooser, a new value, Save: the whole edit ask end to end."""
 
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -189,7 +189,7 @@ def test_config_page_edit_persists(repo: pathlib.Path) -> None:
             modal = app.screen
             assert isinstance(modal, config_page.EditModal)
             # run_commands is an enum -> a [x]/[ ] chooser, focused, current "yes".
-            field = modal.query_one("#edit-value", tui_widgets.ChoiceField)
+            field = modal.query_one("#edit-value", forms.ChoiceField)
             assert field.value == "yes"
             await pilot.press("down")  # highlight "no" (selection unchanged)
             await pilot.pause()
@@ -215,7 +215,7 @@ def test_edit_defaults_to_the_setting_source_layer(repo: pathlib.Path) -> None:
     assert write.set_config_value(repo, "sandbox.run_commands", "no", to_repo=True) is None
 
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -233,8 +233,8 @@ def test_edit_defaults_to_the_setting_source_layer(repo: pathlib.Path) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, config_page.EditModal)
-            assert modal.query_one("#edit-target", tui_widgets.ChoiceField).value == "repo config"
-            modal.query_one("#edit-value", tui_widgets.ChoiceField).select_value("ask")
+            assert modal.query_one("#edit-target", forms.ChoiceField).value == "repo config"
+            modal.query_one("#edit-value", forms.ChoiceField).select_value("ask")
             modal.action_save()
             await pilot.pause()
             assert layer.load_effective(repo).config.sandbox.run_commands == "ask"
@@ -281,7 +281,7 @@ def test_edit_custom_value_inline(repo: pathlib.Path) -> None:
     """A choice setting's last chooser row is an inline custom field, typed right there."""
 
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -299,7 +299,7 @@ def test_edit_custom_value_inline(repo: pathlib.Path) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, config_page.EditModal)
-            field = modal.query_one("#edit-value", tui_widgets.ChoiceField)
+            field = modal.query_one("#edit-value", forms.ChoiceField)
             # Highlight down to the custom row, then type in place: typing selects it.
             for _ in range(3):
                 await pilot.press("down")
@@ -317,7 +317,7 @@ def test_edit_action_arrows_navigate(repo: pathlib.Path) -> None:
     """Left and Right move between the focused flat actions (Save, Unset, Cancel), wrapping."""
 
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -332,7 +332,7 @@ def test_edit_action_arrows_navigate(repo: pathlib.Path) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, config_page.EditModal)
-            items = list(modal.query(tui_widgets.ActionItem))
+            items = list(modal.query(forms.ActionItem))
             assert len(items) == 3  # Save, Unset, Cancel
             items[0].focus()
             await pilot.pause()
@@ -353,7 +353,7 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: pathlib.Path) 
     """Editing models.<role>.provider shows a chooser of the configured provider names."""
 
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test(size=(100, 44)) as pilot:
@@ -374,7 +374,7 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: pathlib.Path) 
             modal = app.screen
             assert isinstance(modal, config_page.EditModal)
             # A ChoiceField, not a plain Input: the configured providers were injected as choices.
-            field = modal.query_one("#edit-value", tui_widgets.ChoiceField)
+            field = modal.query_one("#edit-value", forms.ChoiceField)
             assert field.value == "anthropic"
 
     asyncio.run(scenario())
@@ -393,7 +393,7 @@ def test_model_field_is_a_typeahead_picker(
     monkeypatch.setattr(models_choices, "config_value_choices", _models)  # mock the live fetch
 
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test(size=(100, 44)) as pilot:
@@ -413,7 +413,7 @@ def test_model_field_is_a_typeahead_picker(
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, config_page.EditModal)
-            field = modal.query_one("#edit-value", tui_widgets.TypeaheadField)
+            field = modal.query_one("#edit-value", forms.TypeaheadField)
             assert field.value == "claude-sonnet-4-5"  # the current model
             # First keystroke replaces + narrows; arrow highlights a match.
             await pilot.press("h")
@@ -427,7 +427,7 @@ def test_model_field_is_a_typeahead_picker(
 
 def test_empty_preset_prefill_saves_back_unchanged(repo: pathlib.Path) -> None:
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test(size=(100, 44)) as pilot:
@@ -442,7 +442,7 @@ def test_empty_preset_prefill_saves_back_unchanged(repo: pathlib.Path) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, config_page.EditModal)
-            assert modal.query_one("#edit-value", tui_widgets.ChoiceField).value == ""
+            assert modal.query_one("#edit-value", forms.ChoiceField).value == ""
             modal.action_save()
             await pilot.pause()
             assert layer.load_effective(repo).config.preset == ""
@@ -585,7 +585,7 @@ def test_edit_modal_up_at_top_is_a_hard_stop(repo: pathlib.Path) -> None:
     """Up at the top of the first chooser stays there, not escaping to the scroll container."""
 
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -603,7 +603,7 @@ def test_edit_modal_up_at_top_is_a_hard_stop(repo: pathlib.Path) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, config_page.EditModal)
-            field = modal.query_one("#edit-value", tui_widgets.ChoiceField)
+            field = modal.query_one("#edit-value", forms.ChoiceField)
             assert modal.focused is field and field._cursor == 0  # pyright: ignore[reportPrivateUsage]
             await pilot.press("up")  # at the top edge
             await pilot.pause()
@@ -1033,7 +1033,7 @@ def test_add_provider_via_form_persists(repo: pathlib.Path) -> None:
     """The Add-provider form writes a validated [providers.<name>] block the page reflects."""
 
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test(size=(110, 44)) as pilot:
@@ -1045,7 +1045,7 @@ def test_add_provider_via_form_persists(repo: pathlib.Path) -> None:
             modal = app.screen
             assert isinstance(modal, config_page.ProviderModal)
             modal.query_one("#prov-name", widgets.Input).value = "openrouter"
-            fmt = modal.query_one("#prov-format", tui_widgets.ChoiceField)
+            fmt = modal.query_one("#prov-format", forms.ChoiceField)
             # A chooser round trip (up, down, Space), so the check holds however the union grows.
             fmt.focus()
             await pilot.pause()
@@ -1110,7 +1110,7 @@ def test_add_provider_prefills_known_preset_base_url(repo: pathlib.Path) -> None
     """
 
     async def scenario() -> None:
-        from agent6.ui.tui import widgets as tui_widgets
+        from agent6.ui.tui import forms
 
         app = _Host(repo)
         async with app.run_test(size=(110, 44)) as pilot:
@@ -1125,7 +1125,7 @@ def test_add_provider_prefills_known_preset_base_url(repo: pathlib.Path) -> None
             modal.query_one("#prov-name", widgets.Input).value = "openrouter"
             await pilot.pause()
             # Live prefill flipped the format dropdown and filled the URL field.
-            assert modal.query_one("#prov-format", tui_widgets.ChoiceField).value == "openai"
+            assert modal.query_one("#prov-format", forms.ChoiceField).value == "openai"
             assert (
                 modal.query_one("#prov-baseurl", widgets.Input).value
                 == "https://openrouter.ai/api/v1"

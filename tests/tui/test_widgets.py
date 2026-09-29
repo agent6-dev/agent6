@@ -10,7 +10,7 @@ from textual import app as textual_app
 from textual import containers, widgets
 from textual.widgets._select import SelectCurrent, SelectOverlay
 
-from agent6.ui.tui import widgets as tui_widgets
+from agent6.ui.tui import forms
 
 
 class _ChoiceScrollHost(textual_app.App[None]):
@@ -19,10 +19,10 @@ class _ChoiceScrollHost(textual_app.App[None]):
     def compose(self) -> textual_app.ComposeResult:
         with containers.VerticalScroll(id="scroll"):
             yield widgets.Static("before", id="before")
-            yield tui_widgets.ChoiceField(tuple(f"option-{i}" for i in range(12)), "option-0")
+            yield forms.ChoiceField(tuple(f"option-{i}" for i in range(12)), "option-0")
 
     def on_mount(self) -> None:
-        self.query_one(tui_widgets.ChoiceField).focus()
+        self.query_one(forms.ChoiceField).focus()
 
 
 def test_choice_cursor_stays_visible_below_prior_content() -> None:
@@ -32,7 +32,7 @@ def test_choice_cursor_stays_visible_below_prior_content() -> None:
             await pilot.pause()
             await pilot.press("down")
             await pilot.pause()
-            field = app.query_one(tui_widgets.ChoiceField)
+            field = app.query_one(forms.ChoiceField)
             scroll = app.query_one("#scroll", containers.VerticalScroll)
             cursor_y = field.content_region.y + field._cursor  # pyright: ignore[reportPrivateUsage]
             assert (
@@ -48,7 +48,7 @@ class _ChoiceWidthHost(textual_app.App[None]):
     CSS = "ChoiceField { width: 12; }"
 
     def compose(self) -> textual_app.ComposeResult:
-        yield tui_widgets.ChoiceField(
+        yield forms.ChoiceField(
             ("abcdefghijklmnopqrstuvwxyz", "second"), "abcdefghijklmnopqrstuvwxyz"
         )
 
@@ -58,7 +58,7 @@ def test_choice_options_each_use_one_screen_row() -> None:
         app = _ChoiceWidthHost()
         async with app.run_test(size=(30, 10)) as pilot:
             await pilot.pause()
-            field = app.query_one(tui_widgets.ChoiceField)
+            field = app.query_one(forms.ChoiceField)
             assert field.region.height == field._row_count  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
@@ -70,10 +70,10 @@ class _ChoiceChangeHost(textual_app.App[None]):
         self.changes = 0
 
     def compose(self) -> textual_app.ComposeResult:
-        yield tui_widgets.ChoiceField(("first", "second"), "first")
+        yield forms.ChoiceField(("first", "second"), "first")
 
     def on_mount(self) -> None:
-        self.query_one(tui_widgets.ChoiceField).focus()
+        self.query_one(forms.ChoiceField).focus()
 
     def on_choice_field_changed(self) -> None:
         self.changes += 1
@@ -89,7 +89,7 @@ def test_choice_posts_changed_only_when_the_selection_changes() -> None:
             assert app.changes == 0
             await pilot.press("down", "space")
             await pilot.pause()
-            assert app.query_one(tui_widgets.ChoiceField).value == "second"
+            assert app.query_one(forms.ChoiceField).value == "second"
             assert app.changes == 1
 
     asyncio.run(scenario())
@@ -97,10 +97,10 @@ def test_choice_posts_changed_only_when_the_selection_changes() -> None:
 
 class _ChoiceCustomHost(textual_app.App[None]):
     def compose(self) -> textual_app.ComposeResult:
-        yield tui_widgets.ChoiceField(("fixed",), "abc", allow_custom=True)
+        yield forms.ChoiceField(("fixed",), "abc", allow_custom=True)
 
     def on_mount(self) -> None:
-        self.query_one(tui_widgets.ChoiceField).focus()
+        self.query_one(forms.ChoiceField).focus()
 
 
 def test_choice_custom_caret_follows_left_and_right() -> None:
@@ -108,7 +108,7 @@ def test_choice_custom_caret_follows_left_and_right() -> None:
         app = _ChoiceCustomHost()
         async with app.run_test() as pilot:
             await pilot.pause()
-            field = app.query_one(tui_widgets.ChoiceField)
+            field = app.query_one(forms.ChoiceField)
             await pilot.press("left")
             await pilot.pause()
             assert "[x] ab▌c" in field.render().plain
@@ -129,10 +129,10 @@ class _TypeaheadScrollHost(textual_app.App[None]):
     def compose(self) -> textual_app.ComposeResult:
         with containers.VerticalScroll(id="scroll"):
             yield widgets.Static("before", id="before")
-            yield tui_widgets.TypeaheadField("", [f"option-{i}" for i in range(10)])
+            yield forms.TypeaheadField("", [f"option-{i}" for i in range(10)])
 
     def on_mount(self) -> None:
-        self.query_one(tui_widgets.TypeaheadField).focus()
+        self.query_one(forms.TypeaheadField).focus()
 
 
 def test_typeahead_highlight_stays_visible_when_suggestions_expand() -> None:
@@ -142,7 +142,7 @@ def test_typeahead_highlight_stays_visible_when_suggestions_expand() -> None:
             await pilot.pause()
             await pilot.press("down")
             await pilot.pause()
-            field = app.query_one(tui_widgets.TypeaheadField)
+            field = app.query_one(forms.TypeaheadField)
             scroll = app.query_one("#scroll", containers.VerticalScroll)
             highlight_y = (
                 field.content_region.y + field._index + 1  # pyright: ignore[reportPrivateUsage]
@@ -160,10 +160,10 @@ class _TypeaheadWidthHost(textual_app.App[None]):
     CSS = "TypeaheadField { width: 12; }"
 
     def compose(self) -> textual_app.ComposeResult:
-        yield tui_widgets.TypeaheadField("abcdefghijklmnopqrstuvwxyz", ["one"])
+        yield forms.TypeaheadField("abcdefghijklmnopqrstuvwxyz", ["one"])
 
     def on_mount(self) -> None:
-        self.query_one(tui_widgets.TypeaheadField).focus()
+        self.query_one(forms.TypeaheadField).focus()
 
 
 def test_typeahead_text_line_never_wraps() -> None:
@@ -171,7 +171,7 @@ def test_typeahead_text_line_never_wraps() -> None:
         app = _TypeaheadWidthHost()
         async with app.run_test(size=(30, 10)) as pilot:
             await pilot.pause()
-            field = app.query_one(tui_widgets.TypeaheadField)
+            field = app.query_one(forms.TypeaheadField)
             assert field.region.height == 2  # text line plus one suggestion
 
     asyncio.run(scenario())
@@ -182,7 +182,7 @@ def test_typeahead_caret_follows_left_and_right() -> None:
         app = _TypeaheadRefreshHost()
         async with app.run_test() as pilot:
             await pilot.pause()
-            field = app.query_one(tui_widgets.TypeaheadField)
+            field = app.query_one(forms.TypeaheadField)
             await pilot.press("left")
             await pilot.pause()
             assert field.render().plain.startswith("curren▌t\n")
@@ -195,10 +195,10 @@ def test_typeahead_caret_follows_left_and_right() -> None:
 
 class _TypeaheadRefreshHost(textual_app.App[None]):
     def compose(self) -> textual_app.ComposeResult:
-        yield tui_widgets.TypeaheadField("current", ["alpha", "beta"])
+        yield forms.TypeaheadField("current", ["alpha", "beta"])
 
     def on_mount(self) -> None:
-        self.query_one(tui_widgets.TypeaheadField).focus()
+        self.query_one(forms.TypeaheadField).focus()
 
 
 def test_typeahead_live_refresh_preserves_highlighted_value() -> None:
@@ -206,7 +206,7 @@ def test_typeahead_live_refresh_preserves_highlighted_value() -> None:
         app = _TypeaheadRefreshHost()
         async with app.run_test() as pilot:
             await pilot.pause()
-            field = app.query_one(tui_widgets.TypeaheadField)
+            field = app.query_one(forms.TypeaheadField)
             await pilot.press("down")
             assert field.value == "alpha"
             field.set_suggestions(["zeta", "alpha", "beta"])
@@ -228,16 +228,16 @@ def test_a_value_longer_than_the_row_scrolls_under_the_caret() -> None:
         CSS = "TypeaheadField { width: 16; }"
 
         def compose(self) -> textual_app.ComposeResult:
-            yield tui_widgets.TypeaheadField(value, ["one"])
+            yield forms.TypeaheadField(value, ["one"])
 
         def on_mount(self) -> None:
-            self.query_one(tui_widgets.TypeaheadField).focus()
+            self.query_one(forms.TypeaheadField).focus()
 
     async def scenario() -> list[str]:
         app = Host()
         async with app.run_test(size=(40, 12)) as pilot:
             await pilot.pause()
-            field = app.query_one(tui_widgets.TypeaheadField)
+            field = app.query_one(forms.TypeaheadField)
             await pilot.press("left")
             await pilot.pause()
             strips = field.render_lines(geometry.Region(0, 0, field.size.width, field.size.height))
@@ -250,10 +250,10 @@ def test_a_value_longer_than_the_row_scrolls_under_the_caret() -> None:
 
 class _TypeaheadRowsHost(textual_app.App[None]):
     def compose(self) -> textual_app.ComposeResult:
-        yield tui_widgets.TypeaheadField("gpt", ["gpt-5", "gpt-6"])
+        yield forms.TypeaheadField("gpt", ["gpt-5", "gpt-6"])
 
     def on_mount(self) -> None:
-        self.query_one(tui_widgets.TypeaheadField).focus()
+        self.query_one(forms.TypeaheadField).focus()
 
 
 def test_typeahead_rows_sit_under_the_text_line() -> None:
@@ -263,7 +263,7 @@ def test_typeahead_rows_sit_under_the_text_line() -> None:
         app = _TypeaheadRowsHost()
         async with app.run_test(size=(40, 10)) as pilot:
             await pilot.pause()
-            field = app.query_one(tui_widgets.TypeaheadField)
+            field = app.query_one(forms.TypeaheadField)
             lines = field.render().plain.splitlines()
             assert lines[0].startswith("gpt▌")
             assert [line.rstrip() for line in lines[1:]] == ["gpt-5", "gpt-6"]
@@ -277,8 +277,8 @@ class _PickerRowHost(textual_app.App[None]):
     def compose(self) -> textual_app.ComposeResult:
         modes = [("run", "run"), ("plan", "plan"), ("ask", "ask")]
         with containers.Horizontal(id="row"):
-            yield tui_widgets.Picker(modes, value="run", allow_blank=False, id="a")
-            yield tui_widgets.Picker(
+            yield forms.Picker(modes, value="run", allow_blank=False, id="a")
+            yield forms.Picker(
                 [(_LONG, _LONG), ("o/b", "o/b")], value=_LONG, allow_blank=False, id="b"
             )
 
@@ -292,7 +292,7 @@ def test_picker_list_opens_above_its_field() -> None:
     async def scenario() -> None:
         app = _PickerRowHost()
         async with app.run_test(size=(80, 20)) as pilot:
-            picker = app.query_one("#a", tui_widgets.Picker)
+            picker = app.query_one("#a", forms.Picker)
             picker.focus()
             await pilot.press("enter")
             await pilot.pause()
@@ -313,7 +313,7 @@ def test_the_last_picker_in_a_row_ends_its_value_in_an_ellipsis() -> None:
         app = _PickerRowHost()
         async with app.run_test(size=(40, 20)) as pilot:
             await pilot.pause()
-            picker = app.query_one("#b", tui_widgets.Picker)
+            picker = app.query_one("#b", forms.Picker)
             field = picker.query_one(SelectCurrent).region
             arrow = picker.query_one(".down-arrow").region
             assert field.right <= 40
@@ -328,7 +328,7 @@ class _PickerTopHost(textual_app.App[None]):
     def compose(self) -> textual_app.ComposeResult:
         modes = [("run", "run"), ("plan", "plan"), ("ask", "ask")]
         with containers.Horizontal(id="row"):
-            yield tui_widgets.Picker(modes, value="run", allow_blank=False, opens="down", id="a")
+            yield forms.Picker(modes, value="run", allow_blank=False, opens="down", id="a")
 
 
 def test_a_picker_at_the_top_of_a_pane_opens_its_list_downward() -> None:
@@ -337,7 +337,7 @@ def test_a_picker_at_the_top_of_a_pane_opens_its_list_downward() -> None:
     async def scenario() -> None:
         app = _PickerTopHost()
         async with app.run_test(size=(40, 20)) as pilot:
-            picker = app.query_one("#a", tui_widgets.Picker)
+            picker = app.query_one("#a", forms.Picker)
             picker.focus()
             await pilot.press("enter")
             await pilot.pause()

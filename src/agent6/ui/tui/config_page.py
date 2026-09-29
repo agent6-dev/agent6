@@ -29,7 +29,7 @@ from agent6.app import confine
 from agent6.config import ConfigError, io, layer, write
 from agent6.models import cache
 from agent6.models import choices as models_choices
-from agent6.ui.tui import menubar, screen_chrome, widgets
+from agent6.ui.tui import forms, menubar, screen_chrome
 from agent6.viewmodel import config_view
 
 
@@ -127,20 +127,20 @@ class _FormModal[ResultT](textual_screen.ModalScreen[ResultT]):
     def on_key(self, event: events.Key) -> None:
         """Move between fields and actions with the arrow keys."""
         focused = self.focused
-        if event.key in ("left", "right") and isinstance(focused, widgets.ActionItem):
-            actions = list(self.query(widgets.ActionItem))
+        if event.key in ("left", "right") and isinstance(focused, forms.ActionItem):
+            actions = list(self.query(forms.ActionItem))
             step = 1 if event.key == "right" else -1
             actions[(actions.index(focused) + step) % len(actions)].focus()
             event.stop()
-        elif event.key == "up" and isinstance(focused, (textual_widgets.Input, widgets.ActionItem)):
-            widgets.focus_neighbor(focused, -1)
+        elif event.key == "up" and isinstance(focused, (textual_widgets.Input, forms.ActionItem)):
+            forms.focus_neighbor(focused, -1)
             event.stop()
         elif event.key == "down" and isinstance(focused, textual_widgets.Input):
-            widgets.focus_neighbor(focused, 1)
+            forms.focus_neighbor(focused, 1)
             event.stop()
 
-    @textual.on(widgets.ActionItem.Activated)
-    def _action_activated(self, event: widgets.ActionItem.Activated) -> None:
+    @textual.on(forms.ActionItem.Activated)
+    def _action_activated(self, event: forms.ActionItem.Activated) -> None:
         """Dispatch an activated action item to its handler."""
         getattr(self, f"action_{event.action}")()
 
@@ -155,7 +155,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
     # No Enter to save: Enter on a chooser selects the highlighted option.
     BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
     CSS = (
-        widgets.FORM_CSS
+        forms.FORM_CSS
         + """
     EditModal { align: center middle; }
     #edit-box {
@@ -197,7 +197,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
     def _apply_suggestions(self, models: list[str]) -> None:
         """Replace the typeahead's suggestions."""
         field = self.query("#edit-value").first()
-        if isinstance(field, widgets.TypeaheadField):
+        if isinstance(field, forms.TypeaheadField):
             field.set_suggestions(models)
 
     def compose(self) -> app.ComposeResult:
@@ -230,14 +230,14 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                 )
             )
             if self._typeahead is not None:
-                yield widgets.TypeaheadField(
+                yield forms.TypeaheadField(
                     "" if s.value is None else current,
                     self._typeahead,
                     id="edit-value",
                     classes="edit-gap",
                 )
             elif s.choices is not None:
-                yield widgets.ChoiceField(
+                yield forms.ChoiceField(
                     tuple(s.choices),
                     current,
                     allow_custom=True,
@@ -245,7 +245,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                     classes="edit-gap",
                 )
             elif s.py_type == "bool":
-                yield widgets.ChoiceField(
+                yield forms.ChoiceField(
                     ("true", "false"),
                     current if current in ("true", "false") else "false",
                     id="edit-value",
@@ -264,11 +264,11 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                 )
             yield textual_widgets.Static("save to", classes="edit-label")
             target = "repo config" if s.source == "repo" else "global config"
-            yield widgets.ChoiceField(("global config", "repo config"), target, id="edit-target")
+            yield forms.ChoiceField(("global config", "repo config"), target, id="edit-target")
             with containers.Horizontal(id="edit-actions"):
-                yield widgets.ActionItem("Save", "save")
-                yield widgets.ActionItem("Unset override", "unset")
-                yield widgets.ActionItem("Cancel", "cancel")
+                yield forms.ActionItem("Save", "save")
+                yield forms.ActionItem("Unset override", "unset")
+                yield forms.ActionItem("Cancel", "cancel")
             yield textual_widgets.Static(
                 text.Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
                 classes="edit-label",
@@ -279,9 +279,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
         field = self.query_one("#edit-value")
         value = (
             field.value
-            if isinstance(
-                field, (widgets.ChoiceField, widgets.TypeaheadField, textual_widgets.Input)
-            )
+            if isinstance(field, (forms.ChoiceField, forms.TypeaheadField, textual_widgets.Input))
             else ""
         )
         return io.format_toml_value(value) if self._setting.py_type == "str" else value
@@ -289,14 +287,14 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
     @textual.on(textual_widgets.Input.Submitted)
     def _input_submitted(self, event: textual_widgets.Input.Submitted) -> None:
         """Advance from a text field on Enter, like Tab."""
-        widgets.focus_neighbor(event.input, 1)
+        forms.focus_neighbor(event.input, 1)
 
     def action_save(self) -> None:
         """Return the save, once; Enter may reach both an action item and Submitted."""
         if self._done:
             return
         self._done = True
-        to_repo = self.query_one("#edit-target", widgets.ChoiceField).index == 1
+        to_repo = self.query_one("#edit-target", forms.ChoiceField).index == 1
         self.dismiss(("save", self._new_value(), to_repo))
 
     def action_unset(self) -> None:
@@ -326,7 +324,7 @@ class ProviderModal(_FormModal[None]):
     # No Enter to add: Enter on a chooser selects the highlighted option.
     BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
     CSS = (
-        widgets.FORM_CSS
+        forms.FORM_CSS
         + """
     ProviderModal { align: center middle; }
     #prov-box {
@@ -366,11 +364,11 @@ class ProviderModal(_FormModal[None]):
                 classes="edit-input edit-gap",
             )
             yield textual_widgets.Static("api_format", classes="edit-label")
-            yield widgets.ChoiceField(
+            yield forms.ChoiceField(
                 tuple(choices["api_format"]), choices["api_format"][0], id="prov-format"
             )
             yield textual_widgets.Static("deployment", classes="edit-label")
-            yield widgets.ChoiceField(
+            yield forms.ChoiceField(
                 tuple(choices["deployment"]), choices["deployment"][0], id="prov-deployment"
             )
             yield textual_widgets.Static("base_url", classes="edit-label")
@@ -386,12 +384,12 @@ class ProviderModal(_FormModal[None]):
                 classes="edit-input",
             )
             yield textual_widgets.Static("save to", classes="edit-label")
-            yield widgets.ChoiceField(
+            yield forms.ChoiceField(
                 ("global config", "repo config"), "global config", id="prov-target"
             )
             with containers.Horizontal(id="prov-actions"):
-                yield widgets.ActionItem("Add", "add")
-                yield widgets.ActionItem("Cancel", "cancel")
+                yield forms.ActionItem("Add", "add")
+                yield forms.ActionItem("Cancel", "cancel")
             yield textual_widgets.Static(
                 text.Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
                 classes="edit-label",
@@ -399,13 +397,13 @@ class ProviderModal(_FormModal[None]):
 
     def _selected(self, widget_id: str, fallback: str) -> str:
         """Return a chooser's value, or the fallback when it has none."""
-        field = self.query_one(widget_id, widgets.ChoiceField)
+        field = self.query_one(widget_id, forms.ChoiceField)
         return field.value or fallback
 
     @textual.on(textual_widgets.Input.Submitted)
     def _input_submitted(self, event: textual_widgets.Input.Submitted) -> None:
         """Advance from a text field on Enter, like Tab."""
-        widgets.focus_neighbor(event.input, 1)
+        forms.focus_neighbor(event.input, 1)
 
     @textual.on(textual_widgets.Input.Changed, "#prov-name")
     def _prefill_from_preset(self, event: textual_widgets.Input.Changed) -> None:
@@ -420,7 +418,7 @@ class ProviderModal(_FormModal[None]):
                 baseurl.value = ""
             self._autofilled_baseurl = ""
             return
-        self.query_one("#prov-format", widgets.ChoiceField).select_value(preset["api_format"])
+        self.query_one("#prov-format", forms.ChoiceField).select_value(preset["api_format"])
         if baseurl.value in ("", self._autofilled_baseurl):
             self._autofilled_baseurl = preset.get("base_url", "")
             baseurl.value = self._autofilled_baseurl
@@ -443,7 +441,7 @@ class ProviderModal(_FormModal[None]):
         keyenv = self.query_one("#prov-keyenv", textual_widgets.Input).value.strip()
         if keyenv:
             fields["api_key_env"] = keyenv
-        to_repo = self.query_one("#prov-target", widgets.ChoiceField).index == 1
+        to_repo = self.query_one("#prov-target", forms.ChoiceField).index == 1
         try:
             err = write.set_config_leaves(self._repo, f"providers.{name}", fields, to_repo=to_repo)
         except errors.OperatorError as exc:

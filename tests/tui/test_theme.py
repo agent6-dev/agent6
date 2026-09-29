@@ -11,8 +11,7 @@ import pytest
 from textual import app as textual_app
 from textual import widgets
 
-from agent6.ui.tui import settings, theme
-from agent6.ui.tui import widgets as tui_widgets
+from agent6.ui.tui import forms, settings, theme
 
 
 @pytest.fixture
@@ -91,7 +90,7 @@ def test_saved_extra_theme_applies_on_mount(cfg: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
-async def _select_theme(pilot: object, field: tui_widgets.ChoiceField, target: str) -> None:
+async def _select_theme(pilot: object, field: forms.ChoiceField, target: str) -> None:
     """Highlight down to *target*, then Space to select it (applies live)."""
     for _ in range(len(field._options)):  # pyright: ignore[reportPrivateUsage]
         if field._options[field._cursor] == target:  # pyright: ignore[reportPrivateUsage]
@@ -112,7 +111,7 @@ def test_picker_preview_on_select_and_esc_keeps(cfg: pathlib.Path) -> None:
             assert app.theme == "agent6-dark"
             app.push_screen(theme.ThemePicker())
             await pilot.pause()
-            await _select_theme(pilot, app.screen.query_one(tui_widgets.ChoiceField), "nord")
+            await _select_theme(pilot, app.screen.query_one(forms.ChoiceField), "nord")
             assert app.theme == "nord"  # Space applies the highlighted theme live
             await pilot.press("escape")
             await pilot.pause()
@@ -128,7 +127,7 @@ def test_picker_enter_keeps_and_persists(cfg: pathlib.Path) -> None:
             await pilot.pause()
             app.push_screen(theme.ThemePicker())
             await pilot.pause()
-            await _select_theme(pilot, app.screen.query_one(tui_widgets.ChoiceField), "dracula")
+            await _select_theme(pilot, app.screen.query_one(forms.ChoiceField), "dracula")
             await pilot.press("enter")  # confirm + close
             await pilot.pause()
             assert app.theme == "dracula"
@@ -144,7 +143,7 @@ def test_picker_selects_extra_builtin_and_persists(cfg: pathlib.Path) -> None:
             await pilot.pause()
             app.push_screen(theme.ThemePicker())
             await pilot.pause()
-            await _select_theme(pilot, app.screen.query_one(tui_widgets.ChoiceField), "alice")
+            await _select_theme(pilot, app.screen.query_one(forms.ChoiceField), "alice")
             assert app.theme == "alice"  # listed and applied live
             await pilot.press("enter")
             await pilot.pause()

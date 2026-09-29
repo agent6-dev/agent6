@@ -23,8 +23,7 @@ from textual.css import query
 from agent6 import directive
 from agent6.sessions import ipc
 from agent6.ui import keymap
-from agent6.ui.tui import menubar, modals
-from agent6.ui.tui import widgets as tui_widgets
+from agent6.ui.tui import forms, menubar, modals
 from agent6.viewmodel import approval_parts, tail, transcript
 from agent6.viewmodel import state as viewmodel_state
 
@@ -149,7 +148,7 @@ class ResumeHost(Protocol):
         ...
 
 
-class ResumeOptions(tui_widgets.PickerRow):
+class ResumeOptions(forms.PickerRow):
     """The row above a resume composer: the preset and the model the next execution runs under.
 
     Shown only while the composer resumes; the picks live on the host app, so both
@@ -173,9 +172,9 @@ class ResumeOptions(tui_widgets.PickerRow):
         host = self._host()
         self._labels, self._labelled = host.resume_defaults(host.resume_preset), host.resume_preset
         yield widgets.Static("continue under preset", classes="picker-label")
-        yield tui_widgets.Picker(self._options(0), value="", allow_blank=False, id="resume-preset")
+        yield forms.Picker(self._options(0), value="", allow_blank=False, id="resume-preset")
         yield widgets.Static("model", classes="picker-label")
-        yield tui_widgets.Picker(self._options(1), value="", allow_blank=False, id="resume-model")
+        yield forms.Picker(self._options(1), value="", allow_blank=False, id="resume-model")
 
     def _host(self) -> ResumeHost:
         """Return the app the picks live on."""

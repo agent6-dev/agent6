@@ -23,8 +23,7 @@ from textual.css import query
 from agent6 import directive, kinds
 from agent6.models import choices
 from agent6.ui import spawn
-from agent6.ui.tui import composer, menubar, screen_chrome
-from agent6.ui.tui import widgets as tui_widgets
+from agent6.ui.tui import composer, forms, menubar, screen_chrome
 
 _INTRO = (
     "Describe the task (or the question, for ask). Enter starts it; Ctrl-J adds a line.\n"
@@ -142,9 +141,9 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         ):
             yield widgets.Static(rich_text.Text(_INTRO, style="dim italic"), id="draft-notice")
         yield composer.SteerSuggest(id="draft-suggest")
-        with tui_widgets.PickerRow(id="draft-options"):
+        with forms.PickerRow(id="draft-options"):
             yield widgets.Static("mode", classes="picker-label")
-            yield tui_widgets.Picker(
+            yield forms.Picker(
                 [(m, m) for m in kinds.OPERATOR_MODES],
                 value="run",
                 allow_blank=False,
@@ -152,7 +151,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             )
             yield widgets.Static("preset", classes="picker-label")
             preset = choices.default_preset(self.repo_cwd, self.config_path)
-            yield tui_widgets.Picker(
+            yield forms.Picker(
                 [(choices.default_label(preset), ""), *((p, p) for p in self._presets)],
                 value="",
                 allow_blank=False,
@@ -160,7 +159,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             )
             yield widgets.Static("model", classes="picker-label")
             route = choices.default_route(self.repo_cwd, self.config_path, "run", "")
-            yield tui_widgets.Picker(
+            yield forms.Picker(
                 self._model_options(route), value="", allow_blank=False, id="draft-model"
             )
         yield composer.SteerInput(id="draft-input")
