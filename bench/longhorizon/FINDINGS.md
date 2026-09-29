@@ -32,6 +32,17 @@ Tier-1 gists (`[context].elision_gists`, default on): a large read result decays
 - Cost halves for qwen even with the summariser calls (58 gists written across the wave, 10 demoted to bare markers, 0 distiller failures).
 - relay never engages the gist path (0 gists across 6 legs) and stays flat: no harm outside the engaged regime.
 
+gpt-5.6-sol, n=3 per cell, window16k pinned with keep-recent at half the tier-2 threshold (`results/r38-compaction.jsonl` for baseline, `r38-w16k.jsonl` for the rung):
+
+| task | baseline | window16k |
+|---|---|---|
+| stylebook score | 1.0 (3/3) | 1.0 (3/3) |
+| stylebook compactions / drops / re-reads / iterations | 0 / 0 / 0 / 4 to 6 | 1 to 5 / 5 to 36 / 0 to 28 / 6 to 17 |
+| relay score | 1.0 (3/3) | 1.0 (3/3) |
+| relay compactions / drops / re-reads / iterations | 0 / 0 / 0 / 31 to 39 | 6 to 9 / 0 to 1 / 4 to 16 / 29 to 45 |
+
+A capable model loses no score to the 16k regime on these tasks; it pays in re-reads (relay 4 to 16 per run) and iterations. One baseline stylebook rep scored 0.0 from the grader (the module loaded outside `sys.modules`, a `@dataclass` in the solution); the grader fix regraded it 12 of 12.
+
 ## Cross-run memory
 
 - Unprompted, no model records a memory: 0 writes across 46 legs on qwen3-coder-30b and kimi-k2.6, with a discovered non-obvious fact in hand (orchard's generated-file trap).
@@ -42,7 +53,7 @@ Tier-1 gists (`[context].elision_gists`, default on): a large read result decays
 - The ledger campaign on gpt-5.6-sol (3 reps x 3 conditions, 45 sessions): score 1.000 on every leg and component in every condition. With the shared store, 1.7 writes and 0.8 reads per leg (2.7 memory files by the end); under fresh_state 1.5 writes and 0.2 reads. Memory does not make later legs cheaper for this model: tokens in 37.9k vs 35.3k on later legs, tool calls 33.7 vs 31.2, re-reads flat.
 - Poisoned: the score is unchanged (the model verifies the repo over the stale memory every time), later legs cost +15% tokens in (43.4k), and the planted memories were rewritten in 1 of 12 legs and never removed. Two confidently wrong memories were observed across waves; no model removed or corrected one.
 
-- One rep of orchard and ledger on gpt-5.6-sol under `baseline` and `poisoned` (16 legs, `results/r38-plan.jsonl`): score 1.0 on every leg, 8 to 20 iterations, no compaction. Under `poisoned` both tasks rewrote a planted memory in the second leg (`poison_touched` true) and left the other in place; on orchard the second correction was written to a hallucinated store path (the repo id's `r38-plan-orchard` typed as `r38-plan/orchard`), refused as outside the granted paths, while the index line the model added for a new fact landed without its file. `memory list` names such a line as `no file`.
+- One rep of orchard and ledger on gpt-5.6-sol under `baseline` and `poisoned` (16 legs, `results/r38-plan.jsonl`): score 1.0 on every leg, 8 to 20 iterations, no compaction. Under `poisoned` both tasks rewrote a planted memory in the second leg (`poison_touched` true) and left the other in place; three more orchard poisoned reps (`r38-poisoned.jsonl`) corrected one planted memory each (leg 2 once, leg 3 twice), never both, every leg 1.0; on orchard the second correction was written to a hallucinated store path (the repo id's `r38-plan-orchard` typed as `r38-plan/orchard`), refused as outside the granted paths, while the index line the model added for a new fact landed without its file. `memory list` names such a line as `no file`.
 
 ## Tools measured
 
