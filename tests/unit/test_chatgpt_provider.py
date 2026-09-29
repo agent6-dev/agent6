@@ -1183,3 +1183,40 @@ def test_two_message_items_in_a_response_stay_separated() -> None:
         stop_reason="end_turn",
     )
     assert resp.text == "First message.\n\nSecond message."
+
+
+def test_an_effort_the_served_model_refuses_is_resent_at_its_lowest_accepted_level(
+    signed_in: chatgpt_oauth.ChatGPTCredential,
+) -> None:
+    """A 400 naming `reasoning.effort` unsupported resends at the listed floor, then keeps it.
+
+    The plan serves whichever model it serves; one refuses `none` where the last accepted it.
+    """
+    provider = _provider(signed_in, reasoning_effort="off")
+    refusal = json.dumps(
+        {
+            "error": {
+                "message": "Unsupported value: 'none' is not supported with the 'gpt-x' model."
+                " Supported values are: 'low', 'medium', 'high', 'xhigh', and 'max'.",
+                "type": "invalid_request_error",
+                "param": "reasoning.effort",
+                "code": "unsupported_value",
+            }
+        }
+    )
+    sent: list[str] = []
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        del method, url
+        body = json.loads(kwargs["content"])
+        sent.append(body["reasoning"]["effort"])
+        if len(sent) == 1:
+            return _FakeStreamResponse(status_code=400, lines=[], error_body=refusal)
+        return _FakeStreamResponse(status_code=200, lines=_happy_stream())
+
+    with mock.patch("httpx2.stream", side_effect=fake_stream):
+        first = provider.call(system="SYS", messages=[{"role": "user", "content": "t"}], tools=[])
+        second = provider.call(system="SYS", messages=[{"role": "user", "content": "t"}], tools=[])
+
+    assert first.text == "hello" and second.text == "hello"
+    assert sent == ["none", "low", "low"], "refused once, then the floor without another 400"
