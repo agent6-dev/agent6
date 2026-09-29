@@ -12,11 +12,10 @@ The loop's phase methods live in `loop.py`; these are the shapes they take.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
 
 from agent6.providers import ProviderResponse
 from agent6.workflows._conversation import AssistantTurn, Notice, ToolResultItem
-from agent6.workflows._finish_gates import FinishGates
+from agent6.workflows._finish_gates import FinishCall, FinishGates
 from agent6.workflows._guards import (
     BudgetNudges,
     FocusGuard,
@@ -148,10 +147,9 @@ class TurnState:
     # The response's turn in the conversation; its parsed tool_uses drive the
     # dispatch (the conversation is the single source of what was called).
     assistant: AssistantTurn
-    # A finish_session/finish_planning call captured this turn; the finish gates
-    # may revoke it (set back to None) before the stop checks honour it.
-    finish_signal: str | None = None
-    finish_payload: dict[str, Any] | None = None
+    # The finish_session/finish_planning call dispatched this turn; the finish
+    # gates may revoke it (set back to None) before the stop checks honour it.
+    finish: FinishCall | None = None
     # An end the harness or the model declared without finish_session (a
     # settled stop, a silent finish) that a gate handed back this turn.
     end_returned: bool = False
@@ -159,10 +157,6 @@ class TurnState:
     # else the name the harness declared ("settled", "silent_finish", ...);
     # the panel judges it by this name and the gates' events carry it.
     ending: str | None = None
-    # A finish that declared the configured gate stale, with the replacement it
-    # proposes. Recorded and surfaced; the gate itself never moves.
-    finish_stale_gate: str = ""
-    finish_kind: Literal["finish_session", "finish_planning"] = "finish_session"
     # The user-turn items accumulated for this turn: tool results in dispatch
     # order, with advisory notices (review, metric, nudges) appended after
     # (or, for the broken-verify flag, between them).

@@ -231,7 +231,7 @@ def verify_settled(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
         progress=turn.committed or turn.edited or tree != guard.tree,
         verify_ran=turn.verify_just_passed or turn.verify_just_failed,
     )
-    if turn.finish_signal is not None:
+    if turn.finish is not None:
         return None
     if guard.stop_due():
         return Stop(

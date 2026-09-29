@@ -17,7 +17,12 @@ from agent6.config import Config
 from agent6.prompts.loop import V2_VERIFY_WHEN
 from agent6.viewmodel.listing import status_word
 from agent6.workflows._chain import RunChain
-from agent6.workflows._finish_gates import SILENT_END_GATES, red_gate_returns, verify_finish
+from agent6.workflows._finish_gates import (
+    SILENT_END_GATES,
+    FinishCall,
+    red_gate_returns,
+    verify_finish,
+)
 from agent6.workflows._session_state import End
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
@@ -381,8 +386,7 @@ def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
 
     turn = TurnState(iteration=3, resp=MagicMock(), assistant=MagicMock())
     if finishing:
-        turn.finish_signal = "done"
-        turn.finish_kind = "finish_session"
+        turn.finish = FinishCall("finish_session", "done")
     if edited:
         turn.edited = True
         turn.edit_since_verify_pass = True
@@ -416,7 +420,7 @@ def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree
     assert state.verify.green_and_untouched and turn.verify_just_passed
     assert _notices(turn) == ["[harness verify] finish: verify_command passed (1s).\n3 passed"]
     _verify_gate(wf, state, turn)
-    assert turn.finish_signal == "done"
+    assert turn.finish == FinishCall("finish_session", "done")
 
 
 def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() -> None:
@@ -431,7 +435,7 @@ def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() 
         turn = _turn(finishing=True, edited=True)
         wf.gate.harness_verify(state, turn)
         _verify_gate(wf, state, turn)
-        seen.append(turn.finish_signal)
+        seen.append(turn.finish.summary if turn.finish is not None else None)
         notices.extend(_notices(turn))
     assert seen == [None, None, "done"]
     assert state.gates.verify_retries_used == 2
@@ -447,7 +451,7 @@ def test_zero_retries_lets_the_first_red_finish_stand() -> None:
     turn = _turn(finishing=True, edited=True)
     wf.gate.harness_verify(state, turn)
     _verify_gate(wf, state, turn)
-    assert turn.finish_signal == "done"
+    assert turn.finish == FinishCall("finish_session", "done")
     assert wf.gate.verification(state.verify) == "failed"
 
 
@@ -490,7 +494,7 @@ def test_never_mode_leaves_a_finish_over_an_unverified_tree_alone() -> None:
     wf.gate.harness_verify(state, turn)
     _verify_gate(wf, state, turn)
     dispatcher.run_verify.assert_not_called()
-    assert turn.finish_signal == "done"
+    assert turn.finish == FinishCall("finish_session", "done")
     assert wf.gate.verification(state.verify) == "unverified"
 
 
@@ -501,7 +505,7 @@ def test_run_commands_no_withholds_the_gate_from_the_harness_too() -> None:
     wf.gate.harness_verify(state, turn)
     _verify_gate(wf, state, turn)
     dispatcher.run_verify.assert_not_called()
-    assert turn.finish_signal == "done"
+    assert turn.finish == FinishCall("finish_session", "done")
 
 
 def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
@@ -522,7 +526,7 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
         " The gate is withheld for the rest of the run; the run ends unverified."
     ]
     _verify_gate(wf, state, turn)
-    assert turn.finish_signal == "done"  # no bounce
+    assert turn.finish == FinishCall("finish_session", "done")  # no bounce
     assert state.gates.verify_retries_used == 0
     assert wf.gate.verification(state.verify) == "unverified"
 
@@ -797,7 +801,7 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     wf.gate.harness_verify(state, turn2)
     assert dispatcher.run_verify.call_count == 2
     _verify_gate(wf, state, turn2)
-    assert turn2.finish_signal == "done"
+    assert turn2.finish == FinishCall("finish_session", "done")
 
 
 def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:

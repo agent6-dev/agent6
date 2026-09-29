@@ -336,8 +336,7 @@ class VerifyGate:
             # the red), and its one red is counted once, not twice.
             tree_judged=state.verify.judged_and_untouched,
             changed_this_turn=turn.edit_since_verify_pass,
-            finishing=ending
-            or (turn.finish_signal is not None and turn.finish_kind == "finish_session"),
+            finishing=ending or (turn.finish is not None and turn.finish.kind == "finish_session"),
         )
         if why is None:
             return

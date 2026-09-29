@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 from agent6.workflows._advice import Nudge, Stop
 from agent6.workflows._conversation import AssistantTurn
+from agent6.workflows._finish_gates import FinishCall
 from agent6.workflows._guards import SettledGuard, settled_end, verify_settled
 from agent6.workflows._loop_state import LoopState, TurnState
 from agent6.workflows._nudges import (
@@ -72,7 +73,7 @@ def test_a_finish_call_a_metric_run_or_an_unseeded_run_disarms_it() -> None:
     state.settled = ready
     ctx = turn_context(tree_sha=lambda: "tree")
     finishing = _turn(9)
-    finishing.finish_signal = "done"
+    finishing.finish = FinishCall("finish_session", "done")
     assert verify_settled(finishing, state, ctx) is None
     metric = turn_context(metric=True, tree_sha=lambda: "tree")
     assert verify_settled(_turn(9), state, metric) is None

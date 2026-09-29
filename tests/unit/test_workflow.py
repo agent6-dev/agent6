@@ -25,7 +25,12 @@ from agent6.workflows._advice import Stop, with_open_tasks
 from agent6.workflows._chain import RunChain
 from agent6.workflows._compaction import CompactionSettings
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
-from agent6.workflows._finish_gates import SILENT_END_GATES, FinishGates, task_finish_nudge
+from agent6.workflows._finish_gates import (
+    SILENT_END_GATES,
+    FinishCall,
+    FinishGates,
+    task_finish_nudge,
+)
 from agent6.workflows._guards import SettledGuard, settled_end, verify_settled
 from agent6.workflows._metric import MetricGuard, metric_plateau
 from agent6.workflows._provider_call import (
@@ -5265,7 +5270,7 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
         for value in literal:
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
                 reasons.add(value.value)
-    # `reason=finish_kind` is the one non-literal construction; its Literal type
+    # `reason=finish.kind` is the one non-literal construction; its Literal type
     # covers exactly these two.
     reasons |= {"finish_session", "finish_planning"}
     assert reasons >= {
@@ -6892,7 +6897,7 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     )
     out = wf._turn_dispatch_tools(_state(), turn, turn_context())  # pyright: ignore[reportPrivateUsage]
     assert out is None  # the refusal is served as an error result, not an abort
-    assert turn.finish_signal is None  # and never captured as a finish
+    assert turn.finish is None  # and never captured as a finish
 
 
 def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
@@ -7363,10 +7368,9 @@ def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     wf = _wf(mode="run", curator=curator, budget=None)
     state = _state()
     turn = _turn(iteration=2)
-    turn.finish_signal = "all done"
-    turn.finish_kind = "finish_session"
+    turn.finish = FinishCall("finish_session", "all done")
     wf._turn_finish_gates(state, turn, _ctx(wf, state, 2))  # pyright: ignore[reportPrivateUsage]
-    assert turn.finish_signal is None  # revoked: the goal continues
+    assert turn.finish is None  # revoked: the goal continues
     assert any("standing task" in getattr(n, "text", "") for n in turn.tool_results)
     # Soft stop: verify_settled absorbs and clears its streak.
     state.ok_tool_calls += 1

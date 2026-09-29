@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 from agent6.config import Config
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import AssistantTurn
+from agent6.workflows._finish_gates import FinishCall
 from agent6.workflows.loop import (
     TurnState,
     Workflow,
@@ -31,28 +32,29 @@ def _wf(**kw: Any) -> Workflow:
     )
 
 
-def _capture(tool_input: dict[str, Any]) -> TurnState:
+def _capture(tool_input: dict[str, Any]) -> FinishCall:
     wf = _wf()
     turn = TurnState(iteration=1, resp=MagicMock(), assistant=AssistantTurn((), ()))
     wf._capture_finish(turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
-    return turn
+    assert turn.finish is not None
+    return turn.finish
 
 
 def test_finish_result_object_passes_through() -> None:
-    turn = _capture({"summary": "s", "result": {"found": True}})
-    assert turn.finish_payload == {"found": True}
+    finish = _capture({"summary": "s", "result": {"found": True}})
+    assert finish.payload == {"found": True}
 
 
 def test_finish_result_stringified_object_is_coerced() -> None:
-    turn = _capture({"summary": "s", "result": '{"found": true, "file": "a.py"}'})
-    assert turn.finish_payload == {"found": True, "file": "a.py"}
+    finish = _capture({"summary": "s", "result": '{"found": true, "file": "a.py"}'})
+    assert finish.payload == {"found": True, "file": "a.py"}
 
 
 def test_finish_result_garbage_string_stays_none() -> None:
-    turn = _capture({"summary": "s", "result": "not json"})
-    assert turn.finish_payload is None
+    finish = _capture({"summary": "s", "result": "not json"})
+    assert finish.payload is None
 
 
 def test_finish_result_stringified_non_object_stays_none() -> None:
-    turn = _capture({"summary": "s", "result": '["a", "b"]'})
-    assert turn.finish_payload is None
+    finish = _capture({"summary": "s", "result": '["a", "b"]'})
+    assert finish.payload is None

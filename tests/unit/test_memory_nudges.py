@@ -15,7 +15,7 @@ from agent6.config import Config
 from agent6.tools.results import EditResult, ExecResult
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import AssistantTurn, Notice
-from agent6.workflows._finish_gates import memory_finish
+from agent6.workflows._finish_gates import FinishCall, memory_finish
 from agent6.workflows._guards import MemoryState, memory_flip
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
 from agent6.workflows._verify_verdict import VerifyVerdict
@@ -216,16 +216,15 @@ def test_finish_gate_defers_once_then_honours() -> None:
     # turn later, before the memory note and the re-finish the nudge asks for.
     state.settled.idle = 5
     state.settled.nudged = True
-    first = _turn(5, finish_signal="done", finish_payload={"k": "v"})
+    first = _turn(5, finish=FinishCall("finish_session", "done", {"k": "v"}))
     ctx = wf._turn_context(state, iteration=5, leg_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._turn_finish_gates(state, first, ctx)  # pyright: ignore[reportPrivateUsage]
-    assert first.finish_signal is None
-    assert first.finish_payload is None
+    assert first.finish is None
     assert MEMORY_FINISH_NUDGE in _notice_texts(first)
     assert state.memory.finish_nudged is True
     assert state.settled.idle == 0 and state.settled.nudged is False
 
-    second = _turn(6, finish_signal="done")
+    second = _turn(6, finish=FinishCall("finish_session", "done"))
     assert memory_finish(second, state, ctx) is None
 
 
@@ -250,7 +249,7 @@ def test_finish_gate_quiet_without_a_recovery_or_after_a_write() -> None:
         (_wf(mode="ask"), _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))),
     ]
     for gated_wf, state in cases:
-        turn = _turn(5, finish_signal="done")
+        turn = _turn(5, finish=FinishCall("finish_session", "done"))
         ctx = turn_context(mode=gated_wf.mode, memory_wired=gated_wf.state_dir is not None)
         assert memory_finish(turn, state, ctx) is None
         assert state.memory.finish_nudged is False

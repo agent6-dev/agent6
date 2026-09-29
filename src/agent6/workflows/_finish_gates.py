@@ -10,10 +10,12 @@ end the gates judge."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
+from agent6.tools.schema import FinishPlanningInput, FinishSessionInput
 from agent6.workflows._advice import Gate, Refusal, TurnContext
 from agent6.workflows._metric import metric_early_finish
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, TASK_FINISH_PATIENCE
@@ -23,6 +25,67 @@ from agent6.workflows._verify_verdict import VerifyVerdict
 
 if TYPE_CHECKING:
     from agent6.workflows._loop_state import LoopState, TurnState
+
+
+@dataclass(frozen=True, slots=True)
+class FinishCall:
+    """A dispatched finish_session or finish_planning call, as the model
+    sent it; the finish gates may revoke it. `payload` is finish_session's
+    `result`, `stale_gate` its claim that the configured gate is stale, and
+    `plan_markdown` finish_planning's plan, with the summary folded under a
+    title-only one (`plan_salvaged`)."""
+
+    kind: Literal["finish_session", "finish_planning"]
+    summary: str
+    payload: dict[str, Any] | None = None
+    stale_gate: str = ""
+    plan_markdown: str = ""
+    plan_salvaged: bool = False
+
+    @classmethod
+    def parse(cls, name: str, tool_input: Any) -> FinishCall | None:
+        """The finish a dispatched tool call declares; None for any other
+        tool. Schema validation guaranteed the fields when the dispatcher
+        dispatched the call, but the raw tool_input is what the model sent,
+        so a malformed call still parses."""
+        fields = tool_input if isinstance(tool_input, dict) else {}
+        summary = str(fields.get("summary", "(no summary)"))
+        if name == FinishSessionInput.TOOL_NAME:
+            raw_result = fields.get("result")
+            if isinstance(raw_result, str):
+                # Weak models routinely STRINGIFY the structured result; one
+                # tolerant parse here, schema validation downstream stays
+                # strict about content.
+                try:
+                    raw_result = json.loads(raw_result)
+                except ValueError:
+                    raw_result = None
+            return cls(
+                "finish_session",
+                summary,
+                payload=raw_result if isinstance(raw_result, dict) else None,
+                stale_gate=str(fields.get("stale_gate", "")).strip(),
+            )
+        if name == FinishPlanningInput.TOOL_NAME:
+            plan_md = str(fields.get("plan_markdown", ""))
+            # Weak models leave plan_markdown a bare title and put the plan in
+            # `summary`, a stub `--from` would have to re-derive: the summary
+            # folds under the title. The review gate judged the content; this
+            # only rescues field misuse.
+            salvaged = _plan_is_title_only(plan_md) and len(summary) > len(plan_md)
+            if salvaged:
+                title = next((ln for ln in plan_md.splitlines() if ln.strip()), "# Plan")
+                plan_md = f"{title}\n\n{summary}"
+            return cls("finish_planning", summary, plan_markdown=plan_md, plan_salvaged=salvaged)
+        return None
+
+
+def _plan_is_title_only(plan_md: str) -> bool:
+    """True when plan_markdown has no body: only heading lines (`# ...`) and
+    blanks."""
+    return not any(
+        line.strip() and not line.lstrip().startswith("#") for line in plan_md.splitlines()
+    )
 
 
 @dataclass(slots=True)
@@ -117,7 +180,7 @@ def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refu
     that never conforms, and the engine records that truthfully."""
     if ctx.finish_validator is None:
         return None
-    problems = ctx.finish_validator(turn.finish_payload)
+    problems = ctx.finish_validator(turn.finish.payload if turn.finish is not None else None)
     if not problems:
         return None
     return Refusal(

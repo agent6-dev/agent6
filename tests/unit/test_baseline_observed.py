@@ -16,7 +16,12 @@ import pytest
 
 from agent6.tools.results import ExecResult
 from agent6.workflows._chain import RunChain
-from agent6.workflows._finish_gates import finish_reason, red_gate_returns, verify_finish
+from agent6.workflows._finish_gates import (
+    FinishCall,
+    finish_reason,
+    red_gate_returns,
+    verify_finish,
+)
 from agent6.workflows.loop import (
     LoopState,
     TurnState,
@@ -153,8 +158,7 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     state.verify.baseline_ok = False
     state.verify.ever_passed = True
     state.verify.last_ok = False
-    turn = _turn()
-    turn.finish_kind = "finish_session"
+    finish = FinishCall("finish_session", "done")
 
     assert red_gate_returns(
         wf.config.workflow.verify_when,
@@ -165,8 +169,8 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     )
     assert (
         finish_reason(
-            turn.finish_kind,
-            stale_gate=turn.finish_stale_gate,
+            finish.kind,
+            stale_gate=finish.stale_gate,
             tree_green=wf.gate.tree_green(state.verify),
             verify=state.verify,
         )
@@ -224,12 +228,11 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     state = _state()
     state.verify.baseline_ok = False
     state.verify.last_ok = False
-    turn = _turn()
-    turn.finish_kind = "finish_planning"
+    finish = FinishCall("finish_planning", "done")
     assert (
         finish_reason(
-            turn.finish_kind,
-            stale_gate=turn.finish_stale_gate,
+            finish.kind,
+            stale_gate=finish.stale_gate,
             tree_green=wf.gate.tree_green(state.verify),
             verify=state.verify,
         )
@@ -286,8 +289,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     state.verify.last_ok = False
     state.verify.baseline_ok = False
     turn = TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    turn.finish_signal = MagicMock()
-    turn.finish_kind = "finish_session"
+    turn.finish = FinishCall("finish_session", "done")
 
     ctx = turn_context(tree_green=lambda: False, gate_present=lambda: True)
     bounced = verify_finish(turn, state, ctx) is not None

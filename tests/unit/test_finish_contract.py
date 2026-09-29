@@ -24,7 +24,7 @@ from agent6.machine import AgentRequest
 from agent6.machine.model import FieldSpec
 from agent6.workflows._chain import RunChain
 from agent6.workflows._conversation import Notice
-from agent6.workflows._finish_gates import finish_contract
+from agent6.workflows._finish_gates import FinishCall, finish_contract
 from agent6.workflows._loop_state import LoopState
 from agent6.workflows.loop import (
     TurnState,
@@ -78,9 +78,7 @@ def _wf(validator: Any) -> Workflow:
 
 def _finishing_turn(payload: dict[str, Any] | None) -> TurnState:
     turn = TurnState(iteration=3, resp=MagicMock(), assistant=MagicMock())
-    turn.finish_kind = "finish_session"
-    turn.finish_signal = "done"
-    turn.finish_payload = payload
+    turn.finish = FinishCall("finish_session", "done", payload)
     return turn
 
 
@@ -95,7 +93,7 @@ def test_a_nonconforming_finish_is_refused_with_the_problems() -> None:
     assert refusal is not None and refusal.event == "loop.finish_contract.refused"
     assert refusal.fields["iteration"] == 3 and refusal.fields["problems"]
     wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
-    assert turn.finish_signal is None and turn.finish_payload is None
+    assert turn.finish is None
     notices = [r.text for r in turn.tool_results if isinstance(r, Notice)]
     assert any("finish_session refused" in n and "verdict" in n for n in notices)
 

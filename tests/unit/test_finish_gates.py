@@ -14,6 +14,7 @@ from agent6.workflows._finish_gates import (
     END_GATES,
     FINISH_GATES,
     SILENT_END_GATES,
+    FinishCall,
     review_finish,
     standing_finish,
 )
@@ -30,8 +31,7 @@ from tests.unit.turn_context import turn_context
 
 def _finishing(iteration: int = 4) -> TurnState:
     turn = TurnState(iteration=iteration, resp=MagicMock(), assistant=AssistantTurn((), ()))
-    turn.finish_signal = "done"
-    turn.finish_kind = "finish_session"
+    turn.finish = FinishCall("finish_session", "done")
     return turn
 
 
@@ -90,7 +90,7 @@ def test_an_early_finish_on_a_metric_run_is_refused_while_runway_remains() -> No
     assert state.metric.finish_nudges_used == METRIC_EARLY_FINISH_PATIENCE
 
     quiet = _finishing(2)
-    quiet.finish_signal, quiet.ending = None, "silent_finish"
+    quiet.finish, quiet.ending = None, "silent_finish"
     silent = metric_early_finish(quiet, _state(), runway)
     assert silent is not None and silent.fields["trigger"] == "silent_finish"
     assert "(silent)" in silent.log

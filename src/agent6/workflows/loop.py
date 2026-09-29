@@ -78,8 +78,6 @@ from agent6.tools.results import (
     ToolResult,
 )
 from agent6.tools.schema import (
-    FinishPlanningInput,
-    FinishSessionInput,
     ReadBackgroundInput,
 )
 from agent6.workflows._advice import (
@@ -116,6 +114,7 @@ from agent6.workflows._finish_gates import (
     END_GATES,
     FINISH_GATES,
     SILENT_END_GATES,
+    FinishCall,
     finish_reason,
 )
 from agent6.workflows._guards import (
@@ -230,15 +229,6 @@ def _summarise_assistant_text_for_commit(
     (git `--oneline` width). Free: `resp.text` is already in hand."""
     subject_body = _first_prose_line(text, fallback=fallback)[:72]
     return f"agent6 iter {iteration}: {subject_body}"
-
-
-def _plan_is_title_only(plan_md: str) -> bool:
-    """True when plan_markdown has no body: only heading lines (`# ...`) and
-    blanks, so `--from` would get a stub. Weak models leave it a bare title
-    and put the plan in `summary`; the caller salvages that case."""
-    return not any(
-        line.strip() and not line.lstrip().startswith("#") for line in plan_md.splitlines()
-    )
 
 
 @dataclass
@@ -858,14 +848,14 @@ class Workflow:
         for tu in turn.assistant.tool_uses:
             name = tu.name
             tool_input = tu.input
-            if turn.finish_signal is not None:
+            if turn.finish is not None:
                 # A finish ends the turn's work: the calls after it are not
                 # executed, as the finish tools' descriptions state.
                 turn.tool_results.append(
                     ToolResultItem(
                         tool_use_id=tu.id,
                         content=json.dumps(
-                            {"error": f"{name} not executed: it follows {turn.finish_kind}"}
+                            {"error": f"{name} not executed: it follows {turn.finish.kind}"}
                         ),
                         for_call=tu,
                     )
@@ -1083,71 +1073,32 @@ class Workflow:
             self._log(f"LOOP: memory use record failed: {exc}")
 
     def _capture_finish(self, turn: TurnState, name: str, tool_input: Any) -> None:
-        """Capture a finish_session / finish_planning call's summary + payload on
-        the turn (the finish gates may still revoke it). finish_planning also
-        persists the plan markdown: schema validation already guaranteed the
-        field when the dispatcher dispatched it, but the raw tool_input is what
-        the model sent us, so stay defensive against a malformed call."""
-        if name == FinishSessionInput.TOOL_NAME:
-            turn.finish_kind = "finish_session"
-            turn.finish_signal = (
-                tool_input.get("summary", "(no summary)")
-                if isinstance(tool_input, dict)
-                else "(no summary)"
+        """A dispatched finish ends the turn's work; the finish gates may still
+        revoke it. A finish_planning also writes its plan to `plan_output_path`."""
+        finish = FinishCall.parse(name, tool_input)
+        if finish is None:
+            return
+        turn.finish = finish
+        if finish.kind != "finish_planning":
+            return
+        if finish.plan_salvaged:
+            self._log("  plan salvaged: folded summary into a title-only plan_markdown")
+        if self.plan_output_path is None or not finish.plan_markdown:
+            return
+        try:
+            mkdir_for_real_user(self.plan_output_path.parent)
+            self.plan_output_path.write_text(finish.plan_markdown, encoding="utf-8")
+            self._log(
+                f"  plan written: {self.plan_output_path} ({len(finish.plan_markdown)} chars)"
             )
-            raw_result = tool_input.get("result") if isinstance(tool_input, dict) else None
-            if isinstance(raw_result, str):
-                # Weak models routinely STRINGIFY the structured result; one
-                # tolerant parse here, schema validation downstream stays
-                # strict about content.
-                try:
-                    raw_result = json.loads(raw_result)
-                except ValueError:
-                    raw_result = None
-            turn.finish_payload = raw_result if isinstance(raw_result, dict) else None
-            turn.finish_stale_gate = (
-                str(tool_input.get("stale_gate", "")).strip()
-                if isinstance(tool_input, dict)
-                else ""
+            self._emit(
+                "loop.plan_written",
+                path=str(self.plan_output_path),
+                bytes=len(finish.plan_markdown.encode("utf-8")),
             )
-        elif name == FinishPlanningInput.TOOL_NAME:
-            turn.finish_kind = "finish_planning"
-            turn.finish_signal = (
-                tool_input.get("summary", "(no summary)")
-                if isinstance(tool_input, dict)
-                else "(no summary)"
-            )
-            plan_md = ""
-            summary = ""
-            if isinstance(tool_input, dict):
-                plan_md = str(tool_input.get("plan_markdown", ""))
-                summary = str(tool_input.get("summary", ""))
-            # Salvage a title-only plan_markdown: weak models put the real plan
-            # in `summary`, leaving plan.md a stub that --from must
-            # re-derive. Fold the summary under the title so the plan
-            # carries content. The review gate judged content quality; this only
-            # rescues field misuse.
-            if _plan_is_title_only(plan_md) and len(summary) > len(plan_md):
-                title = next((ln for ln in plan_md.splitlines() if ln.strip()), "# Plan")
-                plan_md = f"{title}\n\n{summary}"
-                self._log("  plan salvaged: folded summary into a title-only plan_markdown")
-            if self.plan_output_path is not None and plan_md:
-                try:
-                    mkdir_for_real_user(self.plan_output_path.parent)
-                    self.plan_output_path.write_text(plan_md, encoding="utf-8")
-                    self._log(f"  plan written: {self.plan_output_path} ({len(plan_md)} chars)")
-                    self._emit(
-                        "loop.plan_written",
-                        path=str(self.plan_output_path),
-                        bytes=len(plan_md.encode("utf-8")),
-                    )
-                except OSError as exc:
-                    self._log(f"  plan write failed: {exc}")
-                    self._emit(
-                        "loop.plan_write.failed",
-                        path=str(self.plan_output_path),
-                        error=str(exc),
-                    )
+        except OSError as exc:
+            self._log(f"  plan write failed: {exc}")
+            self._emit("loop.plan_write.failed", path=str(self.plan_output_path), error=str(exc))
 
     def _turn_auto_commit_and_metric(
         self, state: LoopState, turn: TurnState
@@ -1321,7 +1272,7 @@ class Workflow:
         finish contract, the before-finish panel, the metric early-finish
         rule, the open subtasks, the verify certification, the memory backstop,
         the standing goal. The first refusal revokes the finish (`_refuse`)."""
-        if turn.finish_signal is None or turn.finish_kind != "finish_session":
+        if turn.finish is None or turn.finish.kind != "finish_session":
             return
         turn.ending = "finish_session"
         for gate in FINISH_GATES:
@@ -1337,8 +1288,7 @@ class Workflow:
         when the gate let the end through."""
         if refusal is None:
             return False
-        turn.finish_signal = None
-        turn.finish_payload = None
+        turn.finish = None
         turn.end_returned = True
         if refusal.text:
             turn.tool_results.append(Notice(refusal.text))
@@ -1406,7 +1356,7 @@ class Workflow:
             return None
         if outcome.event:
             self._emit(outcome.event, **outcome.fields)
-        if outcome.declared and turn.finish_signal is None:
+        if outcome.declared and turn.finish is None:
             aborted = self._end_gates(state, turn, ctx, ending=outcome.declared, gates=END_GATES)
             if aborted is not None:
                 return aborted
@@ -1488,16 +1438,17 @@ class Workflow:
             if stop.log:
                 self._log(stop.log)
             return self._finish(state, stop.end(), iteration=turn.iteration)
-        if turn.finish_signal is not None:
-            self._log(f"LOOP: {turn.finish_kind} called at iter {turn.iteration}")
+        finish = turn.finish
+        if finish is not None:
+            self._log(f"LOOP: {finish.kind} called at iter {turn.iteration}")
             self._final_checkpoint(turn.iteration)
             # Honest finish: finish_planning is always a clean finish, but a
             # finish_session over a red/stale verify is "finished", not "passed"
             # -- all_passed reflects the actual verify state, never just "the
             # model called finish_session".
             reason = finish_reason(
-                turn.finish_kind,
-                stale_gate=turn.finish_stale_gate,
+                finish.kind,
+                stale_gate=finish.stale_gate,
                 tree_green=self.gate.tree_green(state.verify),
                 verify=state.verify,
             )
@@ -1506,12 +1457,12 @@ class Workflow:
                 state,
                 End(
                     reason,
-                    with_open_tasks(turn.finish_signal, self._open_subtasks()),
+                    with_open_tasks(finish.summary, self._open_subtasks()),
                     completed=True,
-                    verdict="grounded" if turn.finish_kind == "finish_session" else "passed",
+                    verdict="grounded" if finish.kind == "finish_session" else "passed",
                     checkpoint=False,
-                    finish_payload=turn.finish_payload,
-                    stale_gate=turn.finish_stale_gate,
+                    finish_payload=finish.payload,
+                    stale_gate=finish.stale_gate,
                 ),
                 iteration=turn.iteration,
             )
