@@ -380,6 +380,9 @@ def _load(worktree: str) -> Any:
     if spec is None or spec.loader is None:
         raise ImportError("cannot load audit.py")
     mod = importlib.util.module_from_spec(spec)
+    # Registered before exec: a `@dataclass` in the graded module looks itself up in
+    # sys.modules, and an unregistered module fails the import as the agent's fault.
+    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 
