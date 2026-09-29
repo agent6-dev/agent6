@@ -20,6 +20,7 @@ from agent6.memory import add, record_use
 from agent6.paths import state_dir
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions.layout import SessionLayout
+from agent6.types import RoleName
 from agent6.ui.cli import main
 from agent6.ui.cli import sessions_review as review_mod
 from agent6.workflows.run_review import RunReviewError, run_digest, run_review
@@ -358,6 +359,87 @@ def test_the_verb_prints_and_saves_the_review(
     assert not (state_dir(repo) / "memory").exists()
 
 
+def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The verb resolved through the git verbs' resolver, which refused a
+    model-git run, a fan-out and a session with no manifest, and with no id
+    picked the newest RUN while a plan that just ended was newer. The review
+    reads a journal: any session by id, the newest session without one."""
+    import time as _time
+
+    provider = _FakeProvider(response_text="## Outcome\nok")
+    cfg = _reviewer_config()
+
+    def loaded(*_a: object, **_k: object) -> SimpleNamespace:
+        return SimpleNamespace(config=cfg)
+
+    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
+    monkeypatch.setattr(review_mod, "check_provider_keys", MagicMock(return_value=None))
+    monkeypatch.setattr(review_mod, "build_role_provider", MagicMock(return_value=provider))
+
+    modelgit = _write_session(repo, session_id="run-MODEL1")
+    modelgit.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": "run-MODEL1",
+                "mode": "run",
+                "user_task": "t",
+                "git_control": "model",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert main(["sessions", "review", "run-MODEL1"]) == 0
+    assert "reviewing run: run-MODEL1" in capsys.readouterr().err
+
+    bare = _write_session(repo, session_id="run-BARE01")
+    bare.manifest_path.unlink()
+    assert main(["sessions", "review", "run-BARE01"]) == 0
+    capsys.readouterr()
+
+    _time.sleep(0.05)
+    plan = SessionLayout(state_dir=state_dir(repo), session_id="plan-NEWEST", subdir="plans")
+    plan.ensure()
+    plan.manifest_path.write_text(
+        json.dumps({"version": 2, "session_id": "plan-NEWEST", "mode": "plan", "user_task": "p"})
+        + "\n",
+        encoding="utf-8",
+    )
+    plan.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "plan", "user_task": "p"}) + "\n",
+        encoding="utf-8",
+    )
+    assert main(["sessions", "review"]) == 0
+    err = capsys.readouterr().err
+    assert "reviewing the newest session: plan-NEWEST" in err
+
+
+def test_the_model_flag_reaches_the_reviewer(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_session(repo)
+    cfg = _reviewer_config()
+    seen: list[str] = []
+
+    def loaded(*_a: object, **_k: object) -> SimpleNamespace:
+        return SimpleNamespace(config=cfg)
+
+    def build(cfg_used: Config, role: RoleName, **_k: object) -> _FakeProvider:
+        route = cfg_used.models.resolve(role)
+        seen.append(route.model if route is not None else "")
+        return _FakeProvider()
+
+    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
+    monkeypatch.setattr(review_mod, "check_provider_keys", MagicMock(return_value=None))
+    monkeypatch.setattr(review_mod, "build_role_provider", build)
+    assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 0
+    capsys.readouterr()
+    assert seen == ["other"]
+
+
 def test_the_verb_refuses_an_unknown_session_and_a_provider_it_cannot_build(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -395,7 +477,7 @@ def test_a_failed_reviewer_call_is_reported(
     )
     assert main(["sessions", "review"]) == 2
     err = capsys.readouterr().err
-    assert "reviewing the newest run: run-AAAA11" in err
+    assert "reviewing the newest session: run-AAAA11" in err
     assert "REVIEW FAILED: provider call failed: boom" in err
 
 

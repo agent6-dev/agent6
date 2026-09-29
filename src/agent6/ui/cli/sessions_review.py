@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """`agent6 sessions review`: a read-only review of one finished session's
-record on the reviewer role, its own module so `sessions list` does not load
-the provider stack."""
+record on the reviewer role. Its own module, imported by the dispatcher for
+this verb alone, so the provider stack loads for no other `sessions` verb."""
 
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ from agent6.budget import BudgetExceeded
 from agent6.config import ConfigError
 from agent6.paths import state_dir
 from agent6.providers import ProviderError, TranscriptSink
-from agent6.ui.cli._common import error
+from agent6.sessions.id import SessionIdError
+from agent6.ui.cli._common import error, print_nothing_yet, resolve_or_newest_layout
 from agent6.ui.cli.review_cmds import _reviewer_config, save_review
-from agent6.ui.cli.sessions_cmds import _resolve_session_manifest
 from agent6.viewmodel import session_is_live
 from agent6.workflows._context import agents_md_text
 from agent6.workflows.run_review import RunReviewError, run_digest, run_review
@@ -31,10 +31,19 @@ def _cmd_sessions_review(  # noqa: PLR0911
     `[provider/]model`, applied to the reviewer route over every config
     layer. Exit 0 reviewed, 2 refused, 3 budget."""
     cwd = Path.cwd()
-    resolved = _resolve_session_manifest(cwd, session_id, recent_note="reviewing the newest run")
-    if isinstance(resolved, int):
-        return resolved
-    layout, _manifest = resolved
+    # Any session by id, the newest across every bucket without one: the
+    # review reads a journal, so a plan, an ask, a fan-out and a model-git run
+    # are all records it can read (the git verbs' resolver refuses those).
+    try:
+        layout = resolve_or_newest_layout(cwd, session_id)
+    except SessionIdError as exc:
+        error(f"{exc}")
+        return 2
+    if layout is None:
+        print_nothing_yet("sessions")
+        return 2
+    if not session_id:
+        print(f"[agent6] reviewing the newest session: {layout.session_id}", file=sys.stderr)
     if session_is_live(layout.session_dir):
         error(
             f"{layout.session_id} is live; its record is not complete. Review it once it"
