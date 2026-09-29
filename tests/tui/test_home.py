@@ -25,6 +25,7 @@ from agent6.sessions.ipc import (
     write_question_answers,
 )
 from agent6.viewmodel import session_dirs, session_mtime
+from tests.tui._waits import wait_for
 
 
 def _write_run(
@@ -34,13 +35,6 @@ def _write_run(
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return rd
-
-
-async def _wait_for(pilot: Any, cond: Any, what: str, timeout: float = 10.0) -> None:
-    deadline = time.monotonic() + timeout
-    while not cond():
-        assert time.monotonic() < deadline, f"timed out waiting for {what}"
-        await pilot.pause(0.05)
 
 
 def test_list_runs_spans_runs_and_asks(tmp_path: Path) -> None:
@@ -636,10 +630,10 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
                     return ""
                 return str(table.get_row_at(0)[1])
 
-            await _wait_for(pilot, lambda: "running" in status_cell(), "the running row")
+            await wait_for(pilot, lambda: "running" in status_cell(), "the running row")
             (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
             # No keypress, no screen change: the poll alone must repaint.
-            await _wait_for(pilot, lambda: "stale" in status_cell(), "the stale repaint")
+            await wait_for(pilot, lambda: "stale" in status_cell(), "the stale repaint")
 
     asyncio.run(scenario())
 
@@ -667,7 +661,7 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
             def table() -> DataTable[Any]:  # newest first: r3, r2, r1
                 return app.screen.query_one("#sessions", DataTable)
 
-            await _wait_for(pilot, lambda: table().row_count == 3, "the three rows")
+            await wait_for(pilot, lambda: table().row_count == 3, "the three rows")
             await pilot.press("down")  # cursor onto r2
             scr = app.screen
             assert isinstance(scr, HomeScreen)
@@ -1240,13 +1234,13 @@ def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: Path) 
         app = Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             table = app.screen.query_one("#sessions", DataTable)
-            await _wait_for(pilot, lambda: table.row_count == 1, "the row")
+            await wait_for(pilot, lambda: table.row_count == 1, "the row")
             await pilot.pause()
             assert table.virtual_size.width <= table.scrollable_content_region.width
             narrow = str(table.get_row_at(0)[4])
             assert narrow.endswith("…") and len(narrow) < 60
             await pilot.resize_terminal(160, 30)
-            await _wait_for(pilot, lambda: len(str(table.get_row_at(0)[4])) > len(narrow), "wider")
+            await wait_for(pilot, lambda: len(str(table.get_row_at(0)[4])) > len(narrow), "wider")
             assert table.virtual_size.width <= table.scrollable_content_region.width
 
     asyncio.run(scenario())
@@ -1271,7 +1265,7 @@ def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: Path) -> Non
         app = Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(80, 24)) as pilot:
             table = app.screen.query_one("#sessions", DataTable)
-            await _wait_for(pilot, lambda: table.row_count == 1, "the row")
+            await wait_for(pilot, lambda: table.row_count == 1, "the row")
             await pilot.pause()
             assert [str(c.label) for c in table.columns.values()] == [
                 "updated",
@@ -1284,7 +1278,7 @@ def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: Path) -> Non
             row = [str(cell) for cell in table.get_row_at(0)]
             assert row[1] == "failed" and len(row[0]) == 5 and len(row[4]) >= 24
             await pilot.resize_terminal(79, 24)
-            await _wait_for(pilot, lambda: len(table.columns) == 4, "cost hidden")
+            await wait_for(pilot, lambda: len(table.columns) == 4, "cost hidden")
             assert table.virtual_size.width <= table.scrollable_content_region.width
 
     asyncio.run(scenario())

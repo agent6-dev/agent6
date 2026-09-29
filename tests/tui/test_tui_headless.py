@@ -35,7 +35,7 @@ from agent6.ui.tui.modals import (
     ToolCallDetailModal,
 )
 from agent6.viewmodel.state import Question
-from tests.tui._approval import answer_written, focus_answers
+from tests.tui._waits import answer_written, focus_answers, wait_for
 
 
 def _ev(**fields: Any) -> dict[str, object]:
@@ -52,31 +52,20 @@ def _screen_is(app: Agent6TUI, name: str) -> bool:
     return current is getattr(app, name)
 
 
-async def _wait_for(pilot: Any, cond: Any, what: str, timeout: float = 10.0) -> None:
-    """Deadline-based condition wait. Iteration-capped pause loops spin through
-    in milliseconds under load while the awaited work lags behind, then fall
-    through silently and fail at some later assert; a wall-clock deadline with
-    a loud timeout fails at the wait that actually missed."""
-    deadline = time.monotonic() + timeout
-    while not cond():
-        assert time.monotonic() < deadline, f"timed out waiting for {what}"
-        await pilot.pause(0.05)
-
-
 async def _show_dashboard(pilot: Any) -> None:
     """The app opens on the conversation view; flip to the dashboard (Ctrl+D)
     so the pane tests drive the dashboard like before. Waits for each screen to
     actually be on top: startup pushes the screens asynchronously, and a Ctrl+D
     fired before the conversation lands would type into the wrong screen."""
     app = pilot.app
-    await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+    await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
     await pilot.press("ctrl+d")
-    await _wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
+    await wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
 
 
 async def _settle_focus(pilot: Any, widget: Any) -> None:
     """Wait for a deferred focus() (Widget.focus defers via call_later) to land."""
-    await _wait_for(pilot, lambda: pilot.app.focused is widget, f"focus on {widget}")
+    await wait_for(pilot, lambda: pilot.app.focused is widget, f"focus on {widget}")
 
 
 class _ModalHost(App[None]):
@@ -497,7 +486,7 @@ def test_start_question_before_session_start_is_answerable(tmp_path: Path) -> No
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
-            await _wait_for(
+            await wait_for(
                 pilot,
                 lambda: (
                     isinstance(app.screen, QuestionModal) and bool(app.screen.query("#opt-0-0"))
@@ -657,11 +646,11 @@ def test_conversation_and_dashboard_footers_match(tmp_path: Path) -> None:
                 # here names: compare only the keys the screen offers.
                 return bool(shown) and [k for k in keys if k in shown] == shown
 
-            await _wait_for(pilot, settled, what)
+            await wait_for(pilot, settled, what)
             return [(fk.key_display, fk.description) for fk in app.screen.query(FooterKey)]
 
         async with app.run_test(size=(120, 30)) as pilot:
-            await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             conv = await footer_keys(pilot, "the conversation footer")
             await _show_dashboard(pilot)
             dash = await footer_keys(pilot, "the dashboard footer")
@@ -905,14 +894,14 @@ def test_end_hold_follows_the_resumed_leg(tmp_path: Path, monkeypatch: Any) -> N
     async def scenario() -> None:
         app = Agent6TUI(tmp_path, exit_on_end=True)
         async with app.run_test(size=(120, 40)) as pilot:
-            await _wait_for(pilot, lambda: app._end_hold, "the end hold")
+            await wait_for(pilot, lambda: app._end_hold, "the end hold")
             conv_row = app._conv.query_one("#conv-resume", ResumeOptions)
             assert conv_row.display
             app._conv.query_one("#conv-input", SteerInput).post_message(
                 SteerInput.Submitted("also add tests")
             )
             await app.workers.wait_for_complete()
-            await _wait_for(pilot, lambda: not app.state.finished, "the resumed leg")
+            await wait_for(pilot, lambda: not app.state.finished, "the resumed leg")
             assert spawned == [(tmp_path.name, "also add tests")]
             assert app.dir_status[0] == "running"
             assert not app._end_hold
@@ -1565,7 +1554,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
 
             # The heartbeat needs real wall time (>=1s since the last event);
             # poll until it shows instead of betting on a fixed budget.
-            await _wait_for(pilot, advanced, "the working… heartbeat to advance", timeout=15.0)
+            await wait_for(pilot, advanced, "the working… heartbeat to advance", timeout=15.0)
             return str(app._dash.query_one("#stream-body", Static).render())
 
     text = asyncio.run(scenario())
@@ -1629,7 +1618,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
                 return app._dash.query_one("#tools", DataTable).row_count
 
             # Wait through the reader thread's initial fold, not a fixed budget.
-            await _wait_for(pilot, lambda: rows() >= 1, "the attach-time fold", timeout=15.0)
+            await wait_for(pilot, lambda: rows() >= 1, "the attach-time fold", timeout=15.0)
             before = app._dash.query_one("#tools", DataTable).row_count
             # The background process appends a new turn AFTER we attached.
             append(
@@ -1638,7 +1627,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
                     {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "applied"},
                 ]
             )
-            await _wait_for(pilot, lambda: rows() > before, "the appended turn", timeout=15.0)
+            await wait_for(pilot, lambda: rows() > before, "the appended turn", timeout=15.0)
             return app._dash.query_one("#tools", DataTable).row_count
 
     assert asyncio.run(scenario()) == 2
@@ -1857,7 +1846,7 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: Pa
                     json.dumps(_ev(type="role.call", role="planner", model="m1", provider="p"))
                     + "\n"
                 )
-            await _wait_for(
+            await wait_for(
                 pilot,
                 lambda: app.state.last_role is not None and app.state.last_role.in_flight,
                 "the first model call",
@@ -1957,10 +1946,10 @@ def test_a_short_terminal_dashboard_shows_one_pane_row_at_a_time(tmp_path: Path)
             tools.focus()
             # The fold follows the focus through a relayout, which is a frame
             # or more away under load.
-            await _wait_for(pilot, lambda: tools.region.height > 3, "the tools pane unfolded")
+            await wait_for(pilot, lambda: tools.region.height > 3, "the tools pane unfolded")
             assert dash.query_one("#body").region.height == 0
             await pilot.resize_terminal(120, 40)
-            await _wait_for(pilot, lambda: not dash.has_class("-compact"), "the wide layout")
+            await wait_for(pilot, lambda: not dash.has_class("-compact"), "the wide layout")
             assert dash.query_one("#log").region.height > 3
 
     asyncio.run(scenario())

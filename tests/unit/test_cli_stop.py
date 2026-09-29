@@ -32,7 +32,7 @@ with (d / "logs.jsonl").open("a") as fh:
 """
 
 
-def _wait_for(path: Path, timeout_s: float = 20.0) -> None:
+def _wait_for_file(path: Path, timeout_s: float = 20.0) -> None:
     """Block until *path* exists. A spawned helper interpreter takes seconds to
     import agent6 on a loaded machine, and every wait after it is a real one."""
     deadline = time.monotonic() + timeout_s
@@ -234,7 +234,7 @@ def test_a_fanouts_lanes_end_before_its_coordinator_drains(
         start_new_session=True,
     )
     write_worker_pid(fan, coordinator.pid)
-    _wait_for(fan / "draining")  # the drain loop is running, so the wait times a drain
+    _wait_for_file(fan / "draining")  # the drain loop is running, so the wait times a drain
     try:
         assert main(["stop", "drain-run-AAAAAA"]) == 0
         out = capsys.readouterr().out

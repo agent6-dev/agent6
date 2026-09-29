@@ -1,16 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Waits for an approval row, shared by every TUI test that answers one.
+"""Waits for a TUI test, so the deadline rule has one owner.
+
+`wait_for` is the general one: a condition, a deadline, and a name to fail by.
+An iteration-capped pause loop spins through in milliseconds under load while
+the awaited work lags behind, then falls through silently to fail at some later
+assert; a wall-clock deadline fails at the wait that actually missed.
+
+The rest wait on an approval row.
 
 A row is queryable a frame before the labels it composes, so a test that reads
 its presence as readiness races that mount: `focus_answers` finds no labels and
 silently leaves the focus in the composer, where the answer keys are the letters
 they are, and a render of the row raises NoMatches. The product defers its own
 call through `call_after_refresh`, which is what these waits stand in for.
-
-Every wait here is wall-clock: an iteration-capped pause loop spins through in
-milliseconds under load and falls through silently, to fail at some later
-assert instead of the wait that missed.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from agent6.ui.tui.composer import ApprovalRow
 TIMEOUT_S = 10.0
 
 
-async def until(
+async def wait_for(
     pilot: Any,
     cond: Callable[[], bool],
     what: str,
@@ -64,7 +67,7 @@ async def focus_answers(view: Any, pilot: Any, timeout: float = TIMEOUT_S) -> No
         if rows:
             rows.first().focus_answers()
 
-    await until(pilot, holds, "the answers to take the focus", pump=nudge, timeout=timeout)
+    await wait_for(pilot, holds, "the answers to take the focus", pump=nudge, timeout=timeout)
 
 
 async def row_gone(

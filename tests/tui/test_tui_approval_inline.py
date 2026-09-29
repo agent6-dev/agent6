@@ -20,13 +20,13 @@ from textual.widgets import Static
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow, SteerInput
 from agent6.ui.tui.modals import ApprovalModal
-from tests.tui._approval import (
+from tests.tui._waits import (
     TIMEOUT_S,
     answer_written,
     answerable,
     focus_answers,
     row_gone,
-    until,
+    wait_for,
 )
 
 
@@ -196,7 +196,7 @@ def test_a_click_on_a_row_label_answers(tmp_path: Path) -> None:
             await _open_approval(app, pilot, run)
             label = app._conv.query_one(".answer-yes", Static)  # pyright: ignore[reportPrivateUsage]
             # A click needs the label laid out, which is past mounted.
-            await until(pilot, lambda: label.region.width > 0, "the answer label laid out")
+            await wait_for(pilot, lambda: label.region.width > 0, "the answer label laid out")
             await pilot.click(label)
             assert await answer_written(run, pilot) == "yes"
 
@@ -386,7 +386,7 @@ def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(tmp_pat
             _append(
                 run, {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: ls"}
             )
-            await until(
+            await wait_for(
                 pilot,
                 lambda: answerable(app._dash),  # pyright: ignore[reportPrivateUsage]
                 "the dashboard row",
@@ -404,7 +404,7 @@ def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(tmp_pat
             _append(
                 run, {"type": "approval.prompt", "id": "ap2", "prompt": "Allow run_command: rm"}
             )
-            await until(
+            await wait_for(
                 pilot,
                 lambda: app.focused is not None and "answer-yes" in app.focused.classes,
                 "the next approval's answers to keep the focus",
