@@ -58,7 +58,7 @@ from agent6.machine.journal import (
     write_source,
     write_stop_request,
 )
-from agent6.machine.model import (
+from agent6.machine.spec import (
     PROTECTED_OVERLAY_LEAVES,
     PROTECTED_OVERLAY_TABLES,
     AgentState,

@@ -21,7 +21,7 @@ from agent6.app.machine import (
 from agent6.config import Config, validate_config
 from agent6.git_ops import CommitIdentity
 from agent6.machine import AgentRequest
-from agent6.machine.model import ToolState
+from agent6.machine.spec import ToolState
 from agent6.types import IsolationLevel
 
 

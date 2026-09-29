@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.machine.model — `.asm.toml` parse + semantic validation."""
+"""Tests for agent6.machine.spec — `.asm.toml` parse + semantic validation."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent6.machine._semantics import load_machine
-from agent6.machine.model import AgentState, MachineError
+from agent6.machine.spec import AgentState, MachineError
 
 # The worked example from STATE_MACHINES.md §10. The canonical
 # happy path; error-case tests mutate a copy of this.
@@ -819,7 +819,7 @@ def test_wait_every_secs_accepts_a_bare_integer() -> None:
     Floats stay refused: truncating a sub-second wait would lie."""
     from pydantic import ValidationError
 
-    from agent6.machine.model import WaitState
+    from agent6.machine.spec import WaitState
 
     st = WaitState.model_validate({"kind": "wait", "every_secs": 30, "on": {"tick": "done"}})
     assert st.every_secs == "30"

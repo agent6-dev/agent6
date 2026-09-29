@@ -29,7 +29,7 @@ from agent6.harness.loop import (
     TurnState,
 )
 from agent6.machine import AgentRequest
-from agent6.machine.model import FieldSpec
+from agent6.machine.spec import FieldSpec
 from tests.unit.turn_context import turn_context
 
 _SCHEMAS = {

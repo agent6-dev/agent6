@@ -313,7 +313,7 @@ depends_on = [
   "agent6.graph.models",
   "agent6.machine",
   "agent6.machine.journal",
-  "agent6.machine.model",
+  "agent6.machine.spec",
   "agent6.models.registry",
   "agent6.providers",  # a transcript is provider-wire shaped; its one content-to-text reader lives there
   "agent6.sessions.ipc",
@@ -635,7 +635,7 @@ depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.graph.storage
 
 [[modules]]
 path = "agent6.machine"
-depends_on = ["agent6.machine._semantics", "agent6.machine.authoring", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.model"]
+depends_on = ["agent6.machine._semantics", "agent6.machine.authoring", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.spec"]
 
 [[modules]]
 path = "agent6.machine.authoring"
@@ -650,28 +650,28 @@ path = "agent6.machine.template"
 depends_on = ["agent6.machine.predicate"]
 
 [[modules]]
-path = "agent6.machine.model"
+path = "agent6.machine.spec"
 depends_on = []
 
 [[modules]]
 # Load + semantic validation; the cross-cutting rules over the model shapes.
 path = "agent6.machine._semantics"
-depends_on = ["agent6.machine.model", "agent6.machine.predicate", "agent6.machine.template"]
+depends_on = ["agent6.machine.spec", "agent6.machine.predicate", "agent6.machine.template"]
 
 [[modules]]
 path = "agent6.machine.graph"
-depends_on = ["agent6.machine.model"]
+depends_on = ["agent6.machine.spec"]
 
 [[modules]]
-# JournalError subclasses MachineError (machine.model), so a broken journal and
+# JournalError subclasses MachineError (machine.spec), so a broken journal and
 # a broken machine file degrade through the same catch sites.
 path = "agent6.machine.journal"
-depends_on = ["agent6.machine.model", "agent6.paths", "agent6.portable"]
+depends_on = ["agent6.machine.spec", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"
-depends_on = ["agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.model", "agent6.machine.predicate", "agent6.machine.template", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sessions.layout", "agent6.types"]
+depends_on = ["agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.spec", "agent6.machine.predicate", "agent6.machine.template", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sessions.layout", "agent6.types"]
 
 [[modules]]
 path = "agent6.machine.dryrun"
-depends_on = ["agent6.machine._semantics", "agent6.machine.engine", "agent6.machine.journal", "agent6.machine.model", "agent6.machine.predicate", "agent6.machine.template"]
+depends_on = ["agent6.machine._semantics", "agent6.machine.engine", "agent6.machine.journal", "agent6.machine.spec", "agent6.machine.predicate", "agent6.machine.template"]

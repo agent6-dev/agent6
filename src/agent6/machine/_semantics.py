@@ -21,7 +21,13 @@ from typing import Any, Literal
 
 from pydantic import ValidationError
 
-from agent6.machine.model import (
+from agent6.machine.predicate import (
+    PredicateError,
+    Reference,
+    as_reference,
+    parse_predicate,
+)
+from agent6.machine.spec import (
     AGENT_LABELS,
     BUILTIN_TYPE_NAMES,
     IDENT_RE,
@@ -48,12 +54,6 @@ from agent6.machine.model import (
     reachable_states,
     type_decl,
     type_str,
-)
-from agent6.machine.predicate import (
-    PredicateError,
-    Reference,
-    as_reference,
-    parse_predicate,
 )
 from agent6.machine.template import (
     Interp,

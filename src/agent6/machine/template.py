@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """`{{ ... }}` interpolation: the single source of truth for both the
-author-time validator (`agent6.machine.model`) and the runtime engine
+author-time validator (`agent6.machine.spec`) and the runtime engine
 (`agent6.machine.engine`).
 
 The grammar is intentionally tiny (§4.4): an interpolation is exactly one
@@ -109,7 +109,7 @@ def _parse_interp(body: str, whole: str) -> Interp:
 
 # ---------------------------------------------------------------------------
 # Runtime rendering (engine side). The author-time validator in
-# `agent6.machine.model` has already proven every reference resolves and
+# `agent6.machine.spec` has already proven every reference resolves and
 # every filter applies, so the failures here only fire on genuinely
 # malformed blackboard data, which the renderer surfaces loudly via TemplateError.
 # ---------------------------------------------------------------------------

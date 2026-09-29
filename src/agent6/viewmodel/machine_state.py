@@ -36,7 +36,7 @@ from agent6.machine.journal import (
     StepEvent,
     ToolFact,
 )
-from agent6.machine.model import MachineSpec
+from agent6.machine.spec import MachineSpec
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, machines_root
 from agent6.viewmodel.format import format_transition, machine_state_mark, status_level

@@ -689,7 +689,7 @@ So `agent6.machine` never gains an edge into `agent6.harness`, and the tach grap
 
 Files (all `from __future__ import annotations`, strict pyright, pydantic only at the parse boundary, `@dataclass(frozen=True, slots=True)` for the internal value types):
 
-- `machine/model.py`: pydantic `MachineSpec`/state/var specs (the parse boundary).
+- `machine/spec.py`: pydantic `MachineSpec`/state/var specs (the parse boundary).
 - `machine/_semantics.py`: semantic validation and `finish_session` payload validation.
 - `machine/dryrun.py`: the pure, no-I/O dry-run behind `agent6 machine test`.
 - `machine/predicate.py`: the allow-list AST predicate evaluator.

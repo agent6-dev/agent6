@@ -1759,7 +1759,7 @@ def test_a_captured_lone_surrogate_never_reaches_the_blackboard(tmp_path: Path) 
     from pydantic import BaseModel
 
     from agent6.machine.engine import _apply_capture  # pyright: ignore[reportPrivateUsage]
-    from agent6.machine.model import ToolState
+    from agent6.machine.spec import ToolState
 
     class _Payload(BaseModel):  # the agent request's shape, minimally
         task: str

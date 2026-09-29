@@ -75,7 +75,7 @@ def test_the_authoring_prompt_asks_for_no_key_a_state_refuses() -> None:
     `machine check` and burned an attempt."""
     import pydantic
 
-    from agent6.machine.model import MachineSpec
+    from agent6.machine.spec import MachineSpec
 
     prompt = build_authoring_prompt("Poll a queue", attempt=1)
     assert "`summary`" not in prompt

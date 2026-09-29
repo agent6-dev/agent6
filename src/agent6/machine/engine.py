@@ -55,7 +55,8 @@ from agent6.machine.journal import (
     scrub_lone_surrogates,
     stop_requested,
 )
-from agent6.machine.model import (
+from agent6.machine.predicate import PredicateError, evaluate, parse_predicate
+from agent6.machine.spec import (
     AgentState,
     BranchState,
     FieldSpec,
@@ -65,7 +66,6 @@ from agent6.machine.model import (
     ToolState,
     WaitState,
 )
-from agent6.machine.predicate import PredicateError, evaluate, parse_predicate
 from agent6.machine.template import (
     TemplateError,
     parse_template,

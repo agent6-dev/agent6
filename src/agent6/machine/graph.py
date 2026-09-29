@@ -4,13 +4,13 @@
 
 Two pure renderers over the same validated graph: `mermaid`
 (`stateDiagram-v2`, the default) and Graphviz `dot`. Both consume the
-edges already computed by `agent6.machine.model`, so a diagram is just a
+edges already computed by `agent6.machine.spec`, so a diagram is just a
 render of a machine that has already passed `machine check`.
 """
 
 from __future__ import annotations
 
-from agent6.machine.model import MachineSpec, TerminalState, edges
+from agent6.machine.spec import MachineSpec, TerminalState, edges
 
 __all__ = ["render_dot", "render_mermaid"]
 

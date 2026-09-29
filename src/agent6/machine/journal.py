@@ -39,7 +39,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic_core import PydanticSerializationError
 
-from agent6.machine.model import MachineError
+from agent6.machine.spec import MachineError
 from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write, lock_exclusive, unlock
 

@@ -72,7 +72,7 @@ Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommi
 
 ## MachineSpec
 
-[`agent6.machine.model`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/model.py) &middot; pydantic model + 13 nested models
+[`agent6.machine.spec`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/spec.py) &middot; pydantic model + 13 nested models
 
 Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 

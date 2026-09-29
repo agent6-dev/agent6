@@ -351,7 +351,7 @@ def test_corrupt_journal_line_raises(tmp_path: Path) -> None:
 def test_journal_error_is_a_machine_error() -> None:
     # Surfaces that degrade on a broken machine file (`except MachineError`,
     # reading exc.problems) must degrade the same way on a broken journal.
-    from agent6.machine.model import MachineError
+    from agent6.machine.spec import MachineError
 
     exc = JournalError("corrupt journal line 3")
     assert isinstance(exc, MachineError)

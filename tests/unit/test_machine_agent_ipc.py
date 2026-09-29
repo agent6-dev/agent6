@@ -18,7 +18,7 @@ from pathlib import Path
 from agent6.app.machine_agent import MachineAgentRequest
 from agent6.git_ops import CommitIdentity
 from agent6.machine import AgentExecResult, AgentRequest
-from agent6.machine.model import FieldSpec
+from agent6.machine.spec import FieldSpec
 
 _REQUEST = MachineAgentRequest(
     cwd=Path("/work/repo"),
