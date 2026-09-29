@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 from textual.widgets import Static, Tree
 
+from agent6.ui.tui._diff_pane import DiffPane
 from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.dashboard import DashboardScreen
 
 
 def _mk(d: Path) -> None:
@@ -27,7 +27,7 @@ def _mk(d: Path) -> None:
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
 
-def _no_patch(self: DashboardScreen, sha: str) -> str:
+def _no_patch(self: DiffPane, sha: str) -> str:
     return "(no diff)"  # the diff pane's git read is not under test
 
 
@@ -36,19 +36,19 @@ def test_a_selected_step_relabels_the_details_as_of_that_iteration(
 ) -> None:
     d = tmp_path / "s1"
     _mk(d)
-    monkeypatch.setattr(DashboardScreen, "_step_patch", _no_patch)
+    monkeypatch.setattr(DiffPane, "_step_patch", _no_patch)
 
     async def scenario() -> None:
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
             dash = app._dash  # pyright: ignore[reportPrivateUsage]
-            dash._step_sel = "a" * 40  # pyright: ignore[reportPrivateUsage]
+            dash.diff.step_sel = "a" * 40
             dash.render_state()
             await pilot.pause()
             assert dash.query_one("#plan", Tree).border_title == "tasks · as of iter 1"
             assert "as of iter 1" in str(dash.query_one("#top", Static).render())
-            dash._step_sel = ""  # pyright: ignore[reportPrivateUsage]
+            dash.diff.step_sel = ""
             dash.render_state()
             await pilot.pause()
             assert dash.query_one("#plan", Tree).border_title == ""
@@ -83,7 +83,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_step(
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    monkeypatch.setattr(DashboardScreen, "_step_patch", _no_patch)
+    monkeypatch.setattr(DiffPane, "_step_patch", _no_patch)
 
     async def scenario() -> None:
         app = Agent6TUI(d)
@@ -94,7 +94,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_step(
             await pilot.pause()
             live = str(dash.query_one("#top", Static).render())
             assert "tasks: 1/2" in live and "as of iter" not in live
-            dash._step_sel = "a" * 40  # pyright: ignore[reportPrivateUsage]
+            dash.diff.step_sel = "a" * 40
             dash.render_state()
             await pilot.pause()
             top = str(dash.query_one("#top", Static).render())
@@ -111,12 +111,12 @@ def test_the_diff_pane_keeps_saying_the_model_owns_git(
     paint, a selected task included."""
     d = tmp_path / "s3"
     _mk(d)
-    monkeypatch.setattr(DashboardScreen, "_step_patch", _no_patch)
+    monkeypatch.setattr(DiffPane, "_step_patch", _no_patch)
 
-    def model_owns_git(_self: DashboardScreen) -> str:
+    def model_owns_git(_self: DiffPane) -> str:
         return "model"
 
-    monkeypatch.setattr(DashboardScreen, "_git_control", model_owns_git)
+    monkeypatch.setattr(DiffPane, "git_control", model_owns_git)
 
     async def scenario() -> None:
         app = Agent6TUI(d)
@@ -136,19 +136,19 @@ def test_the_diff_pane_keeps_saying_the_model_owns_git(
 
 def test_a_clipped_diff_pane_marks_the_cut() -> None:
     """The diff pane sliced patches at a byte cap with no ellipsis, so a
-    truncated patch read as the whole one. `_append_colored_diff` marks the
+    truncated patch read as the whole one. `append_colored_diff` marks the
     cut, per the repo's clip_cell rule."""
     from rich.text import Text
 
-    from agent6.ui.tui.dashboard import _append_colored_diff  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.tui._diff_pane import append_colored_diff
 
     patch = "+" + "x" * 5000
     dt = Text()
-    _append_colored_diff(dt, patch, cap=2000)
+    append_colored_diff(dt, patch, cap=2000)
     rendered = dt.plain
     assert "truncated" in rendered
     assert len(rendered) < len(patch)
 
     whole = Text()
-    _append_colored_diff(whole, "+small\n", cap=2000)
+    append_colored_diff(whole, "+small\n", cap=2000)
     assert "truncated" not in whole.plain  # a patch under the cap is unmarked

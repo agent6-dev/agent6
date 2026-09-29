@@ -17,17 +17,15 @@ try:
     from rich.text import Text
     from textual import events
     from textual.app import ComposeResult
-    from textual.containers import Horizontal, ScrollableContainer, VerticalScroll
+    from textual.containers import Horizontal, ScrollableContainer
     from textual.css.query import NoMatches
     from textual.screen import Screen
     from textual.scroll_view import ScrollView
     from textual.widget import Widget
     from textual.widgets import (
-        Checkbox,
         DataTable,
         Footer,
         RichLog,
-        Select,
         Static,
         TextArea,
         Tree,
@@ -38,7 +36,6 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.git_ops import commit_diff, diff_range
 from agent6.graph.order import DONE_STATUSES
 from agent6.sessions.ipc import (
     listening_ports,
@@ -46,6 +43,7 @@ from agent6.sessions.ipc import (
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import SESSION_KINDS
 from agent6.ui.tui import clipboard
+from agent6.ui.tui._diff_pane import DiffPane
 from agent6.ui.tui.composer import (
     APPROVAL_KEY_BINDINGS,
     RUN_MENU,
@@ -67,7 +65,7 @@ from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import (
     status_style,
 )
-from agent6.ui.tui.widgets import Picker, PickerRow
+from agent6.ui.tui.widgets import ScrollPane
 from agent6.viewmodel import manifest_branches, manifest_header, session_compare
 from agent6.viewmodel.format import (
     clip_cell,
@@ -98,15 +96,6 @@ _TOOL_TABLE_ROWS = 20
 # Below this terminal height the dashboard is compact: one pane row at a time.
 _COMPACT_ROWS = 28
 _PANE_ROWS = ("head", "tools", "body")
-
-
-class _ScrollPane(VerticalScroll):
-    """A scrollable pane that can be tabbed to and maximized (View menu).
-    VerticalScroll is
-    focusable but disables maximize by default, so re-enable it; the content is a
-    child Static the dashboard updates in place."""
-
-    ALLOW_MAXIMIZE = True
 
 
 class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
@@ -151,13 +140,9 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     #body { height: 1fr; }
     #log { width: 1fr; border: round $primary; }
     #diff { width: 1fr; border: round $primary; padding: 0 1; }
-    /* The step picker and the cumulative toggle share a picker row; the compact
-       toggle's focus border would make it three lines. */
-    #diff-cumulative { margin-left: 2; background: transparent; }
-    #diff-cumulative:focus { border: none; }
-    /* The stream/diff bodies fill their scroll pane so long content scrolls;
-       they are selectable text, so the pointer shows an I-beam over them. */
-    #stream-body, #diff-body { width: 1fr; height: auto; pointer: text; }
+    /* The stream body fills its scroll pane so long content scrolls; it is
+       selectable text, so the pointer shows an I-beam over it. */
+    #stream-body { width: 1fr; height: auto; pointer: text; }
     /* The composer bar (the same widget as the conversation's) auto-grows with
        its content, squeezing the 1fr #body row above. */
     /* One card background everywhere. Tree/DataTable/RichLog default to $surface
@@ -224,44 +209,17 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
     ]
 
-    def _sync_diff_nav(self, s: SessionState) -> None:
-        """The step selector lists the run's commits (newest first) behind
-        "latest commit"; hidden while nothing is committed, and under
-        `[git].control = "model"` the pane says so (no chain to select from)."""
-        nav = self.query_one("#diff-nav", PickerRow)
-        if self._git_control() == "model":
-            nav.display = False
-            return
-        if not s.steps:
-            nav.display = False
-            return
-        nav.display = True
-        if len(s.steps) != self._nav_steps:
-            self._nav_steps = len(s.steps)
-            options = [("latest commit", "")]
-            options.extend((st.label, st.sha) for st in reversed(s.steps))
-            select = self.query_one("#diff-step", Select)
-            select.set_options(options)
-            select.value = self._step_sel if any(v == self._step_sel for _, v in options) else ""
-            self._sync_cumulative()
+    @property
+    def diff(self) -> DiffPane:
+        return self.query_one("#diff", DiffPane)
 
-    def _git_control(self) -> str:
-        with contextlib.suppress(ManifestError):
-            return read_manifest(self._tui.session_dir).git_control
-        return "agent6"
-
-    def _step_patch(self, sha: str) -> str:
-        if self._cumulative:
-            with contextlib.suppress(ManifestError):
-                base = read_manifest(self._tui.session_dir).base_sha
-                if base:
-                    return diff_range(Path.cwd(), base, sha) or "(no diff)"
-        return commit_diff(Path.cwd(), sha) or "(no diff)"
+    def on_diff_pane_step_changed(self, _event: DiffPane.StepChanged) -> None:
+        self.render_state()
 
     def _details_state(self, s: SessionState) -> tuple[SessionState, str]:
         """The state the task tree and the cost line show: live, or as of the
         selected step (folded once per selection from the log)."""
-        sha = self._step_sel
+        sha = self.diff.step_sel
         if not sha:
             return s, ""
         if self._step_state is None or self._step_state[0] != sha:
@@ -271,25 +229,6 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             self._step_state = (sha, at)
         at = self._step_state[1]
         return at, f" · as of iter {at.steps[-1].iteration}"
-
-    def on_select_changed(self, event: Select.Changed) -> None:
-        if event.select.id == "diff-step":
-            self._step_sel = str(event.value or "")
-            self._sync_cumulative()
-            self.render_state()
-
-    def _sync_cumulative(self) -> None:
-        """Cumulative applies to a chosen step: with "latest commit" picked the
-        box is off and disabled, as the web's is."""
-        box = self.query_one("#diff-cumulative", Checkbox)
-        box.disabled = not self._step_sel
-        if not self._step_sel and box.value:
-            box.value = False
-
-    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        if event.checkbox.id == "diff-cumulative":
-            self._cumulative = bool(event.value)
-            self.render_state()
 
     def __init__(
         self,
@@ -315,11 +254,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         # burst's cost.
         self._rendered_tree: tuple[object, ...] | None = None
         self._rendered_tools: tuple[object, object] | None = None
-        self._rendered_diff: tuple[object, ...] | None = None
-        self._step_sel = ""  # a selected step's sha ("" = latest)
-        self._cumulative = False
-        self._nav_steps = -1  # how many steps the selector lists
-        self._step_state: tuple[str, SessionState] | None = None  # the fold as of _step_sel
+        self._step_state: tuple[str, SessionState] | None = None  # the fold as of the step
         self._compare_line: str | None = None  # cached fan-out compare header (terminal state)
         self._branch_line: str | None = None  # cached branch header
         self._branch_finished = False  # the run state the cached line was read under
@@ -419,7 +354,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         yield Static("", id="summary")  # compact only: the folded rows in one line
         with Horizontal(id="head"):
             yield Tree("tasks", id="plan")
-            with _ScrollPane(id="stream"):
+            with ScrollPane(id="stream"):
                 yield Static("", id="stream-body")
         # cursor_type="row": the whole row highlights and Enter opens its full
         # detail (the columns truncate long args/summaries; see RowSelected).
@@ -440,17 +375,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 auto_scroll=False,
                 max_lines=MAX_LOG_TAIL,
             )
-            with _ScrollPane(id="diff"):
-                with PickerRow(id="diff-nav"):
-                    yield Picker(
-                        [("latest commit", "")],
-                        value="",
-                        allow_blank=False,
-                        opens="down",
-                        id="diff-step",
-                    )
-                    yield Checkbox("cumulative", compact=True, id="diff-cumulative", disabled=True)
-                yield Static("", id="diff-body")
+            yield DiffPane(self._tui.session_dir, id="diff")
         yield SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
         yield ResumeOptions(self._presets, self._routes, id="dash-resume")  # while resuming
         yield SteerInput(id="dash-input")
@@ -494,7 +419,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     def on_mount(self) -> None:
         self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
         # An ask or a plan never commits: the log pane takes the diff pane's width.
-        self.query_one("#diff", _ScrollPane).display = self._tui.mode not in ("ask", "plan")
+        self.diff.display = self._tui.mode not in ("ask", "plan")
         self.render_state()  # initial paint; later paints are coalesced in the app's tick
         # Like the conversation: open ready to type (Tab moves out to the panes).
         self.query_one("#dash-input", SteerInput).focus()
@@ -770,7 +695,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             st.append("(no model call in flight)", style="dim")
         return st
 
-    def render_state(self) -> None:  # noqa: PLR0912, PLR0915
+    def render_state(self) -> None:  # noqa: PLR0912
         self.render_heartbeat()
         tui = self._tui
         s = tui.state
@@ -853,88 +778,4 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                     log.scroll_end(animate=False)
             self._last_log_count = s.log_count
 
-        # Diff: the latest auto-commit or live verify output, or, when a task is
-        # selected, the commits made while it was in focus. Built as rich Text to
-        # avoid markup parsing of diff/verify bodies (which contain brackets).
-        # Skipped whenever none of its inputs changed.
-        self._sync_diff_nav(s)
-        diff_key = (
-            sel,
-            s.recent_diffs,
-            s.last_verify,
-            s.latest_diff,
-            self._step_sel,
-            self._cumulative,
-        )
-        if self._rendered_diff is not None and all(
-            a is b for a, b in zip(self._rendered_diff, diff_key, strict=True)
-        ):
-            return
-        self._rendered_diff = diff_key
-        diff_widget = self.query_one("#diff-body", Static)
-        self.query_one("#diff").border_title = (
-            "diff · the model owns git"
-            if self._git_control() == "model"
-            else (f"diff{filt}" if sel else "")
-        )
-        verify = s.last_verify
-        dt = Text()
-        if self._step_sel:
-            step = next((st for st in s.steps if st.sha == self._step_sel), None)
-            if step is not None:
-                what = "cumulative to" if self._cumulative else "step"
-                dt.append(f"{what} {step.label}\n", style="bold")
-                _append_colored_diff(dt, self._step_patch(step.sha), cap=4000)
-                diff_widget.update(dt)
-                return
-        if sel is not None:
-            task_diffs = [d for d in s.recent_diffs if d.task_id == sel]
-            if task_diffs:
-                n = len(task_diffs)
-                dt.append(f"selected task · {n} commit{'s' if n != 1 else ''}\n", style="bold")
-                _append_colored_diff(dt, task_diffs[-1].patch, cap=2000)
-            else:
-                dt.append("(no commits during the selected task yet)", style="dim")
-            diff_widget.update(dt)
-        # A running or failed verify takes precedence so a failure is never
-        # hidden behind a stale passing diff. A passed verify yields to the diff.
-        elif verify is not None and verify.exit_code is None:
-            dt.append("verify running: ", style="bold")
-            dt.append(clip_cell(" ".join(verify.cmd), 200) + "\n")
-            dt.append("…", style="dim")
-            diff_widget.update(dt)
-        elif verify is not None and verify.exit_code != 0:
-            dt.append(f"verify exit={verify.exit_code} ", style="bold red")
-            dt.append(f"({verify.duration_s:.1f}s)  {clip_cell(' '.join(verify.cmd), 160)}\n")
-            out = verify.stderr_tail or verify.stdout_tail
-            dt.append(out[:2000] or "(no output)")
-            if len(out) > 2000:
-                dt.append("\n… (truncated)", style="dim")
-            diff_widget.update(dt)
-        elif s.latest_diff:
-            dt.append("latest commit diff\n", style="bold")
-            _append_colored_diff(dt, s.latest_diff, cap=2000)
-            diff_widget.update(dt)
-        elif verify is not None:
-            dt.append(f"verify passed ({verify.duration_s:.1f}s)", style="bold green")
-            diff_widget.update(dt)
-        else:
-            diff_widget.update(Text("(no diffs yet)", style="dim"))
-
-
-def _append_colored_diff(dt: Text, patch: str, *, cap: int = 0) -> None:
-    """Append a unified diff with +/- line coloring (no markup parsing). With
-    *cap*, clip to it and mark the cut, so a truncated patch never reads as the
-    whole one (the pane is a preview; `sessions diff` prints the full patch)."""
-    shown = patch if not cap or len(patch) <= cap else patch[:cap]
-    for line in shown.splitlines():
-        if line.startswith("+") and not line.startswith("+++ "):
-            dt.append(line + "\n", style="green")
-        elif line.startswith("-") and not line.startswith("--- "):
-            dt.append(line + "\n", style="red")
-        elif line.startswith("@@"):
-            dt.append(line + "\n", style="cyan")
-        else:
-            dt.append(line + "\n")
-    if cap and len(patch) > cap:
-        dt.append("… (truncated; `sessions diff` for the full patch)\n", style="dim")
+        self.diff.render_state(s, sel=sel, filt=filt)

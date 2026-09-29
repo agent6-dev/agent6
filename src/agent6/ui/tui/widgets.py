@@ -16,7 +16,7 @@ try:
     from rich.console import RenderableType
     from rich.text import Text
     from textual import events
-    from textual.containers import Horizontal, ScrollableContainer
+    from textual.containers import Horizontal, ScrollableContainer, VerticalScroll
     from textual.geometry import Region
     from textual.message import Message
     from textual.widget import Widget
@@ -513,6 +513,14 @@ class ActionItem(Static):
         if event.key == "enter":
             event.stop()
             self.post_message(self.Activated(self._action))
+
+
+class ScrollPane(VerticalScroll):
+    """A scrollable pane that can be tabbed to and maximized (View menu).
+    VerticalScroll is focusable but disables maximize by default, so re-enable
+    it; the content is a child Static the host updates in place."""
+
+    ALLOW_MAXIMIZE = True
 
 
 _PICKER_ROWS = 10  # options a Picker's list shows before it scrolls
