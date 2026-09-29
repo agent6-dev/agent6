@@ -9,33 +9,33 @@ more than a tool.
 
 from __future__ import annotations
 
+import dataclasses
 import os
-from dataclasses import dataclass
-from pathlib import Path
+import pathlib
 
-from agent6.paths import private_dirs
+from agent6 import paths
 
 # The jail mounts only these system roots; a tool elsewhere needs a read+exec mount of its
 # real dir, or a jailed command dies 127. One owner, so dispatch, machine.engine and
 # `machine check` resolve tools identically.
 _JAIL_BASE_PATH_DIRS = ("/usr/bin", "/bin")
 _SYSTEM_ROOTS = (
-    Path("/usr"),
-    Path("/bin"),
-    Path("/sbin"),
-    Path("/lib"),
-    Path("/lib64"),
-    Path("/etc"),
-    Path("/dev"),
+    pathlib.Path("/usr"),
+    pathlib.Path("/bin"),
+    pathlib.Path("/sbin"),
+    pathlib.Path("/lib"),
+    pathlib.Path("/lib64"),
+    pathlib.Path("/etc"),
+    pathlib.Path("/dev"),
 )
 
 
-def _under_system_root(p: Path) -> bool:
+def _under_system_root(p: pathlib.Path) -> bool:
     """Return whether the path lies under a root the jail already mounts."""
     return any(p.is_relative_to(r) for r in _SYSTEM_ROOTS)
 
 
-def _never_mounted(p: Path) -> bool:
+def _never_mounted(p: pathlib.Path) -> bool:
     """Return whether a dir must never be a jail mount, however a tool symlink resolves.
 
     Refused by identity, never by content: $HOME and its ancestors (a mount there
@@ -44,12 +44,12 @@ def _never_mounted(p: Path) -> bool:
     direction, since a mount above a private dir grants the same reads. A dir below
     home stays allowed; that keeps `~/.local/bin` tools working.
     """
-    if Path.home().is_relative_to(p):
+    if pathlib.Path.home().is_relative_to(p):
         return True
-    return any(p.is_relative_to(d) or d.is_relative_to(p) for d in private_dirs())
+    return any(p.is_relative_to(d) or d.is_relative_to(p) for d in paths.private_dirs())
 
 
-def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
+def operator_tool_paths() -> tuple[str, tuple[pathlib.Path, ...]]:
     """Return the jail's PATH and the real-location dirs to mount read+exec.
 
     Recomputed per call, so a tool just installed is picked up. A bin dir under a
@@ -61,7 +61,7 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
     """
     path_dirs: list[str] = list(_JAIL_BASE_PATH_DIRS)
     candidates = _tool_bin_dirs()
-    mounts: set[Path] = set()
+    mounts: set[pathlib.Path] = set()
     for d in candidates:
         if not d.is_dir():
             continue
@@ -83,27 +83,29 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
                 mounts.add(real.parent)
     # uv-managed CPython lives under XDG data; without this mount an in-jail `uv run` sees the
     # venv's interpreter missing and recreates the operator's .venv. A mount, never a PATH entry.
-    data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+    data_home = pathlib.Path(
+        os.environ.get("XDG_DATA_HOME") or pathlib.Path.home() / ".local/share"
+    )
     uv_pythons = data_home / "uv" / "python"
     if uv_pythons.is_dir():
         mounts.add(uv_pythons)
     return ":".join(path_dirs), tuple(sorted(mounts))
 
 
-def _tool_bin_dirs() -> tuple[Path, ...]:
+def _tool_bin_dirs() -> tuple[pathlib.Path, ...]:
     """Return the bin dirs scanned for operator-installed tools."""
-    home = Path.home()
+    home = pathlib.Path.home()
     return (
-        Path("/usr/local/bin"),
-        Path("/usr/local/sbin"),
+        pathlib.Path("/usr/local/bin"),
+        pathlib.Path("/usr/local/sbin"),
         home / ".local/bin",
         home / ".cargo/bin",
-        Path("/opt/homebrew/bin"),
-        Path("/snap/bin"),
+        pathlib.Path("/opt/homebrew/bin"),
+        pathlib.Path("/snap/bin"),
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ToolMountNotes:
     """How the operator's bin dirs resolve into the jail, for the once-per-run preflight.
 
@@ -126,7 +128,7 @@ def tool_mount_notes() -> ToolMountNotes:
     Returns:
         The notes over the bin dirs the jail puts on PATH.
     """
-    home = Path.home()
+    home = pathlib.Path.home()
     bin_dirs = _tool_bin_dirs()
     unreachable: list[str] = []
     exposes: list[str] = []

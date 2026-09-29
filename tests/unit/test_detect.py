@@ -196,7 +196,7 @@ def test_probe_landlock_abi_fails_closed(monkeypatch: pytest.MonkeyPatch) -> Non
     def _boom() -> int:
         raise landlock.LandlockError("probe failed")
 
-    monkeypatch.setattr(detect_mod, "landlock_abi", _boom)
+    monkeypatch.setattr(landlock, "landlock_abi", _boom)
     try:
         assert detect_mod.probe_landlock_abi() == 0
     finally:

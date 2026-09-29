@@ -8,20 +8,20 @@ Probes shell out with fixed argv only.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import os
+import pathlib
 import platform
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.kinds import IsolationLevel
-from agent6.sandbox.landlock import LandlockError, landlock_abi
+from agent6 import kinds
+from agent6.sandbox import landlock
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class KernelInfo:
     """Parsed Linux kernel version."""
 
@@ -30,7 +30,7 @@ class KernelInfo:
     minor: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Environment:
     """The detected execution environment.
 
@@ -57,7 +57,7 @@ class Environment:
     sandbox_available: bool
 
     @property
-    def detected_isolation(self) -> IsolationLevel:
+    def detected_isolation(self) -> kinds.IsolationLevel:
         """The strongest jail isolation this environment can run.
 
         `strict` needs user namespaces; without them `hardened` keeps Landlock,
@@ -87,7 +87,7 @@ def _parse_kernel(raw: str) -> KernelInfo:
 def read_kernel() -> KernelInfo:
     """Return the running kernel version from `/proc/sys/kernel/osrelease`."""
     try:
-        raw = Path("/proc/sys/kernel/osrelease").read_text(encoding="utf-8").strip()
+        raw = pathlib.Path("/proc/sys/kernel/osrelease").read_text(encoding="utf-8").strip()
     except OSError:
         return KernelInfo(raw="unknown", major=0, minor=0)
     return _parse_kernel(raw)
@@ -96,17 +96,17 @@ def read_kernel() -> KernelInfo:
 def detect_container_signals() -> tuple[str, ...]:
     """Return the names of the container indicators present; empty on a bare host."""
     signals: list[str] = []
-    if Path("/.dockerenv").exists():
+    if pathlib.Path("/.dockerenv").exists():
         signals.append("/.dockerenv")
     # Rootless podman often lacks a "podman" token in /proc/1/cgroup; this file is its marker.
-    if Path("/run/.containerenv").exists():
+    if pathlib.Path("/run/.containerenv").exists():
         signals.append("/run/.containerenv")
     if os.environ.get("REMOTE_CONTAINERS") == "true":
         signals.append("REMOTE_CONTAINERS")
     if os.environ.get("CODESPACES") == "true":
         signals.append("CODESPACES")
     try:
-        cgroup = Path("/proc/1/cgroup").read_text(encoding="utf-8")
+        cgroup = pathlib.Path("/proc/1/cgroup").read_text(encoding="utf-8")
     except OSError:
         cgroup = ""
     if any(token in cgroup for token in ("docker", "containerd", "kubepods", "podman")):
@@ -133,7 +133,7 @@ def probe_userns_supported() -> bool:
     Cached for the process lifetime.
     """
     unshare = "/usr/bin/unshare"
-    if not Path(unshare).is_file():
+    if not pathlib.Path(unshare).is_file():
         return False
     try:
         result = subprocess.run(  # fixed argv, no LLM input
@@ -157,8 +157,8 @@ def probe_landlock_abi() -> int:
     if not sandbox_available():
         return 0
     try:
-        return max(0, landlock_abi())
-    except LandlockError:
+        return max(0, landlock.landlock_abi())
+    except landlock.LandlockError:
         return 0
 
 
@@ -171,7 +171,7 @@ def apparmor_userns_restricted() -> bool:
     on non-AppArmor kernels.
     """
     try:
-        raw = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text(
+        raw = pathlib.Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text(
             encoding="utf-8"
         )
     except OSError:
@@ -187,7 +187,9 @@ def sandbox_available() -> bool:
 def _read_max_userns() -> str | None:
     """Return `user.max_user_namespaces`, or None when unreadable."""
     try:
-        return Path("/proc/sys/user/max_user_namespaces").read_text(encoding="utf-8").strip()
+        return (
+            pathlib.Path("/proc/sys/user/max_user_namespaces").read_text(encoding="utf-8").strip()
+        )
     except OSError:
         return None
 
@@ -258,7 +260,7 @@ class IsolationUnavailableError(Exception):
     """
 
 
-def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
+def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
     """Resolve `[sandbox] isolation` against the host.
 
     `auto` degrades to the strongest level the host offers; an explicit level the

@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import dataclasses
 import errno
 import functools
 import json
 import os
+import pathlib
 import select
 import shutil
 import signal
@@ -24,13 +26,9 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import IO, Any, NoReturn, cast
 
-from agent6.child_env import without_provider_keys
-from agent6.kinds import BackgroundHandoff, ChildSnapshot, CommandResult, JailPolicy
-from agent6.paths import hidden_paths, mkdir_for_real_user
+from agent6 import child_env, kinds, paths
 
 # Loaded at import, never between fork and exec: a post-fork dlopen can deadlock on malloc.
 _LIBC: ctypes.CDLL | None = ctypes.CDLL(None, use_errno=True) if sys.platform == "linux" else None
@@ -101,7 +99,7 @@ def _lossy_text(v: object) -> str:
 _ENV_VAR = "AGENT6_JAIL_BIN"
 
 
-def locate_jail_binary() -> Path | None:
+def locate_jail_binary() -> pathlib.Path | None:
     """Return the launcher binary: the override, else the bundled one, else PATH.
 
     No source-tree fallback: the build hook compiles the crate into `sandbox/_bin/`
@@ -113,13 +111,13 @@ def locate_jail_binary() -> Path | None:
     """
     override = os.environ.get(_ENV_VAR)
     if override:
-        p = Path(override)
+        p = pathlib.Path(override)
         return p if p.is_file() else None
-    bundled = Path(__file__).resolve().parent / "_bin" / "agent6-jail"
+    bundled = pathlib.Path(__file__).resolve().parent / "_bin" / "agent6-jail"
     if bundled.is_file():
         return bundled
     found = shutil.which("agent6-jail")
-    return Path(found) if found else None
+    return pathlib.Path(found) if found else None
 
 
 # The holder unshares two namespaces and brings up loopback; slower is a launcher without the flag.
@@ -153,7 +151,7 @@ def _read_available(pipe: IO[bytes] | None, budget_s: float = 0.5) -> bytes:
     return b"".join(chunks)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionNetwork:
     """The run's session network, held open by two file descriptors.
 
@@ -265,7 +263,7 @@ class SessionNetwork:
 
 
 def _join_args(
-    policy: JailPolicy, session_net: SessionNetwork | None
+    policy: kinds.JailPolicy, session_net: SessionNetwork | None
 ) -> tuple[list[str], tuple[int, ...]]:
     """Return the launcher flags and inherited fds for the policy's network.
 
@@ -289,7 +287,7 @@ def _join_args(
     return session_net.args(), session_net.fds()
 
 
-def _policy_spec(policy: JailPolicy) -> dict[str, Any]:
+def _policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
     """Return the launcher's policy spec, JSON-shaped; the caller encodes it.
 
     An absent `mode` is the launcher's "once"; the exec and serve callers add theirs.
@@ -307,13 +305,13 @@ def _policy_spec(policy: JailPolicy) -> dict[str, Any]:
         "tool_paths": [str(p) for p in policy.tool_paths],
         # The builtin private set is unioned at this one choke point, so no policy can omit it:
         # secrets and state never enter the jail even under a $HOME-wide grant.
-        "hide_paths": sorted({str(p) for p in hidden_paths(policy.hide_paths)}),
+        "hide_paths": sorted({str(p) for p in paths.hidden_paths(policy.hide_paths)}),
         "timeout_s": policy.timeout_s,
         "memory_limit_mb": policy.memory_limit_mb,
     }
 
 
-def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
+def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
     """Run the policy's argv as a plain subprocess, with no confinement.
 
     The `none` isolation. The parent environment, overlaid with the policy's,
@@ -326,7 +324,7 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
     Returns:
         The command's result; a timeout is rc 124, as in the jail.
     """
-    env = without_provider_keys({**os.environ, **{k: v for k, v in policy.env}})
+    env = child_env.without_provider_keys({**os.environ, **{k: v for k, v in policy.env}})
     start = time.monotonic()
     # Bytes, decoded lossily: text=True would raise out of communicate() on a non-UTF-8 byte.
     try:
@@ -341,7 +339,7 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
             timeout=policy.timeout_s if policy.timeout_s > 0 else None,
         )
     except subprocess.TimeoutExpired as exc:
-        return CommandResult(
+        return kinds.CommandResult(
             argv=tuple(policy.argv),
             returncode=124,
             stdout=_lossy_text(exc.stdout),
@@ -349,7 +347,7 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
             duration_s=time.monotonic() - start,
         )
     duration = time.monotonic() - start
-    return CommandResult(
+    return kinds.CommandResult(
         argv=tuple(policy.argv),
         returncode=int(proc.returncode),
         stdout=_lossy_text(proc.stdout),
@@ -373,12 +371,12 @@ def strict_namespaces_work() -> bool:
         JailBinaryError: The kernel cannot execute the binary; that says nothing about
             namespaces, so the callers refuse with it.
     """
-    if not Path("/usr/bin/true").exists():
+    if not pathlib.Path("/usr/bin/true").exists():
         return False
-    probe_cwd = Path(tempfile.gettempdir())
+    probe_cwd = pathlib.Path(tempfile.gettempdir())
     try:
         res = run_in_jail(
-            JailPolicy(
+            kinds.JailPolicy(
                 cwd=probe_cwd,
                 argv=("/usr/bin/true",),
                 isolation="strict",
@@ -393,7 +391,7 @@ def strict_namespaces_work() -> bool:
     return res.returncode == 0
 
 
-def _require_jail_binary() -> Path:
+def _require_jail_binary() -> pathlib.Path:
     """Return the launcher binary.
 
     Raises:
@@ -410,7 +408,7 @@ def _require_jail_binary() -> Path:
     return binary
 
 
-def _raise_for_exec_failure(binary: Path, exc: OSError) -> NoReturn:
+def _raise_for_exec_failure(binary: pathlib.Path, exc: OSError) -> NoReturn:
     """Re-raise the launcher's spawn failure, as the binary's refusal when it is one.
 
     Args:
@@ -432,7 +430,7 @@ def _raise_for_exec_failure(binary: Path, exc: OSError) -> NoReturn:
 
 
 def _spawn_launcher(
-    binary: Path,
+    binary: pathlib.Path,
     args: Sequence[str],
     *,
     stdin: int | IO[bytes] | None,
@@ -532,7 +530,7 @@ def _own_children() -> dict[int, int]:
     me = str(os.getpid()).encode()
     found: dict[int, int] = {}
     try:
-        entries = list(Path("/proc").iterdir())
+        entries = list(pathlib.Path("/proc").iterdir())
     except OSError:
         return found
     for entry in entries:
@@ -662,7 +660,7 @@ class JailedProcess:
 
 
 def spawn_in_jail(
-    policy: JailPolicy,
+    policy: kinds.JailPolicy,
     *,
     stdin: int | None = None,
     stdout: int | None = None,
@@ -737,7 +735,9 @@ def spawn_in_jail(
     return JailedProcess(proc, before)
 
 
-def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None) -> CommandResult:
+def run_in_jail(
+    policy: kinds.JailPolicy, *, session_net: SessionNetwork | None = None
+) -> kinds.CommandResult:
     """Run the policy's argv inside the sandbox and collect its result.
 
     The `none` isolation runs the command as a plain subprocess: the one place an
@@ -804,11 +804,11 @@ def survivors_message(pids: frozenset[int]) -> str:
 
 def _launcher_result(
     launcher: subprocess.Popen[bytes],
-    policy: JailPolicy,
+    policy: kinds.JailPolicy,
     spec: str,
     start: float,
-    binary: Path,
-) -> CommandResult:
+    binary: pathlib.Path,
+) -> kinds.CommandResult:
     """Feed the launcher its spec and read the command's result back.
 
     Args:
@@ -837,7 +837,7 @@ def _launcher_result(
             raw_out, raw_err = launcher.communicate(timeout=5.0)
         except subprocess.TimeoutExpired:
             raw_out, raw_err = b"", b""
-        return CommandResult(
+        return kinds.CommandResult(
             argv=tuple(policy.argv),
             returncode=124,
             stdout=_lossy_text(raw_out) or _lossy_text(exc.stdout),
@@ -856,7 +856,7 @@ def _launcher_result(
     if proc.returncode != 0:
         stderr = proc.stderr.strip()
         if "child execution failed" in stderr:
-            return CommandResult(
+            return kinds.CommandResult(
                 argv=tuple(policy.argv),
                 returncode=127,
                 stdout="",
@@ -876,7 +876,9 @@ def _launcher_result(
     )
 
 
-def _with_launcher_warnings(result: CommandResult, launcher_stderr: str) -> CommandResult:
+def _with_launcher_warnings(
+    result: kinds.CommandResult, launcher_stderr: str
+) -> kinds.CommandResult:
     """Return the result with the launcher's own diagnostics appended to its stderr.
 
     The child's stderr arrives in the result JSON, so the launcher's stderr is the
@@ -886,12 +888,12 @@ def _with_launcher_warnings(result: CommandResult, launcher_stderr: str) -> Comm
     warnings = launcher_stderr.strip()
     if not warnings:
         return result
-    return replace(result, stderr=f"{result.stderr}\n{warnings}".strip())
+    return dataclasses.replace(result, stderr=f"{result.stderr}\n{warnings}".strip())
 
 
 def _result_from_json(
     result_json: dict[str, object], argv: tuple[str, ...], duration: float
-) -> CommandResult:
+) -> kinds.CommandResult:
     """Return the launcher's result object as a CommandResult.
 
     An `exec_failed` result gets the same wording as the one-shot path's 127, so the
@@ -899,7 +901,7 @@ def _result_from_json(
     """
     failed_exec = bool(result_json.get("exec_failed", False))
     stderr = str(result_json.get("stderr", ""))
-    return CommandResult(
+    return kinds.CommandResult(
         argv=argv,
         returncode=int(str(result_json["returncode"])),
         stdout=str(result_json.get("stdout", "")),
@@ -918,7 +920,7 @@ _RESULT_NAME = "result.json"
 _LAUNCHER_ERR_NAME = "launcher.err"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class BackgroundStatus:
     """What a detached command is doing, right now.
 
@@ -934,7 +936,7 @@ class BackgroundStatus:
     error: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Stopped:
     """A stop request's answer.
 
@@ -947,7 +949,7 @@ class Stopped:
     survivors: frozenset[int]
 
 
-def _write_outcome(outcome_dir: Path, returncode: int) -> None:
+def _write_outcome(outcome_dir: pathlib.Path, returncode: int) -> None:
     """Record a command's exit code where a surface in another process reads it."""
     with contextlib.suppress(OSError):
         (outcome_dir / _RESULT_NAME).write_text(
@@ -955,7 +957,7 @@ def _write_outcome(outcome_dir: Path, returncode: int) -> None:
         )
 
 
-def _write_stopped(outcome_dir: Path) -> None:
+def _write_stopped(outcome_dir: pathlib.Path) -> None:
     """Record that the command was stopped, when its launcher died before reporting a code.
 
     No code is invented: nobody observed one. Written only over an empty result; a
@@ -1010,7 +1012,7 @@ class LocalJob:
     maybe still running for the run's life and after it.
     """
 
-    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: Path) -> None:
+    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: pathlib.Path) -> None:
         self._proc = proc
         self._outcome_dir = outcome_dir
         self._descendants = frozenset(_own_children())
@@ -1053,7 +1055,7 @@ class BackgroundJob:
     Its launcher writes the exit code to the outcome dir when the command ends.
     """
 
-    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: Path) -> None:
+    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: pathlib.Path) -> None:
         self._proc = proc
         self._outcome_dir = outcome_dir
         self._descendants = frozenset(_own_children())
@@ -1117,9 +1119,9 @@ class SessionJob:
         self,
         session: JailSession,
         pid: int,
-        outcome_dir: Path,
+        outcome_dir: pathlib.Path,
         *,
-        before: ChildSnapshot,
+        before: kinds.ChildSnapshot,
     ) -> None:
         self._session = session
         self._pid = pid
@@ -1169,7 +1171,9 @@ class SessionJob:
             _write_outcome(self._outcome_dir, status.returncode)
 
 
-def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | LocalJob:
+def start_in_jail(
+    policy: kinds.JailPolicy, *, outcome_dir: pathlib.Path
+) -> BackgroundJob | LocalJob:
     """Spawn the policy's argv in the sandbox and return without waiting.
 
     The same policy, launcher and confinement as `run_in_jail`. Nothing of the
@@ -1188,13 +1192,13 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | L
     Raises:
         JailBinaryError: The launcher is missing or cannot be executed.
     """
-    mkdir_for_real_user(outcome_dir)
+    paths.mkdir_for_real_user(outcome_dir)
     if policy.isolation == "none":
         with _sweep_lock:
             proc = subprocess.Popen(
                 list(policy.argv),
                 cwd=str(policy.cwd),
-                env=without_provider_keys({**os.environ, **dict(policy.env)}),
+                env=child_env.without_provider_keys({**os.environ, **dict(policy.env)}),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -1243,7 +1247,7 @@ def _abandon_launcher(proc: subprocess.Popen[bytes], interrupt_w: int) -> None:
         proc.wait(timeout=5.0)
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class JailSession:
     """One long-lived launcher, serving every command of one run.
 
@@ -1263,7 +1267,7 @@ class JailSession:
     """
 
     _proc: subprocess.Popen[bytes]
-    _binary: Path
+    _binary: pathlib.Path
     # Without a PID namespace a `setsid` escapee reparents here, so each command's sweep runs here.
     _pid_namespaced: bool
     # One byte on the interrupt pipe asks the launcher to hand the running command back now; the
@@ -1277,11 +1281,13 @@ class JailSession:
     _opened_with: frozenset[int] = frozenset()
     # The start snapshot of every background command not yet stopped, by pid: what a stop sweeps
     # ends where the next of these began.
-    _live_jobs: dict[int, ChildSnapshot] = field(default_factory=dict)
+    _live_jobs: dict[int, kinds.ChildSnapshot] = dataclasses.field(default_factory=dict)
     _snapshots: int = 0
 
     @classmethod
-    def open(cls, policy: JailPolicy, *, session_net: SessionNetwork | None = None) -> JailSession:
+    def open(
+        cls, policy: kinds.JailPolicy, *, session_net: SessionNetwork | None = None
+    ) -> JailSession:
         """Start a serving launcher confined by the policy; its argv is ignored.
 
         Args:
@@ -1351,7 +1357,7 @@ class JailSession:
         checkin_s: float = 0.0,
         log_dir: str = "",
         interrupted: Callable[[], bool] | None = None,
-    ) -> CommandResult | BackgroundHandoff:
+    ) -> kinds.CommandResult | kinds.BackgroundHandoff:
         """Run one command to completion in this session's namespaces.
 
         Without a PID namespace the command's escapees reparent to this process
@@ -1401,7 +1407,7 @@ class JailSession:
             pid = answer.get("pid")
             if not isinstance(pid, int):
                 raise JailUnavailableError(f"jail session handed back no pid: {answer}")
-            return BackgroundHandoff(
+            return kinds.BackgroundHandoff(
                 argv=argv,
                 pid=pid,
                 log=str(answer.get("log", "")),
@@ -1556,7 +1562,7 @@ class JailSession:
         _forget_launcher(self._proc.pid)
         return self._sweep(frozenset())
 
-    def child_snapshot(self) -> ChildSnapshot:
+    def child_snapshot(self) -> kinds.ChildSnapshot:
         """Return the agent's children before a command starts.
 
         What reparents onto the agent after this is that command's own until the
@@ -1567,13 +1573,13 @@ class JailSession:
         """
         self._snapshots += 1
         pids = frozenset() if self._pid_namespaced else frozenset(_own_children())
-        return ChildSnapshot(self._snapshots, pids)
+        return kinds.ChildSnapshot(self._snapshots, pids)
 
-    def open_job(self, pid: int, before: ChildSnapshot) -> None:
+    def open_job(self, pid: int, before: kinds.ChildSnapshot) -> None:
         """Record a background command's start snapshot until its stop."""
         self._live_jobs[pid] = before
 
-    def sweep_for(self, pid: int, before: ChildSnapshot) -> frozenset[int]:
+    def sweep_for(self, pid: int, before: kinds.ChildSnapshot) -> frozenset[int]:
         """Kill what a stopped command left outside its process group.
 
         What appeared after it started and before the next still-running command
