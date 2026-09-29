@@ -263,8 +263,10 @@ function paintPrompts(cards, s) {
   const pfx = state ? state + ':' : '';
   const extra = state ? { state } : {};
   const build = {};
+  // One box: the approval the run will take an answer to (the server's
+  // open_approval_of; an answer to any other is refused as no longer open).
   for (const ap of (s.pending_approvals || [])) {
-    if (ap.answered) continue;
+    if (ap.answered || ap.id !== s.open_approval) continue;
     build[pfx + 'ap:' + ap.id] = () => {
       const box = el('div', 'prompt-box');
       const head = ap.head || ap.prompt || 'Approve this action?';

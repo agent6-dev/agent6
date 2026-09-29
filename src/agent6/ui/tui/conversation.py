@@ -61,7 +61,7 @@ from agent6.ui.tui.menubar import (
 from agent6.ui.tui.prompts import PromptDispatcher
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome, keys
 from agent6.ui.tui.settings import get_copy_method
-from agent6.viewmodel import approval_parts
+from agent6.viewmodel import approval_parts, open_approval_of
 from agent6.viewmodel.events import SESSION_START_EVENTS
 from agent6.viewmodel.format import dead_run_note, spinner_frame, status_label
 from agent6.viewmodel.policy import session_policy
@@ -446,13 +446,8 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             answered = next((a for a in state.pending_approvals if a.id == aid), None)
             if answered is not None and answered.answered:
                 self._note_answered("allowed" if answered.approved else "denied")
-        open_ones = [
-            ap for ap in state.pending_approvals if not ap.answered and not self._taken(ap.id)
-        ]
-        if open_ones:
-            ap = open_ones[-1]  # the newest: a resumed leg reuses prompt ids
-            return ap.id, ap.prompt, ap.standing
-        return None
+        ap = open_approval_of(state, taken=self._taken)
+        return None if ap is None else (ap.id, ap.prompt, ap.standing)
 
     def _taken(self, aid: str) -> bool:
         if self._prompts is None:

@@ -19,25 +19,33 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class Answer:
     """One answer to an approval: the letter, the value written to the answer
-    bridge, what every surface calls it, and the words the CLI prompt also
-    takes. `standing` marks the two an approval offers only when the operator
-    may answer for the whole session."""
+    bridge, the word every surface shows for it, and the words the CLI prompt
+    also takes. `standing` marks the two an approval offers only when the
+    operator may answer for the whole session; `grants` the two that allow
+    the call (the bridge's rule, pinned to this table by test_keymap)."""
 
     key: str
     answer: str
     label: str
     aliases: tuple[str, ...] = ()
     standing: bool = False
+    grants: bool = False
 
 
 # The order is the order they are offered in, everywhere: allow, allow all,
 # deny, deny all. The CLI prompt's letters, so one keymap is learned once.
 APPROVAL_ANSWERS: tuple[Answer, ...] = (
-    Answer("y", "yes", "allow", ("yes",)),
-    Answer("a", "session", "allow all (session)", ("all", "always", "session"), standing=True),
+    Answer("y", "yes", "allow", ("yes",), grants=True),
+    Answer("a", "session", "allow all", ("all", "always", "session"), standing=True, grants=True),
     Answer("n", "no", "deny", ("no",)),
     Answer("d", "session-deny", "deny all", ("deny", "never"), standing=True),
 )
+
+
+def answer_entry(answer: str) -> Answer:
+    """The table's row for a bridge value; a value outside the table is a
+    programming error, not an operator's."""
+    return next(entry for entry in APPROVAL_ANSWERS if entry.answer == answer)
 
 
 def answer_for(typed: str, *, standing: bool) -> str:
@@ -62,9 +70,7 @@ def approval_prompt_suffix(*, standing: bool) -> str:
         e for e in APPROVAL_ANSWERS if e.standing
     ]
     letters = "/".join(e.key.upper() if e.answer == "no" else e.key for e in ordered)
-    scoped = ", ".join(
-        f"{e.key} = {e.label.removesuffix(' (session)')}" for e in APPROVAL_ANSWERS if e.standing
-    )
+    scoped = ", ".join(f"{e.key} = {e.label}" for e in APPROVAL_ANSWERS if e.standing)
     return f"[{letters}]  ({scoped}, this session): "
 
 

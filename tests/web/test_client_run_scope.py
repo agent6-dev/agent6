@@ -135,6 +135,10 @@ def test_the_web_approval_box_offers_every_answer() -> None:
     body = js[start : js.index("for (const q of", start)]
     for entry in APPROVAL_ANSWERS:
         assert f"send('{entry.answer}')" in body, entry.answer
+        # The button says the word the table says, as the CLI and TUI do.
+        assert f"'{entry.label.capitalize()}')" in body, entry.label
+    # One box, the approval the server will take an answer to.
+    assert "ap.id !== s.open_approval" in body
 
 
 def test_a_failure_toast_holds_until_it_is_dismissed() -> None:

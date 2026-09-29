@@ -72,7 +72,7 @@ from agent6.ui.tui.theme import (
     status_style,
 )
 from agent6.ui.tui.widgets import Picker
-from agent6.viewmodel import manifest_branches, manifest_header, session_compare
+from agent6.viewmodel import manifest_branches, manifest_header, open_approval_of, session_compare
 from agent6.viewmodel.format import (
     TASK_STATUS_GLYPH,
     clip_cell,
@@ -468,7 +468,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         no transcript to carry it. Never a modal: nothing takes the focus."""
         tui = self._tui
         live = tui.session_controllable()
-        current = next((ap for ap in tui.state.pending_approvals if not ap.answered), None)
+        current = open_approval_of(tui.state)
         if current is None or not live:
             if self._row is not None:
                 self._row.remove()

@@ -22,7 +22,10 @@ from textual.widgets import Input, Select, Static, TextArea
 
 from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS
 from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_answer
-from agent6.ui.keymap import APPROVAL_ANSWERS
+from agent6.ui.keymap import (
+    APPROVAL_ANSWERS,
+    answer_entry,
+)
 from agent6.ui.tui.menubar import (
     Menu,
     MenuItem,
@@ -492,7 +495,8 @@ def deliver_answer(
     if prompts is not None:
         prompts.claim(session_dir, prompt_id)
     if write_answer(session_dir, prompt_id, answer):
-        screen.notify(f"answered: {answer}")
-        return "allowed" if answer in ("yes", "session") else "denied"
+        entry = answer_entry(answer)
+        screen.notify(f"answered: {entry.label}")
+        return "allowed" if entry.grants else "denied"
     screen.notify(ANSWERED_ELSEWHERE, severity="warning")
     return "answered elsewhere"

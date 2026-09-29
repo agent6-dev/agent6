@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
@@ -706,12 +706,23 @@ def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
     return state
 
 
+def open_approval_of(
+    state: SessionState, *, taken: Callable[[str], bool] = lambda _aid: False
+) -> ApprovalPrompt | None:
+    """The approval a surface answers now: the oldest unanswered one the
+    surface has not already taken (a modal pushed, a row docked). The one
+    rule behind the server's answer route, the run views' docked row and the
+    web's box, so no surface offers an approval the run will refuse."""
+    return next(
+        (ap for ap in state.pending_approvals if not ap.answered and not taken(ap.id)), None
+    )
+
+
 def open_approval(session_dir: Path) -> ApprovalPrompt | None:
-    """The run's oldest unanswered approval, or None when none is open."""
+    """The run's open approval (`open_approval_of`), or None when none is open."""
     from agent6.viewmodel.tail import tail_events  # noqa: PLC0415 -- cycle at import time
 
-    state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
-    return next((approval for approval in state.pending_approvals if not approval.answered), None)
+    return open_approval_of(fold_session(tail_events(session_dir / LOGS_NAME, follow=False)))
 
 
 def open_question(session_dir: Path) -> QuestionPrompt | None:
@@ -815,6 +826,9 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     )
     for ap, row in zip(state.pending_approvals, d["pending_approvals"], strict=True):
         row["head"], row["payload"] = approval_parts(ap.prompt)
+    # The one approval the run will take an answer to (`open_approval_of`).
+    current = open_approval_of(state)
+    d["open_approval"] = None if current is None else current.id
     if session_dir is not None:
         word, reason = status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in LIVE_STATUS_WORDS

@@ -96,12 +96,14 @@ class ApprovalModal(ModalScreen[str]):
             body.append(self.prompt_text)  # plain append: never parsed as markup
             yield Static(body)
             with Horizontal(id="approval-buttons"):
-                yield Button("Allow (y)", id="yes", variant="success")
-                if self.standing:
-                    yield Button("Allow all (a)", id="session", variant="success")
-                yield Button("Deny (n)", id="no", variant="error")
-                if self.standing:
-                    yield Button("Deny all (d)", id="session-deny", variant="error")
+                for entry in APPROVAL_ANSWERS:
+                    if entry.standing and not self.standing:
+                        continue
+                    yield Button(
+                        f"{entry.label.capitalize()} ({entry.key})",
+                        id=entry.answer,
+                        variant="success" if entry.grants else "error",
+                    )
 
     def on_mount(self) -> None:
         # The safe choice takes the focus, as ConfirmModal's does: an accidental

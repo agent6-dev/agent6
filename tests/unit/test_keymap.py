@@ -80,6 +80,7 @@ def test_the_keymap_and_the_bridge_agree_on_the_four_values() -> None:
     # Which answers grant this call, and which persist for the scope.
     grants = {v for v in values if record_answer(Path(mkdtemp()), v, scope=None)}
     assert grants == {"yes", "session"}
+    assert {entry.answer for entry in APPROVAL_ANSWERS if entry.grants} == grants
     for entry in APPROVAL_ANSWERS:
         d = Path(mkdtemp())
         record_answer(d, entry.answer, scope="command")

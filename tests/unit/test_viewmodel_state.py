@@ -990,3 +990,22 @@ def test_a_cut_log_line_says_it_was_cut() -> None:
     assert "…" in prompt
     short = format_log_line({"ts": "t", "type": "approval.prompt", "prompt": "run ls"})
     assert "…" not in short
+
+
+def test_one_owner_for_the_open_approval() -> None:
+    """The server took an answer to the oldest open approval while the
+    conversation view offered the newest and the dashboard the oldest with no
+    regard to a modal already up: three rules, latent until two are pending."""
+    from agent6.viewmodel.state import open_approval_of
+
+    s = initial_state()
+    for aid in ("a1", "a2", "a3"):
+        s = apply_event(
+            s, {"type": "approval.prompt", "id": aid, "prompt": f"run {aid}", "standing": True}
+        )
+    s = apply_event(s, {"type": "approval.answer", "id": "a1", "answer": "yes"})
+    current = open_approval_of(s)
+    assert current is not None and current.id == "a2"
+    taken = open_approval_of(s, taken=lambda aid: aid == "a2")
+    assert taken is not None and taken.id == "a3"
+    assert open_approval_of(s, taken=lambda _aid: True) is None
