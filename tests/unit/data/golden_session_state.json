@@ -178,7 +178,8 @@
     {
       "iteration": 1,
       "sha": "29251c4be62e",
-      "subject": ""
+      "subject": "",
+      "label": "iter 1 · 29251c4"
     }
   ],
   "steer_requests": 1,
@@ -188,6 +189,7 @@
   "last_event_ep": 1784023218.5,
   "context_pct": null,
   "needs_new_work": true,
+  "open_approval": null,
   "live": null,
   "status": "passed",
   "status_label": "passed",

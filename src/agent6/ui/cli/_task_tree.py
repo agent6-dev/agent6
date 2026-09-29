@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Any
 
 from agent6.viewmodel import task_tree_views
-from agent6.viewmodel.format import TASK_STATUS_GLYPH
 
 
 def task_tree_lines(nodes: dict[str, Any], cursor: str | None = None) -> list[str]:
@@ -28,8 +27,9 @@ def task_tree_lines(nodes: dict[str, Any], cursor: str | None = None) -> list[st
         node = nodes.get(view.id)
         sha = node.get("commit_sha") if isinstance(node, dict) else None
         commit = f"  ({sha[:7]})" if isinstance(sha, str) and sha else ""
-        glyph = TASK_STATUS_GLYPH.get("in_progress" if view.is_cursor else view.status, "·")
         note = f"  ({view.note})" if view.note else ""
         # The id leads the line: it is what `/retire` takes.
-        out.append(f"{view.short_id:>3}  {'  ' * view.depth}{glyph} {view.title}{note}{commit}")
+        out.append(
+            f"{view.short_id:>3}  {'  ' * view.depth}{view.glyph} {view.title}{note}{commit}"
+        )
     return out

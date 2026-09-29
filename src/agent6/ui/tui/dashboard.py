@@ -74,7 +74,6 @@ from agent6.ui.tui.theme import (
 from agent6.ui.tui.widgets import Picker
 from agent6.viewmodel import manifest_branches, manifest_header, open_approval_of, session_compare
 from agent6.viewmodel.format import (
-    TASK_STATUS_GLYPH,
     clip_cell,
     dead_run_note,
     format_compare,
@@ -95,8 +94,6 @@ from agent6.viewmodel.tail import tail_events
 
 if TYPE_CHECKING:
     from agent6.ui.tui.app import Agent6TUI
-
-_TASK_ICONS = TASK_STATUS_GLYPH
 
 # How many recent tool calls the inline table shows. The RowSelected handler maps
 # a visual row back through the same window, so both must use this one value.
@@ -827,11 +824,10 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             tree.clear()
             tree.border_title = f"tasks{as_of}" if as_of else ""
             for tv in ds.tasks:
-                icon = _TASK_ICONS.get(tv.status, "·")
                 indent = "  " * tv.depth
-                marker = "▸ " if tv.is_cursor else ""
-                # The id leads the line: it is what `/retire` takes.
-                label = Text(f"{tv.short_id:>3} {indent}{marker}{icon} {tv.title}")
+                # The id leads the line: it is what `/retire` takes; the glyph
+                # is the view's, the cursor's task drawn as in progress.
+                label = Text(f"{tv.short_id:>3} {indent}{tv.glyph} {tv.title}")
                 if tv.note:
                     label.append(f"  {tv.note}", style="dim italic")
                 if tv.id == sel:  # the task the panes are filtered to

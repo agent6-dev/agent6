@@ -105,7 +105,7 @@ def test_task_rows_carry_their_glyph() -> None:
     views = task_tree_views(
         {"a": {"title": "t", "status": "passed", "children": ["b"]}, "b": {"title": "u"}}, "b"
     )
-    assert [(v.glyph, v.is_cursor) for v in views] == [("✓", False), ("·", True)]
+    assert [(v.glyph, v.is_cursor) for v in views] == [("✓", False), ("▸", True)]
 
 
 def test_machine_transitions_and_spend_arrive_rendered(

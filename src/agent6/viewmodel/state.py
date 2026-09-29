@@ -69,11 +69,14 @@ class TaskNodeView:
     # "queued by you", "standing goal", or "".
     note: str = ""
     short_id: str = ""  # the id as the operator reads and types it (`/retire`)
-    glyph: str = ""  # the status as every surface draws it (TASK_STATUS_GLYPH)
+    # The status as every surface draws it (TASK_STATUS_GLYPH); the cursor's
+    # task draws as in progress, that being where the worker is.
+    glyph: str = ""
 
     def __post_init__(self) -> None:
         if not self.glyph:
-            object.__setattr__(self, "glyph", TASK_STATUS_GLYPH.get(self.status, "·"))
+            status = "in_progress" if self.is_cursor else self.status
+            object.__setattr__(self, "glyph", TASK_STATUS_GLYPH.get(status, "·"))
 
 
 @dataclass(frozen=True, slots=True)
