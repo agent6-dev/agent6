@@ -130,15 +130,9 @@ from agent6.workflows._loop_state import (
 )
 from agent6.workflows._memory_touch import memory_store_facts
 from agent6.workflows._metric import (
-    MetricSample,
     best_metric_sample,
-    coerce_metric_score,
-    extract_metric_targets,
-    format_metric_feedback,
-    metric_at_fraction_ceiling,
-    metric_goal,
-    metric_plateau_summary,
 )
+from agent6.workflows._metric_sampler import MetricSampler
 from agent6.workflows._nudges import (
     PLAN_ON_DISK_HEADER,
     tool_error_signature,
@@ -969,7 +963,7 @@ class Workflow:
             # samples it again on every turn that reads the tree as changed
             # (all of them, with nothing committing between steps).
             state.metric.tree = self.chain.tree_sha()
-            turn.metric_feedback = self._record_metric_result(
+            turn.metric_feedback = self.metrics.record(
                 state.metric.history,
                 result,
                 iteration=turn.iteration,
@@ -977,7 +971,7 @@ class Workflow:
                 sha="",
             )
             if turn.verify_just_passed:
-                turn.metric_plateau_finish = self._plateau_finish(state.metric.history)
+                turn.metric_plateau_finish = self.metrics.plateau_finish(state.metric.history)
         if name in ("apply_edit", "apply_patch") and isinstance(result, PreviewResult):
             return  # a dry run writes nothing: no memory write, no tree edit
         if self._note_memory_touch(state, name, result, tool_input):
@@ -1168,17 +1162,15 @@ class Workflow:
         if tree and tree == state.metric.tree:
             return None
         state.metric.tree = tree
-        # The auto path raises OperatorCommandUnexecutable just like a
-        # manual run_metric_command would; abort the same way the
-        # per-tool handler does (it is a distinct exception, NOT a
-        # ToolError, so _auto_metric_feedback does not swallow it).
+        # The auto path raises OperatorCommandUnexecutable just like a manual
+        # run_metric_command would: the same abort as the per-tool handler's.
         try:
-            turn.metric_feedback = self._auto_metric_feedback(
+            turn.metric_feedback = self.metrics.auto_feedback(
                 state, iteration=turn.iteration, sha=sha
             )
         except OperatorCommandUnexecutable as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
-        turn.metric_plateau_finish = self._plateau_finish(state.metric.history)
+        turn.metric_plateau_finish = self.metrics.plateau_finish(state.metric.history)
         return None
 
     # ---- finish gates ----------------------------------------------------------
@@ -1226,7 +1218,7 @@ class Workflow:
             verify_when=self.gate.when,
             verify_retries=self.gate.retries,
             finish_validator=self.finish_validator,
-            metric=metric_goal(self.config.workflow.metric) is not None,
+            metric=self.metrics.goal is not None,
             memory_wired=self.state_dir is not None,
             end_rejected=lambda turn, ending: self.reviewer.end_rejected(
                 state, turn, ending=ending
@@ -1878,7 +1870,7 @@ class Workflow:
         """
         if self.resume_state_path is None:
             return
-        goal = metric_goal(self.config.workflow.metric)
+        goal = self.metrics.goal
         best = best_metric_sample(state.metric.history, goal=goal) if goal is not None else None
         snapshot = SessionSnapshot(
             system=state.system,
@@ -1939,99 +1931,6 @@ class Workflow:
 
     # ---- metric ----------------------------------------------------------------
 
-    def _record_metric_result(
-        self,
-        history: list[MetricSample],
-        result: MetricResult,
-        *,
-        iteration: int,
-        label: str,
-        sha: str,
-    ) -> str | None:
-        metric_cfg = self.config.workflow.metric
-        goal = metric_goal(metric_cfg)
-        if goal is None:
-            return None
-        assert metric_cfg is not None  # goal is None otherwise
-        score = coerce_metric_score(result.score)
-        returncode = result.returncode
-        stdout = result.stdout
-        stderr = result.stderr
-        combined = f"{stdout}\n{stderr}"
-        targets = extract_metric_targets(combined, goal=goal)
-        at_ceiling = (
-            goal == "maximize"
-            and score is not None
-            # Only count an X/Y ceiling reported on the score-match line, so an
-            # incidental "100/100" progress bar elsewhere cannot latch it.
-            and metric_at_fraction_ceiling(combined, score, pattern=metric_cfg.pattern)
-        )
-        sample = MetricSample(
-            label=label,
-            score=score,
-            returncode=returncode,
-            sha=sha,
-            stdout_tail=stdout[-500:],
-            stderr_tail=stderr[-500:],
-            targets=targets,
-            at_ceiling=at_ceiling,
-        )
-        history.append(sample)
-        self._emit(
-            "loop.metric.sample",
-            iteration=iteration,
-            label=label,
-            score=score,
-            returncode=returncode,
-            sha=sha[:12],
-        )
-        return format_metric_feedback(history, goal=goal)
-
-    def _auto_metric_feedback(self, state: LoopState, *, iteration: int, sha: str) -> str | None:
-        """The harness's own metric reading after a green verify, as feedback
-        text; a failed reading is a sample with its error, and a denied one
-        also withholds the automatic metric for the rest of the run."""
-        history = state.metric.history
-        metric_cfg = self.config.workflow.metric
-        goal = metric_goal(metric_cfg)
-        if self.mode != "run" or goal is None:
-            return None
-        self._log(f"LOOP: auto metric after verify-pass at iter {iteration}")
-        self._emit("loop.metric.auto_call", iteration=iteration, sha=sha[:12])
-        try:
-            result = self.dispatcher.dispatch("run_metric_command", {})
-        except ToolError as exc:
-            error = str(exc)
-            if isinstance(exc, ToolDenied):
-                state.metric.denied = True
-                error += "; the automatic metric is withheld for the rest of the run"
-            sample = MetricSample(
-                label=f"auto iter {iteration}",
-                score=None,
-                returncode=None,
-                sha=sha,
-                error=error,
-            )
-            history.append(sample)
-            self._emit("loop.metric.auto_failed", iteration=iteration, error=error[:200])
-            return format_metric_feedback(history, goal=goal)
-        assert isinstance(result, MetricResult)  # run_metric_command's result type
-        return self._record_metric_result(
-            history,
-            result,
-            iteration=iteration,
-            label=f"auto iter {iteration}",
-            sha=sha,
-        )
-
-    def _plateau_finish(self, history: list[MetricSample]) -> str | None:
-        """The plateau summary for THIS run: the shared rule, plus the two
-        conditions only a run knows (run mode, a configured goal)."""
-        goal = metric_goal(self.config.workflow.metric)
-        if self.mode != "run" or goal is None:
-            return None
-        return metric_plateau_summary(history, goal=goal)
-
     def _budget_fraction_remaining(self) -> float | None:
         """Fraction of the token budget still available, or None when no
         BudgetTracker is wired in (tests / MCP path)."""
@@ -2078,8 +1977,10 @@ class Workflow:
         (Kimi K2.x finishes its reasoning within 65k and rarely goes quiet, let
         alone twice in a row).
         """
-        metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is not None
-        if metric_run and state.quiet.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS:
+        if (
+            self.metrics.active
+            and state.quiet.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS
+        ):
             return max(self.call.per_call_max_tokens, self.call.metric_task_max_tokens)
         return self.call.per_call_max_tokens
 
@@ -2148,6 +2049,16 @@ class Workflow:
             curator=self.curator,
             patience=self.config.workflow.standing_patience,
             budget_remaining=self._budget_fraction_remaining,
+            log=self._log,
+            emit=self._emit,
+        )
+
+    @cached_property
+    def metrics(self) -> MetricSampler:
+        return MetricSampler(
+            settings=self.config.workflow.metric,
+            enabled=self.mode == "run",
+            dispatcher=self.dispatcher,
             log=self._log,
             emit=self._emit,
         )
