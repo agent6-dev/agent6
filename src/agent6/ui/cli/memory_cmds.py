@@ -45,8 +45,13 @@ def _cmd_memory_list() -> int:
     for line in text.splitlines():
         print(line)
         name = index_name(line)
-        if name is not None:
-            print(f"    {format_use(use.get(name, MemoryUse()))}")
+        if name is None:
+            continue
+        if not (memory_dir(state) / f"{name}.md").is_file():
+            # A line with no file is a prompt naming a fact that will not open.
+            print("    no file: nothing recorded under that name; `memory rm` drops the line")
+            continue
+        print(f"    {format_use(use.get(name, MemoryUse()))}")
     if orphans:
         print(f"not in the index (no run sees them; `memory rm` deletes): {', '.join(orphans)}")
     return 0

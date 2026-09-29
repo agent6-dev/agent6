@@ -46,7 +46,7 @@ def _build(mode: str, index: str, tmp_path: Path) -> str:
 def test_run_mode_always_carries_the_memory_header(tmp_path: Path) -> None:
     out = _build("run", "", tmp_path)
     assert "<memory>" in out
-    assert "(none recorded yet)" in out
+    assert "(none recorded yet; an index line is `- <name>: <one line>`)" in out
     memory = out.split("<memory>")[1].split("</memory>")[0]
     assert "edit tools" in memory
     assert "deleted" in memory

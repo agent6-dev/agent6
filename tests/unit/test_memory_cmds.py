@@ -95,6 +95,12 @@ def test_list_shows_who_wrote_and_read_each_fact(
     assert "    written " in out
     assert "by operator" in out
     assert "read 3 times, last 1970-01-02 by run-a" in out
+    # A line whose file never landed (a model's write refused after its index
+    # edit) says so, in place of a use line for a fact that will not open.
+    with (memory_dir(state) / "MEMORY.md").open("a", encoding="utf-8") as fh:
+        fh.write("- ghost: A fact with no file.\n")
+    assert _cmd_memory_list() == 0
+    assert "- ghost: A fact with no file.\n    no file:" in capsys.readouterr().out
     # A fact the record never saw (written by hand) still reads as never read.
     (memory_dir(state) / "by-hand.md").write_text("By hand.\n", encoding="utf-8")
     with (memory_dir(state) / "MEMORY.md").open("a", encoding="utf-8") as fh:

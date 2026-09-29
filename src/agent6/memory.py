@@ -557,13 +557,18 @@ def _index_has(state_dir: Path, name: str) -> bool:
     return any(pattern.match(ln) for ln in index_text(state_dir).splitlines())
 
 
-_INDEX_LINE_RE = re.compile(r"^\s*[-*]\s*([a-z0-9][a-z0-9-]{0,63})\s*:")
+# `- name: summary` (what `memory add` writes) or a link line
+# `- [title](name.md) ...` (the shape models raised on other agents' memory
+# indexes write): either names the fact.
+_INDEX_LINE_RE = re.compile(
+    r"^\s*[-*]\s*(?:\[[^\]]*\]\(([a-z0-9][a-z0-9-]{0,63})\.md\)|([a-z0-9][a-z0-9-]{0,63})\s*:)"
+)
 
 
 def index_name(line: str) -> str | None:
     """The fact an index line names, None for a line that is not an entry."""
     match = _INDEX_LINE_RE.match(line)
-    return None if match is None else match.group(1)
+    return None if match is None else (match.group(1) or match.group(2))
 
 
 def unindexed_names(state_dir: Path) -> tuple[str, ...]:

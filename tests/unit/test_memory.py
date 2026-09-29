@@ -608,6 +608,10 @@ def test_index_name_reads_the_entry_a_line_names() -> None:
     assert index_name("- build-quirk: Needs FOO=1.") == "build-quirk"
     assert index_name("* other-fact : x") == "other-fact"
     assert index_name("not an entry") is None
+    # A model wrote the link shape other agents' indexes use, and the list
+    # called its fact "not in the index" beside the line that named it.
+    assert index_name("- [Public API](public-api.md): re-exported helpers") == "public-api"
+    assert index_name("- [x](Not-A-Name.md)") is None
     assert index_name("- Bad Name: x") is None
 
 
