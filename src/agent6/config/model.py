@@ -55,7 +55,7 @@ from agent6.config._surfaces import (
     WebConfig,
 )
 from agent6.errors import OperatorError
-from agent6.types import ModelRoute, RoleName
+from agent6.kinds import ModelRoute, RoleName
 
 
 class ConfigError(OperatorError):

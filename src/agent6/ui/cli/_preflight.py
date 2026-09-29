@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 
 from agent6.config import Config
-from agent6.types import IsolationLevel
+from agent6.kinds import IsolationLevel
 from agent6.ui.cli._steer import tty_prompt
 
 

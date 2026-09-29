@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.config import Config, plan_metered
+from agent6.kinds import IsolationLevel, RepoSummary
 from agent6.memory import clipped_index
 from agent6.prompts.loop import (
     AGENT_SYSTEM_PROMPT_BASE,
@@ -48,7 +49,6 @@ from agent6.prompts.loop import (
     dag_rules_block,
 )
 from agent6.skills import ResolvedSkills
-from agent6.types import IsolationLevel, RepoSummary
 
 
 def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:

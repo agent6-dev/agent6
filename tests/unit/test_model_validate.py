@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config
+from agent6.kinds import ModelRoute
 from agent6.models import validate
-from agent6.types import ModelRoute
 
 
 @pytest.fixture

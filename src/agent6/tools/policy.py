@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config import Config
+from agent6.kinds import IsolationLevel, JailPolicy, NetworkMode
 from agent6.memory import DECISIONS_NAME
 from agent6.paths import (
     effective_user,
@@ -28,7 +29,6 @@ from agent6.sandbox.jail import JailUnavailableError
 from agent6.sandbox.tool_paths import operator_tool_paths
 from agent6.tools._path_safety import Workspace
 from agent6.tools._result_format import passthrough_env
-from agent6.types import IsolationLevel, JailPolicy, NetworkMode
 
 # strict's default HOME: the launcher creates it inside the run's private /tmp
 # tmpfs, so it goes with the run.

@@ -28,7 +28,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 
-from agent6.types import is_side_role
+from agent6.kinds import is_side_role
 from agent6.viewmodel.events import SESSION_START_EVENTS, as_int, event_epoch, tool_result_ok
 from agent6.viewmodel.format import format_usd, lane_count, status_label
 from agent6.viewmodel.listing import status_word

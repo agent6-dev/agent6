@@ -29,13 +29,13 @@ from typing import TextIO
 
 from agent6.app._setup import detect_env
 from agent6.config import Config
+from agent6.kinds import NetworkMode
 from agent6.sandbox.detect import resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError, SessionNetwork, run_in_jail
 from agent6.sessions.ipc import read_session_netns_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.policy import jail_policy
-from agent6.types import NetworkMode
 from agent6.ui.cli._common import error, refuse
 from agent6.viewmodel import session_is_live, summarize_session_dir
 

@@ -32,12 +32,12 @@ from pydantic import BaseModel, ConfigDict, StrictBool, ValidationError
 from agent6 import __version__
 from agent6.config import is_loopback_host
 from agent6.config.write import PROVIDER_DEFAULTS, provider_choices
+from agent6.kinds import OPERATOR_MODES
 from agent6.machine import MachineError
 from agent6.sessions.ipc import (
     register_frontend,
     unregister_frontend,
 )
-from agent6.types import OPERATOR_MODES
 from agent6.ui.spawn import spawn_new_work
 from agent6.ui.web import actions, model
 from agent6.ui.web._sse import SseChannel, stream_machine, stream_session

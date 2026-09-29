@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent6.app.machine import _scriptcheck as scriptcheck
-from agent6.types import CommandResult, JailPolicy
+from agent6.kinds import CommandResult, JailPolicy
 
 _CLEAN = "import json\n\n\ndef f(x: int) -> str:\n    return json.dumps({'v': x})\n"
 

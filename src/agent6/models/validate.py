@@ -34,10 +34,10 @@ from pathlib import Path
 from agent6.config import ClaudeCodeProviderEntry, Config, ConfigError, RoleName
 from agent6.config.layer import load_effective
 from agent6.directive import DirectiveError, Segment, parse_spec
+from agent6.kinds import ModelRoute
 from agent6.models.cache import cached_models, fetch_models_live
 from agent6.models.registry import normalize_model_id
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
-from agent6.types import ModelRoute
 
 ROLES: tuple[RoleName, ...] = ("worker", "reviewer", "planner")
 

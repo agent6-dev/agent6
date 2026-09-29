@@ -35,6 +35,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PydanticField
 
+from agent6.kinds import CommandResult, JailPolicy, NetworkMode
 from agent6.machine._semantics import validate_record_payload
 from agent6.machine.journal import (
     AgentFact,
@@ -77,7 +78,6 @@ from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.layout import LOGS_NAME
-from agent6.types import CommandResult, JailPolicy, NetworkMode
 
 __all__ = [
     "AgentExecResult",

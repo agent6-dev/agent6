@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from agent6.config import Config
+from agent6.kinds import IsolationLevel
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.operator_prompts import (
     ApprovalAnswer,
@@ -21,7 +22,6 @@ from agent6.tools.operator_prompts import (
 )
 from agent6.tools.results import EditResult
 from agent6.tools.schema import UserQuestion
-from agent6.types import IsolationLevel
 
 _VALID_TOML = """
 [agent6]
@@ -87,8 +87,8 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
     reported all_passed and committed unverified work. The model cannot fix
     operator config, so this must fail loudly instead.
     """
+    from agent6.kinds import CommandResult
     from agent6.tools.dispatch import OperatorCommandUnexecutable
-    from agent6.types import CommandResult
 
     # run_commands = "yes": this exercises verify EXECUTION, not the gate.
     cfg = _config_with_run_commands(tmp_path, "yes")  # verify_command = ["true"]
@@ -1116,7 +1116,7 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
 
 
 def test_jail_env_disables_python_bytecode(tmp_path: Path) -> None:
-    from agent6.types import CommandResult, JailPolicy
+    from agent6.kinds import CommandResult, JailPolicy
 
     cfg = _config_with_run_commands(tmp_path, "yes")
     d = ToolDispatcher(root=tmp_path, config=cfg)
@@ -1882,7 +1882,7 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_strict(
     (tmp_path / ".git").mkdir()
     captured: list[object] = []
 
-    from agent6.types import CommandResult
+    from agent6.kinds import CommandResult
 
     def _capture(policy: object, **_kw: object) -> CommandResult:
         captured.append(policy)

@@ -20,7 +20,7 @@ from typing import Literal
 
 from agent6.config import Config, load_config
 from agent6.harness.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
-from agent6.types import RepoSummary
+from agent6.kinds import RepoSummary
 
 _INTERACTIVE: tuple[Literal["plan", "ask"], ...] = ("plan", "ask")
 

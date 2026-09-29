@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.kinds import BackgroundHandoff, JailPolicy
 from agent6.paths import mkdir_for_real_user
 from agent6.sandbox.jail import (
     BackgroundJob,
@@ -32,7 +33,6 @@ from agent6.sandbox.jail import (
     start_in_jail,
 )
 from agent6.sessions.ipc import ProcessIdentity, process_identity, process_is_alive
-from agent6.types import BackgroundHandoff, JailPolicy
 
 # The command's own output goes to a file both sides can read: the jail gets
 # the LOG directory read-write, and `exec` applies the redirect to the whole

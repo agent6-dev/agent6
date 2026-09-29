@@ -75,6 +75,7 @@ from agent6.harness._snapshot import (
     load_session_snapshot,
     read_turn_marker,
 )
+from agent6.kinds import SESSION_KINDS, ModelRoute, session_bucket, session_kind
 from agent6.paths import state_dir
 from agent6.providers import (
     TranscriptSink,
@@ -101,7 +102,6 @@ from agent6.sessions.lock import (
 )
 from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
 from agent6.tools.operator_prompts import OperatorPrompts
-from agent6.types import SESSION_KINDS, ModelRoute, session_bucket, session_kind
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
 
 

@@ -210,8 +210,8 @@ def _minted_session_id(explicit: str, mode: str) -> str:
     that one rather than whatever the repo's newest happens to be. Minting
     reserves nothing on disk, so a run that refuses leaves no session behind.
     """
+    from agent6.kinds import session_bucket  # noqa: PLC0415
     from agent6.sessions.id import unused_session_id  # noqa: PLC0415
-    from agent6.types import session_bucket  # noqa: PLC0415
 
     if explicit:
         return explicit

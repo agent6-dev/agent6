@@ -14,10 +14,10 @@ import pytest
 
 from agent6.config import Config
 from agent6.harness import _prompt_blocks as pb
+from agent6.kinds import RepoSummary
 from agent6.memory import INDEX_INJECT_CAP, add, memory_dir
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.errors import ToolError
-from agent6.types import RepoSummary
 
 
 def _repo(root: Path) -> RepoSummary:

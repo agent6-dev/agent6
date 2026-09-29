@@ -239,7 +239,7 @@ def test_wire_add_task_order(tmp_path: Path) -> None:
 
 
 def _cmd_result(**kw: Any):
-    from agent6.types import CommandResult
+    from agent6.kinds import CommandResult
 
     base = dict(argv=("x",), returncode=0, stdout="", stderr="", duration_s=0.5, exec_failed=False)
     base.update(kw)

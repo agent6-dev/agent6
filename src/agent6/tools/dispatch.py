@@ -29,6 +29,13 @@ from pydantic import ValidationError
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
+from agent6.kinds import (
+    BackgroundHandoff,
+    CommandResult,
+    IsolationLevel,
+    JailPolicy,
+    session_kind,
+)
 from agent6.memory import memory_dir
 from agent6.paths import data_dir, mkdir_for_real_user
 from agent6.sandbox.jail import (
@@ -118,13 +125,6 @@ from agent6.tools.schema import (
     mode_tools,
 )
 from agent6.tools.sessions import conversation, roster
-from agent6.types import (
-    BackgroundHandoff,
-    CommandResult,
-    IsolationLevel,
-    JailPolicy,
-    session_kind,
-)
 
 # A backslash before a character JSON defines no escape for: a regex the
 # model typed inside a JSON string, meant literally.

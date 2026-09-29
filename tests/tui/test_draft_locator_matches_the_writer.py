@@ -14,8 +14,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent6.app.machine import create as create_mod
+from agent6.kinds import session_bucket
 from agent6.sessions.layout import bucket_dir
-from agent6.types import session_bucket
 from agent6.ui.tui.machines import _list_drafts  # pyright: ignore[reportPrivateUsage]
 
 

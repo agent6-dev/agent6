@@ -23,7 +23,7 @@ from pathlib import Path
 
 from agent6.child_env import without_provider_keys
 from agent6.commit_message import CommitRow
-from agent6.types import CommandResult
+from agent6.kinds import CommandResult
 
 
 class GitError(Exception):

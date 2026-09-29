@@ -24,7 +24,7 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `events`, `git_ops`, `graph`, `init`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secrets`, `sessions`, `skills`, `task_text`, `types`, `verify_infer`, `viewmodel`.
+Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `events`, `git_ops`, `graph`, `init`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secrets`, `sessions`, `skills`, `task_text`, `verify_infer`, `viewmodel`.
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
     - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`

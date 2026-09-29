@@ -9,8 +9,8 @@ from pathlib import Path
 from agent6.config import Config, load_config
 from agent6.harness._chain import RunChain
 from agent6.harness._prompt_blocks import build_system_prompt, skills_block
+from agent6.kinds import RepoSummary
 from agent6.skills import ResolvedSkills, Skill
-from agent6.types import RepoSummary
 
 _VALID_TOML = """
 [agent6]

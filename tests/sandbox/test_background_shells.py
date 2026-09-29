@@ -21,6 +21,7 @@ from typing import Any, cast
 
 import pytest
 
+from agent6.kinds import BackgroundHandoff, ChildSnapshot, IsolationLevel, JailPolicy
 from agent6.sandbox.jail import (
     BackgroundJob,
     BackgroundStatus,
@@ -29,7 +30,6 @@ from agent6.sandbox.jail import (
     run_in_jail,
 )
 from agent6.tools.background import BackgroundError, BackgroundShells, roster_from_dir
-from agent6.types import BackgroundHandoff, ChildSnapshot, IsolationLevel, JailPolicy
 
 pytestmark = pytest.mark.needs_namespaces
 

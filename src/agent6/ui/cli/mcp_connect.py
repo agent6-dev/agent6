@@ -30,11 +30,11 @@ from agent6.config import (
 )
 from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves, unset_config_table
+from agent6.kinds import IsolationLevel
 from agent6.paths import global_config_path, repo_config_path
 from agent6.sandbox.detect import resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec, MCPToolDescriptor, tool_count
-from agent6.types import IsolationLevel
 from agent6.ui.cli._common import error, warn
 
 # Long enough for a cold `npx` to fetch and boot a server, which is the slow

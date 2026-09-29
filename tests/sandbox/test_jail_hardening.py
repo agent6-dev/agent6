@@ -82,8 +82,8 @@ def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
     launcher sets the flags explicitly for that reason; probed on ext4, the
     tool_paths mount came back `ro,relatime` without them.
     """
+    from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
-    from agent6.types import JailPolicy
 
     probe = (
         "for l in open('/proc/self/mountinfo'):\n"
@@ -153,7 +153,7 @@ def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: Path) -> None
         import ctypes, sys
         from pathlib import Path
         from agent6.sandbox.jail import run_in_jail
-        from agent6.types import JailPolicy
+        from agent6.kinds import JailPolicy
 
         libc = ctypes.CDLL(None, use_errno=True)
         ws, ro, tools = (Path(p) for p in sys.argv[1:4])
@@ -248,7 +248,7 @@ def test_a_protect_path_with_its_own_submount_still_jails(tmp_path: Path) -> Non
         import ctypes, sys
         from pathlib import Path
         from agent6.sandbox.jail import run_in_jail
-        from agent6.types import JailPolicy
+        from agent6.kinds import JailPolicy
 
         libc = ctypes.CDLL(None, use_errno=True)
         ws = Path(sys.argv[1])
@@ -324,7 +324,7 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(tmp_path: 
         import ctypes, sys
         from pathlib import Path
         from agent6.sandbox.jail import run_in_jail
-        from agent6.types import JailPolicy
+        from agent6.kinds import JailPolicy
 
         MS_NOSUID, MS_NODEV, MS_NOEXEC = 2, 4, 8
         libc = ctypes.CDLL(None, use_errno=True)
@@ -387,8 +387,8 @@ def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: Path) -> None:
     """
     import platform
 
+    from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
-    from agent6.types import JailPolicy
 
     # Numbers, not names: the point is which number the arch assigns to what.
     by_arch = {"x86_64": (166, 22), "aarch64": (39, None)}  # (umount2, pipe or none)
@@ -438,8 +438,8 @@ def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
     they were inherited. The launcher reads nothing from its environment (the
     policy arrives on stdin), so it gets none.
     """
+    from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
-    from agent6.types import JailPolicy
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-CANARY-must-not-leak")
     probe = (
@@ -474,8 +474,8 @@ def test_a_fully_populated_policy_holds_every_invariant(
     where tmp is ext4, and the ext4 case was probed by hand. The LEAK and
     PROTECT halves are deterministic everywhere.
     """
+    from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
-    from agent6.types import JailPolicy
 
     ws, ro, rw, tools = (tmp_path / n for n in ("ws", "ro", "rw", "tools"))
     for d in (ws, ro, rw, tools):
@@ -540,8 +540,8 @@ def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: Path) -> No
     assert '"/tmp/agent6-jail-root"' not in src, "the jail root must not be a shared path"
     assert re.search(r"agent6-jail-root-\{", src), "the jail root must carry the uid"
 
+    from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
-    from agent6.types import JailPolicy
 
     res = run_in_jail(
         JailPolicy(
@@ -575,8 +575,8 @@ def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: Path)
     """
     import threading
 
+    from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
-    from agent6.types import JailPolicy
 
     probe = (
         "import os, time\nprint(os.readlink('/proc/self/ns/mnt'), flush=True)\ntime.sleep(1.5)\n"
@@ -658,8 +658,8 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: Path, level: str)
     command duplicated a sibling's fd into itself; after, EPERM."""
     import platform
 
+    from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
-    from agent6.types import JailPolicy
 
     if platform.machine() not in ("x86_64", "aarch64"):
         pytest.skip(f"pidfd syscall numbers not pinned for {platform.machine()}")
@@ -702,8 +702,8 @@ def test_io_uring_and_userfaultfd_are_denied(tmp_path: Path, level: str) -> None
     allowed. Probed by NUMBER so a wrapper's own failure can't read as a deny."""
     import platform
 
+    from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import run_in_jail
-    from agent6.types import JailPolicy
 
     # (io_uring_setup, userfaultfd, memfd_create) per arch.
     by_arch = {"x86_64": (425, 323, 319), "aarch64": (425, 282, 279)}

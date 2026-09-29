@@ -11,7 +11,7 @@ passed, failed, skipped, obsolete).
 
 These cross trust boundaries (LLM-emitted intents, disk reload), so they are
 pydantic per project convention. Internal-only value types remain frozen
-dataclasses in `agent6.types`.
+dataclasses in `agent6.kinds`.
 """
 
 from __future__ import annotations

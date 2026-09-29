@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import IO
 
 from agent6.directive import DirectiveError, parse_directive, steer_problem
+from agent6.kinds import OPERATOR_MODES
 from agent6.models.validate import directive_model_refusal
 from agent6.paths import state_dir
 from agent6.sandbox.jail import keep_out_of_the_sweep
@@ -26,7 +27,6 @@ from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.ipc import read_worker_pid
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.lock import repo_writer_held, repo_writer_holder
-from agent6.types import OPERATOR_MODES
 from agent6.viewmodel.listing import session_dirs
 
 

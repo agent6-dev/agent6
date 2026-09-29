@@ -16,6 +16,7 @@ from agent6 import __version__
 from agent6.app.reporter import Reporter
 from agent6.config import Config
 from agent6.events import EventSink
+from agent6.kinds import ModelRoute, session_kind
 from agent6.portable import atomic_write
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import (
@@ -32,7 +33,6 @@ from agent6.sessions.manifest import (
     read_manifest,
 )
 from agent6.task_text import operator_task_text
-from agent6.types import ModelRoute, session_kind
 
 
 def _policy_stamp(cfg: Config, isolation: str) -> PolicyStamp:

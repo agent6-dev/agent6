@@ -25,8 +25,8 @@ from textual.screen import Screen
 from textual.widgets import Footer, Select, Static, TextArea
 
 from agent6.directive import spec_fragment
+from agent6.kinds import OPERATOR_MODES
 from agent6.models.choices import default_label, default_preset, default_route
-from agent6.types import OPERATOR_MODES
 from agent6.ui.spawn import spawn_new_work
 from agent6.ui.tui.composer import SteerInput, SteerSuggest
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings

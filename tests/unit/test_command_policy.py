@@ -110,9 +110,9 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     """The asymmetry that matters: "no" to THIS command is not "no commands".
     Only deny-for-session, `run_commands = "no"` and `--no-commands` withdraw
     the tools; a single answer -- either way -- decides a single call."""
+    from agent6.kinds import JailPolicy
     from agent6.sandbox.jail import CommandResult
     from agent6.sessions.ipc import session_deny_set
-    from agent6.types import JailPolicy
 
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}

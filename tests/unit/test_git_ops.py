@@ -1806,7 +1806,7 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
     """`merge-tree --merge-base` needs git 2.40; an older git exits 129 with a
     usage error, which read as "merge-tree failed: <usage text>". The refusal
     names the git found and the floor."""
-    from agent6.types import CommandResult
+    from agent6.kinds import CommandResult
 
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha

@@ -76,7 +76,7 @@ def test_the_model_flag_survives_a_detach() -> None:
     """A `--model` route rides the detached execution's argv like the budget and
     sandbox flags, else the detached execution re-reads the config's model."""
     from agent6.app._setup import override_flags
-    from agent6.types import ModelRoute
+    from agent6.kinds import ModelRoute
 
     assert override_flags(None, None, ModelRoute("p", "m")) == ["--model", "p/m"]
     assert override_flags(None, None, None) == []

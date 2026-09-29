@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from agent6.kinds import CommandResult, IsolationLevel, JailPolicy
 from agent6.sandbox.jail import JailSession
-from agent6.types import CommandResult, IsolationLevel, JailPolicy
 
 # hardened and none need no namespaces; the strict case is marked per-test.
 _NO_NAMESPACE_LEVELS: tuple[IsolationLevel, ...] = ("hardened", "none")

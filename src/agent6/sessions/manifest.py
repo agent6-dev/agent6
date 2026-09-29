@@ -24,7 +24,7 @@ from typing import cast
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agent6.types import ResumableMode, UnknownSessionKind, session_kind
+from agent6.kinds import ResumableMode, UnknownSessionKind, session_kind
 
 _MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
 

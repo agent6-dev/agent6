@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from agent6.kinds import JailPolicy
 from agent6.sandbox.jail import run_in_jail
-from agent6.types import JailPolicy
 
 
 def test_none_profile_runs_plain_subprocess(tmp_path: Path) -> None:

@@ -35,6 +35,7 @@ from agent6.git_ops import (
 from agent6.git_ops import (
     status as git_status,
 )
+from agent6.kinds import RoleName
 from agent6.models.pricing import lookup_price
 from agent6.models.validate import (
     configured_model_refusal,
@@ -46,7 +47,6 @@ from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import AWAY_MODES, effective_run_commands
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.schema import UserQuestion
-from agent6.types import RoleName
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command, read_agents_md
 from agent6.viewmodel.format import clip_cell
 from agent6.viewmodel.listing import session_dirs

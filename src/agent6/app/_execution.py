@@ -58,6 +58,7 @@ from agent6.harness._provider_call import CallSettings
 from agent6.harness._reviewer import ReviewSettings
 from agent6.harness._snapshot import SessionEndReason
 from agent6.harness.loop import Harness, ResumeError, SessionResult
+from agent6.kinds import AutoCommitDirective, IsolationLevel, ResumableMode
 from agent6.paths import chown_to_real_user
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox.jail import SessionNetwork, survivors_message
@@ -76,7 +77,6 @@ from agent6.sessions.ipc import (
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.operator_prompts import OperatorPrompts
-from agent6.types import AutoCommitDirective, IsolationLevel, ResumableMode
 
 
 @dataclass(frozen=True, slots=True)

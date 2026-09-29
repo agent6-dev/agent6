@@ -11,7 +11,7 @@ from typing import Annotated, Any, ClassVar, get_args
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from agent6.graph.models import NodeStatus
-from agent6.types import session_kind
+from agent6.kinds import session_kind
 
 # Caps the tool descriptions quote, so the number the model reads and the
 # number the handler enforces cannot disagree.

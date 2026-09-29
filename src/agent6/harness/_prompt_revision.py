@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 from agent6.budget import BudgetExceeded
+from agent6.kinds import RepoSummary
 from agent6.prompts.revision import PROMPT_REVISION_SYSTEM_PROMPT
 from agent6.providers import Provider, ProviderError
-from agent6.types import RepoSummary
 
 # One leading list marker ("- ", "* ", "1. ", "2) "). A charset lstrip would
 # also eat leading digits of the question itself ("- 32-bit ..." -> "bit ...").

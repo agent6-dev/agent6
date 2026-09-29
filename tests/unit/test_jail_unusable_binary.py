@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
+from agent6.kinds import JailPolicy
 from agent6.sandbox import jail
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
-from agent6.types import JailPolicy
 
 
 def test_an_unusable_launcher_binary_is_refused_with_the_remedy(

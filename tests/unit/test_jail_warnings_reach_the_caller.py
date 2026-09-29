@@ -16,12 +16,12 @@ import tempfile
 from pathlib import Path
 
 from agent6.config import Config
+from agent6.kinds import CommandResult
 from agent6.sandbox.jail import (
     _with_launcher_warnings,  # pyright: ignore[reportPrivateUsage]
     run_in_jail,
 )
 from agent6.tools.policy import jail_policy
-from agent6.types import CommandResult
 
 WARNING = "[agent6-jail] warning: fresh /proc mount failed (EPERM: Operation not permitted)"
 

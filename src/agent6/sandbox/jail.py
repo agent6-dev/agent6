@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import IO, Any, NoReturn, cast
 
 from agent6.child_env import without_provider_keys
+from agent6.kinds import BackgroundHandoff, ChildSnapshot, CommandResult, JailPolicy
 from agent6.paths import hidden_paths, mkdir_for_real_user
-from agent6.types import BackgroundHandoff, ChildSnapshot, CommandResult, JailPolicy
 
 # Loaded at import, never between fork and exec: dlopen allocates, and another
 # thread mid-malloc at fork would deadlock a post-fork load.

@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent6.git_ops import is_git_repo, recent_log, status, toplevel, tracked_files
-from agent6.types import RepoSummary
+from agent6.kinds import RepoSummary
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6

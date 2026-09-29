@@ -30,6 +30,7 @@ from agent6.config import (
 from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.events import EventSink
 from agent6.git_ops import set_repo_filter_policy, set_repo_hook_policy
+from agent6.kinds import IsolationLevel, JailPolicy, ModelRoute, NetworkMode, session_kind
 from agent6.models.cache import list_models, refresh_pricing_catalog
 from agent6.providers.claude_code import login_status
 from agent6.sandbox import strict_namespaces_work
@@ -39,7 +40,6 @@ from agent6.secrets import SecretsError, load_oauth_tokens, load_secrets, resolv
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
 from agent6.tools.policy import jail_policy
-from agent6.types import IsolationLevel, JailPolicy, ModelRoute, NetworkMode, session_kind
 
 
 def detect_env() -> Environment:

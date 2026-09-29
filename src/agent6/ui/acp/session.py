@@ -20,10 +20,10 @@ from typing import Any
 
 from agent6.app.preflight import git_repo_refusal
 from agent6.app.stop import stop_session
+from agent6.kinds import session_bucket
 from agent6.sessions.id import friendly_token
 from agent6.sessions.ipc import request_stop
 from agent6.sessions.layout import SessionLayout
-from agent6.types import session_bucket
 from agent6.ui.acp.rpc import INVALID_PARAMS, RpcError
 
 # What ACP is told a turn ended as. `cancelled` is the operator's own act, so

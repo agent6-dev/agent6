@@ -279,8 +279,8 @@ def test_the_agent_seat_journals_under_a_driving_role(
     from agent6.app import machine_agent
     from agent6.budget import BudgetTracker
     from agent6.config import Config
+    from agent6.kinds import is_side_role
     from agent6.machine import AgentRequest
-    from agent6.types import is_side_role
 
     def stub_provider(*_args: object, **_kwargs: object) -> MagicMock:
         return MagicMock()

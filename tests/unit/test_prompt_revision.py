@@ -13,9 +13,9 @@ from agent6.harness._chain import RunChain
 from agent6.harness._prompt_revision import RevisionSettings, parse_prompt_revision
 from agent6.harness._provider_call import CallSettings
 from agent6.harness.loop import Harness
+from agent6.kinds import RepoSummary
 from agent6.providers import ProviderResponse
 from agent6.tools.results import ExecResult, RawResult
-from agent6.types import RepoSummary
 
 _VALID_TOML = """
 [agent6]

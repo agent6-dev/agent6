@@ -24,9 +24,9 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config
+from agent6.kinds import JailPolicy, NetworkMode
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.policy import jail_policy
-from agent6.types import JailPolicy, NetworkMode
 
 pytestmark = pytest.mark.needs_namespaces
 

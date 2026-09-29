@@ -33,9 +33,9 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.kinds import IsolationLevel, JailPolicy
 from agent6.sandbox import run_in_jail
 from agent6.sandbox.jail import JailUnavailableError
-from agent6.types import IsolationLevel, JailPolicy
 
 __all__ = ["OfflineTestOutcome", "available_tools", "lint_and_typecheck", "run_offline_tests"]
 

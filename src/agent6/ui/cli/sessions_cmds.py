@@ -31,6 +31,7 @@ from agent6.git_ops import (
     run_branch_for,
     run_ref_tips,
 )
+from agent6.kinds import SESSION_KINDS
 from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import worker_is_alive
@@ -46,7 +47,6 @@ from agent6.sessions.manifest import (
     model_git_refusal,
     read_manifest,
 )
-from agent6.types import SESSION_KINDS
 from agent6.ui.cli._common import (
     _runs_dir,
     error,

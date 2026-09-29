@@ -71,6 +71,7 @@ from agent6.harness._compaction import CompactionSettings
 from agent6.harness._operator import OperatorBridge
 from agent6.harness.loop import Harness
 from agent6.harness.subrun import SubrunError, clone_workspace
+from agent6.kinds import IsolationLevel
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
 from agent6.paths import state_dir
 from agent6.providers import Provider, TranscriptSink
@@ -96,7 +97,6 @@ from agent6.tools.operator_prompts import (
     QuestionAnswer,
     QuestionRequest,
 )
-from agent6.types import IsolationLevel
 from agent6.viewmodel.machine_state import Spend, read_budget_totals
 
 

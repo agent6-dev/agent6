@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.kinds import SESSION_KINDS, UnknownSessionKind, session_bucket
 from agent6.paths import state_dir
 from agent6.sessions.layout import (
     HUB_BUCKETS,
@@ -16,7 +17,6 @@ from agent6.sessions.layout import (
     SessionLayout,
     bucket_dir,
 )
-from agent6.types import SESSION_KINDS, UnknownSessionKind, session_bucket
 
 
 def test_a_bucket_is_the_mode_plus_s() -> None:

@@ -21,6 +21,7 @@ from agent6.harness._chain import RunChain
 from agent6.harness._loop_state import LoopState
 from agent6.harness._provider_call import CallSettings
 from agent6.harness.loop import Harness
+from agent6.kinds import RepoSummary
 from agent6.providers import ProviderResponse
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.mcp_client import MCPManager
@@ -36,7 +37,6 @@ from agent6.tools.schema import (
     RunCommandInput,
     RunMetricInput,
 )
-from agent6.types import RepoSummary
 
 _VALID_TOML = """
 [agent6]
@@ -745,7 +745,7 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: Path) -> None:
     memory block; nothing renders when none are recorded."""
     from agent6.config import Config
     from agent6.harness.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
-    from agent6.types import RepoSummary
+    from agent6.kinds import RepoSummary
 
     repo = RepoSummary(
         root=tmp_path,

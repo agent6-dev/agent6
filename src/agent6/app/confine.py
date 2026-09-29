@@ -18,6 +18,7 @@ from pathlib import Path
 from agent6.app._setup import detect_env, mcp_server_policy
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config, MCPServerEntry
+from agent6.kinds import IsolationLevel
 from agent6.models.registry import resolved_adaptive_values
 from agent6.paths import hidden_paths, is_root, jail_cache_home, private_dirs
 from agent6.sandbox.detect import Environment, degrade_reason, resolve_isolation
@@ -29,7 +30,6 @@ from agent6.tools.policy import (
     persistent_jail_home,
     resolve_network,
 )
-from agent6.types import IsolationLevel
 
 
 def warn_sandbox_gaps(

@@ -16,8 +16,8 @@ from agent6.app.fork import create_fork
 from agent6.app.preflight import headless_approval_refusal
 from agent6.app.resume import resume_task
 from agent6.config import Config
+from agent6.kinds import session_kind
 from agent6.sessions.id import SessionIdError
-from agent6.types import session_kind
 from agent6.ui.cli._common import error, resolve_or_newest_layout
 from agent6.ui.cli.run import session_frontend
 from agent6.viewmodel.listing import finished_needs_new_work

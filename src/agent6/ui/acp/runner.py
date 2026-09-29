@@ -37,10 +37,10 @@ from agent6.app.reporter import Reporter
 from agent6.app.resume import resume_task
 from agent6.app.run import run_task
 from agent6.errors import OperatorError
+from agent6.kinds import is_side_role, session_bucket
 from agent6.paths import state_dir
 from agent6.sessions.id import unused_session_id
 from agent6.sessions.ipc import clear_stop_request
-from agent6.types import is_side_role, session_bucket
 from agent6.ui.acp.frontend import PERMISSION_TIMEOUT_S, acp_frontend
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import ACP_MODE, Session, Sessions, StopReason

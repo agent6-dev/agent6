@@ -35,6 +35,7 @@ from agent6.config.io import upsert_toml_leaf
 from agent6.config.layer import (
     load_effective_with_overlay,
 )
+from agent6.kinds import IsolationLevel
 from agent6.machine import (
     EngineError,
     JournalError,
@@ -51,7 +52,6 @@ from agent6.paths import chown_to_real_user, mkdir_for_real_user, repo_config_pa
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import machines_root
-from agent6.types import IsolationLevel
 from agent6.ui.cli._common import error, plural, refuse, safe_input, styled_status
 from agent6.ui.cli.machine_check import _cmd_machine_test, _fail
 from agent6.ui.cli.plan_watch import format_plain_event

@@ -405,7 +405,7 @@ def test_a_known_mode_is_never_reported_as_an_unknown_one(tmp_path: Path) -> Non
     distinguished: a mode this agent6 does not know, and a known mode that
     resume cannot pick up.
     """
-    from agent6.types import SESSION_KINDS
+    from agent6.kinds import SESSION_KINDS
 
     for name, kind in SESSION_KINDS.items():
         session_dir = tmp_path / name
@@ -421,8 +421,8 @@ def test_a_known_mode_is_never_reported_as_an_unknown_one(tmp_path: Path) -> Non
 
 def test_each_mode_gets_its_own_tool_surface() -> None:
     """Read off the record, not re-derived per call site."""
+    from agent6.kinds import SESSION_KINDS, UnknownSessionKind
     from agent6.tools.schema import ASK_EXTRA_TOOLS, MACHINE_EXTRA_TOOLS, mode_tools
-    from agent6.types import SESSION_KINDS, UnknownSessionKind
 
     assert mode_tools("machine").extras == MACHINE_EXTRA_TOOLS
     assert mode_tools("agent").extras == MACHINE_EXTRA_TOOLS

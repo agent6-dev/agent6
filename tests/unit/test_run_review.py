@@ -17,11 +17,11 @@ import pytest
 
 from agent6.config import Config
 from agent6.harness.run_review import RunReviewError, run_digest, run_review
+from agent6.kinds import RoleName
 from agent6.memory import add, record_use
 from agent6.paths import state_dir
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions.layout import SessionLayout
-from agent6.types import RoleName
 from agent6.ui.cli import main
 from agent6.ui.cli import sessions_review as review_mod
 

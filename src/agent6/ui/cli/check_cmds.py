@@ -29,6 +29,7 @@ from agent6.config.layer import (
     load_effective,
 )
 from agent6.git_ops import GitError, git_common_dir
+from agent6.kinds import CommandResult, IsolationLevel, JailPolicy, SandboxReport
 from agent6.paths import private_dirs, secrets_path, state_dir
 from agent6.sandbox import (
     JailUnavailableError,
@@ -54,7 +55,6 @@ from agent6.tools.policy import (
     resolve_network,
     workspace_for,
 )
-from agent6.types import CommandResult, IsolationLevel, JailPolicy, SandboxReport
 from agent6.verify_infer import infer_verify_command, read_agents_md
 
 # Mirrors SYSTEM_BINDS in src/agent6/jail/src/main.rs (the strict rootfs's

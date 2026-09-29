@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from agent6.harness._reviewer import ReviewDispatch
+from agent6.kinds import session_kind
 from agent6.providers import ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.results import ToolResult
@@ -24,7 +25,6 @@ from agent6.tools.schema import (
     mode_tools,
     wire_schema,
 )
-from agent6.types import session_kind
 
 # The ONLY tools an explore-tier reviewer may use: read-only navigation, no
 # edits/commits/run_command/dag/finish. Enforced both by what we expose AND by

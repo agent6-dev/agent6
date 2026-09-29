@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent6.kinds import JailPolicy
 from agent6.sandbox.jail import _policy_spec  # pyright: ignore[reportPrivateUsage]
-from agent6.types import JailPolicy
 
 
 def _fields(policy: JailPolicy) -> dict[str, object]:

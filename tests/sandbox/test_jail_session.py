@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from agent6.kinds import CommandResult, JailPolicy
 from agent6.sandbox.jail import JailSession, JailUnavailableError
-from agent6.types import CommandResult, JailPolicy
 
 pytestmark = pytest.mark.needs_namespaces
 

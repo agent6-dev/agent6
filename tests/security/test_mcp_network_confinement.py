@@ -21,9 +21,9 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config
+from agent6.kinds import NetworkMode
 from agent6.sandbox.jail import spawn_in_jail
 from agent6.tools.policy import jail_policy
-from agent6.types import NetworkMode
 
 pytestmark = pytest.mark.needs_namespaces
 

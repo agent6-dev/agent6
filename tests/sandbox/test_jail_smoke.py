@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from agent6.kinds import IsolationLevel, JailPolicy
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
-from agent6.types import IsolationLevel, JailPolicy
 from tests.jail_env import require_userns_jail
 
 

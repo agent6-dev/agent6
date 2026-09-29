@@ -14,9 +14,9 @@ from agent6.directive import DirectiveError, parse_directive, parse_pin
 from agent6.harness._conversation import last_assistant_prose
 from agent6.harness._nudges import ending_question
 from agent6.harness.subrun import GroupLaneSpawner
+from agent6.kinds import AutoCommitDirective
 from agent6.sessions.ipc import OperatorRequest
 from agent6.skills import skill_command, skill_steer_payload
-from agent6.types import AutoCommitDirective
 
 if TYPE_CHECKING:
     from agent6.harness._conversation import Conversation

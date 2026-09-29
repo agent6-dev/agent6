@@ -18,6 +18,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.harness.loop import Harness, SessionResult
 from agent6.harness.subrun import GroupLaneSpawner
+from agent6.kinds import AutoCommitDirective, IsolationLevel
 from agent6.portable import has_controlling_tty
 from agent6.sessions.ipc import (
     AWAY_MODES,
@@ -32,7 +33,6 @@ from agent6.sessions.ipc import (
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.operator_prompts import Approver, Questioner
-from agent6.types import AutoCommitDirective, IsolationLevel
 
 
 @dataclass(frozen=True, slots=True)

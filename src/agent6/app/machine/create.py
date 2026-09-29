@@ -31,6 +31,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import load_effective
 from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, GitError, init_repo, verify_git_identity
+from agent6.kinds import session_bucket
 from agent6.machine import (
     AgentRequest,
     MachineError,
@@ -44,7 +45,6 @@ from agent6.portable import atomic_write
 from agent6.sessions.id import unused_session_id
 from agent6.sessions.ipc import emit_session_start
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
-from agent6.types import session_bucket
 
 _CREATE_TIMEOUT_S = 900.0
 

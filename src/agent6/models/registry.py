@@ -11,9 +11,9 @@ from __future__ import annotations
 import re
 
 from agent6.config import Config
+from agent6.kinds import RoleName
 from agent6.models.cache import cached_context_window
 from agent6.providers.openai import is_openai_direct_host, sent_reasoning_effort
-from agent6.types import RoleName
 
 __all__ = [
     "BUNDLED_CONTEXT_WINDOWS",

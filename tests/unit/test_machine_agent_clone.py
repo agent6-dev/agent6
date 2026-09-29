@@ -204,7 +204,7 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
     runner clones the chain tip per call, remaps the bundle protect paths to
     the clone's own copy, and discards the tree after."""
     from agent6.app.machine import run as machine_run
-    from agent6.types import CommandResult, JailPolicy
+    from agent6.kinds import CommandResult, JailPolicy
 
     origin = _origin(tmp_path)
     _git(origin, "checkout", "-q", "-b", "scratch")

@@ -79,6 +79,7 @@ from agent6.harness.subrun import (
     clone_workspace,
     import_run,
 )
+from agent6.kinds import ModelRoute, session_bucket
 from agent6.memory import merge_decisions, merge_memory, merge_use, seed_store
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, mkdir_for_real_user, repo_id, state_dir
@@ -101,7 +102,6 @@ from agent6.sessions.manifest import (
     SessionManifest,
     read_manifest,
 )
-from agent6.types import ModelRoute, session_bucket
 from agent6.viewmodel import produced_result, summarize_session_dir
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import HUB_BUCKETS

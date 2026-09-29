@@ -18,9 +18,9 @@ from rich.text import Text
 from textual.widgets import Static
 
 from agent6.graph.order import DONE_STATUSES
+from agent6.kinds import SESSION_KINDS
 from agent6.sessions.ipc import listening_ports
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.types import SESSION_KINDS
 from agent6.ui.tui.theme import status_style
 from agent6.viewmodel import manifest_branches, manifest_header, session_compare
 from agent6.viewmodel.format import format_compare, format_usd, spinner_frame, status_label

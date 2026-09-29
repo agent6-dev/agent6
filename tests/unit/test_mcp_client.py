@@ -22,13 +22,13 @@ from pathlib import Path
 
 import pytest
 
+from agent6.kinds import JailPolicy
 from agent6.tools.mcp_client import (
     MCP_TOOL_PREFIX,
     MCPError,
     MCPManager,
     MCPServerSpec,
 )
-from agent6.types import JailPolicy
 
 
 def _fake_server_argv(

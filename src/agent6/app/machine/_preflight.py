@@ -20,8 +20,8 @@ from pathlib import Path
 from agent6.app.confine import check_network_support
 from agent6.app.finalize import hook_env, run_notify_hook
 from agent6.config import Config
+from agent6.kinds import IsolationLevel
 from agent6.machine import StateSpec, ToolState
-from agent6.types import IsolationLevel
 
 
 def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> str | None:

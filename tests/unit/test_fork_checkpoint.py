@@ -35,9 +35,9 @@ from agent6.harness.loop import (
     Harness,
     LoopState,
 )
+from agent6.kinds import session_bucket
 from agent6.paths import global_config_dir, state_dir
 from agent6.sessions.layout import SessionLayout
-from agent6.types import session_bucket
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 

@@ -29,9 +29,9 @@ from agent6.config import (
 )
 from agent6.errors import OperatorError
 from agent6.events import EventSink
+from agent6.kinds import ResumableMode, session_kind
 from agent6.paths import data_dir
 from agent6.skills import operator_skills
-from agent6.types import ResumableMode, session_kind
 from agent6.ui.btw import asks_dir, direct_launch, make_btw_runner
 from agent6.ui.cli._ask import (
     build_session_seed,

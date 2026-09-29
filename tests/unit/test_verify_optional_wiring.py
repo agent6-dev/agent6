@@ -22,9 +22,9 @@ from agent6.harness._chain import RunChain
 from agent6.harness._prompt_blocks import build_system_prompt
 from agent6.harness._snapshot import SNAPSHOT_VERSION
 from agent6.harness._verify_verdict import VerifyVerdict
+from agent6.kinds import RepoSummary
 from agent6.paths import state_dir
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.types import RepoSummary
 
 
 def _cfg(*, verify: bool) -> Config:

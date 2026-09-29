@@ -62,6 +62,7 @@ from agent6.git_ops import (
     verify_git_identity,
 )
 from agent6.harness.subrun import SubrunError
+from agent6.kinds import CommandResult, IsolationLevel, JailPolicy, NetworkMode
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,
@@ -86,7 +87,6 @@ from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
 from agent6.sessions.layout import machines_root
 from agent6.tools.policy import jail_policy, passthrough_env
-from agent6.types import CommandResult, IsolationLevel, JailPolicy, NetworkMode
 from agent6.viewmodel.format import format_usd
 from agent6.viewmodel.machine_state import machine_spend, wait_line
 

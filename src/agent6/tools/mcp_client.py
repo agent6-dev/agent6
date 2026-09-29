@@ -52,6 +52,7 @@ from typing import Any
 
 from agent6 import __version__
 from agent6.child_env import curated_env
+from agent6.kinds import JailPolicy
 from agent6.portable import drain_stderr, stderr_tail
 from agent6.sandbox.jail import (
     JailedProcess,
@@ -60,7 +61,6 @@ from agent6.sandbox.jail import (
     spawn_in_jail,
 )
 from agent6.tools.mcp_http import HttpTransport, MCPHttpError, MCPSessionExpired
-from agent6.types import JailPolicy
 
 # MCP protocol version we speak. The spec is versioned by date string;
 # we negotiate this in `initialize` and accept whatever the server says

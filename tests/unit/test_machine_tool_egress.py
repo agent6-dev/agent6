@@ -19,10 +19,10 @@ from agent6.app.machine import (
 )
 from agent6.app.machine.run import machine_tool_policy_factory
 from agent6.config import Config
+from agent6.kinds import NetworkMode
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
 from agent6.paths import jail_cache_home
-from agent6.types import NetworkMode
 from agent6.ui.cli.machine_cmds import (
     _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
 )

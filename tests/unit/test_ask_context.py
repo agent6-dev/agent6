@@ -234,7 +234,7 @@ def test_load_repo_summary_outside_git(tmp_path: Path) -> None:
 def test_system_prompt_names_non_git_directory(tmp_path: Path) -> None:
     from agent6.config import load_config
     from agent6.harness.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
-    from agent6.types import RepoSummary
+    from agent6.kinds import RepoSummary
 
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(
@@ -271,7 +271,7 @@ def test_prompt_revision_context_names_non_git_directory(tmp_path: Path) -> None
     """The reviser context degrades the same way the worker prompt does:
     outside git it names the situation instead of a fake empty repo header."""
     from agent6.harness._prompt_revision import format_prompt_revision_context
-    from agent6.types import RepoSummary
+    from agent6.kinds import RepoSummary
 
     repo = RepoSummary(
         root=tmp_path,

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Environment + kernel detection for the sandbox.
 
-Read-only, and a leaf: imports only `agent6.types` and the sibling `landlock`
+Read-only, and a leaf: imports only `agent6.kinds` and the sibling `landlock`
 probe, never the rest of the sandbox stack. Probes shell out with fixed argv
 from operator input only.
 """
@@ -18,8 +18,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.kinds import IsolationLevel
 from agent6.sandbox.landlock import LandlockError, landlock_abi
-from agent6.types import IsolationLevel
 
 
 @dataclass(frozen=True, slots=True)

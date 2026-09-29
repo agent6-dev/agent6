@@ -70,6 +70,7 @@ from agent6.graph.storage import (
     write_node,
 )
 from agent6.harness._snapshot import load_session_snapshot
+from agent6.kinds import ModelRoute, ResumableMode, session_bucket, session_kind
 from agent6.paths import state_dir
 from agent6.portable import atomic_write
 from agent6.sandbox.detect import resolve_isolation
@@ -90,7 +91,6 @@ from agent6.sessions.manifest import (
     model_git_refusal,
     read_manifest,
 )
-from agent6.types import ModelRoute, ResumableMode, session_bucket, session_kind
 from agent6.viewmodel import newest_session_dir
 
 # Curator-owned DAG artifacts copied verbatim into the fork; each is a

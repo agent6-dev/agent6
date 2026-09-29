@@ -286,8 +286,8 @@ def test_exec_refuses_a_run_that_is_over(
     import os
 
     from agent6.config import Config
+    from agent6.kinds import JailPolicy
     from agent6.sessions.layout import SessionLayout
-    from agent6.types import JailPolicy
     from agent6.ui.cli.net_cmds import exec_in_session
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -329,8 +329,8 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     from types import SimpleNamespace
 
     from agent6.config import Config
+    from agent6.kinds import JailPolicy
     from agent6.sessions.ipc import write_session_netns_pid
-    from agent6.types import JailPolicy
     from agent6.ui.cli import net_cmds
 
     layout = SessionLayout(state_dir=tmp_path / "state", session_id="live-run-AAAA11")

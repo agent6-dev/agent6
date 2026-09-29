@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from agent6.app.stop import StopOutcome, stop_session
+from agent6.kinds import JailPolicy
 from agent6.sessions.ipc import (
     STEER_ANSWER_FILE,
     STOP_REQUEST_FILE,
@@ -23,7 +24,6 @@ from agent6.sessions.ipc import (
     write_worker_pid,
 )
 from agent6.tools.background import BackgroundShells, shell_host_processes
-from agent6.types import JailPolicy
 
 _ANSWERING_WORKER = """
 import json, sys, time

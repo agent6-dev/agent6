@@ -69,6 +69,7 @@ from agent6.git_ops import (
     untracked_paths,
 )
 from agent6.harness._context import agents_md_notices
+from agent6.kinds import ModelRoute, ResumableMode, session_bucket, session_kind
 from agent6.paths import state_dir
 from agent6.providers import TranscriptSink
 from agent6.sessions.id import (
@@ -98,7 +99,6 @@ from agent6.sessions.lock import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.operator_prompts import OperatorPrompts
-from agent6.types import ModelRoute, ResumableMode, session_bucket, session_kind
 from agent6.viewmodel.listing import finished_needs_new_work
 
 

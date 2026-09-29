@@ -13,6 +13,7 @@ import pytest
 
 from agent6.app.machine.run import machine_tool_policy_factory
 from agent6.config import Config
+from agent6.kinds import NetworkMode
 from agent6.machine._semantics import load_machine
 from agent6.machine.engine import (
     AgentExecResult,
@@ -36,7 +37,6 @@ from agent6.machine.journal import (
     StepEvent,
     ToolFact,
 )
-from agent6.types import NetworkMode
 
 # A minimal tool/branch/terminal machine: scan -> (branch on items) -> record -> stop.
 COUNTER = """
@@ -812,7 +812,7 @@ def test_run_tool_uses_the_injected_jail_runner(tmp_path: Path) -> None:
     """The tool step executes through LiveWorld.jail_runner, the seam the CLI
     overrides so a run-machine's tools run in the machine's own tree; the
     default stays the plain jail."""
-    from agent6.types import CommandResult, JailPolicy
+    from agent6.kinds import CommandResult, JailPolicy
 
     seen: list[JailPolicy] = []
 
@@ -1008,9 +1008,9 @@ def test_data_dir_env_matches_jail_mount(tmp_path: Path, monkeypatch: pytest.Mon
     # The data dir lives OUTSIDE cwd by design; the jail mounts extra_rw_paths
     # at their real locations in every isolation, so `$AGENT6_MACHINE_DATA_DIR`
     # is always the host abspath (strict used to need a /rw prefix rewrite).
+    from agent6.kinds import CommandResult, IsolationLevel, JailPolicy
     from agent6.machine import engine
     from agent6.machine.engine import LiveWorld
-    from agent6.types import CommandResult, IsolationLevel, JailPolicy
 
     data_dir = tmp_path / "state" / "machines" / "m" / "data"
     captured: dict[str, JailPolicy] = {}
@@ -1043,9 +1043,9 @@ def test_tool_jails_carry_the_operator_hide_paths(
     """A machine's tool jails are jailed commands like any other, so
     [sandbox].hide_paths reaches them (agent6's own private dirs are unioned
     in by the launcher and need no wiring)."""
+    from agent6.kinds import CommandResult, JailPolicy
     from agent6.machine import engine
     from agent6.machine.engine import LiveWorld
-    from agent6.types import CommandResult, JailPolicy
 
     captured: dict[str, JailPolicy] = {}
 
@@ -1075,9 +1075,9 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
     tool state's on.timeout transition is reachable; the old `except
     TimeoutExpired` was dead code and every real timeout returned
     timed_out=False (routing to on.nonzero and journaling not-timed-out)."""
+    from agent6.kinds import CommandResult, JailPolicy
     from agent6.machine import engine
     from agent6.machine.engine import LiveWorld
-    from agent6.types import CommandResult, JailPolicy
 
     def fake_run_in_jail(policy: JailPolicy) -> CommandResult:
         # The launcher SIGKILLed the child at the deadline and reported rc=124.
@@ -1715,10 +1715,10 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
     # mounts that make it true (sandbox.tool_paths.operator_tool_paths). Copying the
     # host PATH named dirs the jail never mounts, so a tool `machine check`
     # proved reachable still died 127 on the machine's first real transition.
+    from agent6.kinds import CommandResult, JailPolicy
     from agent6.machine import engine as engine_mod
     from agent6.machine.engine import LiveWorld
     from agent6.machine.journal import MachineJournal
-    from agent6.types import CommandResult, JailPolicy
 
     captured: dict[str, JailPolicy] = {}
 

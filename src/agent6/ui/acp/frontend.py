@@ -25,6 +25,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.harness.loop import Harness, SessionResult
+from agent6.kinds import AutoCommitDirective, IsolationLevel
 from agent6.sessions.ipc import (
     answer_written,
     question_answers_written,
@@ -41,7 +42,6 @@ from agent6.tools.operator_prompts import (
     Questioner,
     QuestionRequest,
 )
-from agent6.types import AutoCommitDirective, IsolationLevel
 from agent6.ui.steer import file_bridge_steer
 
 # How long a permission request waits for the editor. An operator who has

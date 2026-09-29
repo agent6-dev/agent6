@@ -17,10 +17,10 @@ if TYPE_CHECKING:
 
 from agent6.budget import BudgetTracker
 from agent6.init import init_workspace
+from agent6.kinds import AutoCommitDirective
 from agent6.paths import repo_config_path, state_dir
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.tools.mcp_client import MCPManager
-from agent6.types import AutoCommitDirective
 from agent6.ui.cli._interact import _pause
 from agent6.ui.cli._steer import idle_prompt_sigint
 from agent6.ui.cli.plan_watch import (

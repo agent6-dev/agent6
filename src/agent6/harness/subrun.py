@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Protocol
 
 from agent6.git_ops import GitError, branch_exists, clone_repo, fetch_branch
+from agent6.kinds import ModelRoute
 from agent6.paths import mkdir_for_real_user
 from agent6.sessions.layout import bucket_dir
-from agent6.types import ModelRoute
 
 
 class SubrunError(Exception):

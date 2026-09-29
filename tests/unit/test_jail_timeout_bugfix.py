@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from agent6.kinds import JailPolicy
 from agent6.sandbox import jail
-from agent6.types import JailPolicy
 
 
 def _write_fake_launcher(tmp_path: Path) -> Path:

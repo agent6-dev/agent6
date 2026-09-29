@@ -18,10 +18,10 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.kinds import is_side_role
 from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.schema import ROSTER_MAX
-from agent6.types import is_side_role
 
 # What a reader needs from another session: who said what, and from which
 # field. Deltas are the same prose arriving in pieces, so only the settled

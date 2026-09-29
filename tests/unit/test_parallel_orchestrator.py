@@ -35,10 +35,10 @@ from agent6.config import Config, ConfigError
 from agent6.directive import DirectiveError
 from agent6.git_ops import branch_exists, commit_all, create_branch
 from agent6.harness.subrun import LaneResult, LaneSpec, LaneTask, clone_workspace
+from agent6.kinds import ModelRoute
 from agent6.memory import decisions_text, record_decision
 from agent6.paths import state_dir
 from agent6.sessions.manifest import ParallelLineage, read_manifest
-from agent6.types import ModelRoute
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli.parallel import lane_runtime
 from agent6.viewmodel.listing import summarize_session_dir

@@ -18,10 +18,10 @@ import httpx2
 import pytest
 
 from agent6.config import Config
+from agent6.kinds import IsolationLevel
 from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
 from agent6.tools.fetch import MAX_BYTES, FetchRefused, check_url, fetch, host_allowed
 from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
-from agent6.types import IsolationLevel
 
 
 class _Body(httpx2.SyncByteStream):

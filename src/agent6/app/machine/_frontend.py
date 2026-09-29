@@ -12,8 +12,8 @@ from typing import Any
 from agent6.app.machine._preflight import NetworkRefusal
 from agent6.app.reporter import Reporter
 from agent6.config import Config
+from agent6.kinds import IsolationLevel
 from agent6.machine import ToolState
-from agent6.types import IsolationLevel
 
 # A hard tool-network refusal is resolved interactively: explain it, then offer
 # to apply the minimal config fix and continue, simulate the machine offline, or

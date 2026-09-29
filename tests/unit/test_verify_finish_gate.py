@@ -541,7 +541,7 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
 
 def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
     from agent6.harness._prompt_blocks import build_system_prompt
-    from agent6.types import RepoSummary
+    from agent6.kinds import RepoSummary
 
     repo = RepoSummary(
         root=Path("/tmp"),

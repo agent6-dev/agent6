@@ -17,10 +17,10 @@ from types import SimpleNamespace
 import pytest
 
 from agent6.config import Config, SandboxConfig
+from agent6.kinds import CommandResult, JailPolicy
 from agent6.sandbox.detect import IsolationUnavailableError
 from agent6.sandbox.jail import JailUnavailableError
 from agent6.sandbox.landlock import LandlockError
-from agent6.types import CommandResult, JailPolicy
 from agent6.ui.cli import check_cmds
 
 

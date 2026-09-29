@@ -11,11 +11,11 @@ from pathlib import Path
 
 from agent6.config import Config, ConfigError
 from agent6.config.layer import EffectiveConfig, load_effective, preset_catalog
+from agent6.kinds import session_kind
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import ROLES
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.types import session_kind
 
 
 def provider_model_choices(cfg: Config, provider: str) -> list[str]:
