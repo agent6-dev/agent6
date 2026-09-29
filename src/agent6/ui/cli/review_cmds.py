@@ -7,6 +7,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from agent6.app._setup import budget_tracker, check_provider_keys
@@ -20,7 +21,8 @@ from agent6.config import (
 )
 from agent6.config.layer import load_effective
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, chain_tip, git_hardening_flags
-from agent6.paths import state_dir
+from agent6.paths import mkdir_for_real_user, state_dir
+from agent6.portable import atomic_write
 from agent6.providers import (
     ProviderError,
     TranscriptSink,
@@ -93,6 +95,22 @@ def _collect_review_diff(
             )
 
 
+def save_review(reviews_dir: Path, *, label: str, body: str) -> Path:
+    """Write one rendered review under *reviews_dir* (beside the provider
+    transcripts) and return its path: `<utc-stamp>-review.md`, a `# review:
+    <label>` line, then *body*. A later session working on a module finds
+    its review by searching the directory for the path."""
+    mkdir_for_real_user(reviews_dir)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    path = reviews_dir / f"{stamp}-review.md"
+    n = 1
+    while path.exists():
+        n += 1
+        path = reviews_dir / f"{stamp}-{n}-review.md"
+    atomic_write(path, f"# review: {label}\n\n{body.rstrip()}\n".encode())
+    return path
+
+
 def _is_checked_out(git: str, root: Path, rev: str) -> bool:
     """True when the checkout at *root* is *rev*: that commit, with nothing
     uncommitted on top. An explore-tier seat's read-only tools read the
@@ -124,10 +142,12 @@ def _run_review_panel(
     reviewers: int,
     personas: str,
     transcript_sink: TranscriptSink,
+    reviews_dir: Path,
     budget: BudgetTracker,
 ) -> int:
     """Run the grounded adversarial review panel over *diff* and print a verdict
-    + merged findings. Read-only. Per-seat status and budget go to stderr.
+    + merged findings, saved under *reviews_dir* as well. Read-only. Per-seat
+    status and budget go to stderr.
 
     The exit code carries the verdict, on `agent6 run`'s scale: 0 = PASS
     (clean or with non-blocking findings), 1 = INCONCLUSIVE (every seat
@@ -202,6 +222,10 @@ def _run_review_panel(
     body = render_findings(result.merged_findings)
     stdout = f"VERDICT: {verdict}\n" + (f"{body}\n" if body else "")
     print(stdout, end="", flush=True)
+    print(
+        f"[agent6] review saved: {save_review(reviews_dir, label=label, body=stdout)}",
+        file=sys.stderr,
+    )
     transcript_sink.record(
         url="agent6://review-panel/result",
         request_headers={},
@@ -338,6 +362,7 @@ def _cmd_review(  # noqa: PLR0911
             reviewers=reviewers,
             personas=personas,
             transcript_sink=transcript_sink,
+            reviews_dir=layout_root,
             budget=budget,
         )
 
@@ -368,5 +393,9 @@ def _cmd_review(  # noqa: PLR0911
         return 3
 
     print(text, flush=True)
+    print(
+        f"[agent6] review saved: {save_review(layout_root, label=label, body=text)}",
+        file=sys.stderr,
+    )
     print(budget.format_summary(), file=sys.stderr)
     return 0

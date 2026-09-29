@@ -413,6 +413,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         reviewers=3,
         personas="security,correctness,tests",
         transcript_sink=TranscriptSink(tmp_path),
+        reviews_dir=tmp_path / "reviews",
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
     )
     out, err = capsys.readouterr()
@@ -426,7 +427,9 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
     assert record["response"]["body"]["stdout"] == out
 
 
-def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys: Any) -> None:
+def test_review_exit_code_is_consistent_across_verdicts(
+    monkeypatch: Any, capsys: Any, tmp_path: Path
+) -> None:
     """The exit code carried the verdict for INCONCLUSIVE (1) but left BLOCK at
     0 -- a CI gate passed a security block and failed on 'nothing reviewed'.
     PASS 0, INCONCLUSIVE 1, BLOCK 2, consistently."""
@@ -474,6 +477,7 @@ def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys
             reviewers=1,
             personas="security",
             transcript_sink=MagicMock(),
+            reviews_dir=tmp_path,
             budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         )
         capsys.readouterr()

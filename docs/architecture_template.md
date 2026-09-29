@@ -172,6 +172,7 @@ The table routes <!-- generated: tool-names -->.
 
 A single read-only pass ([workflows/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/code_review.py)) over a diff: the working tree, a branch against a base, or an arbitrary range.
 It prints a markdown review, and makes no edits, no commits, and no `run_command`; `--reviewers N` runs the adversarial panel instead, which returns structured findings.
+Either output is also saved as `<stamp>-review.md` under `<state-dir>/reviews/`, beside the provider transcripts, so a later session reads a module's review there.
 
 ## Parallel runs
 
