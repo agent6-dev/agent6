@@ -298,7 +298,7 @@ class Workflow:
     # the loop's own session.end emitters use.
     iterations_reached: int = field(default=0, init=False)
 
-    # ---- run / resume entry ----------------------------------------------------
+    # ---- run / resume entry --------------------------------------------------
 
     def run(self, user_task: str) -> SessionResult:
         """Drive the single-loop agent to completion."""
@@ -453,6 +453,8 @@ class Workflow:
             resume_from=snapshot,
         )
 
+    # ---- snapshots and carryover ---------------------------------------------
+
     def _seed_carryover(
         self, state: LoopState, conversation: Conversation, resume_from: SessionSnapshot | None
     ) -> None:
@@ -530,7 +532,83 @@ class Workflow:
             state.verify.last_ok = snap.last_verify_ok
             state.verify.edited_since = snap.edited_since_verify
 
-    # ---- the turn pipeline -----------------------------------------------------
+    def _save_resume_snapshot(
+        self,
+        state: LoopState,
+        messages: list[dict[str, Any]],
+        *,
+        next_iteration: int,
+        write_checkpoint: bool = False,
+    ) -> None:
+        """Write loop state to disk for resume.
+
+        Called before each LLM call and again at the end of each iteration
+        (after the executed tool_results are appended) so a crash after a
+        non-idempotent tool dispatch resumes from AFTER the executed tools
+        rather than replaying them. Every call advances `loop_state.json`
+        (the latest pointer resume follows); only the pre-call save passes
+        `write_checkpoint` and owns `checkpoints/<next_iteration>.json` -- the
+        state that turn's provider call consumes, written once, so
+        `fork --at-turn N` has one meaning. Atomic via tmp-file + replace so a
+        crash mid-write leaves the prior snapshot intact. No-op if
+        `resume_state_path` is None (e.g. unit tests).
+        """
+        if self.resume_state_path is None:
+            return
+        goal = self.metrics.goal
+        best = best_metric_sample(state.metric.history, goal=goal) if goal is not None else None
+        snapshot = SessionSnapshot(
+            system=state.system,
+            messages=messages,
+            tool_calls=state.tool_calls,
+            next_iteration=next_iteration,
+            root_task_id=state.root_task_id,
+            original_task=state.original_task,
+            verify_command=self.gate.command(state.verify),
+            review_rejections_total=state.gates.review_total,
+            verify_ever_passed=state.verify.ever_passed,
+            verify_ever_failed=state.verify.ever_failed,
+            gateless_ever_edited=state.settled.gateless_ever_edited,
+            parallel_groups_dispatched=state.parallel_groups_dispatched,
+            pins=tuple(state.pins),
+            metric_best_score=best.score if best is not None else None,
+            metric_at_ceiling=state.metric.at_ceiling(),
+            last_verify_ok=state.verify.last_ok,
+            edited_since_verify=state.verify.edited_since,
+            baseline_ok=state.verify.baseline_ok,
+            verify_scoped=state.verify.scoped,
+            memory_written=state.memory.written,
+            memory_flip_nudged=state.memory.flip_nudged,
+            memory_finish_nudged=state.memory.finish_nudged,
+            standing_tools_mark=state.standing.tools_mark,
+            standing_fruitless=state.standing.fruitless,
+            ok_tool_calls=state.ok_tool_calls,
+            head_sha=self.chain.checkpoint_head_sha(),
+            graph_version=self._checkpoint_graph_version(),
+        )
+        blob = snapshot.model_dump_json()
+        # The snapshot is recovery state, not run output: an unwritable state dir
+        # (full disk, quota, read-only mount) disables resume/fork but must not
+        # abort an otherwise-healthy run whose edits + commits are already on disk
+        # independently. Warn once, then continue.
+        try:
+            # Write the append-only checkpoint first, then advance loop_state.json
+            # as the latest pointer. If the second write fails, default fork still
+            # follows loop_state.json, while explicit --at-turn can use the durable
+            # checkpoint.
+            if write_checkpoint:
+                cp_dir = self.resume_state_path.parent / "checkpoints"
+                atomic_write(cp_dir / f"{next_iteration:04d}.json", blob)
+            atomic_write(self.resume_state_path, blob)
+        except OSError as exc:
+            if not self._snapshot_write_failed:
+                self._snapshot_write_failed = True
+                self._log(
+                    f"LOOP: WARNING could not persist resume snapshot ({exc}); "
+                    "resume/fork are unavailable for this run, continuing anyway"
+                )
+
+    # ---- the turn pipeline ---------------------------------------------------
 
     def _drive_loop(  # noqa: PLR0911, PLR0912
         self,
@@ -731,6 +809,115 @@ class Workflow:
         self._save_resume_snapshot(state, wire, next_iteration=ctx.iteration, write_checkpoint=True)
         return wire
 
+    def _maybe_inject_plan(
+        self, conversation: Conversation, state: LoopState, *, iteration: int
+    ) -> SessionResult | None:
+        """Put the CURRENT plan.md in front of the planner, every turn.
+
+        plan.md on disk is the plan; the conversation only ever holds a copy, and
+        `agent6 plan edit` writes the operator's answers to the file between legs.
+        So the file is re-read here rather than resynced at one chosen moment, and
+        injected only when it differs from what the planner was last shown -- an
+        untouched plan costs nothing. finish_planning stays the only writer.
+
+        An UNREADABLE plan parks the leg (the returned SessionResult): the file
+        may carry operator answers the planner's own copy supersedes, and
+        continuing without them spends budget on stale direction. A missing
+        file is normal (the first finish_planning creates it).
+        """
+        if self.mode != "plan" or self.plan_output_path is None:
+            return None
+        try:
+            text = self.plan_output_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None  # no plan yet; the first finish_planning creates it
+        except (OSError, UnicodeDecodeError) as exc:
+            session_id = self.session_id or "<session-id>"
+            remedy = f"plan.md unreadable: {exc}; fix it and `agent6 resume {session_id}`"
+            self._log(f"LOOP: {remedy}")
+            self._emit("loop.plan_read.failed", path=str(self.plan_output_path), error=str(exc))
+            return self._finish(
+                state, End("plan_unreadable", remedy, checkpoint=False), iteration=iteration
+            )
+        if text == state.plan_injected:
+            return None
+        state.plan_injected = text
+        conversation.notice(f"{PLAN_ON_DISK_HEADER}\n\n{text}")
+        self._log(f"  plan re-read from disk: {len(text)} chars")
+        self._emit(
+            "loop.plan_reread",
+            path=str(self.plan_output_path),
+            bytes=len(text.encode("utf-8")),
+        )
+
+    def _turn_before_call(
+        self, conversation: Conversation, state: LoopState, ctx: TurnContext
+    ) -> None:
+        """Before the provider call: anything the operator queued joins the
+        graph, then the focus banner, then the before-call advisors, so a
+        finish directive a low budget draws is the most recent message, not the
+        banner."""
+        self.operator_tasks.take(state.root_task_id)
+        self._maybe_surface_current_task(conversation, state)
+        for advisor in BEFORE_CALL:
+            self._tell(conversation, advisor(state, ctx))
+
+    def _maybe_surface_current_task(self, conversation: Conversation, state: LoopState) -> None:
+        """Surface-current-task: keep the worker on ONE task at a time.
+
+        Compute the current task (the cursor if it still points at an open
+        subtask, else the first dependency-satisfied open subtask), advance the
+        cursor to it, and inject a focus banner when the focus first appears,
+        changes, or was wiped by a tier-2 restart (`surfaced_task_id` reset to
+        None there). Advancing the cursor each turn means that once the worker
+        marks the current task passed, the next turn's frontier recompute moves
+        focus to the next ready task -- the cursor walks the frontier on its own.
+
+        Also runs the anti-grind counter (`stuck_on_task`).
+
+        Run mode only; no curator or no open subtask is a no-op (the finish-gate
+        covers the empty-frontier finish). A curator mutation that fails logs
+        and continues.
+        """
+        if self.mode != "run" or self.curator is None:
+            return
+        cursor = self.curator.cursor()
+        nodes = self.curator.nodes()
+        current_id = current_task_id(nodes, cursor)
+        if current_id is None:
+            state.focus.clear()
+            return  # nothing decomposed yet, or the frontier is empty
+        if cursor != current_id:
+            # Advance the cursor onto the frontier task (auto-advance: a passed
+            # cursor task drops out of the frontier, so this moves forward).
+            try:
+                self.curator.set_cursor(SetCursorIntent(id=current_id))
+            except (CuratorError, OSError, ValidationError) as exc:  # advisory; never fatal
+                self._log(f"LOOP: cursor advance skipped: {exc}")
+        self._tell(conversation, stuck_on_task(state, current_id, nodes[current_id], nodes))
+        if current_id == state.focus.surfaced_task_id:
+            return  # already surfaced; the banner survives tier-1 elision
+        node = nodes[current_id]
+        if node.status == "pending":
+            # Reflect that this task is now being worked, keeping the DAG honest
+            # for the TUI and the check-off / finish-gate "open" set. Best-effort.
+            try:
+                self.curator.update_status(
+                    UpdateStatusIntent(id=current_id, new_status="in_progress")
+                )
+            except (CuratorError, OSError, ValidationError) as exc:
+                self._log(f"LOOP: mark in_progress skipped: {exc}")
+        banner = current_task_banner(
+            current_id, node, decompose=self.config.prompt.decompose == "on"
+        )
+        conversation.notice(banner)
+        state.focus.surfaced_task_id = current_id
+        self._log(f"LOOP: surfaced current task {current_id}")
+        self._emit("loop.task.surfaced", task_id=current_id)
+        # The harness-driven cursor/status writes bypass the tool-dispatch path
+        # that emits graph.update, so refresh the live view here.
+        self._emit_graph_snapshot()
+
     def _turn_provider_call(
         self,
         system: str,
@@ -798,6 +985,35 @@ class Workflow:
                 ),
                 iteration=iteration,
             )
+
+    def _worker_max_tokens(self, state: LoopState) -> int:
+        """Per-call output cap for the worker turn.
+
+        Metric-optimization runs (mode "run" with a configured continuous
+        metric) lift the ceiling to `metric_task_max_tokens` so a single turn
+        can rewrite a hot function wholesale without truncating mid-apply_patch.
+        Every other run keeps `per_call_max_tokens`.
+
+        Starvation backoff: once the worker has gone quiet (no text + no
+        tool_use -- typically a reasoning model that spent its whole output
+        budget on reasoning_content) on >= 2 CONSECUTIVE turns, drop back to
+        `per_call_max_tokens` even on a metric run. A spiraling over-reasoner
+        (observed: GLM 5.2) otherwise burns a fresh ~65k-token reasoning binge
+        every nudged turn until it exhausts `went_quiet_max_nudges` and the run
+        dies with zero progress. A tight cap plus the forceful "emit a tool_use
+        now" nudge pressures it to ACT; `went_quiet_nudges_used` resets to 0 on
+        the first productive turn, so the very next turn gets the full ceiling
+        back for the real edit (the recovery edit itself is never truncated).
+        The 2-quiet threshold spares the model the high ceiling was raised FOR
+        (Kimi K2.x finishes its reasoning within 65k and rarely goes quiet, let
+        alone twice in a row).
+        """
+        if (
+            self.metrics.active
+            and state.quiet.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS
+        ):
+            return max(self.call.per_call_max_tokens, self.call.metric_task_max_tokens)
+        return self.call.per_call_max_tokens
 
     def _turn_dispatch_tools(
         self, state: LoopState, turn: TurnState, ctx: TurnContext
@@ -1019,24 +1235,6 @@ class Workflow:
             return True
         return False
 
-    def _record_memory_use(self, state: LoopState) -> None:
-        """Persist the facts this leg wrote and read (`memory list` shows them);
-        a write fault must not break the end."""
-        memory = state.memory
-        if self.state_dir is None or not (memory.wrote or memory.read or memory.deleted):
-            return
-        try:
-            record_use(
-                self.state_dir,
-                session=self.session_id or "?",
-                wrote=tuple(state.memory.wrote),
-                created=tuple(state.memory.created),
-                deleted=tuple(state.memory.deleted),
-                read=dict(state.memory.read),
-            )
-        except OSError as exc:
-            self._log(f"LOOP: memory use record failed: {exc}")
-
     def _capture_finish(self, turn: TurnState, name: str, tool_input: Any) -> None:
         """A dispatched finish ends the turn's work; the finish gates may still
         revoke it. A finish_planning also writes its plan to `plan_output_path`."""
@@ -1064,6 +1262,21 @@ class Workflow:
         except OSError as exc:
             self._log(f"  plan write failed: {exc}")
             self._emit("loop.plan_write.failed", path=str(self.plan_output_path), error=str(exc))
+
+    def _note_tool_error(
+        self, state: LoopState, name: str, tool_input: dict[str, Any], exc: ToolError
+    ) -> str:
+        """Bookkeeping for one failed dispatch: the served error content, the
+        denial/binary records the reachability note reads, and the
+        same-signature streak the nudge ladder climbs."""
+        content = json.dumps({"error": str(exc)})
+        self._log(f"  tool_error: {name}: {exc}")
+        state.spiral.note_error(
+            tool_error_signature(name, str(exc)),
+            denial=isinstance(exc, ToolDenied),
+            content=content,
+        )
+        return content
 
     def _turn_auto_commit_and_metric(
         self, state: LoopState, turn: TurnState
@@ -1173,7 +1386,16 @@ class Workflow:
         turn.metric_plateau_finish = self.metrics.plateau_finish(state.metric.history)
         return None
 
-    # ---- finish gates ----------------------------------------------------------
+    def _turn_notices(self, state: LoopState, turn: TurnState) -> None:
+        """Append the turn's review findings and metric feedback to the
+        tool_results block, ahead of the advisors' notices."""
+        if turn.review_text:
+            turn.tool_results.append(Notice(review_notice(turn.review_text)))
+            turn.review_text = None
+        if turn.metric_feedback:
+            turn.tool_results.append(Notice(turn.metric_feedback))
+
+    # ---- finish gates --------------------------------------------------------
 
     def _turn_finish_gates(self, state: LoopState, turn: TurnState, ctx: TurnContext) -> None:
         """The gates a finish_session must pass, in precedence order: the
@@ -1204,7 +1426,40 @@ class Workflow:
         state.settled.restart()
         return True
 
-    # ---- the advisors ------------------------------------------------------------
+    def _end_gates(
+        self,
+        state: LoopState,
+        turn: TurnState,
+        ctx: TurnContext,
+        *,
+        ending: str,
+        gates: tuple[Gate, ...],
+    ) -> SessionResult | None:
+        """An end declared without finish_session (`settled`: the harness's
+        idle stop; `silent_finish`: a prose turn with no tool call) passes
+        *gates*, the rules a finish_session would, through the one applier
+        (`_refuse`): the first refusal hands the end back (`turn.end_returned`)
+        with its reason. The harness gate runs first on the ending turn (the
+        STANDING verdict decides the red: it is skipped over a tree a red
+        already covers); the unexecutable-command abort ends the run as it
+        does on the tool path. The panel's findings, when it sat, follow the
+        refusal as a notice."""
+        try:
+            self.gate.harness_verify(state, turn, ending=True)
+        except OperatorCommandUnexecutable as exc:
+            return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
+        turn.ending = ending
+        for gate in gates:
+            if self._refuse(state, turn, gate(turn, state, ctx)):
+                break
+        if turn.review_text:
+            # The turn's notices went out before the settled and plateau
+            # checks, so the panel's findings are delivered here.
+            turn.tool_results.append(Notice(review_notice(turn.review_text)))
+            turn.review_text = None
+        return None
+
+    # ---- the advisors --------------------------------------------------------
 
     def _turn_context(self, state: LoopState, *, iteration: int, leg_start: int) -> TurnContext:
         """The facts the advisors read this turn (`TurnContext`)."""
@@ -1234,6 +1489,13 @@ class Workflow:
             operator_wait_s=lambda: self.dispatcher.operator_wait_s,
             open_subtasks=self._open_subtasks,
         )
+
+    def _budget_fraction_remaining(self) -> float | None:
+        """Fraction of the token budget still available, or None when no
+        BudgetTracker is wired in (tests / MCP path)."""
+        if self.budget is None:
+            return None
+        return self.budget.fraction_remaining()
 
     def _turn_advisors(
         self, state: LoopState, turn: TurnState, ctx: TurnContext
@@ -1273,66 +1535,23 @@ class Workflow:
         turn.stops.append(outcome)
         return None
 
-    # ---- turn notices and spiral guards ----------------------------------------
+    def _tell(self, conversation: Conversation, nudge: Nudge | None) -> None:
+        """Apply a before-call advisor's answer: the notice joins the
+        conversation, its event is emitted, its line logged."""
+        if nudge is None:
+            return
+        conversation.notice(nudge.text)
+        self._record(nudge)
 
-    def _turn_notices(self, state: LoopState, turn: TurnState) -> None:
-        """Append the turn's review findings and metric feedback to the
-        tool_results block, ahead of the advisors' notices."""
-        if turn.review_text:
-            turn.tool_results.append(Notice(review_notice(turn.review_text)))
-            turn.review_text = None
-        if turn.metric_feedback:
-            turn.tool_results.append(Notice(turn.metric_feedback))
+    def _record(self, answer: Nudge) -> None:
+        """Record an advisor's or a gate's answer: its event emitted, its
+        line logged (each skipped when empty)."""
+        if answer.event:
+            self._emit(answer.event, **answer.fields)
+        if answer.log:
+            self._log(answer.log)
 
-    def _end_gates(
-        self,
-        state: LoopState,
-        turn: TurnState,
-        ctx: TurnContext,
-        *,
-        ending: str,
-        gates: tuple[Gate, ...],
-    ) -> SessionResult | None:
-        """An end declared without finish_session (`settled`: the harness's
-        idle stop; `silent_finish`: a prose turn with no tool call) passes
-        *gates*, the rules a finish_session would, through the one applier
-        (`_refuse`): the first refusal hands the end back (`turn.end_returned`)
-        with its reason. The harness gate runs first on the ending turn (the
-        STANDING verdict decides the red: it is skipped over a tree a red
-        already covers); the unexecutable-command abort ends the run as it
-        does on the tool path. The panel's findings, when it sat, follow the
-        refusal as a notice."""
-        try:
-            self.gate.harness_verify(state, turn, ending=True)
-        except OperatorCommandUnexecutable as exc:
-            return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
-        turn.ending = ending
-        for gate in gates:
-            if self._refuse(state, turn, gate(turn, state, ctx)):
-                break
-        if turn.review_text:
-            # The turn's notices went out before the settled and plateau
-            # checks, so the panel's findings are delivered here.
-            turn.tool_results.append(Notice(review_notice(turn.review_text)))
-            turn.review_text = None
-        return None
-
-    def _note_tool_error(
-        self, state: LoopState, name: str, tool_input: dict[str, Any], exc: ToolError
-    ) -> str:
-        """Bookkeeping for one failed dispatch: the served error content, the
-        denial/binary records the reachability note reads, and the
-        same-signature streak the nudge ladder climbs."""
-        content = json.dumps({"error": str(exc)})
-        self._log(f"  tool_error: {name}: {exc}")
-        state.spiral.note_error(
-            tool_error_signature(name, str(exc)),
-            denial=isinstance(exc, ToolDenied),
-            content=content,
-        )
-        return content
-
-    # ---- stop checks, silent finish, went-quiet --------------------------------
+    # ---- stop checks, silent finish, went-quiet ------------------------------
 
     def _turn_stop_checks(
         self, state: LoopState, turn: TurnState, conversation: Conversation
@@ -1375,131 +1594,6 @@ class Workflow:
                 iteration=turn.iteration,
             )
         return None
-
-    def _maybe_inject_plan(
-        self, conversation: Conversation, state: LoopState, *, iteration: int
-    ) -> SessionResult | None:
-        """Put the CURRENT plan.md in front of the planner, every turn.
-
-        plan.md on disk is the plan; the conversation only ever holds a copy, and
-        `agent6 plan edit` writes the operator's answers to the file between legs.
-        So the file is re-read here rather than resynced at one chosen moment, and
-        injected only when it differs from what the planner was last shown -- an
-        untouched plan costs nothing. finish_planning stays the only writer.
-
-        An UNREADABLE plan parks the leg (the returned SessionResult): the file
-        may carry operator answers the planner's own copy supersedes, and
-        continuing without them spends budget on stale direction. A missing
-        file is normal (the first finish_planning creates it).
-        """
-        if self.mode != "plan" or self.plan_output_path is None:
-            return None
-        try:
-            text = self.plan_output_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return None  # no plan yet; the first finish_planning creates it
-        except (OSError, UnicodeDecodeError) as exc:
-            session_id = self.session_id or "<session-id>"
-            remedy = f"plan.md unreadable: {exc}; fix it and `agent6 resume {session_id}`"
-            self._log(f"LOOP: {remedy}")
-            self._emit("loop.plan_read.failed", path=str(self.plan_output_path), error=str(exc))
-            return self._finish(
-                state, End("plan_unreadable", remedy, checkpoint=False), iteration=iteration
-            )
-        if text == state.plan_injected:
-            return None
-        state.plan_injected = text
-        conversation.notice(f"{PLAN_ON_DISK_HEADER}\n\n{text}")
-        self._log(f"  plan re-read from disk: {len(text)} chars")
-        self._emit(
-            "loop.plan_reread",
-            path=str(self.plan_output_path),
-            bytes=len(text.encode("utf-8")),
-        )
-
-    def _turn_before_call(
-        self, conversation: Conversation, state: LoopState, ctx: TurnContext
-    ) -> None:
-        """Before the provider call: anything the operator queued joins the
-        graph, then the focus banner, then the before-call advisors, so a
-        finish directive a low budget draws is the most recent message, not the
-        banner."""
-        self.operator_tasks.take(state.root_task_id)
-        self._maybe_surface_current_task(conversation, state)
-        for advisor in BEFORE_CALL:
-            self._tell(conversation, advisor(state, ctx))
-
-    def _tell(self, conversation: Conversation, nudge: Nudge | None) -> None:
-        """Apply a before-call advisor's answer: the notice joins the
-        conversation, its event is emitted, its line logged."""
-        if nudge is None:
-            return
-        conversation.notice(nudge.text)
-        self._record(nudge)
-
-    def _record(self, answer: Nudge) -> None:
-        """Record an advisor's or a gate's answer: its event emitted, its
-        line logged (each skipped when empty)."""
-        if answer.event:
-            self._emit(answer.event, **answer.fields)
-        if answer.log:
-            self._log(answer.log)
-
-    def _maybe_surface_current_task(self, conversation: Conversation, state: LoopState) -> None:
-        """Surface-current-task: keep the worker on ONE task at a time.
-
-        Compute the current task (the cursor if it still points at an open
-        subtask, else the first dependency-satisfied open subtask), advance the
-        cursor to it, and inject a focus banner when the focus first appears,
-        changes, or was wiped by a tier-2 restart (`surfaced_task_id` reset to
-        None there). Advancing the cursor each turn means that once the worker
-        marks the current task passed, the next turn's frontier recompute moves
-        focus to the next ready task -- the cursor walks the frontier on its own.
-
-        Also runs the anti-grind counter (`stuck_on_task`).
-
-        Run mode only; no curator or no open subtask is a no-op (the finish-gate
-        covers the empty-frontier finish). A curator mutation that fails logs
-        and continues.
-        """
-        if self.mode != "run" or self.curator is None:
-            return
-        cursor = self.curator.cursor()
-        nodes = self.curator.nodes()
-        current_id = current_task_id(nodes, cursor)
-        if current_id is None:
-            state.focus.clear()
-            return  # nothing decomposed yet, or the frontier is empty
-        if cursor != current_id:
-            # Advance the cursor onto the frontier task (auto-advance: a passed
-            # cursor task drops out of the frontier, so this moves forward).
-            try:
-                self.curator.set_cursor(SetCursorIntent(id=current_id))
-            except (CuratorError, OSError, ValidationError) as exc:  # advisory; never fatal
-                self._log(f"LOOP: cursor advance skipped: {exc}")
-        self._tell(conversation, stuck_on_task(state, current_id, nodes[current_id], nodes))
-        if current_id == state.focus.surfaced_task_id:
-            return  # already surfaced; the banner survives tier-1 elision
-        node = nodes[current_id]
-        if node.status == "pending":
-            # Reflect that this task is now being worked, keeping the DAG honest
-            # for the TUI and the check-off / finish-gate "open" set. Best-effort.
-            try:
-                self.curator.update_status(
-                    UpdateStatusIntent(id=current_id, new_status="in_progress")
-                )
-            except (CuratorError, OSError, ValidationError) as exc:
-                self._log(f"LOOP: mark in_progress skipped: {exc}")
-        banner = current_task_banner(
-            current_id, node, decompose=self.config.prompt.decompose == "on"
-        )
-        conversation.notice(banner)
-        state.focus.surfaced_task_id = current_id
-        self._log(f"LOOP: surfaced current task {current_id}")
-        self._emit("loop.task.surfaced", task_id=current_id)
-        # The harness-driven cursor/status writes bypass the tool-dispatch path
-        # that emits graph.update, so refresh the live view here.
-        self._emit_graph_snapshot()
 
     def _handle_no_tool_use(
         self,
@@ -1667,38 +1761,7 @@ class Workflow:
             state, End("went_quiet", "(agent emitted no text and no tool_use)"), iteration=iteration
         )
 
-    # ---- snapshots and carryover -----------------------------------------------
-
-    def _dirty_tree_note(self) -> str:
-        """Summary suffix naming an uncommitted worktree (`RunChain.dirty_note`),
-        for a run; "" in the modes that never commit."""
-        return self.chain.dirty_note() if self.mode == "run" else ""
-
-    def _pass_pending_root_tasks(self) -> None:
-        """On successful completion, mark still-pending root task(s) as passed.
-
-        The loop seeds one root task per `run()` (each ask REPL follow-up seeds
-        another), but the worker finishes via `finish_session` without ever
-        touching it -- so a completed ask/run otherwise reads `tasks 0/1`. Pass
-        any root (`parent_id is None`) still pending/in-progress so the DAG --
-        and every viewer + resume -- agrees the run completed. Subtasks the
-        worker deliberately left unfinished are untouched (kept honest).
-        Best-effort: a curator hiccup must never break completion."""
-        if self.curator is None:
-            return
-        changed = False
-        for nid, node in self.curator.nodes().items():
-            if node.parent_id is None and node.status in OPEN_STATUSES:
-                try:
-                    self.curator.update_status(UpdateStatusIntent(id=nid, new_status="passed"))
-                    changed = True
-                except CuratorError as exc:  # this root refused; the next may not
-                    self._log(f"LOOP: auto-pass root {nid} refused: {exc}")
-                except (OSError, ValidationError) as exc:  # a write fault must not break finish
-                    self._log(f"LOOP: auto-pass root {nid} failed: {exc}")
-                    break  # a curator write failure fails for every remaining node too
-        if changed:
-            self._emit_graph_snapshot()
+    # ---- the end -------------------------------------------------------------
 
     def _finish(self, state: LoopState, end: End, *, iteration: int) -> SessionResult:
         """Record *end* (its checkpoint, the pending roots it passes, its
@@ -1748,6 +1811,74 @@ class Workflow:
             stale_gate=end.stale_gate,
         )
 
+    def _pass_pending_root_tasks(self) -> None:
+        """On successful completion, mark still-pending root task(s) as passed.
+
+        The loop seeds one root task per `run()` (each ask REPL follow-up seeds
+        another), but the worker finishes via `finish_session` without ever
+        touching it -- so a completed ask/run otherwise reads `tasks 0/1`. Pass
+        any root (`parent_id is None`) still pending/in-progress so the DAG --
+        and every viewer + resume -- agrees the run completed. Subtasks the
+        worker deliberately left unfinished are untouched (kept honest).
+        Best-effort: a curator hiccup must never break completion."""
+        if self.curator is None:
+            return
+        changed = False
+        for nid, node in self.curator.nodes().items():
+            if node.parent_id is None and node.status in OPEN_STATUSES:
+                try:
+                    self.curator.update_status(UpdateStatusIntent(id=nid, new_status="passed"))
+                    changed = True
+                except CuratorError as exc:  # this root refused; the next may not
+                    self._log(f"LOOP: auto-pass root {nid} refused: {exc}")
+                except (OSError, ValidationError) as exc:  # a write fault must not break finish
+                    self._log(f"LOOP: auto-pass root {nid} failed: {exc}")
+                    break  # a curator write failure fails for every remaining node too
+        if changed:
+            self._emit_graph_snapshot()
+
+    def _record_memory_use(self, state: LoopState) -> None:
+        """Persist the facts this leg wrote and read (`memory list` shows them);
+        a write fault must not break the end."""
+        memory = state.memory
+        if self.state_dir is None or not (memory.wrote or memory.read or memory.deleted):
+            return
+        try:
+            record_use(
+                self.state_dir,
+                session=self.session_id or "?",
+                wrote=tuple(state.memory.wrote),
+                created=tuple(state.memory.created),
+                deleted=tuple(state.memory.deleted),
+                read=dict(state.memory.read),
+            )
+        except OSError as exc:
+            self._log(f"LOOP: memory use record failed: {exc}")
+
+    def _unexecutable_abort(
+        self, exc: OperatorCommandUnexecutable, *, iteration: int, state: LoopState
+    ) -> SessionResult:
+        """Graceful abort when an operator verify/metric command cannot run in
+        the jail (e.g. its binary is not on the jail PATH). The model cannot fix
+        operator config, so stop loudly rather than flail against a gate that
+        never executes or silently report success. Shared by the manual per-tool
+        path and the auto-metric-after-verify path so the same misconfiguration
+        ends the same way regardless of who triggered the command."""
+        self._log(f"LOOP: aborting -- {exc}")
+        # The worst checkpoint case of all the harness ends: verify can never
+        # go green here, so the per-turn auto-commit never fired and ALL of
+        # the run's edits may exist only in the worktree.
+        return self._finish(
+            state, End("verify_command_unexecutable", str(exc)), iteration=iteration
+        )
+
+    def _dirty_tree_note(self) -> str:
+        """Summary suffix naming an uncommitted worktree (`RunChain.dirty_note`),
+        for a run; "" in the modes that never commit."""
+        return self.chain.dirty_note() if self.mode == "run" else ""
+
+    # ---- the task graph ------------------------------------------------------
+
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.
         The worker's add_task/update_task tree lives in the curator, not the
@@ -1777,6 +1908,24 @@ class Workflow:
             for nid, n in self.curator.nodes().items()
         }
         self._emit("graph.update", nodes=nodes, cursor=cursor)
+
+    def _open_subtasks(self) -> list[tuple[str, str]]:
+        """The worker's own subtasks still open: `(id, title)` pairs. Only
+        SUBTASKS (parent_id is not None) count -- the auto-root is pending until
+        the run ends, so counting it would deadlock every gate. Run mode only:
+        a plan's tasks are its deliverable, open by design. Best-effort: no
+        curator -> nothing open."""
+        if self.curator is None or self.mode != "run":
+            return []
+        return open_subtasks(self.curator.nodes())
+
+    def _checkpoint_graph_version(self) -> int:
+        """Curator DAG version for the per-turn checkpoint; 0 if no curator."""
+        if self.curator is None:
+            return 0
+        return self.curator.graph_version
+
+    # ---- the state dir: memory, decisions, skills ----------------------------
 
     def _load_memory_index(self) -> str:
         """The repo memory index for the system prompt.
@@ -1846,153 +1995,6 @@ class Workflow:
             )
             return resolved
         return None
-
-    def _save_resume_snapshot(
-        self,
-        state: LoopState,
-        messages: list[dict[str, Any]],
-        *,
-        next_iteration: int,
-        write_checkpoint: bool = False,
-    ) -> None:
-        """Write loop state to disk for resume.
-
-        Called before each LLM call and again at the end of each iteration
-        (after the executed tool_results are appended) so a crash after a
-        non-idempotent tool dispatch resumes from AFTER the executed tools
-        rather than replaying them. Every call advances `loop_state.json`
-        (the latest pointer resume follows); only the pre-call save passes
-        `write_checkpoint` and owns `checkpoints/<next_iteration>.json` -- the
-        state that turn's provider call consumes, written once, so
-        `fork --at-turn N` has one meaning. Atomic via tmp-file + replace so a
-        crash mid-write leaves the prior snapshot intact. No-op if
-        `resume_state_path` is None (e.g. unit tests).
-        """
-        if self.resume_state_path is None:
-            return
-        goal = self.metrics.goal
-        best = best_metric_sample(state.metric.history, goal=goal) if goal is not None else None
-        snapshot = SessionSnapshot(
-            system=state.system,
-            messages=messages,
-            tool_calls=state.tool_calls,
-            next_iteration=next_iteration,
-            root_task_id=state.root_task_id,
-            original_task=state.original_task,
-            verify_command=self.gate.command(state.verify),
-            review_rejections_total=state.gates.review_total,
-            verify_ever_passed=state.verify.ever_passed,
-            verify_ever_failed=state.verify.ever_failed,
-            gateless_ever_edited=state.settled.gateless_ever_edited,
-            parallel_groups_dispatched=state.parallel_groups_dispatched,
-            pins=tuple(state.pins),
-            metric_best_score=best.score if best is not None else None,
-            metric_at_ceiling=state.metric.at_ceiling(),
-            last_verify_ok=state.verify.last_ok,
-            edited_since_verify=state.verify.edited_since,
-            baseline_ok=state.verify.baseline_ok,
-            verify_scoped=state.verify.scoped,
-            memory_written=state.memory.written,
-            memory_flip_nudged=state.memory.flip_nudged,
-            memory_finish_nudged=state.memory.finish_nudged,
-            standing_tools_mark=state.standing.tools_mark,
-            standing_fruitless=state.standing.fruitless,
-            ok_tool_calls=state.ok_tool_calls,
-            head_sha=self.chain.checkpoint_head_sha(),
-            graph_version=self._checkpoint_graph_version(),
-        )
-        blob = snapshot.model_dump_json()
-        # The snapshot is recovery state, not run output: an unwritable state dir
-        # (full disk, quota, read-only mount) disables resume/fork but must not
-        # abort an otherwise-healthy run whose edits + commits are already on disk
-        # independently. Warn once, then continue.
-        try:
-            # Write the append-only checkpoint first, then advance loop_state.json
-            # as the latest pointer. If the second write fails, default fork still
-            # follows loop_state.json, while explicit --at-turn can use the durable
-            # checkpoint.
-            if write_checkpoint:
-                cp_dir = self.resume_state_path.parent / "checkpoints"
-                atomic_write(cp_dir / f"{next_iteration:04d}.json", blob)
-            atomic_write(self.resume_state_path, blob)
-        except OSError as exc:
-            if not self._snapshot_write_failed:
-                self._snapshot_write_failed = True
-                self._log(
-                    f"LOOP: WARNING could not persist resume snapshot ({exc}); "
-                    "resume/fork are unavailable for this run, continuing anyway"
-                )
-
-    def _checkpoint_graph_version(self) -> int:
-        """Curator DAG version for the per-turn checkpoint; 0 if no curator."""
-        if self.curator is None:
-            return 0
-        return self.curator.graph_version
-
-    # ---- metric ----------------------------------------------------------------
-
-    def _budget_fraction_remaining(self) -> float | None:
-        """Fraction of the token budget still available, or None when no
-        BudgetTracker is wired in (tests / MCP path)."""
-        if self.budget is None:
-            return None
-        return self.budget.fraction_remaining()
-
-    def _unexecutable_abort(
-        self, exc: OperatorCommandUnexecutable, *, iteration: int, state: LoopState
-    ) -> SessionResult:
-        """Graceful abort when an operator verify/metric command cannot run in
-        the jail (e.g. its binary is not on the jail PATH). The model cannot fix
-        operator config, so stop loudly rather than flail against a gate that
-        never executes or silently report success. Shared by the manual per-tool
-        path and the auto-metric-after-verify path so the same misconfiguration
-        ends the same way regardless of who triggered the command."""
-        self._log(f"LOOP: aborting -- {exc}")
-        # The worst checkpoint case of all the harness ends: verify can never
-        # go green here, so the per-turn auto-commit never fired and ALL of
-        # the run's edits may exist only in the worktree.
-        return self._finish(
-            state, End("verify_command_unexecutable", str(exc)), iteration=iteration
-        )
-
-    def _worker_max_tokens(self, state: LoopState) -> int:
-        """Per-call output cap for the worker turn.
-
-        Metric-optimization runs (mode "run" with a configured continuous
-        metric) lift the ceiling to `metric_task_max_tokens` so a single turn
-        can rewrite a hot function wholesale without truncating mid-apply_patch.
-        Every other run keeps `per_call_max_tokens`.
-
-        Starvation backoff: once the worker has gone quiet (no text + no
-        tool_use -- typically a reasoning model that spent its whole output
-        budget on reasoning_content) on >= 2 CONSECUTIVE turns, drop back to
-        `per_call_max_tokens` even on a metric run. A spiraling over-reasoner
-        (observed: GLM 5.2) otherwise burns a fresh ~65k-token reasoning binge
-        every nudged turn until it exhausts `went_quiet_max_nudges` and the run
-        dies with zero progress. A tight cap plus the forceful "emit a tool_use
-        now" nudge pressures it to ACT; `went_quiet_nudges_used` resets to 0 on
-        the first productive turn, so the very next turn gets the full ceiling
-        back for the real edit (the recovery edit itself is never truncated).
-        The 2-quiet threshold spares the model the high ceiling was raised FOR
-        (Kimi K2.x finishes its reasoning within 65k and rarely goes quiet, let
-        alone twice in a row).
-        """
-        if (
-            self.metrics.active
-            and state.quiet.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS
-        ):
-            return max(self.call.per_call_max_tokens, self.call.metric_task_max_tokens)
-        return self.call.per_call_max_tokens
-
-    def _open_subtasks(self) -> list[tuple[str, str]]:
-        """The worker's own subtasks still open: `(id, title)` pairs. Only
-        SUBTASKS (parent_id is not None) count -- the auto-root is pending until
-        the run ends, so counting it would deadlock every gate. Run mode only:
-        a plan's tasks are its deliverable, open by design. Best-effort: no
-        curator -> nothing open."""
-        if self.curator is None or self.mode != "run":
-            return []
-        return open_subtasks(self.curator.nodes())
 
     # ---- the run's helpers ---------------------------------------------------
 
@@ -2128,7 +2130,7 @@ class Workflow:
             emit=self._emit,
         )
 
-    # ---- steering and operator boundaries --------------------------------------
+    # ---- steering and operator boundaries ------------------------------------
 
     def _operator_boundary(
         self, conversation: Conversation, iteration: int, state: LoopState
@@ -2276,6 +2278,8 @@ class Workflow:
                 iteration=iteration,
             )
         return None
+
+    # ---- the log and the events ----------------------------------------------
 
     @property
     def session_id(self) -> str:
