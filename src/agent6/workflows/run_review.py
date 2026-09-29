@@ -144,7 +144,9 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     tool_calls = 0
     end_reason = ""
     all_passed: bool | None = None
-    gated = False
+    leg_rc: int | None = (
+        None  # this leg's last verify exit, reset at a resume (as the listing scan does)
+    )
     iterations: int | None = None
     try:
         raw = layout.logs_path.read_text(errors="replace")
@@ -163,15 +165,17 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         elif etype == "loop.decision.recorded":
             decisions.append((str(event.get("question", "")), str(event.get("answer", ""))))
         elif etype == "verify.end":
-            gated = True
+            leg_rc = _int(event.get("exit_code"))
             tail = str(event.get("stderr_tail") or event.get("stdout_tail") or "")
             verify_runs.append(
                 VerifyRun(
-                    exit_code=_int(event.get("exit_code")),
+                    exit_code=leg_rc,
                     duration_s=float(event.get("duration_s") or 0.0),
                     tail=_clip(tail.strip(), _VERIFY_TAIL_CHARS),
                 )
             )
+        elif etype == "loop.resume.start":
+            leg_rc = None
         elif etype == "tool.call":
             tool_calls += 1
         elif etype == "tool.result" and event.get("ok") is False:
@@ -188,14 +192,17 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
             passed = event.get("all_passed")
             all_passed = passed if isinstance(passed, bool) else None
             iterations = _int(event.get("iterations")) if "iterations" in event else iterations
-    # A plan's and an ask's end carries all_passed=True (nothing gated them):
-    # the gate word follows the verify runs the journal holds, not the flag.
-    if not gated or summary.mode != "run":
+    # The listing scan's rule (`LogScan.verify_verdict`): a plan's and an
+    # ask's end carries all_passed=True with nothing gating it; a run's end
+    # says None when no gate judged it, True when the final tree was green,
+    # False when it was red, stale or never judged; "failed" only on this
+    # leg's own red verify.
+    if summary.mode != "run" or (end_reason and all_passed is None):
         verify = "not gated"
     elif all_passed is True:
         verify = "passed"
-    elif all_passed is False:
-        verify = "failed" if any(v.exit_code != 0 for v in verify_runs[-1:]) else "unverified"
+    elif leg_rc not in (None, 0):
+        verify = "failed"
     else:
         verify = "unverified"
     use = read_use(layout.state_dir)

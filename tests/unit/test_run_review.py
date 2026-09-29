@@ -161,7 +161,9 @@ def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: Path) -> None:
 
     empty = _write_session(repo, session_id="run-BBBB22", events=[])
     d = run_digest(empty)
-    assert (d.end_reason, d.verify, d.tool_calls, d.steers) == ("", "not gated", 0, ())
+    # Nothing observed the tree: "unverified", never a word that claims a gate
+    # was absent or green.
+    assert (d.end_reason, d.verify, d.tool_calls, d.steers) == ("", "unverified", 0, ())
     assert "conversation (tail):" in d.render()
 
 
@@ -195,6 +197,62 @@ def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: Path) -> No
     d = run_digest(layout)
     assert len(d.memory_index) <= INDEX_INJECT_CAP
     assert d.memory_index.endswith("... (index clipped; read MEMORY.md for the rest)")
+
+
+def test_the_gate_word_agrees_with_the_listing_scan(repo: Path) -> None:
+    """Three shapes the digest got wrong against `sessions show`: a resumed
+    run whose red verify was in leg 1 and whose leg 2 ran none reads
+    "unverified" (the scan resets at the resume); a gated run whose gate never
+    ran (all_passed false, no verify.end) reads "unverified", not "not
+    gated"; a killed run (a green verify, no session.end) reads "unverified"."""
+    from agent6.viewmodel.listing import scan_session_log
+
+    resumed = [
+        {"type": "session.start", "session_id": "r", "mode": "run", "user_task": "t"},
+        {
+            "type": "verify.end",
+            "cmd": ["pytest"],
+            "exit_code": 1,
+            "duration_s": 1.0,
+            "stdout_tail": "",
+            "stderr_tail": "E boom",
+        },
+        {"type": "session.end", "reason": "budget_exhausted", "iterations": 4, "all_passed": False},
+        {"type": "loop.resume.start", "session_id": "r", "mode": "run"},
+        {"type": "session.end", "reason": "finish_session", "iterations": 6, "all_passed": False},
+    ]
+    layout = _write_session(repo, session_id="run-resumed", events=resumed)
+    d = run_digest(layout)
+    assert d.verify == "unverified"
+    assert scan_session_log(layout.logs_path).verify_verdict() is None
+
+    never_ran = [
+        {"type": "session.start", "session_id": "n", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": False},
+    ]
+    layout = _write_session(repo, session_id="run-never", events=never_ran)
+    assert run_digest(layout).verify == "unverified"
+
+    killed = [
+        {"type": "session.start", "session_id": "k", "mode": "run", "user_task": "t"},
+        {
+            "type": "verify.end",
+            "cmd": ["pytest"],
+            "exit_code": 0,
+            "duration_s": 1.0,
+            "stdout_tail": "ok",
+            "stderr_tail": "",
+        },
+    ]
+    layout = _write_session(repo, session_id="run-killed", events=killed)
+    assert run_digest(layout).verify == "unverified"
+
+    gateless = [
+        {"type": "session.start", "session_id": "g", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": None},
+    ]
+    layout = _write_session(repo, session_id="run-gateless", events=gateless)
+    assert run_digest(layout).verify == "not gated"
 
 
 def test_the_caps_are_named_not_silent(repo: Path) -> None:
