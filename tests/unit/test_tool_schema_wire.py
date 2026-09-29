@@ -202,3 +202,18 @@ def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> Non
     by_name = {d.name: d for d in definitions}
     assert by_name["read_file"].input_schema == read_file
     assert by_name["add_task"].input_schema == add_task
+
+
+def test_a_class_docstring_never_reaches_the_wire() -> None:
+    """The model-level description pydantic derives from a class docstring stays off the wire.
+
+    The input classes' docstrings are for the reader; the model reads TOOL_DESCRIPTION and the
+    field descriptions, and every extra sentence on the wire costs tokens on every call.
+    """
+    from agent6.tools.schema import ALL_TOOLS, wire_schema
+
+    for cls in ALL_TOOLS:
+        schema = wire_schema(cls)
+        assert "description" not in schema, cls.TOOL_NAME
+        for name, model in schema.get("$defs", {}).items():
+            assert "description" not in model, f"{cls.TOOL_NAME} $defs {name}"

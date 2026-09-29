@@ -647,10 +647,14 @@ def _strip_titles(node: Any, *, keys_are_names: bool = False) -> Any:
 
 def wire_schema(cls: type[_ToolInput]) -> dict[str, Any]:
     """The JSON schema of *cls* as the model receives it: pydantic's, minus the
-    title noise, with "type" present (the API wants the schema bare, not
+    title noise and the model-level descriptions it derives from class
+    docstrings, with "type" present (the API wants the schema bare, not
     wrapped). The one builder behind the loop's tool list and the descriptor
     dump below, so what tests pin is what the model gets."""
     schema = _strip_titles(cls.model_json_schema())
+    schema.pop("description", None)
+    for model in schema.get("$defs", {}).values():
+        model.pop("description", None)
     schema.setdefault("type", "object")
     return schema
 
