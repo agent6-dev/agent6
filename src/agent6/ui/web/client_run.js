@@ -559,12 +559,16 @@ function paintRun(cards, s) {
     const nav = el('div', 'row pickers'); // the composers' picker-row style
     const sel = el('select', 'field');
     sel.appendChild(new Option('latest commit', ''));
-    for (const st of steps) sel.appendChild(new Option(['iter ' + st.iteration, st.sha.slice(0, 7), st.subject].filter(Boolean).join(' · '), st.sha));
+    for (const st of steps) sel.appendChild(new Option(st.label, st.sha)); // the server's CommitStep.label
     const cum = document.createElement('input'); cum.type = 'checkbox';
     const cumLabel = el('label', 'pick');
     cumLabel.appendChild(cum); cumLabel.appendChild(el('span', 'muted', 'cumulative'));
     const pick = cards._diffPick || { sha: '', cumulative: false };
     sel.value = pick.sha; cum.checked = pick.cumulative;
+    // Cumulative applies to a chosen step: with "latest commit" picked the box
+    // is off and disabled, as the TUI's is.
+    const syncCum = () => { if (!sel.value) { cum.checked = false; } cum.disabled = !sel.value; };
+    syncCum();
     nav.appendChild(sel); nav.appendChild(cumLabel);
     cards.diff.appendChild(nav);
     const body = el('div');
@@ -572,8 +576,9 @@ function paintRun(cards, s) {
     const show = async () => {
       cards._diffPick = { sha: sel.value, cumulative: cum.checked };
       body.innerHTML = '';
+      syncCum();
+      cards._diffPick.cumulative = cum.checked;
       if (!sel.value) {
-        if (cum.checked) { cum.checked = false; cards._diffPick.cumulative = false; toast('cumulative applies to a chosen step'); }
         cards._stepState = null; paintDetails(cards, s, null); body.appendChild(renderDiff(s.latest_diff || '')); return;
       }
       try {

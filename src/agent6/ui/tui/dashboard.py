@@ -243,12 +243,11 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         if len(s.steps) != self._nav_steps:
             self._nav_steps = len(s.steps)
             options = [("latest commit", "")]
-            for st in reversed(s.steps):
-                parts = (f"iter {st.iteration}", st.sha[:7], st.subject[:40])
-                options.append((" · ".join(p for p in parts if p), st.sha))
+            options.extend((st.label, st.sha) for st in reversed(s.steps))
             select = self.query_one("#diff-step", Select)
             select.set_options(options)
             select.value = self._step_sel if any(v == self._step_sel for _, v in options) else ""
+            self._sync_cumulative()
 
     def _git_control(self) -> str:
         with contextlib.suppress(ManifestError):
@@ -280,7 +279,16 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "diff-step":
             self._step_sel = str(event.value or "")
+            self._sync_cumulative()
             self.render_state()
+
+    def _sync_cumulative(self) -> None:
+        """Cumulative applies to a chosen step: with "latest commit" picked the
+        box is off and disabled, as the web's is."""
+        box = self.query_one("#diff-cumulative", Checkbox)
+        box.disabled = not self._step_sel
+        if not self._step_sel and box.value:
+            box.value = False
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         if event.checkbox.id == "diff-cumulative":
@@ -448,7 +456,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                         opens="down",
                         id="diff-step",
                     )
-                    yield Checkbox("cumulative", compact=True, id="diff-cumulative")
+                    yield Checkbox("cumulative", compact=True, id="diff-cumulative", disabled=True)
                 yield Static("", id="diff-body")
         yield SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
         yield ResumeOptions(self._presets, self._routes, id="dash-resume")  # while resuming
@@ -909,10 +917,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             step = next((st for st in s.steps if st.sha == self._step_sel), None)
             if step is not None:
                 what = "cumulative to" if self._cumulative else "step"
-                dt.append(
-                    f"{what} iter {step.iteration} · {step.sha[:7]} · {step.subject}\n",
-                    style="bold",
-                )
+                dt.append(f"{what} {step.label}\n", style="bold")
                 _append_colored_diff(dt, self._step_patch(step.sha), cap=4000)
                 diff_widget.update(dt)
                 return

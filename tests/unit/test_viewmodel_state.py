@@ -1009,3 +1009,12 @@ def test_one_owner_for_the_open_approval() -> None:
     taken = open_approval_of(s, taken=lambda aid: aid == "a2")
     assert taken is not None and taken.id == "a3"
     assert open_approval_of(s, taken=lambda _aid: True) is None
+
+
+def test_a_step_label_is_one_line_every_surface_shows() -> None:
+    """The TUI spelled the step line twice and the web once; one copy still
+    ended in a dangling separator when a step had no subject."""
+    from agent6.viewmodel.state import CommitStep
+
+    assert CommitStep(3, "abcdef1234", "fix: parse").label == "iter 3 · abcdef1 · fix: parse"
+    assert CommitStep(3, "abcdef1234", "").label == "iter 3 · abcdef1"

@@ -169,6 +169,12 @@ class CommitStep:
     sha: str
     subject: str
 
+    @property
+    def label(self) -> str:
+        """The line every step picker and diff header shows: `iter N · sha7 ·
+        subject`, a part left out when empty."""
+        return " · ".join(p for p in (f"iter {self.iteration}", self.sha[:7], self.subject) if p)
+
 
 def approval_parts(prompt: str) -> tuple[str, str]:
     """An approval prompt's two parts: the head (`Allow run_command`, the
@@ -826,6 +832,8 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     )
     for ap, row in zip(state.pending_approvals, d["pending_approvals"], strict=True):
         row["head"], row["payload"] = approval_parts(ap.prompt)
+    for step, row in zip(state.steps, d["steps"], strict=True):
+        row["label"] = step.label
     # The one approval the run will take an answer to (`open_approval_of`).
     current = open_approval_of(state)
     d["open_approval"] = None if current is None else current.id
