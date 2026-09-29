@@ -223,6 +223,7 @@ def test_after_auto_commit_default_continues() -> None:
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
+                standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
                 stagnation_notice_after_s=300.0,
@@ -254,6 +255,7 @@ def test_after_auto_commit_field_is_overridable() -> None:
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
+                standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
                 stagnation_notice_after_s=300.0,

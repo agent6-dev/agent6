@@ -81,6 +81,7 @@ def _wf(
         "config": MagicMock(
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
+                standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
                 stagnation_notice_after_s=300.0,
@@ -113,6 +114,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     curator.graph_version = 7
     config = SimpleNamespace(
         workflow=SimpleNamespace(
+            standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
             stagnation_notice_after_s=300.0,
@@ -159,6 +161,7 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
     snap = session_dir / "loop_state.json"
     config = SimpleNamespace(
         workflow=SimpleNamespace(
+            standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
             stagnation_notice_after_s=300.0,
@@ -201,6 +204,7 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -
     snap = session_dir / "loop_state.json"
     config = SimpleNamespace(
         workflow=SimpleNamespace(
+            standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
             stagnation_notice_after_s=300.0,

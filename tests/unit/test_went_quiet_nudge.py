@@ -112,6 +112,7 @@ def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
+                standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
                 stagnation_notice_after_s=300.0,

@@ -17,7 +17,7 @@ The loop-owned conversation: typed turns over the provider wire.
 **Conversation** &mdash; Mutable container of frozen turns plus the rolling cache-mark pair.
 
 - **Written by:** workflows/loop
-- **Read by:** workflows/{_compaction, _compactor, _loop_state, _verify_gate}
+- **Read by:** workflows/{_compaction, _compactor, _loop_state, _standing, _verify_gate}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (23 test files exercise it)
 
 ## SessionManifest

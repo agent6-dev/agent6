@@ -122,7 +122,6 @@ from agent6.workflows._dag_focus import (
     current_task_banner,
     current_task_id,
     initial_dag_hint,
-    ready_subtask,
 )
 from agent6.workflows._finish_gates import (
     END_GATES,
@@ -157,8 +156,6 @@ from agent6.workflows._metric import (
 from agent6.workflows._nudges import (
     PLAN_ON_DISK_HEADER,
     ending_question,
-    standing_fruitless_nudge,
-    standing_resume_nudge,
     tool_error_signature,
 )
 from agent6.workflows._panel import (
@@ -199,6 +196,7 @@ from agent6.workflows._session_state import (
     load_session_snapshot,
     write_turn_marker,
 )
+from agent6.workflows._standing import Standing
 from agent6.workflows._steer import PINS_MAX_CHARS, STEER_VERBS, OperatorBridge, try_pin
 from agent6.workflows._toolset import (
     build_readonly_review_tools,
@@ -1474,7 +1472,7 @@ class Workflow:
             end_rejected=lambda turn, ending: self.reviewer.end_rejected(
                 state, turn, ending=ending
             ),
-            standing_absorb=lambda reason, iteration: self._standing_absorb(
+            standing_absorb=lambda reason, iteration: self.standing.absorb(
                 state, reason=reason, iteration=iteration
             ),
             gate_present=lambda: self.gate.present(state.verify),
@@ -1583,72 +1581,6 @@ class Workflow:
         )
         return content
 
-    def _standing_task(self) -> tuple[str, str] | None:
-        """The ready standing task's (id, title), if this run has one."""
-        if self.curator is None:
-            return None
-        nodes = self.curator.nodes()
-        for nid, node in nodes.items():
-            if node.standing and ready_subtask(nodes, node):
-                return nid, node.title[:120]
-        return None
-
-    def _standing_absorb(self, state: LoopState, *, reason: str, iteration: int) -> str | None:
-        """The standing-goal conversion for a soft end: the nudge text to
-        inject when the run should re-enter the standing task instead of
-        ending, else None. None when there is no ready standing task, when
-        the budget is spent (the hard bounds always win), or once
-        `[workflow].standing_patience` fruitless re-entries (no executed
-        tool call since the last one) are used up. At the default (-1) a
-        fruitless round never ends the run by itself: the nudge escalates
-        to "dig deeper or try a different approach" instead, and the run
-        ends on its budget, iteration cap, or an operator stop."""
-        st = self._standing_task()
-        if st is None:
-            return None
-        remaining = self._budget_fraction_remaining()
-        if remaining is not None and remaining <= 0.0:
-            return None
-        nid, title = st
-        if state.ok_tool_calls == state.standing.tools_mark:
-            state.standing.fruitless += 1
-            patience = self.config.workflow.standing_patience
-            if 0 <= patience < state.standing.fruitless:
-                self._log(
-                    f"  standing: {state.standing.fruitless} fruitless re-entries >"
-                    f" standing_patience {patience}; honouring {reason}"
-                )
-                return None
-            nudge = standing_fruitless_nudge(reason, nid, title, state.standing.fruitless)
-        else:
-            state.standing.fruitless = 0
-            nudge = standing_resume_nudge(reason, nid, title)
-        state.standing.tools_mark = state.ok_tool_calls
-        self._log(f"  standing re-entry ({reason}) -> {nid} at iter {iteration}")
-        self._emit("loop.standing.resumed", reason=reason, task_id=nid, iteration=iteration)
-        return nudge
-
-    def _absorb_soft_stop(
-        self, state: LoopState, turn: TurnState, conversation: Conversation
-    ) -> None:
-        """A standing task converts the soft out-of-work endings into
-        re-entry: the pending stop flag is cleared and the standing nudge
-        joins the conversation. Faults (tool_error), the loop guard, and
-        every hard bound still end the run; the absorb itself refuses on
-        spent budget or a spin."""
-        soft = next((stop.soft for stop in turn.stops if stop.soft), None)
-        if soft is None or any(not stop.soft for stop in turn.stops):
-            return
-        nudge = self._standing_absorb(state, reason=soft, iteration=turn.iteration)
-        if nudge is None:
-            return
-        turn.stops = [stop for stop in turn.stops if not stop.soft]
-        state.settled.restart()
-        state.verify.fail_streak = 0
-        state.no_progress.rearm()
-        state.metric.rearm()
-        conversation.notice(nudge)
-
     # ---- stop checks, silent finish, went-quiet --------------------------------
 
     def _turn_stop_checks(
@@ -1658,7 +1590,7 @@ class Workflow:
         `messages` and the post-tools snapshot is written, in precedence
         order: the advisors' stops as decided, then honouring a finish call
         that survived the gates."""
-        self._absorb_soft_stop(state, turn, conversation)
+        self.standing.absorb_soft_stop(state, turn, conversation)
         for stop in turn.stops:
             if stop.log:
                 self._log(stop.log)
@@ -2624,6 +2556,17 @@ class Workflow:
         )
 
     @cached_property
+    def standing(self) -> Standing:
+        """The run's standing goal: the re-entry a soft end converts into."""
+        return Standing(
+            curator=self.curator,
+            patience=self.config.workflow.standing_patience,
+            budget_remaining=self._budget_fraction_remaining,
+            log=self._log,
+            emit=self._emit,
+        )
+
+    @cached_property
     def reviewer(self) -> Reviewer:
         """The run's in-loop review panel."""
         return Reviewer(
@@ -2694,7 +2637,7 @@ class Workflow:
         the run)."""
         if self.mode != "run":
             return None
-        nudge = self._standing_absorb(state, reason=reason, iteration=iteration)
+        nudge = self.standing.absorb(state, reason=reason, iteration=iteration)
         if nudge is not None:
             conversation.notice(nudge)
             return NEXT_TURN

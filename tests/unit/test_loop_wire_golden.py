@@ -202,6 +202,7 @@ class _SteerOnce:
 def _config() -> Any:
     return SimpleNamespace(
         workflow=SimpleNamespace(
+            standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
             stagnation_notice_after_s=300.0,

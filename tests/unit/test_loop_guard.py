@@ -80,6 +80,7 @@ def _build_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock) -> Workflo
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
+                standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
                 stagnation_notice_after_s=300.0,
@@ -272,6 +273,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> No
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
+                standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
                 stagnation_notice_after_s=300.0,
@@ -314,6 +316,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
+                standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
                 stagnation_notice_after_s=300.0,
@@ -358,6 +361,7 @@ def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any)
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(
+                standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
                 stagnation_notice_after_s=300.0,

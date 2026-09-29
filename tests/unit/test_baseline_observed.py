@@ -34,6 +34,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> Workflow:
     object.__setattr__(wf, "_emit", _quiet)
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         workflow=SimpleNamespace(
+            standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
             stagnation_notice_after_s=300.0,
@@ -208,6 +209,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     wf.mode = "plan"
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         workflow=SimpleNamespace(
+            standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
             stagnation_notice_after_s=300.0,
@@ -269,6 +271,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     wf.mode = "run"
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         workflow=SimpleNamespace(
+            standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
             stagnation_notice_after_s=300.0,
