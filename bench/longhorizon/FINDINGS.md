@@ -42,6 +42,8 @@ Tier-1 gists (`[context].elision_gists`, default on): a large read result decays
 - The ledger campaign on gpt-5.6-sol (3 reps x 3 conditions, 45 sessions): score 1.000 on every leg and component in every condition. With the shared store, 1.7 writes and 0.8 reads per leg (2.7 memory files by the end); under fresh_state 1.5 writes and 0.2 reads. Memory does not make later legs cheaper for this model: tokens in 37.9k vs 35.3k on later legs, tool calls 33.7 vs 31.2, re-reads flat.
 - Poisoned: the score is unchanged (the model verifies the repo over the stale memory every time), later legs cost +15% tokens in (43.4k), and the planted memories were rewritten in 1 of 12 legs and never removed. Two confidently wrong memories were observed across waves; no model removed or corrected one.
 
+- One rep of orchard and ledger on gpt-5.6-sol under `baseline` and `poisoned` (16 legs, `results/r38-plan.jsonl`): score 1.0 on every leg, 8 to 20 iterations, no compaction. Under `poisoned` both tasks rewrote a planted memory in the second leg (`poison_touched` true) and left the other in place; on orchard the second correction was written to a hallucinated store path (the repo id's `r38-plan-orchard` typed as `r38-plan/orchard`), refused as outside the granted paths, while the index line the model added for a new fact landed without its file. `memory list` names such a line as `no file`.
+
 ## Tools measured
 
 - `add_dependency`: unused by qwen and kimi across every leg, including relay's strict chain; mistral-small-3.2 (decompose on) calls it unprompted, 1.7 edges per leg on orchard-weekend and 0.3 on relay, with sensible investigate-first fan-outs. Kept: a weak-model affordance, free when unused.
