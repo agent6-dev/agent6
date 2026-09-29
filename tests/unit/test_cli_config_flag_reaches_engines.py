@@ -16,6 +16,7 @@ import pytest
 from agent6 import git_ops, paths
 from agent6.app import _setup
 from agent6.config import layer
+from agent6.sandbox import jail
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import sessions_cmds, sessions_merge
@@ -146,7 +147,7 @@ def test_detached_resume_reapplies_the_overlay(
     def _no_sweep(_pid: int) -> None:
         pass
 
-    monkeypatch.setattr(spawn_mod, "keep_out_of_the_sweep", _no_sweep)
+    monkeypatch.setattr(jail, "keep_out_of_the_sweep", _no_sweep)
     run = sessions_layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "run-1"
     run.mkdir(parents=True)
     (run / "worker.pid").write_text("4242", encoding="utf-8")  # the fake child owns the run

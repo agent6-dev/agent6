@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import contextlib
 import os
+import pathlib
 import sys
 import tempfile
 import threading
 from collections.abc import Generator
-from pathlib import Path
 from typing import IO
 
 if sys.platform == "win32":
@@ -70,7 +70,7 @@ def unlock(fd: int) -> None:
         fcntl.flock(fd, fcntl.LOCK_UN)
 
 
-def _same_file(fd: int, path: Path) -> bool:
+def _same_file(fd: int, path: pathlib.Path) -> bool:
     """Return whether the descriptor and the path name the same inode."""
     try:
         a = os.fstat(fd)
@@ -84,7 +84,7 @@ def _same_file(fd: int, path: Path) -> bool:
 _HELD_LOCKS = threading.local()
 
 
-def _acquire_lock(lock_path: Path) -> int | None:
+def _acquire_lock(lock_path: pathlib.Path) -> int | None:
     """Open and lock the lock file.
 
     `O_NOFOLLOW` refuses a planted symlink at the predictable lock path outright. Any
@@ -121,7 +121,7 @@ def _acquire_lock(lock_path: Path) -> int | None:
 
 
 @contextlib.contextmanager
-def locked_file(target: Path) -> Generator[bool]:
+def locked_file(target: pathlib.Path) -> Generator[bool]:
     """Serialize read-modify-write cycles on a file across processes.
 
     The lock is a sibling `<name>.lock` file, never the target: `atomic_write`
@@ -165,7 +165,7 @@ def locked_file(target: Path) -> Generator[bool]:
             os.close(fd)
 
 
-def fsync_dir(path: Path) -> None:
+def fsync_dir(path: pathlib.Path) -> None:
     """Fsync a directory so a rename into it is durable; a no-op on Windows."""
     if sys.platform == "win32":
         return
@@ -176,7 +176,7 @@ def fsync_dir(path: Path) -> None:
         os.close(fd)
 
 
-def atomic_write(path: Path, data: str | bytes) -> None:
+def atomic_write(path: pathlib.Path, data: str | bytes) -> None:
     """Write a file through a temp file beside it and a durable rename.
 
     The temp file is fsynced before the rename and the parent after it, so a crash
@@ -207,12 +207,12 @@ def atomic_write(path: Path, data: str | bytes) -> None:
                 fh.write(data)
                 fh.flush()
                 os.fsync(fh.fileno())
-        Path(tmp_name).replace(path)
+        pathlib.Path(tmp_name).replace(path)
     except Exception:
         if fd >= 0:
             os.close(fd)
         if tmp_name:
-            Path(tmp_name).unlink(missing_ok=True)
+            pathlib.Path(tmp_name).unlink(missing_ok=True)
         raise
     fsync_dir(path.parent)
 
@@ -245,9 +245,9 @@ def toml_basic_string(value: str) -> str:
     return '"' + "".join(out) + '"'
 
 
-def _ensure_parent_dirs(parent: Path) -> None:
+def _ensure_parent_dirs(parent: pathlib.Path) -> None:
     """Create the directory and its missing ancestors, fsyncing each new entry."""
-    missing: list[Path] = []
+    missing: list[pathlib.Path] = []
     cur = parent
     while not cur.exists():
         missing.append(cur)
@@ -259,7 +259,7 @@ def _ensure_parent_dirs(parent: Path) -> None:
         fsync_dir(directory.parent)
 
 
-def _existing_mode(path: Path) -> int | None:
+def _existing_mode(path: pathlib.Path) -> int | None:
     """Return the target's permission bits, or None when it does not exist yet."""
     try:
         return path.stat().st_mode & 0o777

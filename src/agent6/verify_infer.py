@@ -13,13 +13,13 @@ the jail PATH.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import pathlib
 import re
 import shlex
 from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 
 # A command line with any of these is a shell construct, wrapped in `sh -c`.
 _SHELL_META = re.compile(r"(\|\||&&|[|&;<>`]|\$\()")
@@ -28,7 +28,7 @@ _INLINE_VERIFY = re.compile(r"^\s*(?:verify|test)\s*:\s*(.+)$", re.IGNORECASE)
 _MAKE_TARGET = re.compile(r"^([A-Za-z0-9_-]+)\s*:", re.MULTILINE)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class InferredVerify:
     """A verify command inferred for one run, never persisted.
 
@@ -85,7 +85,7 @@ def _first_fenced_block(lines: list[str], start: int) -> list[str] | None:
     return None
 
 
-def read_agents_md(repo_root: Path) -> str:
+def read_agents_md(repo_root: pathlib.Path) -> str:
     """Return the repo's AGENTS.md text; "" when absent or unreadable."""
     path = repo_root / "AGENTS.md"
     if not path.is_file():
@@ -130,7 +130,7 @@ def _has_make_target(text: str, target: str) -> bool:
     return any(m.group(1) == target for m in _MAKE_TARGET.finditer(text))
 
 
-def _python(repo_root: Path) -> str:
+def _python(repo_root: pathlib.Path) -> str:
     """Return the interpreter a pytest gate runs with: the project's `.venv`, else `python3`."""
     return ".venv/bin/python" if (repo_root / ".venv" / "bin" / "python").exists() else "python3"
 
@@ -138,7 +138,7 @@ def _python(repo_root: Path) -> str:
 Signal = tuple[tuple[str, ...], str]
 
 
-def _verify_sh(repo_root: Path) -> Signal | None:
+def _verify_sh(repo_root: pathlib.Path) -> Signal | None:
     """Return the root `verify.sh` as the command, or None."""
     script = repo_root / "verify.sh"
     if not script.is_file():
@@ -147,7 +147,7 @@ def _verify_sh(repo_root: Path) -> Signal | None:
     return (argv, "verify.sh")
 
 
-def _package_json(repo_root: Path) -> Signal | None:
+def _package_json(repo_root: pathlib.Path) -> Signal | None:
     """Return `npm test` when package.json has a test script, or None."""
     pkg = repo_root / "package.json"
     if not pkg.is_file():
@@ -162,7 +162,7 @@ def _package_json(repo_root: Path) -> Signal | None:
     return None
 
 
-def _makefile(repo_root: Path) -> Signal | None:
+def _makefile(repo_root: pathlib.Path) -> Signal | None:
     """Return `make test` or `make check` when a Makefile defines it, or None."""
     for mk in ("Makefile", "makefile", "GNUmakefile"):
         p = repo_root / mk
@@ -178,7 +178,7 @@ def _makefile(repo_root: Path) -> Signal | None:
     return None
 
 
-def _python_manifest(repo_root: Path) -> Signal | None:
+def _python_manifest(repo_root: pathlib.Path) -> Signal | None:
     """Return a pytest run when a Python manifest exists, or None."""
     manifests = ("pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg", "setup.py")
     if any((repo_root / f).is_file() for f in manifests):
@@ -186,7 +186,7 @@ def _python_manifest(repo_root: Path) -> Signal | None:
     return None
 
 
-def _cargo(repo_root: Path) -> Signal | None:
+def _cargo(repo_root: pathlib.Path) -> Signal | None:
     """Return `cargo test` when Cargo.toml exists, or None."""
     return (
         (("cargo", "test", "--quiet"), "Cargo.toml")
@@ -195,12 +195,12 @@ def _cargo(repo_root: Path) -> Signal | None:
     )
 
 
-def _go(repo_root: Path) -> Signal | None:
+def _go(repo_root: pathlib.Path) -> Signal | None:
     """Return `go test` when go.mod exists, or None."""
     return (("go", "test", "./..."), "go.mod") if (repo_root / "go.mod").is_file() else None
 
 
-def _loose_python_tests(repo_root: Path) -> Signal | None:
+def _loose_python_tests(repo_root: pathlib.Path) -> Signal | None:
     """Return a pytest run when loose `test_*.py` files exist, or None."""
     if any(repo_root.glob("test_*.py")) or any((repo_root / "tests").glob("test_*.py")):
         return ((_python(repo_root), "-m", "pytest", "-q"), "test_*.py")
@@ -219,7 +219,7 @@ _REPO_SIGNALS = (
 )
 
 
-def verify_from_repo_signals(repo_root: Path) -> Signal | None:
+def verify_from_repo_signals(repo_root: pathlib.Path) -> Signal | None:
     """Return the first repo signal that matches, or None."""
     return next((found for probe in _REPO_SIGNALS if (found := probe(repo_root))), None)
 
@@ -253,7 +253,7 @@ VERIFY_INFER_SYSTEM_PROMPT = (
 )
 
 
-def gather_repo_manifests(repo_root: Path, agents_md: str, *, cap: int = 4000) -> str:
+def gather_repo_manifests(repo_root: pathlib.Path, agents_md: str, *, cap: int = 4000) -> str:
     """Return the clipped manifest files and AGENTS.md as the LLM call's context."""
     parts: list[str] = []
     try:
@@ -293,7 +293,7 @@ def parse_llm_verify(text: str) -> tuple[str, ...] | None:
 
 
 def infer_verify_command(
-    repo_root: Path,
+    repo_root: pathlib.Path,
     agents_md: str,
     *,
     llm_call: Callable[[str], str] | None = None,

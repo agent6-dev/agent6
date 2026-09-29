@@ -10,24 +10,24 @@ run's journal.
 from __future__ import annotations
 
 import os
+import pathlib
 import subprocess
+import threading
 import time
 from collections.abc import Callable
-from pathlib import Path
-from threading import Thread
 
-from agent6.app.btw import BtwLaunch, BtwSession, btw_answer, render_btw, start_btw
-from agent6.events import EventSink
-from agent6.sandbox.jail import keep_out_of_the_sweep
-from agent6.sessions.layout import LOGS_NAME, bucket_dir, layout_of
-from agent6.ui.spawn import agent6_exe
+from agent6 import events as agent6_events
+from agent6.app import btw
+from agent6.sandbox import jail
+from agent6.sessions import layout
+from agent6.ui import spawn
 
 # A poll costs one status fold off the session dir.
 _POLL_S = 1.0
 _GIVE_UP_S = 900.0
 
 
-def direct_launch(cwd: Path, argv: list[str], env_extra: dict[str, str]) -> str:
+def direct_launch(cwd: pathlib.Path, argv: list[str], env_extra: dict[str, str]) -> str:
     """Spawn `agent6 <argv>` detached, for a run with no namespace to escape.
 
     Returns:
@@ -35,7 +35,7 @@ def direct_launch(cwd: Path, argv: list[str], env_extra: dict[str, str]) -> str:
     """
     try:
         proc = subprocess.Popen(
-            [agent6_exe(), *argv],
+            [spawn.agent6_exe(), *argv],
             cwd=str(cwd),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -46,17 +46,17 @@ def direct_launch(cwd: Path, argv: list[str], env_extra: dict[str, str]) -> str:
     except OSError as exc:
         return f"could not start the btw: {exc}"
     # Unregistered, the escapee sweep would kill it at the next background command's teardown.
-    keep_out_of_the_sweep(proc.pid)
+    jail.keep_out_of_the_sweep(proc.pid)
     return ""
 
 
 def make_btw_runner(
     parent_id: str,
     *,
-    launch: BtwLaunch,
-    list_asks: Callable[[], list[Path]],
-    events: EventSink,
-) -> Callable[[str, Path], tuple[bool, str]]:
+    launch: btw.BtwLaunch,
+    list_asks: Callable[[], list[pathlib.Path]],
+    events: agent6_events.EventSink,
+) -> Callable[[str, pathlib.Path], tuple[bool, str]]:
     """Build the `/btw <question>` handler the pause menu and the composers call.
 
     Args:
@@ -70,20 +70,20 @@ def make_btw_runner(
         to show, and never blocks the run.
     """
 
-    def run_btw(question: str, _session_dir: Path) -> tuple[bool, str]:
-        session, err = start_btw(
-            question, parent_id, cwd=Path.cwd(), launch=launch, list_asks=list_asks
+    def run_btw(question: str, _session_dir: pathlib.Path) -> tuple[bool, str]:
+        session, err = btw.start_btw(
+            question, parent_id, cwd=pathlib.Path.cwd(), launch=launch, list_asks=list_asks
         )
         if session is None:
             return False, f"[agent6] {err}"
         events.emit("btw.opened", btw_id=session.id, question=session.question)
-        Thread(target=_watch, args=(session, events), daemon=True).start()
+        threading.Thread(target=_watch, args=(session, events), daemon=True).start()
         return True, f"[agent6] btw {session.id} opened; its answer prints here when it lands"
 
     return run_btw
 
 
-def _watch(session: BtwSession, events: EventSink) -> None:
+def _watch(session: btw.BtwSession, events: agent6_events.EventSink) -> None:
     """Poll until the side question answers, then put the block on the run's journal.
 
     Runs on a daemon thread, so it never holds the run open. Past the give-up time
@@ -91,24 +91,24 @@ def _watch(session: BtwSession, events: EventSink) -> None:
     """
     deadline = time.monotonic() + _GIVE_UP_S
     while time.monotonic() < deadline:
-        answer = btw_answer(session)
+        answer = btw.btw_answer(session)
         if answer is not None:
-            events.emit("btw.answered", btw_id=session.id, block=render_btw(session, answer))
+            events.emit("btw.answered", btw_id=session.id, block=btw.render_btw(session, answer))
             return
         time.sleep(_POLL_S)
     late = (
         f"(no answer after {_GIVE_UP_S / 60:g} minutes; `agent6 sessions show {session.id}`"
         " reads it once it ends)"
     )
-    events.emit("btw.answered", btw_id=session.id, block=render_btw(session, late))
+    events.emit("btw.answered", btw_id=session.id, block=btw.render_btw(session, late))
 
 
-def asks_dir(session_dir: Path) -> Path:
+def asks_dir(session_dir: pathlib.Path) -> pathlib.Path:
     """Return the asks bucket beside the session's own, derived so the two agree under any XDG."""
-    return bucket_dir(layout_of(session_dir).state_dir, "asks")
+    return layout.bucket_dir(layout.layout_of(session_dir).state_dir, "asks")
 
 
-def open_btw(session_dir: Path, question: str) -> tuple[bool, str]:
+def open_btw(session_dir: pathlib.Path, question: str) -> tuple[bool, str]:
     """Open a side question beside a live run, from any composer.
 
     Args:
@@ -128,6 +128,6 @@ def open_btw(session_dir: Path, question: str) -> tuple[bool, str]:
             if asks_dir(session_dir).is_dir()
             else []
         ),
-        events=EventSink(session_dir / LOGS_NAME),
+        events=agent6_events.EventSink(session_dir / layout.LOGS_NAME),
     )
     return runner(question, session_dir)

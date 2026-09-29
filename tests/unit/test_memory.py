@@ -11,7 +11,7 @@ import threading
 
 import pytest
 
-from agent6 import memory
+from agent6 import memory, portable
 
 
 def test_add_writes_file_and_index_line(tmp_path: pathlib.Path) -> None:
@@ -502,16 +502,14 @@ def test_add_publishes_a_fact_atomically(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A crash in the durable publish must not expose a partial fact file."""
-    from agent6 import memory as mem
-
-    real_atomic_write = mem.atomic_write
+    real_atomic_write = portable.atomic_write
 
     def crash(path: pathlib.Path, data: str | bytes) -> None:
         if path.name == "crash.md":
             raise OSError("simulated crash")
         real_atomic_write(path, data)
 
-    monkeypatch.setattr(mem, "atomic_write", crash)
+    monkeypatch.setattr(portable, "atomic_write", crash)
     with pytest.raises(OSError, match="simulated crash"):
         memory.add(tmp_path, "crash", "A complete fact.")
     assert not (memory.memory_dir(tmp_path) / "crash.md").exists()
@@ -521,15 +519,13 @@ def test_an_index_rewrite_cannot_erase_a_concurrent_add(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every index read-modify-write and append shares one lock."""
-    from agent6 import memory as mem
-
     memory.add(tmp_path, "keep", "Keep this.")
     memory.add(tmp_path, "drop", "Drop this.")
     idx = memory.index_path(tmp_path)
     rewrite_ready = threading.Event()
     release_rewrite = threading.Event()
     added = threading.Event()
-    real_atomic_write = mem.atomic_write
+    real_atomic_write = portable.atomic_write
 
     def pause_rewrite(path: pathlib.Path, data: str | bytes) -> None:
         if threading.current_thread().name == "remove" and path == idx:
@@ -537,7 +533,7 @@ def test_an_index_rewrite_cannot_erase_a_concurrent_add(
             assert release_rewrite.wait(5)
         real_atomic_write(path, data)
 
-    monkeypatch.setattr(mem, "atomic_write", pause_rewrite)
+    monkeypatch.setattr(portable, "atomic_write", pause_rewrite)
     remover = threading.Thread(target=memory.remove, args=(tmp_path, "drop"), name="remove")
 
     def add_one() -> None:

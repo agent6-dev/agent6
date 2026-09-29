@@ -135,7 +135,7 @@ def test_steer_btw_opens_a_side_ask_instead_of_queuing_the_directive(
         opened.append((session_dir, question))
         return True, "[agent6] btw side-ask-IIII99 opened"
 
-    monkeypatch.setattr("agent6.ui.directives.open_btw", _open_btw, raising=False)
+    monkeypatch.setattr("agent6.ui.btw.open_btw", _open_btw, raising=False)
 
     assert main(["steer", "tiny-run-HHHH88", "/btw is the migration safe?"]) == 0
     assert opened == [(d, "is the migration safe?")]

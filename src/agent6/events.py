@@ -12,16 +12,16 @@ and stay best-effort; the transcripts keep the lossless copy.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import datetime
 import json
 import os
+import pathlib
+import threading
 from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
-from pathlib import Path
-from threading import RLock
 from typing import Any
 
-from agent6.paths import mkdir_for_real_user
+from agent6 import paths
 
 # Flushed but never fsynced: a reasoning model emits tens of thousands per run.
 _EPHEMERAL_EVENTS = frozenset({"role.text_delta", "role.thinking_delta"})
@@ -35,7 +35,7 @@ class EventWriteError(Exception):
     """
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class EventSink:
     """Append events to a journal file; thread-safe.
 
@@ -45,13 +45,13 @@ class EventSink:
         path: The journal file.
     """
 
-    path: Path
-    _lock: RLock
+    path: pathlib.Path
+    _lock: threading.RLock
     _listeners: list[Callable[[dict[str, Any]], None]]
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: pathlib.Path) -> None:
         self.path = path
-        self._lock = RLock()
+        self._lock = threading.RLock()
         self._listeners = []
 
     def subscribe(self, listener: Callable[[dict[str, Any]], None]) -> None:
@@ -71,7 +71,7 @@ class EventSink:
         """
         ephemeral = event_type in _EPHEMERAL_EVENTS
         payload: dict[str, Any] = {
-            "ts": datetime.now(UTC).isoformat(timespec="microseconds"),
+            "ts": datetime.datetime.now(datetime.UTC).isoformat(timespec="microseconds"),
             "type": event_type,
         }
         payload.update(fields)
@@ -88,7 +88,7 @@ class EventSink:
             with self._lock:
                 # Only when missing: on every event the handback would walk the dir under sudo.
                 if not self.path.parent.is_dir():
-                    mkdir_for_real_user(self.path.parent)
+                    paths.mkdir_for_real_user(self.path.parent)
                 with self.path.open("ab") as fh:
                     fh.write(data)
                     fh.flush()
@@ -104,8 +104,8 @@ class EventSink:
 
 def _json_default(value: Any) -> Any:
     """Return a path or a datetime as text, and anything else as its repr."""
-    if isinstance(value, Path):
+    if isinstance(value, pathlib.Path):
         return str(value)
-    if isinstance(value, datetime | date | time):
+    if isinstance(value, datetime.datetime | datetime.date | datetime.time):
         return value.isoformat()
     return repr(value)

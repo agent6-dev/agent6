@@ -8,8 +8,8 @@ The pydantic models sit at the trust boundaries instead: `config.model`,
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+import dataclasses
+import pathlib
 from typing import Literal
 
 TernaryMode = Literal["no", "ask", "yes"]
@@ -23,7 +23,7 @@ ResumableMode = Literal["run", "plan", "ask"]
 AutoCommitDirective = Literal["continue", "stop", "undo", "exit"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionKind:
     """What a mode may do, in one record.
 
@@ -145,7 +145,7 @@ def session_bucket(name: str) -> str:
     return f"{kind.name}s"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CommandResult:
     """The result of running a command, in or out of the jail.
 
@@ -172,7 +172,7 @@ class CommandResult:
         return self.returncode == 0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ChildSnapshot:
     """The agent's children when a command started.
 
@@ -185,7 +185,7 @@ class ChildSnapshot:
     pids: frozenset[int]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class BackgroundHandoff:
     """A command that outlived its check-in and is still running.
 
@@ -211,7 +211,7 @@ class BackgroundHandoff:
     before: ChildSnapshot
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class JailPolicy:
     """What the jail allows one child invocation.
 
@@ -237,22 +237,22 @@ class JailPolicy:
             descendant; 0 disables, since capping costs real builds more than it buys.
     """
 
-    cwd: Path
+    cwd: pathlib.Path
     argv: tuple[str, ...]
     isolation: IsolationLevel = "strict"
     env: tuple[tuple[str, str], ...] = ()
     network: NetworkMode = "none"
-    extra_ro_paths: tuple[Path, ...] = ()
-    extra_rw_paths: tuple[Path, ...] = ()
-    extra_device_paths: tuple[Path, ...] = ()
-    extra_protect_paths: tuple[Path, ...] = ()
-    tool_paths: tuple[Path, ...] = ()
-    hide_paths: tuple[Path, ...] = ()
+    extra_ro_paths: tuple[pathlib.Path, ...] = ()
+    extra_rw_paths: tuple[pathlib.Path, ...] = ()
+    extra_device_paths: tuple[pathlib.Path, ...] = ()
+    extra_protect_paths: tuple[pathlib.Path, ...] = ()
+    tool_paths: tuple[pathlib.Path, ...] = ()
+    hide_paths: tuple[pathlib.Path, ...] = ()
     timeout_s: float = 600.0
     memory_limit_mb: int = 0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ModelRoute:
     """A provider and a model on it, the pair every model choice resolves to.
 
@@ -270,7 +270,7 @@ class ModelRoute:
         return f"{self.provider}/{self.model}"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RepoSummary:
     """The compact view of a repository the prompt carries.
 
@@ -288,7 +288,7 @@ class RepoSummary:
             names the situation instead of a fake repo header.
     """
 
-    root: Path
+    root: pathlib.Path
     branch: str
     head_sha: str
     file_count: int
@@ -299,7 +299,7 @@ class RepoSummary:
     is_git: bool = True
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SandboxReport:
     """The result of one sandbox self-test.
 

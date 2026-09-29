@@ -9,12 +9,12 @@ subject in the agent6 or the Conventional Commits style. Pure string work;
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
-from pathlib import PurePosixPath
 
-from agent6.task_text import task_headline
+from agent6 import task_text
 
 
 def render_commit_trailer(fmt: str, *, models: Sequence[str]) -> str | None:
@@ -33,7 +33,7 @@ def render_commit_trailer(fmt: str, *, models: Sequence[str]) -> str | None:
     return fmt.format(model=", ".join(dict.fromkeys(m for m in models if m)))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class CommitRow:
     """One commit on a run branch.
 
@@ -104,14 +104,14 @@ def agent6_subject(text: str, iteration: int, *, fallback: str = "verify passed"
 
 def _is_testish(p: str) -> bool:
     """Return whether a path is a test file."""
-    parts = PurePosixPath(p).parts
+    parts = pathlib.PurePosixPath(p).parts
     name = parts[-1] if parts else ""
     return parts[:1] == ("tests",) or name.startswith("test_") or name == "conftest.py"
 
 
 def _is_docish(p: str) -> bool:
     """Return whether a path is documentation."""
-    pp = PurePosixPath(p)
+    pp = pathlib.PurePosixPath(p)
     return pp.suffix.lower() in (".md", ".rst") or pp.parts[:1] == ("docs",)
 
 
@@ -121,12 +121,14 @@ def _conventional_scope(paths: Sequence[str]) -> str:
     The package dir under `src/<pkg>/`, the module stem for a file directly under the
     package, else a second-level dir every path shares.
     """
-    parts = [PurePosixPath(p).parts for p in paths if p]
+    parts = [pathlib.PurePosixPath(p).parts for p in paths if p]
     if not parts:
         return ""
     src_pkgs = [pp for pp in parts if len(pp) >= 3 and pp[0] == "src"]
     if src_pkgs:
-        names = {pp[2] if len(pp) > 3 else str(PurePosixPath(pp[2]).stem) for pp in src_pkgs}
+        names = {
+            pp[2] if len(pp) > 3 else str(pathlib.PurePosixPath(pp[2]).stem) for pp in src_pkgs
+        }
         return names.pop() if len(names) == 1 else ""
     tops = {pp[0] for pp in parts}
     if len(tops) != 1:
@@ -168,7 +170,7 @@ def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: 
 
 def _headline_subject(task: str, *, limit: int = _SUBJECT_LIMIT) -> str:
     """Return a subject from the task's first clause, capped at the limit with an ellipsis."""
-    first_line = _ITER_SUBJECT_RE.sub("", task_headline(task)).strip()
+    first_line = _ITER_SUBJECT_RE.sub("", task_text.task_headline(task)).strip()
     match = re.search(r"[.!?](?:\s|$)", first_line)
     clause = first_line[: match.start()] if match else first_line
     clause = " ".join(clause.split())

@@ -17,13 +17,13 @@ against `max_tokens_fallback`. Each cap: -1 unlimited, 0 refuse that ledger, >
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import threading
 import time
-from dataclasses import dataclass, field, replace
 from typing import Any
 
-from agent6.models.pricing import lookup_price
+from agent6.models import pricing
 
 # No static price table: an unknown price is honest, an outdated hardcoded one is wrong.
 
@@ -32,7 +32,7 @@ class BudgetExceededError(Exception):
     """A configured limit is exceeded; raised by `BudgetTracker.check`."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PlanWindow:
     """One rate-limit window of a subscription plan.
 
@@ -53,7 +53,7 @@ class PlanWindow:
 _CREDITS_PER_USD = 25.0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PlanUsage:
     """One plan-usage reading from a subscription provider.
 
@@ -142,7 +142,7 @@ class PlanUsage:
         return amount if math.isfinite(amount) and amount >= 0 else None
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class ModelUsage:
     """One model's usage totals: the tracker's live counters, and a snapshot row when copied.
 
@@ -177,7 +177,7 @@ class ModelUsage:
     percent_metered: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _ModelCost:
     """One model's resolved cost.
 
@@ -245,7 +245,7 @@ def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost
         # Included-plan calls are an authoritative $0, never table-priced.
         return _ModelCost(0.0, reported=True, estimated=False)
     reported = t.reported_cost_usd > 0.0
-    price = lookup_price(model, provider)
+    price = pricing.lookup_price(model, provider)
     if price is None:
         if reported:
             # Dropping the reported dollars would zero real spend out of the USD cap.
@@ -272,7 +272,7 @@ def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class PlanSpend:
     """One subscription plan's latest reading and this run's consumption.
 
@@ -285,7 +285,7 @@ class PlanSpend:
     consumed: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class BudgetSnapshot:
     """A point-in-time copy of a tracker's counters.
 
@@ -328,7 +328,7 @@ class BudgetSnapshot:
         return max((spend.consumed for spend in self.plans.values()), default=0.0)
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class BudgetTracker:
     """The thread-safe spend accumulator; every call is bounded in one currency.
 
@@ -351,8 +351,8 @@ class BudgetTracker:
     max_tokens_fallback: int
     max_percent: float
     allow_paid_credits: bool = False
-    _lock: threading.Lock = field(default_factory=threading.Lock)
-    _per_model: dict[str, ModelUsage] = field(default_factory=dict)
+    _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+    _per_model: dict[str, ModelUsage] = dataclasses.field(default_factory=dict)
     _input_total: int = 0
     _output_total: int = 0
     _cache_read_total: int = 0
@@ -360,15 +360,15 @@ class BudgetTracker:
     _unmetered_tokens: int = 0
     _exceeded_reason: str = ""
     # Provider entry to its latest plan reading, the most recently reported last.
-    _plans: dict[str, PlanUsage] = field(default_factory=dict)
+    _plans: dict[str, PlanUsage] = dataclasses.field(default_factory=dict)
     # Per (provider entry, window): the last reading, and this run's consumption sawtooth.
-    _plan_last_percent: dict[tuple[str, str], float] = field(default_factory=dict)
-    _plan_consumed_by_window: dict[tuple[str, str], float] = field(default_factory=dict)
+    _plan_last_percent: dict[tuple[str, str], float] = dataclasses.field(default_factory=dict)
+    _plan_consumed_by_window: dict[tuple[str, str], float] = dataclasses.field(default_factory=dict)
     # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
-    _credits_last_usd: dict[str, float] = field(default_factory=dict)
+    _credits_last_usd: dict[str, float] = dataclasses.field(default_factory=dict)
     _credits_spent_usd: float = 0.0
     # Model id to the provider entry that bills it, so a model two providers list is priced right.
-    _routes: dict[str, str] = field(default_factory=dict)
+    _routes: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def note_route(self, model: str, provider: str) -> None:
         """Record which provider entry a model is called through."""
@@ -432,7 +432,10 @@ class BudgetTracker:
             if plan_usage is not None:
                 self._check_plan_ceilings(model, plan_usage)
                 return
-            metered = cost_usd > 0.0 or lookup_price(model, self._routes.get(model, "")) is not None
+            metered = (
+                cost_usd > 0.0
+                or pricing.lookup_price(model, self._routes.get(model, "")) is not None
+            )
             if not metered:
                 self._unmetered_tokens += input_tokens + output_tokens
             if metered and self.max_usd == 0.0:
@@ -602,7 +605,9 @@ class BudgetTracker:
     def snapshot(self) -> BudgetSnapshot:
         """Return a point-in-time copy of every counter."""
         with self._lock:
-            per_model = {model: replace(t) for model, t in sorted(self._per_model.items())}
+            per_model = {
+                model: dataclasses.replace(t) for model, t in sorted(self._per_model.items())
+            }
             return BudgetSnapshot(
                 input_total=self._input_total,
                 output_total=self._output_total,

@@ -26,6 +26,7 @@ from agent6.app import _session, _setup
 from agent6.app import manifest as app_manifest
 from agent6.app import run as app_run
 from agent6.config import Config
+from agent6.models import validate
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, manifest
 
@@ -327,7 +328,7 @@ def test_hub_new_work_fans_out_while_checkout_busy(
     ) -> None:
         return None
 
-    monkeypatch.setattr(spawn, "directive_model_refusal", no_refusal)
+    monkeypatch.setattr(validate, "directive_model_refusal", no_refusal)
     state = paths.state_dir(repo)
     holder_fd = lock.acquire_repo_writer(state, repo, "run-LIVE")
     try:

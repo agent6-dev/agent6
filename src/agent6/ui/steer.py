@@ -8,21 +8,14 @@ SIGINT pause menu on the same shape, `app.frontend.SteerHooks`.
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from pathlib import Path
 
-from agent6.sessions.ipc import (
-    clear_steer_answer,
-    clear_steer_request,
-    read_steer_answer,
-    steer_answer_is_abort,
-    steer_interrupt_pending,
-    steer_request_pending,
-)
+from agent6.sessions import ipc
 
 
-@dataclass
+@dataclasses.dataclass
 class SteerState:
     """The steer hooks a front-end hands the lifecycle.
 
@@ -47,33 +40,33 @@ class SteerState:
     abort_pending: Callable[[], bool]
     interrupt: Callable[[], bool]
     reset_stage: Callable[[], None]
-    armed: Callable[[], bool] = field(default=lambda: False)
-    prompt_now: Callable[[], None] = field(default=lambda: None)
+    armed: Callable[[], bool] = dataclasses.field(default=lambda: False)
+    prompt_now: Callable[[], None] = dataclasses.field(default=lambda: None)
 
 
-def file_bridge_steer(session_dir: Path) -> SteerState:
+def file_bridge_steer(session_dir: pathlib.Path) -> SteerState:
     """Return the steer hooks for a run with no controlling terminal.
 
     No SIGINT handler; requests and answers travel over the front-end file bridge.
     """
 
     def prompt() -> str | None:
-        answer = read_steer_answer(session_dir)
+        answer = ipc.read_steer_answer(session_dir)
         # An abandoned prompt clears its request, or the next boundary would block again.
         if answer is None:
-            clear_steer_request(session_dir)
+            ipc.clear_steer_request(session_dir)
         return answer
 
     def clear() -> None:
-        clear_steer_answer(session_dir)
-        clear_steer_request(session_dir)
+        ipc.clear_steer_answer(session_dir)
+        ipc.clear_steer_request(session_dir)
 
     return SteerState(
-        requested=lambda: steer_request_pending(session_dir),
+        requested=lambda: ipc.steer_request_pending(session_dir),
         clear=clear,
         prompt=prompt,
         restore=lambda: None,
-        abort_pending=lambda: steer_answer_is_abort(session_dir),
-        interrupt=lambda: steer_interrupt_pending(session_dir),
+        abort_pending=lambda: ipc.steer_answer_is_abort(session_dir),
+        interrupt=lambda: ipc.steer_interrupt_pending(session_dir),
         reset_stage=lambda: None,
     )

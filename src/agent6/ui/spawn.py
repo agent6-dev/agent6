@@ -9,40 +9,35 @@ the work in-process.
 from __future__ import annotations
 
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
-from pathlib import Path
 from typing import IO
 
-from agent6.directive import DirectiveError, parse_directive, steer_problem
-from agent6.kinds import OPERATOR_MODES
-from agent6.models.validate import directive_model_refusal
-from agent6.paths import state_dir
-from agent6.sandbox.jail import keep_out_of_the_sweep
-from agent6.sessions.id import SessionIdError, resolve_session
-from agent6.sessions.ipc import read_worker_pid
-from agent6.sessions.layout import LOGS_NAME
-from agent6.sessions.lock import repo_writer_held, repo_writer_holder
-from agent6.viewmodel.listing import session_dirs
+from agent6 import directive, kinds, paths
+from agent6.models import validate
+from agent6.sandbox import jail
+from agent6.sessions import id, ipc, layout, lock
+from agent6.viewmodel import listing
 
 
 def agent6_exe() -> str:
     """Return the agent6 executable of this install, falling back to the one on PATH."""
-    argv0 = Path(sys.argv[0])
+    argv0 = pathlib.Path(sys.argv[0])
     if argv0.name.startswith("agent6") and argv0.exists():
         return str(argv0.resolve())
     # Under `python -m agent6.ui.tui` the install's binary sits beside its interpreter.
-    beside = Path(sys.executable).with_name("agent6")
+    beside = pathlib.Path(sys.executable).with_name("agent6")
     if beside.exists():
         return str(beside.resolve())
     return shutil.which("agent6") or "agent6"
 
 
-def agent6_argv(config_path: Path | None) -> list[str]:
+def agent6_argv(config_path: pathlib.Path | None) -> list[str]:
     """Return the argv head every spawn starts from: the exe, plus the front-end's `--config`."""
     argv = [agent6_exe()]
     if config_path is not None:
@@ -56,14 +51,14 @@ DETACHED_RUN_ENV: dict[str, str] = {"AGENT6_STREAM_TO_LOG": "1", **DETACHED_AWAY
 
 
 def spawn_new_work(  # noqa: PLR0911
-    cwd: Path,
+    cwd: pathlib.Path,
     mode: str,
     task: str,
     *,
     preset: str = "",
     model: str = "",
-    config_path: Path | None = None,
-) -> tuple[Path | None, str]:
+    config_path: pathlib.Path | None = None,
+) -> tuple[pathlib.Path | None, str]:
     """Start a session detached from a hub.
 
     In run mode a `/parallel` message fans out one detached `run --parallel` per
@@ -83,22 +78,22 @@ def spawn_new_work(  # noqa: PLR0911
     Returns:
         The new session's dir (the first lane's for a fan-out) and "", or None and why.
     """
-    if mode not in OPERATOR_MODES:
+    if mode not in kinds.OPERATOR_MODES:
         return None, f"unknown mode {mode!r}"
     if not task.strip():
         return None, "empty task"
     # The child refuses this too, but detached: nobody reads its stderr.
-    if (problem := steer_problem(task)) is not None:
+    if (problem := directive.steer_problem(task)) is not None:
         return None, problem
     segments = None
     if mode == "run":
         try:
-            segments = parse_directive(task)
-        except DirectiveError as exc:
+            segments = directive.parse_directive(task)
+        except directive.DirectiveError as exc:
             return None, str(exc)
     if segments is None:
-        if mode == "run" and repo_writer_held(state := state_dir(cwd), cwd):
-            holder = repo_writer_holder(state, cwd) or "another run"
+        if mode == "run" and lock.repo_writer_held(state := paths.state_dir(cwd), cwd):
+            holder = lock.repo_writer_holder(state, cwd) or "another run"
             return None, (
                 f"run {holder} is already driving this checkout; steer it with this task"
                 " (or /parallel it) from its run view, or wait for it to finish"
@@ -106,10 +101,12 @@ def spawn_new_work(  # noqa: PLR0911
         return _spawn_run(
             cwd, mode, task, preset=preset, model=model, spec="", config_path=config_path
         )
-    refusal = directive_model_refusal(cwd, segments, config_path, preset=preset, model=model)
+    refusal = validate.directive_model_refusal(
+        cwd, segments, config_path, preset=preset, model=model
+    )
     if refusal is not None:
         return None, refusal
-    first: Path | None = None
+    first: pathlib.Path | None = None
     lines: list[str] = []
     failed = False
     for i, seg in enumerate(segments, 1):
@@ -137,15 +134,15 @@ def spawn_new_work(  # noqa: PLR0911
 
 
 def _spawn_run(
-    cwd: Path,
+    cwd: pathlib.Path,
     mode: str,
     task: str,
     *,
     preset: str,
     model: str,
     spec: str,
-    config_path: Path | None,
-) -> tuple[Path | None, str]:
+    config_path: pathlib.Path | None,
+) -> tuple[pathlib.Path | None, str]:
     """Spawn one detached session and locate it by its new session dir.
 
     `--` ends option parsing, so a task starting with `-` is never read as a flag.
@@ -161,24 +158,24 @@ def _spawn_run(
     if spec:
         argv += ["--parallel", spec]
     argv += ["--", task]
-    state = state_dir(cwd)
+    state = paths.state_dir(cwd)
     return spawn_and_locate(
         argv,
         cwd,
-        before=set(session_dirs(state)),
-        list_dirs=lambda: session_dirs(state),
+        before=set(listing.session_dirs(state)),
+        list_dirs=lambda: listing.session_dirs(state),
         env={**os.environ, **DETACHED_RUN_ENV},
     )
 
 
 def spawn_detached_resume(
-    cwd: Path,
+    cwd: pathlib.Path,
     session_id: str,
     *,
     steer: str = "",
     preset: str = "",
     model: str = "",
-    config_path: Path | None = None,
+    config_path: pathlib.Path | None = None,
     flags: Sequence[str] = (),
 ) -> str:
     """Start a detached `agent6 resume` so a run keeps going after the operator detaches.
@@ -202,11 +199,11 @@ def spawn_detached_resume(
     Returns:
         "" once the child owns the run, else why it did not.
     """
-    if steer and (problem := steer_problem(steer)) is not None:
+    if steer and (problem := directive.steer_problem(steer)) is not None:
         return problem
     try:
-        session_dir = resolve_session(state_dir(cwd), session_id).session_dir
-    except SessionIdError as exc:
+        session_dir = id.resolve_session(paths.state_dir(cwd), session_id).session_dir
+    except id.SessionIdError as exc:
         return str(exc)
     argv = [*agent6_argv(config_path), "resume", session_id]
     if preset:
@@ -219,7 +216,7 @@ def spawn_detached_resume(
     return spawn_and_confirm(
         argv,
         cwd,
-        started=lambda pid: read_worker_pid(session_dir) == pid,
+        started=lambda pid: ipc.read_worker_pid(session_dir) == pid,
         extra_env=DETACHED_RUN_ENV,
     )
 
@@ -262,7 +259,9 @@ def _not_started_message(label: str, timeout_s: float, captured: str) -> str:
     )
 
 
-def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+def run_cli_capture(
+    argv: list[str], cwd: pathlib.Path, *, timeout_s: float = 120.0
+) -> tuple[bool, str]:
     """Run a quick agent6 subcommand synchronously and capture its output.
 
     For the foreground CLI operations a front-end drives as an operator would; the
@@ -283,7 +282,9 @@ def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> 
     return proc.returncode == 0, message or f"exit {proc.returncode}"
 
 
-def run_cli_output(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+def run_cli_output(
+    argv: list[str], cwd: pathlib.Path, *, timeout_s: float = 120.0
+) -> tuple[bool, str]:
     """Run a subcommand whose stdout is the deliverable, such as a review's markdown.
 
     Args:
@@ -303,7 +304,7 @@ def run_cli_output(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> t
 
 
 def _run_cli(
-    argv: list[str], cwd: Path, *, timeout_s: float
+    argv: list[str], cwd: pathlib.Path, *, timeout_s: float
 ) -> subprocess.CompletedProcess[str] | str:
     """Return the completed process, or the one-line reason it could not run."""
     try:
@@ -322,7 +323,7 @@ def _run_cli(
 
 def spawn_and_confirm(
     argv: list[str],
-    cwd: Path,
+    cwd: pathlib.Path,
     *,
     started: Callable[[int], bool],
     extra_env: Mapping[str, str] | None = None,
@@ -358,7 +359,7 @@ def spawn_and_confirm(
 def _stderr_tail(err: IO[str], limit: int = 2000) -> str:
     """Return the end of a spawn's captured stderr, cut at a line start."""
     err.flush()
-    text = Path(err.name).read_text(encoding="utf-8", errors="replace")
+    text = pathlib.Path(err.name).read_text(encoding="utf-8", errors="replace")
     if len(text) <= limit:
         return text
     tail = text[-limit:]
@@ -366,23 +367,25 @@ def _stderr_tail(err: IO[str], limit: int = 2000) -> str:
     return tail[nl + 1 :] if 0 <= nl < len(tail) - 1 else tail
 
 
-def _located(list_dirs: Callable[[], list[Path]], before: set[Path]) -> Path | None:
+def _located(
+    list_dirs: Callable[[], list[pathlib.Path]], before: set[pathlib.Path]
+) -> pathlib.Path | None:
     """Return the newest listed dir not in the before set whose log exists, or None."""
     for d in list_dirs():
-        if d not in before and (d / LOGS_NAME).exists():
+        if d not in before and (d / layout.LOGS_NAME).exists():
             return d
     return None
 
 
 def spawn_and_locate(
     argv: list[str],
-    cwd: Path,
+    cwd: pathlib.Path,
     *,
-    before: set[Path],
-    list_dirs: Callable[[], list[Path]],
+    before: set[pathlib.Path],
+    list_dirs: Callable[[], list[pathlib.Path]],
     env: dict[str, str] | None = None,
     timeout_s: float = 25.0,
-) -> tuple[Path | None, str]:
+) -> tuple[pathlib.Path | None, str]:
     """Spawn the argv detached and locate the session dir it creates.
 
     Args:
@@ -403,7 +406,7 @@ def spawn_and_locate(
 
 def _spawn_and_wait[T](
     argv: list[str],
-    cwd: Path,
+    cwd: pathlib.Path,
     *,
     ready: Callable[[int], T | None],
     env: dict[str, str] | None,
@@ -444,7 +447,7 @@ def _spawn_and_wait[T](
             )
         except OSError as exc:
             return None, f"failed to start agent6 {label}: {exc}"
-        keep_out_of_the_sweep(proc.pid)
+        jail.keep_out_of_the_sweep(proc.pid)
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             if (found := ready(proc.pid)) is not None:
@@ -462,4 +465,4 @@ def _spawn_and_wait[T](
     finally:
         # The child keeps the unlinked inode as its stderr; its real output is its own log.
         err.close()
-        Path(err.name).unlink(missing_ok=True)
+        pathlib.Path(err.name).unlink(missing_ok=True)

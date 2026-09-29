@@ -11,19 +11,17 @@ operator copying it.
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
 import hashlib
 import json
+import pathlib
 import re
 import time
 from collections.abc import Collection, Generator, Mapping, Sequence
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass, replace
-from pathlib import Path
 from typing import Any, Literal, cast
 
-from agent6.errors import OperatorError
-from agent6.paths import mkdir_for_real_user
-from agent6.portable import atomic_write, locked_file
+from agent6 import errors, paths, portable
 
 MEMORY_DIR_NAME = "memory"
 INDEX_NAME = "MEMORY.md"
@@ -40,21 +38,21 @@ USE_NAME = "memory-use.json"
 _NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 
 
-class MemoryStoreError(OperatorError):
+class MemoryStoreError(errors.OperatorError):
     """A memory-store operation failed: a bad name, an unreadable store."""
 
 
-def memory_dir(state_dir: Path) -> Path:
+def memory_dir(state_dir: pathlib.Path) -> pathlib.Path:
     """Return the repo's memory directory."""
     return state_dir / MEMORY_DIR_NAME
 
 
-def index_path(state_dir: Path) -> Path:
+def index_path(state_dir: pathlib.Path) -> pathlib.Path:
     """Return the index file's path."""
     return memory_dir(state_dir) / INDEX_NAME
 
 
-def seed_digests(state_dir: Path) -> dict[str, str]:
+def seed_digests(state_dir: pathlib.Path) -> dict[str, str]:
     """Return the seed manifest's name to sha256 map.
 
     A missing, unreadable or misshapen manifest reads as empty, so every file then
@@ -69,17 +67,17 @@ def seed_digests(state_dir: Path) -> dict[str, str]:
     return {k: v for k, v in raw.items() if isinstance(k, str) and isinstance(v, str)}
 
 
-def seed_path(state_dir: Path) -> Path:
+def seed_path(state_dir: pathlib.Path) -> pathlib.Path:
     """Return the seed manifest's path."""
     return state_dir / SEED_NAME
 
 
-def use_path(state_dir: Path) -> Path:
+def use_path(state_dir: pathlib.Path) -> pathlib.Path:
     """Return the use record's path."""
     return state_dir / USE_NAME
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Touch:
     """One session's touch of a fact.
 
@@ -92,7 +90,7 @@ class Touch:
     at: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MemoryUse:
     """One fact's provenance and use.
 
@@ -119,7 +117,7 @@ class MemoryUse:
         return tuple(dict.fromkeys(t.session for t in self.writes))
 
 
-def read_use(state_dir: Path) -> dict[str, MemoryUse]:
+def read_use(state_dir: pathlib.Path) -> dict[str, MemoryUse]:
     """Return the use record by fact name.
 
     A missing, unreadable or misshapen file reads as empty and a misshapen entry is
@@ -168,7 +166,7 @@ def _use_from_entry(entry: dict[Any, Any]) -> MemoryUse | None:
 
 
 def record_use(
-    state_dir: Path,
+    state_dir: pathlib.Path,
     *,
     session: str,
     wrote: Sequence[str],
@@ -205,7 +203,7 @@ def record_use(
 
 
 def _record_use_unlocked(
-    state_dir: Path,
+    state_dir: pathlib.Path,
     *,
     session: str,
     wrote: Sequence[str],
@@ -222,17 +220,17 @@ def _record_use_unlocked(
     for name in wrote:
         prior = use.get(name, MemoryUse())
         made = touch if prior.created is None and name in created else prior.created
-        use[name] = replace(prior, created=made, writes=(*prior.writes, touch))
+        use[name] = dataclasses.replace(prior, created=made, writes=(*prior.writes, touch))
     for name, count in read.items():
         if name in deleted and name not in wrote:
             continue  # a read of a life that ended this execution brings no entry back
         prior = use.get(name, MemoryUse())
-        use[name] = replace(prior, reads=prior.reads + count, last_read=touch)
+        use[name] = dataclasses.replace(prior, reads=prior.reads + count, last_read=touch)
     _write_use(state_dir, use)
 
 
 def merge_use(
-    src_state_dir: Path, dst_state_dir: Path, *, written: Collection[str]
+    src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path, *, written: Collection[str]
 ) -> tuple[int, int]:
     """Carry a lane's use record into the origin's at import, before the lane's state dir goes.
 
@@ -257,13 +255,13 @@ def merge_use(
             if name in written and theirs.writes:
                 fresh = tuple(t for t in theirs.writes if t not in ours.writes)
                 made = theirs.created if ours.created is None else ours.created
-                ours = replace(ours, created=made, writes=(*ours.writes, *fresh))
+                ours = dataclasses.replace(ours, created=made, writes=(*ours.writes, *fresh))
                 carried += 1
                 changed = True
             if theirs.reads and (name in written or name in held):
                 mine, its = ours.last_read, theirs.last_read
                 later = its if mine is None or (its is not None and its.at >= mine.at) else mine
-                ours = replace(ours, reads=ours.reads + theirs.reads, last_read=later)
+                ours = dataclasses.replace(ours, reads=ours.reads + theirs.reads, last_read=later)
                 folded += 1
                 changed = True
             if changed:
@@ -273,21 +271,21 @@ def merge_use(
     return carried, folded
 
 
-def _write_use(state_dir: Path, use: Mapping[str, MemoryUse]) -> None:
+def _write_use(state_dir: pathlib.Path, use: Mapping[str, MemoryUse]) -> None:
     """Write the use record, sorted by name."""
     body = {
         name: {
-            "created": None if entry.created is None else asdict(entry.created),
-            "writes": [asdict(t) for t in entry.writes],
+            "created": None if entry.created is None else dataclasses.asdict(entry.created),
+            "writes": [dataclasses.asdict(t) for t in entry.writes],
             "reads": entry.reads,
-            "last_read": None if entry.last_read is None else asdict(entry.last_read),
+            "last_read": None if entry.last_read is None else dataclasses.asdict(entry.last_read),
         }
         for name, entry in sorted(use.items())
     }
-    atomic_write(use_path(state_dir), (json.dumps(body, indent=1) + "\n").encode("utf-8"))
+    portable.atomic_write(use_path(state_dir), (json.dumps(body, indent=1) + "\n").encode("utf-8"))
 
 
-def _drop_use(state_dir: Path, name: str) -> None:
+def _drop_use(state_dir: pathlib.Path, name: str) -> None:
     """Remove one fact from the use record."""
     use = read_use(state_dir)
     if name in use:
@@ -295,13 +293,13 @@ def _drop_use(state_dir: Path, name: str) -> None:
         _write_use(state_dir, use)
 
 
-def decisions_path(state_dir: Path) -> Path:
+def decisions_path(state_dir: pathlib.Path) -> pathlib.Path:
     """Return the decisions file's path."""
     return memory_dir(state_dir) / DECISIONS_NAME
 
 
-@contextmanager
-def _locked_memory(state_dir: Path) -> Generator[None]:
+@contextlib.contextmanager
+def _locked_memory(state_dir: pathlib.Path) -> Generator[None]:
     """Serialize the harness's mutations of one repo's store.
 
     The model's own edits under its write grant take no lock.
@@ -309,13 +307,13 @@ def _locked_memory(state_dir: Path) -> Generator[None]:
     Yields:
         With the store locked.
     """
-    mkdir_for_real_user(memory_dir(state_dir))
-    with locked_file(memory_dir(state_dir)):
+    paths.mkdir_for_real_user(memory_dir(state_dir))
+    with portable.locked_file(memory_dir(state_dir)):
         yield
 
 
 def record_decision(
-    state_dir: Path, *, question: str, answer: str, session: str, when: float | None = None
+    state_dir: pathlib.Path, *, question: str, answer: str, session: str, when: float | None = None
 ) -> str:
     """Record one operator ruling.
 
@@ -344,7 +342,7 @@ def record_decision(
         for known in _entries(existing.decode("utf-8", "replace").strip()):
             if _ruling(known) == ruling:
                 return known + "\n"
-        atomic_write(path, existing + entry.encode("utf-8"))
+        portable.atomic_write(path, existing + entry.encode("utf-8"))
     return entry
 
 
@@ -364,7 +362,7 @@ def _ruling(entry: str) -> str:
     return entry.split("] ", 1)[-1]
 
 
-def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]:
+def merge_decisions(src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path) -> tuple[int, int]:
     """Append a lane's rulings to the origin's decisions file.
 
     A ruling the destination already holds under any tag is skipped, as is a repeat
@@ -396,16 +394,16 @@ def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]
                 fresh.append(entry)
         if fresh:
             separator = "\n" if existing and not existing.endswith("\n") else ""
-            atomic_write(path, existing + separator + "\n".join(fresh) + "\n")
+            portable.atomic_write(path, existing + separator + "\n".join(fresh) + "\n")
     return len(fresh), len(entries) - len(fresh)
 
 
-def _sha256(path: Path) -> str:
+def _sha256(path: pathlib.Path) -> str:
     """Return a file's sha256 hex digest."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MemoryMerge:
     """What a lane's memory left in the origin's store at import, by name.
 
@@ -422,7 +420,9 @@ class MemoryMerge:
     held: tuple[str, ...] = ()
 
 
-def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) -> MemoryMerge:
+def merge_memory(
+    src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path, *, held_dir: pathlib.Path
+) -> MemoryMerge:
     """Carry a lane's memory into the origin's store the way its branch comes back.
 
     A copy unchanged since seeding is nothing. A change over a copy the origin has not
@@ -443,7 +443,7 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
     if not src.is_dir():
         return MemoryMerge()
     dst = memory_dir(dst_state_dir)
-    mkdir_for_real_user(dst)
+    paths.mkdir_for_real_user(dst)
     seeds = seed_digests(src_state_dir)
     src_index = index_text(src_state_dir).splitlines()
     lane = {p.stem: p for p in src.glob("*.md") if p.name not in (INDEX_NAME, DECISIONS_NAME)}
@@ -467,12 +467,12 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
                 origin.unlink()
             elif fate == "held":
                 if path is not None:
-                    mkdir_for_real_user(held_dir)
-                    atomic_write(held_dir / path.name, path.read_bytes())
+                    paths.mkdir_for_real_user(held_dir)
+                    portable.atomic_write(held_dir / path.name, path.read_bytes())
             elif path is not None:  # carried or updated: the lane has the file
                 if fate == "updated" and hook is not None:
                     _replace_index_line(dst_state_dir, name, hook)
-                atomic_write(origin, path.read_bytes())
+                portable.atomic_write(origin, path.read_bytes())
                 if fate == "carried" and hook is not None:
                     _append_index_line(dst_state_dir, name, hook)
         landed[fate].append(name)
@@ -512,7 +512,7 @@ def _fate(
     return "deleted" if theirs is None else "updated"
 
 
-def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
+def seed_store(src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path) -> int:
     """Copy the repo's memory into a fresh state dir, recording each copied fact's digest.
 
     A lane's clone has an empty store; copies, never links, so a lane cannot write
@@ -548,15 +548,17 @@ def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
                 ):
                     digests[path.stem] = _sha256(target)
                 continue
-            atomic_write(target, path.read_bytes())
+            portable.atomic_write(target, path.read_bytes())
             copied += 1
             if fact:
                 digests[path.stem] = _sha256(target)
-        atomic_write(seed_path(dst_state_dir), json.dumps(earlier | digests, indent=1) + "\n")
+        portable.atomic_write(
+            seed_path(dst_state_dir), json.dumps(earlier | digests, indent=1) + "\n"
+        )
     return copied
 
 
-def decisions_text(state_dir: Path) -> str:
+def decisions_text(state_dir: pathlib.Path) -> str:
     """Return the decisions text for injection: whole under the cap, else its newest tail."""
     try:
         text = decisions_path(state_dir).read_text(encoding="utf-8").strip()
@@ -591,7 +593,7 @@ def clipped_index(index: str) -> str:
     return f"{head}\n{marker}" if head else marker
 
 
-def index_text(state_dir: Path) -> str:
+def index_text(state_dir: pathlib.Path) -> str:
     """Return the index body for injection; "" when absent or unreadable.
 
     A byte that is not UTF-8 is replaced: read strictly, one would empty the index for
@@ -621,7 +623,7 @@ def _check_name(name: str) -> str:
     return name
 
 
-def _index_has(state_dir: Path, name: str) -> bool:
+def _index_has(state_dir: pathlib.Path, name: str) -> bool:
     """Return whether the index has a `- name:` line."""
     pattern = re.compile(rf"^\s*[-*]\s*{re.escape(name)}\s*:")
     return any(pattern.match(ln) for ln in index_text(state_dir).splitlines())
@@ -639,7 +641,7 @@ def index_name(line: str) -> str | None:
     return None if match is None else (match.group(1) or match.group(2))
 
 
-def unindexed_names(state_dir: Path) -> tuple[str, ...]:
+def unindexed_names(state_dir: pathlib.Path) -> tuple[str, ...]:
     """Return the fact files the index does not list, sorted; only the index reaches a prompt."""
     named = {n for n in (index_name(ln) for ln in index_text(state_dir).splitlines()) if n}
     try:
@@ -661,7 +663,7 @@ def _index_pattern(name: str) -> re.Pattern[bytes]:
     return re.compile(rb"^\s*[-*]\s*" + re.escape(name.encode("utf-8")) + rb"\s*:")
 
 
-def _drop_index_line(state_dir: Path, name: str) -> None:
+def _drop_index_line(state_dir: pathlib.Path, name: str) -> None:
     """Remove the index line naming the fact.
 
     Over bytes: a rewrite through the replacing reader would turn every byte that is
@@ -673,10 +675,10 @@ def _drop_index_line(state_dir: Path, name: str) -> None:
         lines = idx.read_bytes().split(b"\n")
     except OSError:
         return
-    atomic_write(idx, b"\n".join(ln for ln in lines if not pattern.match(ln)))
+    portable.atomic_write(idx, b"\n".join(ln for ln in lines if not pattern.match(ln)))
 
 
-def _replace_index_line(state_dir: Path, name: str, hook: str) -> None:
+def _replace_index_line(state_dir: pathlib.Path, name: str, hook: str) -> None:
     """Rewrite the index line naming the fact in place, over bytes, appending one when none."""
     idx = index_path(state_dir)
     pattern = _index_pattern(name)
@@ -688,10 +690,10 @@ def _replace_index_line(state_dir: Path, name: str, hook: str) -> None:
         _append_index_line(state_dir, name, hook)
         return
     new = f"- {name}: {hook}".encode()
-    atomic_write(idx, b"\n".join(new if pattern.match(ln) else ln for ln in lines))
+    portable.atomic_write(idx, b"\n".join(new if pattern.match(ln) else ln for ln in lines))
 
 
-def _append_index_line(state_dir: Path, name: str, hook: str) -> None:
+def _append_index_line(state_dir: pathlib.Path, name: str, hook: str) -> None:
     """Atomically append one line to the index."""
     idx = index_path(state_dir)
     try:
@@ -699,10 +701,10 @@ def _append_index_line(state_dir: Path, name: str, hook: str) -> None:
     except FileNotFoundError:
         existing = b""
     separator = b"\n" if existing and not existing.endswith(b"\n") else b""
-    atomic_write(idx, existing + separator + f"- {name}: {hook}\n".encode())
+    portable.atomic_write(idx, existing + separator + f"- {name}: {hook}\n".encode())
 
 
-def add(state_dir: Path, name: str, body: str) -> Path:
+def add(state_dir: pathlib.Path, name: str, body: str) -> pathlib.Path:
     """Write a fact file and append its index line, for `agent6 memory add`.
 
     The file is written first: an unindexed file is invisible and harmless, while an
@@ -735,13 +737,13 @@ def add(state_dir: Path, name: str, body: str) -> Path:
                 f"memory {name!r} existed but was missing from the index; re-indexed it."
                 f" The body passed here was not saved; edit {path} to change it."
             )
-        atomic_write(path, body + "\n")
+        portable.atomic_write(path, body + "\n")
         _append_index_line(state_dir, name, body.splitlines()[0][:120])
         _record_use_unlocked(state_dir, session="operator", wrote=(name,), created=(name,), read={})
     return path
 
 
-def remove(state_dir: Path, name: str) -> None:
+def remove(state_dir: pathlib.Path, name: str) -> None:
     """Delete a fact file and its index line, for `agent6 memory rm`.
 
     The index line goes first: a file with no line is invisible and a retry can still
@@ -763,7 +765,7 @@ def remove(state_dir: Path, name: str) -> None:
         _drop_use(state_dir, name)
 
 
-def show(state_dir: Path, name: str) -> str:
+def show(state_dir: pathlib.Path, name: str) -> str:
     """Return a fact's text.
 
     Raises:

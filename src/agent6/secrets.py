@@ -11,28 +11,21 @@ Secrets never reach transcripts, `config show` or the jail.
 
 from __future__ import annotations
 
+import dataclasses
 import os
+import pathlib
 import stat
 import tomllib
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from agent6.paths import (
-    RealUser,
-    chown_to_real_user,
-    effective_user,
-    mkdir_for_real_user,
-    secrets_path,
-)
-from agent6.portable import atomic_write, locked_file, toml_basic_string
+from agent6 import paths, portable
 
 
 class SecretsError(Exception):
     """The secrets file is malformed, unreadable or unsafely permitted."""
 
 
-def _require_safe_perms(path: Path, user: RealUser) -> None:
+def _require_safe_perms(path: pathlib.Path, user: paths.RealUser) -> None:
     """Refuse a secrets file that others can read or that the operator does not own.
 
     Raises:
@@ -54,7 +47,7 @@ def _require_safe_perms(path: Path, user: RealUser) -> None:
         )
 
 
-def _read_secrets_toml(path: Path) -> dict[str, Any]:
+def _read_secrets_toml(path: pathlib.Path) -> dict[str, Any]:
     """Parse the secrets file, the one reader.
 
     Returns:
@@ -74,10 +67,10 @@ def _read_secrets_toml(path: Path) -> dict[str, Any]:
         raise SecretsError(f"{path} is not valid TOML: {exc}") from exc
 
 
-def load_secrets(user: RealUser | None = None) -> dict[str, Any]:
+def load_secrets(user: paths.RealUser | None = None) -> dict[str, Any]:
     """Return the validated secrets; empty when the file is absent."""
-    user = user or effective_user()
-    path = secrets_path(user)
+    user = user or paths.effective_user()
+    path = paths.secrets_path(user)
     if not path.exists():
         return {}
     _require_safe_perms(path, user)
@@ -89,7 +82,7 @@ def resolve_api_key(
     api_key_env: str | None,
     *,
     secrets: dict[str, Any] | None = None,
-    user: RealUser | None = None,
+    user: paths.RealUser | None = None,
 ) -> str | None:
     """Return one provider's API key, the env variable first, then the secrets file, else None."""
     if api_key_env:
@@ -112,8 +105,8 @@ def save_secret(
     api_key: str,
     *,
     extra: dict[str, str] | None = None,
-    user: RealUser | None = None,
-) -> Path:
+    user: paths.RealUser | None = None,
+) -> pathlib.Path:
     """Write a provider's `api_key` and any extra string fields, replacing its entry.
 
     Returns:
@@ -122,7 +115,9 @@ def save_secret(
     return _save_provider_entry(provider_name, {"api_key": api_key, **(extra or {})}, user)
 
 
-def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUser | None) -> Path:
+def _save_provider_entry(
+    provider_name: str, entry: dict[str, str], user: paths.RealUser | None
+) -> pathlib.Path:
     """Replace one provider's entry, rewriting the whole file under the lock.
 
     Two concurrent writers (a `connect` beside a run refreshing tokens) would
@@ -132,12 +127,12 @@ def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUs
     Returns:
         The secrets file's path.
     """
-    user = user or effective_user()
-    path = secrets_path(user)
+    user = user or paths.effective_user()
+    path = paths.secrets_path(user)
     # Created 0700 and handed back here, before the lock's parent walk creates it at the umask.
-    mkdir_for_real_user(path.parent, user)
+    paths.mkdir_for_real_user(path.parent, user)
     path.parent.chmod(0o700)
-    with locked_file(path):
+    with portable.locked_file(path):
         data: dict[str, Any] = {}
         if path.exists():
             _require_safe_perms(path, user)
@@ -150,24 +145,24 @@ def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUs
 
         text = _render_secrets_toml(data)
         # mkstemp opens an unpredictable name O_EXCL, so a planted `.tmp` symlink cannot redirect.
-        atomic_write(path, text)
+        portable.atomic_write(path, text)
         path.chmod(0o600)
-    chown_to_real_user(path.parent, user)
-    chown_to_real_user(path, user)
+    paths.chown_to_real_user(path.parent, user)
+    paths.chown_to_real_user(path, user)
     return path
 
 
-def delete_provider_secrets(provider_name: str, *, user: RealUser | None = None) -> bool:
+def delete_provider_secrets(provider_name: str, *, user: paths.RealUser | None = None) -> bool:
     """Remove one provider's entry.
 
     Returns:
         True when it existed.
     """
-    user = user or effective_user()
-    path = secrets_path(user)
+    user = user or paths.effective_user()
+    path = paths.secrets_path(user)
     if not path.exists():
         return False  # before the lock, whose parent walk would create the config dir
-    with locked_file(path):
+    with portable.locked_file(path):
         if not path.exists():
             return False
         _require_safe_perms(path, user)
@@ -176,13 +171,13 @@ def delete_provider_secrets(provider_name: str, *, user: RealUser | None = None)
         if not isinstance(providers, dict) or provider_name not in providers:
             return False
         del providers[provider_name]
-        atomic_write(path, _render_secrets_toml(data))
+        portable.atomic_write(path, _render_secrets_toml(data))
         path.chmod(0o600)
-    chown_to_real_user(path, user)
+    paths.chown_to_real_user(path, user)
     return True
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class OAuthTokens:
     """One provider's OAuth grant as stored.
 
@@ -200,8 +195,8 @@ class OAuthTokens:
 
 
 def save_oauth_tokens(
-    provider_name: str, tokens: OAuthTokens, *, user: RealUser | None = None
-) -> Path:
+    provider_name: str, tokens: OAuthTokens, *, user: paths.RealUser | None = None
+) -> pathlib.Path:
     """Write a provider's OAuth tokens, replacing its entry.
 
     Returns:
@@ -223,7 +218,7 @@ def load_oauth_tokens(
     provider_name: str,
     *,
     secrets: dict[str, Any] | None = None,
-    user: RealUser | None = None,
+    user: paths.RealUser | None = None,
 ) -> OAuthTokens | None:
     """Return one provider's stored OAuth tokens, or None when absent or mangled.
 
@@ -268,6 +263,6 @@ def _render_secrets_toml(data: dict[str, Any]) -> str:
             for field in sorted(entry):
                 value = entry[field]
                 if isinstance(value, str):
-                    lines.append(f"{field} = {toml_basic_string(value)}")
+                    lines.append(f"{field} = {portable.toml_basic_string(value)}")
             lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"

@@ -14,12 +14,12 @@ from __future__ import annotations
 import ast
 import functools
 import itertools
+import pathlib
 import re
 import subprocess
 import sys
-from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
+_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _TEMPLATE = _ROOT / "docs" / "architecture_template.md"
 _OUT = _ROOT / "docs" / "architecture.md"
 # A diagram owns its line; a generated list substitutes in place, so it can sit in a sentence.
@@ -273,9 +273,8 @@ def _handler_names() -> list[str]:
             if cls_name in constants:
                 names.append(constants[cls_name])
             else:
-                raise SystemExit(
-                    f"handler table key is not a known <Input>.TOOL_NAME: {ast.dump(key)}"
-                )
+                shown = ast.dump(key) if key is not None else "**"
+                raise SystemExit(f"handler table key is not a known <Input>.TOOL_NAME: {shown}")
     return names
 
 

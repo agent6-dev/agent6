@@ -9,10 +9,10 @@ leaf with no agent6 or textual imports, so every front-end can read it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import dataclasses
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Answer:
     """One answer to an approval.
 

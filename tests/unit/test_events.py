@@ -11,6 +11,7 @@ import pathlib
 import pytest
 
 from agent6 import events
+from agent6 import paths as agent6_paths
 
 
 def _read_lines(path: pathlib.Path) -> list[dict[str, object]]:
@@ -150,16 +151,14 @@ def test_the_log_dir_is_created_once_not_per_event(
 
     The creator's handback walks the whole dir under sudo.
     """
-    from agent6 import events as events_mod
-    from agent6 import paths
-
     calls: list[pathlib.Path] = []
+    real = agent6_paths.mkdir_for_real_user
 
     def counting(path: pathlib.Path) -> None:
         calls.append(path)
-        paths.mkdir_for_real_user(path)
+        real(path)
 
-    monkeypatch.setattr(events_mod, "mkdir_for_real_user", counting)
+    monkeypatch.setattr(agent6_paths, "mkdir_for_real_user", counting)
     sink = events.EventSink(tmp_path / "run" / "logs.jsonl")
     sink.emit("session.start")
     sink.emit("loop.tool.call", name="read_file")

@@ -15,28 +15,20 @@ The tools: `run_verify`, `run_in_sandbox`, `apply_patch_in_sandbox`,
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
+import pathlib
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 from typing import IO, Any
 
-from agent6 import __version__
-from agent6.config import Config
-from agent6.config.layer import load_effective
-from agent6.graph.storage import load_graph
-from agent6.paths import state_dir
-from agent6.sessions.id import SessionIdError, resolve_session
-from agent6.sessions.layout import (
-    SESSION_BUCKETS,
-    is_safe_session_id,
-)
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.tools.dispatch import ToolDispatcher, ToolError
-from agent6.tools.errors import OperatorCommandUnexecutableError
-from agent6.viewmodel import session_dirs
-from agent6.viewmodel.listing import ListingRow, nested_rows, summarize_session_dir, summary_row
+from agent6 import __version__, paths
+from agent6.config import Config, layer
+from agent6.graph import storage
+from agent6.sessions import id, manifest
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import dispatch, errors
+from agent6.viewmodel import listing, session_dirs
 
 _PROTOCOL_VERSION = "2024-11-05"
 _SERVER_NAME = "agent6"
@@ -52,7 +44,7 @@ class _RpcError(Exception):
         self.message = message
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _ToolSpec:
     """One published tool.
 
@@ -152,12 +144,12 @@ def _no_one_to_ask(config: Config) -> Config:
     return config.with_sandbox_overrides(no_commands=True)
 
 
-def _listable_sessions(agent6_dir: Path) -> list[Path]:
+def _listable_sessions(agent6_dir: pathlib.Path) -> list[pathlib.Path]:
     """Return every session dir, newest first: the sessions the CLI and the web hub list."""
-    return session_dirs(agent6_dir, SESSION_BUCKETS)
+    return session_dirs(agent6_dir, sessions_layout.SESSION_BUCKETS)
 
 
-def _most_recent_session_id(agent6_dir: Path) -> str | None:
+def _most_recent_session_id(agent6_dir: pathlib.Path) -> str | None:
     """Return the newest session's id, or None when there is none."""
     candidates = _listable_sessions(agent6_dir)
     return candidates[0].name if candidates else None
@@ -169,17 +161,17 @@ class MCPServer:
     def __init__(
         self,
         *,
-        root: Path,
+        root: pathlib.Path,
         config: Config,
         stdin: IO[bytes],
         stdout: IO[bytes],
     ) -> None:
         self._root = root.resolve()
         self._config = config
-        self._agent6_dir = state_dir(self._root)
+        self._agent6_dir = paths.state_dir(self._root)
         self._stdin = stdin
         self._stdout = stdout
-        self._dispatcher = ToolDispatcher(root=self._root, config=_no_one_to_ask(config))
+        self._dispatcher = dispatch.ToolDispatcher(root=self._root, config=_no_one_to_ask(config))
         # Absent from tools/list either way; `_call_tool` names the reason to a client anyway.
         self._commands_withdrawn = config.sandbox.run_commands in ("ask", "no")
         self._gate_missing = not config.harness.verify_command
@@ -383,7 +375,7 @@ class MCPServer:
             raise _RpcError(-32602, violation)
         try:
             payload = self._tools[name].handler(args)
-        except (ToolError, OperatorCommandUnexecutableError) as exc:
+        except (errors.ToolError, errors.OperatorCommandUnexecutableError) as exc:
             # An escaping error would end the serve process and break the pipe for every client.
             return {
                 "content": [{"type": "text", "text": str(exc)}],
@@ -439,19 +431,19 @@ class MCPServer:
         session_id_arg = args.get("session_id")
         if isinstance(session_id_arg, str) and session_id_arg:
             # A traversing or absolute id is refused before it builds a path.
-            if not is_safe_session_id(session_id_arg):
-                raise ToolError(f"invalid session_id: {session_id_arg!r}")
+            if not sessions_layout.is_safe_session_id(session_id_arg):
+                raise errors.ToolError(f"invalid session_id: {session_id_arg!r}")
             session_id = session_id_arg
         else:
             resolved = _most_recent_session_id(self._agent6_dir)
             if resolved is None:
-                raise ToolError("no sessions found under the agent6 state dir")
+                raise errors.ToolError("no sessions found under the agent6 state dir")
             session_id = resolved
         try:
-            layout = resolve_session(self._agent6_dir, session_id)
-        except SessionIdError as exc:
-            raise ToolError(str(exc)) from exc
-        nodes = load_graph(layout)
+            layout = id.resolve_session(self._agent6_dir, session_id)
+        except id.SessionIdError as exc:
+            raise errors.ToolError(str(exc)) from exc
+        nodes = storage.load_graph(layout)
         return {
             "session_id": session_id,
             "nodes": {nid: node.model_dump(mode="json") for nid, node in nodes.items()},
@@ -461,30 +453,30 @@ class MCPServer:
         """Return every session: the shared listing row plus its manifest."""
         dirs = {d.name: d for d in _listable_sessions(self._agent6_dir)}
 
-        def entry(row: ListingRow) -> dict[str, Any]:
+        def entry(row: listing.ListingRow) -> dict[str, Any]:
             # The row every hub shows, plus the manifest for the lineage fields it omits.
-            out: dict[str, Any] = summary_row(
+            out: dict[str, Any] = listing.summary_row(
                 row.summary, lanes=[entry(lane) for lane in row.lanes]
             )
             out["mtime"] = row.mtime
-            with contextlib.suppress(ManifestError):
-                out["manifest"] = read_manifest(dirs[row.summary.session_id]).model_dump(
+            with contextlib.suppress(manifest.ManifestError):
+                out["manifest"] = manifest.read_manifest(dirs[row.summary.session_id]).model_dump(
                     mode="json"
                 )
             return out
 
-        rows = nested_rows(summarize_session_dir(d) for d in dirs.values())
+        rows = listing.nested_rows(listing.summarize_session_dir(d) for d in dirs.values())
         return {"sessions": [entry(row) for row in rows]}
 
 
-def run_server(config_path: Path | None) -> int:
+def run_server(config_path: pathlib.Path | None) -> int:
     """Serve from the cwd under the effective config until stdin EOF, for `agent6 mcp serve`.
 
     Returns:
         0 on a clean exit.
     """
-    root = Path.cwd()
-    cfg = load_effective(root, config_path).config
+    root = pathlib.Path.cwd()
+    cfg = layer.load_effective(root, config_path).config
     server = MCPServer(
         root=root,
         config=cfg,

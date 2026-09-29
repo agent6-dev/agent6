@@ -9,7 +9,7 @@ subclass it.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 
 class OperatorError(Exception):
@@ -20,7 +20,7 @@ class OperatorError(Exception):
     """
 
 
-def read_operator_file(path: Path) -> str:
+def read_operator_file(path: pathlib.Path) -> str:
     """Read a file the operator named, the one reader for operator-supplied files.
 
     Returns:

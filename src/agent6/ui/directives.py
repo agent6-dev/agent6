@@ -11,28 +11,18 @@ the same words do the same thing wherever they are typed. `/pin` and
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.directive import (
-    parse_btw,
-    parse_compact,
-    parse_now,
-    parse_retire,
-    parse_standing,
-    parse_task,
-    stray_directive,
-)
-from agent6.graph.order import id_order
-from agent6.graph.storage import load_graph
-from agent6.sessions.ipc import queue_request, request_compact, submit_steer
-from agent6.sessions.layout import layout_of
-from agent6.ui.btw import open_btw
-from agent6.viewmodel.format import short_task_id
+from agent6 import directive as agent6_directive
+from agent6.graph import order, storage
+from agent6.sessions import ipc, layout
+from agent6.ui import btw
+from agent6.viewmodel import format
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _Directive:
     """One directive.
 
@@ -44,89 +34,92 @@ class _Directive:
 
     parse: Callable[[str], str | None]
     empty: str
-    act: Callable[[Path, str], tuple[bool, str]]
+    act: Callable[[pathlib.Path, str], tuple[bool, str]]
 
 
-def _btw(session_dir: Path, question: str) -> tuple[bool, str]:
+def _btw(session_dir: pathlib.Path, question: str) -> tuple[bool, str]:
     """Open a side question beside the run.
 
     Returns:
         Whether it opened, and what to say.
     """
-    opened, line = open_btw(session_dir, question)
+    opened, line = btw.open_btw(session_dir, question)
     return opened, line.removeprefix("[agent6] ")
 
 
-def _task(session_dir: Path, text: str) -> tuple[bool, str]:
+def _task(session_dir: pathlib.Path, text: str) -> tuple[bool, str]:
     """Queue work into the task graph.
 
     Returns:
         True, and what to say.
     """
-    queue_request(session_dir, "task", text)
+    ipc.queue_request(session_dir, "task", text)
     return True, "task queued; it runs once the open tasks drain"
 
 
-def _standing(session_dir: Path, goal: str) -> tuple[bool, str]:
+def _standing(session_dir: pathlib.Path, goal: str) -> tuple[bool, str]:
     """Set the run's standing goal.
 
     Returns:
         True, and what to say.
     """
-    queue_request(session_dir, "standing", goal)
+    ipc.queue_request(session_dir, "standing", goal)
     return True, "standing goal set; it replaces any the run had, at the next step"
 
 
-def _retire(session_dir: Path, named: str) -> tuple[bool, str]:
+def _retire(session_dir: pathlib.Path, named: str) -> tuple[bool, str]:
     """Retire a task, by the id the task tree prints.
 
     Returns:
         Whether the task was found, and what to say.
     """
     wanted = named.strip().upper()
-    nodes = load_graph(layout_of(session_dir))
-    matches = [nid for nid in nodes if short_task_id(nid) == wanted or nid == wanted]
+    nodes = storage.load_graph(layout.layout_of(session_dir))
+    matches = [nid for nid in nodes if format.short_task_id(nid) == wanted or nid == wanted]
     if not matches:
         if not nodes:
             return False, "this run has no tasks yet"
         shown = "  ".join(
-            f"{short_task_id(nid)} {nodes[nid].title[:30]}" for nid in sorted(nodes, key=id_order)
+            f"{format.short_task_id(nid)} {nodes[nid].title[:30]}"
+            for nid in sorted(nodes, key=order.id_order)
         )
         return False, f"no task {named!r} here. This run has: {shown}"
     task_id = matches[0]
-    queue_request(session_dir, "retire", task_id)
+    ipc.queue_request(session_dir, "retire", task_id)
     return True, f"retiring {nodes[task_id].title[:60]!r} at the next step"
 
 
-def _compact(session_dir: Path, focus: str) -> tuple[bool, str]:
+def _compact(session_dir: pathlib.Path, focus: str) -> tuple[bool, str]:
     """Ask for a compaction before the next model call.
 
     Returns:
         Whether the request was written, and what to say.
     """
-    if not request_compact(session_dir, focus=focus):
+    if not ipc.request_compact(session_dir, focus=focus):
         return False, "could not write the compaction request"
     return True, "compaction requested; it applies before the next model call"
 
 
 _DIRECTIVES: tuple[_Directive, ...] = (
-    _Directive(parse_btw, "/btw needs a question: /btw <question>", _btw),
-    _Directive(parse_task, "/task needs the work: /task <text>", _task),
+    _Directive(agent6_directive.parse_btw, "/btw needs a question: /btw <question>", _btw),
+    _Directive(agent6_directive.parse_task, "/task needs the work: /task <text>", _task),
     _Directive(
-        parse_standing,
+        agent6_directive.parse_standing,
         "/standing needs the goal: /standing <text> (the task pane shows the current one)",
         _standing,
     ),
     _Directive(
-        parse_retire,
+        agent6_directive.parse_retire,
         "/retire needs the task: /retire <task id>, the number /tasks prints",
         _retire,
     ),
-    _Directive(parse_compact, "", _compact),
+    _Directive(agent6_directive.parse_compact, "", _compact),
 )
 
 
-def submit_composer_line(session_dir: Path, text: str, *, now: bool = False) -> tuple[bool, str]:
+def submit_composer_line(
+    session_dir: pathlib.Path, text: str, *, now: bool = False
+) -> tuple[bool, str]:
     """Act on a composer line: a directive when it is one, else the steer it is.
 
     Args:
@@ -140,21 +133,21 @@ def submit_composer_line(session_dir: Path, text: str, *, now: bool = False) -> 
     handled = act_on_directive(session_dir, text)
     if handled is not None:
         return handled
-    urgent = parse_now(text)
+    urgent = agent6_directive.parse_now(text)
     if urgent == "":
         return False, "/now needs the instruction: /now <text>"
     now = now or urgent is not None
     sent = urgent or text
-    if not submit_steer(session_dir, sent, now=now):
+    if not ipc.submit_steer(session_dir, sent, now=now):
         return False, "could not write the steer request"
     said = "steering now, interrupting the call in flight" if now else "steering"
     # A token inside the sent text travelled as words, in case it was meant as a directive.
-    if (stray := stray_directive(sent)) is not None:
+    if (stray := agent6_directive.stray_directive(sent)) is not None:
         said += f" (`{stray}` mid-line is text; a directive has to start the line)"
     return True, said
 
 
-def act_on_directive(session_dir: Path, text: str) -> tuple[bool, str] | None:
+def act_on_directive(session_dir: pathlib.Path, text: str) -> tuple[bool, str] | None:
     """Act on the line when it is a directive that works beside the run.
 
     Args:

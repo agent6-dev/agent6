@@ -13,6 +13,8 @@ import subprocess
 import pytest
 
 from agent6.config import layer
+from agent6.models import validate
+from agent6.sessions import lock
 from agent6.ui import spawn
 
 
@@ -300,7 +302,7 @@ def test_parallel_partial_spawn_failure_surfaces(
     ) -> None:
         del cwd, segments, config_path, preset, model
 
-    monkeypatch.setattr(spawn, "directive_model_refusal", no_refusal)
+    monkeypatch.setattr(validate, "directive_model_refusal", no_refusal)
     session_dir, err = spawn.spawn_new_work(
         tmp_path, "run", "/parallel 2 task A /parallel 3 task B"
     )
@@ -333,8 +335,8 @@ def test_a_busy_checkout_is_refused_at_once(
     def _holder(_state: pathlib.Path, _checkout: pathlib.Path) -> str:
         return "busy-run"
 
-    monkeypatch.setattr(spawn, "repo_writer_held", _held)
-    monkeypatch.setattr(spawn, "repo_writer_holder", _holder)
+    monkeypatch.setattr(lock, "repo_writer_held", _held)
+    monkeypatch.setattr(lock, "repo_writer_holder", _holder)
     session_dir, err = spawn.spawn_new_work(tmp_path, "run", "do it")
     assert session_dir is None and "busy-run" in err
     assert captured == []

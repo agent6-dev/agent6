@@ -395,7 +395,7 @@ def test_a_refused_btw_toasts_as_a_warning(
         return True
 
     # The one directive owner spawns the side ask, so the patch goes where the name is read.
-    monkeypatch.setattr("agent6.ui.directives.open_btw", refused)
+    monkeypatch.setattr("agent6.ui.btw.open_btw", refused)
     monkeypatch.setattr(app_mod.Agent6TUI, "session_controllable", controllable)
     run = tmp_path / "sessions" / "runs" / "runny-two-BBBBBB"
     run.mkdir(parents=True)

@@ -11,11 +11,11 @@ fields use, not YAML; anything unparseable is a warning, never a crash.
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 import re
 import stat
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from pathlib import Path
 
 # The agentskills.io name rule.
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
@@ -31,7 +31,7 @@ def is_valid_skill_name(name: str) -> bool:
     return bool(_NAME_RE.match(name))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Skill:
     """One discovered skill.
 
@@ -44,11 +44,11 @@ class Skill:
 
     name: str
     description: str
-    dir: Path
+    dir: pathlib.Path
     text: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ResolvedSkills:
     """Discovery output after the operator's state map is applied.
 
@@ -112,7 +112,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], list[str]]:
     return fields, warnings
 
 
-def _load_skill(skill_dir: Path) -> tuple[Skill | None, list[str]]:
+def _load_skill(skill_dir: pathlib.Path) -> tuple[Skill | None, list[str]]:
     """Load one skill directory.
 
     Returns:
@@ -137,7 +137,7 @@ def _load_skill(skill_dir: Path) -> tuple[Skill | None, list[str]]:
     return Skill(name=name, description=description, dir=skill_dir, text=text), prefixed
 
 
-def _mode(path: Path) -> int | None:
+def _mode(path: pathlib.Path) -> int | None:
     """Return the path's mode, or None when it does not exist.
 
     A path the process may not reach raises, where `Path.is_dir` reports it absent
@@ -149,17 +149,17 @@ def _mode(path: Path) -> int | None:
         return None
 
 
-def _is_dir(path: Path) -> bool:
+def _is_dir(path: pathlib.Path) -> bool:
     """Return whether the path is a directory, raising when it cannot be reached."""
     return (mode := _mode(path)) is not None and stat.S_ISDIR(mode)
 
 
-def _is_file(path: Path) -> bool:
+def _is_file(path: pathlib.Path) -> bool:
     """Return whether the path is a regular file, raising when it cannot be reached."""
     return (mode := _mode(path)) is not None and stat.S_ISREG(mode)
 
 
-def discover_skills(dirs: Sequence[Path]) -> tuple[tuple[Skill, ...], tuple[str, ...]]:
+def discover_skills(dirs: Sequence[pathlib.Path]) -> tuple[tuple[Skill, ...], tuple[str, ...]]:
     """Scan directories for skills, the first directory winning a duplicate name.
 
     A directory holds skill subdirectories or is a single skill itself; dotted
@@ -204,9 +204,11 @@ def discover_skills(dirs: Sequence[Path]) -> tuple[tuple[Skill, ...], tuple[str,
     return tuple(found.values()), tuple(warnings)
 
 
-def skill_search_dirs(extra_dirs: Sequence[str], installed_dir: Path) -> tuple[Path, ...]:
+def skill_search_dirs(
+    extra_dirs: Sequence[str], installed_dir: pathlib.Path
+) -> tuple[pathlib.Path, ...]:
     """Return the search order: the extra dirs first, so a local checkout wins over an install."""
-    return (*(Path(d).expanduser() for d in extra_dirs), installed_dir)
+    return (*(pathlib.Path(d).expanduser() for d in extra_dirs), installed_dir)
 
 
 def resolve_states(skills: Sequence[Skill], state: Mapping[str, str]) -> ResolvedSkills:
@@ -226,7 +228,7 @@ def resolve_states(skills: Sequence[Skill], state: Mapping[str, str]) -> Resolve
 
 
 def operator_skills(
-    enabled: bool, extra_dirs: Sequence[str], state: Mapping[str, str], installed_dir: Path
+    enabled: bool, extra_dirs: Sequence[str], state: Mapping[str, str], installed_dir: pathlib.Path
 ) -> ResolvedSkills:
     """Return the skills a run has, from `[skills]`.
 

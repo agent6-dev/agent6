@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.config import Config, load_config
+from agent6.config import Config, layer, load_config
 from agent6.graph import models, storage
 from agent6.sessions import ipc, manifest
 from agent6.sessions import layout as sessions_layout
@@ -773,6 +773,6 @@ def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
     def boom(*_a: object, **_k: object) -> object:
         raise RuntimeError("a bug in the loader")
 
-    monkeypatch.setattr(mcp_server, "load_effective", boom)
+    monkeypatch.setattr(layer, "load_effective", boom)
     with pytest.raises(RuntimeError):
         mcp_server.run_server(None)

@@ -17,14 +17,14 @@ from __future__ import annotations
 
 import argparse
 import ast
+import collections
+import dataclasses
 import html
+import pathlib
 import re
 import tomllib
-from collections import defaultdict
-from dataclasses import dataclass
-from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
+_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SRC = _ROOT / "src" / "agent6"
 _TESTS = _ROOT / "tests"
 _MD_OUT = _ROOT / "docs" / "data-contracts.md"
@@ -47,7 +47,7 @@ def _module_href(dotted: str) -> str:
 _MAX_INLINE_FIELDS = 24
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class Contract:
     """One registered data contract: the declared inputs a scan cannot derive.
 
@@ -224,7 +224,7 @@ def _union_members(node: ast.expr) -> list[str]:
     return _flatten_bitor(node)
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ModuleFacts:
     """What the AST says about one module.
 
@@ -283,7 +283,7 @@ def _module_facts(dotted: str) -> ModuleFacts:
     class_docs: dict[str, str | None] = {}
     frozen: list[str] = []
     pydantic: list[str] = []
-    subclasses: dict[str, list[str]] = defaultdict(list)
+    subclasses: dict[str, list[str]] = collections.defaultdict(list)
     unions: dict[str, tuple[str, ...]] = {}
     class_fields: dict[str, tuple[tuple[str, str, str], ...]] = {}
     for node in tree.body:
@@ -345,7 +345,7 @@ def _imported_dotted(tree: ast.Module) -> set[str]:
     return out
 
 
-def _reexports(root: Path) -> dict[str, str]:
+def _reexports(root: pathlib.Path) -> dict[str, str]:
     """Return each package facade name to the module that defines it, from the `__init__` files.
 
     Most of the tree reads a contract through its facade.
@@ -371,7 +371,7 @@ def _reexports(root: Path) -> dict[str, str]:
 _REEXPORTS = _reexports(_SRC)
 
 
-def _scan(root: Path) -> dict[str, set[str]]:
+def _scan(root: pathlib.Path) -> dict[str, set[str]]:
     """Return every file's imported modules under a root, facades resolved."""
     scanned: dict[str, set[str]] = {}
     for p in sorted(root.rglob("*.py")):
@@ -392,17 +392,17 @@ def _importers(dotted: str, imports: dict[str, set[str]]) -> list[str]:
 
 def _guard_tests(contract: Contract) -> list[str]:
     """Return the tests that import the module, reference a golden fixture, or are a declared pin."""
-    guards = {Path(p).name for p in contract.pins if p.endswith(".py")}
-    goldens = [Path(p).name for p in contract.pins if not p.endswith(".py")]
+    guards = {pathlib.Path(p).name for p in contract.pins if p.endswith(".py")}
+    goldens = [pathlib.Path(p).name for p in contract.pins if not p.endswith(".py")]
     for rel, mods in _TEST_IMPORTS.items():
         if contract.module in mods or (
             goldens and any(g in (_TESTS / rel).read_text(encoding="utf-8") for g in goldens)
         ):
-            guards.add(Path(rel).name)
+            guards.add(pathlib.Path(rel).name)
     return sorted(guards)
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class Card:
     """One derived card.
 
@@ -458,17 +458,17 @@ def _derive(contract: Contract) -> Card:
         members=members,
         writers=contract.writers,
         readers=readers,
-        pins=tuple((Path(p).name, p) for p in contract.pins),
+        pins=tuple((pathlib.Path(p).name, p) for p in contract.pins),
         guard_count=len(_guard_tests(contract)),
     )
 
 
 def _group(paths: tuple[str, ...]) -> str:
     """Return module paths grouped by package: `app/{merge, run}, harness/loop`."""
-    by_dir: dict[str, list[str]] = defaultdict(list)
+    by_dir: dict[str, list[str]] = collections.defaultdict(list)
     for p in paths:
-        parent = str(Path(p).parent)
-        by_dir[parent].append(Path(p).stem)
+        parent = str(pathlib.Path(p).parent)
+        by_dir[parent].append(pathlib.Path(p).stem)
     parts = []
     for parent in sorted(by_dir):
         stems = sorted(by_dir[parent])
@@ -792,8 +792,8 @@ def build_html() -> str:
 def main() -> None:
     """Write both outputs."""
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--md", type=Path, default=_MD_OUT)
-    ap.add_argument("--html", type=Path, default=_HTML_OUT)
+    ap.add_argument("--md", type=pathlib.Path, default=_MD_OUT)
+    ap.add_argument("--html", type=pathlib.Path, default=_HTML_OUT)
     args = ap.parse_args()
     args.md.write_text(build_markdown(), encoding="utf-8")
     args.html.parent.mkdir(parents=True, exist_ok=True)

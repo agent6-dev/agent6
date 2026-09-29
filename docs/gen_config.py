@@ -17,18 +17,18 @@ tests/unit/test_config_doc.py.
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 import typing
-from pathlib import Path
 from typing import Any, cast
 
-from pydantic import BaseModel
-from pydantic_core import PydanticUndefined
+import pydantic
+import pydantic_core
 
-from agent6.config.layer import BUILTIN_PRESET_NOTES, BUILTIN_PRESETS
-from agent6.config.model import Config
+from agent6.config import layer
+from agent6.config import model as config_model
 
-_ROOT = Path(__file__).resolve().parent.parent
+_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _TEMPLATE = _ROOT / "docs" / "config_template.md"
 _OUT = _ROOT / "docs" / "config.md"
 REGEN_CMD = "uv run python docs/gen_config.py"
@@ -46,11 +46,11 @@ _RUNTIME_DEFAULTS = {
 }
 
 
-def _sections_of(annotation: object) -> list[type[BaseModel]]:
+def _sections_of(annotation: object) -> list[type[pydantic.BaseModel]]:
     """Return every model class an annotation can hold, through `Annotated` and unions alike."""
     if isinstance(annotation, type):
-        return [annotation] if issubclass(annotation, BaseModel) else []
-    found: list[type[BaseModel]] = []
+        return [annotation] if issubclass(annotation, pydantic.BaseModel) else []
+    found: list[type[pydantic.BaseModel]] = []
     for arg in typing.get_args(annotation) or ():
         found.extend(_sections_of(arg))
     return found
@@ -63,7 +63,7 @@ def leaves() -> dict[str, tuple[str, str]]:
     """
     out: dict[str, tuple[str, str]] = {}
 
-    def walk(model: type[BaseModel], prefix: str) -> None:
+    def walk(model: type[pydantic.BaseModel], prefix: str) -> None:
         for name, field in model.model_fields.items():
             path = f"{prefix}{name}"
             if typing.get_origin(field.annotation) is dict:
@@ -79,7 +79,7 @@ def leaves() -> dict[str, tuple[str, str]]:
             if not nested:
                 out[path] = (_default_cell(path, field), field.description or "")
 
-    walk(Config, "")
+    walk(config_model.Config, "")
     return out
 
 
@@ -87,9 +87,9 @@ def _default_cell(path: str, field: object) -> str:
     """Return a leaf's default as the table shows it."""
     if path in _RUNTIME_DEFAULTS:
         return _RUNTIME_DEFAULTS[path]
-    default = getattr(field, "default", PydanticUndefined)
+    default = getattr(field, "default", pydantic_core.PydanticUndefined)
     factory = getattr(field, "default_factory", None)
-    if default is PydanticUndefined and factory is None:
+    if default is pydantic_core.PydanticUndefined and factory is None:
         return "*(required)*"
     value = factory() if factory is not None else default
     if value is None:
@@ -150,9 +150,9 @@ def _flatten(prefix: str, node: dict[str, Any]) -> list[str]:
 def render_presets_table() -> list[str]:
     """Return the built-in presets table's lines."""
     rows = ["| Preset | For | Sets |", "|---|---|---|"]
-    for name, overrides in BUILTIN_PRESETS.items():
+    for name, overrides in layer.BUILTIN_PRESETS.items():
         sets = ", ".join(_flatten("", overrides)) or "nothing (the defaults)"
-        rows.append(f"| `{name}` | {BUILTIN_PRESET_NOTES[name]} | {sets} |")
+        rows.append(f"| `{name}` | {layer.BUILTIN_PRESET_NOTES[name]} | {sets} |")
     return rows
 
 

@@ -17,8 +17,8 @@ leaf both layers sit above.
 
 from __future__ import annotations
 
+import dataclasses
 import re
-from dataclasses import dataclass
 
 # A whitespace-delimited `/parallel` token; not MULTILINE, so the anchors are the whole string's.
 _SEPARATOR = re.compile(r"(?:\A|(?<=\s))/parallel(?=\s|\Z)", re.IGNORECASE)
@@ -28,7 +28,7 @@ class DirectiveError(ValueError):
     """A directive or spec is malformed: a bare token, a missing task, a bad lane count."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Segment:
     """One parsed `/parallel` task.
 

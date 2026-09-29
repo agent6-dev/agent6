@@ -11,18 +11,12 @@ build-artifact `.gitignore` entries, and AGENTS.md or its verify section.
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 from collections.abc import Callable
-from pathlib import Path
 
-from agent6.config.layer import (
-    effective_leaf,
-    load_effective,
-)
-from agent6.config.write import set_config_value
-from agent6.errors import OperatorError
-from agent6.paths import mkdir_for_real_user, repo_config_path
-from agent6.verify_infer import infer_verify_command
+from agent6 import errors, paths, verify_infer
+from agent6.config import layer, write
 
 _EMPTY_CONFIG = """\
 # agent6 per-repo config (per-machine, stored under your state dir, never in
@@ -92,7 +86,7 @@ _ECOSYSTEM_GITIGNORE: dict[str, tuple[str, ...]] = {
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*verify\b", re.IGNORECASE | re.MULTILINE)
 
 
-def _detect_ecosystem(root: Path) -> str:
+def _detect_ecosystem(root: pathlib.Path) -> str:
     """Return the ecosystem the repo's manifests suggest; "" when unknown."""
     if any((root / f).is_file() for f in ("pyproject.toml", "setup.py", "setup.cfg")):
         return "py"
@@ -126,7 +120,7 @@ def _accept_default(_prompt: str, default: bool) -> bool:
     return default
 
 
-def _read_agents_md(root: Path) -> str:
+def _read_agents_md(root: pathlib.Path) -> str:
     """Return the AGENTS.md text; "" when absent or unreadable."""
     p = root / "AGENTS.md"
     if not p.is_file():
@@ -137,7 +131,7 @@ def _read_agents_md(root: Path) -> str:
         return ""
 
 
-def _missing_gitignore_entries(root: Path, *, ecosystem: str) -> list[str]:
+def _missing_gitignore_entries(root: pathlib.Path, *, ecosystem: str) -> list[str]:
     """Return the secret and build-artifact entries `.gitignore` lacks.
 
     Raises:
@@ -151,7 +145,7 @@ def _missing_gitignore_entries(root: Path, *, ecosystem: str) -> list[str]:
     return [e for e in entries if e not in existing_lines]
 
 
-def _append_gitignore(root: Path, missing: list[str]) -> str:
+def _append_gitignore(root: pathlib.Path, missing: list[str]) -> str:
     """Append the missing entries to `.gitignore` under an agent6 comment.
 
     Returns:
@@ -170,17 +164,17 @@ def _append_gitignore(root: Path, missing: list[str]) -> str:
 
 
 def _setup_verify_command(
-    root: Path, *, ecosystem: str, ask: _Ask, config_path: Path | None = None
+    root: pathlib.Path, *, ecosystem: str, ask: _Ask, config_path: pathlib.Path | None = None
 ) -> None:
     """Set `harness.verify_command` from the repo when unset, asking before an override."""
-    leaf = effective_leaf(load_effective(root, config_path), "harness.verify_command")
+    leaf = layer.effective_leaf(layer.load_effective(root, config_path), "harness.verify_command")
     value, source = leaf or ((), "default")
     already = bool(value)
     if already:
         print(f"  verify_command already set ({source}): {' '.join(value)}")
         if not ask("  Re-infer and replace it?", False):
             return
-    inferred = infer_verify_command(root, _read_agents_md(root))
+    inferred = verify_infer.infer_verify_command(root, _read_agents_md(root))
     if inferred is None:
         print(
             "  no verify command could be inferred from this repo. `agent6 run`"
@@ -194,10 +188,10 @@ def _setup_verify_command(
         print("  skipped verify_command.")
         return
     try:
-        err = set_config_value(
+        err = write.set_config_value(
             root, "harness.verify_command", json.dumps(list(inferred.argv)), to_repo=True
         )
-    except OperatorError as exc:
+    except errors.OperatorError as exc:
         err = str(exc)  # an unwritable repo config skips this step, never the whole init
     if err:
         print(f"  ERROR setting verify_command: {err}")
@@ -205,10 +199,10 @@ def _setup_verify_command(
         print(f"  set harness.verify_command = {list(inferred.argv)}")
 
 
-def _setup_agents_md(root: Path, *, ecosystem: str, ask: _Ask) -> None:
+def _setup_agents_md(root: pathlib.Path, *, ecosystem: str, ask: _Ask) -> None:
     """Create a starter AGENTS.md, or append a verify section when the existing one lacks it."""
     agents = root / "AGENTS.md"
-    inferred = infer_verify_command(root, _read_agents_md(root))
+    inferred = verify_infer.infer_verify_command(root, _read_agents_md(root))
     verify_hint = " ".join(inferred.argv) if inferred else "# EDIT: your verify pipeline"
     if not agents.is_file():
         if ask("Create a starter AGENTS.md (how agents should work in this repo)?", True):
@@ -235,12 +229,12 @@ def _setup_agents_md(root: Path, *, ecosystem: str, ask: _Ask) -> None:
 
 
 def init_workspace(
-    root: Path,
+    root: pathlib.Path,
     *,
     ecosystem: str = "",
-    repo_config_target: Path | None = None,
+    repo_config_target: pathlib.Path | None = None,
     interactive: bool = False,
-    config_path: Path | None = None,
+    config_path: pathlib.Path | None = None,
 ) -> int:
     """Run the setup wizard.
 
@@ -255,7 +249,7 @@ def init_workspace(
         The CLI exit code.
     """
     root = root.resolve()
-    cfg_path = repo_config_target or repo_config_path(root)
+    cfg_path = repo_config_target or paths.repo_config_path(root)
     detected = ecosystem or _detect_ecosystem(root)
     ask: _Ask = _ask if interactive else _accept_default
 
@@ -267,7 +261,7 @@ def init_workspace(
     if cfg_path.is_file():
         print(f"  config exists ({cfg_path.name}); leaving it in place.")
     elif ask(f"Create the per-repo config file at {cfg_path}?", True):
-        mkdir_for_real_user(cfg_path.parent)
+        paths.mkdir_for_real_user(cfg_path.parent)
         cfg_path.write_text(_EMPTY_CONFIG, encoding="utf-8")
         print(f"  created {cfg_path}")
     else:

@@ -12,7 +12,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import commit_message, git_ops
+from agent6 import commit_message, git_ops, kinds
 
 
 def _init_repo(path: pathlib.Path) -> None:
@@ -563,7 +563,7 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
 
     def racing_run(
         path: pathlib.Path, *args: str, check: bool = True, env_extra: dict[str, str] | None = None
-    ) -> git_ops.CommandResult:
+    ) -> kinds.CommandResult:
         nonlocal raced
         res = real_run(path, *args, check=check, env_extra=env_extra)
         if not raced and args[:2] == ("stash", "list"):
@@ -628,10 +628,10 @@ def test_raced_drop_failed_putback_raises_with_recovery(
 
     def racing_run(
         path: pathlib.Path, *args: str, check: bool = True, env_extra: dict[str, str] | None = None
-    ) -> git_ops.CommandResult:
+    ) -> kinds.CommandResult:
         nonlocal raced
         if args[:2] == ("stash", "store"):
-            return git_ops.CommandResult(
+            return kinds.CommandResult(
                 argv=("git", *args), returncode=1, stdout="", stderr="ref lock held", duration_s=0.0
             )
         res = real_run(path, *args, check=check, env_extra=env_extra)

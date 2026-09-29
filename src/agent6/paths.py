@@ -12,17 +12,17 @@ in-process, since the jail is the boundary; see docs/security.md.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import hashlib
 import os
+import pathlib
 import pwd
 from collections.abc import Iterable
-from dataclasses import dataclass
-from pathlib import Path
 
 _ALLOW_ROOT_ENV = "AGENT6_ALLOW_ROOT"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RealUser:
     """The operator agent6 acts for.
 
@@ -37,7 +37,7 @@ class RealUser:
     uid: int
     gid: int
     name: str
-    home: Path
+    home: pathlib.Path
     via_sudo: bool
 
 
@@ -49,10 +49,10 @@ def _passwd_entry(uid: int) -> pwd.struct_passwd | None:
         return None
 
 
-def _passwd_home(uid: int) -> Path | None:
+def _passwd_home(uid: int) -> pathlib.Path | None:
     """Return the passwd home for a uid, or None when there is no entry."""
     entry = _passwd_entry(uid)
-    return Path(entry.pw_dir) if entry else None
+    return pathlib.Path(entry.pw_dir) if entry else None
 
 
 def effective_user() -> RealUser:
@@ -65,12 +65,16 @@ def effective_user() -> RealUser:
         gid = int(gid_raw) if gid_raw.isdigit() else uid
         entry = _passwd_entry(uid)
         name = os.environ.get("SUDO_USER", "") or (entry.pw_name if entry else str(uid))
-        home = Path(entry.pw_dir) if entry else Path(os.environ.get("HOME", "/")).resolve()
+        home = (
+            pathlib.Path(entry.pw_dir)
+            if entry
+            else pathlib.Path(os.environ.get("HOME", "/")).resolve()
+        )
         return RealUser(uid=uid, gid=gid, name=name, home=home, via_sudo=True)
     uid = os.getuid()
     gid = os.getgid()
     home_env = os.environ.get("HOME")
-    home = Path(home_env) if home_env else (_passwd_home(uid) or Path("/"))
+    home = pathlib.Path(home_env) if home_env else (_passwd_home(uid) or pathlib.Path("/"))
     try:
         name = pwd.getpwuid(uid).pw_name
     except KeyError:
@@ -78,7 +82,7 @@ def effective_user() -> RealUser:
     return RealUser(uid=uid, gid=gid, name=name, home=home, via_sudo=False)
 
 
-def _user_dir(user: RealUser | None, xdg_env: str, *home_parts: str) -> Path:
+def _user_dir(user: RealUser | None, xdg_env: str, *home_parts: str) -> pathlib.Path:
     """Return one agent6 user dir: the XDG variable's, else under the operator's home.
 
     Under `sudo` the XDG variable is root's and is skipped.
@@ -95,26 +99,26 @@ def _user_dir(user: RealUser | None, xdg_env: str, *home_parts: str) -> Path:
     if not user.via_sudo:
         xdg = os.environ.get(xdg_env)
         if xdg:
-            return Path(xdg) / "agent6"
+            return pathlib.Path(xdg) / "agent6"
     return user.home.joinpath(*home_parts) / "agent6"
 
 
-def global_config_dir(user: RealUser | None = None) -> Path:
+def global_config_dir(user: RealUser | None = None) -> pathlib.Path:
     """Return the global config directory, `$XDG_CONFIG_HOME/agent6` or `~/.config/agent6`."""
     return _user_dir(user, "XDG_CONFIG_HOME", ".config")
 
 
-def global_config_path(user: RealUser | None = None) -> Path:
+def global_config_path(user: RealUser | None = None) -> pathlib.Path:
     """Return the global config file's path."""
     return global_config_dir(user) / "config.toml"
 
 
-def secrets_path(user: RealUser | None = None) -> Path:
+def secrets_path(user: RealUser | None = None) -> pathlib.Path:
     """Return the secrets file's path."""
     return global_config_dir(user) / "secrets.toml"
 
 
-def ui_settings_path(user: RealUser | None = None) -> Path:
+def ui_settings_path(user: RealUser | None = None) -> pathlib.Path:
     """Return the UI preferences file's path, beside the config.
 
     A theme is a viewer preference, not agent behaviour, so it never enters the
@@ -123,7 +127,7 @@ def ui_settings_path(user: RealUser | None = None) -> Path:
     return global_config_dir(user) / "ui.toml"
 
 
-def cache_dir(user: RealUser | None = None) -> Path:
+def cache_dir(user: RealUser | None = None) -> pathlib.Path:
     """Return the cache directory, `$XDG_CACHE_HOME/agent6` or `~/.cache/agent6`.
 
     It holds regenerable data such as the provider model lists; safe to delete.
@@ -131,7 +135,7 @@ def cache_dir(user: RealUser | None = None) -> Path:
     return _user_dir(user, "XDG_CACHE_HOME", ".cache")
 
 
-def jail_cache_home(user: RealUser | None = None) -> Path:
+def jail_cache_home(user: RealUser | None = None) -> pathlib.Path:
     """Return the persistent HOME a jailed command gets, `<cache>/home`.
 
     Used under `hardened` and `none`, which have no private /tmp, and under `strict`
@@ -142,7 +146,7 @@ def jail_cache_home(user: RealUser | None = None) -> Path:
     return cache_dir(user) / "home"
 
 
-def data_dir(user: RealUser | None = None) -> Path:
+def data_dir(user: RealUser | None = None) -> pathlib.Path:
     """Return the data directory, `$XDG_DATA_HOME/agent6` or `~/.local/share/agent6`.
 
     It holds installed skills; unlike the cache it is not regenerable.
@@ -150,7 +154,7 @@ def data_dir(user: RealUser | None = None) -> Path:
     return _user_dir(user, "XDG_DATA_HOME", ".local", "share")
 
 
-def state_base(user: RealUser | None = None) -> Path:
+def state_base(user: RealUser | None = None) -> pathlib.Path:
     """Return the state base, `$XDG_STATE_HOME/agent6` or `~/.local/state/agent6`.
 
     Each repo gets `<base>/<repo-id>/`, out of the workspace; the jail masks the base.
@@ -158,7 +162,7 @@ def state_base(user: RealUser | None = None) -> Path:
     return _user_dir(user, "XDG_STATE_HOME", ".local", "state")
 
 
-def private_dirs() -> tuple[Path, ...]:
+def private_dirs() -> tuple[pathlib.Path, ...]:
     """Return the directories a jailed command must never see: the config dir and the state base.
 
     One owner: the jail masks them, the tool-mount scan refuses them and the config
@@ -169,7 +173,7 @@ def private_dirs() -> tuple[Path, ...]:
     return (global_config_dir(), state_base())
 
 
-def hidden_paths(extra: Iterable[Path]) -> tuple[Path, ...]:
+def hidden_paths(extra: Iterable[pathlib.Path]) -> tuple[pathlib.Path, ...]:
     """Return every tree hidden from a run: `[sandbox].hide_paths` plus the private dirs.
 
     One owner, because the jail and the in-process `Workspace` both enforce it, and a
@@ -184,7 +188,7 @@ _ID_BYTES_MAX = 100
 _ID_HASH_LEN = 12
 
 
-def repo_id(repo_root: Path) -> str:
+def repo_id(repo_root: pathlib.Path) -> str:
     """Return a directory name that identifies the repo root, and only it.
 
     `/` becomes `-`, and a trailing hex tag records which dashes were slashes, one
@@ -205,7 +209,7 @@ def repo_id(repo_root: Path) -> str:
     return f"{flat}-{tag}" if flat else tag
 
 
-def repo_root_of_id(state_dir_name: str) -> Path | None:
+def repo_root_of_id(state_dir_name: str) -> pathlib.Path | None:
     """Return the repo root a state-dir name encodes, `repo_id`'s inverse.
 
     The decoded candidate must re-encode to exactly the name, so a wrong read is
@@ -230,7 +234,7 @@ def repo_root_of_id(state_dir_name: str) -> Path | None:
     it = iter(marks)
     for ch in flat:
         out.append(("/" if next(it) == "1" else "-") if ch == "-" else ch)
-    candidate = Path("/" + "".join(out))
+    candidate = pathlib.Path("/" + "".join(out))
     return candidate if repo_id(candidate) == state_dir_name else None
 
 
@@ -250,7 +254,7 @@ def _tail_bytes(s: str, limit: int) -> str:
     return ""
 
 
-def project_root(start: Path) -> Path:
+def project_root(start: pathlib.Path) -> pathlib.Path:
     """Return the project the path is inside, or the path itself outside one.
 
     Walks for `.git` rather than asking git, since this is on every command's path.
@@ -267,7 +271,7 @@ def project_root(start: Path) -> Path:
     return root
 
 
-def checkout_root(start: Path) -> Path:
+def checkout_root(start: pathlib.Path) -> pathlib.Path:
     """Return the nearest directory holding a `.git`, or the path itself outside one."""
     start = start.resolve()
     for candidate in (start, *start.parents):
@@ -276,7 +280,7 @@ def checkout_root(start: Path) -> Path:
     return start
 
 
-def linked_worktree_git_dir(root: Path) -> Path | None:
+def linked_worktree_git_dir(root: pathlib.Path) -> pathlib.Path | None:
     """Return the repository git dir a linked worktree points into, or None for a plain checkout.
 
     Resolved as git does, from the `.git` file and the entry's `commondir`. Both files
@@ -290,10 +294,10 @@ def linked_worktree_git_dir(root: Path) -> Path | None:
         text = pointer.read_text(encoding="utf-8", errors="replace").strip()
         if not text.startswith("gitdir:"):
             return None
-        admin = Path(text[len("gitdir:") :].strip())
+        admin = pathlib.Path(text[len("gitdir:") :].strip())
         if not admin.is_absolute():
             admin = root / admin
-        common = Path((admin / "commondir").read_text(encoding="utf-8").strip())
+        common = pathlib.Path((admin / "commondir").read_text(encoding="utf-8").strip())
         if not common.is_absolute():
             common = admin / common
         return common.resolve()
@@ -301,12 +305,12 @@ def linked_worktree_git_dir(root: Path) -> Path | None:
         return None
 
 
-def state_dir(repo_root: Path) -> Path:
+def state_dir(repo_root: pathlib.Path) -> pathlib.Path:
     """Return the per-repo state directory, keyed on the project rather than the cwd."""
     return state_base() / repo_id(project_root(repo_root))
 
 
-def repo_config_path(repo_root: Path) -> Path:
+def repo_config_path(repo_root: pathlib.Path) -> pathlib.Path:
     """Return the per-repo config file, `<state_dir>/config.toml`, out of the repo."""
     return state_dir(repo_root) / "config.toml"
 
@@ -321,7 +325,7 @@ def root_optin_enabled(cli_flag: bool) -> bool:
     return cli_flag or os.environ.get(_ALLOW_ROOT_ENV) == "1"
 
 
-def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
+def mkdir_for_real_user(path: pathlib.Path, user: RealUser | None = None) -> None:
     """Create the directory and its missing ancestors, chowning what was created to the operator.
 
     Under `sudo` a root-owned base would block every later non-root sibling. The
@@ -332,7 +336,7 @@ def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
         path: The directory.
         user: The operator; None resolves the effective one.
     """
-    missing: list[Path] = []
+    missing: list[pathlib.Path] = []
     cur = path
     while not cur.exists():
         missing.append(cur)
@@ -346,7 +350,7 @@ def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
     chown_to_real_user(missing[-1] if missing else path, user)
 
 
-def chown_to_real_user(path: Path, user: RealUser | None = None) -> None:
+def chown_to_real_user(path: pathlib.Path, user: RealUser | None = None) -> None:
     """Chown a tree back to the operator, when the process is root through `sudo`.
 
     Every target is named relative to an open directory fd and no link is followed,
