@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 review` command (freeform review + the adversarial review panel)."""
+"""`agent6 review` (the freeform review and the adversarial panel), and
+`save_review`, the one writer of `<state-dir>/reviews/`, which `sessions
+review` shares."""
 
 from __future__ import annotations
 

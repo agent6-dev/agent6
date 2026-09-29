@@ -379,7 +379,7 @@ class MemoryState:
     failing, one deferred finish_session as the backstop; both silent once the
     worker recorded anything (`written`, any edit under the store). Those
     three are run-lifetime and persist in the snapshot. `wrote` and `read`
-    name the facts this LEG touched, for the use record its end persists
+    name the facts this leg touched, for the use record its end persists
     (`memory.record_use`); leg-local, each leg records its own."""
 
     written: bool = False

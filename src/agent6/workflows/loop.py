@@ -1097,7 +1097,7 @@ class Workflow:
 
     def _memory_store_facts(self, name: str, tool_input: Any) -> tuple[str, ...] | None:
         """The facts a tool call addressed in the memory store, None when the
-        call was not (wholly) about the store. Judged on the MODEL'S input
+        call was not (wholly) about the store. Judged on the model's input
         paths: the store sits outside the workspace root, so only an absolute
         path reaches it (a result's path is store-relative, and matching on it
         never fires). `apply_patch` normally carries no `path` and names its

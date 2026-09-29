@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Review-panel seat prompts.
+"""Review prompts: the run review's one-call prompt, and the panel seats'.
 
-The system prompt each adversarial reviewer sees, and its explore-tier
-variant. Pure text with a `{persona}` placeholder; `workflows._review` owns
-the seat calls and the grounding/aggregation.
+The run review (`sessions review`) reads a finished session's record; each
+adversarial seat sees the panel prompt, or its explore-tier variant, with a
+`{persona}` placeholder. Pure text; `workflows.run_review` and
+`workflows._review` own the calls.
 """
 
 from __future__ import annotations

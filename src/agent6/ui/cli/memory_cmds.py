@@ -32,8 +32,9 @@ def _cmd_memory_add(name: str, body: str) -> int:
 
 
 def _cmd_memory_list() -> int:
-    """The index as the runs see it, each entry followed by its use record
-    (who wrote it, who read it) when the harness has one."""
+    """The whole index (a run's prompt gets it clipped), each entry followed
+    by its use record (who wrote it, who read it) when the harness has one,
+    then the files the index does not list."""
     state = state_dir(Path.cwd())
     text = index_text(state)
     orphans = unindexed_names(state)
