@@ -45,7 +45,7 @@ depends_on = [
   "agent6.providers",
   "agent6.sandbox",
   "agent6.sandbox.detect",
-  "agent6.secrets",
+  "agent6.secret_store",
   "agent6.sessions.id",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
@@ -89,7 +89,7 @@ depends_on = [
   "agent6.sandbox",
   "agent6.sandbox.detect",
   "agent6.sandbox.landlock",
-  "agent6.secrets",
+  "agent6.secret_store",
   "agent6.sessions.id",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
@@ -156,7 +156,7 @@ depends_on = [
   "agent6.paths",
   "agent6.portable",
   "agent6.sandbox",  # die_with_parent ties the claude_code child to the agent
-  "agent6.secrets",
+  "agent6.secret_store",
 ]
 
 [[modules]]
@@ -448,7 +448,7 @@ path = "agent6.paths"
 depends_on = []
 
 [[modules]]
-path = "agent6.secrets"
+path = "agent6.secret_store"
 depends_on = ["agent6.paths", "agent6.portable"]
 
 [[modules]]
@@ -465,7 +465,7 @@ depends_on = ["agent6.config._providers", "agent6.config.io", "agent6.config.lay
 
 [[modules]]
 path = "agent6.models.cache"
-depends_on = ["agent6.config", "agent6.models.pricing", "agent6.paths", "agent6.providers", "agent6.secrets"]
+depends_on = ["agent6.config", "agent6.models.pricing", "agent6.paths", "agent6.providers", "agent6.secret_store"]
 
 [[modules]]
 # Curated model capabilities (context windows, compaction sizing, per-model
@@ -483,7 +483,7 @@ depends_on = ["agent6.config", "agent6.kinds", "agent6.models.cache", "agent6.pr
 # re-fetches the live listing (secrets: the key for the authed fetch) so a
 # refusal never rests on a stale snapshot.
 path = "agent6.models.validate"
-depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent6.kinds", "agent6.models.cache", "agent6.models.registry", "agent6.secrets"]
+depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent6.kinds", "agent6.models.cache", "agent6.models.registry", "agent6.secret_store"]
 
 [[modules]]
 # The values an open-text config leaf can take (a provider's model ids, the
@@ -491,7 +491,7 @@ depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent
 # route, and TAB completion.
 path = "agent6.models.choices"
 # sessions.manifest: a resume row names the preset and model a run replays.
-depends_on = ["agent6.config", "agent6.config.layer", "agent6.kinds", "agent6.models.cache", "agent6.models.validate", "agent6.secrets", "agent6.sessions.manifest"]
+depends_on = ["agent6.config", "agent6.config.layer", "agent6.kinds", "agent6.models.cache", "agent6.models.validate", "agent6.secret_store", "agent6.sessions.manifest"]
 
 [[modules]]
 path = "agent6.sandbox.detect"

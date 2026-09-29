@@ -13,7 +13,7 @@ import pathlib
 
 import pytest
 
-from agent6 import secrets
+from agent6 import secret_store
 from agent6.app import _setup
 from agent6.config import Config
 from agent6.models import cache
@@ -39,8 +39,8 @@ def test_claude_only_config_refreshes_the_catalog(monkeypatch: pytest.MonkeyPatc
         return []
 
     monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
-    monkeypatch.setattr(secrets, "load_secrets", dict)
-    monkeypatch.setattr(secrets, "resolve_api_key", _key)
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
+    monkeypatch.setattr(secret_store, "resolve_api_key", _key)
     monkeypatch.setattr(cache, "list_models", _models)
     cfg = _cfg(
         "claude-opus-5",
@@ -60,8 +60,8 @@ def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPat
         return []
 
     monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
-    monkeypatch.setattr(secrets, "load_secrets", dict)
-    monkeypatch.setattr(secrets, "resolve_api_key", _key)
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
+    monkeypatch.setattr(secret_store, "resolve_api_key", _key)
     monkeypatch.setattr(cache, "list_models", _models)
     # A BARE claude-* id through openrouter: the one shape where the guard
     # decides (a non-claude model skips the refresh before the guard is read).
@@ -88,8 +88,8 @@ def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) 
     def _no_key(*_a: object, **_k: object) -> str:
         return ""
 
-    monkeypatch.setattr(secrets, "load_secrets", dict)
-    monkeypatch.setattr(secrets, "resolve_api_key", _no_key)
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
+    monkeypatch.setattr(secret_store, "resolve_api_key", _no_key)
     cfg = Config.model_validate(
         {
             "providers": {
@@ -108,7 +108,7 @@ def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_a_seat_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(secrets, "load_secrets", dict)
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
     cfg = Config.model_validate(
         {
             "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
@@ -126,7 +126,7 @@ def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPa
     The machine call site passes per-state provider pins as extras; an absent pinned provider
     refuses before any state runs.
     """
-    monkeypatch.setattr(secrets, "load_secrets", dict)
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
     cfg = Config.model_validate(
         {
             "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
@@ -166,7 +166,7 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     connect chatgpt`), not mid-setup after state exists; with tokens stored it passes without any
     key lookup.
     """
-    monkeypatch.setattr(secrets, "load_secrets", dict)
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
     cfg = _cfg("gpt-5-codex", {"chatgpt": {"api_format": "chatgpt"}})
     err = _setup.check_provider_keys(cfg)
     assert err is not None and "agent6 connect chatgpt" in err
@@ -174,7 +174,7 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     def stored(*_a: object, **_k: object) -> object:
         return object()
 
-    monkeypatch.setattr(secrets, "load_oauth_tokens", stored)
+    monkeypatch.setattr(secret_store, "load_oauth_tokens", stored)
     listed: list[str] = []
 
     def fake_list(name: str, *_a: object, **_k: object) -> list[str]:
@@ -272,7 +272,7 @@ def test_claude_code_routes_are_plan_metered(
 
     called: list[bool] = []
     monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
-    monkeypatch.setattr(secrets, "load_secrets", dict)
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
     # The sign-in probe is the next test's subject; here the binary need not exist.
     monkeypatch.setattr(providers_claude_code, "login_status", _signed_in)
     assert _setup.check_provider_keys(cfg) is None
@@ -292,7 +292,7 @@ def test_claude_code_route_needs_a_signed_in_binary(monkeypatch: pytest.MonkeyPa
     def signed_in(binary: str) -> str | None:
         return None
 
-    monkeypatch.setattr(secrets, "load_secrets", dict)
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
     monkeypatch.setattr(providers_claude_code, "login_status", signed_out)
     cfg = _cfg("claude-haiku-4-5", {"claude": {"api_format": "claude_code", "binary": "/opt/cc"}})
     err = _setup.check_provider_keys(cfg)

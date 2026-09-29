@@ -20,7 +20,7 @@ from urllib import parse
 
 import pydantic
 
-from agent6 import paths, secrets
+from agent6 import paths, secret_store
 from agent6.config import (
     AnthropicProviderEntry,
     OpenAIProviderEntry,
@@ -354,8 +354,8 @@ def _chatgpt_sign_in(name: str) -> int:
             return 2
     tokens = chatgpt_oauth.tokens_from_grant(grant)
     try:
-        saved = secrets.save_oauth_tokens(name, tokens)
-    except secrets.SecretsError as exc:
+        saved = secret_store.save_oauth_tokens(name, tokens)
+    except secret_store.SecretsError as exc:
         _common.error(f"{exc}")
         return 2
     plan = chatgpt_oauth.plan_type_of(grant)
@@ -432,7 +432,7 @@ def _cmd_logout(name: str, api_format: str) -> int:
             file=sys.stderr,
         )
         return 2
-    tokens = secrets.load_oauth_tokens(name)
+    tokens = secret_store.load_oauth_tokens(name)
     if tokens is not None:
         err = chatgpt_oauth.revoke_tokens(
             chatgpt_oauth.CHATGPT_ISSUER, chatgpt_oauth.CHATGPT_CLIENT_ID, tokens
@@ -442,8 +442,8 @@ def _cmd_logout(name: str, api_format: str) -> int:
         else:
             _common.warn(f"revocation failed ({err}); removing local tokens anyway.")
     try:
-        removed = secrets.delete_provider_secrets(name)
-    except secrets.SecretsError as exc:
+        removed = secret_store.delete_provider_secrets(name)
+    except secret_store.SecretsError as exc:
         _common.error(f"{exc}")
         return 2
     print(
@@ -515,8 +515,8 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
             api_key = ""
     if api_key:
         try:
-            saved = secrets.save_secret(name, api_key)
-        except secrets.SecretsError as exc:
+            saved = secret_store.save_secret(name, api_key)
+        except secret_store.SecretsError as exc:
             _common.error(f"{exc}")
             return 2
         print(f"Saved key to {saved} (0600).")

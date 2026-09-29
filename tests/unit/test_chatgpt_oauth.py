@@ -14,7 +14,7 @@ from urllib import parse
 
 import pytest
 
-from agent6 import secrets
+from agent6 import secret_store
 from agent6.providers import chatgpt_oauth, types
 
 
@@ -207,12 +207,12 @@ def test_every_remedy_names_the_provider_it_diagnosed(
     )
     with pytest.raises(types.ProviderError, match="agent6 connect codex"):
         cred.token()  # nothing stored
-    secrets.save_oauth_tokens(
-        "codex", secrets.OAuthTokens("AT0", "RT1", time.time() + 3600, "acct-1")
+    secret_store.save_oauth_tokens(
+        "codex", secret_store.OAuthTokens("AT0", "RT1", time.time() + 3600, "acct-1")
     )
     assert cred.token() == "AT0"
-    secrets.save_oauth_tokens(
-        "codex", secrets.OAuthTokens("AT1", "RT1", time.time() + 3600, "acct-2")
+    secret_store.save_oauth_tokens(
+        "codex", secret_store.OAuthTokens("AT1", "RT1", time.time() + 3600, "acct-2")
     )
     cred.invalidate()
     with pytest.raises(types.ProviderError, match="agent6 connect codex"):
@@ -224,7 +224,7 @@ def test_every_remedy_names_the_provider_it_diagnosed(
 
 
 def test_tokens_from_grant_keeps_previous_on_partial_refresh() -> None:
-    prev = secrets.OAuthTokens("old-a", "old-r", 1.0, account_id="acct-1")
+    prev = secret_store.OAuthTokens("old-a", "old-r", 1.0, account_id="acct-1")
     fresh = chatgpt_oauth.tokens_from_grant(
         chatgpt_oauth.TokenGrant("new-a", "", 600.0), previous=prev
     )
@@ -251,19 +251,19 @@ def test_credential_caches_refreshes_and_persists(
     with pytest.raises(types.ProviderError, match="agent6 connect chatgpt"):
         cred.token()
 
-    secrets.save_oauth_tokens(
-        "chatgpt", secrets.OAuthTokens("AT0", "RT1", time.time() + 3600, "acct")
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("AT0", "RT1", time.time() + 3600, "acct")
     )
     assert cred.token() == "AT0" and refreshes == []
 
-    secrets.save_oauth_tokens(
-        "chatgpt", secrets.OAuthTokens("AT0", "RT1", time.time() + 10, "acct")
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("AT0", "RT1", time.time() + 10, "acct")
     )
     cred2 = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
     assert cred2.token() == "AT1" and refreshes == ["RT1"]
-    stored = secrets.load_oauth_tokens("chatgpt")
+    stored = secret_store.load_oauth_tokens("chatgpt")
     assert stored is not None and stored.refresh_token == "RT2" and stored.account_id == "acct"
     assert cred2.token() == "AT1" and len(refreshes) == 1  # cached until expiry
     assert cred2.account_id() == "acct"
@@ -290,11 +290,15 @@ def test_credential_adopts_a_sibling_process_rotation(
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("stale", "RT1", 5000.0, "acct"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("stale", "RT1", 5000.0, "acct")
+    )
     assert cred.token() == "stale"
     # The cached copy ages out; a sibling has meanwhile stored a fresher grant.
     clock["now"] = 4800.0
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("rotated", "RT2", 9000.0, "acct"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("rotated", "RT2", 9000.0, "acct")
+    )
     assert cred.token() == "rotated"
 
 
@@ -392,7 +396,7 @@ def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> Non
         return _Resp(500, {"error": "boom", "received": tok})
 
     monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
-    tokens = secrets.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
+    tokens = secret_store.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
     warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
     assert warn is not None and tok not in warn and "<REDACTED>" in warn
 
@@ -408,7 +412,7 @@ def test_revoke_warning_scrubs_a_token_split_across_the_clip(
         return _Resp(500, body)
 
     monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
-    tokens = secrets.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
+    tokens = secret_store.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
     warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
     assert warn is not None
     assert tok[:10] not in warn
@@ -438,9 +442,13 @@ def test_credential_refuses_an_account_swap(
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("tokA", "RT1", 5000.0, "acct-A"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("tokA", "RT1", 5000.0, "acct-A")
+    )
     assert cred.token() == "tokA"
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("tokB", "RT2", 9000.0, "acct-B"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("tokB", "RT2", 9000.0, "acct-B")
+    )
     cred.invalidate(401)
     with pytest.raises(types.ProviderError, match="different account"):
         cred.token()
@@ -458,9 +466,11 @@ def test_credential_pins_a_claim_when_the_stored_account_is_empty(
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens(first, "RT1", 5000.0, "account-a"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens(first, "RT1", 5000.0, "account-a")
+    )
     assert cred.token() == first
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens(second, "RT2", 9000.0))
+    secret_store.save_oauth_tokens("chatgpt", secret_store.OAuthTokens(second, "RT2", 9000.0))
     cred.invalidate(401)
     with pytest.raises(types.ProviderError, match="different account"):
         cred.token()
@@ -481,9 +491,13 @@ def test_post_401_recovery_adopts_a_sibling_grant_first(
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("revoked", "RT1", 5000.0, "acct"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("revoked", "RT1", 5000.0, "acct")
+    )
     assert cred.token() == "revoked"
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("fresh", "RT2", 9000.0, "acct"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("fresh", "RT2", 9000.0, "acct")
+    )
     cred.invalidate(401)
     assert cred.token() == "fresh"
 
@@ -504,7 +518,9 @@ def test_403_does_not_arm_a_refresh(gcfg: pathlib.Path, monkeypatch: pytest.Monk
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("tok", "RT1", 5000.0, "acct"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("tok", "RT1", 5000.0, "acct")
+    )
     assert cred.token() == "tok"
     cred.invalidate(403)
     assert cred.token() == "tok"
@@ -525,7 +541,9 @@ def test_invalid_grant_is_a_dead_signin(
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("old", "RT1", 5000.0, "acct"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("old", "RT1", 5000.0, "acct")
+    )
     with pytest.raises(types.ProviderError, match="no longer valid"):
         cred.token()
 
@@ -535,7 +553,9 @@ def test_reused_rotation_rereads_once(gcfg: pathlib.Path, monkeypatch: pytest.Mo
 
     def reused(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         # A sibling's rotation lands between our read and the endpoint's answer.
-        secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("winner", "RT9", 9000.0, "acct"))
+        secret_store.save_oauth_tokens(
+            "chatgpt", secret_store.OAuthTokens("winner", "RT9", 9000.0, "acct")
+        )
         return _Resp(401, {"error": {"code": "refresh_token_reused"}})
 
     monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", reused)
@@ -553,7 +573,9 @@ def test_reused_rotation_rereads_once(gcfg: pathlib.Path, monkeypatch: pytest.Mo
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("old", "RT1", 5000.0, "acct"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("old", "RT1", 5000.0, "acct")
+    )
     assert cred.token() == "winner"
 
 
@@ -563,8 +585,8 @@ def test_reused_rotation_does_not_adopt_an_expired_sibling(
     """A changed access token is not a rescue when it is already stale."""
 
     def reused(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
-        secrets.save_oauth_tokens(
-            "chatgpt", secrets.OAuthTokens("stale-sibling", "RT9", 6200.0, "acct")
+        secret_store.save_oauth_tokens(
+            "chatgpt", secret_store.OAuthTokens("stale-sibling", "RT9", 6200.0, "acct")
         )
         return _Resp(401, {"error": {"code": "refresh_token_reused"}})
 
@@ -582,7 +604,9 @@ def test_reused_rotation_does_not_adopt_an_expired_sibling(
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("old", "RT1", 5000.0, "acct"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("old", "RT1", 5000.0, "acct")
+    )
     with pytest.raises(types.ProviderError, match="refresh_token_reused"):
         cred.token()
 
@@ -639,7 +663,9 @@ def test_unheld_refresh_lock_refuses_the_rotation(
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens("old", "RT1", 5000.0, "acct"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("old", "RT1", 5000.0, "acct")
+    )
     with pytest.raises(types.ProviderError, match="refresh lock"):
         cred.token()
 
@@ -655,7 +681,9 @@ def test_stored_account_must_match_the_tokens_own_claim(
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
     tok = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "acct-real"}})
-    secrets.save_oauth_tokens("chatgpt", secrets.OAuthTokens(tok, "RT1", 5000.0, "user-legacy"))
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens(tok, "RT1", 5000.0, "user-legacy")
+    )
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )

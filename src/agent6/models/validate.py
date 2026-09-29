@@ -18,8 +18,7 @@ import pathlib
 from collections.abc import Sequence
 
 from agent6 import directive as agent6_directive
-from agent6 import kinds
-from agent6 import secrets as agent6_secrets
+from agent6 import kinds, secret_store
 from agent6.config import ClaudeCodeProviderEntry, Config, ConfigError, RoleName, layer
 from agent6.models import cache as models_cache
 from agent6.models import registry
@@ -86,10 +85,10 @@ def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
     if entry is None or isinstance(entry, ClaudeCodeProviderEntry):
         return None  # no listing: the binary resolves model names itself
     try:
-        secrets = agent6_secrets.load_secrets()
-    except agent6_secrets.SecretsError:
+        secrets = secret_store.load_secrets()
+    except secret_store.SecretsError:
         secrets = {}
-    key = agent6_secrets.resolve_api_key(provider_name, entry.api_key_env, secrets=secrets)
+    key = secret_store.resolve_api_key(provider_name, entry.api_key_env, secrets=secrets)
     return models_cache.fetch_models_live(provider_name, entry, key)
 
 

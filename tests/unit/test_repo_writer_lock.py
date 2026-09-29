@@ -701,13 +701,13 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     execution's first checkpoint would commit it. At resume, every currently untracked file that no
     tool call of the run wrote joins the set; the run's own uncommitted file stays its own.
     """
-    from agent6 import secrets
+    from agent6 import secret_store
     from agent6.app import _execution as app__execution
     from agent6.app import _execution as execution_mod
     from agent6.app import resume as resume_mod
     from agent6.harness import _snapshot
 
-    secrets.save_secret("anthropic", "x")  # the provider preflight runs before the execution
+    secret_store.save_secret("anthropic", "x")  # the provider preflight runs before the execution
     state = paths.state_dir(repo)
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="run-U")
     layout.ensure()

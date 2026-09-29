@@ -10,7 +10,7 @@ from collections.abc import Callable
 
 import pytest
 
-from agent6 import paths, secrets
+from agent6 import paths, secret_store
 from agent6.models import cache
 from agent6.ui.cli import _common, main
 from agent6.ui.cli import model as modelmod
@@ -50,7 +50,7 @@ def test_connect_stores_key_and_provider_and_never_execs(
     sp = tmp_path / "g" / "agent6" / "secrets.toml"
     assert sp.is_file()
     assert stat.S_IMODE(sp.stat().st_mode) == 0o600
-    assert secrets.resolve_api_key("anthropic", None) == "sk-ant-FAKE"
+    assert secret_store.resolve_api_key("anthropic", None) == "sk-ant-FAKE"
 
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.anthropic]" in gc
@@ -109,7 +109,7 @@ def test_connect_warns_when_provider_rejects_key(
     assert "REJECTED this key" in err
     assert "HTTP 401" in err
     # The key was still written (the user may fix it later).
-    assert secrets.resolve_api_key("anthropic", None) == "sk-ant-BAD"
+    assert secret_store.resolve_api_key("anthropic", None) == "sk-ant-BAD"
 
 
 def test_connect_no_verify_skips_the_probe(
@@ -140,7 +140,7 @@ def test_connect_non_tty_reads_plain_input_without_getpass(
 
     rc = main(["connect", "anthropic"])
     assert rc == 0
-    assert secrets.resolve_api_key("anthropic", None) == "sk-ant-PIPED"
+    assert secret_store.resolve_api_key("anthropic", None) == "sk-ant-PIPED"
 
 
 def test_connect_rejects_non_bare_key_provider_name(
@@ -289,7 +289,7 @@ def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
     assert main(["connect", "anthropic", "--no-verify"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("REFUSING:") and "bad combination" in err
-    assert secrets.resolve_api_key("anthropic", None) is None
+    assert secret_store.resolve_api_key("anthropic", None) is None
 
 
 def test_connect_config_rollback_precedes_the_chatgpt_sign_in(
@@ -373,7 +373,7 @@ def test_model_set_warns_when_the_provider_has_no_key(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.secrets.resolve_api_key", _key_stub(None))
+    monkeypatch.setattr("agent6.secret_store.resolve_api_key", _key_stub(None))
     rc = main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     err = capsys.readouterr().err
@@ -391,7 +391,7 @@ def test_model_set_stays_quiet_when_the_key_resolves(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.secrets.resolve_api_key", _key_stub("sk-x"))
+    monkeypatch.setattr("agent6.secret_store.resolve_api_key", _key_stub("sk-x"))
     rc = main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     assert "note:" not in capsys.readouterr().err
@@ -636,7 +636,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
 
     sp = tmp_path / "g" / "agent6" / "secrets.toml"
     assert stat.S_IMODE(sp.stat().st_mode) == 0o600
-    tokens = secrets.load_oauth_tokens("chatgpt")
+    tokens = secret_store.load_oauth_tokens("chatgpt")
     assert tokens is not None and tokens.account_id == "acct-7"
 
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
@@ -691,7 +691,7 @@ def test_connect_chatgpt_state_mismatch_refuses(
     )
     rc = main(["connect", "chatgpt"])
     assert rc == 2
-    assert secrets.load_oauth_tokens("chatgpt") is None
+    assert secret_store.load_oauth_tokens("chatgpt") is None
 
 
 def test_oauth_callback_server_round_trip() -> None:
@@ -727,8 +727,8 @@ def test_connect_logout_revokes_and_removes_tokens(
     """--logout revokes a ChatGPT grant at the issuer and removes the secrets entry."""
     import time as _time
 
-    secrets.save_oauth_tokens(
-        "chatgpt", secrets.OAuthTokens("AT", "RT", _time.time() + 3600, "acct")
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("AT", "RT", _time.time() + 3600, "acct")
     )
     revoked: list[dict[str, object]] = []
 
@@ -745,7 +745,7 @@ def test_connect_logout_revokes_and_removes_tokens(
     assert rc == 0
     assert revoked[0]["url"] == "https://auth.openai.com/oauth/revoke"
     assert revoked[0]["token"] == "RT" and revoked[0]["token_type_hint"] == "refresh_token"
-    assert secrets.load_oauth_tokens("chatgpt") is None
+    assert secret_store.load_oauth_tokens("chatgpt") is None
     assert "Removed stored credentials" in capsys.readouterr().out
 
     rc = main(["connect", "chatgpt", "--logout"])
@@ -787,7 +787,7 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
 
     rc = main(["connect", "chatgpt"])
     assert rc == 0 and opened == []
-    tokens = secrets.load_oauth_tokens("chatgpt")
+    tokens = secret_store.load_oauth_tokens("chatgpt")
     assert tokens is not None and tokens.refresh_token == "RT9"
     out = capsys.readouterr().out
     assert "enter the code:  AB-12" in out and "/codex/device" in out
@@ -828,7 +828,7 @@ def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
 
     assert main(["connect", "codex"]) == 0
     assert told == ["codex"]
-    tokens = secrets.load_oauth_tokens("codex")
+    tokens = secret_store.load_oauth_tokens("codex")
     assert tokens is not None and tokens.refresh_token == "RT9"
 
 
@@ -855,7 +855,7 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
     )
     rc = main(["connect", "chatgpt"])
     assert rc == 0
-    assert secrets.load_oauth_tokens("chatgpt") is not None
+    assert secret_store.load_oauth_tokens("chatgpt") is not None
 
 
 def test_connect_eof_at_the_api_format_prompt_says_why(

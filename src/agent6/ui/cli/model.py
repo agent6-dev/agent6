@@ -11,7 +11,7 @@ import pathlib
 import sys
 from typing import cast
 
-from agent6 import paths, secrets
+from agent6 import paths, secret_store
 from agent6.config import (
     ClaudeCodeProviderEntry,
     ConfigError,
@@ -153,13 +153,13 @@ def _warn_unusable_provider(config_path: pathlib.Path | None, provider: str) -> 
     if entry.auth_style == "none" or entry.token_command:
         return
     if entry.api_format == "chatgpt":
-        if secrets.load_oauth_tokens(provider) is None:
+        if secret_store.load_oauth_tokens(provider) is None:
             _common.warn(
                 f"provider {provider!r} has no ChatGPT sign-in;"
                 f" run `agent6 connect {provider}` before using it."
             )
         return
-    if secrets.resolve_api_key(provider, entry.api_key_env) is None:
+    if secret_store.resolve_api_key(provider, entry.api_key_env) is None:
         remedy = (
             f"export {entry.api_key_env} or run `agent6 connect`"
             if entry.api_key_env

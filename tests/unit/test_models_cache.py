@@ -248,12 +248,12 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
     It comes from the backend's own /models with the stored bearer, the account header and a ceiling
     client_version; hidden entries stay out of completion; context windows land in the cache.
     """
-    from agent6 import secrets
+    from agent6 import secret_store
     from agent6.config import ChatGPTProviderEntry
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    secrets.save_oauth_tokens(
-        "chatgpt", secrets.OAuthTokens("AT", "RT", time.time() + 3600, "acct-1")
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("AT", "RT", time.time() + 3600, "acct-1")
     )
     seen: dict[str, object] = {}
 

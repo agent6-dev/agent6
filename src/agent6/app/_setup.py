@@ -16,8 +16,7 @@ from collections.abc import Iterable
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, event_log, git_ops, kinds
-from agent6 import secrets as agent6_secrets
+from agent6 import child_env, event_log, git_ops, kinds, secret_store
 from agent6.app import reporter as app_reporter
 from agent6.config import (
     AnthropicProviderEntry,
@@ -286,8 +285,8 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
         The refusal, or None when every provider can run.
     """
     try:
-        secrets = agent6_secrets.load_secrets()
-    except agent6_secrets.SecretsError as exc:
+        secrets = secret_store.load_secrets()
+    except secret_store.SecretsError as exc:
         return str(exc)
     needed = {rm.provider for rm in cfg.models.configured().values()}
     for spec in cfg.review.seats:
@@ -325,11 +324,11 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) 
         err = claude_code.login_status(entry.binary)
         return f"[providers.{name}]: {err}" if err is not None else None
     if isinstance(entry, ChatGPTProviderEntry):
-        if agent6_secrets.load_oauth_tokens(name, secrets=secrets) is None:
+        if secret_store.load_oauth_tokens(name, secrets=secrets) is None:
             return f"no ChatGPT sign-in stored for [providers.{name}]; run `agent6 connect {name}`."
         cache.list_models(name, entry, None)
         return None
-    key = agent6_secrets.resolve_api_key(name, entry.api_key_env, secrets=secrets)
+    key = secret_store.resolve_api_key(name, entry.api_key_env, secrets=secrets)
     if key:
         cache.list_models(name, entry, key)
         return None

@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6 import kinds
-from agent6 import secrets as agent6_secrets
+from agent6 import kinds, secret_store
 from agent6.config import Config, ConfigError, layer
 from agent6.models import cache, validate
 from agent6.sessions import manifest as sessions_manifest
@@ -42,10 +41,10 @@ def provider_model_choices(cfg: Config, provider: str) -> list[str]:
         out.update(cache.cached_models(provider))
     else:
         try:
-            secrets = agent6_secrets.load_secrets()
-        except agent6_secrets.SecretsError:
+            secrets = secret_store.load_secrets()
+        except secret_store.SecretsError:
             secrets = {}
-        api_key = agent6_secrets.resolve_api_key(
+        api_key = secret_store.resolve_api_key(
             provider, getattr(entry, "api_key_env", None), secrets=secrets
         )
         out.update(cache.list_models(provider, entry, api_key))

@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import event_log, secrets
+from agent6 import event_log, secret_store
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -222,7 +222,7 @@ def _provider_from_entry(
             budget=budget,
             reasoning_effort=effort,
         )
-    key = secrets.resolve_api_key(provider_name, entry.api_key_env)
+    key = secret_store.resolve_api_key(provider_name, entry.api_key_env)
     credential = (
         CommandToken(entry.token_command, ttl_s=entry.token_command_ttl_s)
         if entry.token_command

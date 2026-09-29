@@ -16,7 +16,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, event_log, git_ops, secrets
+from agent6 import commit_message, event_log, git_ops, secret_store
 from agent6.app import _setup, providers, stamps
 from agent6.config import Config, ConfigError
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
@@ -332,7 +332,7 @@ def _model_squash_message(
         git_ops.GitError,
         OSError,
         ProviderError,
-        secrets.SecretsError,
+        secret_store.SecretsError,
     ) as exc:
         # auto_merge runs the draft in a finished run's teardown, which must not crash on it.
         warn(f"model squash message failed ({exc}); using the agent6 style")

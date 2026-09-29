@@ -26,8 +26,7 @@ from urllib import parse
 
 import httpx2
 
-from agent6 import paths, portable
-from agent6 import secrets as agent6_secrets
+from agent6 import paths, portable, secret_store
 from agent6.providers import types
 
 CHATGPT_ISSUER = "https://auth.openai.com"
@@ -484,7 +483,7 @@ def refresh_grant(
     return _grant_from_response(resp, operation="refresh")
 
 
-def revoke_tokens(issuer: str, client_id: str, tokens: agent6_secrets.OAuthTokens) -> str | None:
+def revoke_tokens(issuer: str, client_id: str, tokens: secret_store.OAuthTokens) -> str | None:
     """Revoke the grant at sign-out, best effort.
 
     The refresh token kills the whole grant; the access token is the fallback.
@@ -562,8 +561,8 @@ def plan_type_of(grant: TokenGrant) -> str:
 
 
 def tokens_from_grant(
-    grant: TokenGrant, *, previous: agent6_secrets.OAuthTokens | None = None
-) -> agent6_secrets.OAuthTokens:
+    grant: TokenGrant, *, previous: secret_store.OAuthTokens | None = None
+) -> secret_store.OAuthTokens:
     """Build the storable tokens for a grant.
 
     Args:
@@ -576,7 +575,7 @@ def tokens_from_grant(
     """
     account = account_id_of(grant) or (previous.account_id if previous else "")
     refresh = grant.refresh_token or (previous.refresh_token if previous else "")
-    return agent6_secrets.OAuthTokens(
+    return secret_store.OAuthTokens(
         access_token=grant.access_token,
         refresh_token=refresh,
         expires_at=time.time() + grant.expires_in,
@@ -621,12 +620,12 @@ class ChatGPTCredential:
         self._issuer = issuer
         self._client_id = client_id
         self._lock = threading.Lock()
-        self._tokens: agent6_secrets.OAuthTokens | None = None
+        self._tokens: secret_store.OAuthTokens | None = None
         self._force_refresh = False
         self._account = ""
         self._last_returned = ""
 
-    def _stored(self) -> agent6_secrets.OAuthTokens:
+    def _stored(self) -> secret_store.OAuthTokens:
         """Load the stored tokens and check them against the pinned account.
 
         Returns:
@@ -636,7 +635,7 @@ class ChatGPTCredential:
             ProviderError: No sign-in is stored, the stored account id contradicts
                 the token's own claim, or the grant belongs to another account.
         """
-        tokens = agent6_secrets.load_oauth_tokens(self._provider)
+        tokens = secret_store.load_oauth_tokens(self._provider)
         if tokens is None:
             raise types.ProviderError(
                 f"No ChatGPT sign-in stored for provider {self._provider!r};"
@@ -655,8 +654,8 @@ class ChatGPTCredential:
         return self._same_account(tokens, claimed=claimed)
 
     def _same_account(
-        self, tokens: agent6_secrets.OAuthTokens, *, claimed: str = ""
-    ) -> agent6_secrets.OAuthTokens:
+        self, tokens: secret_store.OAuthTokens, *, claimed: str = ""
+    ) -> secret_store.OAuthTokens:
         """Pin on the first account id seen.
 
         Args:
@@ -681,7 +680,7 @@ class ChatGPTCredential:
             )
         return tokens
 
-    def _adopt(self, tokens: agent6_secrets.OAuthTokens) -> str:
+    def _adopt(self, tokens: secret_store.OAuthTokens) -> str:
         """Return the tokens' bearer after taking them as current."""
         self._tokens = tokens
         self._force_refresh = False
@@ -731,7 +730,7 @@ class ChatGPTCredential:
                         raise
                     return self._adopt(rescued)
                 fresh = self._same_account(tokens_from_grant(grant, previous=tokens))
-                agent6_secrets.save_oauth_tokens(self._provider, fresh)
+                secret_store.save_oauth_tokens(self._provider, fresh)
                 return self._adopt(fresh)
 
     def invalidate(self, status: int = 401) -> bool:

@@ -20,7 +20,7 @@ from urllib import parse
 
 import httpx2
 
-from agent6 import paths, secrets
+from agent6 import paths, secret_store
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -208,7 +208,7 @@ def _chatgpt_models_endpoint(
     Raises:
         ProviderError: No sign-in is stored for the provider.
     """
-    tokens = secrets.load_oauth_tokens(provider_name)
+    tokens = secret_store.load_oauth_tokens(provider_name)
     if tokens is None:
         raise types.ProviderError(
             f"no ChatGPT sign-in stored for {provider_name!r}; run `agent6 connect {provider_name}`"

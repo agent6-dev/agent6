@@ -14,7 +14,7 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import secrets
+from agent6 import secret_store
 from agent6.providers import ProviderError, chatgpt, chatgpt_oauth, types
 
 
@@ -24,8 +24,8 @@ def signed_in(
 ) -> chatgpt_oauth.ChatGPTCredential:
     """A gcfg-backed credential holding an unexpired sign-in."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    secrets.save_oauth_tokens(
-        "chatgpt", secrets.OAuthTokens("AT0", "RT1", time.time() + 3600, "acct-1")
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("AT0", "RT1", time.time() + 3600, "acct-1")
     )
     return chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"

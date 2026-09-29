@@ -287,7 +287,7 @@ banned-from = [
     "agent6.sandbox.jail",
     "agent6.sandbox.landlock",
     "agent6.sandbox.tool_paths",
-    "agent6.secrets",
+    "agent6.secret_store",
     "agent6.sessions.id",
     "agent6.sessions.ipc",
     "agent6.sessions.layout",
