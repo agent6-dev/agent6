@@ -10,6 +10,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
+from agent6.app import stop as app_stop
 from agent6.sessions import ipc
 from agent6.ui.cli import main
 
@@ -148,7 +149,6 @@ def test_steer_stop_is_the_one_stop(
 ) -> None:
     """`agent6 steer ID /stop` is `agent6 stop ID`, not a steer text for the model."""
     from agent6.app import stop
-    from agent6.ui.cli import steer_cmd
 
     calls: list[pathlib.Path] = []
 
@@ -156,7 +156,7 @@ def test_steer_stop_is_the_one_stop(
         calls.append(session_dir)
         return stop.StopOutcome(session_dir.name, True, "stopped", f"{session_dir.name} stopped")
 
-    monkeypatch.setattr(steer_cmd, "stop_session", _fake)
+    monkeypatch.setattr(app_stop, "stop_session", _fake)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-BBBB22")

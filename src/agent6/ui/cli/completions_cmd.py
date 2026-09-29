@@ -13,19 +13,18 @@ nearest known one up the process tree, else `$SHELL`.
 from __future__ import annotations
 
 import os
+import pathlib
 import shlex
-from pathlib import Path
 
-from argcomplete.shell_integration import shellcode
+from argcomplete import shell_integration
 
-from agent6.errors import read_operator_file
-from agent6.paths import global_config_dir
-from agent6.ui.cli._common import error
+from agent6 import errors, paths
+from agent6.ui.cli import _common
 
 SHELLS = ("bash", "zsh", "fish", "xonsh")
 _MARK_BEGIN = "# >>> agent6 completions >>>"
 _MARK_END = "# <<< agent6 completions <<<"
-_PROC = Path("/proc")  # patched in tests
+_PROC = pathlib.Path("/proc")  # patched in tests
 
 # Registered ahead of xonsh's default completer so it wins for agent6; a no-op elsewhere.
 _XONSH_SCRIPT = """\
@@ -129,14 +128,14 @@ def detect_shell() -> str:
             break
         if pid <= 1:
             break
-    return Path(os.environ.get("SHELL", "")).name
+    return pathlib.Path(os.environ.get("SHELL", "")).name
 
 
-def _rc_path(shell: str) -> Path:
+def _rc_path(shell: str) -> pathlib.Path:
     """Return the shell's rc file; zsh reads it from `$ZDOTDIR` when set."""
     if shell == "bash":
-        return Path.home() / ".bashrc"
-    return Path(os.environ.get("ZDOTDIR") or Path.home()) / ".zshrc"
+        return pathlib.Path.home() / ".bashrc"
+    return pathlib.Path(os.environ.get("ZDOTDIR") or pathlib.Path.home()) / ".zshrc"
 
 
 # Where a shell that auto-loads its completions reads ours, under the config home.
@@ -146,10 +145,10 @@ _AUTOLOAD = {
 }
 
 
-def _autoload_path(shell: str) -> Path:
+def _autoload_path(shell: str) -> pathlib.Path:
     """Return the auto-loaded file's path for fish or xonsh."""
     xdg = os.environ.get("XDG_CONFIG_HOME")
-    base = Path(xdg) if xdg else Path.home() / ".config"
+    base = pathlib.Path(xdg) if xdg else pathlib.Path.home() / ".config"
     return base.joinpath(*_AUTOLOAD[shell])
 
 
@@ -163,14 +162,14 @@ def _install_bash_zsh(shell: str, code: str) -> int:
     Returns:
         The exit code; 2 when the rc file's marker block is malformed.
     """
-    script = global_config_dir() / f"completions.{shell}"
+    script = paths.global_config_dir() / f"completions.{shell}"
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text(code, encoding="utf-8")
     rc = _rc_path(shell)
     # The path lands in shell text the operator's shell sources; quoted, a metacharacter is inert.
     q = shlex.quote(str(script))
     block = f"\n{_MARK_BEGIN}\n[ -f {q} ] && source {q}  # agent6 tab-completion\n{_MARK_END}\n"
-    existing = read_operator_file(rc) if rc.exists() else ""
+    existing = errors.read_operator_file(rc) if rc.exists() else ""
     if _MARK_BEGIN in existing:
         if (
             existing.count(_MARK_BEGIN) != 1
@@ -178,7 +177,7 @@ def _install_bash_zsh(shell: str, code: str) -> int:
             or existing.index(_MARK_END) < existing.index(_MARK_BEGIN)
         ):
             # agent6 edits only its one marker block; a mangled one is the operator's to fix.
-            error(
+            _common.error(
                 f"{rc} holds malformed agent6 completion markers"
                 f" ({_MARK_BEGIN} / {_MARK_END}); fix or remove them and rerun."
             )
@@ -201,7 +200,7 @@ def _install_bash_zsh(shell: str, code: str) -> int:
     return 0
 
 
-def _install_autoloaded(code: str, target: Path, shell: str) -> int:
+def _install_autoloaded(code: str, target: pathlib.Path, shell: str) -> int:
     """Return 0 after writing the auto-loaded file for fish or xonsh."""
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(code, encoding="utf-8")
@@ -222,13 +221,15 @@ def cmd_completions(shell_arg: str | None, *, print_only: bool) -> int:
     shell = shell_arg or detect_shell()
     if shell not in SHELLS:
         detected = f" (detected {shell!r})" if shell else ""
-        error(
+        _common.error(
             f"unsupported or unknown shell{detected}."
             f" Pass one of: agent6 completions {'|'.join(SHELLS)}"
         )
         return 2
     # Xonsh is not an argcomplete backend; it gets a generated completer.
-    code = _XONSH_SCRIPT if shell == "xonsh" else shellcode(["agent6"], shell=shell)
+    code = (
+        _XONSH_SCRIPT if shell == "xonsh" else shell_integration.shellcode(["agent6"], shell=shell)
+    )
     if print_only:
         print(code)
         return 0

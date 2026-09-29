@@ -7,59 +7,25 @@ Prune removes the branches, chain refs, fan-out clones and fork worktrees alread
 
 from __future__ import annotations
 
+import collections
 import contextlib
+import dataclasses
+import pathlib
 import sys
-from collections import Counter
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
-from agent6.app.fork_worktrees import sweep_fork_worktrees
-from agent6.app.merge import NO_BASE_SHA, execute_merge, left_behind_line, noop_merge_line
-from agent6.app.parallel import adopt_orphan_lane, sweep_fanout_clones
-from agent6.commit_message import render_commit_trailer
-from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective
-from agent6.git_ops import (
-    BRANCH_PREFIX,
-    CommitIdentity,
-    GitError,
-    branch_exists,
-    branch_tip_sha,
-    chain_ref_for,
-    chain_tip,
-    delete_branch_if_merged,
-    delete_ref,
-    force_delete_squash_merged_branch,
-    is_ancestor,
-    is_git_repo,
-    list_chain_refs,
-    list_run_branches,
-    list_run_commits,
-    verify_git_identity,
-)
-from agent6.git_ops import status as git_status
-from agent6.harness.subrun import SubrunError
-from agent6.paths import state_dir
-from agent6.sessions.ipc import worker_is_alive
-from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
-from agent6.sessions.manifest import (
-    NO_MERGE_COMMIT,
-    ManifestError,
-    MergeStamp,
-    SessionManifest,
-    read_manifest,
-)
-from agent6.ui.cli._common import error, refuse, sgr
-from agent6.ui.cli.sessions_cmds import (
-    _commits_ref,
-    _committed_nothing,
-    _resolve_session_manifest,
-)
+from agent6 import commit_message, git_ops, paths
+from agent6.app import fork_worktrees, merge, parallel
+from agent6.config import Config, ConfigError, layer
+from agent6.harness import subrun
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.ui.cli import _common, sessions_cmds
 from agent6.viewmodel import tail_events, worker_models
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _MergePlan:
     """A validated, mutation-ready merge: everything `_cmd_merge` needs after every guard passed.
 
@@ -74,23 +40,23 @@ class _MergePlan:
         cfg: The effective config.
     """
 
-    layout: SessionLayout
-    manifest: SessionManifest
+    layout: sessions_layout.SessionLayout
+    manifest: sessions_manifest.SessionManifest
     run_branch: str
     target: str
     base_sha: str
     strategy: str
-    identity: CommitIdentity
+    identity: git_ops.CommitIdentity
     cfg: Config
 
 
 def _plan_merge(  # noqa: PLR0911
-    cwd: Path,
+    cwd: pathlib.Path,
     session_id: str,
     into: str | None,
     strategy: str | None,
     *,
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
 ) -> _MergePlan | int:
     """Resolve and validate everything a merge needs, without touching the repo.
 
@@ -105,80 +71,84 @@ def _plan_merge(  # noqa: PLR0911
         The plan, or the exit code of a printed refusal: every guard fails here, before
         `_cmd_merge` mutates anything.
     """
-    res = _resolve_session_manifest(cwd, session_id)
+    res = sessions_cmds._resolve_session_manifest(cwd, session_id)
     if isinstance(res, int):
         return res
     layout, manifest = res
     # The raw pid, not session_is_live: after session.end the finalizer may still be at work.
-    if worker_is_alive(layout.session_dir):
-        refuse(
+    if ipc.worker_is_alive(layout.session_dir):
+        _common.refuse(
             f"run {session_id!r} is still live; a merge now lands only the"
             " commits so far (its later ones need another merge) and moves your"
             " index while the worker still edits. Stop it first:\n"
             f"    agent6 stop {session_id}"
         )
         return 2
-    ref = _commits_ref(cwd, manifest)
+    ref = sessions_cmds._commits_ref(cwd, manifest)
     # execute_merge refuses a missing base_sha too; here it is a refusal before anything moves.
     unmergeable = (
-        NO_BASE_SHA
+        merge.NO_BASE_SHA
         if not manifest.base_sha
         else f"this session has no branch to merge ({ref.reason})."
         if ref.reason
         else ""
     )
     if unmergeable:
-        refuse(unmergeable)
+        _common.refuse(unmergeable)
         return 2
     run_branch = ref.head_ref
     target = into or manifest.base_branch
     if not target:
-        error("no target branch (manifest has no base_branch); pass --into <branch>.")
+        _common.error("no target branch (manifest has no base_branch); pass --into <branch>.")
         return 2
     if target == run_branch:
-        error(f"target {target!r} is the run branch itself; pass --into <other-branch>.")
+        _common.error(f"target {target!r} is the run branch itself; pass --into <other-branch>.")
         return 2
     try:
-        cfg = load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_path).config
     except ConfigError as exc:
-        error(f"{exc}")
+        _common.error(f"{exc}")
         return 2
     # An orphaned lane (its coordinator died before importing it) is adopted: fetched, then merged.
     try:
-        adopted = adopt_orphan_lane(cwd, cfg, layout, manifest)
-    except SubrunError as exc:
-        error(f"{exc}")
+        adopted = parallel.adopt_orphan_lane(cwd, cfg, layout, manifest)
+    except subrun.SubrunError as exc:
+        _common.error(f"{exc}")
         return 2
     if adopted is not None:
         print(f"[agent6] {adopted}")
-        layout = SessionLayout(state_dir=layout.state_dir, session_id=layout.session_id)
+        layout = sessions_layout.SessionLayout(
+            state_dir=layout.state_dir, session_id=layout.session_id
+        )
     # chain_tip resolves both shapes of head_ref: a branch name and the hidden chain ref.
-    if chain_tip(cwd, run_branch) is None:
-        if _committed_nothing(cwd, manifest.session_id):
+    if git_ops.chain_tip(cwd, run_branch) is None:
+        if sessions_cmds._committed_nothing(cwd, manifest.session_id):
             # Not a failure: there is no work to land.
             print("[agent6] nothing to merge: this run committed nothing.")
             return 0
-        error(
+        _common.error(
             f"run ref {run_branch!r} no longer exists; its commits survive at"
-            f" {chain_ref_for(manifest.session_id)}."
+            f" {git_ops.chain_ref_for(manifest.session_id)}."
         )
         return 2
-    if not branch_exists(cwd, target):
-        error(f"target branch {target!r} does not exist; pass --into <existing-branch>.")
+    if not git_ops.branch_exists(cwd, target):
+        _common.error(f"target branch {target!r} does not exist; pass --into <existing-branch>.")
         return 2
-    identity = CommitIdentity(
+    identity = git_ops.CommitIdentity(
         name=cfg.git.commit.name,
         email=cfg.git.commit.email,
-        trailer=render_commit_trailer(
+        trailer=commit_message.render_commit_trailer(
             cfg.git.commit.trailer,
-            models=worker_models(tail_events(layout.session_dir / LOGS_NAME, follow=False))
+            models=worker_models(
+                tail_events(layout.session_dir / sessions_layout.LOGS_NAME, follow=False)
+            )
             or ((manifest.models.driver.model,) if manifest.models.driver else ()),
         ),
     )
     try:
-        verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
-    except GitError as exc:
-        error(f"{exc}")
+        git_ops.verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
+    except git_ops.GitError as exc:
+        _common.error(f"{exc}")
         return 2
     return _MergePlan(
         layout=layout,
@@ -192,7 +162,7 @@ def _plan_merge(  # noqa: PLR0911
     )
 
 
-def _manual_merge_cmd(cwd: Path, plan: _MergePlan) -> str:
+def _manual_merge_cmd(cwd: pathlib.Path, plan: _MergePlan) -> str:
     """Return the by-hand merge for a plumbing conflict, from the checkout as it is.
 
     Git refuses to merge over modified tracked files, and a finished run leaves its work in
@@ -200,8 +170,8 @@ def _manual_merge_cmd(cwd: Path, plan: _MergePlan) -> str:
     moves to the target.
     """
     steps: list[str] = []
-    with contextlib.suppress(GitError):
-        st = git_status(cwd)
+    with contextlib.suppress(git_ops.GitError):
+        st = git_ops.status(cwd)
         if st.modified_count:
             steps.append("git stash")
         if st.branch != plan.target:
@@ -217,7 +187,7 @@ def _cmd_merge(
     strategy: str | None,
     into: str | None,
     message: str | None,
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
 ) -> int:
     """Land a run's work on a target branch with the chosen strategy.
 
@@ -234,15 +204,15 @@ def _cmd_merge(
     Returns:
         The exit code: 0 landed or nothing to land, 1 a conflict, 2 a refusal.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     plan = _plan_merge(cwd, session_id, into, strategy, config_path=config_path)
     if isinstance(plan, int):
         return plan
-    if not list_run_commits(cwd, plan.base_sha, plan.run_branch):
+    if not git_ops.list_run_commits(cwd, plan.base_sha, plan.run_branch):
         # A success line here would be indistinguishable from a real merge.
         print(f"[agent6] nothing to merge: run branch {plan.run_branch} has no commits.")
         return 0
-    outcome = execute_merge(
+    outcome = merge.execute_merge(
         cwd,
         layout=plan.layout,
         manifest=plan.manifest,
@@ -256,7 +226,7 @@ def _cmd_merge(
         warn=lambda m: print(f"[agent6] {m}", file=sys.stderr),
     )
     if outcome.status == "error":
-        error(f"{outcome.error}")
+        _common.error(f"{outcome.error}")
         return 1
     if outcome.status == "conflict":
         print(
@@ -274,18 +244,20 @@ def _cmd_merge(
         else ""
     )
     if outcome.status == "noop":
-        print(f"[agent6] {noop_merge_line(plan.run_branch, plan.target, outcome)}.{note}")
+        print(f"[agent6] {merge.noop_merge_line(plan.run_branch, plan.target, outcome)}.{note}")
         return 0
     print(
         f"[agent6] merged {plan.run_branch} into {plan.target} "
         f"({plan.strategy}) -> {outcome.merged_sha[:12]}{note}"
     )
-    if kept := left_behind_line(plan.target, outcome):
+    if kept := merge.left_behind_line(plan.target, outcome):
         print(f"[agent6] {kept}")
     return 0
 
 
-def _session_stamp(layout: SessionLayout | None) -> tuple[MergeStamp | None, str]:
+def _session_stamp(
+    layout: sessions_layout.SessionLayout | None,
+) -> tuple[sessions_manifest.MergeStamp | None, str]:
     """Return a session's recorded merge and why none could be read.
 
     Returns:
@@ -296,8 +268,8 @@ def _session_stamp(layout: SessionLayout | None) -> tuple[MergeStamp | None, str
     if layout is None:
         return None, "no session record"
     try:
-        return read_manifest(layout.session_dir).merged, ""
-    except ManifestError:
+        return sessions_manifest.read_manifest(layout.session_dir).merged, ""
+    except sessions_manifest.ManifestError:
         return None, "unreadable manifest"
 
 
@@ -306,7 +278,7 @@ def _base_gone(into: str) -> str:
     return f"base {into} is gone"
 
 
-def _squash_unconfirmed(cwd: Path, stamp: MergeStamp) -> str:
+def _squash_unconfirmed(cwd: pathlib.Path, stamp: sessions_manifest.MergeStamp) -> str:
     """Return why a squash-merge stamp does not prove a force-delete content-safe, or "".
 
     The merged tip must be recorded, and the base must still hold the commit the record
@@ -320,17 +292,17 @@ def _squash_unconfirmed(cwd: Path, stamp: MergeStamp) -> str:
     """
     if not stamp.tip:
         return "no merge tip was recorded"
-    if stamp.sha == NO_MERGE_COMMIT:
+    if stamp.sha == sessions_manifest.NO_MERGE_COMMIT:
         if not stamp.into_tip:
             return "the record names no commit to check"
-        if not is_ancestor(cwd, stamp.into_tip, stamp.into):
+        if not git_ops.is_ancestor(cwd, stamp.into_tip, stamp.into):
             return f"{stamp.into} no longer holds its content"
-    elif not is_ancestor(cwd, stamp.sha, stamp.into):
+    elif not git_ops.is_ancestor(cwd, stamp.sha, stamp.into):
         return f"{stamp.into} no longer holds the merge commit"
     return ""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Landed:
     """How a run's commits stand against its merge stamp, for both prune loops.
 
@@ -344,7 +316,13 @@ class Landed:
     why: str = ""
 
 
-def landed(cwd: Path, stamp: MergeStamp, tip: str | None, *, delete_squashed: bool) -> Landed:
+def landed(
+    cwd: pathlib.Path,
+    stamp: sessions_manifest.MergeStamp,
+    tip: str | None,
+    *,
+    delete_squashed: bool,
+) -> Landed:
     """Return the one classification of a run with a recorded merge.
 
     Args:
@@ -353,9 +331,9 @@ def landed(cwd: Path, stamp: MergeStamp, tip: str | None, *, delete_squashed: bo
         tip: The branch's or chain ref's sha; None when the branch is gone.
         delete_squashed: `--delete-squashed` was given.
     """
-    if not branch_exists(cwd, stamp.into):
+    if not git_ops.branch_exists(cwd, stamp.into):
         return Landed("keep", _base_gone(stamp.into))
-    if tip is not None and is_ancestor(cwd, tip, stamp.into):
+    if tip is not None and git_ops.is_ancestor(cwd, tip, stamp.into):
         return Landed("merged")
     if tip is not None and stamp.tip and stamp.tip != tip:
         # A resumed run committed on after the merge: those commits are in no other ref.
@@ -365,21 +343,23 @@ def landed(cwd: Path, stamp: MergeStamp, tip: str | None, *, delete_squashed: bo
     return Landed("squashed") if delete_squashed else Landed("keep", "squash-merged")
 
 
-def _keep_branch_line(br: str, stamp: MergeStamp, why: str) -> str:
+def _keep_branch_line(br: str, stamp: sessions_manifest.MergeStamp, why: str) -> str:
     """Return the line naming why a run branch is kept."""
     if why == "squash-merged":
         return (
             f"[agent6] kept {br} (squash-merged into {stamp.into}, unreachable; "
             f"remove with: sessions prune --delete-squashed, or: git branch -D {br})"
         )
-    at = "" if stamp.sha == NO_MERGE_COMMIT else f" at {stamp.sha[:12]}"
+    at = "" if stamp.sha == sessions_manifest.NO_MERGE_COMMIT else f" at {stamp.sha[:12]}"
     return (
         f"[agent6] kept {br} (squash-merged into {stamp.into}{at}, but {why};"
         f" review, then: git branch -D {br})"
     )
 
 
-def _prune_branch(cwd: Path, br: str, stamp: MergeStamp, state: Landed, current: str) -> bool:
+def _prune_branch(
+    cwd: pathlib.Path, br: str, stamp: sessions_manifest.MergeStamp, state: Landed, current: str
+) -> bool:
     """Act on one run branch's classification.
 
     A proven squash is force-deleted with the undelete hint (the commit survives in the
@@ -405,16 +385,16 @@ def _prune_branch(cwd: Path, br: str, stamp: MergeStamp, state: Landed, current:
     if state.verdict == "keep":
         print(_keep_branch_line(br, stamp, state.why))
         return False
-    sha = branch_tip_sha(cwd, br)
-    if sha is not None and force_delete_squash_merged_branch(cwd, br):
+    sha = git_ops.branch_tip_sha(cwd, br)
+    if sha is not None and git_ops.force_delete_squash_merged_branch(cwd, br):
         print(f"[agent6] deleted {br} (squash-merged into {stamp.into})")
-        print(sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
+        print(_common.sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
         return True
     print(f"[agent6] kept {br} (squash-merged into {stamp.into}; git refused the delete)")
     return False
 
 
-def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None) -> int:
+def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | None = None) -> int:
     """Delete what `git branch -d` can safely remove, and sweep the merged clones and worktrees.
 
     Run branches reachable-merged into HEAD go; squash-merged and unmerged ones are
@@ -432,29 +412,29 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
     Returns:
         The exit code; 2 when git refuses.
     """
-    cwd = Path.cwd()
-    if not is_git_repo(cwd):
-        error("not a git repository")
+    cwd = pathlib.Path.cwd()
+    if not git_ops.is_git_repo(cwd):
+        _common.error("not a git repository")
         return 2
-    branches = list_run_branches(cwd)
+    branches = git_ops.list_run_branches(cwd)
     try:
-        current = git_status(cwd).branch
-    except GitError as exc:
-        error(f"{exc}")
+        current = git_ops.status(cwd).branch
+    except git_ops.GitError as exc:
+        _common.error(f"{exc}")
         return 2
-    repo_state = state_dir(cwd)
+    repo_state = paths.state_dir(cwd)
     deleted = squashed_deleted = merged_kept = unmerged_kept = live_kept = 0
     for br in branches:
         if br == current:
             print(f"[agent6] skipped {br} (checked out)", file=sys.stderr)
             continue
-        layout = session_layout(repo_state, br.removeprefix(BRANCH_PREFIX))
-        if layout is not None and worker_is_alive(layout.session_dir):
+        layout = sessions_layout.session_layout(repo_state, br.removeprefix(git_ops.BRANCH_PREFIX))
+        if layout is not None and ipc.worker_is_alive(layout.session_dir):
             # The run is still committing to it, whatever git makes of its tip.
             live_kept += 1
             print(f"[agent6] kept {br} (live)")
             continue
-        if delete_branch_if_merged(cwd, br):
+        if git_ops.delete_branch_if_merged(cwd, br):
             deleted += 1
             print(f"[agent6] deleted {br} (merged)")
             continue
@@ -467,7 +447,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
             unmerged_kept += 1
             print(f"[agent6] kept {br} (unmerged; review, then: git branch -D {br})")
             continue
-        state = landed(cwd, stamp, branch_tip_sha(cwd, br), delete_squashed=delete_squashed)
+        state = landed(cwd, stamp, git_ops.branch_tip_sha(cwd, br), delete_squashed=delete_squashed)
         if _prune_branch(cwd, br, stamp, state, current):
             squashed_deleted += 1
         else:
@@ -495,7 +475,9 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
     return 0
 
 
-def _sweep_workdirs(cwd: Path, state: Path, config_path: Path | None) -> tuple[str, bool]:
+def _sweep_workdirs(
+    cwd: pathlib.Path, state: pathlib.Path, config_path: pathlib.Path | None
+) -> tuple[str, bool]:
     """Sweep the fan-out clones and fork worktrees under `[parallel].workdir`.
 
     Prints each keep and each worktree removal.
@@ -509,17 +491,17 @@ def _sweep_workdirs(cwd: Path, state: Path, config_path: Path | None) -> tuple[s
         The summary-line note, and whether anything was swept or kept.
     """
     try:
-        cfg = load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_path).config
     except ConfigError as exc:
         print(f"[agent6] workdir sweep skipped (config unreadable: {exc})", file=sys.stderr)
         return "", False
-    clones_swept, clones_kept = sweep_fanout_clones(cwd, cfg)
+    clones_swept, clones_kept = parallel.sweep_fanout_clones(cwd, cfg)
     if clones_kept:
         print(
             f"[agent6] kept {clones_kept} fan-out clone dir(s) holding a live lane or"
             " commits this repo lacks (merge or archive their lanes first)"
         )
-    worktrees_removed, worktrees_kept = sweep_fork_worktrees(cwd, state)
+    worktrees_removed, worktrees_kept = fork_worktrees.sweep_fork_worktrees(cwd, state)
     for fork_id in worktrees_removed:
         print(f"[agent6] removed {fork_id}'s worktree (merged)")
     for fork_id, why in worktrees_kept:
@@ -533,8 +515,8 @@ def _sweep_workdirs(cwd: Path, state: Path, config_path: Path | None) -> tuple[s
 
 
 def _prune_chain_refs(
-    cwd: Path, repo_state: Path, *, delete_squashed: bool
-) -> tuple[int, Counter[str]]:
+    cwd: pathlib.Path, repo_state: pathlib.Path, *, delete_squashed: bool
+) -> tuple[int, collections.Counter[str]]:
     """Drop the `refs/agent6/<id>/head` chain refs whose manifest confirms the run merged.
 
     The same safety rules as branches: reachable from the base deletes outright; a squash
@@ -551,14 +533,14 @@ def _prune_chain_refs(
         The count deleted, and the kept refs counted by reason; every ref counted once.
     """
     refs_deleted = 0
-    kept: Counter[str] = Counter()
-    for sid, sha in list_chain_refs(cwd):
-        layout = session_layout(repo_state, sid)
+    kept: collections.Counter[str] = collections.Counter()
+    for sid, sha in git_ops.list_chain_refs(cwd):
+        layout = sessions_layout.session_layout(repo_state, sid)
         if layout is None:
             # A machine's chain (`machine_chain_ref_for`) has no session record.
             kept["machine" if sid.startswith("machine-") else "no session record"] += 1
             continue
-        if worker_is_alive(layout.session_dir):
+        if ipc.worker_is_alive(layout.session_dir):
             kept["live"] += 1
             continue
         stamp, why = _session_stamp(layout)
@@ -572,12 +554,12 @@ def _prune_chain_refs(
         if state.verdict == "keep":
             kept[state.why] += 1
             continue
-        ref = chain_ref_for(sid)
-        delete_ref(cwd, ref)
+        ref = git_ops.chain_ref_for(sid)
+        git_ops.delete_ref(cwd, ref)
         refs_deleted += 1
         how = "merged" if state.verdict == "merged" else "squash-merged"
         print(f"[agent6] deleted {ref} ({how} into {stamp.into})")
         if state.verdict == "squashed":
             # A chain ref has no reflog: the sha is the only way back.
-            print(sgr(f"          undelete: git update-ref {ref} {sha[:12]}", "2"))
+            print(_common.sgr(f"          undelete: git update-ref {ref} {sha[:12]}", "2"))
     return refs_deleted, kept

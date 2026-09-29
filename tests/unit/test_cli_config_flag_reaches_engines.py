@@ -13,9 +13,11 @@ from typing import Any
 
 import pytest
 
-from agent6 import paths
+from agent6 import git_ops, paths
+from agent6.config import layer
+from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import sessions_merge
+from agent6.ui.cli import sessions_cmds, sessions_merge
 
 
 def test_merge_planner_passes_the_explicit_config_path(
@@ -27,7 +29,7 @@ def test_merge_planner_passes_the_explicit_config_path(
         seen.append(explicit)
         raise sessions_merge.ConfigError("stop here")
 
-    monkeypatch.setattr(sessions_merge, "load_effective", fake_load)
+    monkeypatch.setattr(layer, "load_effective", fake_load)
 
     # A resolvable path flows through unchanged when the planner reaches the load.
     class _Layout:
@@ -38,7 +40,7 @@ def test_merge_planner_passes_the_explicit_config_path(
     def _dead(d: pathlib.Path) -> bool:
         return False
 
-    monkeypatch.setattr(sessions_merge, "worker_is_alive", _dead)
+    monkeypatch.setattr(ipc, "worker_is_alive", _dead)
 
     class _Manifest:
         session_id = "sid"
@@ -52,8 +54,8 @@ def test_merge_planner_passes_the_explicit_config_path(
     def _exists(cwd: pathlib.Path, b: str) -> bool:
         return True
 
-    monkeypatch.setattr(sessions_merge, "_resolve_session_manifest", _resolved)
-    monkeypatch.setattr(sessions_merge, "branch_exists", _exists)
+    monkeypatch.setattr(sessions_cmds, "_resolve_session_manifest", _resolved)
+    monkeypatch.setattr(git_ops, "branch_exists", _exists)
     explicit = tmp_path / "special.toml"
     rc = sessions_merge._plan_merge(  # pyright: ignore[reportPrivateUsage]
         tmp_path, "sid", None, None, config_path=explicit

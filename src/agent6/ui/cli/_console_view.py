@@ -12,24 +12,13 @@ from __future__ import annotations
 
 import contextlib
 import sys
+import threading
 import time
 from collections.abc import Callable, Generator
-from threading import Event, RLock, Thread
 from typing import Any, TextIO
 
-from agent6.ui.cli._task_tree import task_tree_lines
-from agent6.ui.cli._terminal_guard import raw_stream
-from agent6.viewmodel.events import event_epoch
-from agent6.viewmodel.format import spinner_frame
-from agent6.viewmodel.listing import task_snippet
-from agent6.viewmodel.transcript import (
-    DONE,
-    THINK,
-    TranscriptFold,
-    TranscriptItem,
-    scrub_terminal_controls,
-)
-from agent6.viewmodel.transcript_style import StyleName, item_lines
+from agent6.ui.cli import _task_tree, _terminal_guard
+from agent6.viewmodel import events, format, listing, transcript, transcript_style
 
 _ANSI = {
     "dim": "\033[2m",
@@ -45,7 +34,7 @@ _ANSI = {
 }
 
 # Style name to ANSI escape; the TUI has the sibling Rich map over the same `item_lines()`.
-_STYLE_ANSI: dict[StyleName, str] = {
+_STYLE_ANSI: dict[transcript_style.StyleName, str] = {
     "thinking": _ANSI["dim"],
     "think-marker": _ANSI["blue"],
     "text": "",
@@ -94,9 +83,9 @@ class ConsoleView:
         self._btw: list[str] = []
         self._out = out if out is not None else sys.stderr
         self._color = self._out.isatty() if color is None else color
-        self._fold = TranscriptFold()
+        self._fold = transcript.TranscriptFold()
         # Reentrant: the SIGINT steer handler emits an event while a delta write holds the lock.
-        self._lock = RLock()
+        self._lock = threading.RLock()
         self._phase: str | None = None  # the open prose block: None, "thinking" or "text"
         self._text_streamed = False
         self._last_flush = 0.0
@@ -109,10 +98,10 @@ class ConsoleView:
         self._status_active = False  # a transient spinner line is on screen
         self._paused = False  # an interactive /dev/tty prompt owns the line
         self._spin = 0
-        self._stop = Event()
-        self._heartbeat: Thread | None = None
+        self._stop = threading.Event()
+        self._heartbeat: threading.Thread | None = None
         if self._out.isatty():
-            self._heartbeat = Thread(target=self._heartbeat_loop, daemon=True)
+            self._heartbeat = threading.Thread(target=self._heartbeat_loop, daemon=True)
             self._heartbeat.start()
 
     def __call__(self, event: dict[str, Any]) -> None:
@@ -146,7 +135,7 @@ class ConsoleView:
         etype = event.get("type", "")
         with self._lock:
             # Anchored per event: a replay can end on an event that renders nothing yet.
-            self._event_ep = event_epoch(event.get("ts"))
+            self._event_ep = events.event_epoch(event.get("ts"))
             self._bump_idle()
             # Active through a jailed command too, which runs between role.result and role.call.
             if etype in ("session.start", "role.call", "tool.call"):
@@ -181,8 +170,8 @@ class ConsoleView:
                 return
             if etype == "session.start":
                 # Clipped: a `--from` task carries the whole plan.
-                task = task_snippet(str(event.get("user_task", "")), max_chars=200)
-                self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")
+                task = listing.task_snippet(str(event.get("user_task", "")), max_chars=200)
+                self._line(self._c("bold", self._c("cyan", transcript.DONE) + " " + task) + "\n")
                 policy = self._policy() if self._policy is not None else ""
                 if policy:
                     self._line(self._c("dim", f"  {policy}") + "\n")
@@ -213,14 +202,14 @@ class ConsoleView:
     def _stream(self, piece: str, *, thinking: bool) -> None:
         """Write a delta inline, opening the prose block it belongs to."""
         # A control sequence split across deltas cannot reassemble: the tail prints inert.
-        piece = scrub_terminal_controls(piece)
+        piece = transcript.scrub_terminal_controls(piece)
         want = "thinking" if thinking else "text"
         if self._phase != want:
             if not piece.strip():
                 return  # never open a block on whitespace
             self._end_block()
             self._phase = want
-            self._raw("  " + (self._dim() + THINK + " " if thinking else ""))
+            self._raw("  " + (self._dim() + transcript.THINK + " " if thinking else ""))
             piece = piece.lstrip()
         self._bump_idle()
         # Wrapped lines stay under the block's indent.
@@ -245,7 +234,7 @@ class ConsoleView:
             return
         self._plan_count = len(nodes)
         cursor = event.get("cursor")
-        lines = task_tree_lines(nodes, cursor if isinstance(cursor, str) else None)
+        lines = _task_tree.task_tree_lines(nodes, cursor if isinstance(cursor, str) else None)
         if not lines:
             return
         self._end_block()
@@ -253,14 +242,14 @@ class ConsoleView:
         for line in lines:
             self._line(self._c("dim", "  " + line) + "\n")
 
-    def _render(self, item: TranscriptItem) -> None:
+    def _render(self, item: transcript.TranscriptItem) -> None:
         """Print a fold item's lines in ANSI behind a two-space gutter.
 
         An in-flight tool call prints nothing; the settled item prints the call whole.
         """
         if item.kind == "tool" and item.ok is None:
             return
-        for line in item_lines(item, detail="collapsed"):
+        for line in transcript_style.item_lines(item, detail="collapsed"):
             rendered = "".join(
                 f"{_STYLE_ANSI[style]}{text}{_ANSI['reset']}"
                 if self._color and _STYLE_ANSI[style]
@@ -284,7 +273,7 @@ class ConsoleView:
     def _clear_status(self) -> None:
         """Erase the transient spinner line; the caller holds the lock."""
         if self._status_active:
-            raw_stream(self._out).write("\r\x1b[2K")
+            _terminal_guard.raw_stream(self._out).write("\r\x1b[2K")
             self._status_active = False
 
     def _raw(self, text: str) -> None:
@@ -324,10 +313,10 @@ class ConsoleView:
                 if self._phase is not None:
                     self._end_block()
                 self._spin += 1
-                glyph = spinner_frame(self._spin)
+                glyph = format.spinner_frame(self._spin)
                 hint = "  (Ctrl-C to steer or stop)" if idle >= 20 else ""
                 body = f"{glyph} working… {int(idle)}s{hint}"
-                raw_stream(self._out).write("\r\x1b[2K")
+                _terminal_guard.raw_stream(self._out).write("\r\x1b[2K")
                 self._out.write(self._c("dim", body) if self._color else body)
                 self._out.flush()
                 self._status_active = True

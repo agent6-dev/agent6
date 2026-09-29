@@ -41,7 +41,7 @@ Hold a session's end and the snapshot a resume re-enters.
 **SessionSnapshot** &mdash; Hold the persisted state of an in-flight session, what a resume re-enters and a fork clones.
 
 - **Written by:** harness/loop
-- **Read by:** app/{_execution, finalize, fork, frontend, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}
+- **Read by:** app/{_execution, finalize, fork, frontend, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}, ui/cli/_ask
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (23 test files exercise it)
 
 ## ToolResult family
@@ -67,7 +67,7 @@ Type the logs.jsonl event families the session fold consumes.
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionUndone`, `RawEvent`
 
 - **Written by:** viewmodel/events
-- **Read by:** ui/cli/{_console_view, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, log_line, state, transcript}
+- **Read by:** ui/cli/{_console_view, _repl, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, log_line, state, transcript}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (6 test files exercise it)
 
 ## MachineSpec

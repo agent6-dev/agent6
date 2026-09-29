@@ -9,17 +9,16 @@ render. No provider calls, no real network.
 from __future__ import annotations
 
 import ast
+import pathlib
 import shutil
 import sys
 import tomllib
-from pathlib import Path
 from typing import Any
 
-from agent6.app._setup import detect_env
+from agent6 import errors
+from agent6.app import _setup
 from agent6.app.machine import lint_and_typecheck, run_offline_tests, validate_bundle
-from agent6.config import ConfigError
-from agent6.config.layer import load_effective_with_overlay
-from agent6.errors import OperatorError, read_operator_file
+from agent6.config import ConfigError, layer
 from agent6.machine import (
     DryRunReport,
     MachineError,
@@ -31,11 +30,11 @@ from agent6.machine import (
     render_dot,
     render_mermaid,
 )
-from agent6.sandbox.tool_paths import jail_search_path
-from agent6.ui.cli._common import plural, warn
+from agent6.sandbox import tool_paths
+from agent6.ui.cli import _common
 
 
-def _fail(path: Path, problems: list[str], label: str = "") -> int:
+def _fail(path: pathlib.Path, problems: list[str], label: str = "") -> int:
     """Print a FAIL header and problem bullets to stderr.
 
     Args:
@@ -54,7 +53,7 @@ def _fail(path: Path, problems: list[str], label: str = "") -> int:
 
 
 def _load_validated(
-    path: Path, *, config_path: Path | None = None
+    path: pathlib.Path, *, config_path: pathlib.Path | None = None
 ) -> tuple[MachineSpec | None, list[str], str]:
     """Load a machine file and validate its bundle and config overlay, as `machine run` does.
 
@@ -77,7 +76,9 @@ def _load_validated(
     if bundle_problems:
         return None, bundle_problems, "bundle"
     try:
-        load_effective_with_overlay(Path.cwd(), spec.config, explicit_path=config_path)
+        layer.load_effective_with_overlay(
+            pathlib.Path.cwd(), spec.config, explicit_path=config_path
+        )
     except ConfigError as exc:
         return None, [str(exc)], "config"
     return spec, [], ""
@@ -86,7 +87,7 @@ def _load_validated(
 _SUBPROCESS_CALLS = frozenset({"run", "Popen", "call", "check_call", "check_output"})
 
 
-def _script_binaries(scripts_dir: Path) -> dict[str, str]:
+def _script_binaries(scripts_dir: pathlib.Path) -> dict[str, str]:
     """Return the literal first-argv string of each subprocess call in the bundle's scripts.
 
     Best effort: dynamic argv is invisible to this scan, so absence proves nothing; only a
@@ -119,7 +120,7 @@ def _script_binaries(scripts_dir: Path) -> dict[str, str]:
     return out
 
 
-def _tool_reachability_warnings(spec: MachineSpec, path: Path) -> list[str]:
+def _tool_reachability_warnings(spec: MachineSpec, path: pathlib.Path) -> list[str]:
     """Return a warning for each binary the machine execs that the jail PATH does not resolve.
 
     Tool-state `command[0]` plus literal subprocess argv in bundle scripts. Offline
@@ -130,7 +131,7 @@ def _tool_reachability_warnings(spec: MachineSpec, path: Path) -> list[str]:
         spec: The machine.
         path: The machine file.
     """
-    search = jail_search_path()
+    search = tool_paths.jail_search_path()
     sources: dict[str, str] = {}
     for name, state in spec.states.items():
         if isinstance(state, ToolState):
@@ -147,7 +148,7 @@ def _tool_reachability_warnings(spec: MachineSpec, path: Path) -> list[str]:
     ]
 
 
-def _cmd_machine_check(path: Path, *, config_path: Path | None = None) -> int:
+def _cmd_machine_check(path: pathlib.Path, *, config_path: pathlib.Path | None = None) -> int:
     """Validate a machine file offline and print OK or FAIL.
 
     Returns:
@@ -160,7 +161,7 @@ def _cmd_machine_check(path: Path, *, config_path: Path | None = None) -> int:
     if script_problems:
         return _fail(path, script_problems, "scripts")
     for warning in _tool_reachability_warnings(spec, path):
-        warn(warning)
+        _common.warn(warning)
     for name, state in spec.states.items():
         if isinstance(state, ToolState) and state.pass_env:
             print(
@@ -172,7 +173,7 @@ def _cmd_machine_check(path: Path, *, config_path: Path | None = None) -> int:
 
 
 def _cmd_machine_test(
-    path: Path, *, blackboard: Path | None, config_path: Path | None = None
+    path: pathlib.Path, *, blackboard: pathlib.Path | None, config_path: pathlib.Path | None = None
 ) -> int:
     """Run the offline simulation: validation, script lint and types, mock tests, dry-run.
 
@@ -191,16 +192,16 @@ def _cmd_machine_test(
     if spec is None:
         return _fail(path, problems, label)
     script_problems = lint_and_typecheck(path.parent / "scripts")
-    offline = run_offline_tests(path.parent, detect_env().detected_isolation)
+    offline = run_offline_tests(path.parent, _setup.detect_env().detected_isolation)
     script_problems.extend(offline.problems)
     if script_problems:
         return _fail(path, script_problems, "scripts")
     fixture: dict[str, Any] | None = None
     if blackboard is not None:
         try:
-            fixture = tomllib.loads(read_operator_file(blackboard))
+            fixture = tomllib.loads(errors.read_operator_file(blackboard))
         except tomllib.TOMLDecodeError as exc:
-            raise OperatorError(f"blackboard fixture is not valid TOML: {exc}") from exc
+            raise errors.OperatorError(f"blackboard fixture is not valid TOML: {exc}") from exc
         fixture_errors = fixture_problems(spec, fixture)
         if fixture_errors:
             return _fail(path, fixture_errors, "blackboard")
@@ -209,13 +210,14 @@ def _cmd_machine_test(
     if report.ok:
         # A skip rides the verdict line: OK with tests silently unrun reads as tests ran green.
         skipped = (
-            f"; {plural(offline.skipped, 'offline script test')} not run ({offline.skip_reason})"
+            f"; {_common.plural(offline.skipped, 'offline script test')} not run "
+            f"({offline.skip_reason})"
             if offline.skipped
             else ""
         )
         print(
-            f"\nOK: {path} dry-run passed ({plural(len(report.states), 'state')}, "
-            f"{plural(len(report.branches), 'branch', 'branches')}){skipped}"
+            f"\nOK: {path} dry-run passed ({_common.plural(len(report.states), 'state')}, "
+            f"{_common.plural(len(report.branches), 'branch', 'branches')}){skipped}"
         )
         return 0
     print(f"\nFAIL: {path} dry-run found problems", file=sys.stderr)
@@ -241,7 +243,7 @@ def _print_dry_run_report(spec: MachineSpec, report: DryRunReport) -> None:
             print(f"  {b.name:<16} {clause:<7} {(b.goto or '-'):<14} {mark[b.ok]:<6}  {pred}")
 
 
-def _cmd_machine_graph(path: Path, *, fmt: str) -> int:
+def _cmd_machine_graph(path: pathlib.Path, *, fmt: str) -> int:
     """Print the machine's diagram as DOT or Mermaid.
 
     Returns:

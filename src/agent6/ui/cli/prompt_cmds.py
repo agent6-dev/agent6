@@ -5,17 +5,16 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import pathlib
 from typing import Literal
 
-from agent6.config.layer import load_effective
+from agent6 import paths, verify_infer
+from agent6.config import layer
 from agent6.harness import ModelExchange, model_exchange_for
-from agent6.paths import state_dir
-from agent6.verify_infer import infer_verify_command, read_agents_md
 
 
 def _cmd_prompt_show(
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     *,
     mode: Literal["run", "plan", "ask", "agent"],
     as_json: bool = False,
@@ -34,15 +33,17 @@ def _cmd_prompt_show(
     Returns:
         The exit code, 0.
     """
-    cwd = Path.cwd()
-    eff = load_effective(cwd, config_path)
+    cwd = pathlib.Path.cwd()
+    eff = layer.load_effective(cwd, config_path)
     cfg = eff.config
     if mode in ("run", "plan") and not cfg.harness.verify_command and cfg.harness.verify_infer:
         # The gate shapes the prompt, so infer it as a run does; the LLM tier spends, so not here.
-        inferred = infer_verify_command(cwd, read_agents_md(cwd), llm_call=None)
+        inferred = verify_infer.infer_verify_command(
+            cwd, verify_infer.read_agents_md(cwd), llm_call=None
+        )
         if inferred is not None:
             cfg = cfg.with_verify_command(inferred.argv)
-    exchange = model_exchange_for(cfg, cwd, mode, state_dir=state_dir(cwd))
+    exchange = model_exchange_for(cfg, cwd, mode, state_dir=paths.state_dir(cwd))
     print(_as_json(exchange) if as_json else _as_text(exchange))
     return 0
 

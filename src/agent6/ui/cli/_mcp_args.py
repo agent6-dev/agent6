@@ -6,13 +6,12 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import REPO_FLAG_HELP, _sub
-from agent6.ui.cli.completers import _complete_mcp_servers
+from agent6.ui.cli import _common, completers
 
 
 def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `connect`, `remove` and `list` to the `mcp` group beside `serve`."""
-    connect = _sub(
+    connect = _common._sub(
         mcp_sub,
         "connect",
         help=(
@@ -73,16 +72,16 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         "--repo",
         dest="to_repo",
         action="store_true",
-        help=REPO_FLAG_HELP,
+        help=_common.REPO_FLAG_HELP,
     )
 
-    remove = _sub(
+    remove = _common._sub(
         mcp_sub,
         "remove",
         help="Remove an MCP server from a config file. Default: global config file.",
     )
     remove_name = remove.add_argument("name", help="Server name shown by `agent6 mcp list`.")
-    remove_name.completer = _complete_mcp_servers  # type: ignore[attr-defined]
+    remove_name.completer = completers._complete_mcp_servers  # type: ignore[attr-defined]
     remove.add_argument(
         "--repo",
         dest="to_repo",
@@ -90,7 +89,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         help="Remove from the per-repo config instead of the global config.",
     )
 
-    _sub(
+    _common._sub(
         mcp_sub,
         "list",
         help=(

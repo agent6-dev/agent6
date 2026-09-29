@@ -4,35 +4,24 @@
 
 from __future__ import annotations
 
+import pathlib
 import sys
-from pathlib import Path
 
-from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective
-from agent6.errors import OperatorError
-from agent6.git_ops import (
-    GitError,
-    commit_paths,
-    init_repo,
-    is_git_repo,
-    paths_dirty,
-    unignored,
-)
-from agent6.init import _ask, init_workspace
-from agent6.paths import chown_to_real_user, repo_config_path
-from agent6.ui.cli._common import error
+from agent6 import errors, git_ops, init, paths
+from agent6.config import Config, ConfigError, layer
+from agent6.ui.cli import _common
 
 _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
 
 
-def _workspace_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...]:
+def _workspace_rel_paths(root: pathlib.Path, created: tuple[pathlib.Path, ...]) -> tuple[str, ...]:
     """Return the created paths that exist under the root, relative to it."""
     return tuple(
         str(p.relative_to(root)) for p in created if p.exists() and root in p.resolve().parents
     )
 
 
-def _scaffold_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...]:
+def _scaffold_rel_paths(root: pathlib.Path, created: tuple[pathlib.Path, ...]) -> tuple[str, ...]:
     """Return the repo-relative scaffold files git would record.
 
     The per-repo config lives under the state dir, never here. `unignored` drops what the
@@ -43,11 +32,13 @@ def _scaffold_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...
         root: The workspace.
         created: The paths init wrote.
     """
-    candidates = unignored(root, _workspace_rel_paths(root, created))
-    return tuple(rel for rel in candidates if paths_dirty(root, (rel,)))
+    candidates = git_ops.unignored(root, _workspace_rel_paths(root, created))
+    return tuple(rel for rel in candidates if git_ops.paths_dirty(root, (rel,)))
 
 
-def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool) -> None:
+def _offer_git_setup(
+    root: pathlib.Path, created: tuple[pathlib.Path, ...], *, interactive: bool
+) -> None:
     """Leave the repo ready for `agent6 run`.
 
     In a non-repo, offer to `git init` and commit the scaffold (non-interactively, print the
@@ -59,7 +50,7 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
         created: The paths init wrote.
         interactive: Ask before acting.
     """
-    if is_git_repo(root):
+    if git_ops.is_git_repo(root):
         _offer_scaffold_commit(root, created, interactive=interactive)
         return
     print()
@@ -71,12 +62,12 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
         else:
             print("  Run: git init, then review and commit the files you want tracked.")
         return
-    if not _ask("This directory is not a git repository. Initialise one now?", default=True):
+    if not init._ask("This directory is not a git repository. Initialise one now?", default=True):
         print("  Skipped. `agent6 run` needs a repo; run `git init` here first.")
         return
     try:
-        init_repo(root)
-    except GitError as exc:
+        git_ops.init_repo(root)
+    except git_ops.GitError as exc:
         print(f"  git init failed: {exc}")
         return
     print("  created: .git/  (git init)")
@@ -84,19 +75,21 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
     if not rel:
         print("  (nothing to commit; the created files are all gitignored)")
         return
-    if not _ask("Commit the files agent6 just created?", default=True):
+    if not init._ask("Commit the files agent6 just created?", default=True):
         print(f"  Not committed. When ready: git add {' '.join(rel)} && git commit")
         return
     try:
-        commit_paths(root, _SCAFFOLD_COMMIT_MESSAGE, rel)
+        git_ops.commit_paths(root, _SCAFFOLD_COMMIT_MESSAGE, rel)
         print(f"  committed the agent6 scaffold ({', '.join(rel)})")
-    except GitError as exc:
+    except git_ops.GitError as exc:
         # Most likely a missing git identity, actionable, not fatal.
         print(f"  commit skipped: {exc}")
         print(f"  Set git user.name / user.email, then: git add {' '.join(rel)} && git commit")
 
 
-def _offer_scaffold_commit(root: Path, created: tuple[Path, ...], *, interactive: bool) -> None:
+def _offer_scaffold_commit(
+    root: pathlib.Path, created: tuple[pathlib.Path, ...], *, interactive: bool
+) -> None:
     """Offer to commit the scaffold in an existing repo.
 
     Auto-yes when non-interactive; when declined or the commit fails, print the exact
@@ -111,28 +104,28 @@ def _offer_scaffold_commit(root: Path, created: tuple[Path, ...], *, interactive
     if not rel:
         return
     try:
-        if not paths_dirty(root, rel):
+        if not git_ops.paths_dirty(root, rel):
             # Already committed; a whole-tree check would false-trigger on unrelated work.
             return
-    except GitError:
+    except git_ops.GitError:
         return
     manual = f"git add {' '.join(rel)} && git commit -m '{_SCAFFOLD_COMMIT_MESSAGE}'"
     print()
-    if interactive and not _ask(
+    if interactive and not init._ask(
         "Commit the agent6 scaffold now (`agent6 run` needs a clean tree)?", default=True
     ):
         print(f"  Not committed. Before `agent6 run`: {manual}")
         return
     try:
-        commit_paths(root, _SCAFFOLD_COMMIT_MESSAGE, rel)
-    except GitError as exc:
+        git_ops.commit_paths(root, _SCAFFOLD_COMMIT_MESSAGE, rel)
+    except git_ops.GitError as exc:
         print(f"  commit failed: {exc}")
         print(f"  Commit it yourself before `agent6 run`: {manual}")
         return
     print(f"  committed the agent6 scaffold ({', '.join(rel)})")
 
 
-def _print_next_steps(cwd: Path, config_path: Path | None) -> None:
+def _print_next_steps(cwd: pathlib.Path, config_path: pathlib.Path | None) -> None:
     """Print the commands still between this repo and a first run.
 
     `connect` and `model` appear only while the effective config lacks a provider or a
@@ -143,7 +136,7 @@ def _print_next_steps(cwd: Path, config_path: Path | None) -> None:
         config_path: The `--config` file, if any.
     """
     try:
-        cfg: Config | None = load_effective(cwd, config_path).config
+        cfg: Config | None = layer.load_effective(cwd, config_path).config
     except ConfigError:
         cfg = None
     print()
@@ -157,7 +150,9 @@ def _print_next_steps(cwd: Path, config_path: Path | None) -> None:
     print('  agent6 run "<task>"' + ("" if gated else "            # verify is inferred per run"))
 
 
-def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | None = None) -> int:
+def _cmd_init(
+    *, ecosystem: str, assume_yes: bool = False, config_path: pathlib.Path | None = None
+) -> int:
     """Scaffold the workspace, offer the git setup, and print the next steps.
 
     Args:
@@ -171,23 +166,25 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
     Raises:
         OperatorError: The effective config is invalid; the message names the way out.
     """
-    cwd = Path.cwd()
-    target = repo_config_path(cwd)
+    cwd = pathlib.Path.cwd()
+    target = paths.repo_config_path(cwd)
     if not assume_yes and not sys.stdin.isatty():
         # Consent to write files comes from a TTY or --yes.
-        error("no input. stdin is not a TTY; re-run with --yes to accept every default.")
+        _common.error("no input. stdin is not a TTY; re-run with --yes to accept every default.")
         return 2
     interactive = not assume_yes
     # A scaffold path init leaves untouched is the operator's: excluded from the commit, reported.
     scaffold_all = (cwd / "AGENTS.md", cwd / ".gitignore")
     missing_before = tuple(p for p in scaffold_all if not p.exists())
-    if is_git_repo(cwd):
-        theirs = tuple(p for p in scaffold_all if paths_dirty(cwd, (str(p.relative_to(cwd)),)))
+    if git_ops.is_git_repo(cwd):
+        theirs = tuple(
+            p for p in scaffold_all if git_ops.paths_dirty(cwd, (str(p.relative_to(cwd)),))
+        )
     else:
         theirs = tuple(p for p in scaffold_all if p.exists())
     try:
         try:
-            rc = init_workspace(
+            rc = init.init_workspace(
                 cwd,
                 ecosystem=ecosystem,
                 repo_config_target=target,
@@ -196,7 +193,7 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
             )
         except ConfigError as exc:
             # init is also the command that repairs a setup, so the refusal carries the way out.
-            raise OperatorError(
+            raise errors.OperatorError(
                 f"{exc}\nFix or delete the invalid config, following the error above,"
                 " then re-run `agent6 init`."
             ) from exc
@@ -207,8 +204,8 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
             )
             # Only where a scaffold commit was on the table: outside a repo nothing was left out.
             dirty = (
-                tuple(p for p in theirs if paths_dirty(cwd, (str(p.relative_to(cwd)),)))
-                if is_git_repo(cwd)
+                tuple(p for p in theirs if git_ops.paths_dirty(cwd, (str(p.relative_to(cwd)),)))
+                if git_ops.is_git_repo(cwd)
                 else ()
             )
             if dirty:
@@ -218,7 +215,7 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
         return rc
     finally:
         # Under sudo, nothing root-owned stays in the real user's trees, even after a failed step.
-        chown_to_real_user(target.parent)
+        paths.chown_to_real_user(target.parent)
         for path in missing_before:
             if path.exists():
-                chown_to_real_user(path)
+                paths.chown_to_real_user(path)

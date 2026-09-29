@@ -11,6 +11,7 @@ import pytest
 
 from agent6 import paths
 from agent6.config import io
+from agent6.config import layer as config_layer
 
 
 @pytest.fixture
@@ -341,13 +342,11 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: pathlib.Path) -> N
     import time
     from unittest import mock
 
-    from agent6.ui.cli import config_cmds
-
     assert _run(["config", "set", "sandbox.memory_limit_mb", "512"]) == 0
 
     fill_holds_lock = threading.Event()
     release_fill = threading.Event()
-    real_load = config_cmds.load_global_only
+    real_load = config_layer.load_global_only
     results: dict[str, object] = {}
 
     def gated_load() -> object:
@@ -356,7 +355,7 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: pathlib.Path) -> N
         return real_load()
 
     def run_fill() -> None:
-        with mock.patch.object(config_cmds, "load_global_only", gated_load):
+        with mock.patch.object(config_layer, "load_global_only", gated_load):
             results["fill"] = _run(["config", "fill", "--force"])
 
     def run_set() -> None:

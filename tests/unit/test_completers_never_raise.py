@@ -12,6 +12,7 @@ import pathlib
 
 import pytest
 
+from agent6 import paths
 from agent6.ui.cli import completers
 
 _COMPLETERS = [
@@ -46,7 +47,6 @@ def test_an_unresolvable_state_dir_does_not_reach_the_shell(
     Forced directly: a bad config under cwd never reaches the raising path.
     """
     from agent6.config import ConfigError
-    from agent6.ui.cli import _common
 
     calls: list[pathlib.Path] = []
 
@@ -54,8 +54,8 @@ def test_an_unresolvable_state_dir_does_not_reach_the_shell(
         calls.append(root)
         raise ConfigError("config is not valid TOML")
 
-    monkeypatch.setattr(completers, "state_dir", _boom)
-    monkeypatch.setattr(_common, "state_dir", _boom)
+    monkeypatch.setattr(paths, "state_dir", _boom)
+    monkeypatch.setattr(paths, "state_dir", _boom)
 
     fn = getattr(completers, name)
     result = fn("", parsed_args=None)

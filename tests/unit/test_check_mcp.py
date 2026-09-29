@@ -11,8 +11,9 @@ import pathlib
 
 import pytest
 
+from agent6.app import _setup
 from agent6.config import Config
-from agent6.sandbox import jail
+from agent6.sandbox import detect, jail
 from agent6.tools import mcp_client
 from agent6.ui.cli import check_cmds
 
@@ -61,10 +62,10 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
     def _unexpected_network() -> jail.SessionNetwork:
         raise AssertionError("HTTP-only check created a command session network")
 
-    monkeypatch.setattr(check_cmds, "detect_env", object)
-    monkeypatch.setattr(check_cmds, "resolve_isolation", _strict)
-    monkeypatch.setattr(check_cmds.MCPManager, "start", staticmethod(_start))
-    monkeypatch.setattr(check_cmds.SessionNetwork, "open", staticmethod(_unexpected_network))
+    monkeypatch.setattr(_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(mcp_client.MCPManager, "start", staticmethod(_start))
+    monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_unexpected_network))
     cfg = Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"remote": {"url": "https://mcp.example"}}}}
     )
@@ -85,9 +86,9 @@ def test_mcp_check_reports_a_session_network_refusal(
     def _refuse_network() -> jail.SessionNetwork:
         raise jail.JailUnavailableError("the session network could not be created: denied")
 
-    monkeypatch.setattr(check_cmds, "detect_env", object)
-    monkeypatch.setattr(check_cmds, "resolve_isolation", _strict)
-    monkeypatch.setattr(check_cmds.SessionNetwork, "open", staticmethod(_refuse_network))
+    monkeypatch.setattr(_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_refuse_network))
     cfg = Config.model_validate(
         {
             "mcp": {

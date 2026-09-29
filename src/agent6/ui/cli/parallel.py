@@ -9,29 +9,19 @@ from `_compare`) and the CLI-side preflight and refusals. `run.py` routes here.
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable, Sequence
-from pathlib import Path
 
-from agent6.app.parallel import (
-    LaneRuntime,
-    ParallelError,
-    build_lane_specs,
-    run_parallel,
-)
-from agent6.app.preflight import budget_preflight
+from agent6 import directive, git_ops, paths
+from agent6.app import parallel, preflight
 from agent6.config import Config, ConfigError
-from agent6.directive import DirectiveError
-from agent6.git_ops import GitError, modified_paths
-from agent6.models.validate import refusal_message, validate_spec_models, warning_message
-from agent6.paths import state_dir
-from agent6.sessions.id import friendly_token
-from agent6.ui.cli._common import error, refuse, warn
-from agent6.ui.cli._compare import _judging_status, _reviewer_provider
-from agent6.ui.cli._interact import lane_away_mode
-from agent6.ui.spawn import agent6_exe, spawn_and_locate
+from agent6.models import validate
+from agent6.sessions import id
+from agent6.ui import spawn as ui_spawn
+from agent6.ui.cli import _common, _compare, _interact
 
 
-def lane_runtime() -> LaneRuntime:
+def lane_runtime() -> parallel.LaneRuntime:
     """Return the front-end primitives the parallel pipeline drives.
 
     Injected so `agent6.app` never imports `agent6.ui`. Lane liveness and stop are the
@@ -40,25 +30,25 @@ def lane_runtime() -> LaneRuntime:
 
     def spawn(
         argv: list[str],
-        cwd: Path,
+        cwd: pathlib.Path,
         *,
-        before: set[Path],
-        list_dirs: Callable[[], list[Path]],
+        before: set[pathlib.Path],
+        list_dirs: Callable[[], list[pathlib.Path]],
         env: dict[str, str],
-    ) -> tuple[Path | None, str]:
+    ) -> tuple[pathlib.Path | None, str]:
         """Spawn a detached agent6 process and locate its session dir.
 
         Returns:
             The session dir and an error text, from `spawn_and_locate`.
         """
-        return spawn_and_locate(
-            [agent6_exe(), *argv], cwd, before=before, list_dirs=list_dirs, env=env
+        return ui_spawn.spawn_and_locate(
+            [ui_spawn.agent6_exe(), *argv], cwd, before=before, list_dirs=list_dirs, env=env
         )
 
-    return LaneRuntime(
+    return parallel.LaneRuntime(
         spawn=spawn,
-        build_provider=_reviewer_provider,
-        judging_status=_judging_status,
+        build_provider=_compare._reviewer_provider,
+        judging_status=_compare._judging_status,
     )
 
 
@@ -88,7 +78,7 @@ def dispatch_parallel(
     task: str,
     spec: str,
     *,
-    cwd: Path,
+    cwd: pathlib.Path,
     max_usd: float | None = None,
     auto_approve: bool = False,
     pins: Sequence[str] = (),
@@ -111,21 +101,21 @@ def dispatch_parallel(
         The exit code; 2 on a refusal.
     """
     origin = cwd
-    origin_state = state_dir(origin)
-    for err in (budget_preflight(cfg), _parallel_approval_refusal(cfg)):
+    origin_state = paths.state_dir(origin)
+    for err in (preflight.budget_preflight(cfg), _parallel_approval_refusal(cfg)):
         if err is not None:
-            refuse(f"{err}")
+            _common.refuse(f"{err}")
             return 2
     try:
-        modified = modified_paths(origin)
-    except GitError as exc:
-        error(f"{exc}")
+        modified = git_ops.modified_paths(origin)
+    except git_ops.GitError as exc:
+        _common.error(f"{exc}")
         return 2
     if modified and cfg.git.dirty_tree == "ask":
         listed = "\n".join(f"    {p}" for p in modified[:10])
         more = f"\n    ... {len(modified) - 10} more" if len(modified) > 10 else ""
         n = len(modified)
-        refuse(
+        _common.refuse(
             f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted"
             f" changes:\n{listed}{more}\n"
             "Lanes clone committed HEAD, so those changes would not reach them. Commit or"
@@ -134,26 +124,26 @@ def dispatch_parallel(
         )
         return 2
 
-    fanout_id = friendly_token()
+    fanout_id = id.friendly_token()
     try:
-        lanes = build_lane_specs(spec, cfg=cfg, origin=origin, fanout_id=fanout_id)
-    except (ConfigError, DirectiveError, ParallelError) as exc:
-        refuse(f"{exc}")
+        lanes = parallel.build_lane_specs(spec, cfg=cfg, origin=origin, fanout_id=fanout_id)
+    except (ConfigError, directive.DirectiveError, parallel.ParallelError) as exc:
+        _common.refuse(f"{exc}")
         return 2
     # Before any clone or spawn: a typo refuses when a cache can check it, else warn and proceed.
-    verdict = validate_spec_models([ln.route for ln in lanes], cfg)
+    verdict = validate.validate_spec_models([ln.route for ln in lanes], cfg)
     if verdict.refused:
-        refuse(f"{refusal_message(verdict, directive=False)}")
+        _common.refuse(f"{validate.refusal_message(verdict, directive=False)}")
         return 2
     if verdict.warned:
-        warn(f"{warning_message(verdict)}")
-    lane_away = lane_away_mode()
+        _common.warn(f"{validate.warning_message(verdict)}")
+    lane_away = _interact.lane_away_mode()
     if lane_away == "deny":
-        warn(
+        _common.warn(
             "no terminal to attach from: a lane's questions get empty answers and its"
             " fetch and MCP approvals are denied"
         )
-    return run_parallel(
+    return parallel.run_parallel(
         task,
         lanes,
         cfg=cfg,

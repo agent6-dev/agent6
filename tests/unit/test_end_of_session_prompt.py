@@ -14,6 +14,7 @@ from agent6 import paths
 from agent6.app import _setup
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import _session_prompt as prompt_mod
+from agent6.ui.cli import resume
 
 
 def _seed_session(
@@ -54,7 +55,7 @@ def _seen_resumes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
         calls.append((session_id, str(kw.get("steer", ""))))
         return 0
 
-    monkeypatch.setattr(prompt_mod, "_cmd_resume", fake_resume)
+    monkeypatch.setattr(resume, "_cmd_resume", fake_resume)
     return calls
 
 
@@ -73,7 +74,7 @@ def test_follow_up_executions_run_under_the_invocations_flags(
         seen.append(dict(kw))
         return 0
 
-    monkeypatch.setattr(prompt_mod, "_cmd_resume", fake_resume)
+    monkeypatch.setattr(resume, "_cmd_resume", fake_resume)
     answers = iter(["and a test", "/exit"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
     args = _run_args(max_usd=0.10, auto_approve=True)
@@ -138,7 +139,7 @@ def test_a_failing_execution_stops_the_loop(monkeypatch: pytest.MonkeyPatch) -> 
     def failing(_cfg: pathlib.Path | None, _session_id: str, **_kw: object) -> int:
         return 2
 
-    monkeypatch.setattr(prompt_mod, "_cmd_resume", failing)
+    monkeypatch.setattr(resume, "_cmd_resume", failing)
     asked: list[str] = []
 
     def ask(prompt: str) -> str:
@@ -336,7 +337,7 @@ def test_a_execution_that_undoes_or_detaches_ends_the_asking(
         )
         return 0
 
-    monkeypatch.setattr(prompt_mod, "_cmd_resume", fake_resume)
+    monkeypatch.setattr(resume, "_cmd_resume", fake_resume)
 
     def ask(prompt: str) -> str:
         asked.append(prompt)

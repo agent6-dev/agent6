@@ -7,57 +7,57 @@ A piped invocation naming no model lists the provider's catalog instead, one id 
 
 from __future__ import annotations
 
+import pathlib
 import sys
-from pathlib import Path
 from typing import cast
 
+from agent6 import paths, secrets
 from agent6.config import (
     ClaudeCodeProviderEntry,
     ConfigError,
     RoleName,
+    io,
+    layer,
+    write,
 )
-from agent6.config.layer import load_effective
-from agent6.config.write import ConfigLeafValue, set_config_table
-from agent6.models.choices import provider_model_choices
-from agent6.paths import global_config_path, repo_config_path
-from agent6.providers.claude_code import login_status
-from agent6.secrets import load_oauth_tokens, resolve_api_key
-from agent6.ui.cli._common import error, refuse, safe_input, warn
+from agent6.models import choices
+from agent6.providers import claude_code
+from agent6.ui.cli import _common
 
 
-def _connected_providers(config_path: Path | None) -> list[str]:
+def _connected_providers(config_path: pathlib.Path | None) -> list[str]:
     """Return the provider names the effective config declares; empty on any error."""
     try:
-        eff = load_effective(Path.cwd(), config_path)
+        eff = layer.load_effective(pathlib.Path.cwd(), config_path)
     except ConfigError:
         return []
     return sorted(eff.config.providers)
 
 
-def _models_for(config_path: Path | None, provider: str) -> list[str]:
+def _models_for(config_path: pathlib.Path | None, provider: str) -> list[str]:
     """Return the known model ids for a provider; empty when the config does not load."""
     try:
-        eff = load_effective(Path.cwd(), config_path)
+        eff = layer.load_effective(pathlib.Path.cwd(), config_path)
     except ConfigError:
         return []
-    return provider_model_choices(eff.config, provider)
+    return choices.provider_model_choices(eff.config, provider)
 
 
-def _prompt_for_provider(config_path: Path | None) -> str:
+def _prompt_for_provider(config_path: pathlib.Path | None) -> str:
     """Return the provider picked interactively, defaulting to the first connected one."""
     providers = _connected_providers(config_path)
     if providers:
         print("Connected providers: " + ", ".join(providers))
         default = providers[0]
-        choice = safe_input(f"Provider [{default}]: ")
+        choice = _common.safe_input(f"Provider [{default}]: ")
         if choice is None:
             return ""
         return choice or default
     print("No providers connected yet; run `agent6 connect` first, or type a name.")
-    return safe_input("Provider: ") or ""
+    return _common.safe_input("Provider: ") or ""
 
 
-def _prompt_for_model(config_path: Path | None, provider: str) -> str | None:
+def _prompt_for_model(config_path: pathlib.Path | None, provider: str) -> str | None:
     """Return the model picked interactively from the provider's list.
 
     Returns:
@@ -69,27 +69,27 @@ def _prompt_for_model(config_path: Path | None, provider: str) -> str | None:
         print(f"Models for {provider}:")
         for i, model in enumerate(options, 1):
             print(f"  {i:>2}. {model}")
-        choice = safe_input("Model (name or number): ")
+        choice = _common.safe_input("Model (name or number): ")
         if choice is None:
             return ""
         if choice.isdigit():
             idx = int(choice) - 1
             if 0 <= idx < len(options):
                 return options[idx]
-            error(f"no model {choice}: the list has {len(options)}.")
+            _common.error(f"no model {choice}: the list has {len(options)}.")
             return None
         return choice
     print(f"No known models for {provider} (couldn't reach its API or none configured).")
-    return safe_input("Model: ") or ""
+    return _common.safe_input("Model: ") or ""
 
 
-def _show_assignments(config_path: Path | None) -> int:
+def _show_assignments(config_path: pathlib.Path | None) -> int:
     """Print the three role assignments with their config origin.
 
     Returns:
         The exit code, 0.
     """
-    eff = load_effective(Path.cwd(), config_path)
+    eff = layer.load_effective(pathlib.Path.cwd(), config_path)
     print("Role assignments (planner/reviewer fall back to worker when unset):\n")
     show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
     for r in show_roles:
@@ -109,7 +109,7 @@ def _show_assignments(config_path: Path | None) -> int:
     return 0
 
 
-def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
+def _print_catalog(config_path: pathlib.Path | None, role: str, provider: str) -> int:
     """Print the provider's model ids, one per line, with the set hint on stderr.
 
     The listing for a piped invocation naming no model: the one non-interactive way to
@@ -125,7 +125,7 @@ def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
     """
     options = _models_for(config_path, provider)
     if not options:
-        error(
+        _common.error(
             f"no known models for {provider}: no listing reached and no role names one."
             f" Set one with: agent6 model {role} {provider}/<model>"
         )
@@ -136,40 +136,40 @@ def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
     return 0
 
 
-def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
+def _warn_unusable_provider(config_path: pathlib.Path | None, provider: str) -> None:
     """Warn when a set names a keyless provider: config accepts it, the first run would refuse."""
     try:
-        eff = load_effective(Path.cwd(), config_path)
+        eff = layer.load_effective(pathlib.Path.cwd(), config_path)
     except ConfigError:
         return
     entry = eff.config.providers.get(provider)
     if entry is None:
-        warn(f"provider {provider!r} is not configured; run `agent6 connect` first.")
+        _common.warn(f"provider {provider!r} is not configured; run `agent6 connect` first.")
         return
     if isinstance(entry, ClaudeCodeProviderEntry):
-        if (err := login_status(entry.binary)) is not None:
-            warn(f"provider {provider!r}: {err}")
+        if (err := claude_code.login_status(entry.binary)) is not None:
+            _common.warn(f"provider {provider!r}: {err}")
         return
     if entry.auth_style == "none" or entry.token_command:
         return
     if entry.api_format == "chatgpt":
-        if load_oauth_tokens(provider) is None:
-            warn(
+        if secrets.load_oauth_tokens(provider) is None:
+            _common.warn(
                 f"provider {provider!r} has no ChatGPT sign-in;"
                 f" run `agent6 connect {provider}` before using it."
             )
         return
-    if resolve_api_key(provider, entry.api_key_env) is None:
+    if secrets.resolve_api_key(provider, entry.api_key_env) is None:
         remedy = (
             f"export {entry.api_key_env} or run `agent6 connect`"
             if entry.api_key_env
             else "run `agent6 connect`"
         )
-        warn(f"provider {provider!r} has no stored API key; {remedy} before using it.")
+        _common.warn(f"provider {provider!r} has no stored API key; {remedy} before using it.")
 
 
 def _read_route(
-    config_path: Path | None, role: str, route: str, *, interactive: bool
+    config_path: pathlib.Path | None, role: str, route: str, *, interactive: bool
 ) -> tuple[str, str]:
     """Return `(provider, model)` from a `[PROVIDER/]MODEL` value.
 
@@ -198,7 +198,7 @@ def _read_route(
         if not provider:
             raise ConfigError("no provider given: name it as provider/model.")
         return provider, ""
-    cfg = load_effective(Path.cwd(), config_path).config
+    cfg = layer.load_effective(pathlib.Path.cwd(), config_path).config
     if "/" not in route and route in cfg.providers:
         return route, ""
     if not cfg.providers and "/" in route:
@@ -220,7 +220,7 @@ def _read_route(
 
 
 def _cmd_model(
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     *,
     role: str | None,
     route: str,
@@ -246,7 +246,7 @@ def _cmd_model(
     try:
         provider, model = _read_route(config_path, role, route, interactive=interactive)
     except ConfigError as exc:
-        error(str(exc))
+        _common.error(str(exc))
         return 2
     if not model and not interactive:
         if effort:
@@ -257,11 +257,11 @@ def _cmd_model(
         picked = _prompt_for_model(config_path, provider)
         if not picked:
             if picked == "":
-                error("no model given.")
+                _common.error("no model given.")
             return 2
         model = picked
-    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
-    fields: dict[str, ConfigLeafValue] = {"provider": provider, "model": model}
+    target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
+    fields: dict[str, io.ConfigLeafValue] = {"provider": provider, "model": model}
     if effort:
         fields["effort"] = effort
     roles: tuple[RoleName, ...] = (
@@ -269,9 +269,9 @@ def _cmd_model(
     )
     # The shared edit path re-validates and rolls back, so a bad route never breaks config.toml.
     for r in roles:
-        err = set_config_table(Path.cwd(), f"models.{r}", fields, to_repo=to_repo)
+        err = write.set_config_table(pathlib.Path.cwd(), f"models.{r}", fields, to_repo=to_repo)
         if err is not None:
-            refuse(f"{provider}/{model} would make the config invalid:\n{err}")
+            _common.refuse(f"{provider}/{model} would make the config invalid:\n{err}")
             return 2
     where = "[models.*] (all roles)" if role == "all" else f"[models.{role}]"
     print(f"Set {where} = {provider}/{model}{f' (effort={effort})' if effort else ''} in {target}.")

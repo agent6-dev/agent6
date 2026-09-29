@@ -6,17 +6,12 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import SESSION_ID, SESSION_ID_HELP, _add_session_id, _sub
-from agent6.ui.cli.completers import (
-    _complete_live_session_ids,
-    _complete_session_ports,
-    _complete_watch_targets,
-)
+from agent6.ui.cli import _common, completers
 
 
 def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `attach`, a raw tail or the TUI on one run or machine."""
-    watch_p = _sub(
+    watch_p = _common._sub(
         sub,
         "attach",
         help=(
@@ -32,9 +27,9 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "target",
         nargs="?",
         default="",
-        help=f"{SESSION_ID} or machine id; omit for the newest.",
+        help=f"{_common.SESSION_ID} or machine id; omit for the newest.",
     )
-    watch_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
+    watch_target.completer = completers._complete_watch_targets  # type: ignore[attr-defined]
     # One presentation at a time; argparse refuses the combination instead of picking one.
     watch_mode = watch_p.add_mutually_exclusive_group()
     watch_mode.add_argument(
@@ -66,7 +61,7 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 
 def _add_tui_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `tui`, the run, plan and ask hub."""
-    tui_p = _sub(
+    tui_p = _common._sub(
         sub,
         "tui",
         help="Open the TUI hub: browse runs and start a new run/plan/ask.",
@@ -75,14 +70,15 @@ def _add_tui_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "target",
         nargs="?",
         default="",
-        help=f"{SESSION_ID} or machine id to open (what `attach --tui` opens); omit for the hub.",
+        help=f"{_common.SESSION_ID} or machine id to open (what `attach --tui` opens); "
+        "omit for the hub.",
     )
-    tui_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
+    tui_target.completer = completers._complete_watch_targets  # type: ignore[attr-defined]
 
 
 def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `web`, the browser UI."""
-    web_p = _sub(
+    web_p = _common._sub(
         sub,
         "web",
         help=(
@@ -96,10 +92,11 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         nargs="?",
         default="",
         help=(
-            f"{SESSION_ID}, machine id or `machine create` draft to open on load; omit for the hub."
+            f"{_common.SESSION_ID}, machine id or `machine create` draft to open on load;"
+            " omit for the hub."
         ),
     )
-    web_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
+    web_target.completer = completers._complete_watch_targets  # type: ignore[attr-defined]
     web_p.add_argument(
         "--host",
         default=None,
@@ -128,7 +125,7 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `steer`, which queues an instruction for a live run."""
-    steer_p = _sub(
+    steer_p = _common._sub(
         sub,
         "steer",
         help=(
@@ -140,8 +137,8 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
             " queues one for its next execution."
         ),
     )
-    steer_target = steer_p.add_argument("target", help=f"{SESSION_ID}.")
-    steer_target.completer = _complete_live_session_ids  # type: ignore[attr-defined]
+    steer_target = steer_p.add_argument("target", help=f"{_common.SESSION_ID}.")
+    steer_target.completer = completers._complete_live_session_ids  # type: ignore[attr-defined]
     steer_p.add_argument(
         "text",
         help=(
@@ -162,7 +159,7 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
 
 def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `stop`."""
-    stop_p = _sub(
+    stop_p = _common._sub(
         sub,
         "stop",
         help=(
@@ -172,7 +169,7 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " resumable (`agent6 resume ID`). Default: the newest session."
         ),
     )
-    _add_session_id(stop_p, _complete_live_session_ids)
+    _common._add_session_id(stop_p, completers._complete_live_session_ids)
     stop_p.add_argument(
         "--after-step",
         action="store_true",
@@ -187,7 +184,7 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
 
 def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `answer`."""
-    answer_p = _sub(
+    answer_p = _common._sub(
         sub,
         "answer",
         help=(
@@ -196,8 +193,8 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             " the open question and its options; one TEXT per question, in order."
         ),
     )
-    answer_target = answer_p.add_argument("target", help=f"{SESSION_ID}.")
-    answer_target.completer = _complete_live_session_ids  # type: ignore[attr-defined]
+    answer_target = answer_p.add_argument("target", help=f"{_common.SESSION_ID}.")
+    answer_target.completer = completers._complete_live_session_ids  # type: ignore[attr-defined]
     answer_p.add_argument(
         "answers",
         nargs="*",
@@ -211,7 +208,7 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
 
     Top-level verbs, like `attach`, because they act on a running session.
     """
-    exec_p = _sub(
+    exec_p = _common._sub(
         sub,
         "exec",
         help=(
@@ -230,9 +227,9 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         nargs=argparse.REMAINDER,
         help="[SESSION --] CMD... The command rides verbatim.",
     )
-    exec_rest.completer = _complete_live_session_ids  # type: ignore[attr-defined]
+    exec_rest.completer = completers._complete_live_session_ids  # type: ignore[attr-defined]
 
-    fwd_p = _sub(
+    fwd_p = _common._sub(
         sub,
         "forward",
         help=(
@@ -246,16 +243,16 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         nargs="?",
         default="",
         help=(
-            f"{SESSION_ID_HELP} A bare number"
+            f"{_common.SESSION_ID_HELP} A bare number"
             " here is read as the PORT of the newest session (name a numeric"
             " session by giving both arguments)."
         ),
     )
-    fwd_target.completer = _complete_live_session_ids  # type: ignore[attr-defined]
+    fwd_target.completer = completers._complete_live_session_ids  # type: ignore[attr-defined]
     fwd_port = fwd_p.add_argument(
         "port", nargs="?", type=int, help="The port inside the session. Omit to list them."
     )
-    fwd_port.completer = _complete_session_ports  # type: ignore[attr-defined]
+    fwd_port.completer = completers._complete_session_ports  # type: ignore[attr-defined]
     fwd_p.add_argument(
         "--local-port",
         type=int,

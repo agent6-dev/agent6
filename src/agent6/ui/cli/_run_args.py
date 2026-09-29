@@ -6,22 +6,8 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.config.layer import BUILTIN_PRESETS
-from agent6.ui.cli._common import (
-    _add_budget_flags,
-    _add_config_flag,
-    _add_sandbox_flags,
-    _add_session_id,
-    _sub,
-)
-from agent6.ui.cli.completers import (
-    _complete_model_routes,
-    _complete_parallel_models,
-    _complete_presets,
-    _complete_resumable_ids,
-    _complete_session_ids,
-    _complete_skills,
-)
+from agent6.config import layer
+from agent6.ui.cli import _common, completers
 
 
 def _add_model_flag(parser: argparse.ArgumentParser) -> None:
@@ -37,12 +23,12 @@ def _add_model_flag(parser: argparse.ArgumentParser) -> None:
             " planner. The session records the choice; `resume --model` can change it."
         ),
     )
-    arg.completer = _complete_model_routes  # type: ignore[attr-defined]
+    arg.completer = completers._complete_model_routes  # type: ignore[attr-defined]
 
 
 def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `run`."""
-    run_p = _sub(sub, "run", help="Work on a coding task in a new session.")
+    run_p = _common._sub(sub, "run", help="Work on a coding task in a new session.")
     run_p.add_argument(
         "task",
         nargs="?",
@@ -67,7 +53,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " does not change. Use `agent6 fork` to copy an earlier saved turn instead."
         ),
     )
-    run_from.completer = _complete_session_ids  # type: ignore[attr-defined]
+    run_from.completer = completers._complete_session_ids  # type: ignore[attr-defined]
     run_p.add_argument(
         "--pin",
         dest="pins",
@@ -87,7 +73,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         metavar="NAME",
         help="Add an installed skill's instructions before the task. Repeat for more skills.",
     )
-    run_skill.completer = _complete_skills  # type: ignore[attr-defined]
+    run_skill.completer = completers._complete_skills  # type: ignore[attr-defined]
     run_p.add_argument(
         "--decompose",
         action="store_true",
@@ -122,20 +108,20 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " combine with --max-usd for a per-lane budget."
         ),
     )
-    run_parallel_flag.completer = _complete_parallel_models  # type: ignore[attr-defined]
+    run_parallel_flag.completer = completers._complete_parallel_models  # type: ignore[attr-defined]
     run_profile = run_p.add_argument(
         "--preset",
         default="",
         help=(
-            f"Apply a built-in strategy preset ({'/'.join(BUILTIN_PRESETS)}) or a custom"
+            f"Apply a built-in strategy preset ({'/'.join(layer.BUILTIN_PRESETS)}) or a custom"
             " presets.NAME. This overrides any `preset` selected in a config file and values"
             " from the global and per-repository configs. Values from --config FILE and other"
             " command flags still win."
         ),
     )
-    run_profile.completer = _complete_presets  # type: ignore[attr-defined]
+    run_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
     _add_model_flag(run_p)
-    _add_config_flag(run_p)
+    _common._add_config_flag(run_p)
     run_p.add_argument(
         "-i",
         "--interactive",
@@ -156,16 +142,16 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " terminal and cannot be used with -i. You can also start the run from `agent6 tui`."
         ),
     )
-    _add_budget_flags(run_p)
-    _add_sandbox_flags(run_p)
+    _common._add_budget_flags(run_p)
+    _common._add_sandbox_flags(run_p)
 
 
 def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `resume`."""
-    resume_p = _sub(
+    resume_p = _common._sub(
         sub, "resume", help="Continue a paused or interrupted session from its saved state."
     )
-    _add_session_id(resume_p, _complete_resumable_ids)
+    _common._add_session_id(resume_p, completers._complete_resumable_ids)
     resume_p.add_argument(
         "--steer",
         default="",
@@ -193,9 +179,9 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             " it on later resumes."
         ),
     )
-    resume_preset.completer = _complete_presets  # type: ignore[attr-defined]
+    resume_preset.completer = completers._complete_presets  # type: ignore[attr-defined]
     _add_model_flag(resume_p)
-    _add_config_flag(resume_p)
+    _common._add_config_flag(resume_p)
     resume_p.add_argument(
         "-i",
         "--interactive",
@@ -211,13 +197,13 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Show the resumed session in the full-screen terminal interface.",
     )
-    _add_budget_flags(resume_p)
-    _add_sandbox_flags(resume_p)
+    _common._add_budget_flags(resume_p)
+    _common._add_sandbox_flags(resume_p)
 
 
 def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `fork`."""
-    fork_p = _sub(
+    fork_p = _common._sub(
         sub,
         "fork",
         help=(
@@ -226,9 +212,9 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " read-only in the current checkout."
         ),
     )
-    _add_session_id(
+    _common._add_session_id(
         fork_p,
-        _complete_resumable_ids,
+        completers._complete_resumable_ids,
         help_text=("Source session id or unambiguous prefix. Default: newest resumable session."),
     )
     fork_p.add_argument(
@@ -259,12 +245,12 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         action="store_true",
         help="Create the copy without continuing it. Start it later with `agent6 resume`.",
     )
-    _add_config_flag(fork_p)
+    _common._add_config_flag(fork_p)
     fork_p.add_argument(
         "--tui",
         action="store_true",
         help="Show the forked session in the full-screen terminal interface.",
     )
-    _add_budget_flags(fork_p)
+    _common._add_budget_flags(fork_p)
     # A fork without --no-run continues a run, so it carries the same sandbox overrides.
-    _add_sandbox_flags(fork_p)
+    _common._add_sandbox_flags(fork_p)

@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import contextlib
 import os
+import pathlib
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 from typing import Literal
 
-from agent6.ui.cli._common import error, warn
+from agent6.ui.cli import _common
 
 _APPARMOR_PROFILE_PATH = "/etc/apparmor.d/agent6-jail"
 
@@ -50,7 +50,7 @@ profile agent6-jail /**/agent6/sandbox/_bin/agent6-jail flags=(unconfined) {
 def _host_lsm() -> str:
     """Return the kernel's active LSM list, or "" when unreadable."""
     try:
-        return Path("/sys/kernel/security/lsm").read_text(encoding="utf-8").strip()
+        return pathlib.Path("/sys/kernel/security/lsm").read_text(encoding="utf-8").strip()
     except OSError:
         return ""
 
@@ -80,18 +80,18 @@ def _run_priv(argv: list[str], *, what: str, required: bool = True) -> bool:
         rc = subprocess.run(full, check=False).returncode
     except OSError as exc:
         if required:
-            error(f"could not {what}: {exc}")
+            _common.error(f"could not {what}: {exc}")
         return False
     if rc != 0 and required:
-        error(f"{what} failed (exit {rc}).")
+        _common.error(f"{what} failed (exit {rc}).")
     return rc == 0
 
 
 def _discard_failed_install() -> None:
     """Remove the partial file a failed copy left, so `status` does not report a profile."""
     _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="remove the failed install")
-    if Path(_APPARMOR_PROFILE_PATH).is_file():
-        warn(
+    if pathlib.Path(_APPARMOR_PROFILE_PATH).is_file():
+        _common.warn(
             f"{_APPARMOR_PROFILE_PATH} was left on disk after the failed install;"
             " remove it with `agent6 system apparmor remove`."
         )
@@ -108,7 +108,7 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
     Returns:
         The exit code; 1 when the host lacks AppArmor or a step failed.
     """
-    installed = Path(_APPARMOR_PROFILE_PATH).is_file()
+    installed = pathlib.Path(_APPARMOR_PROFILE_PATH).is_file()
 
     if action == "status":
         print(f"AppArmor profile: {'installed' if installed else 'not installed'}")
@@ -131,8 +131,8 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
                 required=False,
             )
         _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="delete the profile")
-        if Path(_APPARMOR_PROFILE_PATH).is_file():
-            error(f"{_APPARMOR_PROFILE_PATH} is still present after removal.")
+        if pathlib.Path(_APPARMOR_PROFILE_PATH).is_file():
+            _common.error(f"{_APPARMOR_PROFILE_PATH} is still present after removal.")
             return 1
         print("Removed the agent6-jail AppArmor profile. The sandbox falls back to hardened.")
         return 0
@@ -148,9 +148,9 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         return 1
 
     # install
-    from agent6.sandbox.jail import locate_jail_binary  # noqa: PLC0415  # an import cycle
+    from agent6.sandbox import jail  # noqa: PLC0415  # an import cycle  # noqa: PLC0415  # an import cycle
 
-    jail_bin = locate_jail_binary()
+    jail_bin = jail.locate_jail_binary()
     if jail_bin is not None and "/agent6/sandbox/_bin/agent6-jail" not in str(jail_bin):
         print(
             f"NOTE: your jail binary is at {jail_bin}, which the bundled profile's glob"
@@ -168,8 +168,8 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         )
     finally:
         with contextlib.suppress(OSError):
-            Path(tmp).unlink()
-    if not ok and Path(_APPARMOR_PROFILE_PATH).is_file() and not installed:
+            pathlib.Path(tmp).unlink()
+    if not ok and pathlib.Path(_APPARMOR_PROFILE_PATH).is_file() and not installed:
         _discard_failed_install()
     if ok:
         print(

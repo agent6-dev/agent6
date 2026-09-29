@@ -22,9 +22,10 @@ from unittest import mock
 
 import pytest
 
-import agent6.app.preflight as preflight_mod
 from agent6 import git_ops, kinds, paths
-from agent6.app import _setup
+from agent6.app import _execution, _session, _setup
+from agent6.app import fork as app_fork
+from agent6.app import resume as app_resume
 from agent6.graph import storage
 from agent6.harness import _chain, _loop_state, _snapshot, loop
 from agent6.sessions import layout as sessions_layout
@@ -831,7 +832,7 @@ def test_fork_continue_resumes_without_force(
         captured["session_id"] = session_id
         return 0
 
-    monkeypatch.setattr("agent6.ui.cli.fork.resume_task", _fake_resume)
+    monkeypatch.setattr("agent6.app.resume.resume_task", _fake_resume)
     rc = fork._cmd_fork(  # default: continue; approvable headless, so the continuation is reached
         None,
         "src",
@@ -957,8 +958,8 @@ def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.Monke
         captured.update(k)
         return 0
 
-    monkeypatch.setattr(fork_cli, "create_fork", _fake_fork)
-    monkeypatch.setattr(fork_cli, "resume_task", _capture_resume)
+    monkeypatch.setattr(app_fork, "create_fork", _fake_fork)
+    monkeypatch.setattr(app_resume, "resume_task", _capture_resume)
     rc = fork_cli._cmd_fork(  # pyright: ignore[reportPrivateUsage]
         None, "src-run", steer="try the lock-free design instead"
     )
@@ -991,7 +992,7 @@ def test_forking_a_finished_run_with_no_new_work_is_refused(
     def _must_not_fork(*_a: object, **_k: object) -> tuple[str, int]:
         pytest.fail("create_fork must not run when the fork has nothing to do")
 
-    monkeypatch.setattr(fork_cli, "create_fork", _must_not_fork)
+    monkeypatch.setattr(app_fork, "create_fork", _must_not_fork)
 
     assert fork_cli._cmd_fork(None, "done-run") == 2  # pyright: ignore[reportPrivateUsage]
 
@@ -1008,7 +1009,7 @@ def test_fork_steer_with_no_run_is_refused(
     def _must_not_fork(*_a: object, **_k: object) -> tuple[str, int]:
         pytest.fail("create_fork must not run when the flag combo is refused")
 
-    monkeypatch.setattr(fork_cli, "create_fork", _must_not_fork)
+    monkeypatch.setattr(app_fork, "create_fork", _must_not_fork)
     rc = fork_cli._cmd_fork(  # pyright: ignore[reportPrivateUsage]
         None, "src-run", no_run=True, steer="x"
     )
@@ -1163,7 +1164,7 @@ def test_fork_manifest_stamps_the_resolved_isolation(
     def _hardened(_knob: str, _env: object) -> str:
         return "hardened"
 
-    monkeypatch.setattr("agent6.app.fork.resolve_isolation", _hardened)
+    monkeypatch.setattr("agent6.sandbox.detect.resolve_isolation", _hardened)
     assert fork._cmd_fork(None, "iso-src", new_session_id="iso-fork-BBBB22", no_run=True) == 0
     dst = sessions_layout.SessionLayout(
         state_dir=state, session_id="iso-fork-BBBB22", subdir="runs"
@@ -1281,9 +1282,9 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     def _strict(*_a: object, **_k: object) -> str:
         return "strict"
 
-    monkeypatch.setattr(resume_mod, "run_execution", _fake_execution)
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_missing)
-    monkeypatch.setattr(resume_mod, "select_isolation", _strict)
+    monkeypatch.setattr(_execution, "run_execution", _fake_execution)
+    monkeypatch.setattr(_setup, "check_provider_keys", _no_missing)
+    monkeypatch.setattr(_session, "select_isolation", _strict)
     rc = resume_mod.resume_task(
         None, "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
@@ -1398,7 +1399,6 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
 
     A resume runs past every refusal without a provider call.
     """
-    import agent6.app.resume as resume_mod
     from agent6.app import _execution
 
     gdir = paths.global_config_dir()
@@ -1419,9 +1419,9 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     def _finished_execution(*_a: object, **_k: object) -> _execution.ExecutionEnd:
         return _execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _nothing)
-    monkeypatch.setattr(resume_mod, "run_execution", _finished_execution)
+    monkeypatch.setattr(_session, "select_isolation", _unconfined)
+    monkeypatch.setattr(_setup, "check_provider_keys", _nothing)
+    monkeypatch.setattr(_execution, "run_execution", _finished_execution)
 
 
 def test_a_steered_fork_takes_the_steer_as_its_own_task(

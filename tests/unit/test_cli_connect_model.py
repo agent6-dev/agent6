@@ -12,7 +12,7 @@ import pytest
 
 from agent6 import paths, secrets
 from agent6.models import cache
-from agent6.ui.cli import main
+from agent6.ui.cli import _common, main
 from agent6.ui.cli import model as modelmod
 
 
@@ -24,7 +24,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     # The post-save key probe is stubbed so no test makes a network call; probe tests re-patch it.
     monkeypatch.setattr(
-        "agent6.ui.cli.connect.probe_provider_key",
+        "agent6.models.cache.probe_provider_key",
         lambda *a, **k: cache.KeyProbeResult(  # type: ignore[misc]
             ok=True, status="ok", detail="provider returned 1 models"
         ),
@@ -100,7 +100,7 @@ def test_connect_warns_when_provider_rejects_key(
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-BAD")
     monkeypatch.setattr(
-        "agent6.ui.cli.connect.probe_provider_key",
+        "agent6.models.cache.probe_provider_key",
         lambda *a, **k: cache.KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # type: ignore[misc]
     )
     rc = main(["connect", "anthropic"])
@@ -120,7 +120,7 @@ def test_connect_no_verify_skips_the_probe(
     def _boom(*_a: object, **_k: object) -> cache.KeyProbeResult:
         raise AssertionError("--no-verify must not probe the provider")
 
-    monkeypatch.setattr("agent6.ui.cli.connect.probe_provider_key", _boom)
+    monkeypatch.setattr("agent6.models.cache.probe_provider_key", _boom)
     rc = main(["connect", "anthropic", "--no-verify"])
     assert rc == 0
     assert "Checking the key" not in capsys.readouterr().out
@@ -267,7 +267,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     def _invalid(*_a: object, **_k: object) -> str:
         return "models.worker.provider: no such provider"
 
-    monkeypatch.setattr("agent6.ui.cli.model.set_config_table", _invalid)
+    monkeypatch.setattr("agent6.config.write.set_config_table", _invalid)
     assert main(["model", "worker", "anthropic/bad-x"]) == 2
     assert capsys.readouterr().err.startswith("REFUSING:")
     after = cfg.read_text(encoding="utf-8")
@@ -284,7 +284,7 @@ def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
     def bad_combination(*_args: object, **_kwargs: object) -> str:
         return "bad combination"
 
-    monkeypatch.setattr("agent6.ui.cli.connect.set_config_leaves", bad_combination)
+    monkeypatch.setattr("agent6.config.write.set_config_leaves", bad_combination)
 
     assert main(["connect", "anthropic", "--no-verify"]) == 2
     err = capsys.readouterr().err
@@ -305,7 +305,7 @@ def test_connect_config_rollback_precedes_the_chatgpt_sign_in(
         signed_in.append(name)
         return 0
 
-    monkeypatch.setattr("agent6.ui.cli.connect.set_config_leaves", bad_combination)
+    monkeypatch.setattr("agent6.config.write.set_config_leaves", bad_combination)
     monkeypatch.setattr("agent6.ui.cli.connect._chatgpt_sign_in", _sign_in)
 
     assert main(["connect", "chatgpt"]) == 2
@@ -350,7 +350,7 @@ def test_model_piped_without_model_lists_the_catalog(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.models.choices.list_models", _models_stub(["claude-a", "claude-b"]))
+    monkeypatch.setattr("agent6.models.cache.list_models", _models_stub(["claude-a", "claude-b"]))
     rc = main(["model", "worker", "anthropic"])
     assert rc == 0
     captured = capsys.readouterr()
@@ -373,7 +373,7 @@ def test_model_set_warns_when_the_provider_has_no_key(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", _key_stub(None))
+    monkeypatch.setattr("agent6.secrets.resolve_api_key", _key_stub(None))
     rc = main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     err = capsys.readouterr().err
@@ -391,7 +391,7 @@ def test_model_set_stays_quiet_when_the_key_resolves(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", _key_stub("sk-x"))
+    monkeypatch.setattr("agent6.secrets.resolve_api_key", _key_stub("sk-x"))
     rc = main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     assert "note:" not in capsys.readouterr().err
@@ -419,7 +419,7 @@ def test_model_piped_unknown_provider_errors(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.models.choices.list_models", _models_stub([]))
+    monkeypatch.setattr("agent6.models.cache.list_models", _models_stub([]))
     rc = main(["model", "worker", "nosuch"])
     assert rc == 2
     assert "name one as provider/model" in capsys.readouterr().err
@@ -436,7 +436,7 @@ def test_model_stdout_piped_lists_even_with_a_tty_stdin(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.models.choices.list_models", _models_stub(["claude-a"]))
+    monkeypatch.setattr("agent6.models.cache.list_models", _models_stub(["claude-a"]))
     rc = main(["model", "worker", "anthropic"])
     assert rc == 0
     assert capsys.readouterr().out == "claude-a\n"
@@ -472,7 +472,7 @@ def test_model_piped_listing_notes_an_ignored_thinking_flag(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.models.choices.list_models", _models_stub(["claude-a"]))
+    monkeypatch.setattr("agent6.models.cache.list_models", _models_stub(["claude-a"]))
     rc = main(["model", "worker", "anthropic", "--effort", "high"])
     assert rc == 0
     assert "--effort ignored" in capsys.readouterr().err
@@ -496,7 +496,7 @@ def test_model_interactive_prefill(
     def fake_list_models(*a: object, **k: object) -> list[str]:
         return ["claude-a", "claude-b"]
 
-    monkeypatch.setattr("agent6.models.choices.list_models", fake_list_models)
+    monkeypatch.setattr("agent6.models.cache.list_models", fake_list_models)
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)  # interactive = both ttys
     answers = iter(["", "2"])  # provider default, then model #2
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
@@ -519,7 +519,7 @@ def test_model_all_interactive_prompts_once(
     def _models(*_a: object, **_k: object) -> list[str]:
         return ["claude-a", "claude-b"]
 
-    monkeypatch.setattr("agent6.models.choices.list_models", _models)
+    monkeypatch.setattr("agent6.models.cache.list_models", _models)
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)  # interactive = both ttys
     calls = {"n": 0}
     answers = iter(["", "2"])  # provider default, model #2: once, not 3x
@@ -664,14 +664,14 @@ def test_connect_claude_writes_the_format_only_and_stores_no_secret(
     def signed_out(binary: str) -> str | None:
         return "not signed in; run `claude auth login`"
 
-    monkeypatch.setattr("agent6.ui.cli.connect.login_status", signed_in)
+    monkeypatch.setattr("agent6.providers.claude_code.login_status", signed_in)
     assert main(["connect", "claude"]) == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.claude]" in gc and 'api_format = "claude_code"' in gc
     assert not (tmp_path / "g" / "agent6" / "secrets.toml").exists()
     assert "Claude Code (`claude` on PATH): signed in." in capsys.readouterr().out
 
-    monkeypatch.setattr("agent6.ui.cli.connect.login_status", signed_out)
+    monkeypatch.setattr("agent6.providers.claude_code.login_status", signed_out)
     assert main(["connect", "claude"]) == 0
     err = capsys.readouterr().err
     assert "WARNING: not signed in; run `claude auth login`" in err and "not usable yet" in err
@@ -775,8 +775,8 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
         assert provider == "chatgpt"
         return chatgpt_oauth.TokenGrant(_grant_jwt(), "RT9", 3600.0)
 
-    monkeypatch.setattr("agent6.ui.cli.connect.start_device_auth", fake_start)
-    monkeypatch.setattr("agent6.ui.cli.connect.poll_device_auth", fake_poll)
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", fake_start)
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.poll_device_auth", fake_poll)
 
     def no_input(prompt: str = "") -> str:
         pytest.fail("device path must not prompt for a paste")
@@ -814,8 +814,8 @@ def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
         told.append(provider)
         return chatgpt_oauth.TokenGrant(_grant_jwt(), "RT9", 3600.0)
 
-    monkeypatch.setattr("agent6.ui.cli.connect.start_device_auth", fake_start)
-    monkeypatch.setattr("agent6.ui.cli.connect.poll_device_auth", fake_poll)
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", fake_start)
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.poll_device_auth", fake_poll)
 
     def api_format(prompt: str = "") -> str:
         return "chatgpt"
@@ -842,7 +842,7 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
     def disabled(issuer: str, client_id: str) -> None:
         return None
 
-    monkeypatch.setattr("agent6.ui.cli.connect.start_device_auth", disabled)
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", disabled)
     monkeypatch.setattr("agent6.ui.cli.connect.pysecrets.token_urlsafe", lambda n=24: "STATE1")
 
     def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _TokenResp:
@@ -911,7 +911,7 @@ def test_a_number_outside_the_model_list_is_refused(
         return typed.pop(0)
 
     monkeypatch.setattr(modelmod, "_models_for", models)
-    monkeypatch.setattr(modelmod, "safe_input", answer)
+    monkeypatch.setattr(_common, "safe_input", answer)
     assert modelmod._prompt_for_model(None, "p") is None  # pyright: ignore[reportPrivateUsage]
     assert "no model 7: the list has 2" in capsys.readouterr().err
     assert modelmod._prompt_for_model(None, "p") == "b"  # pyright: ignore[reportPrivateUsage]

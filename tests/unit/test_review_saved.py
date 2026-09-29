@@ -16,7 +16,9 @@ from unittest import mock
 import pytest
 
 from agent6 import paths
-from agent6.config import Config
+from agent6.app import _setup, providers
+from agent6.config import Config, layer
+from agent6.harness import code_review
 from agent6.ui.cli import review_cmds
 
 
@@ -52,8 +54,8 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
     def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(config=cfg)
 
-    monkeypatch.setattr(review_cmds, "load_effective", loaded)
-    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(layer, "load_effective", loaded)
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     return tmp_path
 
 
@@ -64,9 +66,9 @@ def _saved_reviews(repo: pathlib.Path) -> list[pathlib.Path]:
 def test_the_freeform_review_is_saved_and_its_path_named(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(review_cmds, "build_role_provider", mock.MagicMock())
+    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock())
     monkeypatch.setattr(
-        review_cmds, "code_review", mock.MagicMock(return_value="LGTM with nits\n- [nit] x")
+        code_review, "code_review", mock.MagicMock(return_value="LGTM with nits\n- [nit] x")
     )
 
     rc = review_cmds._cmd_review(None, base="", head="HEAD", paths=())  # pyright: ignore[reportPrivateUsage]
@@ -107,7 +109,7 @@ def test_the_panel_verdict_is_saved_too(
         provider=_PassingSeatProvider(),  # type: ignore[arg-type]
         model="reviewer",
     )
-    monkeypatch.setattr(review_cmds, "build_review_seats", mock.MagicMock(return_value=[seat]))
+    monkeypatch.setattr(providers, "build_review_seats", mock.MagicMock(return_value=[seat]))
 
     rc = review_cmds._cmd_review(None, base="", head="HEAD", paths=(), reviewers=1)  # pyright: ignore[reportPrivateUsage]
 

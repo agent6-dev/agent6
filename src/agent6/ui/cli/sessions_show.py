@@ -8,45 +8,26 @@ Reads worker.pid, the log scan and the manifest's branch facts; text or `--json`
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
+import pathlib
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.app.resume import covering_stamp
-from agent6.git_ops import (
-    branch_exists,
-    chain_ref_for,
-    chain_tip,
-    run_ref_tips,
-)
-from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, worker_is_alive
-from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
-from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
-from agent6.ui.cli._common import resolve_target
+from agent6 import git_ops
+from agent6.app import resume
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.ui.cli import _common
 from agent6.viewmodel import (
     LogScan,
     SessionSummary,
     existing_run_branch,
+    format,
+    listing,
     scan_session_log,
     summarize_session_dir,
-)
-from agent6.viewmodel.format import (
-    dead_run_note,
-    format_branch,
-    format_compare,
-    format_cost_cell,
-    format_lineage,
-    format_model_route,
-    lane_count,
-    listing_status_label,
-    winner_id,
-)
-from agent6.viewmodel.listing import (
-    lanes_of,
-    summary_row,
-    task_snippet,
 )
 
 
@@ -62,11 +43,11 @@ def _fmt_dur(seconds: float | None) -> str:
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
 
 
-def _print_lineage(manifest: SessionManifest) -> None:
+def _print_lineage(manifest: sessions_manifest.SessionManifest) -> None:
     """Print the session `--from` seeded this one from, and a fork's lineage and worktree."""
     if manifest.source_session_id:
         print(f"seeded from: {manifest.source_session_id}")
-    lineage = format_lineage(
+    lineage = format.format_lineage(
         manifest.parent_session_id, manifest.forked_from_turn, manifest.forked_from_sha
     )
     if lineage:
@@ -76,7 +57,7 @@ def _print_lineage(manifest: SessionManifest) -> None:
         print(f"worktree:   {manifest.worktree}{gone}")
 
 
-def _print_parallel_compare(manifest: SessionManifest) -> None:
+def _print_parallel_compare(manifest: sessions_manifest.SessionManifest) -> None:
     """Print a lane's place in its fan-out; a no-op for any other run.
 
     The coordinator it nests under, then the compare outcome once there is one: its place,
@@ -84,7 +65,7 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
     """
     if (lineage := manifest.parallel) is not None:
         print(f"lane of:    {lineage.coordinator} (lane {lineage.lane} of group {lineage.group})")
-    formatted = format_compare(manifest.compare)
+    formatted = format.format_compare(manifest.compare)
     if formatted is None:
         return
     headline, rationale = formatted
@@ -94,41 +75,50 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
 
 
 def _fanout_lanes(
-    layout: SessionLayout, manifest: SessionManifest, tips: Mapping[str, str]
+    layout: sessions_layout.SessionLayout,
+    manifest: sessions_manifest.SessionManifest,
+    tips: Mapping[str, str],
 ) -> list[SessionSummary]:
     """Return a coordinator's lanes with their unmerged marks; empty for any other session."""
     if manifest.fanout is None:
         return []
-    return lanes_of(layout.state_dir, layout.session_id, branch_tips=tips)
+    return listing.lanes_of(layout.state_dir, layout.session_id, branch_tips=tips)
 
 
-def _won(manifest: SessionManifest | None) -> bool:
+def _won(manifest: sessions_manifest.SessionManifest | None) -> bool:
     """Return whether the manifest's compare stamp names it the winner."""
     return manifest is not None and manifest.compare is not None and manifest.compare.winner
 
 
-def _lane_manifests(state: Path, lanes: list[SessionSummary]) -> dict[str, SessionManifest]:
+def _lane_manifests(
+    state: pathlib.Path, lanes: list[SessionSummary]
+) -> dict[str, sessions_manifest.SessionManifest]:
     """Return each readable lane manifest, for its route and compare stamp."""
-    manifests: dict[str, SessionManifest] = {}
+    manifests: dict[str, sessions_manifest.SessionManifest] = {}
     for lane in lanes:
-        lane_layout = session_layout(state, lane.session_id)
+        lane_layout = sessions_layout.session_layout(state, lane.session_id)
         if lane_layout is not None:
-            with contextlib.suppress(ManifestError):
-                manifests[lane.session_id] = read_manifest(lane_layout.session_dir)
+            with contextlib.suppress(sessions_manifest.ManifestError):
+                manifests[lane.session_id] = sessions_manifest.read_manifest(
+                    lane_layout.session_dir
+                )
     return manifests
 
 
 def _print_fanout(
-    manifest: SessionManifest,
+    manifest: sessions_manifest.SessionManifest,
     lanes: list[SessionSummary],
-    lane_manifests: Mapping[str, SessionManifest],
+    lane_manifests: Mapping[str, sessions_manifest.SessionManifest],
 ) -> None:
     """Print a coordinator's fan-out line and one line per lane: place, id, status, cost."""
     if manifest.fanout is None:
         return
-    print(f"fan-out:    {lane_count(manifest.fanout.lanes)} (--parallel {manifest.fanout.spec})")
+    print(
+        f"fan-out:    {format.lane_count(manifest.fanout.lanes)} (--parallel "
+        f"{manifest.fanout.spec})"
+    )
     idents = {
-        lane.session_id: winner_id(
+        lane.session_id: format.winner_id(
             lane.session_id, winner=_won(lane_manifests.get(lane.session_id))
         )
         for lane in lanes
@@ -140,7 +130,9 @@ def _print_fanout(
         place = f"rank {stamp.rank}/{stamp.of}" if stamp is not None else f"lane {lane.lane}"
         model = lane.model or "?"
         cost = lane.cost_cell
-        label = listing_status_label(lane.mode, lane.status, lane.reason, unmerged=lane.unmerged)
+        label = format.listing_status_label(
+            lane.mode, lane.status, lane.reason, unmerged=lane.unmerged
+        )
         print(
             f"  {place:<10} {idents[lane.session_id]:<{width}}  {model}  {label}  {cost}".rstrip()
         )
@@ -162,14 +154,14 @@ def _status_state(
         last_age: Seconds since the last event, when there is one.
     """
     word, reason = row.status, row.reason
-    cell = listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
+    cell = format.listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
     if scan.finished:
         # The raw end reason is the diagnostic, unless the label already carries it.
         end = "" if scan.end_reason in (word, reason) else scan.end_reason
         return word, cell, end
     detail = {
         "waiting": "needs answer; attach to respond",
-        "stale": dead_run_note("stale", "")[0],
+        "stale": format.dead_run_note("stale", "")[0],
         "parked": f"{reason}; resume to start" if reason else "resume to start",
         # A log holding preflight events from a worker that died launching is "never started".
         "created": "no events yet" if scan.last_type is None else "never started",
@@ -188,7 +180,7 @@ def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
     # Liveness matches the recorded start time, so a recycled pid reads dead, not "not running".
     return (
         f"  (worker pid {pid} was recycled)"
-        if pid_alive(pid)
+        if ipc.pid_alive(pid)
         else f"  (worker pid {pid} not running)"
     )
 
@@ -209,7 +201,7 @@ def _usage_line(scan: LogScan) -> str:
         tokens += f" plan={scan.plan_consumed:g}/{scan.plan_cap:g}pt"
     execution_s = " (latest execution)" if scan.executions > 1 else ""
     cell = (
-        format_cost_cell(scan.cost_usd, partial=scan.usd_partial)
+        format.format_cost_cell(scan.cost_usd, partial=scan.usd_partial)
         if scan.cost_usd is not None
         else ""
     )
@@ -232,23 +224,23 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     Returns:
         The exit code; 2 when the session cannot be resolved.
     """
-    layout = resolve_target(session_id)
+    layout = _common.resolve_target(session_id)
     if layout is None:
         return 2
     target = layout.session_dir
 
-    loaded: SessionManifest | None = None
-    with contextlib.suppress(ManifestError):
-        loaded = read_manifest(target)
+    loaded: sessions_manifest.SessionManifest | None = None
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        loaded = sessions_manifest.read_manifest(target)
     # A missing manifest still renders, with `mode` as "?" rather than the model default.
-    manifest = loaded or SessionManifest()
+    manifest = loaded or sessions_manifest.SessionManifest()
     mode_display = loaded.mode if loaded is not None else None
 
-    logs = target / LOGS_NAME
+    logs = target / sessions_layout.LOGS_NAME
     scan = scan_session_log(logs) if logs.is_file() else LogScan()
 
-    pid = read_worker_pid(target)
-    alive = worker_is_alive(target)
+    pid = ipc.read_worker_pid(target)
+    alive = ipc.worker_is_alive(target)
     last_age = (time.time() - scan.last_ep) if scan.last_ep is not None else None
     # A live run is still elapsing; a finished or dead one stopped at its last event.
     elapsed = (
@@ -257,11 +249,11 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         else None
     )
 
-    model = format_model_route(manifest.models.driver) or "?"
+    model = format.format_model_route(manifest.models.driver) or "?"
     model_from_flag = manifest.models.driver_from_flag
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
-    tips = run_ref_tips(Path.cwd())
+    tips = git_ops.run_ref_tips(pathlib.Path.cwd())
     lanes = _fanout_lanes(layout, manifest, tips)
     lane_manifests = _lane_manifests(layout.state_dir, lanes)
     status, status_cell, status_detail = _status_state(
@@ -312,10 +304,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     else None,
                     "fanout": manifest.fanout.model_dump(mode="json") if manifest.fanout else None,
                     "lanes": [
-                        summary_row(ln, winner=_won(lane_manifests.get(ln.session_id)))
+                        listing.summary_row(ln, winner=_won(lane_manifests.get(ln.session_id)))
                         for ln in lanes
                     ],
-                    "run_branch": existing_run_branch(manifest, Path.cwd()) or None,
+                    "run_branch": existing_run_branch(manifest, pathlib.Path.cwd()) or None,
                     "base_branch": manifest.base_branch or None,
                     "merged_into": changes.merged_into or None,
                     "pins": list(scan.pins),
@@ -326,7 +318,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
     pid_note = _pid_note(pid, alive=alive, finished=scan.finished)
     print(f"session:    {target.name}  (mode={mode_display or '?'})")
-    if task := task_snippet(manifest.user_task or scan.task):
+    if task := listing.task_snippet(manifest.user_task or scan.task):
         print(f"task:       {task}")
     _print_lineage(manifest)
     _print_parallel_compare(manifest)
@@ -361,7 +353,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     return 0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _Changes:
     """Where the run's work lives, as the text row and the merge base.
 
@@ -374,7 +366,9 @@ class _Changes:
     merged_into: str
 
 
-def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Changes:
+def _changes(
+    session_id: str, manifest: sessions_manifest.SessionManifest, *, undone: bool
+) -> _Changes:
     """Return where the run's work lives, checked against git as the end-of-run footer does.
 
     Merged into the base, on the run branch awaiting `sessions merge`, on the hidden chain
@@ -391,26 +385,30 @@ def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Ch
         return _Changes("", "")
     if undone:
         return _Changes(f"{run_branch} (taken back by /undo)", "")
-    cwd = Path.cwd()
-    stamp = covering_stamp(cwd, manifest)
+    cwd = pathlib.Path.cwd()
+    stamp = resume.covering_stamp(cwd, manifest)
     if stamp is not None:
-        return _Changes(format_branch(run_branch, manifest.base_branch, stamp.into), stamp.into)
+        return _Changes(
+            format.format_branch(run_branch, manifest.base_branch, stamp.into), stamp.into
+        )
     merge_hint = f"merge with: agent6 sessions merge {session_id}"
-    if not branch_exists(cwd, run_branch):
-        chain = chain_ref_for(session_id)
-        if chain_tip(cwd, chain) is None:
+    if not git_ops.branch_exists(cwd, run_branch):
+        chain = git_ops.chain_ref_for(session_id)
+        if git_ops.chain_tip(cwd, chain) is None:
             return _Changes(f"{run_branch} (no commits)", "")
         return _Changes(f"{chain} ({run_branch} is gone; the commits are kept); {merge_hint}", "")
-    return _Changes(f"{format_branch(run_branch, manifest.base_branch, '')}; {merge_hint}", "")
+    return _Changes(
+        f"{format.format_branch(run_branch, manifest.base_branch, '')}; {merge_hint}", ""
+    )
 
 
-def _print_listening_ports(session_dir: Path) -> None:
+def _print_listening_ports(session_dir: pathlib.Path) -> None:
     """Print what the run is serving, and how to reach it.
 
     A run's commands share a network with no way in from outside, so a dev server the agent
     started is invisible here, its port included; the line names the command that opens it.
     """
-    ports = listening_ports(session_dir)
+    ports = ipc.listening_ports(session_dir)
     if not ports:
         return
     listed = ", ".join(str(p) for p in ports)
@@ -418,17 +416,16 @@ def _print_listening_ports(session_dir: Path) -> None:
     print(f"            open one: agent6 forward {session_dir.name} {ports[0]}")
 
 
-def _print_task_tree(session_dir: Path) -> None:
+def _print_task_tree(session_dir: pathlib.Path) -> None:
     """Print the run's task tree when it decomposed into subtasks; a single root is skipped."""
-    from agent6.graph.storage import load_graph  # noqa: PLC0415
-    from agent6.sessions.layout import layout_of  # noqa: PLC0415
-    from agent6.ui.cli._task_tree import task_tree_lines  # noqa: PLC0415
+    from agent6.graph import storage  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.ui.cli import _task_tree  # noqa: PLC0415  # noqa: PLC0415
 
-    layout = layout_of(session_dir)
-    nodes = load_graph(layout)
+    layout = sessions_layout.layout_of(session_dir)
+    nodes = storage.load_graph(layout)
     if len(nodes) <= 1:
         return
-    lines = task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})
+    lines = _task_tree.task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})
     if lines:
         print("\nplan:")
         for line in lines:

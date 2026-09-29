@@ -9,12 +9,11 @@ that forwards questions elsewhere can send the reply back.
 
 from __future__ import annotations
 
+import pathlib
 import sys
-from pathlib import Path
 
-from agent6.sessions.id import SessionIdError
-from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_question_answers
-from agent6.ui.cli._common import error, refuse, resolve_session_layout
+from agent6.sessions import id, ipc
+from agent6.ui.cli import _common
 from agent6.viewmodel import QuestionPrompt, open_question, session_is_live
 
 
@@ -39,18 +38,18 @@ def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
         The exit code: 0 when answered or printed, 2 on a refusal.
     """
     try:
-        layout = resolve_session_layout(Path.cwd(), target)
-    except SessionIdError as exc:
-        error(f"{exc}")
+        layout = _common.resolve_session_layout(pathlib.Path.cwd(), target)
+    except id.SessionIdError as exc:
+        _common.error(f"{exc}")
         return 2
     if not session_is_live(layout.session_dir):
-        refuse(
+        _common.refuse(
             f"session {layout.session_id} is not running; only a live run holds a question open."
         )
         return 2
     prompt = open_question(layout.session_dir)
     if prompt is None:
-        refuse(
+        _common.refuse(
             f"{layout.session_id} is not waiting on a question (an approval is answered"
             f" by attaching: agent6 attach {layout.session_id})."
         )
@@ -66,9 +65,9 @@ def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
             file=sys.stderr,
         )
         return 2
-    written = write_question_answers(layout.session_dir, prompt.id, answers)
+    written = ipc.write_question_answers(layout.session_dir, prompt.id, answers)
     if written:
         print(f"answered {layout.session_id}: {', '.join(answers)}")
     else:
-        refuse(f"{layout.session_id}: {ANSWERED_ELSEWHERE}.")
+        _common.refuse(f"{layout.session_id}: {ipc.ANSWERED_ELSEWHERE}.")
     return 0 if written else 2

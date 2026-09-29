@@ -14,8 +14,10 @@ import types
 import pytest
 
 from agent6 import kinds
+from agent6.app import _setup
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, jail, landlock
+from agent6.sandbox import tool_paths as sandbox_tool_paths
 from agent6.ui.cli import check_cmds
 
 
@@ -42,22 +44,22 @@ def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
 def _force_profile(
     monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None = None
 ) -> None:
-    monkeypatch.setattr(check_cmds, "detect_env", object)  # returns a throwaway env stub
+    monkeypatch.setattr(_setup, "detect_env", object)  # returns a throwaway env stub
 
     def _reason(_env: object) -> str | None:
         return reason
 
-    monkeypatch.setattr(check_cmds, "degrade_reason", _reason)
+    monkeypatch.setattr(detect, "degrade_reason", _reason)
 
     def fake_select(_req: str, _env: object) -> str:
         return isolation
 
-    monkeypatch.setattr(check_cmds, "resolve_isolation", fake_select)
+    monkeypatch.setattr(detect, "resolve_isolation", fake_select)
 
 
 def _honour_request(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the resolver to return exactly what the config asked for."""
-    monkeypatch.setattr(check_cmds, "detect_env", object)
+    monkeypatch.setattr(_setup, "detect_env", object)
 
     def _reason(_env: object) -> str | None:
         return None
@@ -65,8 +67,8 @@ def _honour_request(monkeypatch: pytest.MonkeyPatch) -> None:
     def _resolve(requested: str, _env: object) -> str:
         return requested
 
-    monkeypatch.setattr(check_cmds, "degrade_reason", _reason)
-    monkeypatch.setattr(check_cmds, "resolve_isolation", _resolve)
+    monkeypatch.setattr(detect, "degrade_reason", _reason)
+    monkeypatch.setattr(detect, "resolve_isolation", _resolve)
 
 
 def test_check_sandbox_reports_a_landlock_probe_error(
@@ -134,7 +136,7 @@ def test_check_sandbox_none_skips_probes(
 
     _force_profile(monkeypatch, "none")
     monkeypatch.setattr(
-        check_cmds,
+        sandbox_tool_paths,
         "tool_mount_notes",
         lambda: tool_paths.ToolMountNotes(exposes_home_dir=("~/.local/bin/x -> ~/.local/share/x",)),
     )
@@ -163,7 +165,7 @@ def test_check_sandbox_degraded_names_why(
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
     _force_profile(monkeypatch, "hardened", reason=why)
     monkeypatch.setattr(
-        check_cmds,
+        sandbox_tool_paths,
         "tool_mount_notes",
         lambda: tool_paths.ToolMountNotes(exposes_home_dir=("~/.local/bin/x -> ~/.local/share/x",)),
     )
@@ -230,7 +232,7 @@ def test_check_names_a_jail_binary_it_cannot_run(
     def _binary_refusal() -> object:
         raise jail.JailUnavailableError(refusal)
 
-    monkeypatch.setattr(check_cmds, "detect_env", _binary_refusal)
+    monkeypatch.setattr(_setup, "detect_env", _binary_refusal)
     rc = check_cmds._cmd_check_sandbox(None)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert rc == 1, out
@@ -255,14 +257,14 @@ def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
 
     Probes on another level.
     """
-    monkeypatch.setattr(check_cmds, "detect_env", object)
+    monkeypatch.setattr(_setup, "detect_env", object)
 
     def _refuse(req: str, _env: object) -> str:
         raise detect.IsolationUnavailableError(
             f"sandbox.isolation = {req!r} requires user namespaces"
         )
 
-    monkeypatch.setattr(check_cmds, "resolve_isolation", _refuse)
+    monkeypatch.setattr(detect, "resolve_isolation", _refuse)
     rc = check_cmds._cmd_check_sandbox(  # pyright: ignore[reportPrivateUsage]
         Config(sandbox=SandboxConfig(isolation="strict"))
     )
@@ -331,9 +333,9 @@ def test_check_config_runs_the_refusal_ladder_a_run_applies(
     def _as_requested(requested: str, _env: object) -> str:
         return requested
 
-    monkeypatch.setattr(check_cmds, "detect_env", lambda: env)
-    monkeypatch.setattr(check_cmds, "degrade_reason", _no_reason)
-    monkeypatch.setattr(check_cmds, "resolve_isolation", _as_requested)
+    monkeypatch.setattr(_setup, "detect_env", lambda: env)
+    monkeypatch.setattr(detect, "degrade_reason", _no_reason)
+    monkeypatch.setattr(detect, "resolve_isolation", _as_requested)
     cfg = Config.model_validate({"sandbox": {"isolation": "hardened", "network": "session"}})
     checks = check_cmds._check_config_section(cfg)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out

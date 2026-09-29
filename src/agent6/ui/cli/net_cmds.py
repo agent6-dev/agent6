@@ -18,22 +18,20 @@ from __future__ import annotations
 
 import contextlib
 import os
+import pathlib
 import selectors
 import socket
 import sys
-from pathlib import Path
 from typing import TextIO
 
-from agent6.app._setup import detect_env
+from agent6 import kinds
+from agent6.app import _setup
 from agent6.config import Config
-from agent6.kinds import NetworkMode
-from agent6.sandbox.detect import resolve_isolation
-from agent6.sandbox.jail import JailUnavailableError, SessionNetwork, run_in_jail
-from agent6.sessions.ipc import read_session_netns_pid
-from agent6.sessions.layout import SessionLayout
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.tools.policy import jail_policy
-from agent6.ui.cli._common import error, refuse
+from agent6.sandbox import detect, jail
+from agent6.sessions import ipc, manifest
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import policy as tools_policy
+from agent6.ui.cli import _common
 from agent6.viewmodel import session_is_live, summarize_session_dir
 
 # The namespaces to enter; the `os` flags are looked up at join time so the module imports anywhere.
@@ -44,7 +42,7 @@ class SessionNetworkUnavailableError(Exception):
     """The run has no session network to join, and why."""
 
 
-def join_session_network(session_dir: Path) -> None:
+def join_session_network(session_dir: pathlib.Path) -> None:
     """Put this process in the run's session network.
 
     Irreversible: nothing here ever leaves a namespace it entered.
@@ -56,7 +54,7 @@ def join_session_network(session_dir: Path) -> None:
         SessionNetworkUnavailableError: The run publishes no holder, the host is not Linux, or
             the namespaces could not be entered.
     """
-    pid = read_session_netns_pid(session_dir)
+    pid = ipc.read_session_netns_pid(session_dir)
     if pid is None:
         raise SessionNetworkUnavailableError(
             "this session has no network of its own to join. A run only makes one"
@@ -102,7 +100,7 @@ def _pump(a: socket.socket, b: socket.socket) -> None:
         sel.close()
 
 
-def no_session_network_reason(layout: SessionLayout) -> str:
+def no_session_network_reason(layout: sessions_layout.SessionLayout) -> str:
     """Return why `forward` finds no session network to reach into.
 
     The run is not live (its network lives only while it does), or a live run made none
@@ -120,7 +118,10 @@ def no_session_network_reason(layout: SessionLayout) -> str:
 
 
 def forward(
-    layout: SessionLayout, remote_port: int, local_port: int | None, out: TextIO = sys.stderr
+    layout: sessions_layout.SessionLayout,
+    remote_port: int,
+    local_port: int | None,
+    out: TextIO = sys.stderr,
 ) -> int:
     """Bridge a port inside the run to a port on this machine.
 
@@ -138,7 +139,7 @@ def forward(
         The exit code; 2 when there is no network to join or the bind fails.
     """
     # Refuse before binding: the join happens per connection, in the child.
-    if read_session_netns_pid(layout.session_dir) is None:
+    if ipc.read_session_netns_pid(layout.session_dir) is None:
         print(f"REFUSING: {no_session_network_reason(layout)}", file=out)
         return 2
     # The same number on both sides unless told otherwise, as `kubectl port-forward 3000` means.
@@ -172,7 +173,7 @@ def forward(
                 try:
                     conn, _ = listener.accept()
                 except TimeoutError:
-                    if read_session_netns_pid(layout.session_dir) is None:
+                    if ipc.read_session_netns_pid(layout.session_dir) is None:
                         print(
                             f"[agent6] {layout.session_id} ended; nothing left to reach.",
                             file=out,
@@ -204,7 +205,9 @@ def forward(
             return 0
 
 
-def _stamped_policy(layout: SessionLayout) -> tuple[str, NetworkMode | None] | None:
+def _stamped_policy(
+    layout: sessions_layout.SessionLayout,
+) -> tuple[str, kinds.NetworkMode | None] | None:
     """Return the run's recorded `(isolation, network)`.
 
     Returns:
@@ -212,19 +215,21 @@ def _stamped_policy(layout: SessionLayout) -> tuple[str, NetworkMode | None] | N
         unset rather than guessed.
     """
     try:
-        stamp = read_manifest(layout.session_dir).policy
-    except ManifestError:
+        stamp = manifest.read_manifest(layout.session_dir).policy
+    except manifest.ManifestError:
         return None
     if stamp.isolation not in ("strict", "hardened", "none"):
         return None
     # "auto" and "" (unstamped) read as None: jail_policy applies its own auto semantics.
-    network: NetworkMode | None = (
+    network: kinds.NetworkMode | None = (
         stamp.network if stamp.network in ("host", "session", "none") else None
     )
     return stamp.isolation, network
 
 
-def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[str, ...]) -> int:
+def exec_in_session(
+    layout: sessions_layout.SessionLayout, cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]
+) -> int:
     """Run a command the way the run's own commands run: same jail, same network.
 
     The operator's command, not the model's, so it is neither approved nor logged as a tool
@@ -244,14 +249,14 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     """
     # A live run only: a finished run's jail is gone with it, and a fresh one is a different place.
     if not session_is_live(layout.session_dir):
-        refuse(f"{no_session_network_reason(layout)}")
+        _common.refuse(f"{no_session_network_reason(layout)}")
         return 2
-    pid = read_session_netns_pid(layout.session_dir)
+    pid = ipc.read_session_netns_pid(layout.session_dir)
     # The run's recorded policy, not today's config; unstamped falls back with a warning.
     stamped = _stamped_policy(layout)
     if stamped is not None:
         isolation_word, network_word = stamped
-        isolation = resolve_isolation(isolation_word, detect_env())
+        isolation = detect.resolve_isolation(isolation_word, _setup.detect_env())
         # The recorded word, not the holder: a host-network run can still hold a netns for MCP.
         network = network_word if network_word is not None else ("session" if pid else None)
     else:
@@ -260,23 +265,23 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
             " current config, which may differ from what the run's commands got.",
             file=sys.stderr,
         )
-        isolation = resolve_isolation(cfg.sandbox.isolation, detect_env())
+        isolation = detect.resolve_isolation(cfg.sandbox.isolation, _setup.detect_env())
         network = "session" if pid else None
     try:
-        policy = jail_policy(cwd, cfg, isolation, argv, network=network, timeout_s=0.0)
-    except JailUnavailableError as exc:
-        error(f"{exc}")
+        policy = tools_policy.jail_policy(cwd, cfg, isolation, argv, network=network, timeout_s=0.0)
+    except jail.JailUnavailableError as exc:
+        _common.error(f"{exc}")
         return 2
     if policy.network == "session" and pid is None:
         # Recorded as session but holding none (an isolation short of strict): refuse.
-        refuse(f"{no_session_network_reason(layout)}")
+        _common.refuse(f"{no_session_network_reason(layout)}")
         return 2
     if policy.network == "session":
         # Borrowed through the holder, which can exit between the read above and this open.
         userns_fd = -1
         try:
             userns_fd = os.open(f"/proc/{pid}/ns/user", os.O_RDONLY)
-            borrowed = SessionNetwork(
+            borrowed = jail.SessionNetwork(
                 userns_fd=userns_fd,
                 netns_fd=os.open(f"/proc/{pid}/ns/net", os.O_RDONLY),
                 holder_pid=int(pid or 0),
@@ -284,14 +289,14 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
         except OSError as exc:
             if userns_fd >= 0:
                 os.close(userns_fd)
-            refuse(f"the session's network is gone: {exc}")
+            _common.refuse(f"the session's network is gone: {exc}")
             return 2
     else:
         borrowed = None
     try:
-        result = run_in_jail(policy, session_net=borrowed)
-    except JailUnavailableError as exc:
-        error(f"{exc}")
+        result = jail.run_in_jail(policy, session_net=borrowed)
+    except jail.JailUnavailableError as exc:
+        _common.error(f"{exc}")
         return 2
     finally:
         if borrowed is not None:

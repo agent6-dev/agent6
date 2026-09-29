@@ -5,29 +5,21 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import sys
 from collections.abc import Callable, Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agent6.ui.cli._console_view import ConsoleView
+    from agent6.ui.cli import _console_view
 
-from agent6.budget import BudgetTracker
-from agent6.init import init_workspace
-from agent6.kinds import AutoCommitDirective
-from agent6.paths import repo_config_path, state_dir
-from agent6.sessions.id import SessionIdError, resolve_session
-from agent6.tools.mcp_client import MCPManager
-from agent6.ui.cli._interact import _pause
-from agent6.ui.cli._steer import idle_prompt_sigint
-from agent6.ui.cli.plan_watch import (
-    event_epoch,
-    format_plain_event,
-)
-from agent6.ui.cli.sessions_cmds import _cmd_diff
-from agent6.ui.steer import SteerState
-from agent6.viewmodel.state import LOG_NOISE_EVENTS, STREAM_DELTA_EVENTS
+from agent6 import budget as agent6_budget
+from agent6 import init, kinds, paths
+from agent6.sessions import id
+from agent6.tools import mcp_client
+from agent6.ui import steer as ui_steer
+from agent6.ui.cli import _interact, _steer, plan_watch, sessions_cmds
+from agent6.viewmodel import events, state
 
 REPL_HELP = (
     "  /continue  (empty enter) - let the agent take another iteration\n"
@@ -53,14 +45,14 @@ REPL_HELP = (
 
 
 def build_repl_hook(
-    root: Path,
-    budget: BudgetTracker,
+    root: pathlib.Path,
+    budget: agent6_budget.BudgetTracker,
     *,
     session_id: str = "",
-    mcp_manager: MCPManager | None = None,
-    console_view: ConsoleView | None = None,
-    steer_cell: Sequence[SteerState | None] = (),
-) -> Callable[[int, str], AutoCommitDirective]:
+    mcp_manager: mcp_client.MCPManager | None = None,
+    console_view: _console_view.ConsoleView | None = None,
+    steer_cell: Sequence[ui_steer.SteerState | None] = (),
+) -> Callable[[int, str], kinds.AutoCommitDirective]:
     """Build the after-auto-commit hook for `agent6 run -i`.
 
     The CLI's extra state stays in the closure, so the harness knows nothing of it.
@@ -79,12 +71,12 @@ def build_repl_hook(
         The hook, taking the iteration and the commit sha.
     """
 
-    def hook(iteration: int, sha: str) -> AutoCommitDirective:
+    def hook(iteration: int, sha: str) -> kinds.AutoCommitDirective:
         # Paused, the heartbeat cannot erase the prompt; idle, Ctrl-C stands aside for all of it.
-        with _pause(console_view), idle_prompt_sigint():
+        with _interact._pause(console_view), _steer.idle_prompt_sigint():
             return _prompt_loop(iteration, sha)
 
-    def _prompt_loop(iteration: int, sha: str) -> AutoCommitDirective:
+    def _prompt_loop(iteration: int, sha: str) -> kinds.AutoCommitDirective:
         print(
             f"\n[agent6] iter {iteration} committed {sha[:12]}. "
             f"REPL: /continue /cost /diff /watch /mcp /init /undo /help /quit /exit",
@@ -142,12 +134,12 @@ def build_repl_hook(
 def repl_run_diff(session_id: str) -> None:
     """Print the run's diff for `/diff`, with no pager to take over the prompt's terminal."""
     try:
-        _cmd_diff(session_id=session_id, stat=False, paths=(), paginate=False)
+        sessions_cmds._cmd_diff(session_id=session_id, stat=False, paths=(), paginate=False)
     except Exception as exc:
         print(f"[agent6] /diff failed: {exc}", file=sys.stderr)
 
 
-def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
+def repl_show_recent_events(root: pathlib.Path, session_id: str, *, n: int) -> None:
     """Print the last n events of the run's log for `/watch`.
 
     A snapshot, not a tail: the REPL sits between turns, and a tail would block the
@@ -163,8 +155,8 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
         return
     # Across buckets: the REPL also runs inside an ask.
     try:
-        layout = resolve_session(state_dir(root), session_id)
-    except SessionIdError as exc:
+        layout = id.resolve_session(paths.state_dir(root), session_id)
+    except id.SessionIdError as exc:
         print(f"[agent6] /watch: {exc}", file=sys.stderr)
         return
     events_path = layout.logs_path
@@ -181,7 +173,7 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
         try:
             obj0 = json.loads(lines[0])
             if isinstance(obj0, dict):
-                session_start_ts = event_epoch(obj0.get("ts"))
+                session_start_ts = events.event_epoch(obj0.get("ts"))
         except json.JSONDecodeError:
             session_start_ts = None
 
@@ -192,15 +184,15 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
         except json.JSONDecodeError:
             return False
         etype = obj.get("type") if isinstance(obj, dict) else None
-        return etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS
+        return etype not in state.STREAM_DELTA_EVENTS and etype not in state.LOG_NOISE_EVENTS
 
     tail = [raw for raw in lines if _audit_line(raw)][-n:]
     print(f"[agent6] /watch: last {len(tail)} events from {session_id}", file=sys.stderr)
     for raw in tail:
-        print(format_plain_event(raw, session_start_ts=session_start_ts))
+        print(plan_watch.format_plain_event(raw, session_start_ts=session_start_ts))
 
 
-def repl_list_mcp(mcp_manager: MCPManager | None) -> None:
+def repl_list_mcp(mcp_manager: mcp_client.MCPManager | None) -> None:
     """Print the configured MCP servers and their tools for `/mcp`."""
     if mcp_manager is None:
         print(
@@ -221,12 +213,12 @@ def repl_list_mcp(mcp_manager: MCPManager | None) -> None:
         print(f"  {failure.name}: failed to start ({failure.error})")
 
 
-def repl_run_init(root: Path) -> None:
+def repl_run_init(root: pathlib.Path) -> None:
     """Run the setup wizard for `/init`; it prompts and never overwrites a file."""
     try:
-        rc = init_workspace(
+        rc = init.init_workspace(
             root,
-            repo_config_target=repo_config_path(root),
+            repo_config_target=paths.repo_config_path(root),
             interactive=sys.stdin.isatty(),
         )
     except Exception as exc:

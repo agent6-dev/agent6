@@ -16,7 +16,10 @@ import pathlib
 from typing import Any
 from unittest import mock
 
+from agent6.app import _setup, providers
+from agent6.config import layer
 from agent6.harness import _panel as harness__panel
+from agent6.harness import _reviewer as harness__reviewer
 
 # A real unified diff touching foo.py new-lines 10..14 and creating bar.py 1..2.
 SAMPLE_DIFF = """\
@@ -418,8 +421,8 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
     def _fake_panel(*_a: object, **_k: object) -> harness__panel.PanelResult:
         return res
 
-    monkeypatch.setattr(review_cmds, "build_review_seats", _fake_seats)
-    monkeypatch.setattr(review_cmds, "run_panel", _fake_panel)
+    monkeypatch.setattr(providers, "build_review_seats", _fake_seats)
+    monkeypatch.setattr(harness__reviewer, "run_panel", _fake_panel)
     rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
         Config(),
         git="git",
@@ -486,8 +489,8 @@ def test_review_exit_code_is_consistent_across_verdicts(
         def _panel(*_a: object, **_k: object) -> harness__panel.PanelResult:
             return res
 
-        monkeypatch.setattr(review_cmds, "build_review_seats", _seats)
-        monkeypatch.setattr(review_cmds, "run_panel", _panel)
+        monkeypatch.setattr(providers, "build_review_seats", _seats)
+        monkeypatch.setattr(harness__reviewer, "run_panel", _panel)
         rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
             Config(),
             git="git",
@@ -605,9 +608,9 @@ def test_review_degrades_on_an_unreadable_agents_md(
     def _fake_diff(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
 
-    monkeypatch.setattr(review_cmds, "load_effective", _fake_effective)
+    monkeypatch.setattr(layer, "load_effective", _fake_effective)
     monkeypatch.setattr(Config, "require_runnable", _runnable)
-    monkeypatch.setattr(review_cmds, "check_provider_keys", _no_key_error)
+    monkeypatch.setattr(_setup, "check_provider_keys", _no_key_error)
     monkeypatch.setattr(review_cmds, "_collect_review_diff", _fake_diff)
     monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
     try:
@@ -653,9 +656,9 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
     def _fake_diff(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
 
-    monkeypatch.setattr(review_cmds, "load_effective", _fake_effective)
+    monkeypatch.setattr(layer, "load_effective", _fake_effective)
     monkeypatch.setattr(Config, "require_runnable", _runnable)
-    monkeypatch.setattr(review_cmds, "check_provider_keys", _no_key_error)
+    monkeypatch.setattr(_setup, "check_provider_keys", _no_key_error)
     monkeypatch.setattr(review_cmds, "_collect_review_diff", _fake_diff)
     monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]

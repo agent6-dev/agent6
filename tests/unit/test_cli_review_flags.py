@@ -11,7 +11,9 @@ from unittest import mock
 
 import pytest
 
-from agent6.config import Config, ConfigError
+from agent6.app import _setup, providers
+from agent6.config import Config, ConfigError, layer
+from agent6.harness import _reviewer as harness__reviewer
 from agent6.ui.cli import cli_main
 
 
@@ -30,7 +32,7 @@ def test_head_without_base_is_rejected_before_config_load(
     def should_not_load(*_a: object, **_k: object) -> object:
         raise AssertionError("config loaded")
 
-    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", should_not_load)
+    monkeypatch.setattr("agent6.config.layer.load_effective", should_not_load)
     assert cli_main(["review", "--head", "topic"]) == 2
     assert "--head requires --base" in capsys.readouterr().err
 
@@ -67,17 +69,17 @@ def test_an_empty_range_is_reported_before_provider_preflight(
     )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(return_value=types.SimpleNamespace(config=Config())),
     )
     monkeypatch.setattr(
-        review_cmds,
+        _setup,
         "check_provider_keys",
         mock.MagicMock(side_effect=AssertionError("provider keys checked")),
     )
     monkeypatch.setattr(
-        review_cmds,
+        providers,
         "build_review_seats",
         mock.MagicMock(side_effect=AssertionError("seat built")),
     )
@@ -109,7 +111,7 @@ def test_personas_without_reviewers_is_said_to_be_ignored(
     def stop(*_a: object, **_k: object) -> object:
         raise ConfigError("stop here")
 
-    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", stop)
+    monkeypatch.setattr("agent6.config.layer.load_effective", stop)
     rc = cli_main(["review", "--personas", "security,tests"])
     err = capsys.readouterr().err
     assert rc == 2 and "stop here" in err
@@ -134,7 +136,7 @@ def test_personas_under_configured_seats_is_said_to_be_ignored(
     def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(config=cfg)
 
-    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
+    monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
     rc = cli_main(["review", "--personas", "tests", "--reviewers", "2"])
     err = capsys.readouterr().err
     assert rc == 2 and "note: --personas ignored ([review].seats names the roster)." in err
@@ -221,14 +223,14 @@ def test_an_arbitrary_range_uses_the_selected_heads_log(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     provider = _FixedReviewProvider()
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(
             return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=True))
         ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(review_cmds, "build_role_provider", mock.MagicMock(return_value=provider))
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base=base, head=head, paths=()
@@ -253,14 +255,14 @@ def test_an_unknown_pinned_provider_is_named_without_a_reviewer_route(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(
             return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=False))
         ),
     )
     monkeypatch.setattr(
-        review_cmds, "check_provider_keys", mock.MagicMock(return_value="unrelated missing key")
+        _setup, "check_provider_keys", mock.MagicMock(return_value="unrelated missing key")
     )
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
@@ -292,13 +294,13 @@ def test_a_fully_pinned_panel_needs_no_reviewer_route(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     provider = _FixedReviewProvider()
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(
             return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=False))
         ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(
         provider_builders, "_provider_from_entry", mock.MagicMock(return_value=provider)
     )
@@ -369,11 +371,11 @@ def _explore_review(
             n_abstain=0,
         )
 
-    monkeypatch.setattr(review_cmds, "load_effective", _fake_effective)
+    monkeypatch.setattr(layer, "load_effective", _fake_effective)
     monkeypatch.setattr(Config, "require_runnable", _runnable)
-    monkeypatch.setattr(review_cmds, "check_provider_keys", _no_key_error)
-    monkeypatch.setattr(review_cmds, "build_review_seats", _fake_seats)
-    monkeypatch.setattr(review_cmds, "run_panel", _fake_panel)
+    monkeypatch.setattr(_setup, "check_provider_keys", _no_key_error)
+    monkeypatch.setattr(providers, "build_review_seats", _fake_seats)
+    monkeypatch.setattr(harness__reviewer, "run_panel", _fake_panel)
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base=base, head=head, paths=(), reviewers=1
     )
@@ -432,13 +434,13 @@ def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(
             return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=False))
         ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
 
     with pytest.raises(ConfigError, match="reviewer"):
         review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
@@ -484,14 +486,14 @@ def test_the_recent_log_survives_a_head_that_is_also_a_path_or_empty(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     provider = _FixedReviewProvider()
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(
             return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=True))
         ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(review_cmds, "build_role_provider", mock.MagicMock(return_value=provider))
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base=base, head=head, paths=()
@@ -529,12 +531,12 @@ def test_personas_a_configured_roster_ignores_are_not_read(
         return "stop here"
 
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(return_value=types.SimpleNamespace(config=cfg)),
     )
-    monkeypatch.setattr(review_cmds, "build_review_seats", mock.MagicMock(return_value=[]))
-    monkeypatch.setattr(review_cmds, "check_provider_keys", _keys)
+    monkeypatch.setattr(providers, "build_review_seats", mock.MagicMock(return_value=[]))
+    monkeypatch.setattr(_setup, "check_provider_keys", _keys)
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base=base, head=head, paths=(), reviewers=1, personas="tests@oops"
@@ -565,14 +567,14 @@ def test_a_tracked_file_named_head_does_not_break_the_diff(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     provider = _FixedReviewProvider()
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(
             return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=True))
         ),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(review_cmds, "build_role_provider", mock.MagicMock(return_value=provider))
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = review_cmds._cmd_review(None, base="", head="", paths=())  # pyright: ignore[reportPrivateUsage]
 
@@ -601,12 +603,12 @@ def test_review_model_routes_the_reviewer(
     cfg = _other_provider()
     built = mock.MagicMock(return_value=_FixedReviewProvider())
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(return_value=types.SimpleNamespace(config=cfg)),
     )
-    monkeypatch.setattr(review_cmds, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(review_cmds, "build_role_provider", built)
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(providers, "build_role_provider", built)
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base="", head="", paths=(), model="other/read-only-m"
@@ -630,7 +632,7 @@ def test_review_model_naming_no_provider_is_refused_before_the_diff(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        review_cmds,
+        layer,
         "load_effective",
         mock.MagicMock(return_value=types.SimpleNamespace(config=_other_provider())),
     )

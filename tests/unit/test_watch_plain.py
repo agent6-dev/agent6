@@ -9,6 +9,7 @@ import pathlib
 
 import pytest
 
+from agent6.sessions import ipc
 from agent6.ui.cli import plan_watch
 from agent6.viewmodel import events as viewmodel_events
 
@@ -95,7 +96,7 @@ def test_raw_watch_returns_nonzero_when_the_log_disappears_before_the_end(
     def _remove_log(_seconds: float) -> None:
         events.unlink()
 
-    monkeypatch.setattr(plan_watch, "worker_is_alive", _worker_is_alive)
+    monkeypatch.setattr(ipc, "worker_is_alive", _worker_is_alive)
     monkeypatch.setattr(plan_watch.time, "sleep", _remove_log)
 
     assert plan_watch._cmd_watch_plain(target, since=0) == 1  # pyright: ignore[reportPrivateUsage]
@@ -125,7 +126,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
     def _worker_is_alive(_target: pathlib.Path) -> bool:
         return True
 
-    monkeypatch.setattr(plan_watch, "worker_is_alive", _worker_is_alive)
+    monkeypatch.setattr(ipc, "worker_is_alive", _worker_is_alive)
     monkeypatch.setattr(plan_watch.time, "sleep", _append_tail)
     assert plan_watch._cmd_watch_plain(target, since=5) == 0  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out

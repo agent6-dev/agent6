@@ -21,6 +21,7 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import paths
+from agent6.app import providers
 from agent6.config import Config
 from agent6.harness import judge as harness_judge
 from agent6.providers import Provider, ProviderError
@@ -460,7 +461,7 @@ def test_compare_uses_judge_when_reviewer_configured(
     _write_reviewer_config(repo)
     verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b is cleaner"}'
     provider = _FakeProvider([verdict])
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(provider))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -482,7 +483,7 @@ def test_compare_total_line_accounts_the_judge_calls_own_spend(
     _write_reviewer_config(repo)
     verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b is cleaner"}'
     provider = _CostingFakeProvider([verdict])
-    monkeypatch.setattr(compare_mod, "build_role_provider", _costing_stub_builder(provider))
+    monkeypatch.setattr(providers, "build_role_provider", _costing_stub_builder(provider))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -520,7 +521,7 @@ def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
     _write_reviewer_config(repo)
     # The fresh judge flips the order: stamped winner run-BBBB22 now ranks last.
     verdict = '{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "a is cleaner"}'
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(_FakeProvider([verdict])))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(_FakeProvider([verdict])))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -550,7 +551,7 @@ def test_compare_stays_quiet_when_the_fresh_verdict_agrees_with_the_stamp(
     )
     _write_reviewer_config(repo)
     verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b still wins"}'
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(_FakeProvider([verdict])))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(_FakeProvider([verdict])))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -570,7 +571,7 @@ def test_failed_judge_announces_what_its_attempts_still_spent(
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")], cost=0.02)
     _write_reviewer_config(repo)
     provider = _CostingFakeProvider(["not json at all", "still not json"])
-    monkeypatch.setattr(compare_mod, "build_role_provider", _costing_stub_builder(provider))
+    monkeypatch.setattr(providers, "build_role_provider", _costing_stub_builder(provider))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -616,7 +617,7 @@ def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
         provider.budget = kw["budget"]
         return cast(Provider, provider)
 
-    monkeypatch.setattr(compare_mod, "build_role_provider", _build)
+    monkeypatch.setattr(providers, "build_role_provider", _build)
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -651,7 +652,7 @@ def test_compare_falls_back_to_mechanical_on_judge_error(
     )
     _write_reviewer_config(repo)
     provider = _FakeProvider(["not json at all", "still not json"])
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(provider))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -736,7 +737,7 @@ def test_rank_plain_judging_line_on_non_tty(
 ) -> None:
     """Piped or detached, one truthful line surrounds the judge call and no frame animates."""
     provider = _FakeProvider([_VERDICT])
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(provider))
 
     compare_mod.rank(_reviewer_cfg(), _two_candidates(), transcript_dir=tmp_path)
 
@@ -750,7 +751,7 @@ def test_rank_animates_the_judging_status_on_a_tty(
     fake = _FakeTTYOut()
     monkeypatch.setattr(sys, "stdout", fake)
     provider = _SlowFakeProvider(sleep_s=_HEARTBEAT_TICK_S * 2.4, text=_VERDICT)
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(provider))
 
     compare_mod.rank(_reviewer_cfg(), _two_candidates(), transcript_dir=tmp_path)
 
@@ -768,7 +769,7 @@ def test_rank_clears_the_judging_status_even_when_the_judge_call_fails(
     fake = _FakeTTYOut()
     monkeypatch.setattr(sys, "stdout", fake)
     provider = _SlowFakeProvider(sleep_s=_HEARTBEAT_TICK_S * 1.2, raise_exc=ProviderError("down"))
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(provider))
 
     outcome = compare_mod.rank(_reviewer_cfg(), _two_candidates(), transcript_dir=tmp_path)
 
@@ -793,12 +794,11 @@ def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
     """
     from agent6.app import compare as app_compare
     from agent6.app import parallel
-    from agent6.ui.cli import sessions_compare
 
     # The fan-out's auto-compare calls the core directly, through the module.
     assert parallel.app_compare is app_compare
     # `sessions compare` goes through the CLI wrapper, which delegates to that core.
-    assert sessions_compare.rank is compare_mod.rank
+    assert compare_mod.rank is compare_mod.rank
 
 
 def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
@@ -853,7 +853,7 @@ def test_compare_of_a_fanout_id_prints_the_recorded_verdict_without_judging(
     """Asking a fan-out for its comparison reads the stamp, never a fresh judge call."""
     _stamped_fanout(repo)
     judge = _FakeProvider(['{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "flip"}'])
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(judge))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(judge))
 
     rc = main(["sessions", "compare", "fan"])
 
@@ -870,7 +870,7 @@ def test_rejudge_on_a_fanout_id_spends_a_fresh_judge_call(
 ) -> None:
     _stamped_fanout(repo)
     judge = _FakeProvider(['{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "flip"}'])
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(judge))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(judge))
 
     rc = main(["sessions", "compare", "fan", "--rejudge"])
 
@@ -896,7 +896,7 @@ def test_a_fanout_with_no_recorded_verdict_is_judged(
         )
     _write_reviewer_config(repo)
     judge = _FakeProvider(['{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b wins"}'])
-    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(judge))
+    monkeypatch.setattr(providers, "build_role_provider", _stub_builder(judge))
 
     rc = main(["sessions", "compare", "fan"])
 

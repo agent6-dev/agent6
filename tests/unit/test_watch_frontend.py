@@ -12,7 +12,7 @@ import pathlib
 from typing import Any
 
 from agent6.sessions import ipc
-from agent6.ui.cli import plan_watch
+from agent6.ui.cli import _interact, plan_watch
 
 
 def _view() -> Any:
@@ -43,7 +43,7 @@ def test_open_prompt_at_attach_is_answered_and_written(
     def _yes(_prompt: str, *, standing: bool = True) -> str:
         return "yes"
 
-    monkeypatch.setattr(plan_watch, "default_stdin_approver", _yes)
+    monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
     log = tmp_path / "logs.jsonl"
     _write_log(
         log,
@@ -66,7 +66,7 @@ def test_already_answered_prompt_is_not_reasked(tmp_path: pathlib.Path, monkeypa
     def _forbidden(_p: object, *, standing: bool = True) -> str:
         raise AssertionError("must not prompt for an already-answered approval")
 
-    monkeypatch.setattr(plan_watch, "default_stdin_approver", _forbidden)
+    monkeypatch.setattr(_interact, "default_stdin_approver", _forbidden)
     log = tmp_path / "logs.jsonl"
     _write_log(
         log,
@@ -90,7 +90,7 @@ def test_react_answers_a_new_live_question(tmp_path: pathlib.Path, monkeypatch: 
     def _beta(_qs: object) -> tuple[str, ...]:
         return ("beta",)
 
-    monkeypatch.setattr(plan_watch, "default_stdin_questioner", _beta)
+    monkeypatch.setattr(_interact, "default_stdin_questioner", _beta)
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [{"type": "session.start"}]
     _write_log(log, history)
@@ -120,7 +120,7 @@ def test_attach_replay_does_not_reask_an_answered_prompt(
         asked.append(prompt)
         return "yes"
 
-    monkeypatch.setattr(plan_watch, "default_stdin_approver", _yes)
+    monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [
         {"type": "session.start", "user_task": "t"},
@@ -154,8 +154,8 @@ def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
         asked.append("question")
         return ("a",)
 
-    monkeypatch.setattr(plan_watch, "default_stdin_approver", _yes)
-    monkeypatch.setattr(plan_watch, "default_stdin_questioner", _answer)
+    monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
+    monkeypatch.setattr(_interact, "default_stdin_questioner", _answer)
     log = tmp_path / "logs.jsonl"
     leg1: list[dict[str, Any]] = [
         {"type": "session.start"},
@@ -193,7 +193,7 @@ def test_an_answer_that_lost_to_another_surface_is_reported(
     def _yes(_prompt: str, *, standing: bool = True) -> str:
         return "yes"
 
-    monkeypatch.setattr(plan_watch, "default_stdin_approver", _yes)
+    monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
     event: dict[str, Any] = {"type": "approval.prompt", "id": "approval-1", "prompt": "run `ls`?"}
     assert ipc.write_answer(tmp_path, "approval-1", "no")
     view = _view()
@@ -215,7 +215,7 @@ def test_an_unscoped_approval_offers_no_session_choice(
         seen.append(standing)
         return "no"
 
-    monkeypatch.setattr(plan_watch, "default_stdin_approver", _approver)
+    monkeypatch.setattr(_interact, "default_stdin_approver", _approver)
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [
         {"type": "session.start"},

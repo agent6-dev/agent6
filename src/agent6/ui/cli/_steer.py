@@ -7,36 +7,22 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import pathlib
 import signal
 import subprocess
 import sys
 import tempfile
 import termios
 from collections.abc import Callable, Generator
-from pathlib import Path
 from typing import Any
 
-from agent6.app.frontend import SessionFacts
-from agent6.events import EventSink
-from agent6.sessions.ipc import (
-    clear_steer_answer,
-    clear_steer_request,
-    frontend_is_live,
-    read_steer_answer,
-    steer_answer_is_abort,
-    steer_answer_written,
-    steer_interrupt_pending,
-    steer_request_pending,
-    submit_steer,
-    take_steer_answer,
-)
-from agent6.ui.cli._common import editor_argv
-from agent6.ui.cli._console_view import ConsoleView
-from agent6.ui.cli._menu_input import menu_capable, read_line_until
-from agent6.ui.cli._steer_menu import BtwRunner, pause_line, pause_menu
-from agent6.ui.steer import SteerState, file_bridge_steer
-from agent6.viewmodel.format import format_usd
-from agent6.viewmodel.transcript import scrub_terminal_output
+from agent6 import budget
+from agent6 import events as agent6_events
+from agent6.app import frontend
+from agent6.sessions import ipc
+from agent6.ui import steer
+from agent6.ui.cli import _common, _console_view, _menu_input, _steer_menu
+from agent6.viewmodel import transcript
 
 
 @contextlib.contextmanager
@@ -61,7 +47,7 @@ def select_revised_prompt(
     original: str,
     revised: str,
     questions: tuple[str, ...],
-    console_view: ConsoleView | None = None,
+    console_view: _console_view.ConsoleView | None = None,
 ) -> str | None:
     """Ask the operator to accept, keep, edit or quit a revised prompt.
 
@@ -128,7 +114,7 @@ def _edit_in_editor(revised: str) -> str | None:
         The saved text, or None with the reason on stderr for an operator-fixable
         failure: a missing editor, a non-zero exit, a non-UTF-8 or empty save.
     """
-    argv = editor_argv()
+    argv = _common.editor_argv()
     if argv is None:
         print("[agent6] choose again.", file=sys.stderr)
         return None
@@ -139,7 +125,7 @@ def _edit_in_editor(revised: str) -> str | None:
         suffix=".md",
         delete=False,
     ) as tmp:
-        tmp_path = Path(tmp.name)
+        tmp_path = pathlib.Path(tmp.name)
         tmp.write(revised.rstrip() + "\n")
     try:
         try:
@@ -174,7 +160,7 @@ def tty_message(text: str) -> None:
     """Print to the controlling terminal directly, through the same scrubber as stdout."""
     try:
         with open(TTY_PATH, "w", encoding="utf-8") as tty:  # noqa: PTH123
-            tty.write(scrub_terminal_output(text))
+            tty.write(transcript.scrub_terminal_output(text))
             tty.flush()
             return
     except OSError:
@@ -219,13 +205,13 @@ def tty_prompt(
                 return input(text if plain is None else plain)
             sys.stdout.write(text if plain is None else plain)
             sys.stdout.flush()
-            return read_line_until(sys.stdin.fileno(), until)
+            return _menu_input.read_line_until(sys.stdin.fileno(), until)
         except (EOFError, KeyboardInterrupt, OSError, ValueError):
             return None
     try:
         with tty:
-            tty.write(scrub_terminal_output(text))
-            line = read_line_until(fd, until)
+            tty.write(transcript.scrub_terminal_output(text))
+            line = _menu_input.read_line_until(fd, until)
             if line is None and until is not None:
                 # Whatever was typed was aimed at a prompt that is over.
                 with contextlib.suppress(Exception):
@@ -237,15 +223,15 @@ def tty_prompt(
         return None
 
 
-def format_session_facts(facts: SessionFacts) -> str:
+def format_session_facts(facts: frontend.SessionFacts) -> str:
     """Return the one-line status the pause banner and Ctrl-Z print, spend first."""
     return (
-        f"{format_usd(facts.spend_usd, partial=facts.spend_partial)}"
+        f"{budget.format_usd(facts.spend_usd, partial=facts.spend_partial)}"
         f" · {facts.model} · commands {facts.run_commands} · {facts.isolation}"
     )
 
 
-def _status_suffix(session_facts: Callable[[], SessionFacts] | None) -> str:
+def _status_suffix(session_facts: Callable[[], frontend.SessionFacts] | None) -> str:
     """Return the indented status line under the pause banner, or "" without facts."""
     if session_facts is None:
         return ""
@@ -258,7 +244,7 @@ _JOB_CONTROL_HINT = (
 
 
 def _install_status_signal(
-    state: dict[str, Any], session_facts: Callable[[], SessionFacts] | None
+    state: dict[str, Any], session_facts: Callable[[], frontend.SessionFacts] | None
 ) -> Any:
     """Install the Ctrl-Z handler: print the run's state and stand down an unopened pause.
 
@@ -292,13 +278,13 @@ def _install_status_signal(
 
 
 def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one shared stage dict
-    events: EventSink,
-    session_dir: Path,
-    console_view: ConsoleView | None = None,
-    session_facts: Callable[[], SessionFacts] | None = None,
-    btw_runner: BtwRunner | None = None,
-    config_path: Path | None = None,
-) -> SteerState:
+    events: agent6_events.EventSink,
+    session_dir: pathlib.Path,
+    console_view: _console_view.ConsoleView | None = None,
+    session_facts: Callable[[], frontend.SessionFacts] | None = None,
+    btw_runner: _steer_menu.BtwRunner | None = None,
+    config_path: pathlib.Path | None = None,
+) -> steer.SteerState:
     """Install the escalating SIGINT handler and return the harness's steer callables.
 
     The first Ctrl-C pauses at the next boundary and emits `session.steer_requested`;
@@ -331,16 +317,16 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
             raise KeyboardInterrupt
         if state["stage"] == 1:
             state["stage"] = 2
-            if not frontend_is_live(session_dir):
+            if not ipc.frontend_is_live(session_dir):
                 tty_message("\n[agent6] interrupting this step. Ctrl-C again to stop the run.\n")
             return
         state["stage"] = 1
         # A stale answer file would answer this prompt; one with a pending request is a live steer.
-        if not steer_request_pending(session_dir):
-            clear_steer_answer(session_dir)
+        if not ipc.steer_request_pending(session_dir):
+            ipc.clear_steer_answer(session_dir)
         events.emit("session.steer_requested", source="sigint")
         # A live front-end prompts in its own modal; its terminal is not scribbled on.
-        if not frontend_is_live(session_dir):
+        if not ipc.frontend_is_live(session_dir):
             tty_message(
                 "\n[agent6] pausing after this step: Enter continues, type to steer,"
                 " /stop ends it, /detach backgrounds it. Ctrl-C again to interrupt now.\n"
@@ -352,29 +338,29 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
 
     def requested() -> bool:
         """Return whether a Ctrl-C or a front-end's request marker asks for a pause."""
-        return state["stage"] >= 1 or steer_request_pending(session_dir)
+        return state["stage"] >= 1 or ipc.steer_request_pending(session_dir)
 
     def interrupt() -> bool:
         """Return whether the in-flight call is to be aborted: a double Ctrl-C or `steer --now`."""
-        return state["stage"] >= 2 or steer_interrupt_pending(session_dir)
+        return state["stage"] >= 2 or ipc.steer_interrupt_pending(session_dir)
 
     def clear() -> None:
         """Reset the stage and the steer files."""
         state["stage"] = 0
-        clear_steer_answer(session_dir)
-        clear_steer_request(session_dir)
+        ipc.clear_steer_answer(session_dir)
+        ipc.clear_steer_request(session_dir)
 
     def prompt() -> str | None:
         """Return the steer: an answer already on disk, a front-end's, or the terminal's."""
-        seeded = take_steer_answer(session_dir)
+        seeded = ipc.take_steer_answer(session_dir)
         if seeded is not None:
             return seeded
-        if frontend_is_live(session_dir):
-            answer = read_steer_answer(session_dir)
+        if ipc.frontend_is_live(session_dir):
+            answer = ipc.read_steer_answer(session_dir)
             # An abandoned modal: a persisting request would block again at the next boundary.
             if answer is None:
                 state["stage"] = 0
-                clear_steer_request(session_dir)
+                ipc.clear_steer_request(session_dir)
             return answer
         return _menu()
 
@@ -384,16 +370,18 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
         state["prompting"] = True
         try:
             with pause():
-                if menu_capable():
-                    return pause_menu(session_dir, btw_runner=btw_runner, config_path=config_path)
+                if _menu_input.menu_capable():
+                    return _steer_menu.pause_menu(
+                        session_dir, btw_runner=btw_runner, config_path=config_path
+                    )
                 typed = tty_prompt(
                     "[agent6] paused: [enter] continue · type to steer · /stop · /exit · /detach: ",
-                    until=lambda: steer_answer_written(session_dir),
+                    until=lambda: ipc.steer_answer_written(session_dir),
                 )
-                if typed is None and steer_answer_written(session_dir):
+                if typed is None and ipc.steer_answer_written(session_dir):
                     tty_message("[agent6] a steer arrived from a front-end; taking it\n")
-                    return take_steer_answer(session_dir)
-                return pause_line(
+                    return ipc.take_steer_answer(session_dir)
+                return _steer_menu.pause_line(
                     typed, session_dir, btw_runner=btw_runner, config_path=config_path
                 )
         finally:
@@ -413,7 +401,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
             state["stage"] = 0
             return
         # The request marker keeps the action alive across a Ctrl-Z and the next Ctrl-C.
-        if not submit_steer(session_dir, action):
+        if not ipc.submit_steer(session_dir, action):
             state["stage"] = 0
             tty_message("[agent6] could not write the steer request\n")
 
@@ -429,12 +417,12 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
         """Disarm without touching the steer files."""
         state["stage"] = 0
 
-    return SteerState(
+    return steer.SteerState(
         requested=requested,
         clear=clear,
         prompt=prompt,
         restore=restore,
-        abort_pending=lambda: steer_answer_is_abort(session_dir),
+        abort_pending=lambda: ipc.steer_answer_is_abort(session_dir),
         interrupt=interrupt,
         reset_stage=reset_stage,
         armed=armed,
@@ -443,13 +431,13 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
 
 
 def make_steer_state(
-    events: EventSink,
-    session_dir: Path,
-    console_view: ConsoleView | None = None,
-    session_facts: Callable[[], SessionFacts] | None = None,
-    btw_runner: BtwRunner | None = None,
-    config_path: Path | None = None,
-) -> SteerState:
+    events: agent6_events.EventSink,
+    session_dir: pathlib.Path,
+    console_view: _console_view.ConsoleView | None = None,
+    session_facts: Callable[[], frontend.SessionFacts] | None = None,
+    btw_runner: _steer_menu.BtwRunner | None = None,
+    config_path: pathlib.Path | None = None,
+) -> steer.SteerState:
     """Return the steer state: the SIGINT ladder with a controlling terminal, else the file bridge.
 
     Args:
@@ -464,7 +452,7 @@ def make_steer_state(
         with open("/dev/tty", encoding="utf-8"):  # noqa: PTH123
             pass
     except OSError:
-        return file_bridge_steer(session_dir)
+        return steer.file_bridge_steer(session_dir)
     return install_steer_sigint(
         events, session_dir, console_view, session_facts, btw_runner, config_path
     )

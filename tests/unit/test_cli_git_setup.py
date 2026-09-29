@@ -11,7 +11,7 @@ from typing import cast
 
 import pytest
 
-from agent6 import errors, git_ops, paths
+from agent6 import errors, git_ops, init, paths
 from agent6.app import preflight
 from agent6.config import Config, ConfigError
 from agent6.ui.cli import init_cmds as ic
@@ -107,8 +107,8 @@ def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
     def _fail_commit(_root: pathlib.Path, _message: str, _paths: tuple[str, ...]) -> str:
         raise git_ops.GitError("identity missing")
 
-    monkeypatch.setattr(ic, "_ask", _yes)
-    monkeypatch.setattr(ic, "commit_paths", _fail_commit)
+    monkeypatch.setattr(init, "_ask", _yes)
+    monkeypatch.setattr(git_ops, "commit_paths", _fail_commit)
     ic._offer_git_setup(tmp_path, (scaffold,), interactive=True)
 
     out = capsys.readouterr().out
@@ -266,10 +266,10 @@ def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
         raise ConfigError("broken")
 
     handed_back: list[pathlib.Path] = []
-    monkeypatch.setattr(ic, "repo_config_path", _target)
-    monkeypatch.setattr(ic, "is_git_repo", _not_a_repo)
-    monkeypatch.setattr(ic, "init_workspace", _fail)
-    monkeypatch.setattr(ic, "chown_to_real_user", handed_back.append)
+    monkeypatch.setattr(paths, "repo_config_path", _target)
+    monkeypatch.setattr(git_ops, "is_git_repo", _not_a_repo)
+    monkeypatch.setattr(init, "init_workspace", _fail)
+    monkeypatch.setattr(paths, "chown_to_real_user", handed_back.append)
 
     with pytest.raises(errors.OperatorError):
         ic._cmd_init(ecosystem="", assume_yes=True)  # pyright: ignore[reportPrivateUsage]
@@ -409,7 +409,7 @@ def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
     def _yes(*_a: object, **_k: object) -> bool:
         return True
 
-    monkeypatch.setattr("agent6.ui.cli.init_cmds._ask", _yes)
+    monkeypatch.setattr("agent6.init._ask", _yes)
     monkeypatch.setattr("agent6.init._ask", _yes)
     assert main(["init"]) == 0
 
@@ -437,7 +437,7 @@ def test_init_leaves_a_modified_preexisting_file_out_of_a_fresh_repo_commit(
     def _yes(*_a: object, **_k: object) -> bool:
         return True
 
-    monkeypatch.setattr("agent6.ui.cli.init_cmds._ask", _yes)
+    monkeypatch.setattr("agent6.init._ask", _yes)
     monkeypatch.setattr("agent6.init._ask", _yes)
     assert main(["init"]) == 0
 

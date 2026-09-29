@@ -6,13 +6,12 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import SESSION_ID, _add_session_id, _sub
-from agent6.ui.cli.completers import _complete_model_routes, _complete_session_ids
+from agent6.ui.cli import _common, completers
 
 
 def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `sessions`; a bare `sessions` is `sessions list`."""
-    sessions_p = _sub(
+    sessions_p = _common._sub(
         sub,
         "sessions",
         help=(
@@ -27,7 +26,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         dest="sessions_command", required=True, metavar="<subcommand>"
     )
 
-    sessions_list = _sub(
+    sessions_list = _common._sub(
         sessions_sub,
         "list",
         help=(
@@ -55,24 +54,24 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         ),
     )
 
-    sessions_show = _sub(
+    sessions_show = _common._sub(
         sessions_sub,
         "show",
         help="Print a session's current status and progress once. `agent6 attach` follows it live.",
     )
-    _add_session_id(sessions_show, _complete_session_ids)
+    _common._add_session_id(sessions_show, completers._complete_session_ids)
     sessions_show.add_argument(
         "--json",
         action="store_true",
         help="Print the status as one JSON object for scripts and monitoring.",
     )
 
-    sessions_diff = _sub(
+    sessions_diff = _common._sub(
         sessions_sub,
         "diff",
         help="Print the committed changes a session made.",
     )
-    _add_session_id(sessions_diff, _complete_session_ids)
+    _common._add_session_id(sessions_diff, completers._complete_session_ids)
     sessions_diff.add_argument(
         "--stat",
         action="store_true",
@@ -87,7 +86,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help="Only include PATH. Repeat for more paths.",
     )
 
-    sessions_merge = _sub(
+    sessions_merge = _common._sub(
         sessions_sub,
         "merge",
         help=(
@@ -95,7 +94,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " the session started."
         ),
     )
-    _add_session_id(sessions_merge, _complete_session_ids)
+    _common._add_session_id(sessions_merge, completers._complete_session_ids)
     sessions_merge.add_argument(
         "--strategy",
         choices=("squash", "merge", "ff"),
@@ -115,7 +114,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help="Use this commit message for a squash or merge. Default: condensed session summary.",
     )
 
-    sessions_review = _sub(
+    sessions_review = _common._sub(
         sessions_sub,
         "review",
         help=(
@@ -126,7 +125,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " or the memory."
         ),
     )
-    _add_session_id(sessions_review, _complete_session_ids)
+    _common._add_session_id(sessions_review, completers._complete_session_ids)
     review_model = sessions_review.add_argument(
         "--model",
         default="",
@@ -136,9 +135,9 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " model id on the reviewer's provider."
         ),
     )
-    review_model.completer = _complete_model_routes  # type: ignore[attr-defined]
+    review_model.completer = completers._complete_model_routes  # type: ignore[attr-defined]
 
-    sessions_compare = _sub(
+    sessions_compare = _common._sub(
         sessions_sub,
         "compare",
         help=(
@@ -166,16 +165,16 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " compare its lanes."
         ),
     )
-    sessions_compare_ids.completer = _complete_session_ids  # type: ignore[attr-defined]
+    sessions_compare_ids.completer = completers._complete_session_ids  # type: ignore[attr-defined]
 
-    sessions_commits = _sub(
+    sessions_commits = _common._sub(
         sessions_sub,
         "commits",
         help="List the commits a session made.",
     )
-    _add_session_id(sessions_commits, _complete_session_ids)
+    _common._add_session_id(sessions_commits, completers._complete_session_ids)
 
-    sessions_dir = _sub(
+    sessions_dir = _common._sub(
         sessions_sub,
         "dir",
         help=(
@@ -183,13 +182,13 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " session's directory. Output is one path for use in scripts."
         ),
     )
-    _add_session_id(
+    _common._add_session_id(
         sessions_dir,
-        _complete_session_ids,
-        help_text=f"{SESSION_ID}. Default: this repository's session history directory.",
+        completers._complete_session_ids,
+        help_text=f"{_common.SESSION_ID}. Default: this repository's session history directory.",
     )
 
-    sessions_rm = _sub(
+    sessions_rm = _common._sub(
         sessions_sub,
         "rm",
         help=(
@@ -197,7 +196,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " Its git branch, if present, remains."
         ),
     )
-    _add_session_id(sessions_rm, _complete_session_ids)
+    _common._add_session_id(sessions_rm, completers._complete_session_ids)
     sessions_rm.add_argument(
         "--asks",
         action="store_true",
@@ -207,7 +206,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         ),
     )
 
-    sessions_prune = _sub(
+    sessions_prune = _common._sub(
         sessions_sub,
         "prune",
         help=(
@@ -226,12 +225,12 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         ),
     )
 
-    sessions_tr = _sub(
+    sessions_tr = _common._sub(
         sessions_sub,
         "transcript",
         help="Print a session's complete model conversation as Markdown.",
     )
-    _add_session_id(sessions_tr, _complete_session_ids)
+    _common._add_session_id(sessions_tr, completers._complete_session_ids)
     sessions_tr.add_argument(
         "--json",
         dest="as_json",
@@ -253,9 +252,9 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help="Only include round trip N or inclusive range N-M, such as 3 or 3-7. Default: all.",
     )
 
-    sessions_graph = _sub(
+    sessions_graph = _common._sub(
         sessions_sub,
         "graph",
         help="Print a session's saved task graph as a tree.",
     )
-    _add_session_id(sessions_graph, _complete_session_ids)
+    _common._add_session_id(sessions_graph, completers._complete_session_ids)

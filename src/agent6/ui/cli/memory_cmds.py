@@ -8,22 +8,9 @@ Store refusals (a bad name, an unreadable store) raise `MemoryStoreError`, an
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
-from agent6.memory import (
-    MemoryUse,
-    Touch,
-    add,
-    decisions_path,
-    index_name,
-    index_text,
-    memory_dir,
-    read_use,
-    remove,
-    show,
-    unindexed_names,
-)
-from agent6.paths import state_dir
+from agent6 import memory, paths
 
 
 def _cmd_memory_add(name: str, body: str) -> int:
@@ -32,7 +19,7 @@ def _cmd_memory_add(name: str, body: str) -> int:
     Returns:
         The exit code, 0.
     """
-    path = add(state_dir(Path.cwd()), name, body)
+    path = memory.add(paths.state_dir(pathlib.Path.cwd()), name, body)
     print(f"wrote {path}")
     return 0
 
@@ -45,28 +32,28 @@ def _cmd_memory_list() -> int:
     Returns:
         The exit code, 0.
     """
-    state = state_dir(Path.cwd())
-    text = index_text(state)
-    orphans = unindexed_names(state)
+    state = paths.state_dir(pathlib.Path.cwd())
+    text = memory.index_text(state)
+    orphans = memory.unindexed_names(state)
     if not text:
-        print(f"(no memories; files live under {memory_dir(state)})")
-    use = read_use(state)
+        print(f"(no memories; files live under {memory.memory_dir(state)})")
+    use = memory.read_use(state)
     for line in text.splitlines():
         print(line)
-        name = index_name(line)
+        name = memory.index_name(line)
         if name is None:
             continue
-        if not (memory_dir(state) / f"{name}.md").is_file():
+        if not (memory.memory_dir(state) / f"{name}.md").is_file():
             # A line with no file is a prompt naming a fact that will not open.
             print("    no file: nothing recorded under that name; `memory rm` drops the line")
             continue
-        print(f"    {format_use(use.get(name, MemoryUse()))}")
+        print(f"    {format_use(use.get(name, memory.MemoryUse()))}")
     if orphans:
         print(f"not in the index (no run sees them; `memory rm` deletes): {', '.join(orphans)}")
     return 0
 
 
-def format_use(use: MemoryUse) -> str:
+def format_use(use: memory.MemoryUse) -> str:
     """Return a memory's use record as one line.
 
     The parts are `written <date> by <session>`, `edited <date> by <session>` and
@@ -88,7 +75,7 @@ def format_use(use: MemoryUse) -> str:
     return ", ".join(parts)
 
 
-def _when_by(touch: Touch) -> str:
+def _when_by(touch: memory.Touch) -> str:
     """Return a touch as `<date> by <session>`."""
     return f"{touch.at[:10]} by {touch.session}"
 
@@ -99,7 +86,7 @@ def _cmd_memory_show(name: str) -> int:
     Returns:
         The exit code, 0.
     """
-    print(show(state_dir(Path.cwd()), name), end="")
+    print(memory.show(paths.state_dir(pathlib.Path.cwd()), name), end="")
     return 0
 
 
@@ -109,8 +96,8 @@ def _cmd_memory_decisions() -> int:
     Returns:
         The exit code, 0.
     """
-    state = state_dir(Path.cwd())
-    path = decisions_path(state)
+    state = paths.state_dir(pathlib.Path.cwd())
+    path = memory.decisions_path(state)
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -126,6 +113,6 @@ def _cmd_memory_rm(name: str) -> int:
     Returns:
         The exit code, 0.
     """
-    remove(state_dir(Path.cwd()), name)
+    memory.remove(paths.state_dir(pathlib.Path.cwd()), name)
     print(f"removed {name}")
     return 0

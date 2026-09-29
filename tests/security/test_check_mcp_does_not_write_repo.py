@@ -16,7 +16,10 @@ import pathlib
 
 import pytest
 
+from agent6.app import _setup
 from agent6.config import Config, layer
+from agent6.sandbox import detect
+from agent6.tools import mcp_client
 from agent6.ui.cli import check_cmds, mcp_connect
 
 # The interpreter a jailed probe can reach: the run's sandbox grants /usr,
@@ -58,12 +61,12 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
 
     The jail, when one is started, still runs at that level for real.
     """
-    monkeypatch.setattr(check_cmds, "detect_env", object)
+    monkeypatch.setattr(_setup, "detect_env", object)
 
     def _select(_req: str, _env: object) -> str:
         return isolation
 
-    monkeypatch.setattr(check_cmds, "resolve_isolation", _select)
+    monkeypatch.setattr(detect, "resolve_isolation", _select)
 
 
 def _check_mcp(
@@ -79,7 +82,7 @@ def _never_started(monkeypatch: pytest.MonkeyPatch) -> None:
     def _boom(*_a: object, **_k: object) -> None:
         raise AssertionError("the check started a server it must not")
 
-    monkeypatch.setattr(check_cmds.MCPManager, "start", _boom)
+    monkeypatch.setattr(mcp_client.MCPManager, "start", _boom)
 
 
 @pytest.mark.needs_namespaces

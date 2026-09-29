@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import _add_config_flag, _sub
-from agent6.ui.cli.completers import _complete_model_routes
+from agent6.ui.cli import _common, completers
 
 
 def _reviewer_count(raw: str) -> int:
@@ -24,7 +23,7 @@ def _reviewer_count(raw: str) -> int:
 
 def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `check`, the read-only pre-flight checks."""
-    check_p = _sub(
+    check_p = _common._sub(
         sub,
         "check",
         help=(
@@ -40,12 +39,12 @@ def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         choices=("all", "sandbox", "config", "boundaries", "mcp", "verify"),
         help="One section, or all (the default) with a PASS/FAIL summary at the end.",
     )
-    _add_config_flag(check_p)
+    _common._add_config_flag(check_p)
 
 
 def _add_system_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `system <component> <action>`, the privileged host setup that uses sudo."""
-    system_p = _sub(
+    system_p = _common._sub(
         sub,
         "system",
         help="Host/OS setup that needs privileges, and uses sudo to get them."
@@ -54,7 +53,7 @@ def _add_system_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     system_sub = system_p.add_subparsers(
         dest="system_command", required=True, metavar="<subcommand>"
     )
-    apparmor_p = _sub(
+    apparmor_p = _common._sub(
         system_sub,
         "apparmor",
         help="Install/remove the agent6-jail AppArmor profile (Ubuntu 24.04+: lets the"
@@ -69,7 +68,7 @@ def _add_system_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 
 def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `review`, the read-only diff review."""
-    review_p = _sub(
+    review_p = _common._sub(
         sub,
         "review",
         help="Read-only code review of a diff (working tree, branch-vs-base, or arbitrary range).",
@@ -106,7 +105,7 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             " its own model."
         ),
     )
-    review_model.completer = _complete_model_routes  # type: ignore[attr-defined]
+    review_model.completer = completers._complete_model_routes  # type: ignore[attr-defined]
     review_p.add_argument(
         "--reviewers",
         type=_reviewer_count,

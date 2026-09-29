@@ -17,9 +17,10 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6 import kinds
+from agent6 import kinds, portable
 from agent6.config import Config
 from agent6.tools import dispatch, errors, fetch, operator_prompts
+from agent6.ui.cli import _steer
 
 
 class _Body(httpx2.SyncByteStream):
@@ -222,8 +223,8 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
         shown.append(prompt)
         return "a"  # "allow all", on a prompt that offers no such thing
 
-    monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: True)
-    monkeypatch.setattr(interactmod, "tty_prompt", _typed)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
+    monkeypatch.setattr(_steer, "tty_prompt", _typed)
     approve = operator_prompts.OperatorPrompts(
         approver=interactmod.build_approver(session_dir),
         journal=events.EventSink(session_dir / "logs.jsonl").emit,

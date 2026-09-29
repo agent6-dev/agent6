@@ -8,20 +8,17 @@ findable from anywhere, with the directory to cd to and the id to attach.
 
 from __future__ import annotations
 
+import dataclasses
 import json
-from dataclasses import asdict, dataclass, replace
-from pathlib import Path
+import pathlib
 
-from agent6.paths import repo_root_of_id, state_base
-from agent6.sessions.ipc import frontend_is_live, read_worker_pid, worker_is_alive
-from agent6.sessions.layout import SESSION_BUCKETS
-from agent6.ui.cli._common import home_contracted
-from agent6.viewmodel.format import lane_count, lane_id_cell, status_label
-from agent6.viewmodel.listing import ListingRow, SessionSummary, nested_rows, summarize_session_dir
-from agent6.viewmodel.machine_state import summarize_machine_dir
+from agent6 import paths
+from agent6.sessions import ipc, layout
+from agent6.ui.cli import _common
+from agent6.viewmodel import format, listing, machine_state
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _Row:
     """One live session or machine instance.
 
@@ -60,7 +57,7 @@ class _Row:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _Live:
     """The live sessions (rows and summaries, by real dir) and machine rows.
 
@@ -70,27 +67,29 @@ class _Live:
         machines: The machine rows.
     """
 
-    rows: dict[Path, _Row]
-    summaries: dict[Path, SessionSummary]
+    rows: dict[pathlib.Path, _Row]
+    summaries: dict[pathlib.Path, listing.SessionSummary]
     machines: list[_Row]
 
     def nested(self) -> list[_Row]:
         """Return the session rows with a fan-out's live lanes under it, then the machines."""
-        summaries_by_repo: dict[str, list[SessionSummary]] = {}
+        summaries_by_repo: dict[str, list[listing.SessionSummary]] = {}
         rows_by_repo: dict[str, dict[str, _Row]] = {}
         for real, own in self.rows.items():
             summaries_by_repo.setdefault(own.repo_id, []).append(self.summaries[real])
             rows_by_repo.setdefault(own.repo_id, {})[own.id] = own
 
-        def tree(row: ListingRow, own_rows: dict[str, _Row]) -> _Row:
+        def tree(row: listing.ListingRow, own_rows: dict[str, _Row]) -> _Row:
             """Return the row with its lanes nested, from the listing fold's tree."""
             own = own_rows[row.summary.session_id]
-            return replace(own, lanes=tuple(tree(lane, own_rows) for lane in row.lanes))
+            return dataclasses.replace(own, lanes=tuple(tree(lane, own_rows) for lane in row.lanes))
 
         session_rows: list[tuple[float, _Row]] = []
         for repo_id, summaries in summaries_by_repo.items():
             own_rows = rows_by_repo[repo_id]
-            session_rows.extend((row.mtime, tree(row, own_rows)) for row in nested_rows(summaries))
+            session_rows.extend(
+                (row.mtime, tree(row, own_rows)) for row in listing.nested_rows(summaries)
+            )
         session_rows.sort(key=lambda item: item[0], reverse=True)
 
         return [*(row for _mtime, row in session_rows), *self.machines]
@@ -98,17 +97,17 @@ class _Live:
 
 def _live_rows() -> _Live:
     """Return every live session and machine instance under the state base, one row each."""
-    base = state_base()
+    base = paths.state_base()
     # Keyed on the real dir: a lane is linked under its coordinator's repo too, and the link wins.
-    rows_by_dir: dict[Path, _Row] = {}
-    summaries_by_dir: dict[Path, SessionSummary] = {}
+    rows_by_dir: dict[pathlib.Path, _Row] = {}
+    summaries_by_dir: dict[pathlib.Path, listing.SessionSummary] = {}
     rows: list[_Row] = []
     if base.is_dir():
         for repo_dir in sorted(base.iterdir()):
-            root = repo_root_of_id(repo_dir.name)
+            root = paths.repo_root_of_id(repo_dir.name)
             # An elided-hash id is not reversible to a path; the cell says so.
-            where = home_contracted(str(root)) if root is not None else None
-            for bucket in SESSION_BUCKETS:
+            where = _common.home_contracted(str(root)) if root is not None else None
+            for bucket in layout.SESSION_BUCKETS:
                 bucket_path = repo_dir / "sessions" / bucket
                 if not bucket_path.is_dir():
                     continue
@@ -116,37 +115,37 @@ def _live_rows() -> _Live:
                     real = sdir.resolve()
                     if (
                         not sdir.is_dir()
-                        or not worker_is_alive(sdir)
+                        or not ipc.worker_is_alive(sdir)
                         or (real in rows_by_dir and not sdir.is_symlink())
                     ):
                         continue
-                    summary = summarize_session_dir(sdir)
+                    summary = listing.summarize_session_dir(sdir)
                     summaries_by_dir[real] = summary
                     rows_by_dir[real] = _Row(
                         where,
                         repo_dir.name,
                         sdir.name,
                         summary.mode,
-                        status_label(summary.status, summary.reason),
-                        read_worker_pid(sdir),
-                        frontend_is_live(sdir),
+                        format.status_label(summary.status, summary.reason),
+                        ipc.read_worker_pid(sdir),
+                        ipc.frontend_is_live(sdir),
                         coordinator=summary.coordinator,
                     )
             # A machine instance is a live session too: its worker.pid sits at the instance root.
             machines = repo_dir / "machines"
             if machines.is_dir():
                 for mdir in sorted(machines.iterdir()):
-                    if not mdir.is_dir() or not worker_is_alive(mdir):
+                    if not mdir.is_dir() or not ipc.worker_is_alive(mdir):
                         continue
-                    machine = summarize_machine_dir(mdir)
+                    machine = machine_state.summarize_machine_dir(mdir)
                     rows.append(
                         _Row(
                             where,
                             repo_dir.name,
                             mdir.name,
                             "machine",
-                            status_label(machine.status, machine.reason),
-                            read_worker_pid(mdir),
+                            format.status_label(machine.status, machine.reason),
+                            ipc.read_worker_pid(mdir),
                             False,
                         )
                     )
@@ -173,7 +172,7 @@ def cmd_ps(*, as_json: bool = False, lanes: bool = False) -> int:
     """
     rows = _live_rows().nested()
     if as_json:
-        print(json.dumps([asdict(r) for r in rows], indent=2))
+        print(json.dumps([dataclasses.asdict(r) for r in rows], indent=2))
         return 0
     if not rows:
         print("no live agent6 sessions.")
@@ -184,9 +183,9 @@ def cmd_ps(*, as_json: bool = False, lanes: bool = False) -> int:
     def emit(r: _Row, depth: int) -> None:
         """Append the row's cells, then its lanes' when listing them."""
         if depth:
-            cells.append(r.cells(lane_id_cell(r.id, depth)))
+            cells.append(r.cells(format.lane_id_cell(r.id, depth)))
         else:
-            folded = f" ({lane_count(len(r.lanes))})" if r.lanes and not lanes else ""
+            folded = f" ({format.lane_count(len(r.lanes))})" if r.lanes and not lanes else ""
             cells.append(r.cells(r.id + folded))
         if lanes:
             for lane in r.lanes:

@@ -7,25 +7,21 @@ The presentation seam is the one `agent6 run` injects (`ui.cli.run.session_front
 
 from __future__ import annotations
 
+import pathlib
 import time
-from pathlib import Path
 
-from agent6.app._setup import (
-    BudgetOverrides,
-    SandboxOverrides,
-)
-from agent6.app.resume import resume_task
-from agent6.ui.cli.run import session_frontend
+from agent6.app import _setup, resume
+from agent6.ui.cli import run
 
 
 def _cmd_resume(
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     session_id: str,
     *,
     force: bool,
     tui: bool = False,
-    budget_overrides: BudgetOverrides | None = None,
-    sandbox_overrides: SandboxOverrides | None = None,
+    budget_overrides: _setup.BudgetOverrides | None = None,
+    sandbox_overrides: _setup.SandboxOverrides | None = None,
     preset: str = "",
     steer: str = "",
     interactive: bool = False,
@@ -48,10 +44,10 @@ def _cmd_resume(
     Returns:
         The exit code from `app.resume.resume_task`.
     """
-    return resume_task(
+    return resume.resume_task(
         config_path,
         session_id,
-        frontend=session_frontend(config_path),
+        frontend=run.session_frontend(config_path),
         force=force,
         started_at=time.time(),
         tui=tui,

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import sys
 
+from agent6 import kinds
 from agent6.config import Config
-from agent6.kinds import IsolationLevel
-from agent6.ui.cli._steer import tty_prompt
+from agent6.ui.cli import _steer
 
 
 def confirm_run_on_run_branch(base_branch: str) -> bool:
@@ -66,7 +66,7 @@ def confirm_replay_after_crash(iteration: int, tools: tuple[str, ...]) -> bool:
     return ans.strip().lower() in {"y", "yes"}
 
 
-def confirm_unconfined_autorun(isolation: IsolationLevel, cfg: Config) -> bool:
+def confirm_unconfined_autorun(isolation: kinds.IsolationLevel, cfg: Config) -> bool:
     """Confirm once, at startup, a run with the sandbox off and run_command auto-approved.
 
     One consent when interactive, a loud warning when not: the explicit opt-outs are
@@ -91,5 +91,5 @@ def confirm_unconfined_autorun(isolation: IsolationLevel, cfg: Config) -> bool:
     if not sys.stdin.isatty():
         print("[agent6] proceeding (non-interactive).", file=sys.stderr)
         return True
-    answer = tty_prompt("Continue? [y/N]: ")
+    answer = _steer.tty_prompt("Continue? [y/N]: ")
     return (answer or "").strip().lower() in {"y", "yes"}

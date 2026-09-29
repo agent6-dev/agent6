@@ -5,29 +5,22 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import pathlib
 
-from agent6 import __version__
-from agent6.paths import cache_dir, data_dir, effective_user, global_config_path, state_base
-from agent6.ui.cli._common import _add_config_flag, _sub
-from agent6.ui.cli._config_args import _add_config_parser, _add_connect_parser, _add_model_parser
-from agent6.ui.cli._machine_args import _add_machine_parser
-from agent6.ui.cli._mcp_args import _add_mcp_server_parsers
-from agent6.ui.cli._plan_args import _add_ask_parser, _add_plan_parser
-from agent6.ui.cli._review_args import _add_check_parser, _add_review_parser, _add_system_parser
-from agent6.ui.cli._run_args import _add_fork_parser, _add_resume_parser, _add_run_parser
-from agent6.ui.cli._sessions_args import _add_sessions_parser
-from agent6.ui.cli._skills_args import _add_skills_parser
-from agent6.ui.cli._watch_args import (
-    _add_answer_parser,
-    _add_attach_parser,
-    _add_net_parsers,
-    _add_steer_parser,
-    _add_stop_parser,
-    _add_tui_parser,
-    _add_web_parser,
+from agent6 import __version__, paths
+from agent6.ui.cli import (
+    _common,
+    _config_args,
+    _machine_args,
+    _mcp_args,
+    _plan_args,
+    _review_args,
+    _run_args,
+    _sessions_args,
+    _skills_args,
+    _watch_args,
+    completers,
 )
-from agent6.ui.cli.completers import _complete_session_ids
 
 # Commands with a default verb (`plan <task>` is `plan run <task>`, a bare `skills` lists); the
 # explicit form covers a query whose first word is a verb name. A test pins each verb set.
@@ -89,9 +82,9 @@ def _shell_default_help() -> str:
     Detection walks the process tree (a fish inside bash detects fish); unknown keeps the
     generic wording.
     """
-    from agent6.ui.cli.completions_cmd import detect_shell  # noqa: PLC0415
+    from agent6.ui.cli import completions_cmd  # noqa: PLC0415  # noqa: PLC0415
 
-    detected = detect_shell()
+    detected = completions_cmd.detect_shell()
     if detected in ("bash", "zsh", "fish", "xonsh"):
         return f"Target shell (default: detected {detected})."
     return "Target shell (default: detect the running shell)."
@@ -148,12 +141,12 @@ def _directories_epilog() -> str:
 
     Paths only, each a plain env or home lookup, so building the parser stays cheap.
     """
-    user = effective_user()
+    user = paths.effective_user()
     rows = (
-        ("config", global_config_path(user).parent, "config.toml, secrets.toml (0600)"),
-        ("state", state_base(user), "per-repo run history, memory, reviews"),
-        ("data", data_dir(user), "installed skill packs (skills/)"),
-        ("cache", cache_dir(user), "regenerable model lists"),
+        ("config", paths.global_config_path(user).parent, "config.toml, secrets.toml (0600)"),
+        ("state", paths.state_base(user), "per-repo run history, memory, reviews"),
+        ("data", paths.data_dir(user), "installed skill packs (skills/)"),
+        ("cache", paths.cache_dir(user), "regenerable model lists"),
     )
     width = max(len(str(p)) for _n, p, _w in rows)
     lines = [f"  {name:<6} {path!s:<{width}}  {what}" for name, path, what in rows]
@@ -209,7 +202,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser.add_argument("--version", action="version", version=f"agent6 {__version__}")
     parser.add_argument(
         "--config",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         metavar="FILE",
         help=(
@@ -234,28 +227,28 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     groups = parser._action_groups  # pyright: ignore[reportPrivateUsage]
     groups.insert(0, groups.pop())
 
-    _add_run_parser(sub)
+    _run_args._add_run_parser(sub)
 
-    _add_resume_parser(sub)
+    _run_args._add_resume_parser(sub)
 
-    _add_fork_parser(sub)
+    _run_args._add_fork_parser(sub)
 
-    _add_plan_parser(sub)
+    _plan_args._add_plan_parser(sub)
 
-    _add_ask_parser(sub)
+    _plan_args._add_ask_parser(sub)
 
-    _add_review_parser(sub)
+    _review_args._add_review_parser(sub)
 
-    _add_attach_parser(sub)
-    _add_steer_parser(sub)
+    _watch_args._add_attach_parser(sub)
+    _watch_args._add_steer_parser(sub)
 
-    _add_stop_parser(sub)
-    _add_answer_parser(sub)
-    _add_net_parsers(sub)
+    _watch_args._add_stop_parser(sub)
+    _watch_args._add_answer_parser(sub)
+    _watch_args._add_net_parsers(sub)
 
-    _add_sessions_parser(sub)
+    _sessions_args._add_sessions_parser(sub)
 
-    ps_p = _sub(
+    ps_p = _common._sub(
         sub,
         "ps",
         help=(
@@ -276,13 +269,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         " the JSON form nests them always).",
     )
 
-    hist_p = _sub(
+    hist_p = _common._sub(
         sub,
         "history",
         help=("Search every session's transcripts and records (`sessions` shows one session)."),
     )
     hist_sub = hist_p.add_subparsers(dest="history_command", required=True, metavar="<subcommand>")
-    hist_search = _sub(hist_sub, "search", help="ripgrep-backed search over all sessions.")
+    hist_search = _common._sub(hist_sub, "search", help="ripgrep-backed search over all sessions.")
     hist_search.add_argument(
         "query",
         nargs="?",
@@ -298,13 +291,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="SESSION_ID",
         help="Restrict to a single session id (default: all sessions).",
     )
-    hist_search_session.completer = _complete_session_ids  # type: ignore[attr-defined]
+    hist_search_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
 
-    _add_tui_parser(sub)
+    _watch_args._add_tui_parser(sub)
 
-    _add_web_parser(sub)
+    _watch_args._add_web_parser(sub)
 
-    _sub(
+    _common._sub(
         sub,
         "acp",
         help=(
@@ -315,7 +308,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    init_p = _sub(
+    init_p = _common._sub(
         sub,
         "init",
         help="Optional setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md.",
@@ -338,15 +331,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    _add_connect_parser(sub)
+    _config_args._add_connect_parser(sub)
 
-    _add_model_parser(sub)
+    _config_args._add_model_parser(sub)
 
-    _add_config_parser(sub)
+    _config_args._add_config_parser(sub)
 
-    _add_check_parser(sub)
+    _review_args._add_check_parser(sub)
 
-    prompt_p = _sub(
+    prompt_p = _common._sub(
         sub,
         "prompt",
         help="Inspect the assembled system prompt for this repo + config.",
@@ -354,7 +347,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     prompt_sub = prompt_p.add_subparsers(
         dest="prompt_command", required=True, metavar="<subcommand>"
     )
-    prompt_show = _sub(
+    prompt_show = _common._sub(
         prompt_sub,
         "show",
         help=(
@@ -379,7 +372,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    completions_p = _sub(
+    completions_p = _common._sub(
         sub,
         "completions",
         help=(
@@ -405,11 +398,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Print the completion script to stdout instead of installing it.",
     )
 
-    _add_system_parser(sub)
+    _review_args._add_system_parser(sub)
 
-    _add_skills_parser(sub)
+    _skills_args._add_skills_parser(sub)
 
-    mcp_p = _sub(
+    mcp_p = _common._sub(
         sub,
         "mcp",
         help=(
@@ -418,8 +411,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     mcp_sub = mcp_p.add_subparsers(dest="mcp_command", required=True, metavar="<subcommand>")
-    _add_mcp_server_parsers(mcp_sub)
-    mcp_serve = _sub(
+    _mcp_args._add_mcp_server_parsers(mcp_sub)
+    mcp_serve = _common._sub(
         mcp_sub,
         "serve",
         help=(
@@ -432,9 +425,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " this command."
         ),
     )
-    _add_config_flag(mcp_serve)
+    _common._add_config_flag(mcp_serve)
 
-    mem_p = _sub(
+    mem_p = _common._sub(
         sub,
         "memory",
         help=(
@@ -443,20 +436,20 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
-    mem_add = _sub(mem_sub, "add", help="Write <name>.md and its index line.")
+    mem_add = _common._sub(mem_sub, "add", help="Write <name>.md and its index line.")
     mem_add.add_argument("name", help="Memory name (lowercase letters, digits, dashes).")
     mem_add.add_argument("body", help="The fact (in quotes; first line becomes the index hook).")
-    _sub(mem_sub, "list", help="Print the MEMORY.md index.")
-    mem_show = _sub(mem_sub, "show", help="Print one memory file.")
+    _common._sub(mem_sub, "list", help="Print the MEMORY.md index.")
+    mem_show = _common._sub(mem_sub, "show", help="Print one memory file.")
     mem_show.add_argument("name", help="Memory name.")
-    mem_rm = _sub(mem_sub, "rm", help="Delete a memory file and its index line.")
+    mem_rm = _common._sub(mem_sub, "rm", help="Delete a memory file and its index line.")
     mem_rm.add_argument("name", help="Memory name.")
-    _sub(
+    _common._sub(
         mem_sub,
         "decisions",
         help="Print the operator rulings the harness recorded (memory/DECISIONS.md).",
     )
 
-    _add_machine_parser(sub)
+    _machine_args._add_machine_parser(sub)
 
     return parser

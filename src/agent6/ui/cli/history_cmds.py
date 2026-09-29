@@ -5,34 +5,20 @@
 from __future__ import annotations
 
 import base64
+import dataclasses
 import json
+import pathlib
 import shutil
 import subprocess
 import sys
 from collections.abc import Iterator
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.graph.storage import load_graph
-from agent6.paths import state_dir
-from agent6.sessions.id import SessionIdError
-from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SESSIONS_ROOT, SessionLayout
-from agent6.ui.cli._common import (
-    all_session_dirs,
-    error,
-    newest_layout_holding,
-    resolve_session_layout,
-    sgr,
-)
-from agent6.ui.cli._task_tree import task_tree_lines
-from agent6.viewmodel.transcript_render import (
-    conversation_transcripts,
-    fold_conversation,
-    load_transcripts,
-    render_markdown,
-    transcript_seq,
-    window_turns,
-)
+from agent6 import paths
+from agent6.graph import storage
+from agent6.sessions import id
+from agent6.sessions import layout as sessions_layout
+from agent6.ui.cli import _common, _task_tree
+from agent6.viewmodel import transcript_render
 
 
 def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
@@ -48,22 +34,22 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
     """
     rg = shutil.which("rg")
     if rg is None:
-        error(
+        _common.error(
             "`rg` (ripgrep) is required for `agent6 history search`. "
             "Install ripgrep (https://github.com/BurntSushi/ripgrep) and retry."
         )
         return 2
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     if session_id:
         # Resolve across every bucket so an ask's logs/transcript are searchable.
         try:
-            targets = [resolve_session_layout(cwd, session_id).session_dir]
-        except SessionIdError as exc:
-            error(f"{exc}")
+            targets = [_common.resolve_session_layout(cwd, session_id).session_dir]
+        except id.SessionIdError as exc:
+            _common.error(f"{exc}")
             return 2
     else:
         # No id: every session in every bucket, so a search right after an `ask` finds it.
-        targets = all_session_dirs(cwd)
+        targets = _common.all_session_dirs(cwd)
         if not targets:
             print("[agent6] no sessions to search yet.")
             return 1
@@ -76,11 +62,13 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
         sys.stderr.write(completed.stderr)
         return completed.returncode
     hits = _parse_rg_matches(completed.stdout)
-    _render_history_hits(hits, targets[0] if session_id else state_dir(cwd) / SESSIONS_ROOT)
+    _render_history_hits(
+        hits, targets[0] if session_id else paths.state_dir(cwd) / sessions_layout.SESSIONS_ROOT
+    )
     return 0 if hits else 1
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _SearchHit:
     """A search hit rendered readably: never the whole JSON event line.
 
@@ -222,7 +210,7 @@ def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
         if rec.get("type") != "match":
             continue
         data = rec.get("data", {})
-        path = Path(_rg_bytes(data.get("path")).decode("utf-8", "replace"))
+        path = pathlib.Path(_rg_bytes(data.get("path")).decode("utf-8", "replace"))
         raw_bytes = _rg_bytes(data.get("lines")).rstrip(b"\n")
         raw = raw_bytes.decode("utf-8", "replace")
         subs = data.get("submatches") or []
@@ -283,17 +271,17 @@ def _char_span(line: bytes, b_start: int, b_end: int) -> tuple[int, int]:
     return start, start + len(line[b_start:b_end].decode("utf-8", "replace"))
 
 
-def _session_id_from_path(path: Path) -> str:
+def _session_id_from_path(path: pathlib.Path) -> str:
     """Return the session id owning a match file: `<sessions>/<bucket>/<id>`."""
     parts = path.parts
-    anchors = set(SESSION_BUCKETS)
+    anchors = set(sessions_layout.SESSION_BUCKETS)
     for i in range(len(parts) - 3, -1, -1):
-        if parts[i] == SESSIONS_ROOT and parts[i + 1] in anchors:
+        if parts[i] == sessions_layout.SESSIONS_ROOT and parts[i + 1] in anchors:
             return parts[i + 2]
     return path.parent.name
 
 
-def _event_when_kind(path: Path, raw: str) -> tuple[str, str]:
+def _event_when_kind(path: pathlib.Path, raw: str) -> tuple[str, str]:
     """Return `(clock time, event type)` when the matched line is a logs.jsonl event.
 
     Otherwise `("", label)`: a transcript snapshot, plan.md and the like. The snapshots are
@@ -303,7 +291,7 @@ def _event_when_kind(path: Path, raw: str) -> tuple[str, str]:
         path: The match file.
         raw: The matched line.
     """
-    if path.name == LOGS_NAME:
+    if path.name == sessions_layout.LOGS_NAME:
         try:
             event = json.loads(raw)
         except (ValueError, RecursionError):
@@ -402,7 +390,7 @@ def _window(text: str, start: int) -> str:
     return f"{'…' if lo > 0 else ''}{excerpt}{'…' if hi < len(text) else ''}"
 
 
-def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
+def _render_history_hits(hits: list[_SearchHit], target: pathlib.Path) -> None:
     """Print the hits grouped by session, a faded header once, then one line per hit.
 
     Identical snippets within a session (the same system-prompt boilerplate matched in
@@ -417,7 +405,7 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
     total = 0
     for i, (session_id, run_hits) in enumerate(grouped.items()):
         print("" if i == 0 else "\n", end="")
-        print(sgr(session_id, "1"))
+        print(_common.sgr(session_id, "1"))
         # Dedup by content identity: one task string lives in many storage encodings.
         counts: dict[str, int] = {}
         best: dict[str, _SearchHit] = {}
@@ -430,11 +418,11 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
             n = counts[key]
             # A collapsed group spans several times, so it shows a count, not a timestamp.
             meta = "  ".join(p for p in (hit.when, hit.kind) if p) if n == 1 else hit.kind
-            tag = f" {sgr(f'(x{n})', '2')}" if n > 1 else ""
-            print(f"  {sgr(meta, '2')}  {hit.snippet}{tag}")
+            tag = f" {_common.sgr(f'(x{n})', '2')}" if n > 1 else ""
+            print(f"  {_common.sgr(meta, '2')}  {hit.snippet}{tag}")
         total += len(run_hits)
     print(
-        sgr(
+        _common.sgr(
             f"\n{total} matching line{'s' if total != 1 else ''} in {len(grouped)} "
             f"session{'s' if len(grouped) != 1 else ''}",
             "2",
@@ -448,18 +436,18 @@ def _cmd_history_graph(session_id: str) -> int:
     Returns:
         The exit code; 2 when the session cannot be resolved.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     if session_id:
         # Resolve across runs/ + asks/ so an ask's graph is findable too.
         try:
-            layout = resolve_session_layout(cwd, session_id)
-        except SessionIdError as exc:
-            error(f"{exc}")
+            layout = _common.resolve_session_layout(cwd, session_id)
+        except id.SessionIdError as exc:
+            _common.error(f"{exc}")
             return 2
     else:
-        found = newest_layout_holding(cwd, "graph")
+        found = _common.newest_layout_holding(cwd, "graph")
         if found is None:
-            error(f"no sessions with a graph under {state_dir(cwd)}")
+            _common.error(f"no sessions with a graph under {paths.state_dir(cwd)}")
             return 2
         layout = found
         print(
@@ -468,14 +456,14 @@ def _cmd_history_graph(session_id: str) -> int:
         )
 
     target_id = layout.session_id
-    nodes = load_graph(layout)
+    nodes = storage.load_graph(layout)
     if not nodes:
-        error(f"session {target_id} has no persisted graph nodes")
+        _common.error(f"session {target_id} has no persisted graph nodes")
         return 2
 
     print(f"Session id: {target_id}")
     print()
-    for line in task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)}):
+    for line in _task_tree.task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)}):
         print(line)
     return 0
 
@@ -502,7 +490,7 @@ def _parse_seq_window(spec: str) -> tuple[int, int] | None:
     return n, n
 
 
-def _transcript_layout(cwd: Path, session_id: str) -> SessionLayout | int:
+def _transcript_layout(cwd: pathlib.Path, session_id: str) -> sessions_layout.SessionLayout | int:
     """Resolve the session whose transcripts to render.
 
     By id, else the most recent session that has a transcripts dir.
@@ -512,13 +500,13 @@ def _transcript_layout(cwd: Path, session_id: str) -> SessionLayout | int:
     """
     if session_id:
         try:
-            return resolve_session_layout(cwd, session_id)
-        except SessionIdError as exc:
-            error(f"{exc}")
+            return _common.resolve_session_layout(cwd, session_id)
+        except id.SessionIdError as exc:
+            _common.error(f"{exc}")
             return 2
-    found = newest_layout_holding(cwd, "transcripts")
+    found = _common.newest_layout_holding(cwd, "transcripts")
     if found is None:
-        error(f"no sessions with transcripts under {state_dir(cwd)}")
+        _common.error(f"no sessions with transcripts under {paths.state_dir(cwd)}")
         return 2
     print(f"[agent6] transcript for most recent session: {found.session_id}", file=sys.stderr)
     return found
@@ -543,29 +531,31 @@ def _cmd_history_transcript(
     Returns:
         The exit code; 2 for a bad window or an unresolvable session.
     """
-    layout = _transcript_layout(Path.cwd(), session_id)
+    layout = _transcript_layout(pathlib.Path.cwd(), session_id)
     if isinstance(layout, int):
         return layout
 
     try:
         window = _parse_seq_window(seq)
     except ValueError:
-        error(f"--seq expects N or N-M with N <= M, got {seq!r}")
+        _common.error(f"--seq expects N or N-M with N <= M, got {seq!r}")
         return 2
 
-    transcripts = load_transcripts(layout.transcripts_dir)
+    transcripts = transcript_render.load_transcripts(layout.transcripts_dir)
     if not transcripts:
-        error(f"session {layout.session_id} has no transcripts")
+        _common.error(f"session {layout.session_id} has no transcripts")
         return 2
 
     if as_json:
         if window is not None:
             lo, hi = window
-            transcripts = [t for t in transcripts if lo <= transcript_seq(t) <= hi]
+            transcripts = [
+                t for t in transcripts if lo <= transcript_render.transcript_seq(t) <= hi
+            ]
         print(json.dumps(transcripts, indent=2, ensure_ascii=False))
         return 0
 
-    if not conversation_transcripts(transcripts):
+    if not transcript_render.conversation_transcripts(transcripts):
         # A review-only dir: every round-trip is a side-call seat, so the fold would print nothing.
         print(
             f"session {layout.session_id} has only side-call transcripts (review seats /"
@@ -575,12 +565,12 @@ def _cmd_history_transcript(
         return 2
 
     # Fold the full set (the per-seq walk needs every call), then window the turns.
-    turns = fold_conversation(transcripts)
+    turns = transcript_render.fold_conversation(transcripts)
     if window is not None:
         lo, hi = window
-        turns = window_turns(turns, lo, hi)
+        turns = transcript_render.window_turns(turns, lo, hi)
     print(
-        render_markdown(
+        transcript_render.render_markdown(
             turns, session_id=layout.session_id, show_thinking=not no_thinking, tools=tools
         ),
         end="",

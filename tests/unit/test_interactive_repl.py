@@ -18,6 +18,7 @@ import pytest
 
 from agent6 import budget, paths
 from agent6.harness import _chain, _operator
+from agent6.sessions import ipc as sessions_ipc
 from agent6.ui import steer
 from agent6.ui.cli import _repl
 
@@ -287,8 +288,8 @@ def test_steer_prompt_clears_request_marker_on_no_answer(
     assert ipc.steer_request_pending(session_dir)
 
     # TUI is live but the modal yields no answer (dismissed / 600s timeout).
-    monkeypatch.setattr(_steer, "frontend_is_live", _tui_live)
-    monkeypatch.setattr(_steer, "read_steer_answer", _answer_none)
+    monkeypatch.setattr(sessions_ipc, "frontend_is_live", _tui_live)
+    monkeypatch.setattr(sessions_ipc, "read_steer_answer", _answer_none)
 
     state = _steer.install_steer_sigint(mock.MagicMock(), session_dir)
     try:
@@ -310,8 +311,8 @@ def test_steer_prompt_keeps_marker_on_real_answer(
 
     session_dir = tmp_path
     ipc.request_steer(session_dir)
-    monkeypatch.setattr(_steer, "frontend_is_live", _tui_live)
-    monkeypatch.setattr(_steer, "read_steer_answer", _answer_text)
+    monkeypatch.setattr(sessions_ipc, "frontend_is_live", _tui_live)
+    monkeypatch.setattr(sessions_ipc, "read_steer_answer", _answer_text)
 
     state = _steer.install_steer_sigint(mock.MagicMock(), session_dir)
     try:
@@ -476,7 +477,7 @@ def test_init_wizard_ctrl_c_aborts_init_not_the_run(
         os.kill(os.getpid(), signal.SIGINT)  # the operator's Ctrl-C at the y/n question
         return 0
 
-    monkeypatch.setattr("agent6.ui.cli._repl.init_workspace", _wizard)
+    monkeypatch.setattr("agent6.init.init_workspace", _wizard)
     answers = iter(["/init", "/continue"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
 
@@ -501,7 +502,7 @@ def test_diff_ctrl_c_aborts_diff_not_the_run(
     def _diff(**_kw: Any) -> int:
         raise KeyboardInterrupt  # the operator's Ctrl-C while the patch prints
 
-    monkeypatch.setattr("agent6.ui.cli._repl._cmd_diff", _diff)
+    monkeypatch.setattr("agent6.ui.cli.sessions_cmds._cmd_diff", _diff)
     answers = iter(["/diff", "/continue"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
 

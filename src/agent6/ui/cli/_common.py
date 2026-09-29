@@ -6,25 +6,15 @@ from __future__ import annotations
 
 import argparse
 import os
+import pathlib
 import shlex
 import sys
-from pathlib import Path
 
-from agent6.app.reporter import STDIO_REPORTER
-from agent6.paths import (
-    effective_user,
-    is_root,
-    root_optin_enabled,
-    state_dir,
-)
-from agent6.sessions.id import SessionIdError, resolve_session
-from agent6.sessions.layout import (
-    SESSION_BUCKETS,
-    SessionLayout,
-    bucket_dir,
-    layout_of,
-)
-from agent6.viewmodel.format import StatusLevel
+from agent6 import paths
+from agent6.app import reporter
+from agent6.sessions import id
+from agent6.sessions import layout as sessions_layout
+from agent6.viewmodel import format
 
 
 def _sub(
@@ -73,7 +63,7 @@ def _add_config_flag(parser: argparse.ArgumentParser) -> None:
     """
     parser.add_argument(
         "--config",
-        type=Path,
+        type=pathlib.Path,
         default=argparse.SUPPRESS,
         metavar="FILE",
         help="Load FILE after the global and per-repository config files.",
@@ -180,14 +170,14 @@ def sgr(text: str, code: str) -> str:
     return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
 
 
-def _runs_dir(repo_root: Path) -> Path:
+def _runs_dir(repo_root: pathlib.Path) -> pathlib.Path:
     """Return the `runs/` directory under the per-repo state dir."""
-    return bucket_dir(state_dir(repo_root), "runs")
+    return sessions_layout.bucket_dir(paths.state_dir(repo_root), "runs")
 
 
-def _plans_dir(repo_root: Path) -> Path:
+def _plans_dir(repo_root: pathlib.Path) -> pathlib.Path:
     """Return the `plans/` directory under the per-repo state dir."""
-    return bucket_dir(state_dir(repo_root), "plans")
+    return sessions_layout.bucket_dir(paths.state_dir(repo_root), "plans")
 
 
 def nothing_yet(what: str = "sessions") -> str:
@@ -196,10 +186,10 @@ def nothing_yet(what: str = "sessions") -> str:
 
 
 # The stderr conventions belong to app.reporter; every CLI message goes through these.
-error = STDIO_REPORTER.error
-note = STDIO_REPORTER.note
-refuse = STDIO_REPORTER.refuse
-warn = STDIO_REPORTER.warn
+error = reporter.STDIO_REPORTER.error
+note = reporter.STDIO_REPORTER.note
+refuse = reporter.STDIO_REPORTER.refuse
+warn = reporter.STDIO_REPORTER.warn
 
 # The one sentence every command's id argument prints.
 MACHINE_ID_HELP = "Machine id (a directory under the per-repo state dir's machines/)."
@@ -211,7 +201,7 @@ def print_nothing_yet(what: str = "sessions") -> None:
     print(nothing_yet(what), file=sys.stderr)
 
 
-def print_no_session_match(query: str, state: Path) -> None:
+def print_no_session_match(query: str, state: pathlib.Path) -> None:
     """Print the one missing-session error: the query and where it looked, or the first contact."""
     if query:
         print(f"ERROR: no session matches {query!r} (looked under {state})", file=sys.stderr)
@@ -219,15 +209,15 @@ def print_no_session_match(query: str, state: Path) -> None:
         print_nothing_yet()
 
 
-def session_bucket_dirs(repo_root: Path) -> list[Path]:
+def session_bucket_dirs(repo_root: pathlib.Path) -> list[pathlib.Path]:
     """Return every session bucket dir, present or not; iterators skip the missing ones."""
-    state = state_dir(repo_root)
-    return [bucket_dir(state, subdir) for subdir in SESSION_BUCKETS]
+    state = paths.state_dir(repo_root)
+    return [sessions_layout.bucket_dir(state, subdir) for subdir in sessions_layout.SESSION_BUCKETS]
 
 
-def all_session_dirs(repo_root: Path) -> list[Path]:
+def all_session_dirs(repo_root: pathlib.Path) -> list[pathlib.Path]:
     """Return every session directory across all buckets, so a bare `attach` finds an ask too."""
-    dirs: list[Path] = []
+    dirs: list[pathlib.Path] = []
     for bucket in session_bucket_dirs(repo_root):
         if bucket.is_dir():
             dirs.extend(p for p in bucket.iterdir() if p.is_dir())
@@ -235,8 +225,8 @@ def all_session_dirs(repo_root: Path) -> list[Path]:
 
 
 def resolve_session_layout(
-    repo_root: Path, query: str, *, allow_husk: bool = False
-) -> SessionLayout:
+    repo_root: pathlib.Path, query: str, *, allow_husk: bool = False
+) -> sessions_layout.SessionLayout:
     """Resolve a session id or unique prefix across every bucket.
 
     Args:
@@ -250,42 +240,44 @@ def resolve_session_layout(
     Raises:
         SessionIdError: No session matches, several do, or the match is a husk.
     """
-    layout = resolve_session(state_dir(repo_root), query)
+    layout = id.resolve_session(paths.state_dir(repo_root), query)
     from agent6.viewmodel import is_session_husk  # noqa: PLC0415
 
     if not allow_husk and is_session_husk(layout.session_dir):
-        raise SessionIdError(
+        raise id.SessionIdError(
             f"session {layout.session_id} crashed before it ever started (no log, nothing"
             f" to resume); `agent6 sessions rm {layout.session_id}` removes it"
         )
     return layout
 
 
-def resolve_target(target: str) -> SessionLayout | None:
+def resolve_target(target: str) -> sessions_layout.SessionLayout | None:
     """Return the named session, or the newest when none was named, printing why when neither."""
     try:
-        layout = resolve_or_newest_layout(Path.cwd(), target)
-    except SessionIdError as exc:
+        layout = resolve_or_newest_layout(pathlib.Path.cwd(), target)
+    except id.SessionIdError as exc:
         error(f"{exc}")
         return None
     if layout is None:
-        print_no_session_match(target, state_dir(Path.cwd()))
+        print_no_session_match(target, paths.state_dir(pathlib.Path.cwd()))
     return layout
 
 
-def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
+def newest_layout_holding(
+    repo_root: pathlib.Path, child: str
+) -> sessions_layout.SessionLayout | None:
     """Return the newest session across every bucket whose dir holds the child, or None."""
     candidates = [d for d in all_session_dirs(repo_root) if (d / child).is_dir()]
     if not candidates:
         return None
     from agent6.viewmodel import session_mtime  # noqa: PLC0415
 
-    return layout_of(max(candidates, key=session_mtime))
+    return sessions_layout.layout_of(max(candidates, key=session_mtime))
 
 
 def resolve_or_newest_layout(
-    repo_root: Path, session_id: str, *, allow_husk: bool = False
-) -> SessionLayout | None:
+    repo_root: pathlib.Path, session_id: str, *, allow_husk: bool = False
+) -> sessions_layout.SessionLayout | None:
     """Resolve an explicit session id, or the newest session when the id is empty.
 
     Args:
@@ -306,7 +298,7 @@ def resolve_or_newest_layout(
     newest = newest_session_dir(session_bucket_dirs(repo_root))
     if newest is None:
         return None
-    return layout_of(newest)
+    return sessions_layout.layout_of(newest)
 
 
 def _enforce_root_policy(allow_root: bool) -> int | None:
@@ -321,9 +313,9 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
     Returns:
         The exit code to refuse with, or None to proceed (with a loud banner as root).
     """
-    if not is_root():
+    if not paths.is_root():
         return None
-    if not root_optin_enabled(allow_root):
+    if not paths.root_optin_enabled(allow_root):
         print(
             "REFUSING: running as root. An LLM-driven agent as root is dangerous;"
             " if a task genuinely needs it, re-run as `agent6 --allow-root <command> ...`"
@@ -331,7 +323,7 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
             file=sys.stderr,
         )
         return 2
-    user = effective_user()
+    user = paths.effective_user()
     who = f" on behalf of {user.name} (uid {user.uid})" if user.via_sudo else ""
     print(
         f"[agent6] WARNING: running as root{who}. The LLM's commands execute as"
@@ -343,7 +335,7 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
 
 
 # The ANSI SGR per `viewmodel.format.status_level`; the TUI's Rich map is the sibling.
-_LEVEL_SGR: dict[StatusLevel, str] = {
+_LEVEL_SGR: dict[format.StatusLevel, str] = {
     "ok": "32",
     "info": "35",  # magenta (mauve on the TUI/web)
     "active": "1;36",
@@ -364,10 +356,8 @@ def styled_status(
         color: Style the label.
         label: Overrides the text.
     """
-    from agent6.viewmodel.format import status_label, status_level  # noqa: PLC0415
-
-    text = status_label(status, reason) if label is None else label
-    sgr_code = _LEVEL_SGR[status_level(status)]
+    text = format.status_label(status, reason) if label is None else label
+    sgr_code = _LEVEL_SGR[format.status_level(status)]
     if color and sgr_code:
         return f"\x1b[{sgr_code}m{text}\x1b[0m", text
     return text, text
@@ -381,5 +371,5 @@ def plural(n: int, singular: str, plural: str | None = None) -> str:
 
 def home_contracted(path: str) -> str:
     """Return the path with `$HOME` shortened to `~`, only at a path boundary."""
-    home = str(Path.home())
+    home = str(pathlib.Path.home())
     return "~" + path[len(home) :] if path == home or path.startswith(home + "/") else path

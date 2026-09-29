@@ -10,7 +10,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.ui.cli import main, plan_watch
+from agent6.ui.cli import _common, main, plan_watch
 from agent6.viewmodel import newest_session_dir
 
 
@@ -96,7 +96,6 @@ def test_run_no_task_terminal_offer_names_the_newest_updated_plan(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from agent6.ui import cli
 
     monkeypatch.chdir(tmp_path)
     plans = paths.state_dir(tmp_path) / "sessions" / "plans"
@@ -113,7 +112,7 @@ def test_run_no_task_terminal_offer_names_the_newest_updated_plan(
     def decline(_prompt: str) -> str:
         return "n"
 
-    monkeypatch.setattr(cli, "safe_input", decline)
+    monkeypatch.setattr(_common, "safe_input", decline)
 
     assert main(["run"]) == 0
 
@@ -128,7 +127,6 @@ def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`Execute it now? [Y/n]` defaults to yes: Enter runs the plan, `n` and an EOF abort."""
-    from agent6.ui import cli
     from agent6.ui.cli import run as run_mod
 
     monkeypatch.chdir(tmp_path)
@@ -148,7 +146,7 @@ def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
         def answer(prompt: str, typed: str | None = typed) -> str | None:
             return typed
 
-        monkeypatch.setattr(cli, "safe_input", answer)
+        monkeypatch.setattr(_common, "safe_input", answer)
         ran.clear()
         assert main(["run"]) == 0
         assert (len(ran) == 1) is executes, typed

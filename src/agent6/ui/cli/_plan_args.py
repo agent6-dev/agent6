@@ -7,24 +7,12 @@ from __future__ import annotations
 import argparse
 import os
 
-from agent6.ui.cli._common import (
-    _add_budget_flags,
-    _add_config_flag,
-    _add_sandbox_flags,
-    _add_session_id,
-    _sub,
-)
-from agent6.ui.cli._run_args import _add_model_flag
-from agent6.ui.cli.completers import (
-    _complete_plan_session_ids,
-    _complete_presets,
-    _complete_session_ids,
-)
+from agent6.ui.cli import _common, _run_args, completers
 
 
 def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `plan` with its `run`, `show` and `edit` verbs."""
-    plan_p = _sub(
+    plan_p = _common._sub(
         sub,
         "plan",
         help=(
@@ -38,7 +26,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     )
     # `run` is the default verb, so `plan "fix the bug"` and `plan run "fix the bug"` are the same.
     plan_sub = plan_p.add_subparsers(dest="plan_command", required=True, metavar="<subcommand>")
-    plan_run = _sub(plan_sub, "run", help="Create a plan for a task.")
+    plan_run = _common._sub(plan_sub, "run", help="Create a plan for a task.")
     plan_run.add_argument(
         "task",
         nargs="?",
@@ -53,9 +41,9 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         default="",
         help="Apply a strategy preset. `agent6 config presets` lists the choices.",
     )
-    plan_profile.completer = _complete_presets  # type: ignore[attr-defined]
-    _add_model_flag(plan_run)
-    _add_config_flag(plan_run)
+    plan_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
+    _run_args._add_model_flag(plan_run)
+    _common._add_config_flag(plan_run)
     plan_run.add_argument(
         "--tui",
         action="store_true",
@@ -65,15 +53,15 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " Requires a terminal. You can also start the plan from `agent6 tui`."
         ),
     )
-    _add_budget_flags(plan_run)
-    _add_sandbox_flags(plan_run)
-    plan_show = _sub(plan_sub, "show", help="Print plan.md from a saved planning session.")
-    _add_session_id(
+    _common._add_budget_flags(plan_run)
+    _common._add_sandbox_flags(plan_run)
+    plan_show = _common._sub(plan_sub, "show", help="Print plan.md from a saved planning session.")
+    _common._add_session_id(
         plan_show,
-        _complete_plan_session_ids,
+        completers._complete_plan_session_ids,
         help_text="Planning session id or unambiguous prefix. Default: newest plan.",
     )
-    plan_edit = _sub(
+    plan_edit = _common._sub(
         plan_sub,
         "edit",
         help=(
@@ -81,16 +69,16 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             f" Resolved command: {os.environ.get('EDITOR', '') or 'vi'}."
         ),
     )
-    _add_session_id(
+    _common._add_session_id(
         plan_edit,
-        _complete_plan_session_ids,
+        completers._complete_plan_session_ids,
         help_text="Planning session id or unambiguous prefix. Default: newest plan.",
     )
 
 
 def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `ask` with its `query` default verb."""
-    ask_p = _sub(
+    ask_p = _common._sub(
         sub,
         "ask",
         help=(
@@ -104,7 +92,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     )
     # `query` is the default verb, so `ask "why ..."` and `ask query "why ..."` are the same.
     ask_sub = ask_p.add_subparsers(dest="ask_command", required=True, metavar="<subcommand>")
-    ask_query = _sub(ask_sub, "query", help="Ask a question.")
+    ask_query = _common._sub(ask_sub, "query", help="Ask a question.")
     ask_query.add_argument(
         "task",
         nargs="?",
@@ -126,7 +114,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " unambiguous prefix."
         ),
     )
-    ask_session.completer = _complete_session_ids  # type: ignore[attr-defined]
+    ask_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
     seed.add_argument(
         "--from-latest",
         dest="ask_session_latest",
@@ -149,9 +137,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         help="Apply a strategy preset. `agent6 config presets` lists the choices.",
     )
-    ask_profile.completer = _complete_presets  # type: ignore[attr-defined]
-    _add_model_flag(ask_query)
-    _add_config_flag(ask_query)
+    ask_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
+    _run_args._add_model_flag(ask_query)
+    _common._add_config_flag(ask_query)
     ask_query.add_argument(
         "-i",
         "--interactive",
@@ -162,5 +150,5 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " terminal. A bare `agent6 ask` uses this mode there."
         ),
     )
-    _add_budget_flags(ask_query)
-    _add_sandbox_flags(ask_query)
+    _common._add_budget_flags(ask_query)
+    _common._add_sandbox_flags(ask_query)

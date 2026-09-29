@@ -5,15 +5,15 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import sys
 from collections.abc import Callable
-from pathlib import Path
 
-from agent6.app._setup import BudgetOverrides, SandboxOverrides
-from agent6.directive import steer_problem
-from agent6.sessions.layout import LOGS_NAME
-from agent6.ui.cli.resume import _cmd_resume
-from agent6.viewmodel.listing import scan_session_log
+from agent6 import directive
+from agent6.app import _setup
+from agent6.sessions import layout
+from agent6.ui.cli import resume
+from agent6.viewmodel import listing
 
 # Free text is the next execution's operator instruction, as `--steer` carries it.
 _NEXT_PROMPT = "next (/exit to finish): "
@@ -35,14 +35,14 @@ def prompting_is_possible() -> bool:
         return False
 
 
-def follow_up_on_offer(session_dir: Path) -> bool:
+def follow_up_on_offer(session_dir: pathlib.Path) -> bool:
     """Return whether the run can take a follow-up execution from here.
 
     Not after a detach (the run goes on in the background), an `/undo` (the fork it
     named is the continuation) or an `/exit` (asking again would reopen what the
     operator closed); each printed its own line.
     """
-    scan = scan_session_log(session_dir / LOGS_NAME)
+    scan = listing.scan_session_log(session_dir / layout.LOGS_NAME)
     return scan.finished and scan.end_reason not in ("undone", "steer_exit")
 
 
@@ -50,11 +50,11 @@ def end_of_session_prompt(
     *,
     rc: int,
     session_id: str,
-    session_dir: Path | None = None,
+    session_dir: pathlib.Path | None = None,
     ask: Callable[[str], str],
-    config_path: Path | None = None,
-    budget_overrides: BudgetOverrides | None = None,
-    sandbox_overrides: SandboxOverrides | None = None,
+    config_path: pathlib.Path | None = None,
+    budget_overrides: _setup.BudgetOverrides | None = None,
+    sandbox_overrides: _setup.SandboxOverrides | None = None,
     model: str = "",
 ) -> int:
     """Keep the session going from the terminal until `/exit`.
@@ -86,7 +86,7 @@ def end_of_session_prompt(
             return rc
         if not answer:
             continue
-        if (problem := steer_problem(answer)) is not None:
+        if (problem := directive.steer_problem(answer)) is not None:
             print(f"[agent6] {problem}", file=sys.stderr)
             continue
         if answer.startswith("/") and len(answer.split()) == 1 and answer != "/undo":
@@ -98,7 +98,7 @@ def end_of_session_prompt(
                 file=sys.stderr,
             )
             continue
-        rc = _cmd_resume(
+        rc = resume._cmd_resume(
             config_path,
             session_id,
             force=False,

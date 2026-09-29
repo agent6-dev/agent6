@@ -9,6 +9,8 @@ from collections.abc import Callable
 
 import pytest
 
+from agent6.sessions import ipc as sessions_ipc
+from agent6.ui.cli import _menu_input
 from agent6.ui.cli import _steer_menu as cli__steer_menu
 
 
@@ -508,7 +510,7 @@ def test_pause_menu_seeds_recall_from_the_journal(
         history.append("/status")  # what accepting a line does
         return "go"
 
-    monkeypatch.setattr(_steer_menu, "menu_input", fake_menu_input)
+    monkeypatch.setattr(_menu_input, "menu_input", fake_menu_input)
     assert cli__steer_menu.pause_menu(tmp_path) == "go"
     assert seen[0] == ["polish the TUI", "focus on tests"]
     # A later pause of the same session must not reseed away in-process lines.
@@ -541,7 +543,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
 
     printed: list[str] = []
     monkeypatch.setattr(_steer, "tty_message", printed.append)
-    monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(sessions_ipc, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
 
     facts = frontend.SessionFacts(
         spend_usd=1.42,
@@ -603,8 +605,8 @@ def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
     from agent6.ui.cli import _steer
 
     monkeypatch.setattr(_steer, "tty_message", lambda _t: None)  # type: ignore[misc]
-    monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
-    monkeypatch.setattr(_steer, "menu_capable", lambda: False)
+    monkeypatch.setattr(sessions_ipc, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(_menu_input, "menu_capable", lambda: False)
 
     def at_the_open_menu(_text: str, **_kw: object) -> str:
         handler = signal.getsignal(signal.SIGTSTP)
@@ -645,8 +647,8 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
         return "focus on the failing test"
 
     monkeypatch.setattr(_steer, "tty_message", lambda _t: None)  # type: ignore[misc]
-    monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
-    monkeypatch.setattr(_steer, "menu_capable", lambda: False)
+    monkeypatch.setattr(sessions_ipc, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(_menu_input, "menu_capable", lambda: False)
     monkeypatch.setattr(_steer, "tty_prompt", typed)
 
     state = _steer.install_steer_sigint(events.EventSink(tmp_path / "logs.jsonl"), tmp_path)

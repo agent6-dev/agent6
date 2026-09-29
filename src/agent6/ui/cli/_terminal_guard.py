@@ -18,7 +18,7 @@ import sys
 from collections.abc import Generator, Iterable
 from typing import IO, Any
 
-from agent6.viewmodel.transcript import scrub_terminal_output
+from agent6.viewmodel import transcript
 
 
 class ScrubbedStream:
@@ -29,7 +29,7 @@ class ScrubbedStream:
 
     def write(self, text: str) -> int:
         """Return what the wrapped stream wrote of the scrubbed text."""
-        return self.raw.write(scrub_terminal_output(text))
+        return self.raw.write(transcript.scrub_terminal_output(text))
 
     def writelines(self, lines: Iterable[str]) -> None:
         """Write each line, scrubbed."""

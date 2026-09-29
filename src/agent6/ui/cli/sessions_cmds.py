@@ -8,73 +8,30 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
+import pathlib
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.app.fork_worktrees import (
-    remove_fork_worktree,
-    uncommitted_in_worktree,
-    worktree_owners,
-)
-from agent6.app.resume import covering_stamp
-from agent6.git_ops import (
-    DIFF_SHOW_SAFETY_FLAGS,
-    GitError,
-    branch_exists,
-    chain_ref_for,
-    chain_tip,
-    delete_ref,
-    git_hardening_flags,
-    list_run_commits,
-    run_branch_for,
-    run_ref_tips,
-)
-from agent6.kinds import SESSION_KINDS
-from agent6.paths import state_dir
-from agent6.sessions.id import SessionIdError
-from agent6.sessions.ipc import worker_is_alive
-from agent6.sessions.layout import (
-    SESSION_BUCKETS,
-    SessionLayout,
-    bucket_dir,
-    layout_of,
-)
-from agent6.sessions.manifest import (
-    ManifestError,
-    SessionManifest,
-    model_git_refusal,
-    read_manifest,
-)
-from agent6.ui.cli._common import (
-    _runs_dir,
-    error,
-    nothing_yet,
-    print_nothing_yet,
-    refuse,
-    resolve_or_newest_layout,
-    resolve_session_layout,
-    styled_status,
-)
+from agent6 import git_ops, kinds
+from agent6 import paths as agent6_paths
+from agent6.app import fork_worktrees, resume
+from agent6.sessions import id, ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.ui.cli import _common
 from agent6.viewmodel import (
+    format,
     is_winner,
     newest_session_dir,
     session_dirs,
     summarize_session_dir,
     task_snippet,
+    wire,
 )
-from agent6.viewmodel.format import (
-    format_when,
-    lane_count,
-    lane_id_cell,
-    listing_status_label,
-    winner_id,
-)
-from agent6.viewmodel.listing import ListingRow, nested_rows, row_json
-from agent6.viewmodel.wire import commits_ref
+from agent6.viewmodel import listing as viewmodel_listing
 
 
 def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
@@ -93,40 +50,48 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     Returns:
         The exit code, 0.
     """
-    cwd = Path.cwd()
-    dirs = session_dirs(state_dir(cwd), SESSION_BUCKETS)
+    cwd = pathlib.Path.cwd()
+    dirs = session_dirs(agent6_paths.state_dir(cwd), sessions_layout.SESSION_BUCKETS)
     if not dirs:
-        print("[]" if as_json else nothing_yet())  # the empty listing is output, not an error
+        print(
+            "[]" if as_json else _common.nothing_yet()
+        )  # the empty listing is output, not an error
         return 0
     winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
-    tips = run_ref_tips(cwd)
-    listing = nested_rows(summarize_session_dir(d, branch_tips=tips) for d in dirs)
+    tips = git_ops.run_ref_tips(cwd)
+    listing = viewmodel_listing.nested_rows(
+        summarize_session_dir(d, branch_tips=tips) for d in dirs
+    )
     if as_json:
-        print(json.dumps([row_json(r, winners=winners) for r in listing], indent=2))
+        print(
+            json.dumps([viewmodel_listing.row_json(r, winners=winners) for r in listing], indent=2)
+        )
         return 0
     color = sys.stdout.isatty()
 
-    def cells(row: ListingRow, id_cell: str) -> tuple[str, str, str, str, str, str]:
+    def cells(
+        row: viewmodel_listing.ListingRow, id_cell: str
+    ) -> tuple[str, str, str, str, str, str]:
         """Return a row's six cells with the id cell as given."""
         s = row.summary
-        styled, plain = styled_status(
+        styled, plain = _common.styled_status(
             s.status,
             s.reason,
             color=color,
-            label=listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
+            label=format.listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
         )
-        return format_when(row.mtime), styled, plain, s.cost_cell, id_cell, s.task
+        return format.format_when(row.mtime), styled, plain, s.cost_cell, id_cell, s.task
 
     rows: list[tuple[str, str, str, str, str, str]] = []
 
-    def emit(row: ListingRow, depth: int) -> None:
+    def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
         """Append the row's cells, then its lanes' when listing them."""
         s = row.summary
-        id_cell = winner_id(s.session_id, winner=s.session_id in winners)
+        id_cell = format.winner_id(s.session_id, winner=s.session_id in winners)
         if depth:
-            id_cell = lane_id_cell(id_cell, depth)
+            id_cell = format.lane_id_cell(id_cell, depth)
         elif row.lanes and not lanes:
-            id_cell += f" ({lane_count(len(row.lanes))})"
+            id_cell += f" ({format.lane_count(len(row.lanes))})"
         rows.append(cells(row, id_cell))
         if lanes:
             for lane in row.lanes:
@@ -166,7 +131,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
     Returns:
         git's exit code; 2 when the run cannot be resolved or has no branch.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     res = _resolve_session_manifest(
         cwd,
         session_id,
@@ -189,12 +154,12 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
             return 0
     base_sha = manifest.base_sha
     if not base_sha:
-        error("manifest has no base_sha; nothing to diff against")
+        _common.error("manifest has no base_sha; nothing to diff against")
         return 2
 
     head_ref = ref.head_ref
     # Printed without the -c hardening overrides, as git_ops error messages are; executed with them.
-    args: list[str] = ["diff", *DIFF_SHOW_SAFETY_FLAGS]
+    args: list[str] = ["diff", *git_ops.DIFF_SHOW_SAFETY_FLAGS]
     if stat:
         args.append("--stat")
     args.extend([f"{base_sha}..{head_ref}"])
@@ -206,11 +171,14 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         file=sys.stderr,
     )
     # Probe first so a zero-commit run says so; a probe error falls through to git's message.
-    probe_args = ["diff", *DIFF_SHOW_SAFETY_FLAGS, "--quiet", f"{base_sha}..{head_ref}"]
+    probe_args = ["diff", *git_ops.DIFF_SHOW_SAFETY_FLAGS, "--quiet", f"{base_sha}..{head_ref}"]
     if paths:
         probe_args.extend(["--", *paths])
     probe = subprocess.run(
-        ["git", *git_hardening_flags(cwd), *probe_args], cwd=cwd, check=False, capture_output=True
+        ["git", *git_ops.git_hardening_flags(cwd), *probe_args],
+        cwd=cwd,
+        check=False,
+        capture_output=True,
     )
     if probe.returncode == 0:
         # A live run mid-work has uncommitted edits on the worktree: say so, not a bare silence.
@@ -218,11 +186,13 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         print(dirty if dirty else "(no changes)")
         return 0
     pager = () if paginate else ("--no-pager",)
-    proc = subprocess.run(["git", *pager, *git_hardening_flags(cwd), *args], cwd=cwd, check=False)
+    proc = subprocess.run(
+        ["git", *pager, *git_ops.git_hardening_flags(cwd), *args], cwd=cwd, check=False
+    )
     return proc.returncode
 
 
-def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
+def _dirty_worktree_note(cwd: pathlib.Path, run_branch: object) -> str:
     """Return a note when the diffed run's branch is checked out with uncommitted work, else "".
 
     Only when the dirty files are unambiguously this run's: the current branch must equal
@@ -233,7 +203,7 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
     # Hardened like the diff: `git status` would fire a poisoned core.fsmonitor on the host.
     try:
         current = subprocess.run(
-            ["git", *git_hardening_flags(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
+            ["git", *git_ops.git_hardening_flags(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=cwd,
             check=False,
             capture_output=True,
@@ -242,7 +212,7 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
         if current.returncode != 0 or current.stdout.strip() != str(run_branch):
             return ""
         status = subprocess.run(
-            ["git", *git_hardening_flags(cwd), "status", "--porcelain"],
+            ["git", *git_ops.git_hardening_flags(cwd), "status", "--porcelain"],
             cwd=cwd,
             check=False,
             capture_output=True,
@@ -260,7 +230,7 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _CommitsRef:
     """Where a session's commits end, for `base_sha..head_ref`.
 
@@ -275,23 +245,26 @@ class _CommitsRef:
     reason: str
 
 
-def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
+def _commits_ref(cwd: pathlib.Path, manifest: sessions_manifest.SessionManifest) -> _CommitsRef:
     """Return where the run's commits end.
 
     The run branch while it covers the chain, else the chain ref; else the manifest's branch
     name while no chain exists (the verbs read its absence themselves: pruned, never cut, or
     a lane's branch still in its clone); else the reason the run has no commits.
     """
-    if ref := commits_ref(manifest, cwd):
+    if ref := wire.commits_ref(manifest, cwd):
         return _CommitsRef(head_ref=ref, reason="")
-    if manifest.run_branch and chain_tip(cwd, chain_ref_for(manifest.session_id)) is None:
+    if (
+        manifest.run_branch
+        and git_ops.chain_tip(cwd, git_ops.chain_ref_for(manifest.session_id)) is None
+    ):
         return _CommitsRef(head_ref=manifest.run_branch, reason="")
     if manifest.parked_task:
         # A parked run never started, so `base..HEAD` is the run it was parked behind.
         return _CommitsRef(
             head_ref="", reason="this run was parked before it started, so it made no commits"
         )
-    kind = SESSION_KINDS.get(manifest.mode)
+    kind = kinds.SESSION_KINDS.get(manifest.mode)
     if kind is not None and not kind.edits:
         article = "an" if manifest.mode[:1] in "aeiou" else "a"
         return _CommitsRef(
@@ -302,12 +275,12 @@ def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
 
 
 def _resolve_session_manifest(
-    cwd: Path,
+    cwd: pathlib.Path,
     session_id: str,
     *,
     recent_note: str = "using most recent run",
     missing_hint: str = "",
-) -> tuple[SessionLayout, SessionManifest] | int:
+) -> tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest] | int:
     """Resolve a run id, or "" for the newest, to its layout and manifest.
 
     Shared by `sessions diff`, `merge` and `commits`; the two note strings vary per caller.
@@ -321,63 +294,67 @@ def _resolve_session_manifest(
     Returns:
         `(layout, manifest)`, or the exit code of a printed error.
     """
-    runs_dir = _runs_dir(cwd)
+    runs_dir = _common._runs_dir(cwd)
     if not session_id:
         # No id: the most recent run; a plan or an ask has no branch for these verbs.
         latest = newest_session_dir([runs_dir]) if runs_dir.is_dir() else None
         if latest is None:
             # Only branchless sessions: say so; a fresh state dir keeps the first-contact copy.
-            print_nothing_yet("runs" if session_dirs(state_dir(cwd)) else "sessions")
+            _common.print_nothing_yet(
+                "runs" if session_dirs(agent6_paths.state_dir(cwd)) else "sessions"
+            )
             return 2
-        layout = layout_of(latest)
+        layout = sessions_layout.layout_of(latest)
         print(f"[agent6] {recent_note}: {layout.session_id}", file=sys.stderr)
     else:
         # Every bucket: a plan the operator named exists, it just has no branch to show.
         try:
-            layout = resolve_session_layout(cwd, session_id)
-        except SessionIdError as exc:
-            error(f"{exc}")
+            layout = _common.resolve_session_layout(cwd, session_id)
+        except id.SessionIdError as exc:
+            _common.error(f"{exc}")
             return 2
     target_id = layout.session_id
     if not layout.manifest_path.is_file():
-        error(f"session {target_id} has no manifest.json{missing_hint}")
+        _common.error(f"session {target_id} has no manifest.json{missing_hint}")
         return 2
     try:
-        manifest = read_manifest(layout.session_dir)
-    except ManifestError as exc:
-        error(f"could not read manifest: {exc}")
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
+    except sessions_manifest.ManifestError as exc:
+        _common.error(f"could not read manifest: {exc}")
         return 2
     # A fan-out commits nothing: its lanes hold the work.
     refusal = (
         f"{target_id} is a fan-out; its lanes hold the commits"
         f" (`agent6 sessions show {target_id}` lists them)"
         if manifest.fanout is not None
-        else model_git_refusal(manifest, "sessions")
+        else sessions_manifest.model_git_refusal(manifest, "sessions")
     )
     if refusal is not None:
-        refuse(f"{refusal}")
+        _common.refuse(f"{refusal}")
         return 2
     return layout, manifest
 
 
-def _committed_nothing(cwd: Path, session_id: str) -> bool:
+def _committed_nothing(cwd: pathlib.Path, session_id: str) -> bool:
     """Return whether a run left no commit anywhere.
 
     The chain ref it commits to was never created, so its branch was never cut either.
     """
-    return chain_tip(cwd, chain_ref_for(session_id)) is None
+    return git_ops.chain_tip(cwd, git_ops.chain_ref_for(session_id)) is None
 
 
-def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -> str | None:
+def _pruned_branch_note(
+    cwd: pathlib.Path, manifest: sessions_manifest.SessionManifest, run_branch: str
+) -> str | None:
     """Return where the work went when a run's branch is absent, or None when it is there.
 
     Separates the ways to get here: a merged-then-pruned branch (the stamp covering every
     commit), a branch deleted past its stamp or with no merge recorded (the chain ref keeps
     the commits), and a run that committed nothing.
     """
-    if branch_exists(cwd, run_branch):
+    if git_ops.branch_exists(cwd, run_branch):
         return None
-    stamp = covering_stamp(cwd, manifest)
+    stamp = resume.covering_stamp(cwd, manifest)
     if stamp is not None:
         note = f"[agent6] run branch {run_branch} was pruned; {stamp.landed()}"
         if stamp.commit:
@@ -385,7 +362,7 @@ def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -
         return note
     if _committed_nothing(cwd, manifest.session_id):
         return f"[agent6] this run committed nothing, so {run_branch} was never cut."
-    chain = chain_ref_for(manifest.session_id)
+    chain = git_ops.chain_ref_for(manifest.session_id)
     if manifest.merged is not None:
         return (
             f"[agent6] run branch {run_branch} is gone; its commits survive at {chain},"
@@ -403,18 +380,18 @@ def _cmd_commits(*, session_id: str) -> int:
     Returns:
         The exit code; 2 when the run cannot be resolved or has no commits.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     res = _resolve_session_manifest(cwd, session_id)
     if isinstance(res, int):
         return res
     _layout, manifest = res
     ref = _commits_ref(cwd, manifest)
     if not ref.head_ref:
-        error(f"this session has no branch to list commits from ({ref.reason}).")
+        _common.error(f"this session has no branch to list commits from ({ref.reason}).")
         return 2
     base_sha = manifest.base_sha
     if not base_sha:
-        error("manifest has no base_sha; nothing to list commits from")
+        _common.error("manifest has no base_sha; nothing to list commits from")
         return 2
     head_ref = ref.head_ref
     # A branch may stand in for a pruned one: say where the work went.
@@ -426,7 +403,7 @@ def _cmd_commits(*, session_id: str) -> int:
     if pruned is not None:
         print(pruned)
         return 0
-    rows = list_run_commits(cwd, base_sha, head_ref)
+    rows = git_ops.list_run_commits(cwd, base_sha, head_ref)
     if not rows:
         print(f"[agent6] no commits on {head_ref}.")
         return 0
@@ -445,42 +422,44 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
     Returns:
         The exit code; 2 when the session cannot be resolved.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     if not session_id:
-        print(state_dir(cwd))
+        print(agent6_paths.state_dir(cwd))
         return 0
     try:
-        layout = resolve_session_layout(cwd, session_id)
-    except SessionIdError as exc:
-        error(f"{exc}")
+        layout = _common.resolve_session_layout(cwd, session_id)
+    except id.SessionIdError as exc:
+        _common.error(f"{exc}")
         return 2
     print(layout.session_dir)
     return 0
 
 
-def _rm_asks(cwd: Path, session_id: str) -> int:
+def _rm_asks(cwd: pathlib.Path, session_id: str) -> int:
     """Clear this directory's asks bucket.
 
     Returns:
         The exit code; 1 when a deletion failed, never a success line over a surviving dir.
     """
     if session_id:
-        error("--asks clears this directory's asks; drop the run id.")
+        _common.error("--asks clears this directory's asks; drop the run id.")
         return 2
-    bucket = bucket_dir(state_dir(cwd), "asks")
+    bucket = sessions_layout.bucket_dir(agent6_paths.state_dir(cwd), "asks")
     gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
     try:
         shutil.rmtree(bucket)
     except FileNotFoundError:
         pass
     except OSError as exc:
-        error(f"could not remove {bucket}: {exc}")
+        _common.error(f"could not remove {bucket}: {exc}")
         return 1
     print(f"removed {gone} ask{'' if gone == 1 else 's'} from {cwd}")
     return 0
 
 
-def _rm_refusal(layout: SessionLayout, worktree: Path | None, tips: tuple[str, ...]) -> str:
+def _rm_refusal(
+    layout: sessions_layout.SessionLayout, worktree: pathlib.Path | None, tips: tuple[str, ...]
+) -> str:
     """Return why this record cannot be deleted, or "".
 
     The record is the only thing that names a fork's worktree, so deleting one that still
@@ -491,11 +470,11 @@ def _rm_refusal(layout: SessionLayout, worktree: Path | None, tips: tuple[str, .
         worktree: The fork's own worktree; None when another session shares and keeps it.
         tips: The branch tips the worktree's commits must reach.
     """
-    if worker_is_alive(layout.session_dir):
+    if ipc.worker_is_alive(layout.session_dir):
         return (
             f"{layout.session_id} is still live; stop it first (agent6 stop {layout.session_id})."
         )
-    if worktree is None or not (dirt := uncommitted_in_worktree(worktree, tips)):
+    if worktree is None or not (dirt := fork_worktrees.uncommitted_in_worktree(worktree, tips)):
         return ""
     return (
         f"{layout.session_id}'s worktree {dirt} ({worktree}); deleting the record"
@@ -520,40 +499,42 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     Returns:
         The exit code; 1 on a partial delete, 2 on a refusal.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     if asks:
         return _rm_asks(cwd, session_id)
     try:
         # rm is the surface that deletes a husk, so it resolves one.
-        layout = resolve_or_newest_layout(cwd, session_id, allow_husk=True)
-    except SessionIdError as exc:
-        error(f"{exc}")
+        layout = _common.resolve_or_newest_layout(cwd, session_id, allow_husk=True)
+    except id.SessionIdError as exc:
+        _common.error(f"{exc}")
         return 2
     if layout is None:
-        print_nothing_yet()
+        _common.print_nothing_yet()
         return 2
-    worktree: Path | None = None
-    with contextlib.suppress(ManifestError):
-        worktree = read_manifest(layout.session_dir).worktree
+    worktree: pathlib.Path | None = None
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        worktree = sessions_manifest.read_manifest(layout.session_dir).worktree
     sharing = (
         [
             d.name
-            for d, _m in worktree_owners(state_dir(cwd)).get(worktree, [])
+            for d, _m in fork_worktrees.worktree_owners(agent6_paths.state_dir(cwd)).get(
+                worktree, []
+            )
             if d != layout.session_dir
         ]
         if worktree is not None
         else []
     )
-    landed = chain_tip(cwd, chain_ref_for(layout.session_id)) or ""
+    landed = git_ops.chain_tip(cwd, git_ops.chain_ref_for(layout.session_id)) or ""
     tips = (landed,) if landed else ()
     if reason := _rm_refusal(layout, worktree if not sharing else None, tips):
-        refuse(f"{reason}")
+        _common.refuse(f"{reason}")
         return 2
     try:
         shutil.rmtree(layout.session_dir)
     except OSError as exc:
         # A partial delete leaves a remnant: no success line, and the chain ref stays as its anchor.
-        error(f"could not remove {layout.session_dir}: {exc}")
+        _common.error(f"could not remove {layout.session_dir}: {exc}")
         return 1
     went: list[str] = []  # what went with the record
     stays = ""
@@ -561,17 +542,17 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         verb = "names" if len(sharing) == 1 else "name"
         stays = f"; its worktree stays: {', '.join(sharing)} still {verb} it"
     elif worktree is not None:
-        gone, why = remove_fork_worktree(cwd, worktree, tips)
+        gone, why = fork_worktrees.remove_fork_worktree(cwd, worktree, tips)
         if gone:
             went.append("its worktree")
         elif why:
             stays = f"; its worktree stays: it {why} ({worktree})"
-    chain = chain_ref_for(layout.session_id)
+    chain = git_ops.chain_ref_for(layout.session_id)
     try:
-        if (chain_head := chain_tip(cwd, chain)) is not None:
-            branch = run_branch_for(layout.session_id)
-            branch_kept = branch_exists(cwd, branch)
-            delete_ref(cwd, chain)
+        if (chain_head := git_ops.chain_tip(cwd, chain)) is not None:
+            branch = git_ops.run_branch_for(layout.session_id)
+            branch_kept = git_ops.branch_exists(cwd, branch)
+            git_ops.delete_ref(cwd, chain)
             # A chain ref has no reflog: the sha on the deleting line is the only way back.
             went.append(
                 "its chain ref"
@@ -582,7 +563,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
                     f" git branch <name> {chain_head[:12]})"
                 )
             )
-    except GitError:
+    except git_ops.GitError:
         pass  # not a repo here, or git unreadable: state-dir removal stands
     what = [layout.session_id, *went]
     removed = f"{', '.join(what[:-1])} and {what[-1]}" if went else what[0]

@@ -8,7 +8,9 @@ import pathlib
 
 import pytest
 
+from agent6.app import _setup
 from agent6.config import Config
+from agent6.sandbox import detect
 from agent6.ui.cli import check_cmds as cli_check_cmds  # pyright: ignore[reportPrivateUsage]
 
 
@@ -105,7 +107,7 @@ def test_boundaries_fails_when_a_run_would_refuse_the_config(
         '[sandbox]\nisolation = "hardened"\nnetwork = "session"\n', encoding="utf-8"
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(check_cmds, "detect_env", object)
+    monkeypatch.setattr(_setup, "detect_env", object)
 
     def _hardened(_requested: str, _env: object) -> str:
         return "hardened"
@@ -113,8 +115,8 @@ def test_boundaries_fails_when_a_run_would_refuse_the_config(
     def _no_degradation(_env: object) -> None:
         return None
 
-    monkeypatch.setattr(check_cmds, "resolve_isolation", _hardened)
-    monkeypatch.setattr(check_cmds, "degrade_reason", _no_degradation)
+    monkeypatch.setattr(detect, "resolve_isolation", _hardened)
+    monkeypatch.setattr(detect, "degrade_reason", _no_degradation)
 
     rc = check_cmds._cmd_check(  # pyright: ignore[reportPrivateUsage]
         config_path, section="boundaries"

@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
+import pathlib
 import re
-from pathlib import Path
 
 _TASK_FILE_REF_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9_./\-]+)")
 
@@ -13,7 +13,7 @@ _TASK_FILE_REF_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9_./\-]+)")
 TASK_FILE_REF_MAX_BYTES = 64 * 1024  # per file; a bigger read needs an explicit tool call
 
 
-def expand_task_file_refs(task: str, root: Path) -> str:
+def expand_task_file_refs(task: str, root: pathlib.Path) -> str:
     """Inline the `@path` references in the task that resolve to files under the root.
 
     A match starts at a word boundary that excludes `@` and `/`, so `user@example.com`

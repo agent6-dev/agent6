@@ -7,76 +7,39 @@ The lifecycle is `agent6.app.run.run_task`.
 
 from __future__ import annotations
 
+import dataclasses
 import os
+import pathlib
 import sys
 import time
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.app._setup import (
-    BudgetOverrides,
-    SandboxOverrides,
-    load_session_config,
-)
-from agent6.app.frontend import FrontendCapabilities, SessionFrontend
-from agent6.app.parallel import build_coordinator_spawner
-from agent6.app.preflight import (
-    require_git_repo,
-    route_preflight,
-)
-from agent6.app.reporter import STDIO_REPORTER
-from agent6.app.run import run_task
+from agent6 import errors, kinds, paths
+from agent6 import events as agent6_events
+from agent6 import skills as agent6_skills
+from agent6.app import _setup, frontend, parallel, preflight, reporter, run
 from agent6.config import (
     Config,
 )
-from agent6.errors import OperatorError
-from agent6.events import EventSink
-from agent6.kinds import ResumableMode, session_kind
-from agent6.paths import data_dir
-from agent6.skills import operator_skills
-from agent6.ui.btw import asks_dir, direct_launch, make_btw_runner
-from agent6.ui.cli._ask import (
-    build_session_seed,
-    run_ask_repl,
-    save_ask_transcript,
+from agent6.ui import btw, spawn, steer
+from agent6.ui.cli import (
+    _ask,
+    _common,
+    _console_view,
+    _interact,
+    _live,
+    _preflight,
+    _repl,
+    _steer,
+    _task_refs,
 )
-from agent6.ui.cli._common import error, refuse
-from agent6.ui.cli._console_view import ConsoleView
-from agent6.ui.cli._interact import (
-    build_approver,
-    build_questioner,
-    lane_away_mode,
-    prompt_detach_away_mode,
-)
-from agent6.ui.cli._live import (
-    loop_logger,
-    should_spawn_tui,
-    stream_modes,
-    tui_session,
-)
-from agent6.ui.cli._preflight import (
-    confirm_replay_after_crash,
-    confirm_run_on_run_branch,
-    confirm_unconfined_autorun,
-)
-from agent6.ui.cli._repl import build_repl_hook
-from agent6.ui.cli._steer import (
-    make_steer_state,
-    select_revised_prompt,
-)
-from agent6.ui.cli._task_refs import (
-    expand_task_file_refs,
-)
-from agent6.ui.cli.parallel import dispatch_parallel, lane_runtime
-from agent6.ui.spawn import agent6_exe, spawn_detached_resume
-from agent6.ui.steer import SteerState
+from agent6.ui.cli import parallel as cli_parallel
 from agent6.viewmodel import session_policy
 
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
     """Return the task-prompt prefix for the `--skill` names, and an error text or ""."""
-    resolved = operator_skills(
-        cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, data_dir() / "skills"
+    resolved = agent6_skills.operator_skills(
+        cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, paths.data_dir() / "skills"
     )
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
     blocks: list[str] = []
@@ -98,7 +61,9 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
     )
 
 
-def _remember_steer(cell: list[SteerState | None], state: SteerState) -> SteerState:
+def _remember_steer(
+    cell: list[steer.SteerState | None], state: steer.SteerState
+) -> steer.SteerState:
     """Publish the execution's steer state for the approver's late-bound read.
 
     Returns:
@@ -108,7 +73,7 @@ def _remember_steer(cell: list[SteerState | None], state: SteerState) -> SteerSt
     return state
 
 
-def session_frontend(config_path: Path | None = None) -> SessionFrontend:
+def session_frontend(config_path: pathlib.Path | None = None) -> frontend.SessionFrontend:
     """Return the presentation seam the run and resume lifecycles drive.
 
     One per invocation: the console-view cell is run-scoped. The console view is created
@@ -120,13 +85,15 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
         config_path: The `--config` file, if any.
     """
     # Late-bound: the approver and questioner are built before the view or steer state exists.
-    console_cell: list[ConsoleView | None] = [None]
-    steer_cell: list[SteerState | None] = [None]
+    console_cell: list[_console_view.ConsoleView | None] = [None]
+    steer_cell: list[steer.SteerState | None] = [None]
 
-    def attach_console_view(events: EventSink) -> None:
+    def attach_console_view(events: agent6_events.EventSink) -> None:
         """Create the console view on the run's event sink."""
         # The sink's path is the handle to the run dir, so the layout need not cross the protocol.
-        view = ConsoleView(sys.stderr, policy=lambda: session_policy(events.path.parent).line())
+        view = _console_view.ConsoleView(
+            sys.stderr, policy=lambda: session_policy(events.path.parent).line()
+        )
         console_cell[0] = view
         events.subscribe(view)
 
@@ -136,33 +103,35 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
         if view is not None:
             view.close()
 
-    return SessionFrontend(
+    return frontend.SessionFrontend(
         # The CLI asks on the terminal, so a piped stdin means it cannot ask.
-        capabilities=FrontendCapabilities(can_ask=sys.stdin.isatty()),
-        should_spawn_tui=lambda tui, interactive, mode: should_spawn_tui(
+        capabilities=frontend.FrontendCapabilities(can_ask=sys.stdin.isatty()),
+        should_spawn_tui=lambda tui, interactive, mode: _live.should_spawn_tui(
             tui=tui, interactive=interactive, mode=mode
         ),
-        stream_modes=lambda tui_enabled: stream_modes(tui_enabled=tui_enabled),
+        stream_modes=lambda tui_enabled: _live.stream_modes(tui_enabled=tui_enabled),
         attach_console_view=attach_console_view,
         close_console_view=close_console_view,
-        loop_logger=lambda mode: loop_logger(mode, console_cell[0]),
-        tui_session=lambda session_dir, enabled: tui_session(session_dir, enabled=enabled),
-        build_approver=lambda session_dir: build_approver(session_dir, console_cell, steer_cell),
-        build_questioner=lambda session_dir: build_questioner(session_dir, console_cell),
+        loop_logger=lambda mode: _live.loop_logger(mode, console_cell[0]),
+        tui_session=lambda session_dir, enabled: _live.tui_session(session_dir, enabled=enabled),
+        build_approver=lambda session_dir: _interact.build_approver(
+            session_dir, console_cell, steer_cell
+        ),
+        build_questioner=lambda session_dir: _interact.build_questioner(session_dir, console_cell),
         make_steer_state=lambda events, session_dir, facts: _remember_steer(
             steer_cell,
-            make_steer_state(
+            _steer.make_steer_state(
                 events,
                 session_dir,
                 console_cell[0],
                 facts,
                 # The CLI has a terminal, so `/btw` launches directly, unlike a confined lane.
-                make_btw_runner(
+                btw.make_btw_runner(
                     session_dir.name,
-                    launch=direct_launch,
+                    launch=btw.direct_launch,
                     list_asks=lambda: (
-                        [d for d in asks_dir(session_dir).iterdir() if d.is_dir()]
-                        if asks_dir(session_dir).is_dir()
+                        [d for d in btw.asks_dir(session_dir).iterdir() if d.is_dir()]
+                        if btw.asks_dir(session_dir).is_dir()
                         else []
                     ),
                     events=events,
@@ -170,21 +139,21 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
                 config_path=config_path,
             ),
         ),
-        confirm_unconfined_autorun=confirm_unconfined_autorun,
-        confirm_run_on_run_branch=confirm_run_on_run_branch,
-        confirm_replay_after_crash=confirm_replay_after_crash,
-        prompt_detach_away_mode=prompt_detach_away_mode,
+        confirm_unconfined_autorun=_preflight.confirm_unconfined_autorun,
+        confirm_run_on_run_branch=_preflight.confirm_run_on_run_branch,
+        confirm_replay_after_crash=_preflight.confirm_replay_after_crash,
+        prompt_detach_away_mode=_interact.prompt_detach_away_mode,
         # The choice reads stdin: with it redirected nobody can answer.
         select_revised_prompt=(
             (
-                lambda original, revised, questions: select_revised_prompt(
+                lambda original, revised, questions: _steer.select_revised_prompt(
                     original, revised, questions, console_cell[0]
                 )
             )
             if sys.stdin.isatty()
             else None
         ),
-        build_repl_hook=lambda cwd, budget, session_id, mcp_manager: build_repl_hook(
+        build_repl_hook=lambda cwd, budget, session_id, mcp_manager: _repl.build_repl_hook(
             cwd,
             budget,
             session_id=session_id,
@@ -192,35 +161,35 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
             console_view=console_cell[0],
             steer_cell=steer_cell,
         ),
-        run_ask_repl=lambda wf, budget, layout, first_question: run_ask_repl(
+        run_ask_repl=lambda wf, budget, layout, first_question: _ask.run_ask_repl(
             wf, budget, layout, first_question=first_question
         ),
-        save_ask_transcript=lambda layout, question, answer: save_ask_transcript(
+        save_ask_transcript=lambda layout, question, answer: _ask.save_ask_transcript(
             layout, question=question, answer=answer
         ),
         build_coordinator_spawner=(
             lambda cfg, cwd, state_dir, mode, session_id, max_usd, auto_approve: (
-                build_coordinator_spawner(
+                parallel.build_coordinator_spawner(
                     cfg,
                     cwd,
                     state_dir,
                     mode=mode,
                     session_id=session_id,
-                    runtime=lane_runtime(),
+                    runtime=cli_parallel.lane_runtime(),
                     max_usd=max_usd,
                     auto_approve=auto_approve,
-                    lane_away=lane_away_mode(),
+                    lane_away=_interact.lane_away_mode(),
                 )
             )
         ),
-        agent6_exe=agent6_exe,
-        spawn_detached_resume=lambda cwd, sid, flags: spawn_detached_resume(
+        agent6_exe=spawn.agent6_exe,
+        spawn_detached_resume=lambda cwd, sid, flags: spawn.spawn_detached_resume(
             cwd, sid, config_path=config_path, flags=flags
         ),
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ComposedTask:
     """The prompt a session starts from.
 
@@ -257,30 +226,30 @@ def _compose_task(
     if skills:
         prefix, skills_err = _skills_task_prefix(cfg, skills)
         if skills_err:
-            raise OperatorError(skills_err)
+            raise errors.OperatorError(skills_err)
         task = prefix + task
     if not seed_from:
         return ComposedTask(task)
-    seed = build_session_seed(Path.cwd(), seed_from, latest=False)
+    seed = _ask.build_session_seed(pathlib.Path.cwd(), seed_from, latest=False)
     if seed is None:
-        raise OperatorError(f"could not seed from {seed_from!r}")
+        raise errors.OperatorError(f"could not seed from {seed_from!r}")
     return ComposedTask(f"{seed.text}\n\n{task}" if task else seed.text, seed.source_session_id)
 
 
 def _cmd_run(
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     task: str,
     *,
     session_id: str = "",
     interactive: bool = False,
     tui: bool = False,
     decompose: bool = False,
-    mode: ResumableMode = "run",
+    mode: kinds.ResumableMode = "run",
     seed_from: str = "",
     source_session_id: str = "",
     skills: tuple[str, ...] = (),
-    budget_overrides: BudgetOverrides | None = None,
-    sandbox_overrides: SandboxOverrides | None = None,
+    budget_overrides: _setup.BudgetOverrides | None = None,
+    sandbox_overrides: _setup.SandboxOverrides | None = None,
     preset: str = "",
     parallel_spec: str = "",
     standing_goal: str = "",
@@ -316,10 +285,10 @@ def _cmd_run(
         The exit code; 2 on a refusal.
     """
     # The git wall first, so a scratch dir does not clear every other wall before hitting it.
-    if mode != "ask" and not require_git_repo(Path.cwd()):
+    if mode != "ask" and not preflight.require_git_repo(pathlib.Path.cwd()):
         return 2
-    effective = load_session_config(
-        Path.cwd(),
+    effective = _setup.load_session_config(
+        pathlib.Path.cwd(),
         config_path,
         mode=mode,
         preset=preset,
@@ -332,38 +301,40 @@ def _cmd_run(
         cfg = cfg.with_decompose("on")
     try:
         composed = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
-    except OperatorError as exc:
-        error(f"{exc}")
+    except errors.OperatorError as exc:
+        _common.error(f"{exc}")
         return 2
     task = composed.text
     source_session_id = composed.source_session_id or source_session_id
-    role = session_kind(mode).role
+    role = kinds.session_kind(mode).role
 
     # `@path` references inline the files verbatim before the harness sees the task.
-    task = expand_task_file_refs(task, Path.cwd())
+    task = _task_refs.expand_task_file_refs(task, pathlib.Path.cwd())
 
     # `--parallel` routes after the config walls and before the single-run preflight; run mode only.
     if parallel_spec and mode == "run":
         # Depth 1: a subordinate lane (AGENT6_SUBRUN) must never itself fan out.
         if os.environ.get("AGENT6_SUBRUN"):
-            refuse(
+            _common.refuse(
                 "--parallel is unavailable inside a subordinate run (parallel dispatch is depth 1)."
             )
             return 2
         # run_task's route preflight, early so the fan-out refuses before cloning.
-        if not route_preflight(cfg, role, reporter=STDIO_REPORTER, model_flag=model):
+        if not preflight.route_preflight(
+            cfg, role, reporter=reporter.STDIO_REPORTER, model_flag=model
+        ):
             return 2
-        return dispatch_parallel(
+        return cli_parallel.dispatch_parallel(
             cfg,
             task,
             parallel_spec,
-            cwd=Path.cwd(),
+            cwd=pathlib.Path.cwd(),
             max_usd=budget_overrides.max_usd if budget_overrides is not None else None,
             auto_approve=sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
             pins=pins,
         )
 
-    return run_task(
+    return run.run_task(
         cfg,
         task,
         frontend=session_frontend(config_path),

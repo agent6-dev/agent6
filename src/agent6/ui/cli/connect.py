@@ -9,52 +9,29 @@ import getpass
 import html as html_module
 import http.server
 import os
+import pathlib
 import re
 import secrets as pysecrets
 import sys
 import threading
 import time
 import webbrowser
-from pathlib import Path
-from urllib.parse import urlsplit
+from urllib import parse
 
-from pydantic import ValidationError
+import pydantic
 
+from agent6 import paths, secrets
 from agent6.config import (
     AnthropicProviderEntry,
     OpenAIProviderEntry,
     ProviderEntry,
+    io,
     validate_base_url,
+    write,
 )
-from agent6.config.write import PROVIDER_DEFAULTS, ConfigLeafValue, set_config_leaves
-from agent6.models.cache import probe_provider_key
-from agent6.paths import global_config_path, repo_config_path
-from agent6.providers.chatgpt_oauth import (
-    CALLBACK_PORT,
-    CHATGPT_CLIENT_ID,
-    CHATGPT_ISSUER,
-    DEVICE_VERIFY_PATH,
-    TokenGrant,
-    authorize_url,
-    exchange_code,
-    parse_callback,
-    pkce_pair,
-    plan_type_of,
-    poll_device_auth,
-    revoke_tokens,
-    start_device_auth,
-    tokens_from_grant,
-)
-from agent6.providers.claude_code import login_status
-from agent6.providers.types import ProviderError
-from agent6.secrets import (
-    SecretsError,
-    delete_provider_secrets,
-    load_oauth_tokens,
-    save_oauth_tokens,
-    save_secret,
-)
-from agent6.ui.cli._common import error, refuse, warn
+from agent6.models import cache
+from agent6.providers import chatgpt_oauth, claude_code, types
+from agent6.ui.cli import _common
 
 
 def _prompt_api_key(name: str) -> str:
@@ -126,14 +103,18 @@ def _resolve_provider_name(provider: str) -> str | None:
     """
     name = provider.strip()
     if not name:
-        print("Known presets: " + ", ".join(sorted(PROVIDER_DEFAULTS)) + " (or any custom name).")
+        print(
+            "Known presets: "
+            + ", ".join(sorted(write.PROVIDER_DEFAULTS))
+            + " (or any custom name)."
+        )
         try:
             name = input("Provider name [anthropic]: ").strip() or "anthropic"
         except EOFError:
-            error("no input.")
+            _common.error("no input.")
             return None
     if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
-        error(
+        _common.error(
             f"provider name {name!r} is not a valid TOML bare key"
             " (use only letters, digits, '-', '_')."
         )
@@ -160,11 +141,11 @@ def _verify_key(*, api_format: str, base_url: str, api_key: str) -> None:
                 api_format="openai", base_url=base_url or "https://api.openai.com/v1"
             )
         )
-    except ValidationError as exc:
+    except pydantic.ValidationError as exc:
         print(f"  (skipped key check: {exc})", file=sys.stderr)
         return
     print("Checking the key against the provider...")
-    result = probe_provider_key(entry, api_key)
+    result = cache.probe_provider_key(entry, api_key)
     if result.status == "ok":
         print(f"  Key validated: {result.detail}.")
     elif result.status == "auth_failed":
@@ -192,7 +173,7 @@ class _CallbackServer:
     memory only, never logged.
     """
 
-    def __init__(self, state: str, *, port: int = CALLBACK_PORT) -> None:
+    def __init__(self, state: str, *, port: int = chatgpt_oauth.CALLBACK_PORT) -> None:
         self._code: str | None = None
         self._got = threading.Event()
         outer = self
@@ -202,12 +183,12 @@ class _CallbackServer:
 
             def do_GET(self) -> None:  # BaseHTTPRequestHandler API name
                 """Take the authorization code from the callback query, checking its state."""
-                parts = urlsplit(self.path)
+                parts = parse.urlsplit(self.path)
                 if parts.path != "/auth/callback":
                     self.send_error(404)
                     return
                 try:
-                    outer._code = parse_callback(parts.query, state=state)
+                    outer._code = chatgpt_oauth.parse_callback(parts.query, state=state)
                     body = b"<html><body>Signed in. Return to the terminal.</body></html>"
                     status = 200
                 except ValueError as exc:
@@ -278,11 +259,11 @@ def _code_via_callback_server(url: str, state: str) -> str | None:
     try:
         server = _CallbackServer(state)
     except OSError as exc:
-        print(f"(no local callback: port {CALLBACK_PORT} unavailable: {exc})")
+        print(f"(no local callback: port {chatgpt_oauth.CALLBACK_PORT} unavailable: {exc})")
         return None
     with contextlib.suppress(Exception):
         webbrowser.open(url)
-    print(f"Waiting for the sign-in redirect on localhost:{CALLBACK_PORT}")
+    print(f"Waiting for the sign-in redirect on localhost:{chatgpt_oauth.CALLBACK_PORT}")
     print("(Ctrl-C to paste the callback URL by hand instead)")
     try:
         return server.wait(timeout_s=300.0)
@@ -293,7 +274,9 @@ def _code_via_callback_server(url: str, state: str) -> str | None:
         server.close()
 
 
-def _grant_via_device_code(issuer: str, client_id: str, provider: str) -> TokenGrant | None:
+def _grant_via_device_code(
+    issuer: str, client_id: str, provider: str
+) -> chatgpt_oauth.TokenGrant | None:
     """Show a short code and poll while the person enters it at the issuer's device page.
 
     The no-display path: nothing to forward over SSH.
@@ -303,21 +286,21 @@ def _grant_via_device_code(issuer: str, client_id: str, provider: str) -> TokenG
         the caller falls back to pasting the callback URL.
     """
     try:
-        device = start_device_auth(issuer, client_id)
-    except ProviderError as exc:
+        device = chatgpt_oauth.start_device_auth(issuer, client_id)
+    except types.ProviderError as exc:
         print(f"(device sign-in unavailable: {exc})")
         return None
     if device is None:
         return None
-    print(f"On any device, open  {issuer.rstrip('/')}{DEVICE_VERIFY_PATH}")
+    print(f"On any device, open  {issuer.rstrip('/')}{chatgpt_oauth.DEVICE_VERIFY_PATH}")
     print(f"and enter the code:  {device.user_code}")
     print("(waiting; Ctrl-C to paste the callback URL by hand instead)")
     try:
-        return poll_device_auth(issuer, client_id, device, provider=provider)
+        return chatgpt_oauth.poll_device_auth(issuer, client_id, device, provider=provider)
     except KeyboardInterrupt:
         print()
         return None
-    except ProviderError as exc:
+    except types.ProviderError as exc:
         print(f"(device sign-in failed: {exc})")
         return None
 
@@ -336,13 +319,13 @@ def _chatgpt_sign_in(name: str) -> int:
     Returns:
         The exit code.
     """
-    issuer, client_id = CHATGPT_ISSUER, CHATGPT_CLIENT_ID
-    verifier, challenge = pkce_pair()
+    issuer, client_id = chatgpt_oauth.CHATGPT_ISSUER, chatgpt_oauth.CHATGPT_CLIENT_ID
+    verifier, challenge = chatgpt_oauth.pkce_pair()
     state = pysecrets.token_urlsafe(24)
-    url = authorize_url(issuer, client_id, challenge=challenge, state=state)
+    url = chatgpt_oauth.authorize_url(issuer, client_id, challenge=challenge, state=state)
     print("Open this URL to sign in with your ChatGPT account:\n\n  " + url + "\n")
 
-    grant: TokenGrant | None = None
+    grant: chatgpt_oauth.TokenGrant | None = None
     code: str | None = None
     if sys.stdin.isatty() and _gui_browser_available():
         code = _code_via_callback_server(url, state)
@@ -352,31 +335,33 @@ def _chatgpt_sign_in(name: str) -> int:
         try:
             pasted = input("Paste the callback URL the browser landed on: ").strip()
         except EOFError:
-            error("no callback input.")
+            _common.error("no callback input.")
             return 2
         try:
-            code = parse_callback(pasted, state=state)
+            code = chatgpt_oauth.parse_callback(pasted, state=state)
         except ValueError as exc:
-            error(f"{exc}")
+            _common.error(f"{exc}")
             return 2
 
     if grant is None:
         assert code is not None
         try:
-            grant = exchange_code(issuer, client_id, code=code, verifier=verifier, provider=name)
-        except ProviderError as exc:
-            error(f"{exc}")
+            grant = chatgpt_oauth.exchange_code(
+                issuer, client_id, code=code, verifier=verifier, provider=name
+            )
+        except types.ProviderError as exc:
+            _common.error(f"{exc}")
             return 2
-    tokens = tokens_from_grant(grant)
+    tokens = chatgpt_oauth.tokens_from_grant(grant)
     try:
-        saved = save_oauth_tokens(name, tokens)
-    except SecretsError as exc:
-        error(f"{exc}")
+        saved = secrets.save_oauth_tokens(name, tokens)
+    except secrets.SecretsError as exc:
+        _common.error(f"{exc}")
         return 2
-    plan = plan_type_of(grant)
+    plan = chatgpt_oauth.plan_type_of(grant)
     print(f"Signed in{f' ({plan} plan)' if plan else ''}; tokens saved to {saved} (0600).")
     if not tokens.account_id:
-        warn(
+        _common.warn(
             "the sign-in carried no ChatGPT account id; runs will refuse until a"
             " sign-in with a ChatGPT plan succeeds."
         )
@@ -395,11 +380,11 @@ def _claude_code_check(name: str) -> None:
     No secret to store: the binary carries the operator's own login. `connect` checks
     `claude` on PATH; the run preflight and `agent6 model` check `[providers.<name>].binary`.
     """
-    err = login_status("claude")
+    err = claude_code.login_status("claude")
     if err is None:
         print("Claude Code (`claude` on PATH): signed in.")
         return
-    warn(f"{err}\n  [providers.{name}] is written but not usable yet.")
+    _common.warn(f"{err}\n  [providers.{name}] is written but not usable yet.")
 
 
 def _prompt_api_format(name: str, preset_format: str) -> str | None:
@@ -416,10 +401,10 @@ def _prompt_api_format(name: str, preset_format: str) -> str | None:
                 or "anthropic"
             )
         except EOFError:
-            error("no input.")
+            _common.error("no input.")
             return None
     if api_format not in ("anthropic", "openai", "chatgpt", "claude_code"):
-        error(
+        _common.error(
             f"unknown api_format {api_format!r}"
             " (expected anthropic, openai, chatgpt, or claude_code)."
         )
@@ -447,17 +432,19 @@ def _cmd_logout(name: str, api_format: str) -> int:
             file=sys.stderr,
         )
         return 2
-    tokens = load_oauth_tokens(name)
+    tokens = secrets.load_oauth_tokens(name)
     if tokens is not None:
-        err = revoke_tokens(CHATGPT_ISSUER, CHATGPT_CLIENT_ID, tokens)
+        err = chatgpt_oauth.revoke_tokens(
+            chatgpt_oauth.CHATGPT_ISSUER, chatgpt_oauth.CHATGPT_CLIENT_ID, tokens
+        )
         if err is None:
-            print(f"Revoked the ChatGPT sign-in for {name!r} at {CHATGPT_ISSUER}.")
+            print(f"Revoked the ChatGPT sign-in for {name!r} at {chatgpt_oauth.CHATGPT_ISSUER}.")
         else:
-            warn(f"revocation failed ({err}); removing local tokens anyway.")
+            _common.warn(f"revocation failed ({err}); removing local tokens anyway.")
     try:
-        removed = delete_provider_secrets(name)
-    except SecretsError as exc:
-        error(f"{exc}")
+        removed = secrets.delete_provider_secrets(name)
+    except secrets.SecretsError as exc:
+        _common.error(f"{exc}")
         return 2
     print(
         f"Removed stored credentials for {name!r} from secrets.toml."
@@ -487,7 +474,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
     name = _resolve_provider_name(provider)
     if name is None:
         return 2
-    preset = PROVIDER_DEFAULTS.get(name)
+    preset = write.PROVIDER_DEFAULTS.get(name)
     preset_format = preset["api_format"] if preset else ""
     if logout:
         return _cmd_logout(name, preset_format)
@@ -500,17 +487,17 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
         try:
             base_url = _prompt_base_url(base_url or "https://api.openai.com/v1")
         except ValueError as exc:
-            error(f"{exc}")
+            _common.error(f"{exc}")
             return 2
 
-    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
-    fields: dict[str, ConfigLeafValue] = {"api_format": api_format}
+    target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
+    fields: dict[str, io.ConfigLeafValue] = {"api_format": api_format}
     if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
         fields["base_url"] = base_url
     # Leaf surgery keeps hand-added sibling keys; revalidated before any credential is stored.
-    err = set_config_leaves(Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
+    err = write.set_config_leaves(pathlib.Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
     if err is not None:
-        refuse(f"that would make the config invalid:\n{err}")
+        _common.refuse(f"that would make the config invalid:\n{err}")
         return 2
     print(f"Wrote [providers.{name}] to {target}.")
 
@@ -528,16 +515,16 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
             api_key = ""
     if api_key:
         try:
-            saved = save_secret(name, api_key)
-        except SecretsError as exc:
-            error(f"{exc}")
+            saved = secrets.save_secret(name, api_key)
+        except secrets.SecretsError as exc:
+            _common.error(f"{exc}")
             return 2
         print(f"Saved key to {saved} (0600).")
         if verify:
             _verify_key(api_format=api_format, base_url=base_url, api_key=api_key)
     elif api_format == "anthropic":
         # The Anthropic api_format always sends a key, so a keyless block fails at the first run.
-        warn(
+        _common.warn(
             f"no key entered, but the Anthropic API format requires one.\n"
             f"  [providers.{name}] is written but not usable yet; rerun"
             " `agent6 connect`\n  (or set the api_key_env var) before `agent6 run`."

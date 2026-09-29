@@ -7,37 +7,26 @@ from __future__ import annotations
 import argparse
 import contextlib
 import functools
+import pathlib
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
+from agent6 import paths
 from agent6.config import (
     Config,
     ConfigError,
+    layer,
 )
-from agent6.config.layer import (
-    EffectiveConfig,
-    available_preset_names,
-    leaf_keys,
-    load_effective,
-    preset_catalog,
-)
-from agent6.models.choices import route_choices
-from agent6.paths import state_dir
-from agent6.ui.cli._common import (
-    _plans_dir,
-    all_session_dirs,
-    resolve_or_newest_layout,
-)
-from agent6.viewmodel.listing import session_is_live
-from agent6.viewmodel.machine_state import MachineVerb, machine_verb_refusal
+from agent6.models import choices as models_choices
+from agent6.ui.cli import _common
+from agent6.viewmodel import listing, machine_state
 
 
-def _explicit_config(kw: dict[str, object]) -> Path | None:
+def _explicit_config(kw: dict[str, object]) -> pathlib.Path | None:
     """Return the `--config FILE` already typed on the line, so completions read that config."""
     parsed = kw.get("parsed_args")
     raw = getattr(parsed, "config", None)
-    return raw if isinstance(raw, Path) else None
+    return raw if isinstance(raw, pathlib.Path) else None
 
 
 def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
@@ -60,39 +49,43 @@ def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
 @_never_raises
 def _complete_providers(prefix: str, **kw: object) -> list[str]:
     """Return the connected provider names and the known presets."""
-    from agent6.config.write import PROVIDER_DEFAULTS  # noqa: PLC0415
-    from agent6.ui.cli.model import _connected_providers  # noqa: PLC0415
+    from agent6.config import write  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.ui.cli import model  # noqa: PLC0415  # noqa: PLC0415
 
-    names = set(_connected_providers(_explicit_config(kw))) | set(PROVIDER_DEFAULTS)
+    names = set(model._connected_providers(_explicit_config(kw))) | set(write.PROVIDER_DEFAULTS)
     return sorted(n for n in names if n.startswith(prefix))
 
 
 @_never_raises
 def _complete_presets(prefix: str, **kw: object) -> list[str]:
     """Return the built-in presets and the configured `[presets.*]` names."""
-    names = available_preset_names(Path.cwd(), _explicit_config(kw))
+    names = layer.available_preset_names(pathlib.Path.cwd(), _explicit_config(kw))
     return [n for n in names if n.startswith(prefix)]
 
 
 @_never_raises
 def _complete_skills(prefix: str, **_kw: object) -> list[str]:
     """Return the installed and extra-dir skill names."""
-    from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion  # noqa: PLC0415
+    from agent6.ui.cli import skills_cmds  # noqa: PLC0415  # noqa: PLC0415
 
-    return [n for n in resolved_skill_names_for_completion(Path.cwd()) if n.startswith(prefix)]
+    return [
+        n
+        for n in skills_cmds.resolved_skill_names_for_completion(pathlib.Path.cwd())
+        if n.startswith(prefix)
+    ]
 
 
 @_never_raises
 def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
     """Return the configured MCP server names."""
-    effective = load_effective(Path.cwd(), _explicit_config(kw))
+    effective = layer.load_effective(pathlib.Path.cwd(), _explicit_config(kw))
     target = "repo" if getattr(kw.get("parsed_args"), "to_repo", False) else "global"
-    from agent6.ui.cli.mcp_connect import _layers_holding  # noqa: PLC0415
+    from agent6.ui.cli import mcp_connect  # noqa: PLC0415  # noqa: PLC0415
 
     return sorted(
         name
         for name in effective.config.mcp.servers
-        if name.startswith(prefix) and target in _layers_holding(effective, name)
+        if name.startswith(prefix) and target in mcp_connect._layers_holding(effective, name)
     )
 
 
@@ -100,10 +93,10 @@ def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
 def _complete_model_routes(prefix: str, **kw: object) -> list[str]:
     """Return every `provider/model` route the config can run, for `--model`."""
     try:
-        cfg = load_effective(Path.cwd(), _explicit_config(kw)).config
+        cfg = layer.load_effective(pathlib.Path.cwd(), _explicit_config(kw)).config
     except ConfigError:
         return []
-    return [r for r in route_choices(cfg) if r.startswith(prefix)]
+    return [r for r in models_choices.route_choices(cfg) if r.startswith(prefix)]
 
 
 @_never_raises
@@ -118,23 +111,23 @@ def _complete_parallel_models(prefix: str, **kw: object) -> list[str]:
 _WITHHELD_ENUM_VALUES: dict[str, frozenset[str]] = {"sandbox.isolation": frozenset({"none"})}
 
 
-def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str, ...]]:
+def _config_enum_choices(config_path: pathlib.Path | None = None) -> dict[str, tuple[str, ...]]:
     """Return every closed-value leaf's allowed values, through the view the config surfaces render.
 
     A bool completes like an enum: `config set` takes exactly `true` or `false`.
     """
-    from agent6.viewmodel.config_view import build_config_view  # noqa: PLC0415
+    from agent6.viewmodel import config_view  # noqa: PLC0415  # noqa: PLC0415
 
     try:
-        view = build_config_view(load_effective(Path.cwd(), config_path))
+        view = config_view.build_config_view(layer.load_effective(pathlib.Path.cwd(), config_path))
     except ConfigError:
         # A config that does not load still completes: the schema carries the choices.
-        view = build_config_view(
-            EffectiveConfig(
+        view = config_view.build_config_view(
+            layer.EffectiveConfig(
                 config=Config(),
                 sources={},
                 layers=(),
-                presets=tuple(available_preset_names(Path.cwd(), config_path)),
+                presets=tuple(layer.available_preset_names(pathlib.Path.cwd(), config_path)),
             )
         )
     out: dict[str, tuple[str, ...]] = {}
@@ -149,19 +142,19 @@ def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str
     return out
 
 
-def _config_list_keys(config_path: Path | None = None) -> set[str]:
+def _config_list_keys(config_path: pathlib.Path | None = None) -> set[str]:
     """Return the list leaves `config add` and `config remove` accept."""
-    from agent6.viewmodel.config_view import build_config_view  # noqa: PLC0415
+    from agent6.viewmodel import config_view  # noqa: PLC0415  # noqa: PLC0415
 
-    effective = load_effective(Path.cwd(), config_path)
+    effective = layer.load_effective(pathlib.Path.cwd(), config_path)
     return {
         setting.key
-        for setting in build_config_view(effective).settings
+        for setting in config_view.build_config_view(effective).settings
         if setting.py_type == "list"
     }
 
 
-def _user_preset_names(config_path: Path | None = None) -> list[str]:
+def _user_preset_names(config_path: pathlib.Path | None = None) -> list[str]:
     """Return the user-defined `[presets.*]` names.
 
     A built-in name is withheld: writing `presets.<builtin>.*` replaces the built-in
@@ -170,7 +163,7 @@ def _user_preset_names(config_path: Path | None = None) -> list[str]:
     try:
         return [
             p.name
-            for p in preset_catalog(Path.cwd(), config_path).presets
+            for p in layer.preset_catalog(pathlib.Path.cwd(), config_path).presets
             if p.origin != "built-in"
         ]
     except ConfigError:
@@ -192,7 +185,7 @@ def _complete_config_keys(
     """
     explicit = _explicit_config(kw)
     try:
-        keys = set(leaf_keys(load_effective(Path.cwd(), explicit)))
+        keys = set(layer.leaf_keys(layer.load_effective(pathlib.Path.cwd(), explicit)))
     except ConfigError:
         keys = set()
     if settable:
@@ -211,7 +204,7 @@ def _complete_config_keys(
         pool = {k for k in keys if k != "preset"}
         keys |= {f"presets.{name}.{k}" for name in _user_preset_names(explicit) for k in pool}
     if command in ("set", "unset", "add", "remove") and isinstance(
-        getattr(kw.get("parsed_args"), "machine_file", None), Path
+        getattr(kw.get("parsed_args"), "machine_file", None), pathlib.Path
     ):
         from agent6.machine import protected_overlay_key_error  # noqa: PLC0415
 
@@ -237,7 +230,7 @@ def _complete_config_values(
     recipes.
     """
     key = getattr(parsed_args, "key", "") or ""
-    if isinstance(getattr(parsed_args, "machine_file", None), Path):
+    if isinstance(getattr(parsed_args, "machine_file", None), pathlib.Path):
         from agent6.machine import protected_overlay_key_error  # noqa: PLC0415
 
         if protected_overlay_key_error(key) is not None:
@@ -245,7 +238,7 @@ def _complete_config_values(
     parts = key.split(".", 2)
     schema_key = parts[2] if len(parts) == 3 and parts[0] == "presets" else key
     raw = getattr(parsed_args, "config", None)
-    config_path = raw if isinstance(raw, Path) else None
+    config_path = raw if isinstance(raw, pathlib.Path) else None
     if getattr(parsed_args, "config_command", "") in (
         "add",
         "remove",
@@ -256,9 +249,9 @@ def _complete_config_values(
         choices += list(_EXTRA_BODY_RECIPES)
     if not choices:
         with contextlib.suppress(ConfigError):
-            from agent6.models.choices import config_value_choices  # noqa: PLC0415
-
-            choices = config_value_choices(load_effective(Path.cwd(), config_path), schema_key)
+            choices = models_choices.config_value_choices(
+                layer.load_effective(pathlib.Path.cwd(), config_path), schema_key
+            )
     return [v for v in choices if v.startswith(prefix)]
 
 
@@ -274,11 +267,11 @@ def _complete_model_verb_values(
     role = getattr(parsed_args, "role", None)
     if role not in ("planner", "worker", "reviewer", "all"):
         return []
-    from agent6.ui.cli.model import _connected_providers  # noqa: PLC0415
+    from agent6.ui.cli import model  # noqa: PLC0415  # noqa: PLC0415
 
     providers = [
         name
-        for name in _connected_providers(_explicit_config({"parsed_args": parsed_args}))
+        for name in model._connected_providers(_explicit_config({"parsed_args": parsed_args}))
         if name.startswith(prefix)
     ]
     return providers + _complete_model_routes(prefix, parsed_args=parsed_args, **kw)
@@ -287,28 +280,30 @@ def _complete_model_verb_values(
 @_never_raises
 def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the ids across every session bucket, what `--from` accepts."""
-    return sorted(d.name for d in all_session_dirs(Path.cwd()) if d.name.startswith(prefix))
+    return sorted(
+        d.name for d in _common.all_session_dirs(pathlib.Path.cwd()) if d.name.startswith(prefix)
+    )
 
 
 @_never_raises
 def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: object) -> list[str]:
     """Return the ports the session is listening on; only something inside its network sees them."""
     target = str(getattr(parsed_args, "target", "") or "")
-    from agent6.sessions.ipc import listening_ports  # noqa: PLC0415
+    from agent6.sessions import ipc  # noqa: PLC0415  # noqa: PLC0415
 
-    layout = resolve_or_newest_layout(Path.cwd(), target)
+    layout = _common.resolve_or_newest_layout(pathlib.Path.cwd(), target)
     if layout is None:
         return []
-    return [str(p) for p in listening_ports(layout.session_dir) if str(p).startswith(prefix)]
+    return [str(p) for p in ipc.listening_ports(layout.session_dir) if str(p).startswith(prefix)]
 
 
 @_never_raises
 def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the ids `resume` and `fork` pick up: every resumable bucket, not a machine draft."""
     out: list[str] = []
-    from agent6.app.resume import resumable_bucket_dirs  # noqa: PLC0415
+    from agent6.app import resume  # noqa: PLC0415  # noqa: PLC0415
 
-    for bucket in resumable_bucket_dirs(state_dir(Path.cwd())):
+    for bucket in resume.resumable_bucket_dirs(paths.state_dir(pathlib.Path.cwd())):
         if not bucket.is_dir():
             continue
         out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]
@@ -320,15 +315,15 @@ def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the live sessions, through the same gate the verbs reaching a running one use."""
     return sorted(
         d.name
-        for d in all_session_dirs(Path.cwd())
-        if d.name.startswith(prefix) and session_is_live(d)
+        for d in _common.all_session_dirs(pathlib.Path.cwd())
+        if d.name.startswith(prefix) and listing.session_is_live(d)
     )
 
 
 @_never_raises
 def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the plan ids, for `plan show` and `plan edit`."""
-    plans = _plans_dir(Path.cwd())
+    plans = _common._plans_dir(pathlib.Path.cwd())
     if not plans.is_dir():
         return []
     return sorted(
@@ -338,11 +333,11 @@ def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
     )
 
 
-def _machine_instance_dirs(prefix: str) -> list[Path]:
+def _machine_instance_dirs(prefix: str) -> list[pathlib.Path]:
     """Return the machine instance dirs matching the prefix."""
-    from agent6.sessions.layout import machines_root  # noqa: PLC0415
+    from agent6.sessions import layout as sessions_layout  # noqa: PLC0415  # noqa: PLC0415
 
-    base = machines_root(state_dir(Path.cwd()))
+    base = sessions_layout.machines_root(paths.state_dir(pathlib.Path.cwd()))
     if not base.is_dir():
         return []
     return [p for p in base.iterdir() if p.is_dir() and p.name.startswith(prefix)]
@@ -354,10 +349,12 @@ def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
     return sorted(p.name for p in _machine_instance_dirs(prefix))
 
 
-def _machine_ids_taking(prefix: str, verb: MachineVerb) -> list[str]:
+def _machine_ids_taking(prefix: str, verb: machine_state.MachineVerb) -> list[str]:
     """Return the instances the verb acts on, through the verb's own refusal rule."""
     return sorted(
-        p.name for p in _machine_instance_dirs(prefix) if not machine_verb_refusal(p, p.name, verb)
+        p.name
+        for p in _machine_instance_dirs(prefix)
+        if not machine_state.machine_verb_refusal(p, p.name, verb)
     )
 
 
@@ -382,15 +379,15 @@ def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
 @_never_raises
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
     """Return the `*.asm.toml` files under cwd, spelled as the prefix is, and the machines dir's."""
-    from agent6.sessions.layout import machines_root  # noqa: PLC0415
+    from agent6.sessions import layout as sessions_layout  # noqa: PLC0415  # noqa: PLC0415
 
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     absolute = prefix.startswith("/")
     dotted = "./" if prefix.startswith("./") else ""
     out = {
         str(p) if absolute else dotted + str(p.relative_to(cwd)) for p in cwd.rglob("*.asm.toml")
     }
-    machines = machines_root(state_dir(cwd))
+    machines = sessions_layout.machines_root(paths.state_dir(cwd))
     if machines.is_dir():
         out.update(str(p) for p in machines.rglob("*.asm.toml"))
     return sorted(p for p in out if p.startswith(prefix))

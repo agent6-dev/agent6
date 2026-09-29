@@ -424,7 +424,7 @@ def test_cmd_ps_lists_live_sessions_with_decoded_directory(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(ps_cmd, "state_base", lambda: base)
+    monkeypatch.setattr(paths, "state_base", lambda: base)
     assert ps_cmd.cmd_ps() == 0
     out = capsys.readouterr().out
     assert "brave-fox-AAAAAA" in out and str(repo) in out.replace("~", str(pathlib.Path.home()))
@@ -446,6 +446,6 @@ def test_cmd_ps_lists_live_sessions_with_decoded_directory(
     out = capsys.readouterr().out
     assert "? (" in out and "directory not recoverable" in out
 
-    monkeypatch.setattr(ps_cmd, "state_base", lambda: tmp_path / "empty")
+    monkeypatch.setattr(paths, "state_base", lambda: tmp_path / "empty")
     assert ps_cmd.cmd_ps() == 0
     assert "no live agent6 sessions." in capsys.readouterr().out

@@ -19,8 +19,8 @@ import select
 import sys
 from collections.abc import Callable
 
-from agent6.ui.cli._terminal_guard import raw_stream
-from agent6.viewmodel.transcript import scrub_terminal_controls
+from agent6.ui.cli import _terminal_guard
+from agent6.viewmodel import transcript
 
 try:
     import termios
@@ -208,7 +208,8 @@ class _Reader:
         rows, highlight = self._rows()
         # A row's text is data, scrubbed here: this writer bypasses the stream's scrubber.
         rows = [
-            (scrub_terminal_controls(label), scrub_terminal_controls(dim)) for label, dim in rows
+            (transcript.scrub_terminal_controls(label), transcript.scrub_terminal_controls(dim))
+            for label, dim in rows
         ]
         if rows:
             pad = max(len(label) for label, _dim in rows)
@@ -492,7 +493,7 @@ def menu_input(
 
         def _stdout_write(text: str) -> None:
             """Write and flush past stdout's scrubber."""
-            out = raw_stream(sys.stdout)
+            out = _terminal_guard.raw_stream(sys.stdout)
             out.write(text)
             out.flush()
 

@@ -11,16 +11,15 @@ process, which gives true mid-call cancellation.
 from __future__ import annotations
 
 import os
+import pathlib
 import sys
-from pathlib import Path
 
-from agent6.app.machine_agent import MachineAgentRequest, run_one
-from agent6.events import EventSink, EventWriteError
-from agent6.ui.cli._common import error
-from agent6.ui.cli._console_view import ConsoleView
+from agent6 import events as agent6_events
+from agent6.app import machine_agent
+from agent6.ui.cli import _common, _console_view
 
 
-def _attach_console(events: EventSink) -> None:
+def _attach_console(events: agent6_events.EventSink) -> None:
     """Render the live conversation to stderr at a TTY or under AGENT6_FORCE_STREAM=1.
 
     The console consumes the same events the per-state sink records.
@@ -29,7 +28,7 @@ def _attach_console(events: EventSink) -> None:
         events: The state's event sink.
     """
     if sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1":
-        events.subscribe(ConsoleView(sys.stderr))
+        events.subscribe(_console_view.ConsoleView(sys.stderr))
 
 
 def main() -> int:
@@ -38,14 +37,16 @@ def main() -> int:
     Returns:
         The exit code; 1 when the per-state journal could not be written.
     """
-    req = MachineAgentRequest.model_validate_json(Path(sys.argv[1]).read_bytes())
+    req = machine_agent.MachineAgentRequest.model_validate_json(
+        pathlib.Path(sys.argv[1]).read_bytes()
+    )
     try:
-        out = run_one(req, attach_console=_attach_console)
-    except EventWriteError as exc:
+        out = machine_agent.run_one(req, attach_console=_attach_console)
+    except agent6_events.EventWriteError as exc:
         # Off the CLI dispatch backstop, a raw traceback would leave the engine a bare "error".
-        error(f"{exc}")
+        _common.error(f"{exc}")
         return 1
-    Path(sys.argv[2]).write_text(out.model_dump_json(), encoding="utf-8")
+    pathlib.Path(sys.argv[2]).write_text(out.model_dump_json(), encoding="utf-8")
     return 0
 
 

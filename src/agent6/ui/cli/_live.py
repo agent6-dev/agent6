@@ -6,16 +6,16 @@ from __future__ import annotations
 
 import contextlib
 import os
+import pathlib
 import signal
 import subprocess
 import sys
 from collections.abc import Callable, Generator
-from pathlib import Path
 
-from agent6.ui.cli._console_view import ConsoleView
+from agent6.ui.cli import _console_view
 
 
-def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], None]:
+def loop_logger(mode: str, console_view: _console_view.ConsoleView | None) -> Callable[[str], None]:
     """Return the harness's text logger for the mode.
 
     With a live console view, notices go through it, under its lock and after its
@@ -122,7 +122,7 @@ def stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
 
 
 @contextlib.contextmanager
-def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
+def tui_session(session_dir: pathlib.Path, *, enabled: bool) -> Generator[None]:
     """Run the dashboard TUI as a co-process that owns the terminal for the block.
 
     This process's console goes to `<session_dir>/tui_console.log` meanwhile; the

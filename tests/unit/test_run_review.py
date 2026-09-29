@@ -18,12 +18,12 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, memory, paths
+from agent6.app import _setup, providers
 from agent6.config import Config
 from agent6.harness import run_review
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
-from agent6.ui.cli import sessions_review as review_mod
 
 _EVENTS: list[dict[str, Any]] = [
     {
@@ -348,9 +348,9 @@ def test_the_verb_prints_and_saves_the_review(
     def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(config=cfg)
 
-    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(review_mod, "build_role_provider", mock.MagicMock(return_value=provider))
+    monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = main(["sessions", "review", "run-AAAA11"])
 
@@ -384,9 +384,9 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
     def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(config=cfg)
 
-    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(review_mod, "build_role_provider", mock.MagicMock(return_value=provider))
+    monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
 
     modelgit = _write_session(repo, session_id="run-MODEL1")
     modelgit.manifest_path.write_text(
@@ -444,9 +444,9 @@ def test_the_model_flag_reaches_the_reviewer(
         seen.append(route.model if route is not None else "")
         return _FakeProvider()
 
-    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(review_mod, "build_role_provider", build)
+    monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(providers, "build_role_provider", build)
     assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 0
     capsys.readouterr()
     assert seen == ["other"]
@@ -464,10 +464,10 @@ def test_the_verb_refuses_an_unknown_session_and_a_provider_it_cannot_build(
     def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(config=cfg)
 
-    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(
-        review_mod, "build_role_provider", mock.MagicMock(side_effect=ProviderError("no key"))
+        providers, "build_role_provider", mock.MagicMock(side_effect=ProviderError("no key"))
     )
     assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 2
     assert "provider init failed: no key" in capsys.readouterr().err
@@ -482,10 +482,10 @@ def test_a_failed_reviewer_call_is_reported(
     def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(config=cfg)
 
-    monkeypatch.setattr("agent6.ui.cli.review_cmds.load_effective", loaded)
-    monkeypatch.setattr(review_mod, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
+    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(
-        review_mod,
+        providers,
         "build_role_provider",
         mock.MagicMock(return_value=_FakeProvider(raise_error=True)),
     )
@@ -506,7 +506,7 @@ def test_a_live_session_is_refused_before_any_call(
     layout = _write_session(repo, events=_EVENTS[:1])
     ipc.write_worker_pid(layout.session_dir, os.getpid())
     monkeypatch.setattr(
-        "agent6.ui.cli.review_cmds.load_effective",
+        "agent6.config.layer.load_effective",
         mock.MagicMock(side_effect=AssertionError("config loaded")),
     )
     assert main(["sessions", "review", "run-AAAA11"]) == 2

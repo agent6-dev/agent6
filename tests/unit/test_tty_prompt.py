@@ -22,8 +22,10 @@ from typing import Any
 
 import pytest
 
+from agent6.sessions import ipc as sessions_ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import _interact
+from agent6.ui.cli import _steer as cli__steer
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore:This process.*is multi-threaded, use of fork:DeprecationWarning"
@@ -166,20 +168,18 @@ def test_a_wait_park_narrates_the_attach_remedy(
 
     It printed nothing, so a piped `resume` looked hung for 300s.
     """
-    from agent6.ui.cli import _interact as interact_mod
-
     lines: list[str] = []
-    monkeypatch.setattr(interact_mod, "tty_message", lines.append)
+    monkeypatch.setattr(cli__steer, "tty_message", lines.append)
 
     def _away(_d: object) -> str:
         return "wait"
 
-    monkeypatch.setattr(interact_mod, "away_mode", _away)
+    monkeypatch.setattr(sessions_ipc, "away_mode", _away)
 
     def _reply(_d: object, _r: object) -> tuple[str, ...]:
         return ("yes",)
 
-    monkeypatch.setattr(interact_mod, "await_frontend_reply", _reply)
+    monkeypatch.setattr(sessions_ipc, "await_frontend_reply", _reply)
 
     class _Events:
         def emit(self, event_type: str, **fields: Any) -> None:

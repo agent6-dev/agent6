@@ -13,29 +13,26 @@ from __future__ import annotations
 import contextlib
 import difflib
 import json
+import pathlib
 import sys
 import time
-from pathlib import Path
 from typing import Any
 
-from agent6.app._setup import detect_env
+from agent6 import budget, kinds, paths
+from agent6.app import _setup, reporter
 from agent6.app.machine import (
     MachineFrontend,
     NetworkRefusal,
+    listing,
     machine_network_refusal,
     machine_spend,
 )
-from agent6.app.machine.listing import machine_rows
-from agent6.app.reporter import STDIO_REPORTER
 from agent6.config import (
     Config,
     ConfigError,
+    io,
+    layer,
 )
-from agent6.config.io import upsert_toml_leaf
-from agent6.config.layer import (
-    load_effective_with_overlay,
-)
-from agent6.kinds import IsolationLevel
 from agent6.machine import (
     EngineError,
     JournalError,
@@ -48,29 +45,21 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
-from agent6.paths import chown_to_real_user, mkdir_for_real_user, repo_config_path, state_dir
-from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
-from agent6.sessions.ipc import read_worker_pid, worker_is_alive
-from agent6.sessions.layout import machines_root
-from agent6.ui.cli._common import error, plural, refuse, safe_input, styled_status
-from agent6.ui.cli.machine_check import _cmd_machine_test, _fail
-from agent6.ui.cli.plan_watch import format_plain_event
-from agent6.ui.notify import desktop_notify
+from agent6.sandbox import detect
+from agent6.sessions import ipc, layout
+from agent6.ui import notify
+from agent6.ui.cli import _common, machine_check, plan_watch
 from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
     armed_wait,
     event_epoch,
     fold_machine,
+    format,
+    machine_state,
     machine_word_for_dir,
     newest_agent_execution,
 )
-from agent6.viewmodel.format import (
-    format_transition,
-    format_usd,
-    format_when,
-)
-from agent6.viewmodel.machine_state import verb_answer, wait_line
 
 
 def _cmd_machine_list() -> int:
@@ -81,18 +70,20 @@ def _cmd_machine_list() -> int:
     Returns:
         The exit code, 0.
     """
-    cwd = Path.cwd()
-    machines = machine_rows(cwd, state_dir(cwd))
+    cwd = pathlib.Path.cwd()
+    machines = listing.machine_rows(cwd, paths.state_dir(cwd))
     if not machines:
         print('no machines yet. Draft one with `agent6 machine create "<task>"`.')
         return 0
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str, str]] = []
     for m in machines:
-        styled, plain = styled_status(m.status, m.reason, color=color) if m.status else ("-", "-")
+        styled, plain = (
+            _common.styled_status(m.status, m.reason, color=color) if m.status else ("-", "-")
+        )
         rows.append(
             (
-                format_when(m.mtime) if m.mtime else "-",
+                format.format_when(m.mtime) if m.mtime else "-",
                 styled,
                 plain,
                 m.current or "-",
@@ -119,14 +110,14 @@ def _cmd_machine_list() -> int:
 
 
 def _resolve_network_refusal(  # noqa: PLR0911
-    path: Path,
+    path: pathlib.Path,
     refusal: NetworkRefusal,
     cfg: Config,
-    isolation: IsolationLevel,
+    isolation: kinds.IsolationLevel,
     tool_states: list[ToolState],
-    cwd: Path,
+    cwd: pathlib.Path,
     overlay: dict[str, Any],
-) -> int | tuple[Config, IsolationLevel]:
+) -> int | tuple[Config, kinds.IsolationLevel]:
     """Turn a hard network refusal into a choice.
 
     Interactively: explain it, then offer to apply the minimal config fix and continue,
@@ -146,7 +137,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
         The new `(cfg, isolation)` when the fix applied and re-validates clear, else the exit
         code.
     """
-    refuse(refusal.message)
+    _common.refuse(refusal.message)
     fix = refusal.fix
     if not fix:
         print(
@@ -164,22 +155,22 @@ def _resolve_network_refusal(  # noqa: PLR0911
     print("  agent6 can apply the minimal fix now (writes the per-repo config):", file=sys.stderr)
     for key, value in fix:
         print(f"    {key} = {value}", file=sys.stderr)
-    choice = (safe_input("  [a]pply & run, [s]imulate offline, or [Q]uit? ") or "").lower()
+    choice = (_common.safe_input("  [a]pply & run, [s]imulate offline, or [Q]uit? ") or "").lower()
     if choice == "s":
-        return _cmd_machine_test(path, blackboard=None)
+        return machine_check._cmd_machine_test(path, blackboard=None)
     if choice != "a":
         print("Stopped; nothing changed.", file=sys.stderr)
         return 2
-    target = repo_config_path(cwd)
-    mkdir_for_real_user(target.parent)
+    target = paths.repo_config_path(cwd)
+    paths.mkdir_for_real_user(target.parent)
     for key, value in fix:
-        upsert_toml_leaf(target, key, value)
-    chown_to_real_user(target.parent)
-    chown_to_real_user(target)
+        io.upsert_toml_leaf(target, key, value)
+    paths.chown_to_real_user(target.parent)
+    paths.chown_to_real_user(target)
     try:
-        new_cfg = load_effective_with_overlay(cwd, overlay).config
-        new_profile = resolve_isolation(new_cfg.sandbox.isolation, detect_env())
-    except (ConfigError, IsolationUnavailableError) as exc:
+        new_cfg = layer.load_effective_with_overlay(cwd, overlay).config
+        new_profile = detect.resolve_isolation(new_cfg.sandbox.isolation, _setup.detect_env())
+    except (ConfigError, detect.IsolationUnavailableError) as exc:
         print(f"  Applied, but the config no longer validates: {exc}", file=sys.stderr)
         return 2
     if machine_network_refusal(new_cfg, new_profile, tool_states) is not None:
@@ -189,7 +180,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     return new_cfg, new_profile
 
 
-def _no_instance_hint(machine_id: str, cwd: Path) -> str:
+def _no_instance_hint(machine_id: str, cwd: pathlib.Path) -> str:
     """Return a "Did you mean" suffix for a missing-instance error, or "".
 
     `machine run` takes a file; status, replay, poke, stop and `agent6 attach` take an
@@ -200,9 +191,9 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
         machine_id: The argument as given.
         cwd: The repo.
     """
-    machines = machines_root(state_dir(cwd))
+    machines = layout.machines_root(paths.state_dir(cwd))
     existing = sorted(p.name for p in machines.iterdir() if p.is_dir()) if machines.is_dir() else []
-    candidate = Path(machine_id)
+    candidate = pathlib.Path(machine_id)
     if machine_id.endswith(".asm.toml") or candidate.is_file():
         name = ""
         with contextlib.suppress(MachineError, OSError):
@@ -222,12 +213,12 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
     return f" Did you mean {close[0]!r}?" if close else ""
 
 
-def machine_instance_root(machine_id: str, cwd: Path) -> Path | None:
+def machine_instance_root(machine_id: str, cwd: pathlib.Path) -> pathlib.Path | None:
     """Return the instance dir for one leaf id, or None for a path or symlink escape."""
-    candidate = Path(machine_id)
+    candidate = pathlib.Path(machine_id)
     if candidate.name != machine_id:
         return None
-    machines = machines_root(state_dir(cwd))
+    machines = layout.machines_root(paths.state_dir(cwd))
     root = machines / machine_id
     try:
         if root.resolve().parent != machines.resolve():
@@ -237,7 +228,7 @@ def machine_instance_root(machine_id: str, cwd: Path) -> Path | None:
     return root
 
 
-def _existing_machine_root(machine_id: str, cwd: Path) -> Path | None:
+def _existing_machine_root(machine_id: str, cwd: pathlib.Path) -> pathlib.Path | None:
     """Resolve an instance id, printing the shared missing-instance error.
 
     Returns:
@@ -246,9 +237,9 @@ def _existing_machine_root(machine_id: str, cwd: Path) -> Path | None:
     root = machine_instance_root(machine_id, cwd)
     if root is not None and root.is_dir():
         return root
-    machines = machines_root(state_dir(cwd))
+    machines = layout.machines_root(paths.state_dir(cwd))
     location = f"at {root}" if root is not None else f"for id {machine_id!r} under {machines}"
-    error(f"no machine instance {location}.{_no_instance_hint(machine_id, cwd)}")
+    _common.error(f"no machine instance {location}.{_no_instance_hint(machine_id, cwd)}")
     return None
 
 
@@ -258,7 +249,7 @@ def _cmd_machine_replay(machine_id: str) -> int:
     Returns:
         The exit code; 1 when the replay did not end ok.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
         return 2
@@ -266,21 +257,21 @@ def _cmd_machine_replay(machine_id: str) -> int:
     try:
         spec = load_machine(source_path)
     except MachineError as exc:
-        return _fail(source_path, exc.problems)
+        return machine_check._fail(source_path, exc.problems)
     journal = MachineJournal(root)
     try:
         result = drive(spec, journal, None, live=False)
     except (JournalError, EngineError) as exc:
-        error(f"{exc}")
+        _common.error(f"{exc}")
         return 1
     print(
         f"{result.status.upper()}: {spec.machine} replayed to {result.state!r}"
-        f" after {plural(result.transitions, 'transition')} ({result.reason})"
+        f" after {_common.plural(result.transitions, 'transition')} ({result.reason})"
     )
     return 0 if result.status in ("ok", "incomplete") else 1
 
 
-def _armed_wait_tolerant(root: Path, ms: MachineState) -> tuple[PendingWait | None, str]:
+def _armed_wait_tolerant(root: pathlib.Path, ms: MachineState) -> tuple[PendingWait | None, str]:
     """Return the armed wait and a note; a corrupt wait.json yields the note instead.
 
     The readout goes on, as the shared dir word tolerates it (parked, keep streaming),
@@ -302,7 +293,7 @@ def _cmd_machine_status(machine_id: str) -> int:
     Returns:
         The exit code; 1 when the journal cannot be read.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
         return 2
@@ -310,19 +301,19 @@ def _cmd_machine_status(machine_id: str) -> int:
     try:
         spec = load_machine(source_path)
     except MachineError as exc:
-        return _fail(source_path, exc.problems)
+        return machine_check._fail(source_path, exc.problems)
     journal = MachineJournal(root)
     try:
         result = drive(spec, journal, None, live=False)
         events = journal.read()
         snapshot = journal.latest_snapshot()
     except (JournalError, EngineError) as exc:
-        error(f"{exc}")
+        _common.error(f"{exc}")
         return 1
     ms = fold_machine(spec, events)
     pending, pending_note = _armed_wait_tolerant(root, ms)
 
-    alive = worker_is_alive(root)
+    alive = ipc.worker_is_alive(root)
     spend, inflight_state = machine_spend(events, root, alive=alive)
     # machine_word_for_dir owns running/waiting/stopped for every surface; parked beats alive.
     word = machine_word_for_dir(ms, root)
@@ -330,7 +321,7 @@ def _cmd_machine_status(machine_id: str) -> int:
     print(f"machine: {spec.machine} (v{spec.version})")
     if alive and word == "running":
         running_in = f", running {inflight_state!r}" if inflight_state else ""
-        print(f"  status: running (worker pid {read_worker_pid(root)} alive){running_in}")
+        print(f"  status: running (worker pid {ipc.read_worker_pid(root)} alive){running_in}")
     else:
         # A live worker blocked on an operator prompt: "waiting", naming the state to answer in.
         print(
@@ -350,12 +341,12 @@ def _cmd_machine_status(machine_id: str) -> int:
         else ""
     )
     print(
-        f"  spend: {format_usd(spend.usd, partial=spend.partial)}"
+        f"  spend: {budget.format_usd(spend.usd, partial=spend.partial)}"
         f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok{cached})"
     )
     if pending is not None:
         # The armed record is the wait a poke wakes; a timed one wakes on its own too.
-        print("  " + wait_line(machine_id, pending.state, pending.wake_at))
+        print("  " + machine_state.wait_line(machine_id, pending.state, pending.wake_at))
     if pending_note:
         print(f"  pending wait: unreadable ({pending_note})")
     poked, poke_payload = journal.read_pending_poke()
@@ -369,7 +360,9 @@ def _cmd_machine_status(machine_id: str) -> int:
     if step_events:
         print("  recent steps:")
         for event in step_events[-5:]:
-            print(f"    {format_transition(event.seq, event.state, event.label, event.goto)}")
+            print(
+                f"    {format.format_transition(event.seq, event.state, event.label, event.goto)}"
+            )
     return 0
 
 
@@ -386,14 +379,14 @@ def _cmd_machine_poke(
     Returns:
         The exit code; 2 when the machine has ended or has no armed wait.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
         return 2
     # An ended machine consumes no signals, so the wake reply would be a lie: refuse.
-    ok, refusal = verb_answer(root, machine_id, "poke")
+    ok, refusal = machine_state.verb_answer(root, machine_id, "poke")
     if not ok or refusal:
-        refuse(f"{refusal}")
+        _common.refuse(f"{refusal}")
         return 2
     journal = MachineJournal(root)
     if message is not None:
@@ -402,14 +395,14 @@ def _cmd_machine_poke(
         try:
             payload = json.loads(data)
         except json.JSONDecodeError as exc:
-            error(f"--data is not valid JSON: {exc}")
+            _common.error(f"--data is not valid JSON: {exc}")
             return 2
     else:
         payload = None
     try:
         journal.poke(payload)
     except JournalError as exc:
-        error(f"{exc}")
+        _common.error(f"{exc}")
         return 1
     carried = "" if payload is None else " (with payload)"
     print(f"poked {machine_id}: it will wake on its next signal check{carried}")
@@ -426,13 +419,13 @@ def _cmd_machine_stop(machine_id: str) -> int:
     Returns:
         The exit code.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
         return 2
-    ok, answer = verb_answer(root, machine_id, "stop")
+    ok, answer = machine_state.verb_answer(root, machine_id, "stop")
     if not ok:
-        refuse(f"{answer}")
+        _common.refuse(f"{answer}")
         return 2
     if answer:
         print(f"[agent6] {answer}", file=sys.stderr)
@@ -451,7 +444,7 @@ def _render_overview(ms: MachineState) -> str:
     return "\n".join(lines)
 
 
-def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int | None:
+def _watch_liveness_exit(root: pathlib.Path, machine_id: str, ms: MachineState) -> int | None:
     """Return the watch's exit code when nothing will ever append to the journal.
 
     Parked (an armed `--exit-on-wait` wait, no worker) or stopped (no live worker, no end,
@@ -470,7 +463,7 @@ def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int |
     """
     word = machine_word_for_dir(ms, root)
     current = next((st.name for st in ms.states if st.is_current), "?")
-    if word == "waiting" and not worker_is_alive(root):
+    if word == "waiting" and not ipc.worker_is_alive(root):
         print(
             f"\nWAITING in {current!r} (poke to resume):"
             f" agent6 machine poke {machine_id} [--message TEXT]"
@@ -495,7 +488,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     Returns:
         The exit code.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
         return 2
@@ -503,12 +496,12 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     try:
         spec = load_machine(source)
     except MachineError as exc:
-        return _fail(source, exc.problems)
+        return machine_check._fail(source, exc.problems)
     journal = MachineJournal(root)
     try:
         ms = fold_machine(spec, journal.read())
     except JournalError as exc:
-        error(f"{exc}")
+        _common.error(f"{exc}")
         return 1
     print(_render_overview(ms), flush=True)
     if ms.ended is not None:
@@ -533,14 +526,14 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
                 ms = fold_machine(spec, journal.read())
             except JournalError as exc:
                 # The same degradation `machine status` gives a corrupt journal, never a traceback.
-                error(f"{exc}")
+                _common.error(f"{exc}")
                 return 1
             for t in cursor.new_transitions(ms):
                 print(f"  {t.line}", flush=True)
             for n in cursor.new_notifications(ms):
                 # The bell and a desktop notification, so an operator watching over ssh is alerted.
                 print(f"\a  🔔 [{n.level}] {n.state}: {n.message}", flush=True)
-                desktop_notify(f"agent6: {ms.machine}", n.message)
+                notify.desktop_notify(f"agent6: {ms.machine}", n.message)
             newest, switched = cursor.advance_log(root)
             if switched:
                 # Each state log re-derives its elapsed-time base, else states 2..N read inflated.
@@ -551,7 +544,10 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
                 if anchor is None:
                     with contextlib.suppress(json.JSONDecodeError):
                         anchor = event_epoch(json.loads(line).get("ts"))
-                print("    " + format_plain_event(line, session_start_ts=anchor), flush=True)
+                print(
+                    "    " + plan_watch.format_plain_event(line, session_start_ts=anchor),
+                    flush=True,
+                )
             if ms.ended is not None:
                 print(
                     f"\n{ms.ended.status.upper()}: ended in {ms.ended.state!r} after"
@@ -573,4 +569,6 @@ def _machine_frontend() -> MachineFrontend:
     Stdio output plus the interactive network-refusal resolver, which needs a TTY, so it
     stays on the CLI side; `create_machine` uses only the reporter.
     """
-    return MachineFrontend(reporter=STDIO_REPORTER, resolve_network_fix=_resolve_network_refusal)
+    return MachineFrontend(
+        reporter=reporter.STDIO_REPORTER, resolve_network_fix=_resolve_network_refusal
+    )

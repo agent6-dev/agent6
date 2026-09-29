@@ -5,19 +5,14 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import pathlib
 
-from agent6.ui.cli._common import MACHINE_ID_HELP, _add_sandbox_flags, _sub
-from agent6.ui.cli.completers import (
-    _complete_machine_ids,
-    _complete_pokable_machine_ids,
-    _complete_stoppable_machine_ids,
-)
+from agent6.ui.cli import _common, completers
 
 
 def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `machine` and its subcommands over `.asm.toml` state machines."""
-    machine_p = _sub(
+    machine_p = _common._sub(
         sub,
         "machine",
         help=(
@@ -28,7 +23,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     machine_sub = machine_p.add_subparsers(
         dest="machine_command", required=True, metavar="<subcommand>"
     )
-    _sub(
+    _common._sub(
         machine_sub,
         "list",
         help=(
@@ -36,7 +31,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " instance's status and state, and each authored .asm.toml's spec validity."
         ),
     )
-    machine_check = _sub(
+    machine_check = _common._sub(
         machine_sub,
         "check",
         help=(
@@ -44,8 +39,10 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " bundle paths, and static script lint/types (ruff + ty). No execution."
         ),
     )
-    machine_check.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
-    machine_test = _sub(
+    machine_check.add_argument(
+        "file", type=pathlib.Path, help="Path to the .asm.toml machine file."
+    )
+    machine_test = _common._sub(
         machine_sub,
         "test",
         help=(
@@ -55,32 +52,34 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " No provider calls, no real network."
         ),
     )
-    machine_test.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
+    machine_test.add_argument("file", type=pathlib.Path, help="Path to the .asm.toml machine file.")
     machine_test.add_argument(
         "--blackboard",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         metavar="FIXTURE.toml",
         help="TOML fixture of variable values, overlaid on defaults for branch routing.",
     )
-    machine_graph = _sub(
+    machine_graph = _common._sub(
         machine_sub,
         "graph",
         help="Emit the machine as a state diagram (mermaid or Graphviz dot).",
     )
-    machine_graph.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
+    machine_graph.add_argument(
+        "file", type=pathlib.Path, help="Path to the .asm.toml machine file."
+    )
     machine_graph.add_argument(
         "--format",
         choices=("mermaid", "dot"),
         default="mermaid",
         help="Diagram format (default: mermaid).",
     )
-    machine_run = _sub(
+    machine_run = _common._sub(
         machine_sub,
         "run",
         help="Run (or resume) a machine, driving its states to a terminal one.",
     )
-    machine_run.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
+    machine_run.add_argument("file", type=pathlib.Path, help="Path to the .asm.toml machine file.")
     machine_run.add_argument(
         "--exit-on-wait",
         action="store_true",
@@ -90,21 +89,21 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         ),
     )
     # A machine's [config] overlay cannot set sandbox.*, so the grant comes from these flags.
-    _add_sandbox_flags(machine_run)
-    machine_status = _sub(
+    _common._add_sandbox_flags(machine_run)
+    machine_status = _common._sub(
         machine_sub,
         "status",
         help="Report a machine instance's current state, spend, and next wake. Read-only.",
     )
-    machine_status_id = machine_status.add_argument("machine_id", help=MACHINE_ID_HELP)
-    machine_status_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
-    machine_poke = _sub(
+    machine_status_id = machine_status.add_argument("machine_id", help=_common.MACHINE_ID_HELP)
+    machine_status_id.completer = completers._complete_machine_ids  # type: ignore[attr-defined]
+    machine_poke = _common._sub(
         machine_sub,
         "poke",
         help="Signal a waiting machine to wake on its next check (drops a signal file).",
     )
-    machine_poke_id = machine_poke.add_argument("machine_id", help=MACHINE_ID_HELP)
-    machine_poke_id.completer = _complete_pokable_machine_ids  # type: ignore[attr-defined]
+    machine_poke_id = machine_poke.add_argument("machine_id", help=_common.MACHINE_ID_HELP)
+    machine_poke_id.completer = completers._complete_pokable_machine_ids  # type: ignore[attr-defined]
     machine_poke_payload = machine_poke.add_mutually_exclusive_group()
     machine_poke_payload.add_argument(
         "--data",
@@ -117,7 +116,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         metavar="TEXT",
         help="Shorthand for --data with a JSON string payload.",
     )
-    machine_stop = _sub(
+    machine_stop = _common._sub(
         machine_sub,
         "stop",
         help=(
@@ -125,17 +124,17 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " in flight."
         ),
     )
-    machine_stop_id = machine_stop.add_argument("machine_id", help=MACHINE_ID_HELP)
-    machine_stop_id.completer = _complete_stoppable_machine_ids  # type: ignore[attr-defined]
-    machine_replay = _sub(
+    machine_stop_id = machine_stop.add_argument("machine_id", help=_common.MACHINE_ID_HELP)
+    machine_stop_id.completer = completers._complete_stoppable_machine_ids  # type: ignore[attr-defined]
+    machine_replay = _common._sub(
         machine_sub,
         "replay",
         help="Deterministically replay a machine's journal offline (no world I/O).",
     )
-    machine_replay_id = machine_replay.add_argument("machine_id", help=MACHINE_ID_HELP)
-    machine_replay_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
+    machine_replay_id = machine_replay.add_argument("machine_id", help=_common.MACHINE_ID_HELP)
+    machine_replay_id.completer = completers._complete_machine_ids  # type: ignore[attr-defined]
 
-    machine_create = _sub(
+    machine_create = _common._sub(
         machine_sub,
         "create",
         help="Draft a .asm.toml machine from a natural-language task (LLM-assisted).",
@@ -144,7 +143,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     machine_create.add_argument(
         "-o",
         "--output",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         help=(
             "Write the draft here (overwriting freely). Default: <machine-name>.asm.toml"

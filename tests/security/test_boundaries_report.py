@@ -16,8 +16,9 @@ import re
 import pytest
 
 from agent6 import paths
+from agent6.app import _setup
 from agent6.config import Config, SandboxConfig
-from agent6.sandbox import tool_paths
+from agent6.sandbox import detect, tool_paths
 from agent6.ui.cli import check_cmds
 
 _MAIN_RS = (
@@ -42,7 +43,7 @@ def test_hardened_ro_base_mirrors_the_launcher() -> None:
 
 
 def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None = None) -> None:
-    monkeypatch.setattr(check_cmds, "detect_env", object)
+    monkeypatch.setattr(_setup, "detect_env", object)
 
     def _select(_req: str, _env: object) -> str:
         return isolation
@@ -50,10 +51,10 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None =
     def _reason(_env: object) -> str | None:
         return reason
 
-    monkeypatch.setattr(check_cmds, "resolve_isolation", _select)
-    monkeypatch.setattr(check_cmds, "degrade_reason", _reason)
+    monkeypatch.setattr(detect, "resolve_isolation", _select)
+    monkeypatch.setattr(detect, "degrade_reason", _reason)
     monkeypatch.setattr(
-        check_cmds,
+        tool_paths,
         "tool_mount_notes",
         lambda: tool_paths.ToolMountNotes(exposes_home_dir=("a -> b",)),
     )

@@ -8,44 +8,26 @@ Its own module so `sessions list` does not load the judge.
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+import pathlib
 
-from agent6.app.compare import RankOutcome, manifest_task, print_ranked_candidates
-from agent6.config.layer import load_effective
-from agent6.git_ops import (
-    GitError,
-    branch_exists,
-    diff_range,
-)
-from agent6.harness.judge import CandidateBrief
-from agent6.paths import state_dir
-from agent6.sessions.layout import (
-    SessionLayout,
-)
-from agent6.sessions.manifest import (
-    NO_MERGE_COMMIT,
-    ManifestError,
-    SessionManifest,
-    read_manifest,
-)
-from agent6.ui.cli._common import (
-    _runs_dir,
-    error,
-    plural,
-)
-from agent6.ui.cli._compare import rank
-from agent6.ui.cli.sessions_cmds import _resolve_session_manifest
+from agent6 import git_ops, paths
+from agent6.app import compare
+from agent6.config import layer
+from agent6.harness import judge
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.ui.cli import _common, _compare, sessions_cmds
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     died_without_end,
+    format,
     summarize_session_dir,
 )
-from agent6.viewmodel.format import (
-    WINNER_GLYPH,
-)
 
 
-def _candidate_diff(cwd: Path, manifest: SessionManifest) -> tuple[str, bool]:
+def _candidate_diff(
+    cwd: pathlib.Path, manifest: sessions_manifest.SessionManifest
+) -> tuple[str, bool]:
     """Return the diff a run introduced, read-only, without checking out its branch.
 
     A pruned branch reads from the recorded merge: its merged tip while the objects exist,
@@ -62,23 +44,24 @@ def _candidate_diff(cwd: Path, manifest: SessionManifest) -> tuple[str, bool]:
     base_sha, run_branch = manifest.base_sha, manifest.run_branch or ""
     if not base_sha:
         return "", False
-    if run_branch and branch_exists(cwd, run_branch):
-        return diff_range(cwd, base_sha, run_branch), False
+    if run_branch and git_ops.branch_exists(cwd, run_branch):
+        return git_ops.diff_range(cwd, base_sha, run_branch), False
     merged = manifest.merged
     if merged is None:
         return "", False
     for ref in (merged.tip, merged.sha):
-        if ref and ref != NO_MERGE_COMMIT:
+        if ref and ref != sessions_manifest.NO_MERGE_COMMIT:
             try:
-                return diff_range(cwd, base_sha, ref), True
-            except GitError:
+                return git_ops.diff_range(cwd, base_sha, ref), True
+            except git_ops.GitError:
                 continue
     return "", False
 
 
 def _screen_candidates(
-    cwd: Path, resolved: list[tuple[SessionLayout, SessionManifest]]
-) -> tuple[list[CandidateBrief], list[str]]:
+    cwd: pathlib.Path,
+    resolved: list[tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest]],
+) -> tuple[list[judge.CandidateBrief], list[str]]:
     """Return briefs for the comparable runs and a note for each excluded one.
 
     A run without a session end has no verdict and a truncated spend, so ranking it would
@@ -92,7 +75,7 @@ def _screen_candidates(
     Returns:
         The candidates and the notes to print.
     """
-    candidates: list[CandidateBrief] = []
+    candidates: list[judge.CandidateBrief] = []
     notes: list[str] = []
     for layout, manifest in resolved:
         summary = summarize_session_dir(layout.session_dir)
@@ -115,9 +98,9 @@ def _screen_candidates(
                 " the recorded merge"
             )
         candidates.append(
-            CandidateBrief(
+            judge.CandidateBrief(
                 session_id=layout.session_id,
-                task=manifest_task(layout.session_dir, fallback=layout.session_id),
+                task=compare.manifest_task(layout.session_dir, fallback=layout.session_id),
                 diff=diff,
                 verify_ok=summary.verify_ok,
                 cost_usd=summary.cost_usd,
@@ -126,7 +109,7 @@ def _screen_candidates(
     return candidates, notes
 
 
-def _fanout_lanes(cwd: Path, parallel_id: str) -> tuple[str, ...]:
+def _fanout_lanes(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
     """Return the lane ids of a fan-out in lane order; empty when no run names it.
 
     Args:
@@ -134,19 +117,20 @@ def _fanout_lanes(cwd: Path, parallel_id: str) -> tuple[str, ...]:
         parallel_id: The fan-out's id, as each lane's manifest records it.
     """
     lanes: list[tuple[int, str]] = []
-    runs = _runs_dir(cwd)
+    runs = _common._runs_dir(cwd)
     if runs.is_dir():
         for d in runs.iterdir():
-            with contextlib.suppress(ManifestError):
-                m = read_manifest(d)
+            with contextlib.suppress(sessions_manifest.ManifestError):
+                m = sessions_manifest.read_manifest(d)
                 if m.parallel is not None and m.parallel.group == parallel_id:
                     lanes.append((m.parallel.lane, d.name))
     return tuple(name for _, name in sorted(lanes))
 
 
 def _recorded_outcome(
-    resolved: list[tuple[SessionLayout, SessionManifest]], candidates: list[CandidateBrief]
-) -> RankOutcome | None:
+    resolved: list[tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest]],
+    candidates: list[judge.CandidateBrief],
+) -> compare.RankOutcome | None:
     """Return a fan-out's stamped verdict as a `RankOutcome`, for the ranking table.
 
     Args:
@@ -165,7 +149,7 @@ def _recorded_outcome(
     if len(stamps) != len(ids):
         return None
     first = stamps[min(stamps, key=lambda sid: stamps[sid].rank)]
-    return RankOutcome(
+    return compare.RankOutcome(
         ranking=tuple(sorted(stamps, key=lambda sid: stamps[sid].rank)),
         rationale=first.rationale,
         ranked_by="judge" if first.ranked_by == "judge" else "mechanical",
@@ -175,7 +159,7 @@ def _recorded_outcome(
 
 
 def _cmd_compare(
-    *, session_ids: tuple[str, ...], config_path: Path | None, rejudge: bool = False
+    *, session_ids: tuple[str, ...], config_path: pathlib.Path | None, rejudge: bool = False
 ) -> int:
     """Print an advisory ranking of two or more already-run candidates.
 
@@ -193,7 +177,7 @@ def _cmd_compare(
     Returns:
         The exit code; 2 when the ids do not name two comparable runs.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     by_fanout = False
     if len(session_ids) == 1:
         # One id is a fan-out's, comparing its lanes; anything else is one run, too few.
@@ -201,30 +185,30 @@ def _cmd_compare(
         by_fanout = bool(lanes)
         session_ids = lanes or session_ids
     if len(session_ids) < 2:
-        error(
+        _common.error(
             "sessions compare needs 2 or more run ids, or one --parallel fan-out id"
             f" (its lanes); got {len(session_ids)}."
         )
         return 2
-    resolved: list[tuple[SessionLayout, SessionManifest]] = []
+    resolved: list[tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest]] = []
     seen: set[str] = set()
     for query in session_ids:
-        res = _resolve_session_manifest(cwd, query)
+        res = sessions_cmds._resolve_session_manifest(cwd, query)
         if isinstance(res, int):
             return res
         layout, manifest = res
         if layout.session_id in seen:
-            error(f"run {layout.session_id!r} was given more than once.")
+            _common.error(f"run {layout.session_id!r} was given more than once.")
             return 2
         seen.add(layout.session_id)
         resolved.append((layout, manifest))
-    cfg = load_effective(cwd, config_path).config
+    cfg = layer.load_effective(cwd, config_path).config
 
     candidates, notes = _screen_candidates(cwd, resolved)
     for note in notes:
         print(note)
     if not candidates:
-        error("no comparable runs; every run given is still live or never finished.")
+        _common.error("no comparable runs; every run given is still live or never finished.")
         return 2
 
     merged = {
@@ -234,16 +218,16 @@ def _cmd_compare(
     }
     recorded = _recorded_outcome(resolved, candidates) if by_fanout and not rejudge else None
     if recorded is not None:
-        print(f"[agent6] the recorded verdict for {plural(len(candidates), 'lane')}:")
-        print_ranked_candidates(candidates, recorded, merged_into=merged)
+        print(f"[agent6] the recorded verdict for {_common.plural(len(candidates), 'lane')}:")
+        compare.print_ranked_candidates(candidates, recorded, merged_into=merged)
         print("\n(recorded when the fan-out ran; `--rejudge` spends a fresh judge call)")
         return 0
 
     reviewer = cfg.models.resolve("reviewer")
     # Advisory and stateless: only the fan-out's auto-compare stamps a manifest.
-    outcome = rank(cfg, candidates, transcript_dir=state_dir(cwd) / "compare")
+    outcome = _compare.rank(cfg, candidates, transcript_dir=paths.state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
-    print_ranked_candidates(candidates, outcome, merged_into=merged)
+    compare.print_ranked_candidates(candidates, outcome, merged_into=merged)
     # Re-judging one fan-out's lanes can contradict its stamp, which the listings read: say so.
     groups = {manifest.parallel.group if manifest.parallel else None for _, manifest in resolved}
     if outcome.ranking and len(groups) == 1 and None not in groups:
@@ -258,7 +242,7 @@ def _cmd_compare(
         if stamped is not None and stamped != outcome.ranking[0]:
             print(
                 f"\nnote: the recorded fan-out verdict picked {stamped}"
-                f" (the {WINNER_GLYPH} in listings); this fresh ranking is advisory"
+                f" (the {format.WINNER_GLYPH} in listings); this fresh ranking is advisory"
                 " and nothing was re-stamped."
             )
     if reviewer is None:

@@ -16,11 +16,13 @@ from typing import Any
 import pytest
 
 from agent6 import events as agent6_events
+from agent6 import portable
 from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui import steer
 from agent6.ui.cli import _interact as interactmod
 from agent6.ui.cli import _live as livemod
+from agent6.ui.cli import _steer as cli__steer
 
 
 def _events_of(log: pathlib.Path, type_: str) -> list[dict[str, Any]]:
@@ -86,8 +88,8 @@ def test_approver_uses_tui_answer_when_live(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = agent6_events.EventSink(log)
-    monkeypatch.setattr(interactmod, "frontend_is_live", _live)
-    monkeypatch.setattr(interactmod, "read_answer", _ans_yes)
+    monkeypatch.setattr(ipc, "frontend_is_live", _live)
+    monkeypatch.setattr(ipc, "read_answer", _ans_yes)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
     approve = _prompts(tmp_path, events).approve
     assert approve("run `ls`?", scope=ipc.COMMAND_SCOPE) is True
@@ -105,11 +107,11 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
 
     log = tmp_path / "logs.jsonl"
     events = agent6_events.EventSink(log)
-    monkeypatch.setattr(interactmod, "frontend_is_live", _live)
+    monkeypatch.setattr(ipc, "frontend_is_live", _live)
     monkeypatch.setattr(
-        interactmod, "read_answer", functools.partial(ipc.read_answer, timeout_s=0.4, poll_s=0.05)
+        ipc, "read_answer", functools.partial(ipc.read_answer, timeout_s=0.4, poll_s=0.05)
     )
-    monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)  # foreground stdin path
+    monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground stdin path
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
     ipc.write_answer(tmp_path, "approval-1", "yes")  # the premature POST
     approve = _prompts(tmp_path, events).approve
@@ -128,9 +130,9 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
 
     log = tmp_path / "logs.jsonl"
     events = agent6_events.EventSink(log)
-    monkeypatch.setattr(interactmod, "frontend_is_live", _live)
+    monkeypatch.setattr(ipc, "frontend_is_live", _live)
     monkeypatch.setattr(
-        interactmod, "read_answer", functools.partial(ipc.read_answer, timeout_s=3.0, poll_s=0.05)
+        ipc, "read_answer", functools.partial(ipc.read_answer, timeout_s=3.0, poll_s=0.05)
     )
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
 
@@ -155,8 +157,8 @@ def test_approver_falls_back_to_stdin_without_tui(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = agent6_events.EventSink(log)
-    monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
-    monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)  # foreground
+    monkeypatch.setattr(ipc, "frontend_is_live", _dead)
+    monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
     approve = _prompts(tmp_path, events).approve
     assert approve("x", scope=ipc.COMMAND_SCOPE) is False
@@ -173,7 +175,7 @@ def test_approver_headless_no_frontend_waits_not_denies(
     log = tmp_path / "logs.jsonl"
     events = agent6_events.EventSink(log)
     # The real frontend_is_live: nothing is attached at approve() time, so the wait path runs.
-    monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: False)  # headless
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)  # headless
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
 
     def attach_and_answer() -> None:
@@ -193,8 +195,8 @@ def test_approver_session_allows_every_later_command(
     # "allow session" approves this command and every later one across the run.
     log = tmp_path / "logs.jsonl"
     events = agent6_events.EventSink(log)
-    monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
-    monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)  # foreground
+    monkeypatch.setattr(ipc, "frontend_is_live", _dead)
+    monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
     approve = _prompts(tmp_path, events).approve
     assert approve("first?", scope=ipc.COMMAND_SCOPE) is True
@@ -209,9 +211,9 @@ def test_approver_tui_timeout_falls_back_to_stdin(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = agent6_events.EventSink(log)
-    monkeypatch.setattr(interactmod, "frontend_is_live", _live)
-    monkeypatch.setattr(interactmod, "read_answer", _ans_none)  # TUI died / timed out
-    monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)  # foreground
+    monkeypatch.setattr(ipc, "frontend_is_live", _live)
+    monkeypatch.setattr(ipc, "read_answer", _ans_none)  # TUI died / timed out
+    monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
     approve = _prompts(tmp_path, events).approve
     assert approve("x", scope=ipc.COMMAND_SCOPE) is True
@@ -359,8 +361,8 @@ def test_approver_live_front_end_wins_over_away_mode(
 
     log = tmp_path / "logs.jsonl"
     events = agent6_events.EventSink(log)
-    monkeypatch.setattr(interactmod, "frontend_is_live", _live)  # a front-end is attached
-    monkeypatch.setattr(interactmod, "read_answer", _ans_yes)  # and it approved
+    monkeypatch.setattr(ipc, "frontend_is_live", _live)  # a front-end is attached
+    monkeypatch.setattr(ipc, "read_answer", _ans_yes)  # and it approved
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
     ipc.set_away_mode(tmp_path, "deny")  # would deny if the front-end did NOT win
     approve = _prompts(tmp_path, events).approve
@@ -465,7 +467,7 @@ def test_approver_wait_consumes_a_claimless_answer(
 
     log = tmp_path / "logs.jsonl"
     events = agent6_events.EventSink(log)
-    monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: False)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
 
     def answer_never_claiming() -> None:
@@ -501,7 +503,7 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
         plains.append(kw.get("plain"))
         return "y"
 
-    monkeypatch.setattr(interactmod, "tty_prompt", _capture)
+    monkeypatch.setattr(cli__steer, "tty_prompt", _capture)
     assert interactmod.default_stdin_approver("Allow run_command: git log --stat -5") == "yes"
     rendered = seen[0]
     plain = re.sub(r"\x1b\[[0-9;]*m", "", rendered)
@@ -552,10 +554,10 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
     def _approve_yes(_p: str, **_k: object) -> str:
         return "yes"
 
-    monkeypatch.setattr(interactmod, "frontend_is_live", _not_live)
-    monkeypatch.setattr(interactmod, "away_mode", _no_away)
-    monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: True)
-    monkeypatch.setattr(interactmod, "tty_message", notices.append)
+    monkeypatch.setattr(ipc, "frontend_is_live", _not_live)
+    monkeypatch.setattr(ipc, "away_mode", _no_away)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
+    monkeypatch.setattr(cli__steer, "tty_message", notices.append)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _approve_yes)
 
     approve = _prompts(tmp_path, events, [_steer(True)]).approve
@@ -588,8 +590,8 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
         return real_pause(self)
 
     monkeypatch.setattr(_console_view.ConsoleView, "pause", _pause)
-    monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
-    monkeypatch.setattr(interactmod, "has_controlling_tty", _tty)
+    monkeypatch.setattr(ipc, "frontend_is_live", _dead)
+    monkeypatch.setattr(portable, "has_controlling_tty", _tty)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
 
     def _first(_q: tuple[schema.UserQuestion, ...], **_k: object) -> tuple[str, ...]:

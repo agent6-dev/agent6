@@ -8,45 +8,34 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
 import time
-from pathlib import Path
 
-from agent6.app._setup import budget_tracker, check_provider_keys
-from agent6.app.finalize import EXIT_VERIFY_FAILED
-from agent6.app.providers import build_review_seats, build_role_provider
-from agent6.budget import BudgetExceededError, BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6 import git_ops
+from agent6 import paths as agent6_paths
+from agent6.app import _setup, finalize, providers
 from agent6.config import (
     Config,
     ConfigError,
+    layer,
     parse_seat_spec,
 )
-from agent6.config.layer import load_effective
-from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, chain_tip, git_hardening_flags
-from agent6.harness._context import agents_md_text
-from agent6.harness._panel import (
-    ReviewContext,
-    inconclusive_note,
-    panel_is_inconclusive,
-    render_findings,
-)
-from agent6.harness._reviewer import run_panel
-from agent6.harness.code_review import CodeReviewError, code_review
-from agent6.harness.loop import build_readonly_review_tools
-from agent6.paths import mkdir_for_real_user, state_dir
+from agent6.harness import _context, _panel, _reviewer, _toolset, code_review
 from agent6.providers import (
     ProviderError,
     TranscriptSink,
 )
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.ui.cli._common import error
+from agent6.tools import dispatch as tools_dispatch
+from agent6.ui.cli import _common
 
 
 def _collect_review_diff(
     git: str,
-    root: Path,
+    root: pathlib.Path,
     *,
     base: str,
     head: str,
@@ -71,7 +60,7 @@ def _collect_review_diff(
     Returns:
         The completed `git diff`, decoded with replacement so a non-UTF-8 file cannot crash it.
     """
-    hardening = git_hardening_flags(root)
+    hardening = git_ops.git_hardening_flags(root)
     untracked: list[str] = []
     if not base:
         status = subprocess.run(
@@ -87,7 +76,14 @@ def _collect_review_diff(
     try:
         rev = f"{base}..{head}" if base else "HEAD"
         # `--end-of-options` and `--` keep a rev that is also a path a rev.
-        diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, "--end-of-options", rev]
+        diff_args = [
+            git,
+            *hardening,
+            "diff",
+            *git_ops.DIFF_SHOW_SAFETY_FLAGS,
+            "--end-of-options",
+            rev,
+        ]
         diff_args.extend(["--", *paths])
         # git diff emits raw file bytes; a non-UTF-8 file must not crash the review.
         return subprocess.run(
@@ -100,7 +96,7 @@ def _collect_review_diff(
             )
 
 
-def save_review(reviews_dir: Path, *, label: str, body: str) -> Path:
+def save_review(reviews_dir: pathlib.Path, *, label: str, body: str) -> pathlib.Path:
     """Write one rendered review under the reviews dir, beside the provider transcripts.
 
     The file is `<utc-stamp>-review.md`: a `# review: <label>` line, then the body. A later
@@ -114,7 +110,7 @@ def save_review(reviews_dir: Path, *, label: str, body: str) -> Path:
     Returns:
         The file's path.
     """
-    mkdir_for_real_user(reviews_dir)
+    agent6_paths.mkdir_for_real_user(reviews_dir)
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     content = f"# review: {label}\n\n{body.rstrip()}\n".encode()
     n = 1
@@ -131,7 +127,7 @@ def save_review(reviews_dir: Path, *, label: str, body: str) -> Path:
         return path
 
 
-def _is_checked_out(git: str, root: Path, rev: str) -> bool:
+def _is_checked_out(git: str, root: pathlib.Path, rev: str) -> bool:
     """Return whether the checkout at the root is the rev, with nothing uncommitted on top.
 
     An explore-tier seat's read-only tools read the checkout, so anything else answers
@@ -142,11 +138,11 @@ def _is_checked_out(git: str, root: Path, rev: str) -> bool:
         root: The repo root.
         rev: The reviewed head.
     """
-    checked_out = chain_tip(root, "HEAD")
-    if checked_out is None or chain_tip(root, rev) != checked_out:
+    checked_out = git_ops.chain_tip(root, "HEAD")
+    if checked_out is None or git_ops.chain_tip(root, rev) != checked_out:
         return False
     status = subprocess.run(
-        [git, *git_hardening_flags(root), "status", "--porcelain", "--untracked-files=no"],
+        [git, *git_ops.git_hardening_flags(root), "status", "--porcelain", "--untracked-files=no"],
         cwd=root,
         capture_output=True,
         errors="replace",
@@ -159,7 +155,7 @@ def _run_review_panel(
     cfg: Config,
     *,
     git: str,
-    root: Path,
+    root: pathlib.Path,
     base: str,
     head: str,
     label: str,
@@ -168,8 +164,8 @@ def _run_review_panel(
     reviewers: int,
     personas: str,
     transcript_sink: TranscriptSink,
-    reviews_dir: Path,
-    budget: BudgetTracker,
+    reviews_dir: pathlib.Path,
+    budget: agent6_budget.BudgetTracker,
 ) -> int:
     """Run the grounded adversarial review panel over the diff and print its verdict.
 
@@ -199,7 +195,7 @@ def _run_review_panel(
     """
     persona_tuple = tuple(p.strip() for p in personas.split(",") if p.strip())
     try:
-        seats = build_review_seats(
+        seats = providers.build_review_seats(
             cfg,
             transcript_sink=transcript_sink,
             budget=budget,
@@ -207,29 +203,29 @@ def _run_review_panel(
             personas=persona_tuple,
         )
     except ProviderError as exc:
-        error(f"provider init failed: {exc}")
+        _common.error(f"provider init failed: {exc}")
         return 2
     # check_provider_keys reads a configured roster; --personas is the roster only without one.
     pinned = [] if cfg.review.seats else [parse_seat_spec(spec)[1] for spec in persona_tuple]
-    err = check_provider_keys(cfg, extra_providers=pinned)
+    err = _setup.check_provider_keys(cfg, extra_providers=pinned)
     if err is not None:
-        error(f"{err}")
+        _common.error(f"{err}")
         return 2
-    ctx = ReviewContext(task=f"code review: {label}", agents_md=agents_md, diff=diff)
+    ctx = _panel.ReviewContext(task=f"code review: {label}", agents_md=agents_md, diff=diff)
     # explore-tier seats need a read-only tool surface over the repo.
     tools = None
     dispatch = None
     if any(s.tier == "explore" for s in seats):
         if base and not _is_checked_out(git, root, head):
-            error(
+            _common.error(
                 "review.tier = 'explore' reads the checkout, but the checkout is not"
                 f" --head {head!r} (another commit, or uncommitted changes on top): a"
                 " seat's read_file would answer from a tree the diff does not describe."
                 " Check it out clean, or set review.tier = 'diff'."
             )
             return 2
-        disp = ToolDispatcher(root=root, config=cfg)
-        tools, dispatch = build_readonly_review_tools(disp)
+        disp = tools_dispatch.ToolDispatcher(root=root, config=cfg)
+        tools, dispatch = _toolset.build_readonly_review_tools(disp)
     print(
         f"[agent6] review panel: {len(seats)} seats"
         f" ({', '.join(s.persona for s in seats)}) | decision={cfg.review.decision}"
@@ -237,7 +233,7 @@ def _run_review_panel(
         file=sys.stderr,
     )
     try:
-        result = run_panel(
+        result = _reviewer.run_panel(
             seats,
             ctx,
             decision=cfg.review.decision,
@@ -247,20 +243,20 @@ def _run_review_panel(
             tools=tools,
             dispatch=dispatch,
         )
-    except BudgetExceededError as exc:
+    except agent6_budget.BudgetExceededError as exc:
         print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
         return 3
     # One all-abstain owner, shared with the in-loop panel: nothing reviewed is never a pass.
-    inconclusive = panel_is_inconclusive(result)
+    inconclusive = _panel.panel_is_inconclusive(result)
     if inconclusive:
-        verdict, rc = f"INCONCLUSIVE ({inconclusive_note(result)})", 1
+        verdict, rc = f"INCONCLUSIVE ({_panel.inconclusive_note(result)})", 1
     elif result.blocked:
-        verdict, rc = "BLOCK", EXIT_VERIFY_FAILED
+        verdict, rc = "BLOCK", finalize.EXIT_VERIFY_FAILED
     elif result.merged_findings:
         verdict, rc = "PASS (with findings)", 0
     else:
         verdict, rc = "PASS", 0
-    body = render_findings(result.merged_findings)
+    body = _panel.render_findings(result.merged_findings)
     stdout = f"VERDICT: {verdict}\n" + (f"{body}\n" if body else "")
     print(stdout, end="", flush=True)
     print(
@@ -288,7 +284,7 @@ def _run_review_panel(
 
 def _reviewed_diff(
     base: str, head: str, paths: tuple[str, ...]
-) -> tuple[str, Path, str, str] | int:
+) -> tuple[str, pathlib.Path, str, str] | int:
     """Resolve the git binary, the repo root, the diff a review reads and its label.
 
     Args:
@@ -300,17 +296,17 @@ def _reviewed_diff(
         `(git, root, diff, label)`, else the exit code: 2 when git is missing or failed,
         0 when there is nothing to review (said on stderr, naming the range).
     """
-    root = Path.cwd()
+    root = pathlib.Path.cwd()
     git = shutil.which("git")
     if git is None:
-        error("git not found on PATH.")
+        _common.error("git not found on PATH.")
         return 2
     label = ("working tree vs HEAD" if not base else f"{base}..{head}") + (
         f" -- {' '.join(paths)}" if paths else ""
     )
     diff_proc = _collect_review_diff(git, root, base=base, head=head, paths=paths)
     if diff_proc.returncode != 0:
-        error(f"git diff failed: {diff_proc.stderr.strip()}")
+        _common.error(f"git diff failed: {diff_proc.stderr.strip()}")
         return 2
     diff = diff_proc.stdout
     if not diff.strip():
@@ -319,7 +315,7 @@ def _reviewed_diff(
     return git, root, diff, label
 
 
-def _reviewer_config(config_path: Path | None, model: str) -> Config:
+def _reviewer_config(config_path: pathlib.Path | None, model: str) -> Config:
     """Return the effective config with `--model` applied to the reviewer route.
 
     Args:
@@ -329,14 +325,14 @@ def _reviewer_config(config_path: Path | None, model: str) -> Config:
     Raises:
         ConfigError: The value names no configured provider or no model.
     """
-    cfg = load_effective(Path.cwd(), config_path).config
+    cfg = layer.load_effective(pathlib.Path.cwd(), config_path).config
     if not model:
         return cfg
     return cfg.with_model_route("reviewer", cfg.model_route("reviewer", model))
 
 
 def _cmd_review(  # noqa: PLR0911
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     *,
     base: str,
     head: str,
@@ -363,7 +359,9 @@ def _cmd_review(  # noqa: PLR0911
         The exit code: 0 reviewed or PASS, 2 refused, 3 budget, and the panel's 1 or 4.
     """
     if not base and head not in ("", "HEAD"):
-        error("--head requires --base; without --base, review uses the working tree vs HEAD.")
+        _common.error(
+            "--head requires --base; without --base, review uses the working tree vs HEAD."
+        )
         return 2
     if personas.strip() and reviewers < 1:
         print(
@@ -373,7 +371,7 @@ def _cmd_review(  # noqa: PLR0911
     try:
         cfg = _reviewer_config(config_path, model)
     except ConfigError as exc:
-        error(str(exc))
+        _common.error(str(exc))
         return 2
     if personas.strip() and reviewers >= 1 and cfg.review.seats:
         print("note: --personas ignored ([review].seats names the roster).", file=sys.stderr)
@@ -385,15 +383,15 @@ def _cmd_review(  # noqa: PLR0911
 
     if reviewers < 1:
         cfg.require_runnable("reviewer")
-        err = check_provider_keys(cfg)
+        err = _setup.check_provider_keys(cfg)
         if err is not None:
-            error(f"{err}")
+            _common.error(f"{err}")
             return 2
 
     log_proc = subprocess.run(
         [
             git,
-            *git_hardening_flags(root),
+            *git_ops.git_hardening_flags(root),
             "log",
             "-n",
             "10",
@@ -409,11 +407,11 @@ def _cmd_review(  # noqa: PLR0911
     )
     recent_log = log_proc.stdout if log_proc.returncode == 0 else ""
 
-    agents_md = agents_md_text(root)
+    agents_md = _context.agents_md_text(root)
 
     # The reviewer route; the budget is per invocation, a one-shot.
-    budget = budget_tracker(cfg)
-    layout_root = state_dir(root) / "reviews"
+    budget = _setup.budget_tracker(cfg)
+    layout_root = agent6_paths.state_dir(root) / "reviews"
     transcript_sink = TranscriptSink(layout_root)
 
     if reviewers >= 1:
@@ -434,28 +432,28 @@ def _cmd_review(  # noqa: PLR0911
         )
 
     try:
-        reviewer = build_role_provider(
+        reviewer = providers.build_role_provider(
             cfg,
             "reviewer",
             transcript_sink=transcript_sink,
             budget=budget,
         )
     except ProviderError as exc:
-        error(f"provider init failed: {exc}")
+        _common.error(f"provider init failed: {exc}")
         return 2
 
     print(f"[agent6] reviewing: {label}", file=sys.stderr)
     try:
-        text = code_review(
+        text = code_review.code_review(
             reviewer,
             diff=diff,
             agents_md=agents_md,
             recent_log=recent_log,
         )
-    except CodeReviewError as exc:
+    except code_review.CodeReviewError as exc:
         print(f"REVIEW FAILED: {exc}", file=sys.stderr)
         return 2
-    except BudgetExceededError as exc:
+    except agent6_budget.BudgetExceededError as exc:
         print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
         return 3
 

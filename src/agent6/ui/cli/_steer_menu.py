@@ -13,39 +13,29 @@ instruction, so no quoting is needed. Info commands print and re-prompt.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
+import pathlib
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from pathlib import Path
 
-from agent6.config.layer import load_effective
-from agent6.directive import STEER_COMMANDS, parse_btw
-from agent6.graph.order import DONE_STATUSES
-from agent6.paths import data_dir
-from agent6.sessions.ipc import (
-    steer_answer_written,
-    take_steer_answer,
-)
-from agent6.sessions.layout import LOGS_NAME
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.skills import operator_skills
-from agent6.tools.background import SHELLS_DIR, roster_from_dir
-from agent6.ui.cli._common import plural
-from agent6.ui.cli._menu_input import (
-    LineSuperseded,
-    menu_input,
-)
-from agent6.ui.directives import act_on_directive
+from agent6 import budget, directive, paths
+from agent6 import skills as agent6_skills
+from agent6.config import layer
+from agent6.graph import order
+from agent6.sessions import ipc, layout, manifest
+from agent6.tools import background
+from agent6.ui import directives
+from agent6.ui.cli import _common, _menu_input
 from agent6.viewmodel import (
     fold_session,
+    format,
     operator_inputs,
     restate,
+    state,
     status_for_session_dir,
     tail_events,
     task_snippet,
 )
-from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_usd, short_task_id, status_label
-from agent6.viewmodel.state import SessionState, context_fill, status_facts
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
@@ -65,17 +55,17 @@ MENU_COMMANDS: dict[str, str] = {
     "/status": MENU_ONLY_HELP["/status"],
     "/tasks": MENU_ONLY_HELP["/tasks"],
     "/pin": MENU_ONLY_HELP["/pin"],
-    "/compact": STEER_COMMANDS["/compact"],
-    "/parallel": STEER_COMMANDS["/parallel"],
-    "/btw": STEER_COMMANDS["/btw"],
-    "/task": STEER_COMMANDS["/task"],
-    "/standing": STEER_COMMANDS["/standing"],
-    "/retire": STEER_COMMANDS["/retire"],
-    "/shells": STEER_COMMANDS["/shells"],
-    "/restate": STEER_COMMANDS["/restate"],
-    "/undo": STEER_COMMANDS["/undo"],
+    "/compact": directive.STEER_COMMANDS["/compact"],
+    "/parallel": directive.STEER_COMMANDS["/parallel"],
+    "/btw": directive.STEER_COMMANDS["/btw"],
+    "/task": directive.STEER_COMMANDS["/task"],
+    "/standing": directive.STEER_COMMANDS["/standing"],
+    "/retire": directive.STEER_COMMANDS["/retire"],
+    "/shells": directive.STEER_COMMANDS["/shells"],
+    "/restate": directive.STEER_COMMANDS["/restate"],
+    "/undo": directive.STEER_COMMANDS["/undo"],
     "/continue": MENU_ONLY_HELP["/continue"],
-    "/stop": STEER_COMMANDS["/stop"],
+    "/stop": directive.STEER_COMMANDS["/stop"],
     "/exit": MENU_ONLY_HELP["/exit"],
     "/detach": MENU_ONLY_HELP["/detach"],
     "/help": MENU_ONLY_HELP["/help"],
@@ -87,7 +77,7 @@ def _without_btw() -> dict[str, str]:
     return {cmd: help_ for cmd, help_ in MENU_COMMANDS.items() if cmd != "/btw"}
 
 
-def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, str]]:
+def skill_menu_table(config_path: pathlib.Path | None = None) -> dict[str, tuple[str, str]]:
     """Return `/name` to (description, SKILL.md text) for the enabled skills.
 
     A built-in command wins a name collision. A broken config or store degrades to
@@ -97,9 +87,9 @@ def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, st
         config_path: The invocation's `--config`.
     """
     try:
-        cfg = load_effective(Path.cwd(), config_path).config
-        resolved = operator_skills(
-            cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, data_dir() / "skills"
+        cfg = layer.load_effective(pathlib.Path.cwd(), config_path).config
+        resolved = agent6_skills.operator_skills(
+            cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, paths.data_dir() / "skills"
         )
     except Exception as exc:  # the pause prompt survives any config error
         print(f"[agent6] skill commands unavailable: {exc}")
@@ -111,51 +101,51 @@ def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, st
     }
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class _Recall:
     """The pause prompt's history, seeded once per session from its journal, then grown."""
 
-    lines: list[str] = field(default_factory=list)
+    lines: list[str] = dataclasses.field(default_factory=list)
     seeded_from: str | None = None
 
-    def seed(self, session_dir: Path) -> None:
+    def seed(self, session_dir: pathlib.Path) -> None:
         """Seed the task and every steer, once; reseeding would drop the lines accepted since."""
         if self.seeded_from == str(session_dir):
             return
         self.seeded_from = str(session_dir)
-        recorded = operator_inputs(tail_events(session_dir / LOGS_NAME, follow=False))
+        recorded = operator_inputs(tail_events(session_dir / layout.LOGS_NAME, follow=False))
         self.lines[:] = [" ".join(text.split()) for text in recorded]
 
 
 _RECALL = _Recall()
 
 
-def _fold(session_dir: Path) -> SessionState:
+def _fold(session_dir: pathlib.Path) -> state.SessionState:
     """Return the session's state, folded from its log."""
-    return fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
+    return fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False))
 
 
-def _read_preset(session_dir: Path) -> str:
+def _read_preset(session_dir: pathlib.Path) -> str:
     """Return the preset the run started with, or ""."""
     try:
-        return read_manifest(session_dir).harness.preset
-    except ManifestError:
+        return manifest.read_manifest(session_dir).harness.preset
+    except manifest.ManifestError:
         return ""
 
 
-def _print_status(session_dir: Path) -> None:
+def _print_status(session_dir: pathlib.Path) -> None:
     """Print the run's status line: tasks, tools, cost, context and preset."""
     s = _fold(session_dir)
     # The dir's probes too: a gone worker reads as running from the fold alone.
-    label = status_label(*status_for_session_dir(session_dir, status_facts(s)))
-    done = sum(1 for t in s.tasks if t.status in DONE_STATUSES)
+    label = format.status_label(*status_for_session_dir(session_dir, state.status_facts(s)))
+    done = sum(1 for t in s.tasks if t.status in order.DONE_STATUSES)
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     role = s.last_role
     model = f"{role.role}/{role.model}" if role else "—"
-    cost = format_usd(s.budget.usd_total, partial=s.budget.usd_partial)
+    cost = budget.format_usd(s.budget.usd_total, partial=s.budget.usd_partial)
     ctx = ""
     if role is not None and role.ctx_tokens > 0:
-        fill = context_fill(s)
+        fill = state.context_fill(s)
         pct = f" ({fill}%)" if fill is not None else ""
         ctx = f" · ctx {role.ctx_tokens:,} tok{pct}"
     if s.compact_elided:
@@ -164,12 +154,12 @@ def _print_status(session_dir: Path) -> None:
         ctx += f" · pins {len(s.pins)}"
     preset = _read_preset(session_dir)
     prof = f" · preset {preset}" if preset else ""
-    calls = plural(len(s.tool_calls), "tool")
+    calls = _common.plural(len(s.tool_calls), "tool")
     print(f"[agent6] {label} · tasks {tasks} · {calls} · cost {cost}{ctx}{prof}")
     print(f"         model {model} · task: {task_snippet(s.user_task, max_chars=80)}")
 
 
-def _print_pins(session_dir: Path) -> None:
+def _print_pins(session_dir: pathlib.Path) -> None:
     """Print the recorded pins for a bare `/pin`; `/pin <text>` travels as a steer."""
     s = _fold(session_dir)
     if not s.pins:
@@ -180,7 +170,7 @@ def _print_pins(session_dir: Path) -> None:
         print(f"  {i}. {pin}")
 
 
-def _print_tasks(session_dir: Path) -> None:
+def _print_tasks(session_dir: pathlib.Path) -> None:
     """Print the task tree with statuses."""
     s = _fold(session_dir)
     if not s.tasks:
@@ -188,9 +178,9 @@ def _print_tasks(session_dir: Path) -> None:
         return
     # The fold's views carry their depth; the id leads the line, as `/retire` names a task.
     for tv in s.tasks:
-        icon = TASK_STATUS_GLYPH.get(tv.status, "·")
+        icon = format.TASK_STATUS_GLYPH.get(tv.status, "·")
         marker = "▸ " if tv.is_cursor else ""
-        print(f"  {short_task_id(tv.id):>3}  {'  ' * tv.depth}{marker}{icon} {tv.title}")
+        print(f"  {format.short_task_id(tv.id):>3}  {'  ' * tv.depth}{marker}{icon} {tv.title}")
 
 
 def _print_help(offered: dict[str, str]) -> None:
@@ -203,12 +193,12 @@ def _print_help(offered: dict[str, str]) -> None:
 
 
 # Starts a btw and delivers its answer to the console view; None makes `/btw` say so.
-BtwRunner = Callable[[str, Path], tuple[bool, str]]
+BtwRunner = Callable[[str, pathlib.Path], tuple[bool, str]]
 
 
-def _print_shells(session_dir: Path) -> None:
+def _print_shells(session_dir: pathlib.Path) -> None:
     """Print the run's background commands, read off disk like every other surface."""
-    lines = roster_from_dir(session_dir / SHELLS_DIR)
+    lines = background.roster_from_dir(session_dir / background.SHELLS_DIR)
     if not lines:
         print("[agent6] no background commands this run")
         return
@@ -216,9 +206,9 @@ def _print_shells(session_dir: Path) -> None:
         print(f"  {line}")
 
 
-def _start_btw(cmd: str, session_dir: Path, runner: BtwRunner | None) -> str:
+def _start_btw(cmd: str, session_dir: pathlib.Path, runner: BtwRunner | None) -> str:
     """Return the line to print after starting a btw through the runner."""
-    question = parse_btw(cmd)
+    question = directive.parse_btw(cmd)
     if not question:
         return "[agent6] ask something: `/btw <question>`"
     if runner is None:
@@ -239,7 +229,7 @@ _ACTIONS: dict[str, str] = {
 
 def _run_info_command(
     cmd: str,
-    session_dir: Path,
+    session_dir: pathlib.Path,
     btw_runner: BtwRunner | None = None,
 ) -> None:
     """Run a command that prints and re-prompts (everything not in `_ACTIONS`)."""
@@ -256,17 +246,17 @@ def _run_info_command(
     elif cmd == "/shells":
         _print_shells(session_dir)
     elif cmd == "/restate":
-        print(restate(list(tail_events(session_dir / LOGS_NAME, follow=False))))
+        print(restate(list(tail_events(session_dir / layout.LOGS_NAME, follow=False))))
     elif cmd.startswith("/btw"):
         print(_start_btw(cmd, session_dir, btw_runner))
     elif cmd.startswith(("/task", "/standing", "/retire")):
         # The one owner of what a composer line does; `/btw` stays local for its runner.
-        _did, said = act_on_directive(session_dir, cmd) or (False, "")
+        _did, said = directives.act_on_directive(session_dir, cmd) or (False, "")
         print(f"[agent6] {said}")
 
 
 def _line_reader(
-    session_dir: Path, offered: dict[str, str], skills: dict[str, tuple[str, str]]
+    session_dir: pathlib.Path, offered: dict[str, str], skills: dict[str, tuple[str, str]]
 ) -> Callable[[str], str]:
     """Return the terminal's line reader: the menu, polling the session's steer file.
 
@@ -275,18 +265,18 @@ def _line_reader(
         offered: The commands and their help.
         skills: The skill commands.
     """
-    arrived = functools.partial(steer_answer_written, session_dir)
+    arrived = functools.partial(ipc.steer_answer_written, session_dir)
     _RECALL.seed(session_dir)
     display = {**offered, **{c: d[:70] for c, (d, _t) in skills.items()}}
-    return lambda p: menu_input(p, display, _RECALL.lines, until=arrived)
+    return lambda p: _menu_input.menu_input(p, display, _RECALL.lines, until=arrived)
 
 
 def pause_menu(
-    session_dir: Path,
+    session_dir: pathlib.Path,
     *,
     input_fn: Callable[[str], str] | None = None,
     btw_runner: BtwRunner | None = None,
-    config_path: Path | None = None,
+    config_path: pathlib.Path | None = None,
 ) -> str | None:
     """Run the pause menu until a line ends it.
 
@@ -312,15 +302,15 @@ def pause_menu(
             line = input_fn(PROMPT)
         except EOFError:
             return None
-        except LineSuperseded:
+        except _menu_input.LineSuperseded:
             print("[agent6] a steer arrived from a front-end; taking it")
-            return take_steer_answer(session_dir) or ""
+            return ipc.take_steer_answer(session_dir) or ""
         answer = _answer_line(line, session_dir, btw_runner, skills)
         if not isinstance(answer, _Again):
             return answer
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _Again:
     """A line that printed: the menu asks again, the plain prompt continues the run."""
 
@@ -332,7 +322,7 @@ _LOOP_DIRECTIVES = ("/pin", "/parallel")
 
 def _answer_line(  # noqa: PLR0911, PLR0912
     line: str,
-    session_dir: Path,
+    session_dir: pathlib.Path,
     btw_runner: BtwRunner | None,
     skills: dict[str, tuple[str, str]],
 ) -> str | _Again:
@@ -351,7 +341,7 @@ def _answer_line(  # noqa: PLR0911, PLR0912
         if word == "/btw":
             print(_start_btw(stripped, session_dir, btw_runner))
             return AGAIN
-        acted = act_on_directive(session_dir, stripped)
+        acted = directives.act_on_directive(session_dir, stripped)
         if acted is not None:
             print(f"[agent6] {acted[1]}")
             return AGAIN
@@ -366,7 +356,7 @@ def _answer_line(  # noqa: PLR0911, PLR0912
         return stripped
     if word == "/compact":
         # Complete on its own; the owner composers share acts on it.
-        acted = act_on_directive(session_dir, stripped)
+        acted = directives.act_on_directive(session_dir, stripped)
         assert acted is not None
         print(f"[agent6] {acted[1]}")
         return AGAIN
@@ -386,10 +376,10 @@ def _answer_line(  # noqa: PLR0911, PLR0912
 
 def pause_line(
     line: str | None,
-    session_dir: Path,
+    session_dir: pathlib.Path,
     *,
     btw_runner: BtwRunner | None = None,
-    config_path: Path | None = None,
+    config_path: pathlib.Path | None = None,
 ) -> str | None:
     """Return the plain prompt's answer for one line; a line that printed continues the run.
 

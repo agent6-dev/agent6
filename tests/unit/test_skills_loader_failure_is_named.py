@@ -14,6 +14,7 @@ import pathlib
 
 import pytest
 
+from agent6 import skills
 from agent6.ui.cli import skills_cmds
 
 
@@ -21,7 +22,7 @@ def _break_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
     def _raise(_dirs: object) -> tuple[tuple[object, ...], tuple[str, ...]]:
         raise OSError(13, "Permission denied")
 
-    monkeypatch.setattr(skills_cmds, "discover_skills", _raise)
+    monkeypatch.setattr(skills, "discover_skills", _raise)
 
 
 @pytest.mark.parametrize("verb", ["enable", "disable"])

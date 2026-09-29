@@ -16,15 +16,17 @@ import json
 import os
 import pathlib
 import threading
+import types
 from collections.abc import Generator, Mapping
 
 import pytest
 
-from agent6 import directive, git_ops, kinds, memory, paths
+from agent6 import directive, git_ops, kinds, memory, paths, portable
 from agent6.app import _lane_watch as lane_watch
-from agent6.app import compare, parallel, reporter
+from agent6.app import compare, manifest, parallel, reporter
 from agent6.config import Config, ConfigError
 from agent6.harness import subrun
+from agent6.sessions import ipc
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.viewmodel import listing
@@ -293,7 +295,7 @@ def test_dispatch_parallel_refuses_unknown_model_before_any_clone(
     def _boom(*_a: object, **_k: object) -> int:
         raise AssertionError("run_parallel must not be reached on a refusal")
 
-    monkeypatch.setattr(parallel_cmd, "run_parallel", _boom)
+    monkeypatch.setattr(parallel, "run_parallel", _boom)
     rc = parallel_cmd.dispatch_parallel(
         _provider_cfg(), "fix the bug", "moonshotai/kimi-k2.7", cwd=origin
     )
@@ -318,7 +320,7 @@ def test_dispatch_parallel_unknown_model_no_cache_warns_and_proceeds(
         reached.append(task)
         return 0
 
-    monkeypatch.setattr(parallel_cmd, "run_parallel", _fake_run)
+    monkeypatch.setattr(parallel, "run_parallel", _fake_run)
     rc = parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
     assert rc == 0
     assert reached == ["fix the bug"]  # not blocked offline
@@ -336,7 +338,7 @@ def test_dispatch_parallel_forwards_auto_approve_to_run_parallel(
         captured.append(kw.get("auto_approve"))
         return 0
 
-    monkeypatch.setattr(parallel_cmd, "run_parallel", _fake_run)
+    monkeypatch.setattr(parallel, "run_parallel", _fake_run)
     parallel_cmd.dispatch_parallel(
         _provider_cfg(), "fix the bug", "made-up/model", cwd=origin, auto_approve=True
     )
@@ -357,8 +359,6 @@ def test_dispatch_parallel_gives_the_lanes_the_coordinators_away_mode(
     answers), else a terminal to attach from means `wait`, else `deny` with a warning that names
     what a lane loses.
     """
-    from agent6.ui.cli import _interact as interactmod
-
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     captured: list[object] = []
 
@@ -366,11 +366,11 @@ def test_dispatch_parallel_gives_the_lanes_the_coordinators_away_mode(
         captured.append(kw.get("lane_away"))
         return 0
 
-    monkeypatch.setattr(parallel_cmd, "run_parallel", _fake_run)
+    monkeypatch.setattr(parallel, "run_parallel", _fake_run)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: True)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
     parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
-    monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: False)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
     parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
     parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
@@ -394,7 +394,7 @@ def test_dispatch_parallel_forwards_pins_to_run_parallel(
         captured.append(kw.get("pins"))
         return 0
 
-    monkeypatch.setattr(parallel_cmd, "run_parallel", _fake_run)
+    monkeypatch.setattr(parallel, "run_parallel", _fake_run)
     parallel_cmd.dispatch_parallel(
         _provider_cfg(), "fix", "made-up/model", cwd=origin, pins=("never touch schema",)
     )
@@ -429,7 +429,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
     def _boom(*_a: object, **_k: object) -> None:
         raise AssertionError("clone must not happen before validation")
 
-    monkeypatch.setattr(parallel, "clone_workspace", _boom)
+    monkeypatch.setattr(subrun, "clone_workspace", _boom)
     dispatch = parallel.build_lane_spawner(
         _provider_cfg(), origin, origin_state, coordinator_session_id="coord", runtime=runtime
     )
@@ -792,7 +792,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
 
     monkeypatch.setattr(lane_watch, "summarize_session_dir", fake_summary)
     monkeypatch.setattr(lane_watch.time, "sleep", fake_sleep)
-    monkeypatch.setattr(lane_watch, "worker_is_alive", fake_worker_is_alive)
+    monkeypatch.setattr(ipc, "worker_is_alive", fake_worker_is_alive)
 
     assert lane_watch.await_lanes([res]) is False
     assert "waiting on a question (answer via agent6 attach" in capsys.readouterr().err
@@ -987,7 +987,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
             ("fan-l1", "fan-l2"), long_rationale, "judge", judge_cost_usd=0.0123
         )
 
-    monkeypatch.setattr(parallel, "rank", fake_rank)
+    monkeypatch.setattr(compare, "rank", fake_rank)
 
     parallel.run_parallel(
         "t", lanes, cfg=cfg, origin=origin, origin_state=origin_state,
@@ -1183,7 +1183,11 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
     def boom(_path: pathlib.Path, _m: object) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr(parallel, "write_manifest", boom)
+    # The stamp is the fan-out's own manifest write; the lane imports keep the real writer.
+    stand_in = types.SimpleNamespace(
+        write_manifest=boom, write_session_manifest=manifest.write_session_manifest
+    )
+    monkeypatch.setattr(parallel, "app_manifest", stand_in)
 
     rc = parallel.run_parallel(
         "t",
@@ -1373,7 +1377,7 @@ def test_await_uses_real_run_dir_not_symlink(
     def _no_symlink(*_a: object, **_k: object) -> None:
         return None
 
-    monkeypatch.setattr(parallel, "symlink_lane", _no_symlink)
+    monkeypatch.setattr(lane_watch, "symlink_lane", _no_symlink)
 
     rc = parallel.run_parallel(
         "t",
@@ -2111,7 +2115,7 @@ def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
         # The failed lane (mis-l1) ranked ahead of the one that passed.
         return compare.RankOutcome(("mis-l1", "mis-l2"), "misranked", "judge", judge_cost_usd=0.01)
 
-    monkeypatch.setattr(parallel, "rank", fake_rank)
+    monkeypatch.setattr(compare, "rank", fake_rank)
     parallel.run_parallel(
         "t",
         lanes,
@@ -2526,7 +2530,7 @@ def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
 
     monkeypatch.setattr(lane_watch.time, "sleep", _no_sleep)
     monkeypatch.setattr(lane_watch, "STOP_GRACE_S", 0.0)
-    monkeypatch.setattr(lane_watch, "worker_is_alive", _alive)
+    monkeypatch.setattr(ipc, "worker_is_alive", _alive)
 
     assert lane_watch.await_lanes([res], should_stop=lambda: True) is True
     assert ipc.stop_request_pending(lane)
@@ -2602,7 +2606,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
     def interrupted_judge(*_a: object, **_k: object) -> object:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(parallel, "rank", interrupted_judge)
+    monkeypatch.setattr(compare, "rank", interrupted_judge)
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
     with pytest.raises(KeyboardInterrupt):
         parallel.run_parallel(

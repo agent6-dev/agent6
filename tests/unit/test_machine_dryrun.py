@@ -9,6 +9,7 @@ import re
 
 import pytest
 
+from agent6.app import _setup
 from agent6.machine import _semantics, dry_run, dryrun, load_machine
 
 # tool -> branch -> (agent | tool) -> terminal, with a typed capture + an enum.
@@ -181,14 +182,14 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
     """The OK verdict says how many offline script tests were not run and why."""
     import types
 
-    from agent6.ui.cli import machine_check, main
+    from agent6.ui.cli import main
 
     f = _write(tmp_path)
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     (scripts / "thing_test.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
     monkeypatch.setattr(
-        machine_check, "detect_env", lambda: types.SimpleNamespace(detected_isolation="hardened")
+        _setup, "detect_env", lambda: types.SimpleNamespace(detected_isolation="hardened")
     )
     assert main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out

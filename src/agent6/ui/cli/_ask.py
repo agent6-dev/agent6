@@ -4,30 +4,24 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import pathlib
 import subprocess
 import sys
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from agent6.budget import BudgetTracker
-from agent6.errors import read_operator_file
-from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
-from agent6.harness.loop import (
-    Harness,
-    SessionResult,
-)
-from agent6.paths import state_dir
-from agent6.sessions.id import SessionIdError, resolve_session
-from agent6.sessions.layout import SessionLayout, bucket_dir
-from agent6.sessions.manifest import NO_MERGE_COMMIT, ManifestError, SessionManifest, read_manifest
-from agent6.ui.cli._common import error, warn
-from agent6.ui.cli._steer import idle_prompt_sigint
+from agent6 import budget as agent6_budget
+from agent6 import errors, git_ops, paths
+from agent6.harness import _snapshot, loop
+from agent6.sessions import id
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
+from agent6.ui.cli import _common, _steer
 from agent6.viewmodel import newest_session_dir
 
 
-def summarize_session_log(logs_path: Path) -> str:
+def summarize_session_log(logs_path: pathlib.Path) -> str:
     """Return a compact summary of a run's log: outcome, event counts and recent events."""
     if not logs_path.is_file():
         return "(no logs.jsonl for this run)"
@@ -78,7 +72,7 @@ def fmt_run_event(e: dict[str, Any]) -> str:
     return t
 
 
-def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
+def _git_diff_text(cwd: pathlib.Path, range_spec: str) -> tuple[int, str, str]:
     """Return the rc, stdout and stderr of a hardened `git diff <range>`.
 
     Bytes are decoded lossily, since a valid diff can be non-UTF-8. Fixed argv from
@@ -86,7 +80,13 @@ def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
     `diff.external` or a textconv on the host.
     """
     proc = subprocess.run(
-        ["git", *git_hardening_flags(cwd), "diff", *DIFF_SHOW_SAFETY_FLAGS, range_spec],
+        [
+            "git",
+            *git_ops.git_hardening_flags(cwd),
+            "diff",
+            *git_ops.DIFF_SHOW_SAFETY_FLAGS,
+            range_spec,
+        ],
         cwd=cwd,
         capture_output=True,
         check=False,
@@ -99,7 +99,10 @@ def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
 
 
 def _diff_via_merge_stamp(
-    cwd: Path, manifest: SessionManifest, base_sha: str, run_branch: str | None
+    cwd: pathlib.Path,
+    manifest: sessions_manifest.SessionManifest,
+    base_sha: str,
+    run_branch: str | None,
 ) -> tuple[str, int, str, str] | None:
     """Return the diff through the manifest's merge stamp when the primary range is unreachable.
 
@@ -115,9 +118,9 @@ def _diff_via_merge_stamp(
     merged = manifest.merged
     if merged is None or not run_branch or not merged.sha:
         return None
-    gone = branch_tip_sha(cwd, run_branch) is None
+    gone = git_ops.branch_tip_sha(cwd, run_branch) is None
     why = "run branch pruned" if gone else "base unreachable"
-    if merged.sha == NO_MERGE_COMMIT:
+    if merged.sha == sessions_manifest.NO_MERGE_COMMIT:
         # A merge that added nothing names no commit; the run's work is its stamped tip's.
         if not merged.tip:
             return None
@@ -136,7 +139,7 @@ def _diff_via_merge_stamp(
     return label, *_git_diff_text(cwd, f"{merged_sha}^..{merged_sha}")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionSeed:
     """A prior session's resolved id and markdown context."""
 
@@ -144,7 +147,7 @@ class SessionSeed:
     text: str
 
 
-def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSeed | None:
+def build_session_seed(cwd: pathlib.Path, session_id: str, *, latest: bool) -> SessionSeed | None:
     """Return the resolved source and its markdown context for a new session.
 
     Any session kind seeds any other: a run, a plan and an ask record the same shape.
@@ -157,27 +160,29 @@ def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSe
     Returns:
         The seed, or None after printing why the source could not be resolved.
     """
-    state = state_dir(cwd)
+    state = paths.state_dir(cwd)
     if latest:
         # A machine draft is an authoring log, not a session with a task and an outcome.
-        newest = newest_session_dir([bucket_dir(state, "runs"), bucket_dir(state, "asks")])
+        newest = newest_session_dir(
+            [sessions_layout.bucket_dir(state, "runs"), sessions_layout.bucket_dir(state, "asks")]
+        )
         if newest is None:
-            error(f"--from-latest: no run or ask under {state}")
+            _common.error(f"--from-latest: no run or ask under {state}")
             return None
         session_id = newest.name
     try:
-        layout = resolve_session(state, session_id)
-    except SessionIdError as exc:
-        error(f"{exc}")
+        layout = id.resolve_session(state, session_id)
+    except id.SessionIdError as exc:
+        _common.error(f"{exc}")
         return None
     target = layout.session_id
     if not layout.manifest_path.is_file():
-        error(f"run {target} has no manifest.json")
+        _common.error(f"run {target} has no manifest.json")
         return None
     try:
-        manifest = read_manifest(layout.session_dir)
-    except ManifestError as exc:
-        error(f"could not read manifest for {target}: {exc}")
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
+    except sessions_manifest.ManifestError as exc:
+        _common.error(f"could not read manifest for {target}: {exc}")
         return None
     base_sha = manifest.base_sha
     run_branch = manifest.run_branch
@@ -201,10 +206,12 @@ def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSe
             tail = "\n... (diff truncated; read more with git)" if len(diff) > cap else ""
             diff_body = f"```diff\n{diff[:cap]}{tail}\n```"
     plan_path = layout.session_dir / "plan.md"
-    plan_section = f"\n## Plan\n{read_operator_file(plan_path)}\n" if plan_path.is_file() else ""
+    plan_section = (
+        f"\n## Plan\n{errors.read_operator_file(plan_path)}\n" if plan_path.is_file() else ""
+    )
     transcript_path = layout.session_dir / "transcript.md"
     ask_section = (
-        f"\n## Ask transcript\n{read_operator_file(transcript_path)}\n"
+        f"\n## Ask transcript\n{errors.read_operator_file(transcript_path)}\n"
         if layout.subdir == "asks" and transcript_path.is_file()
         else ""
     )
@@ -225,14 +232,14 @@ def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSe
     )
 
 
-def seed_files(cwd: Path, files: list[str]) -> str:
+def seed_files(cwd: pathlib.Path, files: list[str]) -> str:
     """Return the `--file` seeds wrapped for an ask; a capped, non-fatal read each."""
     parts: list[str] = []
     for f in files:
         try:
             content = (cwd / f).read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
-            warn(f"--file {f}: {exc}")
+            _common.warn(f"--file {f}: {exc}")
             continue
         cap = 64 * 1024
         if len(content) > cap:
@@ -241,7 +248,9 @@ def seed_files(cwd: Path, files: list[str]) -> str:
     return "\n".join(parts)
 
 
-def save_ask_transcript(layout: SessionLayout, *, question: str, answer: str) -> None:
+def save_ask_transcript(
+    layout: sessions_layout.SessionLayout, *, question: str, answer: str
+) -> None:
     """Append the question and its markdown answer to the ask's transcript.
 
     A resumed ask appends both halves: an answer alone under the first question
@@ -263,7 +272,9 @@ def save_ask_transcript(layout: SessionLayout, *, question: str, answer: str) ->
     )
 
 
-def save_ask_repl_transcript(layout: SessionLayout, conversation: list[tuple[str, str]]) -> None:
+def save_ask_repl_transcript(
+    layout: sessions_layout.SessionLayout, conversation: list[tuple[str, str]]
+) -> None:
     """Write the cumulative transcript for an interactive ask session."""
     parts = ["# agent6 ask (interactive)\n"]
     for i, (q, a) in enumerate(conversation, 1):
@@ -272,8 +283,12 @@ def save_ask_repl_transcript(layout: SessionLayout, conversation: list[tuple[str
 
 
 def run_ask_repl(
-    wf: Harness, budget: BudgetTracker, layout: SessionLayout, *, first_question: str
-) -> SessionResult:
+    wf: loop.Harness,
+    budget: agent6_budget.BudgetTracker,
+    layout: sessions_layout.SessionLayout,
+    *,
+    first_question: str,
+) -> _snapshot.SessionResult:
     """Run a multi-turn ask, each follow-up re-entering the loop with the prior Q&A as context.
 
     Args:
@@ -291,14 +306,14 @@ def run_ask_repl(
     )
     conversation: list[tuple[str, str]] = []
     pending = first_question.strip()
-    result: SessionResult | None = None
+    result: _snapshot.SessionResult | None = None
     while True:
         if pending:
             question = pending
             pending = ""
         else:
             try:
-                with idle_prompt_sigint():
+                with _steer.idle_prompt_sigint():
                     question = input("\nask> ").strip()
             except (EOFError, KeyboardInterrupt):
                 print(file=sys.stderr)
@@ -329,7 +344,7 @@ def run_ask_repl(
             print("[agent6] budget exhausted; ending the REPL.", file=sys.stderr)
             break
     if result is None:
-        return SessionResult(
+        return _snapshot.SessionResult(
             completed=True, reason="ask_repl_empty", summary="", iterations=0, tool_calls=0
         )
     return result

@@ -16,8 +16,11 @@ from typing import Any
 import pytest
 
 from agent6 import paths
+from agent6.app import _setup
+from agent6.sandbox import detect, jail
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
+from agent6.tools import policy
 from agent6.ui import cli
 
 
@@ -109,7 +112,7 @@ def test_exec_refuses_a_session_network_nobody_holds(
     def _strict(req: str, env: Any) -> str:
         return "strict"
 
-    monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
     (tmp_path / "run").mkdir()
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
     ipc.write_worker_pid(layout.session_dir, os.getpid())  # live, but holding no network
@@ -181,10 +184,10 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
     def _resolve(word: str, _env_v: Any) -> str:
         return word
 
-    monkeypatch.setattr(net_cmds, "jail_policy", fake_jail_policy)
-    monkeypatch.setattr(net_cmds, "read_session_netns_pid", _no_pid)
-    monkeypatch.setattr(net_cmds, "detect_env", _env)
-    monkeypatch.setattr(net_cmds, "resolve_isolation", _resolve)
+    monkeypatch.setattr(policy, "jail_policy", fake_jail_policy)
+    monkeypatch.setattr(ipc, "read_session_netns_pid", _no_pid)
+    monkeypatch.setattr(_setup, "detect_env", _env)
+    monkeypatch.setattr(detect, "resolve_isolation", _resolve)
 
     cfg = Config.model_validate({"sandbox": {"isolation": "strict"}})
     with pytest.raises(RuntimeError, match="stop before"):
@@ -302,7 +305,7 @@ def test_exec_refuses_a_run_that_is_over(
         ran.append(tuple(policy.argv))
         return os.EX_OK
 
-    monkeypatch.setattr("agent6.ui.cli.net_cmds.run_in_jail", fake_run)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run)
 
     rc = cli_net_cmds.exec_in_session(layout, Config(), repo, ("pwd",))
 
@@ -357,11 +360,9 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     def _strict(_req: str, _env: Any) -> str:
         return "strict"
 
-    monkeypatch.setattr(
-        net_cmds, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True)
-    )
-    monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
-    monkeypatch.setattr(net_cmds, "run_in_jail", fake_run)
+    monkeypatch.setattr(_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True))
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(jail, "run_in_jail", fake_run)
 
     cfg = Config.model_validate(
         {
@@ -391,21 +392,21 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
     def _strict(req: str, env: Any) -> str:
         return "strict"
 
-    monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
     (tmp_path / "run").mkdir()
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
     ipc.write_worker_pid(layout.session_dir, os.getpid())
     holder = subprocess.Popen(["sleep", "30"])
     try:
         ipc.write_session_netns_pid(layout.session_dir, holder.pid)
-        real_policy = net_cmds.jail_policy
+        real_policy = policy.jail_policy
 
         def _holder_dies(*args: Any, **kwargs: Any) -> Any:
             holder.kill()
             holder.wait()
             return real_policy(*args, **kwargs)
 
-        monkeypatch.setattr(net_cmds, "jail_policy", _holder_dies)
+        monkeypatch.setattr(policy, "jail_policy", _holder_dies)
         cfg = Config.model_validate({"sandbox": {"network": "session"}})
         rc = net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
         assert rc == 2
@@ -605,7 +606,7 @@ def test_forward_local_port_zero_picks_a_free_port(
     def _probe(_dir: pathlib.Path) -> int | None:
         return next(probes, None)
 
-    monkeypatch.setattr(net_cmds, "read_session_netns_pid", _probe)
+    monkeypatch.setattr(ipc, "read_session_netns_pid", _probe)
     out = io.StringIO()
     assert net_cmds.forward(layout, 8080, 0, out=out) == 0
     line = next(ln for ln in out.getvalue().splitlines() if "forwarding http://127.0.0.1:" in ln)

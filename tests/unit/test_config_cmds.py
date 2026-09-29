@@ -9,6 +9,8 @@ import pathlib
 import pytest
 
 from agent6 import paths
+from agent6.config import layer as config_layer
+from agent6.models import choices
 from agent6.ui.cli import config_cmds as cc
 
 
@@ -93,8 +95,8 @@ def test_parallel_models_completer_completes_after_last_comma(
     def _routes(_cfg: object) -> list[str]:
         return ["s/gpt-sibling", "w/gpt-5", "w/gpt-5-mini", "w/opus"]
 
-    monkeypatch.setattr(completers, "load_effective", _eff)
-    monkeypatch.setattr(completers, "route_choices", _routes)
+    monkeypatch.setattr(config_layer, "load_effective", _eff)
+    monkeypatch.setattr(choices, "route_choices", _routes)
     assert completers._complete_parallel_models("w/gpt") == [  # pyright: ignore[reportPrivateUsage]
         "w/gpt-5",
         "w/gpt-5-mini",
@@ -163,7 +165,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     def _global_path(*_a: object, **_k: object) -> pathlib.Path:
         return cfg
 
-    monkeypatch.setattr(cc, "global_config_path", _global_path)
+    monkeypatch.setattr(paths, "global_config_path", _global_path)
     monkeypatch.setattr(paths, "global_config_path", _global_path)
 
     rc = cli_main(["config", "set", "sandbox.run_commands", "yes"])
@@ -199,7 +201,7 @@ def test_revalidate_machine_rejects_invalid_spec_and_rolls_back(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The cwd-dependent [config]-overlay validation is stubbed out.
-    monkeypatch.setattr(cc, "load_effective_with_overlay", _noop_overlay)
+    monkeypatch.setattr(config_layer, "load_effective_with_overlay", _noop_overlay)
     target = tmp_path / "m.asm.toml"
     target.write_text(_BAD, encoding="utf-8")
 
@@ -212,7 +214,7 @@ def test_revalidate_machine_rejects_invalid_spec_and_rolls_back(
 def test_revalidate_machine_accepts_valid_spec(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cc, "load_effective_with_overlay", _noop_overlay)
+    monkeypatch.setattr(config_layer, "load_effective_with_overlay", _noop_overlay)
     target = tmp_path / "m.asm.toml"
     target.write_text(_GOOD, encoding="utf-8")
 
@@ -773,7 +775,7 @@ def test_config_fix_skips_an_entry_another_writer_already_fixed(
         calls["n"] += 1
         return layer.ConfigDiagnosis(removable=(stale,) if calls["n"] == 1 else (), blocked=None)
 
-    monkeypatch.setattr(cc, "find_invalid_entries", _diag)
+    monkeypatch.setattr(config_layer, "find_invalid_entries", _diag)
     cc._cmd_config_fix(machine=None)  # pyright: ignore[reportPrivateUsage]
 
     assert 'run_commands = "ask"' in cfg.read_text(encoding="utf-8"), (
@@ -821,7 +823,7 @@ def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(
 
     A whole-file restore could clobber a concurrent writer's update.
     """
-    monkeypatch.setattr(cc, "load_effective_with_overlay", _noop_overlay)
+    monkeypatch.setattr(config_layer, "load_effective_with_overlay", _noop_overlay)
     target = tmp_path / "m.asm.toml"
     target.write_text(_BAD, encoding="utf-8")
 

@@ -5,79 +5,39 @@
 from __future__ import annotations
 
 import math
+import pathlib
 import sys
 import tempfile
-from pathlib import Path
 
-from agent6.app.confine import resolved_config_values
+from agent6 import errors, paths, portable
+from agent6.app import confine
 from agent6.config import (
     ConfigError,
+    io,
+    layer,
+    write,
 )
-from agent6.config.io import (
-    parse_cli_value,
-    read_toml_file,
-    read_toml_leaf,
-    remove_toml_leaf,
-    remove_toml_table,
-    upsert_toml_leaf,
-)
-from agent6.config.layer import (
-    EffectiveConfig,
-    InvalidEntry,
-    effective_leaf,
-    find_invalid_entries,
-    flatten_leaves,
-    load_effective,
-    load_effective_with_overlay,
-    load_global_only,
-    materialize,
-    preset_catalog,
-)
-from agent6.config.write import (
-    keep_or_rollback,
-    merged_config_error,
-    resolved_write_path,
-    revalidate_write,
-    set_config_value,
-    unknown_key_error,
-    unset_config_value,
-    writing_config,
-)
-from agent6.errors import OperatorError, read_operator_file
 from agent6.machine import (
     MachineError,
     load_machine,
     protected_overlay_error,
     protected_overlay_key_error,
 )
-from agent6.paths import (
-    cache_dir,
-    chown_to_real_user,
-    data_dir,
-    effective_user,
-    global_config_path,
-    mkdir_for_real_user,
-    repo_config_path,
-    secrets_path,
-    state_base,
-    state_dir,
-)
-from agent6.portable import atomic_write, locked_file
-from agent6.ui.cli._common import error, warn
-from agent6.viewmodel.config_view import format_value, render_key_detail, render_show
+from agent6.ui.cli import _common
+from agent6.viewmodel import config_view
 
 
-def _require_machine_file(machine: Path | None) -> None:
+def _require_machine_file(machine: pathlib.Path | None) -> None:
     """Refuse a missing machine file instead of treating it as empty.
 
     Raises:
         OperatorError: The file does not exist.
     """
     if machine is not None and not machine.is_file():
-        raise OperatorError(f"no such machine file: {machine}")
+        raise errors.OperatorError(f"no such machine file: {machine}")
 
 
-def _read_machine_overlay(machine: Path | None) -> dict[str, object] | None:
+def _read_machine_overlay(machine: pathlib.Path | None) -> dict[str, object] | None:
     """Read a machine file's `[config]` overlay.
 
     Returns:
@@ -89,29 +49,31 @@ def _read_machine_overlay(machine: Path | None) -> dict[str, object] | None:
     if machine is None:
         return None
     _require_machine_file(machine)
-    overlay = read_toml_file(machine).get("config", {})
+    overlay = io.read_toml_file(machine).get("config", {})
     if not isinstance(overlay, dict):
         return {}
     if problem := protected_overlay_error(overlay):
-        raise OperatorError(problem)
+        raise errors.OperatorError(problem)
     return overlay
 
 
-def _effective_with_overlay(config_path: Path | None, machine: Path | None) -> EffectiveConfig:
+def _effective_with_overlay(
+    config_path: pathlib.Path | None, machine: pathlib.Path | None
+) -> layer.EffectiveConfig:
     """Return the effective config, with a machine file's `[config]` overlay on top when named."""
     overlay = _read_machine_overlay(machine)
     if overlay is None:
-        return load_effective(Path.cwd(), config_path)
-    return load_effective_with_overlay(Path.cwd(), overlay, explicit_path=config_path)
+        return layer.load_effective(pathlib.Path.cwd(), config_path)
+    return layer.load_effective_with_overlay(pathlib.Path.cwd(), overlay, explicit_path=config_path)
 
 
 def _cmd_config_show(
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     *,
     as_json: bool,
     keys: list[str] | None = None,
     descriptions: bool = False,
-    machine: Path | None = None,
+    machine: pathlib.Path | None = None,
 ) -> int:
     """Print the effective config, every leaf with its origin, or the asked-for keys in full.
 
@@ -126,19 +88,19 @@ def _cmd_config_show(
         The exit code.
     """
     eff = _effective_with_overlay(config_path, machine)
-    resolved = resolved_config_values(eff.config)
+    resolved = confine.resolved_config_values(eff.config)
     if keys:
         # An asked-for key is the one place a description can never bury the values.
         try:
-            detail = render_key_detail(
+            detail = config_view.render_key_detail(
                 eff, keys, resolved=resolved, color=sys.stdout.isatty(), as_json=as_json
             )
         except KeyError as exc:
-            error(_config_key_error(str(exc.args[0]), eff))
+            _common.error(_config_key_error(str(exc.args[0]), eff))
             return 2
         print(detail, end="")
         return 0
-    text = render_show(
+    text = config_view.render_show(
         eff,
         as_json=as_json,
         resolved=resolved,
@@ -155,16 +117,16 @@ def _cmd_config_path() -> int:
     Returns:
         0.
     """
-    user = effective_user()
-    rows: list[tuple[str, Path, bool]] = [
-        ("global config", global_config_path(user), True),
-        ("repo config", repo_config_path(Path.cwd()), True),
-        ("secrets", secrets_path(user), True),
-        ("config dir", global_config_path(user).parent, False),
-        ("state (all repos)", state_base(user), False),
-        ("state (this repo)", state_dir(Path.cwd()), False),
-        ("skills", data_dir(user) / "skills", False),
-        ("cache", cache_dir(user), False),
+    user = paths.effective_user()
+    rows: list[tuple[str, pathlib.Path, bool]] = [
+        ("global config", paths.global_config_path(user), True),
+        ("repo config", paths.repo_config_path(pathlib.Path.cwd()), True),
+        ("secrets", paths.secrets_path(user), True),
+        ("config dir", paths.global_config_path(user).parent, False),
+        ("state (all repos)", paths.state_base(user), False),
+        ("state (this repo)", paths.state_dir(pathlib.Path.cwd()), False),
+        ("skills", paths.data_dir(user) / "skills", False),
+        ("cache", paths.cache_dir(user), False),
     ]
     width = max(len(label) for label, _p, _f in rows)
     for label, p, is_file in rows:
@@ -173,13 +135,13 @@ def _cmd_config_path() -> int:
     return 0
 
 
-def _cmd_config_presets(config_path: Path | None = None) -> int:
+def _cmd_config_presets(config_path: pathlib.Path | None = None) -> int:
     """Print every known preset with the overrides it applies, the selected one marked.
 
     Returns:
         The exit code.
     """
-    cat = preset_catalog(Path.cwd(), config_path)
+    cat = layer.preset_catalog(pathlib.Path.cwd(), config_path)
     if cat.selected:
         print(f"preset = {cat.selected}  [{cat.source}]")
     else:
@@ -190,11 +152,11 @@ def _cmd_config_presets(config_path: Path | None = None) -> int:
             tag += ", replaces the built-in"
         sel = "  (selected)" if info.name == cat.selected else ""
         print(f"\n{info.name}  [{tag}]{sel}")
-        leaves = flatten_leaves(info.overrides)
+        leaves = layer.flatten_leaves(info.overrides)
         if not leaves:
             print("  (plain defaults, no overrides)")
         for key, val in leaves.items():
-            print(f"  {key} = {format_value(val)}")
+            print(f"  {key} = {config_view.format_value(val)}")
     print(
         "\nSelect per run with --preset <name>;"
         " persist with `agent6 config set preset <name>` (--repo for this repo)."
@@ -202,9 +164,9 @@ def _cmd_config_presets(config_path: Path | None = None) -> int:
     return 0
 
 
-def _open_target(target: Path) -> None:
+def _open_target(target: pathlib.Path) -> None:
     """Create the config dir and hand it back to the real operator before any write under sudo."""
-    mkdir_for_real_user(target.parent)
+    paths.mkdir_for_real_user(target.parent)
 
 
 def _cmd_config_fill(*, force: bool) -> int:
@@ -218,23 +180,23 @@ def _cmd_config_fill(*, force: bool) -> int:
     Returns:
         The exit code.
     """
-    target = resolved_write_path(global_config_path())
+    target = write.resolved_write_path(paths.global_config_path())
     _open_target(target)
     # Read and publish under the lock: a read before it would lose a concurrent `config set`.
-    with writing_config(target):
-        eff = load_global_only()
+    with write.writing_config(target):
+        eff = layer.load_global_only()
         if target.is_file() and not force:
-            error(f"{target} already exists. Re-run with --force to overwrite.")
+            _common.error(f"{target} already exists. Re-run with --force to overwrite.")
             return 2
-        atomic_write(
+        portable.atomic_write(
             target,
-            materialize(eff.config, keep_presets_from=target, keep_preset_selector=True),
+            layer.materialize(eff.config, keep_presets_from=target, keep_preset_selector=True),
         )
     print(f"Wrote fully-resolved config to {target}")
     return 0
 
 
-def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str]:
+def _config_write_target(*, repo: bool, machine: pathlib.Path | None) -> tuple[pathlib.Path, str]:
     """Return the file and the dotted-key prefix a config write targets.
 
     Args:
@@ -249,16 +211,16 @@ def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str
     """
     if machine is not None:
         if repo:
-            raise OperatorError("use either --repo or --machine-file, not both")
+            raise errors.OperatorError("use either --repo or --machine-file, not both")
         if machine.is_file():
             _read_machine_overlay(machine)
-        return resolved_write_path(machine), "config."
+        return write.resolved_write_path(machine), "config."
     if repo:
-        return resolved_write_path(repo_config_path(Path.cwd())), ""
-    return resolved_write_path(global_config_path()), ""
+        return write.resolved_write_path(paths.repo_config_path(pathlib.Path.cwd())), ""
+    return write.resolved_write_path(paths.global_config_path()), ""
 
 
-def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
+def _reject_machine_protected(key: str, machine: pathlib.Path | None) -> str | None:
     """Return the error for an operator-only key in a machine overlay, by the loader's own rule."""
     if machine is None:
         return None
@@ -273,7 +235,7 @@ def _machine_is_valid(text: str | None) -> bool:
         tf.write(text)
         tf.flush()
         try:
-            load_machine(Path(tf.name))
+            load_machine(pathlib.Path(tf.name))
         except MachineError:
             return False
     return True
@@ -289,7 +251,9 @@ def _leaf_problems(text: str) -> str:
     return "\n".join(leaves) if leaves else text
 
 
-def _revalidate_machine(target: Path, prior_text: str | None, *, held: bool = True) -> str | None:
+def _revalidate_machine(
+    target: pathlib.Path, prior_text: str | None, *, held: bool = True
+) -> str | None:
     """Re-validate a machine file after an overlay write, restoring the prior text on failure.
 
     Blocks only when the edit made a valid machine invalid; one already invalid is
@@ -305,9 +269,11 @@ def _revalidate_machine(target: Path, prior_text: str | None, *, held: bool = Tr
     """
     err: str | None = None
     try:
-        data = read_toml_file(target)
+        data = io.read_toml_file(target)
         overlay = data.get("config", {})
-        load_effective_with_overlay(Path.cwd(), overlay if isinstance(overlay, dict) else {})
+        layer.load_effective_with_overlay(
+            pathlib.Path.cwd(), overlay if isinstance(overlay, dict) else {}
+        )
         if "states" in data and _machine_is_valid(prior_text):
             load_machine(target)
     except ConfigError as exc:
@@ -316,19 +282,21 @@ def _revalidate_machine(target: Path, prior_text: str | None, *, held: bool = Tr
         err = "; ".join(exc.problems)
     if err is None:
         return None
-    return keep_or_rollback(target, prior_text, err, held=held)
+    return write.keep_or_rollback(target, prior_text, err, held=held)
 
 
 def _warn_if_still_broken() -> None:
     """Warn when the config still fails to load after a kept write, naming the layer."""
-    if (after := merged_config_error(Path.cwd())) is not None:
-        warn(
+    if (after := write.merged_config_error(pathlib.Path.cwd())) is not None:
+        _common.warn(
             "the config is still invalid because of a value this edit did not"
             f" write; fix that one on its own:\n{after}"
         )
 
 
-def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None) -> int:
+def _cmd_config_get(
+    config_path: pathlib.Path | None, key: str, *, machine: pathlib.Path | None
+) -> int:
     """Print a leaf's effective value and the layer that set it.
 
     Args:
@@ -340,21 +308,21 @@ def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None)
         The exit code.
     """
     eff = _effective_with_overlay(config_path, machine)
-    found = effective_leaf(eff, key)
+    found = layer.effective_leaf(eff, key)
     if found is None:
-        error(_config_key_error(key, eff))
+        _common.error(_config_key_error(key, eff))
         return 2
     value, source = found
-    print(f"{key} = {format_value(value)}  [{source}]")
+    print(f"{key} = {config_view.format_value(value)}  [{source}]")
     return 0
 
 
-def _flag_shadow_note(key: str, config_path: Path | None) -> str | None:
+def _flag_shadow_note(key: str, config_path: pathlib.Path | None) -> str | None:
     """Return a note when the `--config FILE` in force sets the key the write just landed under."""
     if config_path is None:
         return None
     try:
-        eff = load_effective(Path.cwd(), config_path)
+        eff = layer.load_effective(pathlib.Path.cwd(), config_path)
     except ConfigError:
         return None
     if eff.sources.get(key) != "flag":
@@ -363,7 +331,12 @@ def _flag_shadow_note(key: str, config_path: Path | None) -> str | None:
 
 
 def _cmd_config_set(
-    key: str, value: str, *, repo: bool, machine: Path | None, config_path: Path | None = None
+    key: str,
+    value: str,
+    *,
+    repo: bool,
+    machine: pathlib.Path | None,
+    config_path: pathlib.Path | None = None,
 ) -> int:
     """Set a scalar leaf in the target file.
 
@@ -378,38 +351,40 @@ def _cmd_config_set(
         The exit code.
     """
     if err := _reject_machine_protected(key, machine):
-        error(f"{err}")
+        _common.error(f"{err}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
-    parsed = parse_cli_value(value)
+    parsed = io.parse_cli_value(value)
     if machine is None:
-        err = set_config_value(Path.cwd(), key, value, to_repo=repo)
+        err = write.set_config_value(pathlib.Path.cwd(), key, value, to_repo=repo)
     else:
         _open_target(target)
-        with writing_config(target) as held:
-            prior = read_operator_file(target) if target.is_file() else None
-            read_toml_file(target)  # no line surgery on a file that does not parse
-            upsert_toml_leaf(target, prefix + key, parsed)
+        with write.writing_config(target) as held:
+            prior = errors.read_operator_file(target) if target.is_file() else None
+            io.read_toml_file(target)  # no line surgery on a file that does not parse
+            io.upsert_toml_leaf(target, prefix + key, parsed)
             err = _revalidate_machine(target, prior, held=held)
     if err:
-        error(f"{err}")
+        _common.error(f"{err}")
         return 2
     if machine is None:
         _warn_if_still_broken()
-    print(f"Set {key} = {format_value(parsed)} in {target}")
+    print(f"Set {key} = {config_view.format_value(parsed)} in {target}")
     if machine is None and (note := _flag_shadow_note(key, config_path)):
         print(note)
     return 0
 
 
-def _config_key_error(key: str, eff: EffectiveConfig) -> str:
+def _config_key_error(key: str, eff: layer.EffectiveConfig) -> str:
     """Return the error for a key that is a section or unknown, with its did-you-mean."""
-    if any(candidate.startswith(key + ".") for candidate in resolved_config_values(eff.config)):
+    if any(
+        candidate.startswith(key + ".") for candidate in confine.resolved_config_values(eff.config)
+    ):
         return f"{key!r} is not a config leaf (see `agent6 config show`)."
-    return unknown_key_error(key, Path.cwd(), eff=eff)
+    return write.unknown_key_error(key, pathlib.Path.cwd(), eff=eff)
 
 
-def _not_a_leaf(key: str, config_path: Path | None, machine: Path | None) -> str:
+def _not_a_leaf(key: str, config_path: pathlib.Path | None, machine: pathlib.Path | None) -> str:
     """Return why the key cannot be unset; an MCP server table names the verb that removes it."""
     try:
         eff = _effective_with_overlay(config_path, machine)
@@ -422,7 +397,7 @@ def _not_a_leaf(key: str, config_path: Path | None, machine: Path | None) -> str
 
 
 def _cmd_config_unset(
-    key: str, *, repo: bool, machine: Path | None, config_path: Path | None = None
+    key: str, *, repo: bool, machine: pathlib.Path | None, config_path: pathlib.Path | None = None
 ) -> int:
     """Remove a leaf, so it reverts to the next layer or the built-in default.
 
@@ -436,31 +411,34 @@ def _cmd_config_unset(
         The exit code.
     """
     if err := _reject_machine_protected(key, machine):
-        error(f"{err}")
+        _common.error(f"{err}")
         return 2
     # An unset repairs a config that no longer loads, so a failing validation must not block it.
     try:
-        known_leaf = effective_leaf(load_effective(Path.cwd(), config_path), key) is not None
+        known_leaf = (
+            layer.effective_leaf(layer.load_effective(pathlib.Path.cwd(), config_path), key)
+            is not None
+        )
     except ConfigError:
         known_leaf = True
     if not known_leaf:
-        error(f"{_not_a_leaf(key, config_path, machine)}")
+        _common.error(f"{_not_a_leaf(key, config_path, machine)}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     if not target.is_file():
-        error(f"{target} does not exist; nothing to unset.")
+        _common.error(f"{target} does not exist; nothing to unset.")
         return 2
     if machine is None:
-        res = unset_config_value(Path.cwd(), key, to_repo=repo)
+        res = write.unset_config_value(pathlib.Path.cwd(), key, to_repo=repo)
         removed, err = res.removed, res.error
     else:
-        with writing_config(target) as held:
-            prior = read_operator_file(target)
-            read_toml_file(target)  # no line surgery on a file that does not parse
-            removed = remove_toml_leaf(target, prefix + key)
+        with write.writing_config(target) as held:
+            prior = errors.read_operator_file(target)
+            io.read_toml_file(target)  # no line surgery on a file that does not parse
+            removed = io.remove_toml_leaf(target, prefix + key)
             err = _revalidate_machine(target, prior, held=held) if removed else None
     if err:
-        error(f"unsetting {key} left an invalid config:\n{err}")
+        _common.error(f"unsetting {key} left an invalid config:\n{err}")
         return 2
     if not removed:
         print(f"{key} is not set in {target}; nothing to unset.")
@@ -473,7 +451,9 @@ def _cmd_config_unset(
     return 0
 
 
-def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None, add: bool) -> int:
+def _config_list_edit(
+    key: str, value: str, *, repo: bool, machine: pathlib.Path | None, add: bool
+) -> int:
     """Add to or remove from a list leaf in the target file.
 
     Args:
@@ -487,40 +467,40 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
         The exit code.
     """
     if err := _reject_machine_protected(key, machine):
-        error(f"{err}")
+        _common.error(f"{err}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     _open_target(target)
     # The lock spans from the read: two concurrent adds would otherwise drop one element.
-    with writing_config(target) as held:
-        current = read_toml_leaf(read_toml_file(target), prefix + key)
+    with write.writing_config(target) as held:
+        current = io.read_toml_leaf(io.read_toml_file(target), prefix + key)
         if current is None:
             # A new override starts from the value it overrides, not [].
             try:
                 base = (
-                    load_effective(Path.cwd(), None)
+                    layer.load_effective(pathlib.Path.cwd(), None)
                     if repo or machine is not None
-                    else load_global_only()
+                    else layer.load_global_only()
                 )
-                inherited = effective_leaf(base, key)
+                inherited = layer.effective_leaf(base, key)
             except ConfigError:
                 inherited = None
             current = inherited[0] if inherited is not None and inherited[0] is not None else []
         if not isinstance(current, (list, tuple)):
-            error(f"{key} is not a list field in {target}.")
+            _common.error(f"{key} is not a list field in {target}.")
             return 2
-        parsed = parse_cli_value(value)
+        parsed = io.parse_cli_value(value)
         items = list(current)
         if (parsed in items) == add:
-            print(f"{format_value(parsed)} {'already' if add else 'not'} in {key}.")
+            print(f"{config_view.format_value(parsed)} {'already' if add else 'not'} in {key}.")
             return 0
         items = [*items, parsed] if add else [x for x in items if x != parsed]
-        prior = read_operator_file(target) if target.is_file() else None
-        was_valid = machine is None and merged_config_error(Path.cwd()) is None
-        upsert_toml_leaf(target, prefix + key, items)
+        prior = errors.read_operator_file(target) if target.is_file() else None
+        was_valid = machine is None and write.merged_config_error(pathlib.Path.cwd()) is None
+        io.upsert_toml_leaf(target, prefix + key, items)
         if machine is None:
-            err = revalidate_write(
-                Path.cwd(),
+            err = write.revalidate_write(
+                pathlib.Path.cwd(),
                 target,
                 prior,
                 was_valid=was_valid,
@@ -530,23 +510,23 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
         else:
             err = _revalidate_machine(target, prior, held=held)
         if err:
-            error(f"{value!r} is not valid for {key}:\n{err}")
+            _common.error(f"{value!r} is not valid for {key}:\n{err}")
             return 2
     if machine is None:
         _warn_if_still_broken()
     verb, prep = ("Added", "to") if add else ("Removed", "from")
-    print(f"{verb} {format_value(parsed)} {prep} {key} in {target}")
+    print(f"{verb} {config_view.format_value(parsed)} {prep} {key} in {target}")
     return 0
 
 
-def _entry_is_stale(entry: InvalidEntry) -> bool:
+def _entry_is_stale(entry: layer.InvalidEntry) -> bool:
     """Return whether the entry's key no longer holds the value the unlocked diagnosis read."""
     try:
-        data = read_toml_file(entry.path)
+        data = io.read_toml_file(entry.path)
     except ConfigError:
         return True  # unreadable now: left to the loud paths
     # nan != nan, so a still-present nan would read as replaced on every pass and never be removed.
-    return not _equal_tolerating_nan(read_toml_leaf(data, entry.file_key), entry.value)
+    return not _equal_tolerating_nan(io.read_toml_leaf(data, entry.file_key), entry.value)
 
 
 def _equal_tolerating_nan(a: object, b: object) -> bool:
@@ -562,7 +542,7 @@ def _equal_tolerating_nan(a: object, b: object) -> bool:
     return a == b
 
 
-def _cmd_config_fix(*, machine: Path | None) -> int:
+def _cmd_config_fix(*, machine: pathlib.Path | None) -> int:
     """Drop every invalid entry from the config, printing what it was and where it lived.
 
     Removing one entry can reveal another it shadowed, so the diagnosis repeats until
@@ -575,26 +555,26 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
     Returns:
         The exit code.
     """
-    repo_root = Path.cwd()
+    repo_root = pathlib.Path.cwd()
     _read_machine_overlay(machine)
-    removed: list[InvalidEntry] = []
-    stuck: list[InvalidEntry] = []
-    touched: set[Path] = set()
-    diag = find_invalid_entries(repo_root, machine=machine)
+    removed: list[layer.InvalidEntry] = []
+    stuck: list[layer.InvalidEntry] = []
+    touched: set[pathlib.Path] = set()
+    diag = layer.find_invalid_entries(repo_root, machine=machine)
     while diag.removable:
         progressed = False
         for entry in diag.removable:
             # The surgery publishes by rename, so it edits the file a link resolves to.
-            target = resolved_write_path(entry.path)
+            target = write.resolved_write_path(entry.path)
             # Diagnosis ran unlocked, so a concurrent writer may have fixed this key since.
-            with locked_file(target):
+            with portable.locked_file(target):
                 if _entry_is_stale(entry):
                     continue
                 try:
                     ok = (
-                        remove_toml_table(target, entry.file_key)
+                        io.remove_toml_table(target, entry.file_key)
                         if entry.is_table
-                        else remove_toml_leaf(target, entry.file_key)
+                        else io.remove_toml_leaf(target, entry.file_key)
                     )
                 except ConfigError:
                     # A leaf inside an inline table or dotted key: the surgery cannot carve it out.
@@ -609,34 +589,35 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
             # Nothing this pass could delete; re-diagnosing the same set would loop forever.
             break
         stuck = []
-        diag = find_invalid_entries(repo_root, machine=machine)
+        diag = layer.find_invalid_entries(repo_root, machine=machine)
     for path in touched:
-        chown_to_real_user(path)
+        paths.chown_to_real_user(path)
     for entry in removed:
         what = (
             f"[{entry.leaf}] (whole table)"
             if entry.is_table
-            else f"{entry.leaf} = {format_value(entry.value)}"
+            else f"{entry.leaf} = {config_view.format_value(entry.value)}"
         )
         print(f"Removed {what}  [{entry.layer}: {entry.path}]")
     if diag.blocked:
-        error(
+        _common.error(
             f"config still invalid (not an auto-removable entry); fix it by hand:\n{diag.blocked}"
         )
         return 2
     if stuck:
         names = "\n".join(
-            f"  {e.leaf} = {format_value(e.value)}  [{e.layer}: {e.path}]" for e in stuck
+            f"  {e.leaf} = {config_view.format_value(e.value)}  [{e.layer}: {e.path}]"
+            for e in stuck
         )
-        error(
+        _common.error(
             "config still invalid (flagged entries could not be auto-removed);"
             f" fix by hand:\n{names}"
         )
         return 2
     # Measured before claimed: a no-progress break lands here with the config still refused.
-    final = find_invalid_entries(repo_root, machine=machine)
+    final = layer.find_invalid_entries(repo_root, machine=machine)
     if final.removable or final.blocked:
-        error(
+        _common.error(
             "config still invalid (flagged entries changed under the lock"
             " this pass); re-run `agent6 config fix` or fix by hand."
         )

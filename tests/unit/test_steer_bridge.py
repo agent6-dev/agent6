@@ -54,7 +54,7 @@ def test_prompt_without_answer_clears_request(
     def no_answer(session_dir: pathlib.Path) -> str | None:
         return None
 
-    monkeypatch.setattr("agent6.ui.cli._steer.read_steer_answer", no_answer)
+    monkeypatch.setattr("agent6.sessions.ipc.read_steer_answer", no_answer)
     sessions_ipc.request_steer(tmp_path)
     steer = ui_steer.file_bridge_steer(tmp_path)
     assert steer.prompt() is None
@@ -138,7 +138,7 @@ def test_sigint_at_the_pause_prompt_stops(
     import signal
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
-    monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli._menu_input.menu_capable", lambda: False)
 
     def prompt_hit_by_ctrl_c(text: str, **_kw: object) -> str | None:
         signal.raise_signal(signal.SIGINT)
@@ -163,12 +163,12 @@ def test_a_seeded_steer_is_the_answer_on_the_terminal_too(
     `resume --steer` and the end-of-session follow-up seed it; the path consumed only a live
     front-end's answer and asked again for the text the operator had just typed.
     """
-    monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli._menu_input.menu_capable", lambda: True)
 
     def no_menu(session_dir: pathlib.Path, **_kw: object) -> str | None:
         pytest.fail("the menu opened over a seeded steer")
 
-    monkeypatch.setattr("agent6.ui.cli._steer.pause_menu", no_menu)
+    monkeypatch.setattr("agent6.ui.cli._steer_menu.pause_menu", no_menu)
     events = agent6_events.EventSink(tmp_path / "logs.jsonl")
     sessions_ipc.submit_steer(tmp_path, "also add a test that mul(2, 0) == 0")
     steer = _steer.install_steer_sigint(events, tmp_path)
@@ -200,13 +200,13 @@ def test_prompt_pauses_the_console_spinner(
             yield
             calls.append("resume")
 
-    monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli._menu_input.menu_capable", lambda: True)
 
     def fake_menu(session_dir: pathlib.Path, **_kw: object) -> str | None:
         calls.append("prompt")
         return "steer text"
 
-    monkeypatch.setattr("agent6.ui.cli._steer.pause_menu", fake_menu)
+    monkeypatch.setattr("agent6.ui.cli._steer_menu.pause_menu", fake_menu)
     events = agent6_events.EventSink(tmp_path / "logs.jsonl")
     steer = _steer.install_steer_sigint(
         events, tmp_path, cast(_console_view.ConsoleView, FakeView())
@@ -437,7 +437,7 @@ def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
     A front-end's steer ends the prompt and is the answer, not a line the operator never typed.
     """
     monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
-    monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli._menu_input.menu_capable", lambda: False)
 
     def prompt_superseded(text: str, **kw: object) -> str | None:
         until = kw.get("until")

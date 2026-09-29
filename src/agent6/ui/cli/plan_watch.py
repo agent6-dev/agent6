@@ -7,36 +7,21 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import time
-from pathlib import Path
 
-from agent6.errors import read_operator_file
-from agent6.paths import state_dir
-from agent6.sessions.id import SessionIdError, resolve_session
-from agent6.sessions.ipc import (
-    ANSWERED_ELSEWHERE,
-    register_frontend,
-    unregister_frontend,
-    worker_is_alive,
-    write_answer,
-    write_question_answers,
-)
-from agent6.sessions.layout import LOGS_NAME
-from agent6.tools.schema import UserQuestion
-from agent6.ui.cli._common import (
-    _plans_dir,
-    editor_argv,
-    error,
-    print_nothing_yet,
-    resolve_or_newest_layout,
-)
-from agent6.ui.cli._console_view import ConsoleView
-from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
+from agent6 import errors, paths
+from agent6.sessions import id, ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import schema
+from agent6.ui.cli import _common, _console_view, _interact
 from agent6.viewmodel import (
     StatusFacts,
     event_epoch,
+    events,
+    format,
     scan_session_log,
     session_is_live,
     session_mtime,
@@ -44,8 +29,6 @@ from agent6.viewmodel import (
     status_for_session_dir,
     tail_events,
 )
-from agent6.viewmodel.events import SESSION_START_EVENTS
-from agent6.viewmodel.format import dead_run_note, status_label
 
 
 def _resolve_plan_session_id(session_id: str) -> str | None:
@@ -56,31 +39,31 @@ def _resolve_plan_session_id(session_id: str) -> str | None:
     Returns:
         The id, or None after printing an error.
     """
-    plans_dir = _plans_dir(Path.cwd())
+    plans_dir = _common._plans_dir(pathlib.Path.cwd())
     if not session_id:
         latest = _most_recent_plan_session_id(plans_dir)
         if latest is None:
-            error("no plans yet (start one with `agent6 plan`).")
+            _common.error("no plans yet (start one with `agent6 plan`).")
             return None
         session_id = latest
-    state = state_dir(Path.cwd())
+    state = paths.state_dir(pathlib.Path.cwd())
     try:
-        resolved = resolve_session(state, session_id, buckets=("plans",)).session_id
-    except SessionIdError as exc:
+        resolved = id.resolve_session(state, session_id, buckets=("plans",)).session_id
+    except id.SessionIdError as exc:
         # An existing run or ask is named as such.
         if exc.no_match:
             try:
-                other = resolve_session(state, session_id)
-            except SessionIdError as other_exc:
+                other = id.resolve_session(state, session_id)
+            except id.SessionIdError as other_exc:
                 exc = other_exc
             else:
-                error(f"{other.session_id} is a session under {other.subdir}/, not a plan")
+                _common.error(f"{other.session_id} is a session under {other.subdir}/, not a plan")
                 return None
-        error(f"{exc}")
+        _common.error(f"{exc}")
         return None
     plan = plans_dir / resolved / "plan.md"
     if not plan.is_file():
-        error(f"{resolved} has no plan.md (was it created with `agent6 plan`?)")
+        _common.error(f"{resolved} has no plan.md (was it created with `agent6 plan`?)")
         return None
     return resolved
 
@@ -94,7 +77,9 @@ def _cmd_plan_show(session_id: str) -> int:
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
-    sys.stdout.write(read_operator_file(_plans_dir(Path.cwd()) / resolved / "plan.md"))
+    sys.stdout.write(
+        errors.read_operator_file(_common._plans_dir(pathlib.Path.cwd()) / resolved / "plan.md")
+    )
     return 0
 
 
@@ -110,22 +95,22 @@ def _cmd_plan_edit(session_id: str) -> int:
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
-    plan = _plans_dir(Path.cwd()) / resolved / "plan.md"
-    argv = editor_argv()
+    plan = _common._plans_dir(pathlib.Path.cwd()) / resolved / "plan.md"
+    argv = _common.editor_argv()
     if argv is None:
         return 1
     try:
         result = subprocess.run([*argv, str(plan)], check=False)
     except OSError as exc:
-        error(f"failed to spawn editor {argv[0]!r}: {exc}")
+        _common.error(f"failed to spawn editor {argv[0]!r}: {exc}")
         return 1
     if result.returncode != 0:
-        error(f"editor {argv[0]!r} exited {result.returncode}")
+        _common.error(f"editor {argv[0]!r} exited {result.returncode}")
         return 1
     return 0
 
 
-def _most_recent_plan_session_id(plans_dir: Path) -> str | None:
+def _most_recent_plan_session_id(plans_dir: pathlib.Path) -> str | None:
     """Return the most recently active plan dir that holds a `plan.md`.
 
     A bare `agent6 run` offers it for execution.
@@ -146,7 +131,7 @@ def _cmd_watch(
     tui: bool = False,
     since: int = 0,
     raw: bool = False,
-    config_path: Path | None = None,
+    config_path: pathlib.Path | None = None,
 ) -> int:
     """Follow a run directory read-only.
 
@@ -163,38 +148,38 @@ def _cmd_watch(
     Returns:
         The exit code; 2 when the session cannot be resolved, 3 when the TUI cannot load.
     """
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     # Every run-style bucket, by id and for the newest, so a bare `attach` after an `ask` finds it.
     try:
-        layout = resolve_or_newest_layout(cwd, session_id)
-    except SessionIdError as exc:
-        error(f"{exc}")
+        layout = _common.resolve_or_newest_layout(cwd, session_id)
+    except id.SessionIdError as exc:
+        _common.error(f"{exc}")
         return 2
     if layout is None:
-        print_nothing_yet()
+        _common.print_nothing_yet()
         return 2
     target = layout.session_dir
     if not session_id:
         print(f"[agent6] attached to most recent run: {target.name}", file=sys.stderr)
     if not target.is_dir():
-        error(f"no such run dir: {target}")
+        _common.error(f"no such run dir: {target}")
         return 2
     if not tui:
         return _cmd_watch_plain(target, since=since) if raw else _watch_transcript(target)
     try:
-        from agent6.ui.tui.app import run_tui  # noqa: PLC0415  # textual is optional
+        from agent6.ui.tui import app  # noqa: PLC0415  # textual is optional  # noqa: PLC0415  # textual is optional
     except ImportError as e:
-        error(f"{e}")
+        _common.error(f"{e}")
         print(
             "HINT: drop --tui for the conversation view, or pass --raw for the line tail.",
             file=sys.stderr,
         )
         return 3
-    run_tui(target, config_path=config_path)
+    app.run_tui(target, config_path=config_path)
     return 0
 
 
-def _cmd_tui(config_path: Path | None = None) -> int:
+def _cmd_tui(config_path: pathlib.Path | None = None) -> int:
     """Run the TUI hub (`agent6 tui`): browse runs and start new work.
 
     Loops between the home screen and the run view; opening a run watches it, then returns
@@ -204,24 +189,24 @@ def _cmd_tui(config_path: Path | None = None) -> int:
         The exit code; 3 when textual is not installed.
     """
     try:
-        from agent6.ui.tui.app import (  # noqa: PLC0415  # textual is optional
-            run_tui,
+        from agent6.ui.tui import (  # noqa: PLC0415  # textual is optional
+            app,
+            home,
         )
-        from agent6.ui.tui.home import run_home  # noqa: PLC0415
     except ImportError as e:
-        error(f"{e}")
+        _common.error(f"{e}")
         print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)
         return 3
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
     # Every bucket lookup goes through `bucket_dir`, which appends `sessions/` itself.
-    agent6_dir = state_dir(cwd)
-    session_dir: Path | None = None
+    agent6_dir = paths.state_dir(cwd)
+    session_dir: pathlib.Path | None = None
     while True:
         # Esc in a run view reopens home, Run this plan hands the new run back, Ctrl+Q quits.
-        session_dir = session_dir or run_home(agent6_dir, cwd, config_path)
+        session_dir = session_dir or home.run_home(agent6_dir, cwd, config_path)
         if session_dir is None:
             return 0
-        result = run_tui(session_dir, from_hub=True, config_path=config_path)
+        result = app.run_tui(session_dir, from_hub=True, config_path=config_path)
         if result.quit_hub:
             return 0
         session_dir = result.open_next
@@ -286,7 +271,7 @@ class _CliFrontEnd:
     the start on attach, so the answered and handled id sets gate re-prompting.
     """
 
-    def __init__(self, session_dir: Path, view: ConsoleView) -> None:
+    def __init__(self, session_dir: pathlib.Path, view: _console_view.ConsoleView) -> None:
         """Bind the session dir and the console view; nothing is prompted yet."""
         self._session_dir = session_dir
         self._view = view
@@ -295,7 +280,7 @@ class _CliFrontEnd:
         # How many events the pre-scan decided; the append-only log hands them to `react` first.
         self._replayed: int = 0
 
-    def open_prompts_at_attach(self, events_path: Path) -> list[dict[str, object]]:
+    def open_prompts_at_attach(self, events_path: pathlib.Path) -> list[dict[str, object]]:
         """Pre-scan the existing log and return the prompts open right now.
 
         Seeds the answered set, so a run already waiting at an approval when you attach is
@@ -313,7 +298,7 @@ class _CliFrontEnd:
             scanned += 1
             etype = str(ev.get("type", ""))
             pid = str(ev.get("id", ""))
-            if etype in SESSION_START_EVENTS:
+            if etype in events.SESSION_START_EVENTS:
                 self._new_session()
                 open_prompts.clear()
             if etype in ("approval.prompt", "question.prompt"):
@@ -334,29 +319,29 @@ class _CliFrontEnd:
         prompt_id = str(event.get("id", ""))
         if event.get("type") == "approval.prompt":
             with self._view.pause():
-                answer = default_stdin_approver(
+                answer = _interact.default_stdin_approver(
                     str(event.get("prompt", "")), standing=_standing(event)
                 )
-            if not write_answer(self._session_dir, prompt_id, answer or "no"):
-                self._view.notice(f"[agent6] {ANSWERED_ELSEWHERE}")
+            if not ipc.write_answer(self._session_dir, prompt_id, answer or "no"):
+                self._view.notice(f"[agent6] {ipc.ANSWERED_ELSEWHERE}")
         else:
             raw_questions = event.get("questions", [])
             questions = tuple(
-                UserQuestion(
+                schema.UserQuestion(
                     question=str(q.get("question", "")),
                     options=tuple(str(o) for o in q.get("options", [])),
                 )
                 for q in (raw_questions if isinstance(raw_questions, list) else [])
             )
             with self._view.pause():
-                answers = default_stdin_questioner(questions)
-            written = write_question_answers(
+                answers = _interact.default_stdin_questioner(questions)
+            written = ipc.write_question_answers(
                 self._session_dir,
                 prompt_id,
                 answers if answers is not None else tuple("" for _ in questions),
             )
             if not written:
-                self._view.notice(f"[agent6] {ANSWERED_ELSEWHERE}")
+                self._view.notice(f"[agent6] {ipc.ANSWERED_ELSEWHERE}")
         self._handled.add(prompt_id)
 
     def _new_session(self) -> None:
@@ -374,12 +359,12 @@ class _CliFrontEnd:
         if self._replayed > 0:
             # Inside the pre-scan's window: keep the bookkeeping in step, never prompt.
             self._replayed -= 1
-            if etype in SESSION_START_EVENTS:
+            if etype in events.SESSION_START_EVENTS:
                 self._new_session()
             elif etype in ("approval.answer", "question.answer"):
                 self._answered.add(pid)
             return
-        if etype in SESSION_START_EVENTS:
+        if etype in events.SESSION_START_EVENTS:
             self._new_session()
             return
         if etype in ("approval.answer", "question.answer"):
@@ -391,16 +376,17 @@ class _CliFrontEnd:
             self.handle(event)
 
 
-def _print_crashed_line(target: Path) -> None:
+def _print_crashed_line(target: pathlib.Path) -> None:
     """Print the crashed-or-killed line for a run no session end settled."""
     print(
-        f"[agent6] {target.name}: {status_label('stale', dead_run_note('stale', '')[0])};"
+        f"[agent6] {target.name}: "
+        f"{format.status_label('stale', format.dead_run_note('stale', '')[0])};"
         f" see `agent6 sessions show {target.name}`.",
         file=sys.stderr,
     )
 
 
-def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> int:
+def _render_over_session(target: pathlib.Path, events_path: pathlib.Path, *, finished: bool) -> int:
     """Render the log of a session no worker is driving, then say how it ended.
 
     Nothing more will be appended and no answer would be read, so there is no front-end and
@@ -415,7 +401,7 @@ def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> 
     Returns:
         The exit code, 0.
     """
-    view = ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
+    view = _console_view.ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
     try:
         for event in tail_events(events_path, follow=False):
             view.feed(event)
@@ -430,7 +416,9 @@ def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> 
     return 0
 
 
-def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
+def _install_front_end(
+    target: pathlib.Path, view: _console_view.ConsoleView
+) -> _CliFrontEnd | None:
     """Attach as the answering front-end on an interactive terminal.
 
     Returns:
@@ -444,7 +432,7 @@ def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
         )
         return None
     front_end = _CliFrontEnd(target, view)
-    register_frontend(target, os.getpid())
+    ipc.register_frontend(target, os.getpid())
     print(
         f"[agent6] attached to {target.name}: approvals and questions prompt here."
         f" Ctrl-C detaches; agent6 stop {target.name} stops it.",
@@ -453,7 +441,7 @@ def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
     return front_end
 
 
-def _watch_transcript(target: Path) -> int:
+def _watch_transcript(target: pathlib.Path) -> int:
     """Follow a run's conversation live and, on a terminal, attach as its front-end.
 
     Folds `logs.jsonl` through the same `ConsoleView` as `agent6 run`; when the run asks
@@ -464,11 +452,11 @@ def _watch_transcript(target: Path) -> int:
     Returns:
         The exit code; 1 when the worker died mid-call, 2 when the run has no log yet.
     """
-    events_path = target / LOGS_NAME
+    events_path = target / sessions_layout.LOGS_NAME
     if not events_path.is_file():
         # Not an error: a parked submission, a `fork --no-run` or a launching run has no log yet.
         word, reason = status_for_session_dir(target, StatusFacts())
-        print(f"{target.name}: {status_label(word, reason)}")
+        print(f"{target.name}: {format.status_label(word, reason)}")
         if word == "starting":
             # A live worker mid-preflight is running, not resumable; it has no log to follow yet.
             print("it is starting; run this again in a moment to follow it.")
@@ -484,9 +472,9 @@ def _watch_transcript(target: Path) -> int:
     def worker_dead() -> bool:
         """Return whether the worker is gone, from its pid alone."""
         # Per poll, O(1): once following, the worker pid is the liveness evidence.
-        return not worker_is_alive(target)
+        return not ipc.worker_is_alive(target)
 
-    view = ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
+    view = _console_view.ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
     front_end = _install_front_end(target, view)
     interrupted = False
     try:
@@ -505,7 +493,7 @@ def _watch_transcript(target: Path) -> int:
     finally:
         view.close()  # stop the heartbeat thread, clear any spinner line
         if front_end is not None:
-            unregister_frontend(target, os.getpid())  # our claim only
+            ipc.unregister_frontend(target, os.getpid())  # our claim only
     if not interrupted and not scan_session_log(events_path).finished:
         # No session.end settled the call the worker died on.
         view.settle_dead("the run died")
@@ -524,7 +512,7 @@ def _line_is_session_end(raw: bytes | str) -> bool:
     return isinstance(obj, dict) and obj.get("type") == "session.end"
 
 
-def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event kind the watch prints
+def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event kind the watch prints
     """Tail `logs.jsonl` line by line with no extra deps.
 
     Polls the file with 0.25s sleeps; rotates when the inode changes.
@@ -536,9 +524,9 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911
     Returns:
         0 at `session.end` or on Ctrl-C, 1 when the worker or the log dies first.
     """
-    events_path = target / LOGS_NAME
+    events_path = target / sessions_layout.LOGS_NAME
     if not events_path.is_file():
-        error(f"no logs.jsonl in {target}")
+        _common.error(f"no logs.jsonl in {target}")
         return 2
 
     # The first event is the elapsed-time anchor; a torn first line must not crash the watch.
@@ -562,7 +550,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911
     try:
         fh = events_path.open("rb")
     except OSError as exc:
-        error(f"cannot open {events_path}: {exc}")
+        _common.error(f"cannot open {events_path}: {exc}")
         return 2
 
     try:
@@ -572,7 +560,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911
             try:
                 lines = fh.readlines()
             except OSError as exc:
-                error(f"read failed: {exc}")
+                _common.error(f"read failed: {exc}")
                 return 2
             if lines and not lines[-1].endswith(b"\n"):
                 pending = lines.pop()
@@ -609,7 +597,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911
             try:
                 new_ino = events_path.stat().st_ino
             except OSError:
-                if worker_is_alive(target):
+                if ipc.worker_is_alive(target):
                     time.sleep(0.5)
                     continue
                 print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
@@ -620,7 +608,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911
                 try:
                     fh = events_path.open("rb")
                 except OSError:
-                    if worker_is_alive(target):
+                    if ipc.worker_is_alive(target):
                         time.sleep(0.5)
                         continue
                     print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
@@ -628,7 +616,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911
                 current_ino = new_ino
                 pending = b""
                 continue
-            if not worker_is_alive(target):
+            if not ipc.worker_is_alive(target):
                 _print_crashed_line(target)
                 return 1
             time.sleep(0.25)

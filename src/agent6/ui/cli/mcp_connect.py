@@ -12,41 +12,40 @@ as text and stored nowhere.
 
 from __future__ import annotations
 
+import pathlib
 import shlex
 import shutil
 import sys
-from pathlib import Path
 
-from pydantic import ValidationError
+import pydantic
 
-from agent6.app._setup import detect_env, mcp_server_spec, no_jail_cause
+from agent6 import kinds, paths
+from agent6.app import _setup
 from agent6.config import (
     Config,
     MCPServerEntry,
+    io,
     is_cleartext_url,
     is_loopback_url,
     mcp_server_name_refusal,
+    write,
 )
-from agent6.config.layer import EffectiveConfig, load_effective
-from agent6.config.write import ConfigLeafValue, set_config_leaves, unset_config_table
-from agent6.kinds import IsolationLevel
-from agent6.paths import global_config_path, repo_config_path
-from agent6.sandbox.detect import resolve_isolation
-from agent6.sandbox.jail import JailUnavailableError
-from agent6.tools.mcp_client import MCPManager, MCPServerSpec, MCPToolDescriptor, tool_count
-from agent6.ui.cli._common import error, warn
+from agent6.config import layer as config_layer
+from agent6.sandbox import detect, jail
+from agent6.tools import mcp_client
+from agent6.ui.cli import _common
 
 # Long enough for a cold `npx` to fetch and boot a server; the per-run default stays 10s.
 _CONNECT_TIMEOUT_S = 60.0
 
 
-def _probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
+def _probe(spec: mcp_client.MCPServerSpec) -> tuple[tuple[mcp_client.MCPToolDescriptor, ...], str]:
     """Start the server as a run does, take its tool list, stop it.
 
     Returns:
         The tools and the failure text; one of them is empty.
     """
-    manager = MCPManager.start([spec])
+    manager = mcp_client.MCPManager.start([spec])
     try:
         return manager.descriptors(), manager.failures[0].error if manager.failures else ""
     finally:
@@ -108,7 +107,7 @@ def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
     """
     if not (token_env and is_cleartext_url(url) and not is_loopback_url(url)):
         return True
-    warn(
+    _common.warn(
         f"{url} is plaintext http to a non-loopback host: the token"
         f" from ${token_env} will be readable on the network path."
     )
@@ -117,7 +116,7 @@ def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
     return input("Connect anyway? [y/N]: ").strip().lower() in ("y", "yes")
 
 
-def _describe(spec: MCPServerSpec) -> str:
+def _describe(spec: mcp_client.MCPServerSpec) -> str:
     """Return the server's transport and target as one phrase."""
     if spec.http is not None:
         return f"connecting to {spec.http.url}"
@@ -125,7 +124,7 @@ def _describe(spec: MCPServerSpec) -> str:
 
 
 def _report_no_answer(
-    name: str, command: list[str], isolation: IsolationLevel, failure: str
+    name: str, command: list[str], isolation: kinds.IsolationLevel, failure: str
 ) -> None:
     """Print the failure and the one hint that applies.
 
@@ -138,12 +137,12 @@ def _report_no_answer(
         isolation: The isolation the probe ran under.
         failure: The probe's failure text.
     """
-    error(f"{name} did not answer: {failure}")
+    _common.error(f"{name} did not answer: {failure}")
     if command and shutil.which(command[0]) is None:
         head = command[0]
         what = (
             "not executable"
-            if Path(head).exists()
+            if pathlib.Path(head).exists()
             else "no such file"
             if "/" in head
             else "not on PATH"
@@ -167,7 +166,7 @@ def cmd_mcp_connect(
     token_env: str,
     pass_env: list[str],
     to_repo: bool,
-    config_path: Path | None = None,
+    config_path: pathlib.Path | None = None,
 ) -> int:
     """Prove the server answers, then write it into config.
 
@@ -183,13 +182,13 @@ def cmd_mcp_connect(
     Returns:
         The exit code; 2 on a refusal or a server that gave no proof.
     """
-    effective = load_effective(Path.cwd(), config_path)
+    effective = config_layer.load_effective(pathlib.Path.cwd(), config_path)
     cfg = effective.config
     refusal = _refuse_bad_flags(
         name=name, command=command, url=url, token_env=token_env, pass_env=pass_env, cfg=cfg
     )
     if refusal:
-        error(f"{refusal}")
+        _common.error(f"{refusal}")
         return 2
     if not _cleartext_token_go_ahead(url, token_env):
         print("nothing was written to config.", file=sys.stderr)
@@ -205,26 +204,29 @@ def cmd_mcp_connect(
                 "startup_timeout_s": _CONNECT_TIMEOUT_S,
             }
         )
-    except ValidationError as exc:
+    except pydantic.ValidationError as exc:
         # The entry's own rules (the URL shape above all) reach the operator as one line each.
         detail = "; ".join(
             f"{'.'.join(str(part) for part in issue['loc']) or 'entry'}: {issue['msg']}"
             for issue in exc.errors()
         )
-        error(f"{name}: {detail}")
+        _common.error(f"{name}: {detail}")
         return 2
-    env = detect_env()
-    isolation = resolve_isolation(cfg.sandbox.isolation, env)
+    env = _setup.detect_env()
+    isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
     if command and isolation == "none":
         # No jail, no read-only workspace to probe under: the entry is written unproved, said so.
-        warn(f"{name} not probed: no jail ({no_jail_cause(cfg, env)}); a run starts it unconfined.")
+        _common.warn(
+            f"{name} not probed: no jail ({_setup.no_jail_cause(cfg, env)}); a run starts "
+            "it unconfined."
+        )
     else:
         rc = _prove(cfg, name, entry, isolation)
         if rc is not None:
             return rc
 
     # Values, not TOML text: a pre-quoted argv would validate as a tuple of characters.
-    fields: dict[str, ConfigLeafValue] = {"enabled": True}
+    fields: dict[str, io.ConfigLeafValue] = {"enabled": True}
     if command:
         fields["command"] = command
     else:
@@ -233,9 +235,11 @@ def cmd_mcp_connect(
         fields["token_env"] = token_env
     if pass_env:
         fields["pass_env"] = pass_env
-    written = set_config_leaves(Path.cwd(), f"mcp.servers.{name}", fields, to_repo=to_repo)
+    written = write.set_config_leaves(
+        pathlib.Path.cwd(), f"mcp.servers.{name}", fields, to_repo=to_repo
+    )
     if written is not None:
-        error(f"{written}")
+        _common.error(f"{written}")
         return 2
     print(f"\n{_written_line(effective, name, to_repo)}")
     # The master switch is a security default: named, never flipped on the operator's behalf.
@@ -243,7 +247,9 @@ def cmd_mcp_connect(
     return 0
 
 
-def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLevel) -> int | None:
+def _prove(
+    cfg: Config, name: str, entry: MCPServerEntry, isolation: kinds.IsolationLevel
+) -> int | None:
     """Start the server as a run would and print its tools.
 
     The probe runs under the run's sandbox with the workspace bound read-only; a probe
@@ -259,9 +265,11 @@ def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLe
         The exit code when the server gave no proof, else None.
     """
     try:
-        spec = mcp_server_spec(cfg, Path.cwd(), isolation, name, entry, readonly=True)
-    except JailUnavailableError as exc:
-        error(f"{exc}")
+        spec = _setup.mcp_server_spec(
+            cfg, pathlib.Path.cwd(), isolation, name, entry, readonly=True
+        )
+    except jail.JailUnavailableError as exc:
+        _common.error(f"{exc}")
         return 2
     print(f"[agent6] {_describe(spec)} ...", file=sys.stderr)
     tools, failure = _probe(spec)
@@ -269,9 +277,9 @@ def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLe
         _report_no_answer(name, list(entry.command), isolation, failure)
         return 1
     if not tools:
-        error(f"{name} started but exposed no tools; nothing was written.")
+        _common.error(f"{name} started but exposed no tools; nothing was written.")
         return 1
-    print(f"\n{name}: {tool_count(len(tools))}")
+    print(f"\n{name}: {mcp_client.tool_count(len(tools))}")
     for tool in tools:
         # Server-chosen text: no forged extra line, no ESC sequence repainting the terminal.
         summary = "".join(c for c in " ".join(tool.description.split()) if c.isprintable())[:80]
@@ -284,7 +292,7 @@ def _repo_flag(to_repo: bool) -> str:
     return "--repo " if to_repo else ""
 
 
-def _layers_holding(effective: EffectiveConfig, name: str) -> set[str]:
+def _layers_holding(effective: config_layer.EffectiveConfig, name: str) -> set[str]:
     """Return the config layers whose own file declares `[mcp.servers.<name>]`."""
     return {
         layer.name
@@ -293,7 +301,7 @@ def _layers_holding(effective: EffectiveConfig, name: str) -> set[str]:
     }
 
 
-def _written_line(effective: EffectiveConfig, name: str, to_repo: bool) -> str:
+def _written_line(effective: config_layer.EffectiveConfig, name: str, to_repo: bool) -> str:
     """Return where the entry went, and what that means beside the other layer's entry.
 
     The repo layer wins over the global one.
@@ -316,7 +324,9 @@ def _enable_command(to_repo: bool) -> str:
     return f"agent6 config set {_repo_flag(to_repo)}mcp.enabled true"
 
 
-def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None = None) -> int:
+def cmd_mcp_remove(
+    name: str, *, to_repo: bool = False, config_path: pathlib.Path | None = None
+) -> int:
     """Drop `[mcp.servers.<name>]` from the global (or `--repo`) config.
 
     The inverse of `connect`, and the only way to drop a server: the entry is a table, so
@@ -331,7 +341,7 @@ def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None
     Returns:
         The exit code; 2 when the layer does not hold the entry.
     """
-    effective = load_effective(Path.cwd(), config_path)
+    effective = config_layer.load_effective(pathlib.Path.cwd(), config_path)
     holders = _layers_holding(effective, name)
     target, other = ("repo", "global") if to_repo else ("global", "repo")
     if target not in holders:
@@ -340,16 +350,16 @@ def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None
             if other in holders
             else "agent6 mcp list shows the configured servers"
         )
-        error(f"no {name!r} in the {target} config ({elsewhere}).")
+        _common.error(f"no {name!r} in the {target} config ({elsewhere}).")
         return 2
-    res = unset_config_table(Path.cwd(), f"mcp.servers.{name}", to_repo=to_repo)
+    res = write.unset_config_table(pathlib.Path.cwd(), f"mcp.servers.{name}", to_repo=to_repo)
     if res.error is not None:
-        error(f"removing {name} left an invalid config:\n{res.error}")
+        _common.error(f"removing {name} left an invalid config:\n{res.error}")
         return 2
     if not res.removed:
         # A dotted key or inline table the line surgery cannot delete: still live, and said so.
-        path = repo_config_path(Path.cwd()) if to_repo else global_config_path()
-        error(
+        path = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
+        _common.error(
             f"{name} is not written as a [mcp.servers.{name}] table in {path};"
             " it lives in a dotted key or an inline table, which this verb does not"
             " rewrite. Edit that file by hand."
@@ -361,7 +371,7 @@ def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None
     return 0
 
 
-def cmd_mcp_list(config_path: Path | None = None) -> int:
+def cmd_mcp_list(config_path: pathlib.Path | None = None) -> int:
     """Print the configured servers and how each is reached.
 
     Reads config only: it never starts anything, so it says nothing about whether a server
@@ -370,7 +380,7 @@ def cmd_mcp_list(config_path: Path | None = None) -> int:
     Returns:
         The exit code, 0.
     """
-    effective = load_effective(Path.cwd(), config_path)
+    effective = config_layer.load_effective(pathlib.Path.cwd(), config_path)
     cfg = effective.config
     if not cfg.mcp.servers:
         print("no MCP servers configured. Add one with `agent6 mcp connect <name> ...`.")

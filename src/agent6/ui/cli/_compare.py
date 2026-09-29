@@ -10,21 +10,18 @@ and the reviewer-provider builder; the fan-out binds the same two through its
 from __future__ import annotations
 
 import contextlib
+import pathlib
 import sys
 import threading
 from collections.abc import Generator
-from pathlib import Path
 
-from agent6.app.compare import RankOutcome
-from agent6.app.compare import rank as core_rank
-from agent6.app.providers import build_role_provider
-from agent6.budget import BudgetTracker
+from agent6 import budget as agent6_budget
+from agent6.app import compare, providers
 from agent6.config import Config
-from agent6.harness.judge import CandidateBrief
+from agent6.harness import judge
 from agent6.providers import Provider, TranscriptSink
-from agent6.ui.cli._console_view import _HEARTBEAT_TICK_S
-from agent6.ui.cli._terminal_guard import raw_stream
-from agent6.viewmodel.format import spinner_frame
+from agent6.ui.cli import _console_view, _terminal_guard
+from agent6.viewmodel import format
 
 __all__ = ["rank"]
 
@@ -48,11 +45,11 @@ def _judging_status() -> Generator[None]:
     def spin() -> None:
         i = 0
         while True:
-            raw_stream(sys.stdout).write("\r\x1b[2K")
-            sys.stdout.write(f"{spinner_frame(i)} judging...")
+            _terminal_guard.raw_stream(sys.stdout).write("\r\x1b[2K")
+            sys.stdout.write(f"{format.spinner_frame(i)} judging...")
             sys.stdout.flush()
             i += 1
-            if stop.wait(_HEARTBEAT_TICK_S):
+            if stop.wait(_console_view._HEARTBEAT_TICK_S):
                 return
 
     thread = threading.Thread(target=spin, daemon=True)
@@ -62,16 +59,20 @@ def _judging_status() -> Generator[None]:
     finally:
         stop.set()
         thread.join(timeout=1.0)
-        raw_stream(sys.stdout).write("\r\x1b[2K")
+        _terminal_guard.raw_stream(sys.stdout).write("\r\x1b[2K")
         sys.stdout.flush()
 
 
-def _reviewer_provider(cfg: Config, sink: TranscriptSink, budget: BudgetTracker) -> Provider:
+def _reviewer_provider(
+    cfg: Config, sink: TranscriptSink, budget: agent6_budget.BudgetTracker
+) -> Provider:
     """Return the configured `reviewer` provider for the judge call."""
-    return build_role_provider(cfg, "reviewer", transcript_sink=sink, budget=budget)
+    return providers.build_role_provider(cfg, "reviewer", transcript_sink=sink, budget=budget)
 
 
-def rank(cfg: Config, candidates: list[CandidateBrief], *, transcript_dir: Path) -> RankOutcome:
+def rank(
+    cfg: Config, candidates: list[judge.CandidateBrief], *, transcript_dir: pathlib.Path
+) -> compare.RankOutcome:
     """Rank the candidates best first through the core, with the CLI's two pieces bound.
 
     Args:
@@ -82,7 +83,7 @@ def rank(cfg: Config, candidates: list[CandidateBrief], *, transcript_dir: Path)
     Returns:
         The core's outcome.
     """
-    return core_rank(
+    return compare.rank(
         cfg,
         candidates,
         transcript_dir=transcript_dir,

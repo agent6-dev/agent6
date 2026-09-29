@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from agent6 import directive, git_ops
+from agent6.app import parallel, preflight
 from agent6.harness import _parallel_dispatch as pd
 from agent6.harness import subrun
 
@@ -162,8 +163,8 @@ def test_a_dirty_origin_fans_out_under_stash_and_include(
     def _clear(_cfg: Config) -> None:
         return None
 
-    monkeypatch.setattr(cli_parallel, "modified_paths", _dirty)
-    monkeypatch.setattr(cli_parallel, "budget_preflight", _clear)
+    monkeypatch.setattr(git_ops, "modified_paths", _dirty)
+    monkeypatch.setattr(preflight, "budget_preflight", _clear)
     monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
     fanned: list[str] = []
 
@@ -171,7 +172,7 @@ def test_a_dirty_origin_fans_out_under_stash_and_include(
         fanned.append(task)
         return 0
 
-    monkeypatch.setattr(cli_parallel, "run_parallel", _fake_run_parallel)
+    monkeypatch.setattr(parallel, "run_parallel", _fake_run_parallel)
     ask = Config.model_validate({"git": {"dirty_tree": "ask"}})
     assert cli_parallel.dispatch_parallel(ask, "t", "2", cwd=tmp_path) == 2
     assert "dirty_tree" in capsys.readouterr().err and fanned == []

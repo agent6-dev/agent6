@@ -12,26 +12,20 @@ machine name resolves as the run.
 from __future__ import annotations
 
 import json
+import pathlib
 import sys
-from pathlib import Path
 
+from agent6 import paths
 from agent6.machine import JournalError, MachineError, load_machine
-from agent6.paths import state_dir
-from agent6.sessions.id import SessionIdError
-from agent6.ui.cli._common import (
-    error,
-    resolve_session_layout,
-    resolve_target,
-)
-from agent6.ui.cli.machine_cmds import _cmd_machine_watch, machine_instance_root
-from agent6.ui.cli.plan_watch import _cmd_watch
+from agent6.sessions import id
+from agent6.ui.cli import _common, machine_cmds, plan_watch
 from agent6.viewmodel import (
     machine_snapshot,
     session_snapshot,
 )
 
 
-def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
+def _run_intent(repo_root: pathlib.Path, target: str) -> tuple[bool, str | None]:
     """Resolve a target against the session buckets.
 
     Args:
@@ -44,13 +38,13 @@ def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
         surfaces instead of falling through to machine lookup.
     """
     try:
-        resolve_session_layout(repo_root, target)
-    except SessionIdError as exc:
+        _common.resolve_session_layout(repo_root, target)
+    except id.SessionIdError as exc:
         return (False, None) if exc.no_match else (False, str(exc))
     return (True, None)
 
 
-def _machine_json_snapshot(machine_dir: Path) -> int:
+def _machine_json_snapshot(machine_dir: pathlib.Path) -> int:
     """Print a machine's snapshot as one JSON object.
 
     Returns:
@@ -59,7 +53,7 @@ def _machine_json_snapshot(machine_dir: Path) -> int:
     try:
         snap = machine_snapshot(machine_dir)
     except JournalError as exc:  # a MachineError too: the corrupt-journal wording first
-        error(f"{exc}")
+        _common.error(f"{exc}")
         return 1
     except MachineError as exc:
         source = machine_dir / "machine.asm.toml"
@@ -69,7 +63,7 @@ def _machine_json_snapshot(machine_dir: Path) -> int:
     return 0
 
 
-def _machine_watch_tui(machine_dir: Path) -> int:
+def _machine_watch_tui(machine_dir: pathlib.Path) -> int:
     """Open the full-screen machine watch.
 
     Returns:
@@ -82,12 +76,12 @@ def _machine_watch_tui(machine_dir: Path) -> int:
         print(f"FAIL: {source}: {'; '.join(exc.problems)}", file=sys.stderr)
         return 1
     try:
-        from agent6.ui.tui.machines import run_machine_watch_tui  # noqa: PLC0415
+        from agent6.ui.tui import machines  # noqa: PLC0415  # noqa: PLC0415
     except ImportError as e:
-        error(f"{e}")
+        _common.error(f"{e}")
         print("HINT: drop --tui for the plain text follow.", file=sys.stderr)
         return 3
-    return run_machine_watch_tui(machine_dir, spec)
+    return machines.run_machine_watch_tui(machine_dir, spec)
 
 
 def _cmd_watch_target(  # noqa: PLR0911
@@ -97,7 +91,7 @@ def _cmd_watch_target(  # noqa: PLR0911
     json_out: bool,
     since: int | None,
     raw: bool,
-    config_path: Path | None = None,
+    config_path: pathlib.Path | None = None,
 ) -> int:
     """Resolve a target to a run or a machine and follow or snapshot it.
 
@@ -113,26 +107,28 @@ def _cmd_watch_target(  # noqa: PLR0911
         The exit code; 2 when the flags conflict or nothing matches.
     """
     if since is not None and since < 0:
-        error("--since must be non-negative.")
+        _common.error("--since must be non-negative.")
         return 2
     if since is not None and not raw:
         # --since replays event lines, which only the --raw tail renders.
-        error("--since applies to --raw only.")
+        _common.error("--since applies to --raw only.")
         return 2
     since = since or 0
-    cwd = Path.cwd()
+    cwd = pathlib.Path.cwd()
 
     # An ambiguous prefix or a husk is surfaced, not fallen through to machine lookup.
     is_run, run_error = (True, None) if not target else _run_intent(cwd, target)
     if run_error is not None:
-        error(f"{run_error}")
+        _common.error(f"{run_error}")
         return 2
 
     # Empty target, or one that resolves to a run id: watch the run.
     if is_run:
         if not json_out:
-            return _cmd_watch(target, tui=tui, since=since, raw=raw, config_path=config_path)
-        layout = resolve_target(target)
+            return plan_watch._cmd_watch(
+                target, tui=tui, since=since, raw=raw, config_path=config_path
+            )
+        layout = _common.resolve_target(target)
         if layout is None:
             return 2
         session_dir = layout.session_dir
@@ -141,14 +137,14 @@ def _cmd_watch_target(  # noqa: PLR0911
         return 0
 
     # Else a machine by name.
-    machine_dir = machine_instance_root(target, cwd)
+    machine_dir = machine_cmds.machine_instance_root(target, cwd)
     if machine_dir is not None and machine_dir.is_dir():
         if raw:
-            error("--raw applies to run sessions, not machines.")
+            _common.error("--raw applies to run sessions, not machines.")
             return 2
         if json_out:
             return _machine_json_snapshot(machine_dir)
-        return _machine_watch_tui(machine_dir) if tui else _cmd_machine_watch(target)
+        return _machine_watch_tui(machine_dir) if tui else machine_cmds._cmd_machine_watch(target)
 
-    error(f"no run or machine matches {target!r} (looked under {state_dir(cwd)})")
+    _common.error(f"no run or machine matches {target!r} (looked under {paths.state_dir(cwd)})")
     return 2

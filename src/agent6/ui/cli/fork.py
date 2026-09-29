@@ -8,32 +8,28 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import sys
 import time
-from pathlib import Path
 
-from agent6.app._setup import BudgetOverrides, SandboxOverrides
-from agent6.app.fork import create_fork
-from agent6.app.preflight import headless_approval_refusal
-from agent6.app.resume import resume_task
+from agent6 import kinds
+from agent6.app import _setup, fork, preflight, resume
 from agent6.config import Config
-from agent6.kinds import session_kind
-from agent6.sessions.id import SessionIdError
-from agent6.ui.cli._common import error, resolve_or_newest_layout
-from agent6.ui.cli.run import session_frontend
-from agent6.viewmodel.listing import finished_needs_new_work
+from agent6.sessions import id
+from agent6.ui.cli import _common, run
+from agent6.viewmodel import listing
 
 
 def _cmd_fork(
-    config_path: Path | None,
+    config_path: pathlib.Path | None,
     source_session_id: str,
     *,
     at_turn: int | None = None,
     new_session_id: str = "",
     no_run: bool = False,
     tui: bool = False,
-    budget_overrides: BudgetOverrides | None = None,
-    sandbox_overrides: SandboxOverrides | None = None,
+    budget_overrides: _setup.BudgetOverrides | None = None,
+    sandbox_overrides: _setup.SandboxOverrides | None = None,
     steer: str = "",
 ) -> int:
     """Create a session cloned from a source at a checkpoint, then continue it.
@@ -56,7 +52,7 @@ def _cmd_fork(
         The exit code; 2 when the flags conflict or the source already finished.
     """
     if no_run and steer.strip():
-        error(
+        _common.error(
             "--steer seeds the immediate continuation, which --no-run skips."
             " Drop --no-run, or start the fork later with `agent6 resume <id> --steer ...`."
         )
@@ -64,36 +60,36 @@ def _cmd_fork(
     if not no_run and not steer.strip() and at_turn is None:
         # `resume` cannot see a finished parent from the child's empty log, so refuse here.
         try:
-            source = resolve_or_newest_layout(Path.cwd(), source_session_id)
-        except SessionIdError:
+            source = _common.resolve_or_newest_layout(pathlib.Path.cwd(), source_session_id)
+        except id.SessionIdError:
             source = None
-        if source is not None and finished_needs_new_work(source.session_dir):
-            error(
+        if source is not None and listing.finished_needs_new_work(source.session_dir):
+            _common.error(
                 f"run {source.session_id!r} already finished (the agent called"
                 " finish_session), so a fork of its last turn has nothing to do."
                 ' Give the fork new work with --steer "<what to do next>",'
                 " or fork an earlier turn with --at-turn N."
             )
             return 2
-    frontend = session_frontend(config_path)
+    frontend = run.session_frontend(config_path)
 
     def refuse_continuation(cfg: Config, mode: str) -> str | None:
         # The resume below would refuse the same way, after the fork existed.
         """Return why the continuation would refuse, before the fork exists."""
-        return headless_approval_refusal(
+        return preflight.headless_approval_refusal(
             cfg,
             tui_enabled=frontend.should_spawn_tui(tui, False, mode),
             away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
             can_ask=frontend.capabilities.can_ask,
-            clamped=session_kind(mode).clamps_commands,
+            clamped=kinds.session_kind(mode).clamps_commands,
         )
 
-    child_id, rc = create_fork(
+    child_id, rc = fork.create_fork(
         config_path,
         source_session_id,
         at_turn=at_turn,
         new_session_id=new_session_id,
-        cwd=Path.cwd(),
+        cwd=pathlib.Path.cwd(),
         sandbox_overrides=None if no_run else sandbox_overrides,
         refuse_continuation=None if no_run else refuse_continuation,
     )
@@ -106,7 +102,7 @@ def _cmd_fork(
         return 0
 
     # The fork's branch sits at the checkpoint's sha, so the head guard passes; force stays off.
-    return resume_task(
+    return resume.resume_task(
         config_path,
         child_id,
         frontend=frontend,
