@@ -154,9 +154,11 @@ reportUnusedFunction = false
 reportUnusedClass = false
 
 # The headless TUI tests poke internal seams (`_handle_event`, `_tick`) on
-# purpose, so silence the private-usage check here only.
+# purpose, so silence the private-usage check here only. The root also decides
+# where an absolute import resolves from, so the tree itself stays on the path.
 [[tool.pyright.executionEnvironments]]
 root = "tests/tui"
+extraPaths = ["."]
 reportPrivateUsage = false
 
 [tool.pytest.ini_options]

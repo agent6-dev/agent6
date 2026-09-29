@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -19,6 +20,14 @@ from textual.widgets import Static
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow, SteerInput
 from agent6.ui.tui.modals import ApprovalModal
+from tests.tui._approval import (
+    TIMEOUT_S,
+    answer_written,
+    answerable,
+    focus_answers,
+    row_gone,
+    until,
+)
 
 
 def _live_run(d: Path) -> None:
@@ -66,43 +75,32 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
             assert "approval needed" in text and "pytest -q tests/unit/test_x.py" in text
             # The composer keeps focus: an empty one lets the row's keys answer.
             assert app.focused is app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
-            app._conv.query(ApprovalRow).first().focus_answers()  # pyright: ignore[reportPrivateUsage]
-            await pilot.pause()
+            await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("y")
-            assert await _answer_written(run, pilot) == "yes"
+            assert await answer_written(run, pilot) == "yes"
             _append(run, {"type": "approval.answer", "id": "ap1", "approved": True})
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.pause(0.3)
             app._tick()  # pyright: ignore[reportPrivateUsage]
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
-            await pilot.pause()
-            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            assert await row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             assert "allowed" in str(item.render())
 
     asyncio.run(scenario())
 
 
-async def _answer_written(run: Path, pilot: Any, name: str = "ap1") -> str:
-    """The answer file's text once the click's or key's answer has landed
-    through the host: a single pause is not enough under a loaded gate."""
-    path = run / "approvals" / f"{name}.answer"
-    for _ in range(80):
-        if path.exists():
-            break
-        await pilot.pause(0.05)
-    return path.read_text(encoding="utf-8")
-
-
 async def _row_shown(app: Agent6TUI, pilot: Any) -> bool:
-    """Whether the approval row is up. The host folds the journal in its own
-    thread, so the row follows within a few ticks rather than one pause."""
-    for _ in range(80):
-        if app._conv.query(ApprovalRow):  # pyright: ignore[reportPrivateUsage]
-            return True
+    """Whether the approval row is up and answerable. The host folds the
+    journal in its own thread, so the row follows within a few ticks rather
+    than one pause."""
+    deadline = time.monotonic() + TIMEOUT_S
+    while not answerable(app._conv):  # pyright: ignore[reportPrivateUsage]
+        if time.monotonic() >= deadline:
+            return False
         app._conv._poll()  # pyright: ignore[reportPrivateUsage]
         await pilot.pause(0.05)
-    return bool(app._conv.query(ApprovalRow))  # pyright: ignore[reportPrivateUsage]
+    return True
 
 
 async def _open_approval(app: Agent6TUI, pilot: Any, run: Path) -> None:
@@ -162,13 +160,9 @@ def test_a_resumed_leg_drops_the_previous_legs_approval(tmp_path: Path) -> None:
             boundary: dict[str, object] = {"type": "loop.resume.start", "iteration": 2}
             _append(run, boundary)
             # The withdrawal is an async DOM prune after the tails read the
-            # boundary: poll and wait rather than trust one pause.
-            for _ in range(80):
-                app._conv._poll()  # pyright: ignore[reportPrivateUsage]
-                await pilot.pause(0.05)
-                if not app._conv.query(ApprovalRow):  # pyright: ignore[reportPrivateUsage]
-                    break
-            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            # boundary, so the poll feeds the fold while the wait runs.
+            conv = app._conv  # pyright: ignore[reportPrivateUsage]
+            assert await row_gone(conv, pilot, conv._poll)  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
 
@@ -182,11 +176,9 @@ def test_an_answered_approval_stays_closed_on_reload(tmp_path: Path) -> None:
         app = Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
-            app._conv.query(ApprovalRow).first().focus_answers()  # pyright: ignore[reportPrivateUsage]
-            await pilot.pause()
+            await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("y")
-            await pilot.pause()
-            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            assert await row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             app._conv.action_reload()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
@@ -203,19 +195,10 @@ def test_a_click_on_a_row_label_answers(tmp_path: Path) -> None:
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
             label = app._conv.query_one(".answer-yes", Static)  # pyright: ignore[reportPrivateUsage]
-            for _ in range(80):  # the row is queryable before it is laid out
-                if label.region.width > 0:
-                    break
-                await pilot.pause(0.05)
+            # A click needs the label laid out, which is past mounted.
+            await until(pilot, lambda: label.region.width > 0, "the answer label laid out")
             await pilot.click(label)
-            answer = run / "approvals" / "ap1.answer"
-            for _ in range(40):
-                if answer.exists():
-                    break
-                await pilot.pause(0.05)
-            else:  # a click under a loaded pilot can land before the layout settles
-                await pilot.click(label)
-            assert await _answer_written(run, pilot) == "yes"
+            assert await answer_written(run, pilot) == "yes"
 
     asyncio.run(scenario())
 
@@ -241,16 +224,12 @@ def test_a_click_after_another_surface_answered_is_refused(tmp_path: Path) -> No
             # The row settles as an answer does: nothing left to click.
             assert app._conv._approval is None  # pyright: ignore[reportPrivateUsage]
             assert str(app._conv._approval_done).startswith("answered elsewhere")  # pyright: ignore[reportPrivateUsage]
-            for _ in range(40):  # the row unmounts on a later tick
-                if not app._conv.query(ApprovalRow):  # pyright: ignore[reportPrivateUsage]
-                    break
-                await pilot.pause(0.05)
-            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            assert await row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
 
 
-def test_a_dead_runs_approval_is_shown_but_not_answerable(tmp_path: Path) -> None:
+def test_a_dead_runs_approval_is_shown_but_notanswerable(tmp_path: Path) -> None:
     """A run killed with its prompt open: the fact stays on the surface, the
     key row (whose answer would reach nothing) is not offered."""
     run = tmp_path / "dead-run-AAAAAA"
@@ -339,7 +318,7 @@ def test_a_key_answers_from_the_transcript(tmp_path: Path) -> None:
             app._conv.query_one("#conv-scroll").focus()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.press("y")
-            assert await _answer_written(run, pilot) == "yes"
+            assert await answer_written(run, pilot) == "yes"
             bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == ""  # the transcript types nothing
 
@@ -384,7 +363,7 @@ def test_tab_reaches_the_answers_and_enter_answers(tmp_path: Path) -> None:
                     break
             assert app.focused is not None and "answer-yes" in app.focused.classes
             await pilot.press("enter")
-            assert await _answer_written(run, pilot) == "yes"
+            assert await answer_written(run, pilot) == "yes"
 
     asyncio.run(scenario())
 
@@ -407,32 +386,31 @@ def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(tmp_pat
             _append(
                 run, {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: ls"}
             )
-            for _ in range(80):
-                app._tick()  # pyright: ignore[reportPrivateUsage]
-                await pilot.pause(0.05)
-                if app._dash.query(ApprovalRow):  # pyright: ignore[reportPrivateUsage]
-                    break
+            await until(
+                pilot,
+                lambda: answerable(app._dash),  # pyright: ignore[reportPrivateUsage]
+                "the dashboard row",
+                pump=app._tick,  # pyright: ignore[reportPrivateUsage]
+            )
             row = app._dash.query(ApprovalRow).first()  # pyright: ignore[reportPrivateUsage]
             assert not isinstance(app.screen, ApprovalModal)
             assert app.focused is bar  # the row took nothing
             shown = str(row.query_one(Static).render())
             assert "Allow run_command" in shown and "ls" in shown
-            row.focus_answers()
-            await pilot.pause()
+            await focus_answers(app._dash, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("y")
-            assert await _answer_written(run, pilot) == "yes"
+            assert await answer_written(run, pilot) == "yes"
             _append(run, {"type": "approval.answer", "id": "ap1", "approved": True})
             _append(
                 run, {"type": "approval.prompt", "id": "ap2", "prompt": "Allow run_command: rm"}
             )
-            for _ in range(80):
-                app._tick()  # pyright: ignore[reportPrivateUsage]
-                await pilot.pause(0.05)
-                focused = app.focused
-                if focused is not None and "answer-yes" in focused.classes:
-                    break
-            assert app.focused is not None and "answer-yes" in app.focused.classes
+            await until(
+                pilot,
+                lambda: app.focused is not None and "answer-yes" in app.focused.classes,
+                "the next approval's answers to keep the focus",
+                pump=app._tick,  # pyright: ignore[reportPrivateUsage]
+            )
             await pilot.press("n")
-            assert await _answer_written(run, pilot, "ap2") == "no"
+            assert await answer_written(run, pilot, "ap2") == "no"
 
     asyncio.run(scenario())

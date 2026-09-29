@@ -35,6 +35,7 @@ from agent6.ui.tui.modals import (
     ToolCallDetailModal,
 )
 from agent6.viewmodel.state import Question
+from tests.tui._approval import answer_written, focus_answers
 
 
 def _ev(**fields: Any) -> dict[str, object]:
@@ -397,21 +398,17 @@ def test_render_and_modals(tmp_path: Path) -> None:
             app._tick()
             await pilot.pause()
             assert not isinstance(app.screen, ApprovalModal)
-            app._dash.query(ApprovalRow).first().focus_answers()
-            await pilot.pause()
+            await focus_answers(app._dash, pilot)
             await pilot.press("y")
-            await pilot.pause()
-            assert (tmp_path / "approvals" / "ap1.answer").read_text(encoding="utf-8") == "yes"
+            assert await answer_written(tmp_path, pilot) == "yes"
 
             app._handle_event(_ev(type="approval.answer", id="ap1", approved=True))
             app._handle_event(_ev(type="approval.prompt", id="ap2", prompt="rm -rf"))
             app._tick()
             await pilot.pause()
-            app._dash.query(ApprovalRow).first().focus_answers()
-            await pilot.pause()
+            await focus_answers(app._dash, pilot)
             await pilot.press("n")
-            await pilot.pause()
-            assert (tmp_path / "approvals" / "ap2.answer").read_text(encoding="utf-8") == "no"
+            assert await answer_written(tmp_path, pilot, "ap2") == "no"
 
             # An external steer request routes to the docked composer bar (no
             # popup): the bar takes focus, typing + Enter answers over the bridge.
@@ -735,10 +732,9 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> N
             app._conv._poll()
             await pilot.pause()
             assert app._conv.query(ApprovalRow)
-            app._conv.query(ApprovalRow).first().focus_answers()
-            await pilot.pause()
+            await focus_answers(app._conv, pilot)
             await pilot.press("y")
-            await pilot.pause()
+            assert await answer_written(tmp_path, pilot, "approval-1") == "yes"
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
             # The resume: a real resumed leg emits ONLY loop.resume.start (never
             # a second session.start -- workflows/loop.py run() vs resume()), then
@@ -753,12 +749,9 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> N
             app._conv._poll()
             await pilot.pause()
             assert app._conv.query(ApprovalRow)  # re-shown, not swallowed
-            app._conv.query(ApprovalRow).first().focus_answers()
-            await pilot.pause()
+            await focus_answers(app._conv, pilot)
             await pilot.press("n")
-            await pilot.pause()
-            answer = (tmp_path / "approvals" / "approval-1.answer").read_text(encoding="utf-8")
-            assert answer == "no"
+            assert await answer_written(tmp_path, pilot, "approval-1") == "no"
 
     asyncio.run(scenario())
 

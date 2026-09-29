@@ -30,6 +30,7 @@ from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow, SteerInput
 from agent6.ui.tui.modals import ApprovalModal
 from agent6.viewmodel.state import status_facts
+from tests.tui._approval import answerable, focus_answers
 
 
 def _mk_parked(d: Path) -> None:
@@ -692,11 +693,14 @@ def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
 
 def _approval_ready(app: Agent6TUI) -> bool:
     # The conversation screen renders an approval inline: the item plus its key
-    # row, mounted, with the composer keeping focus (a modal only on the other
-    # screens).
-    rows = app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+    # row, mounted down to the labels, with the composer keeping focus (a modal
+    # only on the other screens).
     bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
-    return _screen_is(app, "_conv") and bool(rows) and app.focused is bar
+    return (
+        _screen_is(app, "_conv")
+        and answerable(app._conv)  # pyright: ignore[reportPrivateUsage]
+        and app.focused is bar
+    )
 
 
 def test_screen_probe_tolerates_an_empty_stack(tmp_path: Path) -> None:
@@ -1079,8 +1083,7 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
             # Deny the inline approval (d writes only the bridge file;
             # no answer EVENT lands, so the fold keeps the run "waiting").
             await _wait_for(pilot, lambda: _approval_ready(app), "the approval row")
-            app._conv.query(ApprovalRow).first().focus_answers()  # pyright: ignore[reportPrivateUsage]
-            await pilot.pause()
+            await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("d")
             await _open_dash(app, pilot)
             await _wait_for(pilot, lambda: app.dir_status[0] == "waiting", "the waiting word")
