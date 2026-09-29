@@ -22,13 +22,20 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
+from agent6.graph.models import owner_note
 from agent6.models.registry import context_window
 from agent6.sessions.ipc import listening_ports
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.viewmodel import events
-from agent6.viewmodel.format import TASK_STATUS_GLYPH, budget_usd_text, dead_run_note, status_label
+from agent6.viewmodel.format import (
+    TASK_STATUS_GLYPH,
+    budget_usd_text,
+    dead_run_note,
+    short_task_id,
+    status_label,
+)
 from agent6.viewmodel.listing import (
     LIVE_STATUS_WORDS,
     StatusFacts,
@@ -55,9 +62,13 @@ class TaskNodeView:
     status: NodeStatus = "pending"
     depth: int = 0
     is_cursor: bool = False
-    # Who added the task. A subtask the operator queued reads differently on
-    # every surface; "" for a run dir written before the field existed.
+    # Who added the task; "" for a run dir written before the field existed.
     created_by: str = ""
+    standing: bool = False
+    # The operator's mark beside a task they own (graph.models.owner_note):
+    # "queued by you", "standing goal", or "".
+    note: str = ""
+    short_id: str = ""  # the id as the operator reads and types it (`/retire`)
     glyph: str = ""  # the status as every surface draws it (TASK_STATUS_GLYPH)
 
     def __post_init__(self) -> None:
@@ -636,6 +647,8 @@ def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNode
         if not isinstance(node, dict) or nid in seen:
             return
         seen.add(nid)
+        created_by, standing = str(node.get("created_by", "")), bool(node.get("standing", False))
+        parent_id = node.get("parent_id")
         out.append(
             TaskNodeView(
                 id=nid,
@@ -643,7 +656,14 @@ def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNode
                 status=node.get("status", "pending"),
                 depth=depth,
                 is_cursor=(nid == cursor),
-                created_by=str(node.get("created_by", "")),
+                created_by=created_by,
+                standing=standing,
+                note=owner_note(
+                    created_by=created_by,
+                    parent_id=str(parent_id) if isinstance(parent_id, str) else None,
+                    standing=standing,
+                ),
+                short_id=short_task_id(nid),
             )
         )
         children = node.get("children", ())

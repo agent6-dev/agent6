@@ -393,10 +393,12 @@ function paintDetails(cards, s, asOf) {
   for (const t of s.tasks || []) {
     const line = el('div', 'node' + (t.is_cursor ? ' cursor' : ''));
     const glyph = t.glyph || '·'; // the server's TASK_STATUS_GLYPH
+    // The id leads the line: it is what /retire takes.
+    line.appendChild(el('span', 'muted', String(t.short_id || '').padStart(3) + ' '));
     line.appendChild(el('span', 'st-' + t.status, '  '.repeat(t.depth) + glyph + ' '));
     line.appendChild(document.createTextNode(t.title));
-    // A task you queued into a running session, not one the model wrote.
-    if (t.created_by === 'user' && t.depth > 0) line.appendChild(el('span', 'sub muted', ' queued by you'));
+    // The operator's mark beside a task they own (the server's owner_note).
+    if (t.note) line.appendChild(el('span', 'sub muted', ' ' + t.note));
     tree.appendChild(line);
   }
   cards.tasks.appendChild(tree);

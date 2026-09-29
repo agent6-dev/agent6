@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.graph.models import TaskNode
+from agent6.graph.models import TaskNode, owner_note
 from agent6.graph.order import OPEN_STATUSES
 from agent6.workflows._session_state import End
 
@@ -144,11 +144,13 @@ def open_subtasks(nodes: Mapping[str, TaskNode]) -> list[tuple[str, str]]:
     A task the operator queued carries that in its title: both consumers are
     prose the operator or the model reads (the end receipt, the finish
     deferral), and an end over one of those is worth naming as theirs."""
-    return [
-        (nid, node.title[:120] + (" (queued by you)" if node.created_by == "user" else ""))
-        for nid, node in nodes.items()
-        if node.parent_id is not None and node.status in OPEN_STATUSES and not node.standing
-    ]
+    out: list[tuple[str, str]] = []
+    for nid, node in nodes.items():
+        if node.parent_id is None or node.status not in OPEN_STATUSES or node.standing:
+            continue
+        note = owner_note(created_by=node.created_by, parent_id=node.parent_id, standing=False)
+        out.append((nid, node.title[:120] + (f" ({note})" if note else "")))
+    return out
 
 
 def with_open_tasks(summary: str, open_tasks: Sequence[tuple[str, str]]) -> str:

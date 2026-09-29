@@ -193,10 +193,12 @@ def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
     s = apply_event(initial_state(), _graph_event(nodes, cursor="a1"))
     assert s.cursor_task_id == "a1"
     assert s.tasks == (
-        TaskNodeView(id="root", title="root", status="in_progress", depth=0),
-        TaskNodeView(id="a", title="task a", status="passed", depth=1),
-        TaskNodeView(id="a1", title="task a1", status="pending", depth=2, is_cursor=True),
-        TaskNodeView(id="b", title="task b", status="failed", depth=1),
+        TaskNodeView(id="root", title="root", status="in_progress", depth=0, short_id="root"),
+        TaskNodeView(id="a", title="task a", status="passed", depth=1, short_id="a"),
+        TaskNodeView(
+            id="a1", title="task a1", status="pending", depth=2, is_cursor=True, short_id="a1"
+        ),
+        TaskNodeView(id="b", title="task b", status="failed", depth=1, short_id="b"),
     )
 
 

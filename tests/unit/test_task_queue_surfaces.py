@@ -84,3 +84,56 @@ def test_an_end_over_an_operator_task_names_it_as_theirs() -> None:
     assert "add a --json flag (queued by you)" in summary
     assert "refactor the parser" in summary
     assert "refactor the parser (queued by you)" not in summary
+
+
+def test_every_surface_reads_one_owner_note() -> None:
+    """The TUI and web decided "queued by you" for themselves and marked no
+    standing goal; the CLI tree marked nothing. One owner (owner_note) and
+    one field on the view, with the id leading every line as `/retire` takes
+    it."""
+    from agent6.graph.models import owner_note
+    from agent6.ui.cli._task_tree import task_tree_lines
+    from agent6.viewmodel.state import task_tree_views
+
+    nodes = {
+        "0001": {
+            "title": "the run",
+            "parent_id": None,
+            "children": ["0002", "0003", "0004"],
+            "status": "in_progress",
+            "created_by": "user",
+        },
+        "0002": {
+            "title": "the model's own",
+            "parent_id": "0001",
+            "children": [],
+            "status": "pending",
+            "created_by": "worker",
+        },
+        "0003": {
+            "title": "queued",
+            "parent_id": "0001",
+            "children": [],
+            "status": "pending",
+            "created_by": "user",
+        },
+        "0004": {
+            "title": "keep the suite green",
+            "parent_id": "0001",
+            "children": [],
+            "status": "pending",
+            "created_by": "steering",
+            "standing": True,
+        },
+    }
+    views = task_tree_views(nodes, "0002")
+    assert [(v.short_id, v.note) for v in views] == [
+        ("1", ""),
+        ("2", ""),
+        ("3", "queued by you"),
+        ("4", "standing goal"),
+    ]
+    assert owner_note(created_by="user", parent_id=None, standing=False) == ""
+    lines = task_tree_lines(nodes, "0002")
+    assert lines[2].startswith("  3    ") and lines[2].endswith("queued  (queued by you)")
+    assert lines[3].endswith("keep the suite green  (standing goal)")

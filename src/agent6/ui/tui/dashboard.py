@@ -822,10 +822,10 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 icon = _TASK_ICONS.get(tv.status, "·")
                 indent = "  " * tv.depth
                 marker = "▸ " if tv.is_cursor else ""
-                label = Text(f"{indent}{marker}{icon} {tv.title}")
-                if tv.created_by == "user" and tv.depth:
-                    # Queued into the running session, not written by the model.
-                    label.append("  queued by you", style="dim italic")
+                # The id leads the line: it is what `/retire` takes.
+                label = Text(f"{tv.short_id:>3} {indent}{marker}{icon} {tv.title}")
+                if tv.note:
+                    label.append(f"  {tv.note}", style="dim italic")
                 if tv.id == sel:  # the task the panes are filtered to
                     label.stylize("bold reverse")
                 tree.root.add_leaf(label, data=tv.id)

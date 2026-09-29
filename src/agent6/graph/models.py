@@ -46,6 +46,24 @@ NodeActor = Literal[
 ]
 
 
+def owner_note(*, created_by: str, parent_id: str | None, standing: bool) -> str:
+    """What every surface says beside a task the operator owns: "queued by
+    you" for an ordinary task they added to a live run, "standing goal" for
+    the goal `--standing` or `/standing` set (the curator lets only the
+    operator's steering set the flag); "" for the model's own and the root."""
+    if standing:
+        return "standing goal"
+    if created_by == "user" and parent_id is not None:
+        return "queued by you"
+    return ""
+
+
+def queued_by_operator(node: TaskNode) -> bool:
+    """A task the operator added to a live run: theirs to withdraw, so the
+    model may pass it or leave it open but never retire it."""
+    return owner_note(created_by=node.created_by, parent_id=node.parent_id, standing=False) != ""
+
+
 class TaskNodeDraft(BaseModel):
     """A new-node payload, id is assigned by the curator on insert."""
 

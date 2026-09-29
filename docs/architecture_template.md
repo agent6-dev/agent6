@@ -382,7 +382,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `approval.prompt` / `.answer` | `id`, `prompt`, `standing`, `call_id` (the gated tool call; null for a verify the harness runs itself) / `id`, `approved`, `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `session`, `headless`, `acp`) |
 | `question.prompt` / `.answer` | `id`, `questions` (each `question`, `options`), `call_id` (null for the dirty-tree start question) / `id`, `answers` (aligned to the questions; an unanswered one is `""`), `source` (`stdin`, `frontend`, `await-frontend`, `away-wait`, `headless-default`, `headless`, `acp`): the `ask_user` tool and the start question |
 | `diff.updated` | what a chain commit changed: `sha` and its `patch`, capped at 8000 bytes; every fold counts commits and shows the latest diff from this event alone |
-| `graph.update` | the task DAG after this turn: `nodes` (title, status, parent_id, children, created_by), `cursor` |
+| `graph.update` | the task DAG after this turn: `nodes` (title, status, parent_id, children, created_by, standing), `cursor` |
 | `loop.task.queued` | a task the operator added to a live run (`/task`): `id`, `title` |
 | `loop.standing.set` | the standing goal the operator set mid-run (`/standing`): `id`, `title` |
 | `loop.task.retired` | a task the operator dropped from the graph (`/retire`): `id`, `title` |
@@ -402,7 +402,7 @@ A `run_command` approval publishes as `approval.prompt`.
 - the answer poll falls back headless (stdin, or deny for a machine state) only after the front-end stays dead 30 consecutive seconds
     - a page reload or a locked phone never converts a pending approval into a deny
 - a watching browser registers as the run's answer front-end; prompts bridge to the page
-- the task DAG rides as `graph.update` (`nodes`: title, status, parent_id, children, created_by; `cursor`), once per turn that mutated the DAG, plus the root seed, a surfaced task, the finish auto-pass, the compaction check-off and each parallel stamp; every mutation is curator-owned in `graph.jsonl`, read via `sessions graph`
+- the task DAG rides as `graph.update` (`nodes`: title, status, parent_id, children, created_by, standing; `cursor`), once per turn that mutated the DAG, plus the root seed, a surfaced task, the finish auto-pass, the compaction check-off and each parallel stamp; every mutation is curator-owned in `graph.jsonl`, read via `sessions graph`
 
 ## Where things live
 

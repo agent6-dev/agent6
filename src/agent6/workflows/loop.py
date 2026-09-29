@@ -2279,10 +2279,11 @@ class Workflow:
         if self.curator is None:
             return
         cursor = self.curator.cursor()
-        # FROZEN wire surface: project each node to exactly these five fields,
+        # FROZEN wire surface: project each node to exactly these six fields,
         # children as a JSON list -- the graph.update shape the viewmodel fold,
-        # web and TUI hold. `created_by` tells the operator's own queued tasks
-        # from the model's; a run dir written before it reads as the model's.
+        # web and TUI hold. `created_by` and `standing` tell the operator's own
+        # tasks from the model's (graph.models.owner_note); a run dir written
+        # before a field existed reads it as the model's.
         # Pinned by test_graph_update_snapshot_payload_is_wire_stable.
         nodes = {
             nid: {
@@ -2291,6 +2292,7 @@ class Workflow:
                 "parent_id": n.parent_id,
                 "children": list(n.children),
                 "created_by": n.created_by,
+                "standing": n.standing,
             }
             for nid, n in self.curator.nodes().items()
         }

@@ -14,6 +14,7 @@ from agent6.graph.models import (
     TaskNode,
     TaskNodeDraft,
     UpdateStatusIntent,
+    queued_by_operator,
 )
 from agent6.graph.order import is_focusable_subtask, tree_order
 from agent6.tools.errors import ToolError
@@ -65,7 +66,7 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     if args.status is not None:
         if args.status in ("skipped", "obsolete"):
             current = curator.get(args.id)
-            if current.parent_id is not None and current.created_by == "user":
+            if queued_by_operator(current):
                 # A task the operator queued is theirs to withdraw: pass it
                 # when it is done, or leave it open and let the run's end
                 # receipt say it went undone. The curator stays permissive,
@@ -74,10 +75,11 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
                     f"update_task: {args.id} was queued by the operator, so it is not"
                     " yours to retire; pass it when it is done, or leave it open"
                 )
-            if current.standing and current.created_by == "steering":
-                # The operator's --standing goal: the operator retires it (a
-                # steer, or stopping the run). The model retiring it converts
-                # the never-finishing fallback into an ordinary early finish.
+            if current.standing:
+                # The operator's goal (`--standing`, `/standing`): only they
+                # retire it (`/standing` with a new one, or stopping the run).
+                # The model retiring it converts the never-finishing fallback
+                # into an ordinary early finish.
                 raise ToolError(
                     f"update_task: {args.id} is the operator's standing goal;"
                     " it stays until the operator retires it. Work it when"

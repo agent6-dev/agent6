@@ -16,7 +16,7 @@ work to surface.
 
 from __future__ import annotations
 
-from agent6.graph.models import TaskNode
+from agent6.graph.models import TaskNode, queued_by_operator
 from agent6.graph.order import is_focusable_subtask, ready_subtask, tree_order
 
 # Tool names that mutate the task DAG; after one runs the loop re-snapshots the
@@ -79,7 +79,7 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
     """The per-turn focus directive naming the current task and its acceptance."""
     title = node.title.strip() or "(untitled)"
     lines = [f"[harness focus] Current task ({task_id}): {title}"]
-    if node.created_by == "user" and node.parent_id is not None:
+    if queued_by_operator(node):
         # Queued by the operator mid-run, so the wording is theirs and the
         # whole text is the spec (the title is only its first line).
         if (queued := node.rationale.strip()) and queued != title:
@@ -95,16 +95,12 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
     if paths:
         lines.append("Relevant paths: " + ", ".join(paths[:8]))
     if node.standing:
-        # A standing task never passes; the curator refuses `passed`, and the
-        # operator's own goal (created_by "steering") refuses every retirement.
-        retire = (
-            "only the operator retires it"
-            if node.created_by == "steering"
-            else "retire it with update_task (skipped or obsolete) once it no longer applies"
-        )
+        # A standing task never passes (the curator refuses `passed`) and it is
+        # the operator's own goal, so it refuses every retirement.
         lines.append(
             "This is a standing task: it never passes, so do not mark it passed;"
-            f" {retire}. Work a round on it now, add_task each follow-up you find so"
+            " only the operator retires it. Work a round on it now, add_task each"
+            " follow-up you find so"
             " it is worked in turn, and call finish_session when a round finds"
             " nothing left to do."
         )
