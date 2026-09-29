@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Mid-run harness interjections: when the loop speaks and what it says.
+"""Hold the harness's mid-run notices: when the loop speaks and what it says.
 
-Each nudge/gate is a threshold (when it fires) plus a directive (the text
-injected as a user-role harness message). The loop owns detection and
-injection; this module owns the tuning values and the words.
+Each nudge is a threshold and a directive, injected as a user-role harness message. The loop
+detects and injects; this module holds the tuning values and the words.
 """
 
 from __future__ import annotations
@@ -13,23 +12,15 @@ import hashlib
 import re
 from collections.abc import Sequence
 
-# No-progress spiral guard (run mode): N consecutive verify failures sharing
-# ONE normalized signature. A green verify or a DIFFERENT failure (progress
-# through the error list) resets the streak, so a healthy run never pays for
-# it. Signatures ignore line numbers, addresses, and durations, else cosmetic
-# drift between identical failures defeats the detector.
-# Thresholds + evidence: bench/coreagent/FINDINGS.md.
+# No-progress guard (run mode): consecutive verify failures sharing one normalized signature.
+# A green verify or a different failure resets the streak (evidence: bench/coreagent/FINDINGS.md).
 NO_PROGRESS_NUDGE_AFTER = 4
 NO_PROGRESS_ESCALATE_AFTER = 7
-# Third stage: both nudges delivered and unheeded, so stop honestly rather
-# than spend the rest of the budget on a proven non-strategy.
+# Both nudges delivered and unheeded: the run stops.
 NO_PROGRESS_STOP_AFTER = 10
 
-# Tool-error spiral guard (run mode). Distinct from the verify streak: this
-# counts consecutive tool calls that raise the SAME error (name + error text
-# with digits stripped, so a runaway that varies its args but trips the same
-# "not a JSON object" / "pattern too long" error still accumulates).
-# Any successful tool call, or a different error, resets it.
+# Tool-error guard (run mode): consecutive tool calls raising the same error, digits stripped.
+# Any successful call, or a different error, resets it.
 TOOL_ERROR_NUDGE_AFTER = 3
 TOOL_ERROR_ESCALATE_AFTER = 5
 TOOL_ERROR_STOP_AFTER = 8
@@ -42,9 +33,7 @@ TOOL_ERROR_ESCALATION = (
     "[harness tool-error] The identical error persists; the run ends at the eighth."
 )
 
-# A streak of ToolDeniedError refusals (the approval policy): the call
-# was REFUSED, not malformed, so the generic "fix the call shape" text would
-# be false and invite pointless reshuffling of the same command.
+# A streak of ToolDeniedError refusals: the call was refused, not malformed.
 TOOL_DENIED_NUDGE = (
     "[harness tool-error] Refused by policy, not a failure: the same call gets"
     " the same refusal, and the refusal names what applies. Tools that need no"
@@ -57,7 +46,7 @@ LOOP_GUARD_NOTICE_AFTER = 3
 
 
 def loop_guard_words(tool: str, streak: int) -> str:
-    """The notice after *streak* identical calls of *tool*."""
+    """Return the notice after a streak of identical calls of one tool."""
     return (
         f"[loop-guard] You have called `{tool}` with"
         f" identical arguments {streak} times in a row."
@@ -69,7 +58,7 @@ def loop_guard_words(tool: str, streak: int) -> str:
 
 
 def unreachable_tool_notice(binary: str) -> str:
-    """The note when *binary* exists on the host but the jail cannot execute it."""
+    """Return the note for a binary the host has but the jail cannot execute."""
     return (
         f"NOTE: `{binary}` is installed on this machine but the sandbox"
         " cannot execute it: a reachability problem (a per-user or"
@@ -82,8 +71,7 @@ def unreachable_tool_notice(binary: str) -> str:
     )
 
 
-# The empty turn (no text, no tool_use). A starved reasoner gets its own
-# nudge: the generic one gives it nothing actionable, so it repeats the loop.
+# The empty turn (no text, no tool_use); a starved reasoner gets its own nudge below.
 WENT_QUIET_NUDGE = (
     "[harness] Your previous turn was empty (no text, no tool call); this"
     " message is the harness's. A tool call continues the run; finish_session"
@@ -92,7 +80,7 @@ WENT_QUIET_NUDGE = (
 
 
 def reasoning_starved_nudge(output_tokens: int) -> str:
-    """The nudge after a turn that spent its whole output cap on reasoning."""
+    """Return the nudge after a turn that spent its whole output cap on reasoning."""
     return (
         f"[harness] Your previous turn spent its whole output budget ({output_tokens}"
         " tokens) on reasoning, with no visible content and no tool call; this"
@@ -101,10 +89,7 @@ def reasoning_starved_nudge(output_tokens: int) -> str:
     )
 
 
-# A verify command that exited nonzero almost instantly with one of these
-# signatures did not RUN the tests -- the runner itself is absent/broken.
-# Treating that as a normal red misleads the model into "fixing" passing code
-# or finishing on an unchecked patch.
+# A verify that failed at once with one of these ran no tests: the runner itself is absent.
 _VERIFY_DEAD_SIGNATURES = (
     "no module named pytest",
     "no module named _pytest",
@@ -119,10 +104,20 @@ _VERIFY_DEAD_SIGNATURES = (
 
 
 def unrunnable_signature(argv: tuple[str, ...], rc: int | None, stdout: str, stderr: str) -> str:
-    """Why an ADOPTED gate cannot run here, or "" for an ordinary red: exit
-    127 (no such executable), or "No module named <mod>" naming exactly the
-    module the adopted `-m <mod>` runs. A failing suite exits 1 or 2 with
-    test output and matches neither."""
+    """Return why an adopted gate cannot run here, or "" for an ordinary red.
+
+    Exit 127 (no such executable), or "No module named <mod>" naming the module the adopted
+    `-m <mod>` runs. A failing suite exits 1 or 2 with test output and matches neither.
+
+    Args:
+        argv: The gate's argv.
+        rc: Its exit code, or None.
+        stdout: Its stdout.
+        stderr: Its stderr.
+
+    Returns:
+        The reason, or "".
+    """
     if rc == 127:
         return "exit 127, the command is not found"
     if "-m" in argv:
@@ -153,10 +148,18 @@ VERIFY_BROKEN_NUDGE = (
 
 
 def verify_did_not_run(stdout_tail: str, stderr_tail: str, duration_s: float) -> bool:
-    """True when a FAILED verify almost certainly did not execute any tests
-    (the runner is absent), so the loop can flag it instead of passing the
-    blind failure to the model. Requires a fast exit to avoid flagging a real
-    suite that happens to import-error deep in a long run."""
+    """Return whether a failed verify ran no tests because the runner is absent.
+
+    Requires a fast exit, so a real suite that import-errors deep in a long run is not flagged.
+
+    Args:
+        stdout_tail: The verify's last stdout bytes.
+        stderr_tail: The verify's last stderr bytes.
+        duration_s: How long the verify ran.
+
+    Returns:
+        Whether the failure carries a dead-runner signature within three seconds.
+    """
     if duration_s > 3.0:
         return False
     blob = f"{stdout_tail}\n{stderr_tail}".lower()
@@ -164,8 +167,7 @@ def verify_did_not_run(stdout_tail: str, stderr_tail: str, duration_s: float) ->
 
 
 def tool_error_signature(name: str, error_text: str) -> str:
-    """Stable signature of a tool error, insensitive to varying numbers so a
-    runaway that changes its args but trips the same error still matches."""
+    """Return a tool error's signature with digits masked, so varied numbers still match."""
     return f"{name}:{re.sub(r'[0-9]+', '#', error_text)[:200]}"
 
 
@@ -184,7 +186,7 @@ _SIG_NOISE = re.compile(r"line \d+|0x[0-9a-fA-F]+|\d+\.\d+s\b|:\d+:|/tmp/\S+|\bi
 
 
 def verify_failure_signature(stdout_tail: str, stderr_tail: str) -> str:
-    """Stable hash of a verify failure, insensitive to cosmetic drift."""
+    """Return a verify failure's hash, insensitive to cosmetic drift."""
     tail = f"{stdout_tail}\n{stderr_tail}".strip()[-800:]
     digest = hashlib.md5(
         _SIG_NOISE.sub("#", tail).encode("utf-8", "replace"), usedforsecurity=False
@@ -192,31 +194,17 @@ def verify_failure_signature(stdout_tail: str, stderr_tail: str) -> str:
     return digest.hexdigest()
 
 
-# Plan-mode wrap-up: nudge once the budget fraction drops below the threshold,
-# or after this many iterations without having finished (or even started) a
-# plan at all. A plan rarely needs more than a handful of reads.
+# Plan-mode wrap-up: nudge below this budget fraction, or after this many turns without a plan.
 PLAN_BUDGET_NUDGE_BELOW = 0.35
 PLAN_NUDGE_AFTER_ITERS = 12
 
-# Task finish-gate: when the worker has broken the run into subtasks, don't let
-# it finish (or silently stop) while subtasks are still open -- re-prompt with
-# the open list instead. A weak model on a long task tends to quit early with
-# work pending.
-# Capped, as the review gate is: after the cap the end goes through, and the
-# end word carries the open tasks rather than a pass. Only SUBTASKS gate -- the
-# always-pending auto-root would deadlock.
+# Task finish gate: a finish with open subtasks is re-prompted with the open list, this many times.
+# Only subtasks gate; the always-pending root would deadlock.
 TASK_FINISH_PATIENCE = 3
 
-# verify-settled completion (run mode). A non-metric run has no positive "done"
-# signal, clean exit depends on the worker volunteering finish_session, and a weak
-# worker keeps re-running read-only commands after success. Once verify has
-# passed, count iterations that
-# make no progress (no new commit + no edit): nudge to finish at the first
-# threshold, hard-stop at the second. NOT "green verify = instant stop", verify
-# fires per-edit and is often lenient, so green-but-still-editing must continue.
-# Thresholds are deliberately generous: the failure mode is only a little wasted
-# budget on an already-done run, whereas a too-tight window could cut off a
-# worker still reading toward its next edit in a big multi-file change.
+# Verify-settled completion (run mode): after a green verify, turns with no commit and no edit.
+# Nudge at the first threshold, stop at the second; a green verify alone never stops a run.
+# Generous on purpose: a tight window would cut off a worker reading toward its next edit.
 VERIFY_SETTLED_NUDGE_AFTER = 3
 VERIFY_SETTLED_STOP_AFTER = 6
 
@@ -226,23 +214,20 @@ VERIFY_SETTLED_NUDGE = (
     " run ends on its own."
 )
 
-# Injected once when a run has spent `stagnation_notice_after_s` with no edit
-# and no verify. The gateless variant drops the verify step: there is no gate
-# to run, and naming one sends the model after a tool it does not have.
+# Injected once when a run has spent `stagnation_notice_after_s` with no edit and no verify.
 STAGNATION_NUDGE = (
     "[stagnation] {minutes} minutes in, no edit and no verify yet; the budget"
     " is finite, and finish_session ends the run with its summary."
 )
 
+# The gateless variant names no verify step: there is no gate to run.
 STAGNATION_NUDGE_GATELESS = (
     "[stagnation] {minutes} minutes in and nothing edited yet; the budget is"
     " finite, and finish_session ends the run with its summary."
 )
 
-# A non-metric `run` injects a one-shot wrap-up directive when the budget gets
-# low: a worker that solves the task but never re-runs verify leaves the
-# settled detector unable to engage (it needs a green verify) and burns the
-# remainder on read-only commands.
+# A non-metric run gets one wrap-up directive when the budget runs low.
+# A worker that never re-runs verify leaves the settled detector unable to engage.
 RUN_BUDGET_NUDGE_BELOW = 0.25
 
 RUN_BUDGET_NUDGE = (
@@ -251,17 +236,14 @@ RUN_BUDGET_NUDGE = (
     " finish_session ends the run."
 )
 
-# Gateless variant (no verify command this run): there is nothing to verify, so
-# steer straight to finish_session.
+# Gateless variant: nothing to verify, so straight to finish_session.
 RUN_BUDGET_NUDGE_GATELESS = (
     "[harness budget] Under a quarter of the budget remains; the loop halts"
     " when a cap is crossed. finish_session ends the run."
 )
 
-# plan.md on disk is the plan; the planner's conversation only ever holds a
-# copy. The operator answers open questions with `agent6 plan edit`, so the
-# loop re-reads the file each turn and prepends this header when it differs
-# from what the planner was last shown.
+# plan.md on disk is the plan; the planner's conversation only holds a copy.
+# The loop re-reads the file each turn and prepends this header when it differs from the last shown.
 PLAN_ON_DISK_HEADER = (
     "[harness plan] plan.md on disk now reads as follows; it supersedes every"
     " earlier version in this conversation (operator edits: answers under"
@@ -276,13 +258,8 @@ PLAN_BUDGET_NUDGE = (
 )
 
 
-# Silent finish before any work (run mode). Observed on SWE-bench with
-# kimi-k2.7: a chat-tuned model answers the problem statement in prose at
-# iteration 2, with no edit and no verify behind it. An EARLY prose turn
-# (first iterations) on an untouched tree is a stall, not a finish; steer back
-# to the tools a bounded number of times. Later prose finishes stay honored: a
-# run that read its fill and answers in prose is the legitimate implicit-finish
-# path.
+# Silent finish before any work (run mode): an early prose turn on an untouched tree is a stall.
+# A later prose finish stays honored as the implicit-finish path.
 SILENT_NO_WORK_PATIENCE = 2
 SILENT_NO_WORK_NUDGE = (
     "[harness] Prose with no tool call on an untouched tree is not a finish"
@@ -297,18 +274,9 @@ QUESTION_NUDGE = (
 )
 
 
-# Cross-run memory write nudges. Measured (bench/longhorizon FINDINGS #2):
-# 46 executions across 2 models produced ZERO unprompted memory writes, so the
-# <memory> block alone never causes writes. Prompt at the two moments a
-# durable discovery is actually in hand: the first red-to-green verify flip
-# (advisory, free) and the first finish_session after such a recovery
-# (deferred once, the backstop). Each fires at most once per run, only in run
-# mode with a memory store wired, and only while the worker has recorded
-# nothing; a run whose verify never failed is never nudged.
-# "State the rule, not the instance": measured on orchard execution 3 (FINDINGS #2
-# day 3), a store that spelled the house convention in words transferred to
-# a new computation; a store carrying only the formula it was first seen in
-# did not.
+# Memory write nudges fire at the first red-to-green verify flip and the first finish after it.
+# Each fires at most once per run, in run mode with a memory store, while nothing is recorded.
+# Measured (bench/longhorizon/FINDINGS.md): a stored rule transfers, a stored instance does not.
 MEMORY_FLIP_NUDGE = (
     "[harness memory] Verify flipped green and nothing is recorded in the"
     " memory dir this run; it takes a durable non-obvious repo fact as a"
@@ -323,23 +291,28 @@ MEMORY_FINISH_NUDGE = (
 )
 
 
-# A line that asks: its last '?' is followed only by decoration and at most
-# one short parenthesized tail ("proceed? (y/n)", "**which?**", "…?\"").
+# A line that asks: its last '?' is followed only by decoration and at most one short parenthesis.
 _ASKS = re.compile(r"\?[\s)\"'`*_\]]*(?:\([^()]{0,24}\))?[\s)\"'`*_\]]*$")
-# An option line under a question: "1. yes", "2) no", "- keep", "* drop",
-# "a) first". The question stays the ask when only options follow it.
+# An option line under a question ("1. yes", "- keep", "a) first"); options after the ask keep it.
 _OPTION_LINE = re.compile(r"^(?:[-*]|\d{1,2}[.)]|[a-z][.)])\s")
 
 
 def _asks(line: str) -> bool:
+    """Return whether the line ends in a question."""
     return _ASKS.search(line) is not None
 
 
 def ending_question(text: str) -> str:
-    """The question at the end of the model's prose, or ``""``.
+    """Return the question at the end of the model's prose, or "".
 
-    Option lines may follow the question; return the asking line rather than
-    the final option so a later steer is recorded against the right ruling.
+    Option lines may follow the question; the asking line is returned rather than the final
+    option, so a later steer is recorded against the right ruling.
+
+    Args:
+        text: The model's prose.
+
+    Returns:
+        The asking line, or "".
     """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if not lines:
@@ -353,13 +326,12 @@ def ending_question(text: str) -> str:
 
 
 def ends_with_question(text: str) -> bool:
-    """Whether the model's prose ends with a question and optional choices."""
+    """Return whether the model's prose ends with a question and optional choices."""
     return bool(ending_question(text))
 
 
 def standing_fruitless_nudge(reason: str, task_id: str, title: str, streak: int) -> str:
-    """The re-entry notice once a round landed nothing: the same continuation
-    with a harder push."""
+    """Return the re-entry notice for a round that landed nothing."""
     return (
         f"[harness] The run would have ended here ({reason}), and nothing has"
         f" landed since the last re-entry (fruitless round {streak}). The"
@@ -371,8 +343,7 @@ def standing_fruitless_nudge(reason: str, task_id: str, title: str, streak: int)
 
 
 def standing_resume_nudge(reason: str, task_id: str, title: str) -> str:
-    """The soft-end conversion for a run with a standing task: instead of
-    ending, the loop re-enters the standing goal with this notice."""
+    """Return the notice that re-enters the standing goal in place of a soft end."""
     return (
         f"[harness] The run would have ended here ({reason}), but the standing"
         f" task ({task_id}: {title}) continues. Re-enter it now: pick the next"
@@ -384,9 +355,15 @@ def standing_resume_nudge(reason: str, task_id: str, title: str) -> str:
 
 
 def is_test_path(path: str) -> bool:
-    """Path names a test file by the common Python conventions: a
-    test_*.py / *_test.py basename, or any tests/test directory segment
-    (conftest.py included via its directory)."""
+    """Return whether the path names a test file by the common Python conventions.
+
+    Args:
+        path: The path, repo-relative.
+
+    Returns:
+        True for a `test_*.py` or `*_test.py` basename, or any `tests` or `test` directory
+        segment.
+    """
     parts = path.replace("\\", "/").split("/")
     name = parts[-1]
     return (
@@ -401,9 +378,16 @@ TEST_ONLY_LIST_CAP = 12
 
 
 def test_only_green_notice(paths: Sequence[str]) -> str:
-    """The gate was red at the last verify and green at this one, and every
-    file changed in between is a test file: the flip alone renders as an
-    ordinary success, so the notice names them (world state, no advice)."""
+    """Return the notice for a red-to-green flip whose changed files are all tests.
+
+    The flip alone renders as an ordinary success, so the notice names the files.
+
+    Args:
+        paths: The files changed between the two verifies.
+
+    Returns:
+        The notice, listing at most `TEST_ONLY_LIST_CAP` paths.
+    """
     shown = sorted(paths)[:TEST_ONLY_LIST_CAP]
     more = len(paths) - len(shown)
     listed = ", ".join(shown) + (f" (+{more} more)" if more else "")

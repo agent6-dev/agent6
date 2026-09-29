@@ -1,21 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Context-window management for the agent loop.
+"""Context-window management for the agent loop: the pure compaction rules.
 
-Two tiers keep a long run inside the model's context window:
-
-- tier 1 (`compact_old_tool_results`): at `DROP_BLOCKS_AT_CHARS` the oldest
-  tool_result blocks are replaced by `ELISION_PLACEHOLDER`; large read_file
-  results decay through a distilled-gist placeholder first when the caller
-  provides a `gister` (see below).
-- tier 2 (`context_chars` vs `SUMMARISE_AT_CHARS`): the elided history is
-  summarised and the conversation restarts from (task + summary).
-
-`cap_tool_result` separately bounds a single tool_result so one huge payload
-cannot blow the budget on the turn it arrives. Everything here is a pure
-function of the conversation; the loop owns the policy of when to call them
-and supplies the one impure seam (the `gister` callable that distills
-about-to-be-elided file reads with the summariser model).
+Tier 1 (`compact_old_tool_results`) replaces the oldest tool_result blocks
+with placeholders at `DROP_BLOCKS_AT_CHARS`; a large read_file result decays
+through a distilled-gist placeholder first when the caller provides a
+`gister`. Tier 2 (`context_chars` against `SUMMARISE_AT_CHARS`) is the
+summarise-and-restart the driver in `_compactor` runs. `cap_tool_result`
+bounds a single tool_result on the turn it arrives. The loop owns when to
+call these and supplies the one impure seam, the `gister`.
 """
 
 from __future__ import annotations
@@ -40,8 +33,7 @@ from agent6.providers import CLAUDE_CODE_PERSIST_BYTES, Provider
 from agent6.providers.types import ToolDefinition
 from agent6.tools.schema import AskUserInput
 
-# Stable prefix shared by every placeholder variant: idempotency checks and
-# tests key on it.
+# Every placeholder variant shares the prefix: idempotency checks and tests key on it.
 ASK_USER_TOOL = AskUserInput.TOOL_NAME
 ELISION_PREFIX = "<elided by context compaction"
 
@@ -52,28 +44,30 @@ ELISION_PLACEHOLDER = (
     "read_file start_line/limit; do not re-issue the identical call.>"
 )
 
-# Gist placeholders share ELISION_PREFIX (idempotency walks key on it) but are
-# distinguishable so continued pressure can demote them to the bare marker.
+# Distinguishable from the bare marker, so continued pressure can demote a gist to it.
 ELISION_GIST_PREFIX = ELISION_PREFIX + " (distilled)"
 
-# How much of a tool arg the placeholder echoes. Placeholders stay in context,
-# so the identity hint must stay short.
+# Placeholders stay in context, so the identity hint stays short.
 _ELISION_HINT_MAX_CHARS = 120
 
 
-# The argument that identifies a call, tried in order. Named tools are not
-# enumerated here: anything carrying one of these gets a label, so a tool added
-# later is never silently anonymous in a compacted transcript. It matters most
-# for `run_command`: a placeholder reading just "run_command" leaves the model
-# unable to tell whether it already ran the suite.
+# The argument that identifies a call, tried in order; keyed on arguments, not tool
+# names, so a tool added later is never anonymous in a compacted transcript.
 _IDENTIFYING_KEYS: Final = ("path", "argv", "symbol", "name", "id", "url", "query")
 
 
 def call_label(tool_name: str, tool_input: Any) -> str:
-    """Short identity for a tool call ("read_file src/foo.py").
+    """Return a short identity for a tool call, such as "read_file src/foo.py".
 
-    The placeholder hint, shared with the `loop.compact.*` event payloads so
-    every surface can say WHAT left the model's context, not just how much.
+    The placeholder hint and the `loop.compact.*` event payloads share it, so
+    every surface can say what left the model's context.
+
+    Args:
+        tool_name: The tool's name.
+        tool_input: The model's input to the tool.
+
+    Returns:
+        The name plus the identifying argument, clipped.
     """
     if not tool_name or not isinstance(tool_input, dict):
         return tool_name
@@ -99,19 +93,22 @@ def call_label(tool_name: str, tool_input: Any) -> str:
 
 
 def elision_placeholder(tool_name: str, tool_input: Any) -> str:
-    """Identity-bearing tier-1 placeholder.
+    """Return the tier-1 placeholder naming the elided call.
 
-    Names the elided call (tool + its key argument) so the model can re-issue
-    or skip it without scanning up for the paired tool_use block; under a bare
-    marker weak models lose track of what was elided and re-read the wrong
-    files. Unknown tool (orphan result) falls back to the generic marker.
+    The model can re-issue or skip the call without scanning up for the paired
+    tool_use block.
+
+    Args:
+        tool_name: The tool's name; "" for an orphan result.
+        tool_input: The model's input to the tool.
+
+    Returns:
+        The placeholder, the generic marker for an unknown tool.
     """
     if not tool_name or not isinstance(tool_input, dict):
         return ELISION_PLACEHOLDER
     described = call_label(tool_name, tool_input)
-    # Only read_file takes a range, so only it can be told to re-read one;
-    # start_line/limit named for a run_command result leaves the model no
-    # legal move next to "do not re-issue the identical call".
+    # Only read_file takes a range, so only it can be told to re-read one.
     retry = (
         "re-read only the part you need (read_file with a targeted start_line/limit)"
         if tool_name == "read_file"
@@ -124,16 +121,10 @@ def elision_placeholder(tool_name: str, tool_input: Any) -> str:
     )
 
 
-# Distilled-gist elision. Measured (bench/longhorizon FINDINGS #1): under a
-# small-window regime tier-1 elision of reference docs halves a retention
-# task's score (0.921 -> 0.425) and every redundant read is post-drop, while
-# code files are cheaply re-readable. So a large read_file result about to be
-# elided decays in two stages: first to a placeholder carrying a model-written
-# gist of the file, then (under continued pressure) to
-# the bare identity marker, so the hard byte bound always holds. The caps
-# bound the distiller call per drop event; hot files (protect_paths) are never
-# gisted because their content is changing under edits and a stale gist would
-# mislead.
+# Measured (bench/longhorizon FINDINGS #1): under a small window, bare elision of
+# reference docs halves a retention task's score (0.921 -> 0.425), so a large read
+# decays content -> gist -> bare marker. The caps bound the distiller call per drop
+# event; a hot file (protect_paths) is never gisted, since a stale gist misleads.
 GIST_MIN_SOURCE_CHARS = 2_000  # below this the content is nearly gist-sized
 GIST_MAX_CHARS = 400  # per gist, clipped
 GIST_FILE_SLICE_CHARS = 8_000  # per-file head sent to the distiller
@@ -143,25 +134,31 @@ GIST_MAX_FILES_PER_CALL = 12
 
 @dataclass(frozen=True, slots=True)
 class GistRequest:
-    """One file whose about-to-be-elided read_file content should be distilled."""
+    """One file whose about-to-be-elided read_file content is to be distilled.
+
+    Attributes:
+        path: The file's path as the call named it.
+        content: The head of the file text sent to the distiller.
+    """
 
     path: str
     content: str
 
 
-# The impure seam: called once per drop event with the batch of eligible
-# reads; returns path -> distilled gist (missing paths fall back to the bare
-# placeholder). The loop binds this to the summariser model; on provider
-# failure it returns {}.
+# The impure seam, called once per drop event; a path it misses gets the bare marker.
 Gister = Callable[[tuple[GistRequest, ...]], Mapping[str, str]]
 
 
 @dataclass(frozen=True, slots=True)
 class CompactionStats:
-    """One tier-1 pass: the identities (`call_label` strings, read paths) of
-    the identical results deduplicated, the old tool_results elided, the
-    gists among them, and the gist placeholders demoted to the bare marker.
-    A count is the length of its tuple."""
+    """What one tier-1 pass did; a count is the length of its tuple.
+
+    Attributes:
+        elided_calls: The `call_label` of each tool_result elided.
+        gist_paths: The paths whose elision kept a gist.
+        demoted_paths: The paths whose gist was demoted to the bare marker.
+        deduped_calls: The `call_label` of each duplicate result replaced.
+    """
 
     elided_calls: tuple[str, ...] = ()
     gist_paths: tuple[str, ...] = ()
@@ -170,13 +167,17 @@ class CompactionStats:
 
 
 def elision_gist_placeholder(described: str, gist: str) -> str:
-    """Tier-1 placeholder that keeps a distilled gist of the elided read.
+    """Return the tier-1 placeholder that keeps a distilled gist of the elided read.
 
-    Takes the caller's `call_label` rather than rebuilding one, so the gist
-    and bare markers carry the SAME identity (the conversation differ dedupes a
-    gist->bare demotion on it). Rebuilt from the path alone it would drop a
-    ranged read's start_line/limit, and every demotion would re-report as a
-    fresh elision.
+    The gist and bare markers carry the same `call_label`, so the conversation
+    differ reads a demotion as one, not as a fresh elision.
+
+    Args:
+        described: The call's `call_label`.
+        gist: The distilled gist.
+
+    Returns:
+        The placeholder.
     """
     return (
         f"{ELISION_GIST_PREFIX}: the result of {described} was replaced "
@@ -186,12 +187,16 @@ def elision_gist_placeholder(described: str, gist: str) -> str:
 
 
 def read_file_text_from_result(raw: str) -> str:
-    """The file text inside a serialized read_file tool_result.
+    """Return the file text inside a serialized read_file tool_result.
 
-    Unwraps the {"content": ...} result shape (and the truncation envelope's
-    "head") so the distiller sees file text, not JSON escapes. An error result
-    returns "" (nothing worth distilling); any other shape falls back to the
-    raw payload.
+    The distiller sees file text, not JSON escapes.
+
+    Args:
+        raw: The serialized result.
+
+    Returns:
+        The `content` field, the truncation envelope's `head`, "" for an error
+        result, else the raw payload.
     """
     try:
         data = json.loads(raw)
@@ -210,10 +215,16 @@ def read_file_text_from_result(raw: str) -> str:
 
 
 def parse_gist_lines(text: str, paths: Sequence[str]) -> dict[str, str]:
-    """path -> gist from the distiller's one-line-per-file reply.
+    """Return path to gist from the distiller's one-line-per-file reply.
 
-    Tolerant of list markers and backticks around the path; a file the reply
-    misses simply keeps the bare placeholder, and unknown paths are ignored.
+    List markers and backticks around the path are tolerated.
+
+    Args:
+        text: The distiller's reply.
+        paths: The paths asked for; any other is ignored.
+
+    Returns:
+        The gists for the paths the reply names.
     """
     wanted = set(paths)
     out: dict[str, str] = {}
@@ -229,38 +240,36 @@ def parse_gist_lines(text: str, paths: Sequence[str]) -> dict[str, str]:
     return out
 
 
-# Per-tool-result cap: 60_000 bytes of UTF-8 (~15k tokens) fits most source
-# files whole. Anything over it is wrapped by cap_tool_result in a well-formed
-# JSON truncation notice: a raw mid-JSON slice reads as a malformed result,
-# and a weak model re-calls `read_file` to "see the rest" until the loop-guard
-# latches. Bytes, because the bound that displaces this default when a Claude
-# Code provider drives the session (its 50,000-byte persistence threshold) is
-# measured in bytes.
+# 60_000 bytes of UTF-8 (~15k tokens) fits most source files whole; bytes, because the
+# Claude Code provider's persistence threshold that displaces it is measured in bytes.
 TOOL_RESULT_CAP_BYTES = 60_000
 
-# A Claude Code turn carries the capped result and the turn's trailing
-# notices in one tool_result, and the whole stays under the provider's
-# persist threshold with the notices at their largest: a verify
-# tail of VERIFY_TAIL_CHARS four-byte characters, a review critique of
-# REVIEW_NOTICE_BYTES, and the nudges and framing around them.
+# A Claude Code turn's tool_result carries the trailing notices too, and the whole
+# stays under the persist threshold with the notices at their largest.
 CLAUDE_CODE_NOTICE_ROOM_BYTES = 4 * VERIFY_TAIL_CHARS + REVIEW_NOTICE_BYTES + 4_000
 CLAUDE_CODE_RESULT_CAP_BYTES = CLAUDE_CODE_PERSIST_BYTES - CLAUDE_CODE_NOTICE_ROOM_BYTES
 
-# compaction thresholds (chars, not tokens - approximate; tokens
-# are roughly chars/4 for English-shaped content).
+# Chars, not tokens: tokens are roughly chars/4 for English-shaped content.
 DROP_BLOCKS_AT_CHARS = 256_000  # ~64k tokens of tool_result content
 SUMMARISE_AT_CHARS = 768_000  # ~192k tokens: full context restart
 
 
 def cap_tool_result(content: str, *, tool_name: str, cap: int = TOOL_RESULT_CAP_BYTES) -> str:
-    """Cap a serialized tool_result payload at *cap* bytes of UTF-8 (the loop's
-    `TOOL_RESULT_CAP_BYTES`, or a provider's tighter bound) without producing
-    malformed JSON. If the payload is over the
-    cap, wrap it in a new JSON envelope that tells the model:
-    (a) the result was truncated, (b) how many chars were shown vs
-    total, (c) the head of the original content, (d) actionable next
-    steps. This prevents weak models from inferring "the tool itself
-    returned a partial result, let me call it again"."""
+    """Cap a serialized tool_result payload without producing malformed JSON.
+
+    A payload over the cap becomes a JSON envelope that says it was truncated,
+    how many chars were shown of the total, the head of the content, and what
+    to call next; a raw mid-JSON slice reads as a partial result the model
+    re-calls for.
+
+    Args:
+        content: The serialized result.
+        tool_name: The tool's name; picks the guidance.
+        cap: The bound in bytes of UTF-8.
+
+    Returns:
+        The payload unchanged when it fits, else the envelope.
+    """
     if len(content.encode()) <= cap:
         return content
     if tool_name == "read_file":
@@ -296,12 +305,8 @@ def cap_tool_result(content: str, *, tool_name: str, cap: int = TOOL_RESULT_CAP_
             ensure_ascii=False,
         )
 
-    # Size the head by ENCODED length: json.dumps re-escapes quotes/backslashes
-    # and a wide character is several bytes, so a raw-char budget overshoots
-    # the cap on escape-heavy or CJK content (observed 118k emitted against
-    # the 60k cap). Encoded length is monotone in head length and the empty
-    # head always fits, so bisect for the largest head whose envelope fits
-    # (~16 dumps passes).
+    # Bisect on encoded length: escapes and wide characters make a raw-char budget
+    # overshoot the cap (118k emitted against 60k observed).
     lo, hi = 0, min(len(content), cap)
     while lo < hi:
         mid = (lo + hi + 1) // 2
@@ -316,14 +321,18 @@ _CHECKOFF_FENCE_RE = re.compile(r"```checkoff\s*\n(.*?)\n```", re.DOTALL)
 
 
 def parse_checkoff(text: str) -> tuple[list[str], list[str]]:
-    """Extract a tier-2 compaction check-off from the summariser's output.
+    """Extract the tier-2 check-off block from the summariser's reply.
 
-    The summariser is asked to append a fenced ```checkoff block holding
-    `{"completed_ids": [...], "new_tasks": [...]}` so agent6 can mark finished
-    tasks done and queue newly-discovered ones in the curator-owned DAG (the
-    model rarely calls update_task itself). Returns
-    `(completed_ids, new_task_titles)`. Best-effort and total: a missing or
-    malformed block yields `([], [])` so a bad summary never breaks the run.
+    The summariser appends a fenced checkoff block holding `completed_ids` and
+    `new_tasks`, so the DAG stays accurate without the worker calling
+    update_task.
+
+    Args:
+        text: The summariser's reply.
+
+    Returns:
+        (completed ids, new task titles); ([], []) for a missing or malformed
+        block, so a bad summary never breaks the run.
     """
     m = _CHECKOFF_FENCE_RE.search(text)
     if m is None:
@@ -338,48 +347,65 @@ def parse_checkoff(text: str) -> tuple[list[str], list[str]]:
 
 
 def _nonempty_strs(value: object) -> list[str]:
-    """The stripped, non-empty strings in a JSON *value*, or [] if it is not a
-    list. Keeps parse_checkoff total: a present-but-non-list field (`null`
-    when nothing completed, a number, a bool -- all natural summariser output)
-    yields [] rather than raising when iterated."""
+    """Return the stripped, non-empty strings in a JSON value.
+
+    Args:
+        value: The parsed field; `null`, a number or a bool are natural
+            summariser output.
+
+    Returns:
+        The strings, [] when the value is not a list.
+    """
     if not isinstance(value, list):
         return []
     return [s.strip() for s in value if isinstance(s, str) and s.strip()]
 
 
 def strip_checkoff(text: str) -> str:
-    """Remove the ```checkoff block from a summary before it re-enters context;
-    it is agent6 bookkeeping, not narrative the restarted worker should re-read."""
+    """Remove the checkoff block from a summary before it re-enters context.
+
+    Args:
+        text: The summariser's reply.
+
+    Returns:
+        The narrative alone, stripped.
+    """
     return _CHECKOFF_FENCE_RE.sub("", text).strip()
 
 
 def context_chars(conversation: Conversation) -> int:
-    """Approximate the full character size of the conversation context.
+    """Return the character size of the conversation context.
 
-    Sums notice text, tool_result content, and -- for assistant turns -- every
-    value of every raw block, because `Conversation.to_wire` sends those
-    blocks VERBATIM: whatever is in them is in each later request. Used as the
-    tier-2 (summarise-and-restart) trigger, which must measure something tier-1
-    elision does not already cap, against ~80% of the model's real context
-    window.
+    Notice text, tool_result content and every value of every assistant raw
+    block count, since `to_wire` sends those blocks verbatim; counting known
+    keys alone would score a thinking block as zero. The tier-2 trigger
+    measures this against about 80% of the model's window.
 
-    Whole blocks rather than a list of known keys: counting only text/content/
-    tool_use-input scores a reasoning model's `{"type": "thinking", ...}` as
-    zero, leaving tier-2 to wait on a number that omits the largest thing in
-    the context. A block type nobody has met yet must not be free either.
+    Args:
+        conversation: The loop's history.
+
+    Returns:
+        The sum over the turns.
     """
     return sum(turn_chars(turn) for turn in conversation.turns)
 
 
 def turn_chars(turn: Turn) -> int:
-    """One turn's contribution to :func:`context_chars`."""
+    """Return one turn's contribution to `context_chars`.
+
+    Args:
+        turn: The turn.
+
+    Returns:
+        Its character count, "type" keys excluded.
+    """
     if isinstance(turn, AssistantTurn):
         total = 0
         for item in turn.raw_content:
             if not isinstance(item, dict):
                 total += len(str(item))
                 continue
-            # "type" is the discriminator, not payload; everything else is.
+            # "type" is the discriminator, not payload.
             total += sum(
                 len(v if isinstance(v, str) else str(v))
                 for k, v in item.items()
@@ -391,24 +417,28 @@ def turn_chars(turn: Turn) -> int:
     )
 
 
-# Verbatim recent-history tail kept through a tier-2 restart, sized to pi's
-# keepRecentTokens default (20k tokens ~= 80k chars). `[context]
+# The verbatim tail a tier-2 restart keeps, about 20k tokens; `[context]
 # keep_recent_chars` overrides.
 KEEP_RECENT_CHARS = 80_000
 
 
 @dataclass(frozen=True, slots=True)
 class CompactionSettings:
-    """Context compaction as the run configures it. Tier 1 at `drop_at_chars`
-    turns the oldest tool results into placeholders, a large read decaying
-    through a model-written gist first when `elision_gists` is on; tier 2 at
-    `summarise_at_chars` has `summariser` (the reviewer role; the worker
-    when None) summarise the elided history into `summary_max_tokens` and
-    restarts the conversation from the task, the summary and the last
-    `keep_recent_chars` verbatim. `keep_thinking_turns` drops thinking
-    blocks from assistant turns older than that many at tier-1 moments (0
-    keeps all). `tool_result_cap_bytes` bounds one result before it enters
-    the conversation."""
+    """Context compaction as the run configures it.
+
+    Attributes:
+        drop_at_chars: Tier 1 turns the oldest tool results into placeholders
+            past this.
+        summarise_at_chars: Tier 2 summarises and restarts past this.
+        tool_result_cap_bytes: The bound on one result before it enters the
+            conversation.
+        keep_recent_chars: The verbatim tail a restart keeps.
+        keep_thinking_turns: Thinking blocks are dropped from assistant turns
+            older than this many at tier-1 moments; 0 keeps all.
+        elision_gists: A large read decays through a model-written gist first.
+        summary_max_tokens: The summariser's output cap.
+        summariser: The reviewer role's provider; the worker's when None.
+    """
 
     drop_at_chars: int = DROP_BLOCKS_AT_CHARS
     summarise_at_chars: int = SUMMARISE_AT_CHARS
@@ -421,11 +451,18 @@ class CompactionSettings:
 
 
 def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[int, int]:
-    """Drop thinking blocks from assistant turns older than the newest
-    *keep_turns* assistant turns (Claude Code clears old thinking the same
-    way). The newest stay: Anthropic requires the signed thinking block of a
-    tool_use still being answered, so callers pass `keep_turns >= 1`.
-    Returns (turns stripped, chars removed)."""
+    """Drop thinking blocks from assistant turns older than the newest few.
+
+    Anthropic requires the signed thinking block of a tool_use still being
+    answered, so callers pass at least 1.
+
+    Args:
+        conversation: The loop's history.
+        keep_turns: How many of the newest assistant turns keep their thinking.
+
+    Returns:
+        (turns stripped, chars removed).
+    """
     assistant_idxs = [
         i for i, turn in enumerate(conversation.turns) if isinstance(turn, AssistantTurn)
     ]
@@ -439,14 +476,20 @@ def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[
 
 
 def request_prefix_chars(system: str, tools: Sequence[ToolDefinition]) -> int:
-    """The chars every request carries besides the conversation: the system
-    prompt and the tool definitions.
+    """Return the chars every request carries besides the conversation.
 
-    The model's window bounds the WHOLE request, so a threshold measured on the
-    conversation alone leaves a band, exactly the size of this prefix, where
-    the loop sees room and the provider answers 400 (prompt too long), and a
-    resumed execution re-issues the same over-window request.
-    The system prompt is the unbounded half: AGENTS.md rides in it whole."""
+    The window bounds the whole request, so a threshold on the conversation
+    alone leaves a band the size of this prefix where the loop sees room and
+    the provider refuses. AGENTS.md rides in the system prompt whole.
+
+    Args:
+        system: The system prompt.
+        tools: The tool definitions.
+
+    Returns:
+        The system prompt's length plus each tool's name, description and
+        compact schema.
+    """
     return len(system) + sum(
         len(t.name) + len(t.description) + len(json.dumps(t.input_schema, separators=(",", ":")))
         for t in tools
@@ -454,15 +497,19 @@ def request_prefix_chars(system: str, tools: Sequence[ToolDefinition]) -> int:
 
 
 def recent_tail_start(turns: Sequence[Turn], cap_chars: int) -> int:
-    """The index where a tier-2 restart's verbatim tail begins: the largest
-    tail of whole turns within *cap_chars* that starts on a wire-safe
-    boundary. Returns `len(turns)` when nothing is kept (cap 0, or no safe
-    boundary fits).
+    """Return the index where a tier-2 restart's verbatim tail begins.
 
-    A safe start is any turn except a user turn carrying tool_results: that
-    turn answers the assistant turn BEFORE it, which the restart summarised
-    away, and an unanswered pairing is a provider refusal. Turn 0 (the task)
-    is never part of the tail; the restart always keeps it separately.
+    A safe start is any turn except a user turn carrying tool_results, which
+    answers the assistant turn before it. Turn 0, the task, is never part of
+    the tail; the restart keeps it separately.
+
+    Args:
+        turns: The conversation's turns.
+        cap_chars: The tail's size cap.
+
+    Returns:
+        The start of the largest tail of whole turns within the cap on a safe
+        boundary; `len(turns)` when nothing is kept.
     """
     if cap_chars <= 0:
         return len(turns)
@@ -479,9 +526,8 @@ def recent_tail_start(turns: Sequence[Turn], cap_chars: int) -> int:
     while start < len(turns) and _starts_with_results(turns[start]):
         start += 1
     if start == len(turns):
-        # The newest exchange alone exceeds the cap: keep it anyway. It holds
-        # the model's freshest (possibly still undelivered) results, and
-        # paraphrasing those away is the one loss the tail exists to prevent.
+        # The newest exchange exceeds the cap alone: keep it anyway, since paraphrasing
+        # undelivered results away is the one loss the tail exists to prevent.
         assistant_idxs = [i for i in range(1, len(turns)) if isinstance(turns[i], AssistantTurn)]
         if assistant_idxs:
             start = assistant_idxs[-1]
@@ -494,21 +540,26 @@ def _starts_with_results(turn: Turn) -> bool:
     )
 
 
-# Target headers in a unified diff (`+++ b/PATH`) or a v4a patch
-# (`*** Update|Add File: PATH`). One apply_patch call may carry several files.
+# Target headers in a unified diff (`+++ b/PATH`) or a v4a patch (`*** Update File:`).
 _PATCH_TARGET_RE = re.compile(
     r"^(?:\+\+\+ b/(?P<u>\S+)|\*\*\* (?:Update|Add) File: (?P<v>.+))$", re.MULTILINE
 )
 
 
 def recently_edited_paths(conversation: Conversation, *, last_turns: int = 8) -> frozenset[str]:
-    """Paths targeted by apply_edit / apply_patch in the last *last_turns*
-    assistant turns: the files the worker is actively editing. Tier-1
-    elision deprioritises their read_file results (see
-    `compact_old_tool_results`), because a placeholder there triggers a paid
-    re-read before the very next edit. Best-effort: an apply_patch without a
-    `path` argument falls back to the patch headers; an unparseable patch
-    just goes unprotected.
+    """Return the paths apply_edit and apply_patch targeted in the newest turns.
+
+    Tier-1 elision deprioritises these files' reads, since a placeholder there
+    triggers a paid re-read before the next edit. An apply_patch without a
+    `path` argument falls back to the patch headers; an unparseable patch goes
+    unprotected.
+
+    Args:
+        conversation: The loop's history.
+        last_turns: How many of the newest assistant turns count.
+
+    Returns:
+        The paths.
     """
     out: set[str] = set()
     seen_assistant = 0
@@ -535,7 +586,14 @@ def recently_edited_paths(conversation: Conversation, *, last_turns: int = 8) ->
 def _tool_result_pointers(
     conversation: Conversation,
 ) -> tuple[list[tuple[int, int, int]], int]:
-    """((turn_idx, item_idx, size) per tool_result, total size) in order."""
+    """Return every tool_result's position and size, in order.
+
+    Args:
+        conversation: The loop's history.
+
+    Returns:
+        ((turn index, item index, size) per result, total size).
+    """
     pointers: list[tuple[int, int, int]] = []
     total = 0
     for turn_idx, turn in enumerate(conversation.turns):
@@ -550,11 +608,16 @@ def _tool_result_pointers(
 
 
 def count_elisions(conversation: Conversation) -> tuple[int, int]:
-    """The count of elision markers in the context, and of live gists among them.
+    """Count the elision markers in the context, and the live gists among them.
 
-    A resumed or forked execution re-announces these: a fork's fresh logs.jsonl has
-    no compact.dropped events to fold, so the status surfaces would otherwise
-    report zero over a restored context full of markers.
+    A resumed or forked execution re-announces these, since its fresh log has
+    no compaction events to fold.
+
+    Args:
+        conversation: The loop's history.
+
+    Returns:
+        (markers, gists).
     """
     elided = gists = 0
     for turn in conversation.turns:
@@ -574,43 +637,34 @@ def compact_old_tool_results(
     protect_paths: frozenset[str] = frozenset(),
     gister: Gister | None = None,
 ) -> CompactionStats:
-    """Elide old tool_result blocks once cumulative content exceeds the
-    threshold. Walks the conversation oldest-first, replaces each tool_result's
-    `content` with a short identity-bearing placeholder, stops once total
-    size is back under `max_total_bytes`. The most recent `keep_recent`
-    are always preserved, as is every tool_result in the newest result turn
-    until an assistant turn has consumed it: the loop compacts at
-    top-of-iteration, before the provider call that would deliver a fresh
-    batch, so the placeholder's "re-call the tool" guidance would trigger a
-    paid re-call cycle. (Keying on the final turn alone is not enough: a
-    trailing steer or nudge user turn pushes fresh, still undelivered results
-    off the final index, and one turn can carry several such blocks.)
+    """Elide old tool_result blocks once their content exceeds the threshold.
 
-    `protect_paths` (the actively-edited set from `recently_edited_paths`)
-    deprioritises rather than exempts: read_file results for those paths are
-    elided only after every other candidate, so the hot file's content
-    survives as long as the budget allows but the hard bound still holds.
+    The walk is oldest-first and stops once the total is back under the bound.
+    The newest `keep_recent` results stay, as does every result in the newest
+    result turn until an assistant turn has consumed it: the loop compacts
+    before the provider call that would deliver it, and a placeholder there
+    triggers a paid re-call. Protected reads are elided only after every other
+    candidate. With a gister, a large unprotected read decays to a gist
+    placeholder; when the total still exceeds the bound, gists are demoted
+    oldest-first to the bare marker, after even the protected reads: losing a
+    gist costs correctness, losing a hot read one paid re-read. Idempotent on
+    already-elided entries.
 
-    With a `gister`, each large unprotected read_file victim decays to a
-    placeholder carrying a distilled gist of the file (one batched distiller
-    call per pass, newest read per path, caps above); everything else gets the
-    bare marker. Gists make the pass land slightly OVER the bare-accounting
-    plan, so when the applied total still exceeds the budget, existing gist
-    placeholders are demoted oldest-first to the bare marker: content decays
-    content -> gist -> bare marker, and the spec facts survive the longest
-    while the byte bound still holds (in the limit everything is bare).
-    Demotion runs after even the protected reads are elided: losing a gist
-    costs correctness (the file is gone from context), losing a hot read costs
-    one paid re-read.
+    Args:
+        conversation: The loop's history, rewritten in place.
+        max_total_bytes: The bound on tool_result content.
+        keep_recent: How many of the newest results always stay.
+        protect_paths: The actively-edited paths from `recently_edited_paths`.
+        gister: The distiller; None elides to bare markers.
 
-    Idempotent on already-elided entries.
+    Returns:
+        What the pass did.
     """
     pointers, total = _tool_result_pointers(conversation)
     if total <= max_total_bytes or len(pointers) <= keep_recent:
         return CompactionStats()
 
-    # Dedup first: freeing duplicate bytes is lossless, and may spare real
-    # content from elision below (or make it unnecessary).
+    # Dedup first: freeing duplicate bytes is lossless and may spare real content.
     deduped_calls = _dedupe_identical_results(conversation, pointers, keep_recent=keep_recent)
     if deduped_calls:
         pointers, total = _tool_result_pointers(conversation)
@@ -658,12 +712,17 @@ def compact_old_tool_results(
 
 
 def _is_operator_answer(item: ToolResultItem) -> bool:
-    """Whether this result is the operator's answer to an `ask_user`.
+    """Return whether the result is the operator's answer to an `ask_user`.
 
-    Exempt from elision and dedup: it is a binding ruling that exists nowhere
-    else in the model's context, and the placeholder's advice ("re-run it")
-    means interrupting the operator to re-ask a question they have already
-    answered. A handful of answers costs less than the re-ask."""
+    An answer is exempt from elision and dedup: it is a binding ruling that
+    exists nowhere else in the context, and a re-run would re-ask the operator.
+
+    Args:
+        item: The result.
+
+    Returns:
+        True for an `ask_user` result.
+    """
     return item.for_call.name == ASK_USER_TOOL
 
 
@@ -678,15 +737,22 @@ def _result_at(conversation: Conversation, turn_idx: int, item_idx: int) -> Tool
 def _undelivered_result_turn(
     conversation: Conversation, pointers: list[tuple[int, int, int]]
 ) -> int | None:
-    """The newest result turn when no assistant turn has consumed it yet."""
+    """Return the newest result turn when no assistant turn has consumed it yet.
+
+    Args:
+        conversation: The loop's history.
+        pointers: The result positions from `_tool_result_pointers`.
+
+    Returns:
+        The turn index, or None once an assistant turn follows it.
+    """
     last_result = max(turn_idx for turn_idx, _, _ in pointers)
     if any(isinstance(turn, AssistantTurn) for turn in conversation.turns[last_result + 1 :]):
         return None
     return last_result
 
 
-# Below this a duplicate's pointer placeholder is barely smaller than the
-# content it replaces.
+# Below this a duplicate's placeholder is barely smaller than the content it replaces.
 _DEDUP_MIN_CHARS = 200
 
 
@@ -696,19 +762,21 @@ def _dedupe_identical_results(
     *,
     keep_recent: int,
 ) -> tuple[str, ...]:
-    """History-wide identical-result dedup, the tier-1 pass's first step.
+    """Replace every copy but the newest of a byte-identical result with a placeholder.
 
-    When the same call (name + input) produced byte-identical content more
-    than once, every copy but the newest becomes a short placeholder. It runs
-    only here, where history is being rewritten anyway, so it adds no new
-    cache-invalidation points. The placeholder points at no other
-    block, because the elision pass below can take the newest copy in the same
-    call. Claude Code dedupes the same way; pi, which only ever compacts at the
-    context edge, has no tier this could live in.
+    It runs only where history is being rewritten anyway, so it adds no
+    cache-invalidation points. The placeholder points at no other block, since
+    the elision pass can take the newest copy in the same call. The undelivered
+    final batch, the newest `keep_recent` results, already-elided placeholders,
+    operator answers and results under `_DEDUP_MIN_CHARS` are never rewritten.
 
-    The undelivered final batch, the `keep_recent` newest results,
-    already-elided placeholders, operator answers, and
-    sub-`_DEDUP_MIN_CHARS` results are never rewritten.
+    Args:
+        conversation: The loop's history, rewritten in place.
+        pointers: The result positions from `_tool_result_pointers`.
+        keep_recent: How many of the newest results always stay.
+
+    Returns:
+        The `call_label` of each copy replaced.
     """
     if len(pointers) <= keep_recent:
         return ()
@@ -743,9 +811,7 @@ def _dedupe_identical_results(
                 " re-read only the part you need; do not re-issue the identical call.>"
             )
             if len(marker) >= len(item.content):
-                # The label carries the call's arguments, so a long path can
-                # make the marker bigger than the result it replaces: writing
-                # it would GROW the total, as the elision pass also refuses to.
+                # A long path can make the marker bigger than the result it replaces.
                 continue
             conversation.set_result_content(turn_idx, item_idx, marker)
             labels.append(label)
@@ -754,8 +820,22 @@ def _dedupe_identical_results(
 
 @dataclass(slots=True)
 class _Tier1Pass:
-    """State shared by the phases of one tier-1 pass (the loop's `TurnState`
-    pattern: one mutable object instead of six hand-threaded locals)."""
+    """The state shared by the phases of one tier-1 pass.
+
+    Attributes:
+        conversation: The loop's history, rewritten in place.
+        max_total_bytes: The bound on tool_result content.
+        protect_paths: The actively-edited paths, never gisted.
+        candidates: The results the pass may rewrite, oldest-first, protected
+            reads last.
+        total: The tool_result content size as the pass stands.
+        victims: The candidates the plan elides.
+        gist_headroom: What a gist may add back on top of the bare plan.
+        gists: The distilled gists by victim position.
+        elided_calls: The `call_label` of each result elided.
+        gist_paths: The paths whose elision kept a gist.
+        demoted_paths: The paths whose gist was demoted.
+    """
 
     conversation: Conversation
     max_total_bytes: int
@@ -773,9 +853,10 @@ class _Tier1Pass:
         return _result_at(self.conversation, turn_idx, item_idx)
 
     def plan(self) -> None:
-        """Pick the victim set under bare-placeholder accounting (the maximum
-        shrink); nothing is mutated yet so the distiller can still read the
-        content."""
+        """Pick the victims under bare-placeholder accounting, the maximum shrink.
+
+        Nothing is mutated yet, so the distiller can still read the content.
+        """
         planned = self.total
         for turn_idx, item_idx, size in self.candidates:
             if planned <= self.max_total_bytes:
@@ -785,8 +866,7 @@ class _Tier1Pass:
                 continue
             placeholder = elision_placeholder(item.for_call.name, item.for_call.input)
             if size <= len(placeholder):
-                # Replacing content already smaller than the placeholder would
-                # GROW the total, defeating the point; skip it.
+                # Content smaller than the placeholder would grow the total.
                 continue
             self.victims.append((turn_idx, item_idx, size))
             planned -= size - len(placeholder)
@@ -794,9 +874,14 @@ class _Tier1Pass:
         self.gist_headroom = self.max_total_bytes - planned
 
     def distill(self, gister: Gister) -> None:
-        """One batched distiller call over the eligible victims: large
-        unprotected read_file results, the newest read per path, largest files
-        first under the input caps."""
+        """Make one batched distiller call over the eligible victims.
+
+        Eligible is a large unprotected read_file result, the newest read per
+        path, largest files first under the input caps.
+
+        Args:
+            gister: The distiller.
+        """
         newest_by_path: dict[str, tuple[int, int, int]] = {}
         for turn_idx, item_idx, size in self.victims:
             call = self._item(turn_idx, item_idx).for_call
@@ -828,12 +913,15 @@ class _Tier1Pass:
                 self.gists[keys[path]] = flat[:GIST_MAX_CHARS]
 
     def _landing_gists(self) -> dict[tuple[int, int], str]:
-        """The distilled placeholders that land, chosen NEWEST-first: the newest
-        read of a path is the one a later turn needs, and `demote` drops gists
-        oldest-first for the same reason. A gist no smaller than the content it
-        replaces never lands, nor does one costing more than the plan's headroom
-        (`demote` would strip it before this same pass returned). A gist shorter
-        than the bare marker adds its savings to the remaining headroom."""
+        """Return the gist placeholders that land, chosen newest-first.
+
+        The newest read of a path is the one a later turn needs. A gist no
+        smaller than the content it replaces never lands, nor one costing more
+        than the plan's headroom, which `demote` would strip in this same pass.
+
+        Returns:
+            The placeholder by victim position.
+        """
         headroom = max(self.gist_headroom, 0)
         landing: dict[tuple[int, int], str] = {}
         for turn_idx, item_idx, size in reversed(self.victims):
@@ -849,8 +937,7 @@ class _Tier1Pass:
         return landing
 
     def apply(self) -> None:
-        """Apply the whole plan (`plan` already chose the minimal set; gist
-        placeholders only add back what the plan's headroom holds)."""
+        """Rewrite every victim with its gist or bare placeholder."""
         landing = self._landing_gists()
         for turn_idx, item_idx, size in self.victims:
             call = self._item(turn_idx, item_idx).for_call
@@ -863,9 +950,7 @@ class _Tier1Pass:
             self.elided_calls.append(call_label(call.name, call.input))
 
     def demote(self) -> None:
-        """Still over budget (gist extras, or a shrunken budget with nothing
-        fresh left): demote gist placeholders oldest-first to the bare marker
-        until the bound holds or none remain."""
+        """Demote gist placeholders oldest-first to the bare marker while over budget."""
         if self.total <= self.max_total_bytes:
             return
         for turn_idx, item_idx, _size in self.candidates:

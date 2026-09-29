@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The operator's side of a run: the callables a front-end injects for
-steering, stopping and compacting the loop, the steer verbs, and the pin
-invariant."""
+"""Hold the operator's side of a run.
+
+The callables a front-end injects for steering, stopping and compacting the loop, the steer
+verbs, and the pin invariant.
+"""
 
 from __future__ import annotations
 
@@ -24,14 +26,11 @@ if TYPE_CHECKING:
     from agent6.harness._parallel_dispatch import ParallelDispatcher
     from agent6.tools.dispatch import ToolDispatcher
 
-# `/pin` instructions are re-injected verbatim after every tier-2 restart, so
-# their total is capped. Over the cap a pin lands as an ordinary steer (the
-# instruction still reaches the model once); only its survives-compaction
-# durability is refused.
+# `/pin` instructions are re-injected after every tier-2 restart, so their total is capped.
+# Over the cap a pin lands as an ordinary steer; only its survival across compaction is refused.
 PINS_MAX_CHARS = 4_000
 
-# The steer texts that end or hand over the run, as the operator types them:
-# the verb the loop acts on, the event that records it, the log line.
+# The steer texts that end or hand over the run: the verb, its event, its log line.
 STEER_VERBS: dict[str, tuple[str, str, str]] = {
     "abort": ("abort", "loop.steer.aborted", "abort - halting the run"),
     "exit": ("exit", "loop.steer.exited", "exit - halting the run and leaving the terminal"),
@@ -42,63 +41,67 @@ STEER_VERBS: dict[str, tuple[str, str, str]] = {
 
 @dataclass(frozen=True, slots=True)
 class OperatorBridge:
-    """What the operator can do to a running loop, as the front-end injects
-    it. The defaults do nothing: a loop with no operator runs unattended."""
+    """What the operator can do to a running loop, as the front-end injects it.
 
-    # Polled between iterations; on a positive the loop asks `steer_prompt`
-    # for the instruction (or "abort") and `steer_clear` consumes the request.
+    The defaults do nothing: a loop with no operator runs unattended.
+
+    Attributes:
+        steer_requested: Polled between iterations; a positive asks `steer_prompt`.
+        steer_clear: Consumes the steer request.
+        steer_prompt: The operator's instruction, or None.
+        steer_reset: Called at each execution entry; disarms a SIGINT stage the prior execution
+            never consumed, leaving the steer marker files alone.
+        compact_requested: Polled at the pre-call boundary; a positive forces the tier-2
+            summarise-and-restart. The marker travels the same file bridge as steer.
+        compact_clear: Consumes the compact request.
+        stop_requested: Polled at each completed-iteration boundary; a positive ends the run
+            cleanly there. The mid-turn immediate stop is the steer "abort" answer.
+        stop_clear: Consumes the stop request.
+        should_abort: Polled during a streaming call; True once the operator asked to stop.
+        should_interrupt: Polled during a streaming call; True once the operator asked to steer,
+            so the watchdog ends the turn and the loop reaches its steer boundary at once.
+        take_requests: What the operator queued for the graph (`/task`, `/standing`, `/retire`)
+            since the last call, oldest first.
+        after_auto_commit: Called with the iteration and sha of each landed auto-commit; "stop"
+            ends the loop as interactive_stop, "undo" takes the `/undo` path, "continue" runs on.
+        undo_forker: `/undo`: commits the tree onto the session's ref, forks the session before
+            its last operator message and restores that tree; returns the new session id and
+            the undone text, or None with the reason printed. Injected: harness never imports app.
+        lane_spawner: The ui-side group spawner `/parallel` dispatches through; None (headless,
+            or inside a lane) makes the directive answer with feedback and continue.
+    """
+
     steer_requested: Callable[[], bool] = field(default=lambda: False)
     steer_clear: Callable[[], None] = field(default=lambda: None)
     steer_prompt: Callable[[], str | None] = field(default=lambda: None)
-    # Called at each execution entry (run/resume): disarms a SIGINT stage the prior
-    # execution never consumed, without touching the steer marker files.
     steer_reset: Callable[[], None] = field(default=lambda: None)
-    # "Compact now" from a front-end: polled at the same pre-call boundary as
-    # the tiered thresholds; a positive forces the tier-2 summarise-and-restart.
-    # The marker travels the same file bridge as steer.
     compact_requested: Callable[[], str | None] = field(default=lambda: None)
     compact_clear: Callable[[], None] = field(default=lambda: None)
-    # "Stop after this step": polled at each completed-iteration boundary
-    # (tool results and auto-commit landed), ending the run cleanly there. The
-    # mid-turn immediate stop is the steer "abort" answer.
     stop_requested: Callable[[], bool] = field(default=lambda: False)
     stop_clear: Callable[[], None] = field(default=lambda: None)
-    # Polled DURING a streaming model call: True once the operator asked to
-    # stop, so a long reasoning turn aborts promptly.
     should_abort: Callable[[], bool] = field(default=lambda: False)
-    # Polled DURING a streaming call: True once the operator asked to steer
-    # (Ctrl-C, the TUI's `s`), so the watchdog ends the turn and the loop
-    # reaches its steer boundary at once instead of waiting the turn out.
     should_interrupt: Callable[[], bool] = field(default=lambda: False)
-    # What the operator queued for the graph (`/task`, `/standing`, `/retire`),
-    # taken at each pre-call boundary and while the run is parked; each call
-    # returns what arrived since the last, oldest first.
     take_requests: Callable[[], list[OperatorRequest]] = field(default=list)
-    # Called once per landed auto-commit. "stop" ends the loop cleanly as
-    # interactive_stop; "undo" takes the steer's /undo path; "continue" (the
-    # default) runs the next iteration. `agent6 run -i` installs its REPL
-    # prompt here.
     after_auto_commit: Callable[[int, str], AutoCommitDirective] = field(
         default=lambda _i, _sha: "continue"
     )
-    # `/undo`: commits the tree as it stands onto the session's ref, forks the
-    # session at the state before its last operator message and puts the
-    # checkout back to that tree (app.undo.undo_fork, injected: harness never
-    # import app); returns (new_session_id, undone_text), or None with the
-    # reason printed.
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
-    # `/parallel` steer dispatch: the ui-side group spawner that runs a sibling
-    # group of subordinate lanes to completion and imports their branches into
-    # this run's repo. None (the default, every headless path, and inside a
-    # lane: depth 1) makes a `/parallel` directive answer with feedback and
-    # continue.
     lane_spawner: GroupLaneSpawner | None = None
 
 
 def try_pin(pins: list[str], instruction: str) -> bool:
-    """Append *instruction* to *pins* when it is non-empty and fits the
-    PINS_MAX_CHARS total; whether it was pinned. The one owner of the pin
-    invariants: `/pin` and the pre-run --pin seeding both go through it."""
+    """Append an instruction to the pins when it is non-empty and fits `PINS_MAX_CHARS`.
+
+    The one owner of the pin invariants: `/pin` and the pre-run `--pin` seeding both go through
+    it.
+
+    Args:
+        pins: The run's pins, appended in place.
+        instruction: The instruction text.
+
+    Returns:
+        Whether it was pinned.
+    """
     instruction = instruction.strip()
     if not instruction:
         return False
@@ -110,15 +113,22 @@ def try_pin(pins: list[str], instruction: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Steering:
-    """What a steer's text means for the run, taken at an operator boundary
-    or a park: a verb (`STEER_VERBS`: the name the loop maps to an end), a
-    `/parallel` directive dispatched at once, a `/pin` that survives
-    compaction, a `/<skill>` expanded to its text, or an instruction
-    injected into the conversation (paired with the question it answers,
-    when the model just asked one)."""
+    """What a steer's text means for the run, taken at an operator boundary or a park.
+
+    A verb (`STEER_VERBS`), a `/parallel` directive dispatched at once, a `/pin` that survives
+    compaction, a `/<skill>` expanded to its text, or an instruction injected into the
+    conversation, paired with the question it answers when the model just asked one.
+
+    Attributes:
+        bridge: The operator's callables.
+        parallel: Builds the dispatcher on the first `/parallel`.
+        dispatcher: The run's tool dispatcher, for the resolved skills.
+        record_decision: Records an answered question as a ruling.
+        log: The run's text logger.
+        emit: The run's event sink.
+    """
 
     bridge: OperatorBridge
-    # Built on the first `/parallel` (the dispatcher reads the config then).
     parallel: Callable[[], ParallelDispatcher]
     dispatcher: ToolDispatcher
     record_decision: Callable[[LoopState, str, str], None]
@@ -131,19 +141,20 @@ class Steering:
         iteration: int,
         state: LoopState,
     ) -> str | None:
-        """Operator steering between iterations.
+        """Take the operator's steer between iterations.
 
-        Returns `"abort"` if the operator typed "abort" at the prompt;
-        the loop should then return a steer_abort result. Returns `None`
-        in all other cases (no request, empty steer, `/parallel` dispatch,
-        or instruction injected into the conversation).
+        The boundary is between completed iterations, so a tool_use and tool_result pair is
+        never split.
 
-        Polls steer_requested() and, on a positive, calls steer_prompt()
-        to capture operator text. Empty / None / KeyboardInterrupt aborts;
-        boundary is between completed iters so a tool_use / tool_result pair
-        is never split. A message starting with the exact `/parallel` token
-        is a dispatch directive (see `ParallelDispatcher.dispatch`), not an injected
-        instruction.
+        Args:
+            conversation: The run's conversation.
+            iteration: The iteration just completed.
+            state: The loop state.
+
+        Returns:
+            The verb's name ("abort", "exit", "undo", "detach") when the steer was one; None
+            otherwise (no request, an empty steer, a directive, a pin, a skill, or an injected
+            instruction).
         """
         if not self.bridge.steer_requested():
             return None
@@ -179,10 +190,15 @@ class Steering:
         return None
 
     def skill(self, conversation: Conversation, steer_text: str) -> bool:
-        """Handle a `/<skill> [args]` steer from any composer: the skill's
-        full text is injected as the instruction (the same payload on every
-        surface). Returns True when handled; False when *steer_text* names no
-        enabled skill."""
+        """Handle a `/<skill> [args]` steer: the skill's full text is injected as the instruction.
+
+        Args:
+            conversation: The run's conversation.
+            steer_text: The steer as typed.
+
+        Returns:
+            True when handled; False when the text names no enabled skill.
+        """
         if not steer_text.startswith("/"):
             return False
         found = skill_command(steer_text, self.dispatcher.resolved_skills())
@@ -198,11 +214,20 @@ class Steering:
         return True
 
     def pin(self, conversation: Conversation, state: LoopState, steer_text: str) -> bool:
-        """Handle a steer that is a `/pin` directive. A recorded pin is injected
-        as a marked instruction AND re-injected verbatim after every tier-2
-        restart. Over the total cap, the instruction is still delivered as an
-        ordinary steer -- only the durability is refused, loudly. Returns True
-        when handled; False when *steer_text* is not a pin directive."""
+        """Handle a `/pin` steer.
+
+        A recorded pin is injected as a marked instruction and re-injected after every tier-2
+        restart. Over the total cap the instruction is delivered as an ordinary steer, and only
+        the durability is refused, loudly.
+
+        Args:
+            conversation: The run's conversation.
+            state: The loop state holding the pins.
+            steer_text: The steer as typed.
+
+        Returns:
+            True when handled; False when the text is not a pin directive.
+        """
         try:
             instruction = parse_pin(steer_text)
         except DirectiveError as exc:
@@ -212,8 +237,7 @@ class Steering:
         if instruction is None:
             return False
         if not try_pin(state.pins, instruction):
-            # parse_pin already rejects an empty directive, so a refusal here is
-            # always the cap: deliver the instruction as an ordinary steer.
+            # parse_pin rejects an empty directive, so a refusal here is always the cap.
             self.log(f"  /pin over cap (> {PINS_MAX_CHARS}); delivered as an ordinary steer")
             self.emit("loop.pin.refused", chars=len(instruction), limit=PINS_MAX_CHARS)
             conversation.notice(
@@ -238,10 +262,17 @@ class Steering:
         state: LoopState,
         steer_text: str,
     ) -> bool:
-        """Handle a steer that is a `/parallel` directive: dispatch a valid one,
-        or answer a malformed one (a bare `/parallel`, a spec with no task) and
-        continue. Returns True when handled; False when *steer_text* is ordinary
-        steering to inject as an instruction."""
+        """Handle a `/parallel` steer: dispatch a valid one, answer a malformed one and continue.
+
+        Args:
+            conversation: The run's conversation.
+            iteration: The iteration just completed.
+            state: The loop state.
+            steer_text: The steer as typed.
+
+        Returns:
+            True when handled; False when the text is ordinary steering to inject.
+        """
         try:
             segments = parse_directive(steer_text)
         except DirectiveError as exc:

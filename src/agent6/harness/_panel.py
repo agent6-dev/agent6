@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pure core of the adversarial review panel: the verdict types and the
-grounded aggregator.
+"""Aggregate the review panel's verdicts with executable grounding.
 
-The panel's rule is executable rather than prose a reviewer can rationalize
-around: a finding is reported only when its citation is in the diff (a touched
-path, or a line on either side of a hunk), and a `block` only gates in an
-allowed category. A block in another category is downgraded to `warn`;
-`warn`/`nit` never gate. This module is network-free; `run_panel` (the
-orchestration that calls models) lives separately.
+A finding is reported only when its citation is in the diff (a touched path, or a line on
+either side of a hunk), and a `block` gates only in an allowed category; a block elsewhere is
+downgraded to `warn`, and `warn` and `nit` never gate. Network-free; `run_panel` calls the
+models.
 """
 
 from __future__ import annotations
@@ -21,9 +18,7 @@ Severity = Literal["block", "warn", "nit"]
 Verdict = Literal["pass", "block"]
 ReviewDecision = Literal["advisory", "veto", "quorum", "all"]
 
-# Categories a finding may carry. Only the first set is allowed to GATE; the
-# rest advise but never block (taste/test-gap/over-engineering findings are
-# too noisy to gate).
+# Only the first set may gate; the rest advise, being too noisy to block on.
 ALLOWED_BLOCK_CATEGORIES: frozenset[str] = frozenset(
     {"security", "sandbox-bypass", "off-topic-edit", "data-loss", "verify-uncovered-correctness"}
 )
@@ -33,71 +28,119 @@ ALL_CATEGORIES: frozenset[str] = ALLOWED_BLOCK_CATEGORIES | ADVISORY_CATEGORIES
 
 @dataclass(frozen=True, slots=True)
 class Finding:
+    """One reviewer finding.
+
+    Attributes:
+        category: One of `ALL_CATEGORIES`.
+        severity: block, warn or nit.
+        file_line: The citation the grounding check reads: "path:line" or "path".
+        title: One line.
+        detail: The rest, or "".
+    """
+
     category: str
     severity: Severity
-    file_line: str  # "path:line" or "path" (the citation the grounding check uses)
+    file_line: str
     title: str
     detail: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewVerdict:
+    """One seat's verdict.
+
+    Attributes:
+        seat: The seat's name.
+        model: The model that reviewed.
+        verdict: pass or block.
+        findings: The seat's findings.
+        summary: The seat's summary, or "".
+        error: Set when the seat failed; the seat then abstains rather than passes.
+    """
+
     seat: str
     model: str
     verdict: Verdict
     findings: tuple[Finding, ...] = ()
     summary: str = ""
-    error: str | None = None  # set => the seat failed and ABSTAINS (not a pass)
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewContext:
-    """What every seat is shown, and what the aggregator grounds findings against."""
+    """What every seat is shown, and what the aggregator grounds findings against.
+
+    Attributes:
+        task: The run's task.
+        agents_md: The repo's AGENTS.md.
+        diff: The working-tree delta since the last accepted finish.
+        verify_ok: The gate's result; None when none ran (none configured, or `agent6 review`).
+        verify_output: The gate's output.
+        persona: The seat's persona text.
+        prior_findings: Findings already injected, for dedup; they never re-count.
+    """
 
     task: str = ""
     agents_md: str = ""
-    diff: str = ""  # the working-tree delta since the last accepted finish
-    verify_ok: bool | None = None  # None = no result: none configured, or `agent6 review`
+    diff: str = ""
+    verify_ok: bool | None = None
     verify_output: str = ""
     persona: str = ""
-    prior_findings: tuple[Finding, ...] = ()  # already-injected, for dedup (not re-count)
+    prior_findings: tuple[Finding, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class PanelResult:
+    """The panel's aggregated result.
+
+    Attributes:
+        panel_id: The panel's id.
+        decision: The gating rule applied.
+        blocked: Whether the panel rejects the work.
+        merged_findings: The grounded findings across seats, deduplicated, blocks first.
+        per_seat: Each seat's grounded verdict.
+        n_block: Distinct blocking models counted toward the gate.
+        n_abstain: Seats that failed.
+        skipped_reason: Why the panel did not run, or None.
+    """
+
     panel_id: str
     decision: ReviewDecision
     blocked: bool
     merged_findings: tuple[Finding, ...]
     per_seat: tuple[ReviewVerdict, ...]
-    n_block: int  # distinct-model blocking seats counted toward the gate
+    n_block: int
     n_abstain: int
     skipped_reason: str | None = None
 
 
 def panel_is_inconclusive(result: PanelResult) -> bool:
-    """Whether EVERY seat abstained, so nothing was actually reviewed. "0
-    blocking findings" is not a clean bill then -- the single owner both the CLI
-    verdict and the in-loop critique text ask, so neither can launder an
-    all-abstain panel into a pass."""
+    """Return whether every seat abstained, so nothing was reviewed.
+
+    The one owner the CLI verdict and the in-loop critique both ask, so neither reads an
+    all-abstain panel as a pass.
+
+    Args:
+        result: The panel result.
+
+    Returns:
+        Whether every seat abstained.
+    """
     return bool(result.per_seat) and result.n_abstain == len(result.per_seat)
 
 
 def inconclusive_note(result: PanelResult) -> str:
-    """The human line for an all-abstain panel (see :func:`panel_is_inconclusive`)."""
+    """Return the human line for an all-abstain panel."""
     return f"review inconclusive: all {result.n_abstain} seats abstained; nothing was reviewed"
 
 
-# A critique rides into the worker's next turn as a notice beside the tool
-# results, and a Claude Code worker's turn has a persist threshold the loop
-# sizes its result cap under with this much critique in mind
-# (`_compaction.CLAUDE_CODE_NOTICE_ROOM_BYTES`). Head first: the findings lead.
+# A critique rides into the worker's next turn beside the tool results, findings first.
+# `_compaction.CLAUDE_CODE_NOTICE_ROOM_BYTES` sizes the result cap with this much critique in mind.
 REVIEW_NOTICE_BYTES = 4_000
 
 
 def review_notice(text: str) -> str:
-    """The `[review]` notice for *text*, cut to `REVIEW_NOTICE_BYTES` of UTF-8
-    with a marker naming the cut."""
+    """Return the `[review]` notice for the text, cut to `REVIEW_NOTICE_BYTES` with a marker."""
     body = text.encode()
     if len(body) <= REVIEW_NOTICE_BYTES:
         return f"[review]\n{text}"
@@ -105,19 +148,14 @@ def review_notice(text: str) -> str:
     return f"[review]\n{head}\n[review: {len(body) - len(head.encode())} more bytes cut]"
 
 
-# ----------------------------------------------------------------------------
 # Diff grounding: the (path, line) citations this diff supports.
-# ----------------------------------------------------------------------------
-
-# Capture BOTH the old-side (-A,B) and new-side (+C,D) line numbers so deletions
-# ground against the pre-image path too.
+# Both the old-side and new-side line numbers, so a deletion grounds against the pre-image path.
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _GIT_HDR_RE = re.compile(r"^diff --git a/(.*?) b/(.*)$")
 
 
 def _unquote_git_path(p: str) -> str:
-    """git quotes paths with special chars as a C-string ("b/a\\tb"); strip the
-    quotes + the common backslash escapes so the header path matches a citation."""
+    """Return the path with git's C-string quoting stripped, so it matches a citation."""
     p = p.strip()
     if len(p) >= 2 and p.startswith('"') and p.endswith('"'):
         p = p[1:-1].replace('\\"', '"').replace("\\\\", "\\")
@@ -125,41 +163,49 @@ def _unquote_git_path(p: str) -> str:
 
 
 def _hdr_path(raw: str) -> str:
-    """Path from a `--- `/`+++ ` header line ("" for /dev/null)."""
+    """Return the path of a `--- ` or `+++ ` header line, or "" for /dev/null."""
     target = _unquote_git_path(raw[4:].split("\t", 1)[0])
     return "" if target == "/dev/null" else re.sub(r"^[ab]/", "", target)
 
 
 @dataclass(frozen=True, slots=True)
 class Hunk:
-    """One hunk as it addresses one path: the pre-image lines it replaced and
-    the post-image lines it produced, each an inclusive span (a side with no
-    lines spans the line the change sits at, so a citation of it grounds), or
-    None for a side that is another file's (a rename's other name) or absent
-    (a created or deleted file, filed by its `/dev/null` side)."""
+    """One hunk as it addresses one path.
+
+    A side with no lines spans the line the change sits at, so a citation of it grounds.
+
+    Attributes:
+        old: The pre-image lines it replaced, an inclusive span; None when that side is another
+            file's (a rename's other name) or absent (a created file).
+        new: The post-image lines it produced, likewise; None for a rename's other name or a
+            deleted file.
+    """
 
     old: tuple[int, int] | None
     new: tuple[int, int] | None
 
 
 def _span(start: str, count: str | None) -> tuple[int, int]:
+    """Return the inclusive span of a hunk side from its header start and count."""
     s, n = int(start), int(count) if count is not None else 1
     return (s, s + max(n, 1) - 1)
 
 
 def diff_hunks(diff: str) -> dict[str, list[Hunk]]:
-    """Map each touched path to its hunks, so a finding's `path:line` citation
-    can be grounded (a block may only gate if its cited line is inside a hunk)
-    and keyed (`_dedup_key`). An in-place hunk carries both sides under its
-    path; a rename's, a created file's or a deleted file's hunk carries the
-    post-image side under the post-image path and the pre-image side under
-    the pre-image path, so a citation of deleted code at its OLD line number
-    still grounds and neither name grounds the other's line numbers.
-    A `+++ ` line only counts as a header when it follows a `--- ` (an added
-    line whose content happens to start with `++ ` is not mistaken for one).
-    A file the diff touches without hunks (binary, a pure rename, a mode
-    change) is recorded with none, so a path-only citation of it grounds and
-    a line citation does not.
+    """Map each touched path to its hunks, for grounding and dedup.
+
+    An in-place hunk carries both sides under its path. A rename's, a created file's or a
+    deleted file's hunk carries each side under that side's path, so deleted code grounds at
+    its old line number and neither name grounds the other's. A `+++ ` line counts as a header
+    only after a `--- ` line. A file touched without hunks (binary, a pure rename, a mode
+    change) is recorded with none, so a path-only citation of it grounds and a line citation
+    does not.
+
+    Args:
+        diff: The unified diff.
+
+    Returns:
+        The hunks by repo path.
     """
     hunks: dict[str, list[Hunk]] = {}
     newpath = oldpath = ""
@@ -172,12 +218,7 @@ def diff_hunks(diff: str) -> dict[str, list[Hunk]]:
             oldpath = newpath = ""
             prev_minus = False
             continue
-        # A real "--- " file header is always immediately followed by a "+++ "
-        # header. Requiring that lookahead stops a DELETED line whose own text
-        # begins with "-- " -- rendered "--- ..." in the diff -- from being
-        # misparsed as a file header, which would clobber oldpath/newpath and
-        # mis-attribute every later hunk (the symmetric "+++ " side is
-        # already guarded by prev_minus).
+        # A "--- " header is always followed by "+++ "; the lookahead rejects a deleted "-- " line.
         if raw.startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ "):
             oldpath, newpath, prev_minus = _hdr_path(raw), "", True
             continue
@@ -199,26 +240,24 @@ def diff_hunks(diff: str) -> dict[str, list[Hunk]]:
 
 
 def _split_cite(file_line: str, hunks: dict[str, list[Hunk]]) -> tuple[str, tuple[int, int] | None]:
-    """One citation parsed into `(repo path, cited line span or None)`.
+    """Parse one citation into its repo path and cited line span.
 
-    The forms a reviewer writes: 'foo.py', 'a/foo.py:2', 'foo.py:2-4',
-    'foo.py:2:' and 'foo.py:12:5' (the standard compiler/grep -n
-    `path:line:col`). ONE owner: a per-consumer single-rpartition parse would read a line:col
-    citation's COLUMN as the line and 'foo.py:12' as the path, so grounding
-    would miss and a real block silently downgrade to a warning.
+    The forms a reviewer writes: 'foo.py', 'a/foo.py:2', 'foo.py:2-4', 'foo.py:2:' and
+    'foo.py:12:5' (`path:line:col`). The path resolves against the hunks first; a leading `a/`
+    or `b/` is dropped only when the unstripped path is not in the diff.
 
-    `hunks` is keyed on repo paths, so the path resolves there first; a
-    leading `a/` or `b/` is dropped only when the unstripped path is not in
-    the diff, so a real top-level `a/` dir the diff touched keeps its name
-    and a prefix copied from a header grounds on the file under it.
+    Args:
+        file_line: The citation.
+        hunks: The diff's hunks by repo path.
+
+    Returns:
+        The path and the span, or None for a path-only citation; ("", None) for an empty one.
     """
     cite = file_line.strip().rstrip(":")
     if not cite:
         return "", None
     parts = cite.split(":")
-    # Trailing numeric fields are position (line, then column); the path is
-    # whatever precedes them. A Windows-style 'C:\\x.py' keeps its drive letter
-    # because that field is not numeric-only.
+    # Trailing numeric fields are position (line, then column); a drive letter is not numeric.
     nums: list[str] = []
     while len(parts) > 1 and _is_span(parts[-1]):
         nums.insert(0, parts.pop())
@@ -232,20 +271,29 @@ def _split_cite(file_line: str, hunks: dict[str, list[Hunk]]) -> tuple[str, tupl
 
 
 def _is_span(field: str) -> bool:
-    """True for a numeric position field: a line ("12") or a range ("2-4")."""
+    """Return whether the field is a numeric position: a line ("12") or a range ("2-4")."""
     ends = field.split("-", 1)
     return all(e.isdigit() for e in ends) and bool(ends[0])
 
 
 def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """Return whether two inclusive spans share a line."""
     return a[0] <= b[1] and b[0] <= a[1]
 
 
 def is_grounded(file_line: str, hunks: dict[str, list[Hunk]]) -> bool:
-    """Whether the citation is in the diff: a touched path (path-only), or a
-    line or range that overlaps a hunk on either side (a range grounds when
-    any line in it does, so a changed span whose first line is unchanged
-    still grounds)."""
+    """Return whether the citation is in the diff.
+
+    A path-only citation grounds on a touched path; a line or range grounds when it overlaps a
+    hunk on either side, so a changed span whose first line is unchanged still grounds.
+
+    Args:
+        file_line: The citation.
+        hunks: The diff's hunks by repo path.
+
+    Returns:
+        Whether the citation grounds.
+    """
     path, span = _split_cite(file_line, hunks)
     if not path:
         return False
@@ -262,14 +310,19 @@ DedupKey = tuple[str, str, Hunk | tuple[int, int] | None]
 
 
 def _dedup_key(f: Finding, hunks: dict[str, list[Hunk]]) -> DedupKey:
-    """A finding's identity across seats and iterations: its file, its category
-    and the hunk its citation falls in, so a re-citation a few lines off
-    collapses while a second finding in another hunk of the same file stays.
-    The hunk whose post-image span holds the citation decides first (a
-    reviewer cites the file as it reads), else the one whose pre-image span
-    does (deleted code at its old number); the two sides of one hunk key
-    alike. A citation outside every hunk keys on its own span, a path-only
-    one on the file."""
+    """Return a finding's identity across seats and iterations: file, category and hunk.
+
+    The hunk whose post-image span holds the citation decides first, else the one whose
+    pre-image span does; the two sides of one hunk key alike. A citation outside every hunk
+    keys on its own span, a path-only one on the file.
+
+    Args:
+        f: The finding.
+        hunks: The diff's hunks by repo path.
+
+    Returns:
+        The key.
+    """
     path, span = _split_cite(f.file_line, hunks)
     if span is None:
         return (path, f.category, None)
@@ -287,9 +340,19 @@ _SEV_ORDER = {"block": 0, "warn": 1, "nit": 2}
 
 
 def _ground_severity(f: Finding, ctx: ReviewContext, hunks: dict[str, list[Hunk]]) -> Severity:
-    """A `block` survives only if grounded in the diff AND in a gating category
-    (and `verify-uncovered-correctness` is coherent only when verify passed);
-    otherwise it is downgraded to `warn`. `warn`/`nit` pass through."""
+    """Return the severity a finding keeps after grounding.
+
+    A `block` survives only in a gating category, and `verify-uncovered-correctness` only when
+    verify passed; otherwise it becomes `warn`. `warn` and `nit` pass through.
+
+    Args:
+        f: The finding.
+        ctx: The review context, for the verify result.
+        hunks: The diff's hunks by repo path; unread here.
+
+    Returns:
+        The severity.
+    """
     if f.severity != "block":
         return f.severity
     coherent = f.category != "verify-uncovered-correctness" or ctx.verify_ok is True
@@ -301,6 +364,19 @@ def _ground_severity(f: Finding, ctx: ReviewContext, hunks: dict[str, list[Hunk]
 def _ground_seat(
     v: ReviewVerdict, ctx: ReviewContext, hunks: dict[str, list[Hunk]]
 ) -> ReviewVerdict:
+    """Ground one seat's findings.
+
+    An uncited finding is dropped; a block the category cannot carry, or one on a seat whose
+    verdict is pass, becomes a warn.
+
+    Args:
+        v: The seat's verdict.
+        ctx: The review context.
+        hunks: The diff's hunks by repo path.
+
+    Returns:
+        The verdict with its grounded findings.
+    """
     out: list[Finding] = []
     for f in v.findings:
         if not is_grounded(f.file_line, hunks):
@@ -315,11 +391,19 @@ def _ground_seat(
 def _has_new_block(
     v: ReviewVerdict, prior_keys: set[DedupKey], hunks: dict[str, list[Hunk]]
 ) -> bool:
-    """True when the seat carries a surviving block that is NOT an already-
-    injected prior finding. `prior_findings` is "for dedup (not re-count)":
-    a block whose key dedups away is dropped from `merged_findings`, so
-    letting it gate would reject the work while reporting no blocking
-    findings."""
+    """Return whether the seat carries a surviving block that is not a prior finding.
+
+    A block whose key dedups away is dropped from `merged_findings`, so letting it gate would
+    reject the work while reporting no blocking findings.
+
+    Args:
+        v: The seat's grounded verdict.
+        prior_keys: The keys of the already-injected findings.
+        hunks: The diff's hunks by repo path.
+
+    Returns:
+        Whether a new block survives.
+    """
     return v.verdict == "block" and any(
         f.severity == "block" and _dedup_key(f, hunks) not in prior_keys for f in v.findings
     )
@@ -333,8 +417,18 @@ def _decide(
     n_seats_blocking: int,
     n_total: int,
 ) -> bool:
-    """*n_block* counts distinct blocking models and *n_seats_blocking* the
-    seats with a surviving non-prior block."""
+    """Apply the gating rule.
+
+    Args:
+        decision: The rule.
+        n_block: Distinct blocking models.
+        quorum: The blocks a `quorum` decision needs.
+        n_seats_blocking: Seats with a surviving non-prior block.
+        n_total: Seats that reviewed.
+
+    Returns:
+        Whether the panel blocks.
+    """
     if decision == "advisory" or not n_total:
         return False
     if decision == "veto":
@@ -354,21 +448,24 @@ def aggregate_verdicts(
     quorum: int,
     panel_id: str,
 ) -> PanelResult:
-    """Fold per-seat verdicts into one panel result with EXECUTABLE grounding.
+    """Fold per-seat verdicts into one panel result with executable grounding.
 
-    1. Drop every finding whose `file_line` is not in the diff (a touched
-       path, or a line on either side of a hunk). A `block` survives only when
-       its category is allowed to block (and `verify-uncovered-correctness` is
-       coherent only when verify passed); otherwise it is downgraded to `warn`.
-    2. Dedup across seats and against `prior_findings` by (path, category,
-       hunk): a re-citation of one defect a few lines off collapses, a second
-       finding in another hunk of the same file stays (`_dedup_key`). An
-       already-injected block neither re-surfaces nor counts toward the gate
-       (otherwise a rejection could ship with zero merged findings).
-    3. Decide: advisory never blocks; veto blocks on any surviving block; quorum
-       needs >= `quorum` blocks counting **at most one per distinct model**
-       (correlated same-model seats cannot fabricate a quorum); all needs every
-       configured seat to block (an abstention is not a block).
+    Every finding whose citation is not in the diff is dropped, and a block outside a gating
+    category becomes a warn. Findings dedup across seats and against `prior_findings` by (path,
+    category, hunk); an already-injected block neither re-surfaces nor counts toward the gate.
+    Advisory never blocks; veto blocks on any surviving block; quorum needs `quorum` blocks
+    counting at most one per distinct model; all needs every seat to block, an abstention being
+    no block.
+
+    Args:
+        per_seat: The seats' verdicts.
+        ctx: The review context.
+        decision: The gating rule.
+        quorum: The blocks a `quorum` decision needs.
+        panel_id: The panel's id.
+
+    Returns:
+        The panel result.
     """
     hunks = diff_hunks(ctx.diff)
     prior_keys = {_dedup_key(f, hunks) for f in ctx.prior_findings}
@@ -387,7 +484,7 @@ def aggregate_verdicts(
             blocking_models.add(v.model)
             n_seats_blocking += 1
 
-    # Merge + dedup all findings (post-grounding); drop ones already injected.
+    # Merge and dedup the grounded findings, dropping those already injected.
     merged: dict[DedupKey, Finding] = {}
     for v in grounded_seats:
         for f in v.findings:
@@ -422,8 +519,7 @@ def aggregate_verdicts(
 
 
 def render_findings(findings: tuple[Finding, ...]) -> str:
-    """Render merged findings as a compact `[review]` block for the worker /
-    the post-hoc CLI. Empty -> ''."""
+    """Return merged findings as a `[review]` block for the worker or the CLI, "" when empty."""
     if not findings:
         return ""
     lines = []

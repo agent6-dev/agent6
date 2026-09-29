@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The harness-run verify gate (`[harness].verify_when`): when the harness
-runs the gate itself, and what the model is told about a run it did not
-start.
+"""Run the verify gate the harness owes a turn, per `[harness].verify_when`.
 
-`finish` certifies the tree a run ends on; `step` also judges every editing
-turn; `never` leaves every gate run to the model's own `run_verify_command`
-calls. A turn whose own verify call already judged the tree is never judged
-twice. `VerifyGate` runs the harness gate and its scoped follow-up and keeps
-the verdict bookkeeping; the loop decides when a turn ends.
+`finish` certifies the tree a run ends on; `step` also judges every editing turn; `never`
+leaves every gate run to the model. A tree the run already holds a verdict for is never judged
+twice. `VerifyGate` runs the gate and its scoped follow-up and keeps the verdict bookkeeping.
 """
 
 from __future__ import annotations
@@ -56,15 +52,18 @@ def harness_verify_due(
     changed_this_turn: bool,
     finishing: bool,
 ) -> HarnessVerifyWhy | None:
-    """Why the harness runs the gate after this turn, or None: `step` after a
-    turn that changed the tree, `finish` when a run ends over a tree no verify
-    covers; never on top of a verdict the run already holds for this tree.
+    """Return why the harness runs the gate after this turn, or None.
 
-    `tree_judged` is that verdict, green OR red: the model's own
-    run_verify_command this turn, or a standing verdict from an earlier turn
-    with nothing edited since. A red tree nothing has touched needs no re-run
-    (the finish reports the red it already knows); an edit since the verdict
-    clears it and the gate runs again."""
+    Args:
+        when: `[harness].verify_when`.
+        gate_present: Whether a gate can judge the run.
+        tree_judged: Whether the run holds a verdict, green or red, for the tree as it stands.
+        changed_this_turn: Whether the turn edited the tree.
+        finishing: Whether the run is ending.
+
+    Returns:
+        `step` after an editing turn, `finish` when the run ends over an unjudged tree, else None.
+    """
     if when == "never" or not gate_present or tree_judged:
         return None
     if finishing:
@@ -75,8 +74,15 @@ def harness_verify_due(
 
 
 def harness_verify_notice(result: ExecResult, why: HarnessVerifyWhy) -> str:
-    """What the model sees of a gate run it did not start: the verdict and
-    the output tail, labelled by what triggered it."""
+    """Return the notice for a gate run the harness started: the verdict and output tail.
+
+    Args:
+        result: The gate's result.
+        why: What triggered the run.
+
+    Returns:
+        The notice text.
+    """
     verdict = "passed" if result.returncode == 0 else f"exit {result.returncode}"
     tail = f"{result.stdout}\n{result.stderr}".strip()[-VERIFY_TAIL_CHARS:]
     head = f"[harness verify] {why}: verify_command {verdict} ({result.duration_s:.0f}s)."
@@ -84,11 +90,16 @@ def harness_verify_notice(result: ExecResult, why: HarnessVerifyWhy) -> str:
 
 
 def scoped_verify_notice(result: ExecResult, *, timeout_s: float, paths: tuple[str, ...]) -> str:
-    """What the model sees of a scoped gate run: the full command overran its
-    budget (this run or an earlier one; scoping stays armed), so the gate ran
-    only the tests nearest the run's change, listed by path. A scoped green
-    certifies less than a full pass and the notice says so. One notice for
-    the harness gate and the follow-up to the model's own timed-out call."""
+    """Return the notice for a scoped gate run, which names its paths and what a scoped green means.
+
+    Args:
+        result: The gate's result.
+        timeout_s: The budget the full command overran.
+        paths: The test paths the gate ran.
+
+    Returns:
+        The notice text.
+    """
     verdict = "passed" if result.returncode == 0 else f"exit {result.returncode}"
     tail = f"{result.stdout}\n{result.stderr}".strip()[-VERIFY_TAIL_CHARS:]
     head = (
@@ -100,8 +111,15 @@ def scoped_verify_notice(result: ExecResult, *, timeout_s: float, paths: tuple[s
 
 
 def gate_withheld_notice(head: str, exc: Exception) -> str:
-    """A gate run not approved (a human's no, or the unattended auto-deny):
-    withheld for the rest of the run, whichever site asked."""
+    """Return the notice for a gate run an approval denied: withheld for the rest of the run.
+
+    Args:
+        head: The notice's label.
+        exc: The denial.
+
+    Returns:
+        The notice text.
+    """
     return (
         f"{head}: not run: {exc}."
         " The gate is withheld for the rest of the run; the run ends unverified."
@@ -109,7 +127,15 @@ def gate_withheld_notice(head: str, exc: Exception) -> str:
 
 
 def finish_red_notice(*, used: int, retries: int) -> str:
-    """The finish came back: the gate did not certify the tree."""
+    """Return the notice for a finish the gate did not certify, with the returns left.
+
+    Args:
+        used: The red finishes so far.
+        retries: The red finishes allowed.
+
+    Returns:
+        The notice text.
+    """
     left = retries - used
     ending = (
         "the next red finish ends the run, reported as finished, not passed"
@@ -131,13 +157,20 @@ EXIT_TIMEOUT = 124
 
 @dataclass(slots=True)
 class VerifyGate:
-    """The run's verify gate: the configured command, when the harness runs
-    it (`[harness].verify_when`), its retries and timeout, and the run facts
-    it reads. The command in force is `command(verdict)`: the configured one,
-    else the one a gateless run adopted at a commit (`verdict.adopted`), else
-    `()` for gateless. One owner for whether a gate is present, whether the
-    tree is green, what a verify result means for the verdict, and the
-    harness's own gate runs (the scoped re-run after a timeout included)."""
+    """Own the run's verify gate: whether one is present, what a result means, and the harness runs.
+
+    Attributes:
+        configured: The configured command, () when none.
+        when: `[harness].verify_when`.
+        retries: The red finishes allowed.
+        timeout_s: The gate's budget.
+        infer: Whether a gateless run adopts an inferred command at a commit.
+        mode: The loop mode; only a run is gated.
+        chain: The run's chain.
+        dispatcher: The run's dispatcher, which runs the gate.
+        log: The run's text logger.
+        emit: The run's event emitter.
+    """
 
     configured: tuple[str, ...]
     when: Literal["finish", "step", "never"]
@@ -151,26 +184,19 @@ class VerifyGate:
     emit: Callable[..., None]
 
     def judged_the_base_commit(self, verdict: VerifyVerdict, result: ExecResult) -> bool:
-        """True when this verify judged the commit the RUN started from.
+        """Return whether this verify judged the commit the run started from.
 
-        "The model has not edited yet" is the wrong test: every reason an
-        operator resumes -- a budget stop, an iteration cap, a provider error --
-        commits the execution's work first, so execution two opens on a clean tree whose
-        HEAD already carries execution one's breakage, and reading that as the base
-        would tell the worker its own failures are inherited. `/parallel` does
-        the same by merging lane commits into the workspace.
+        HEAD must be the base commit on a clean tree (a resumed execution opens on its
+        predecessor's commits), the gate must have produced a verdict (an absent or timed-out
+        runner judged nothing), and a run that ever went green answers for a later red.
+        Fails closed: an unreadable git records nothing.
 
-        So: HEAD must still BE the base commit, the tree must be clean, and the
-        gate must have actually produced a verdict -- a runner that was absent
-        (instant exit) or timed out (124) never judged anything, and recording
-        either would excuse every real failure for the rest of the run.
+        Args:
+            verdict: The run's verify bookkeeping.
+            result: The verify's result.
 
-        A run that has already made the gate GREEN is answerable for a later
-        red: it demonstrably could pass.
-
-        Fails CLOSED. Every other user of `RunChain.dirty` treats an
-        unreadable git as "assume clean"; here that would be a false
-        exoneration, so an unreadable git records nothing.
+        Returns:
+            True when the result is the base commit's own.
         """
         if (
             verdict.ever_passed
@@ -187,8 +213,13 @@ class VerifyGate:
         return status.is_clean and status.head_sha == self.chain.base_sha
 
     def note_result(self, state: LoopState, turn: TurnState, result: ExecResult) -> None:
-        """Verify bookkeeping: pass/fail flags, the grounding tail, and the
-        no-progress streak (consecutive fails sharing one signature)."""
+        """Record a verify result: the flags, the grounding tail, the no-progress streak.
+
+        Args:
+            state: The execution's state.
+            turn: The turn the verify ran in.
+            result: The verify's result.
+        """
         rc = result.returncode
         verdict = state.verify
         if rc == 0:
@@ -201,24 +232,18 @@ class VerifyGate:
                     self.emit(
                         "loop.test_only_green.notice", iteration=turn.iteration, paths=list(paths)
                     )
-            # This verify validated the current tree; any earlier
-            # edit is now covered.
             turn.edit_since_verify_pass = False
         else:
             turn.verify_just_failed = True
             if verdict.adopted and (
                 why := unrunnable_signature(verdict.adopted, rc, result.stdout, result.stderr)
             ):
-                # An ADOPTED gate that cannot run here: un-adopt (the run is
-                # gateless again, the argv never re-adopted) and say so. A
-                # configured gate stays a loud red.
+                # An adopted gate that cannot run here is un-adopted; a configured one stays red.
                 cmd = " ".join(verdict.adopted)
                 verdict.unadoptable.add(verdict.adopted)
                 verdict.adopted = ()
-                # The gate produced no verdict and no longer exists: the turn
-                # is not "verify failed" (an on_verify_fail panel and the
-                # checkpoint logic key on it).
-                turn.verify_just_failed = False
+                turn.verify_just_failed = False  # no verdict was produced
+
                 self.dispatcher.drop_verify_command()
                 self.log(f"LOOP: verify un-adopted ({why}): {cmd}")
                 self.emit(
@@ -229,9 +254,7 @@ class VerifyGate:
                 )
                 turn.tool_results.append(Notice(VERIFY_UNADOPTED_NOTICE.format(cmd=cmd, why=why)))
                 return
-            # A verify that exited instantly without running any tests (runner
-            # absent) is a broken verify, not a real failure: flag it once so
-            # the model does not "fix" working code or finish unchecked.
+            # An instant exit with no tests run is a broken gate, flagged once, not a failure.
             if not verdict.broken_warned and verify_did_not_run(
                 result.stdout, result.stderr, result.duration_s
             ):
@@ -239,8 +262,6 @@ class VerifyGate:
                 turn.tool_results.append(Notice(VERIFY_BROKEN_NUDGE))
                 self.emit("loop.verify_broken.nudge", iteration=turn.iteration)
         if verdict.baseline_ok is None and self.judged_the_base_commit(verdict, result):
-            # This verify judged the run's BASE commit, so it IS the
-            # baseline: no second gate run is needed to learn the same answer.
             verdict.baseline_ok = rc == 0
             self.emit("loop.baseline", ok=rc == 0, iteration=turn.iteration)
             if rc != 0:
@@ -254,20 +275,19 @@ class VerifyGate:
         verdict.note_fail(verify_failure_signature(result.stdout, result.stderr))
         verdict.red_tree = self.chain.tree_sha()
         if verdict.fail_streak == 1:
-            # A NEW stuck point: the nudge allowance starts over with it.
-            state.no_progress.rearm()
+            state.no_progress.rearm()  # a new stuck point re-arms the nudges
 
     def maybe_adopt(self, state: LoopState, turn: TurnState) -> None:
-        """A gateless run that commits has just materialized project files the
-        preflight inference never saw (an empty repo infers nothing, then the
-        run creates a pyproject two minutes later and finishes ungated). Re-run
-        the DETERMINISTIC inference tiers (an AGENTS.md fence, repo signals;
-        never the LLM tier) at each gateless commit until one lands, then adopt
-        it for the rest of the run: the loop's gates, the dispatcher's
-        run_verify_command, and the resume snapshot all read the adopted
-        command. The model is told, so the gate flip is never silent; first
-        adoption wins (the config gaining a command ends the gateless branch).
-        `verify_infer = false` pins gatelessness: no adoption either."""
+        """Adopt a verify command a gateless run's commit makes inferable.
+
+        The deterministic inference tiers (an AGENTS.md fence, repo signals; never the model
+        tier) run at each gateless commit until one lands; the model is told of the adoption.
+        `verify_infer = false` pins gatelessness.
+
+        Args:
+            state: The execution's state.
+            turn: The turn that committed.
+        """
         if not self.infer:
             return
         inferred = infer_verify_command(
@@ -276,9 +296,7 @@ class VerifyGate:
         if inferred is None or inferred.argv in state.verify.unadoptable:
             return
         if not self.dispatcher.adopt_verify_command(inferred.argv):
-            # An inferred runner the jail cannot execute: adopting it would
-            # turn the honest settle into an unexecutable-verify abort. Stay
-            # gateless; re-inferred (and re-declined) at the next commit.
+            # A runner the jail cannot execute stays unadopted: the run settles, no abort.
             self.log(f"LOOP: verify inference declined; {inferred.argv[0]} not on the jail PATH")
             return
         state.verify.adopted = inferred.argv
@@ -299,41 +317,47 @@ class VerifyGate:
         )
 
     def may_run(self, *, denied: bool) -> bool:
-        """Whether anyone may run a verify command in this run: `run_commands =
-        "no"` withholds it from the harness as from the model, and so does a
-        denied gate (`denied`: an ask answered no, or the unattended
-        auto-deny)."""
+        """Return whether anyone may run a verify command in this run.
+
+        `run_commands = "no"` and a denied gate withhold it from the harness as from the model.
+
+        Args:
+            denied: Whether an approval denied the gate.
+
+        Returns:
+            True when the gate may run.
+        """
         return self.dispatcher.command_policy() != "no" and not denied
 
     def command(self, verdict: VerifyVerdict) -> tuple[str, ...]:
-        """The command in force: the configured one, else the adopted one."""
+        """Return the command in force: the configured one, else the adopted one, else ()."""
         return self.configured or verdict.adopted
 
     def present(self, verdict: VerifyVerdict) -> bool:
-        """Whether a verify gate can judge this run's steps: a command is
-        configured (or adopted) and someone may run it. The one answer behind
-        the harness gate, the per-step commit, the nudges, the verdict and the
-        prompt's commit rule, so none of them can disagree."""
+        """Return whether a gate can judge this run: a command is in force and someone may run it.
+
+        Args:
+            verdict: The run's verify bookkeeping.
+
+        Returns:
+            The one answer the harness gate, the per-step commit, the nudges and the prompt read.
+        """
         return bool(self.command(verdict)) and self.may_run(denied=verdict.denied)
 
     def harness_verify(self, state: LoopState, turn: TurnState, *, ending: bool = False) -> None:
-        """Run the gate the harness owes this turn (`[harness].verify_when`):
-        after an editing turn under `step`, and when the run is ending (a
-        finish_session, or `ending`: an end the harness declares) over a tree
-        no green run covers under `step` or `finish`. The model's own
-        run_verify_command this turn already judged the tree, so nothing runs
-        on top of it. `run_commands = "no"` withholds the gate from the
-        harness as it does from the model, and a DENIED gate (ask: a human's
-        no, or the unattended auto-deny) is withheld for the rest of the run
-        the same way. An unexecutable operator command raises
-        `OperatorCommandUnexecutableError` for the loop to end the run on."""
+        """Run the gate the harness owes this turn, per `harness_verify_due`.
+
+        A denied gate is withheld for the rest of the run. An unexecutable operator command
+        raises `OperatorCommandUnexecutableError` out of the dispatcher for the loop to end on.
+
+        Args:
+            state: The execution's state.
+            turn: The turn that ended.
+            ending: Whether the harness declares an end this turn.
+        """
         why = harness_verify_due(
             when=self.when,
             gate_present=self.mode == "run" and self.present(state.verify),
-            # The verdict the run holds over the tree AS IT STANDS -- this
-            # turn's own verify or a standing one nothing has edited since.
-            # A red tree nothing touched is not re-judged (the finish reports
-            # the red), and its one red is counted once, not twice.
             tree_judged=state.verify.judged_and_untouched,
             changed_this_turn=turn.edit_since_verify_pass,
             finishing=ending or (turn.finish is not None and turn.finish.kind == "finish_session"),
@@ -367,21 +391,31 @@ class VerifyGate:
         turn.tool_results.append(Notice(notice))
 
     def scope_paths(self, verdict: VerifyVerdict) -> tuple[str, ...]:
-        """The scoped-gate selection: tests nearest the run's cumulative diff.
-        Empty unless the gate is a pytest argv naming no paths (the one shape
-        that takes appended test files as its selection), or when nothing
-        near the change exists to run."""
+        """Return the tests nearest the run's diff, for a scoped gate run.
+
+        Args:
+            verdict: The run's verify bookkeeping.
+
+        Returns:
+            The test paths; () unless the gate is a bare pytest argv, or when nothing is near.
+        """
         if not is_bare_pytest(self.command(verdict)):
             return ()
         return nearest_test_paths(self.chain.root, diff_changed_paths(self.chain.diff_since_base()))
 
     def scoped_followup(self, state: LoopState, turn: TurnState) -> ExecResult | None:
-        """The scoped re-run after a full gate overran its budget, wherever
-        that gate ran (the harness's own, or the model's run_verify_command):
-        the same command over the tests nearest the run's diff, noted and
-        noticed like any gate run. Arms `verdict.scoped`, so later harness
-        gates skip the doomed full run. None when the gate is not pytest or
-        nothing near the change exists to run."""
+        """Re-run a gate that overran its budget over the tests nearest the run's diff.
+
+        Arms `verdict.scoped`, so later harness gates skip the full run. The result is noted
+        and noticed like any gate run.
+
+        Args:
+            state: The execution's state.
+            turn: The turn the gate ran in.
+
+        Returns:
+            The scoped result; None when the gate cannot be scoped or the run was refused.
+        """
         scope = self.scope_paths(state.verify)
         if not scope:
             return None
@@ -404,10 +438,16 @@ class VerifyGate:
         return result
 
     def test_only_paths_since_red(self, red_tree: str) -> tuple[str, ...]:
-        """Paths whose content differs between *red_tree* (the tree at the
-        last red verify) and the current tree, when every one is a test file;
-        () when either tree is unknown, nothing changed, or a non-test file did.
-        Asked of git, so a run_command edit counts like an apply_edit."""
+        """Return the paths changed since the last red verify when every one is a test file.
+
+        Asked of git, so a run_command edit counts like an apply_edit.
+
+        Args:
+            red_tree: The tree sha at the last red verify.
+
+        Returns:
+            The sorted test paths; () when a tree is unknown, nothing changed or a non-test did.
+        """
         if not red_tree:
             return ()
         tree = self.chain.tree_sha()
@@ -422,28 +462,30 @@ class VerifyGate:
         return ()
 
     def tree_green(self, verdict: VerifyVerdict) -> bool | None:
-        """Is the current tree in a verified-green state? None when no verify
-        command is configured (nothing to gate on); else True iff the last verify
-        was green AND nothing has been edited since, so a gate nobody may run
-        leaves the run unverified, as documented. Grounds both the honest
-        finish signal and the opt-in hard finish gate, so 'passed' can never
-        mean 'finished over a red or stale verify'."""
+        """Return whether the tree is verified green, None when no command is in force.
+
+        Args:
+            verdict: The run's verify bookkeeping.
+
+        Returns:
+            True when the last verify was green and nothing was edited since.
+        """
         if not self.command(verdict):
             return None
         return verdict.green_and_untouched
 
     def verification(self, verdict: VerifyVerdict) -> Verification:
-        """The verify verdict for the SessionResult, grounded on what the gate
-        last saw of the tree. Not-green splits on that observation: "failed"
-        claims someone SAW a red gate, so an execution where no verify ran (or edits
-        landed after the last green) is "unverified" instead -- both exit 4,
-        but only one sends the operator chasing a red that never happened.
+        """Return the gate's word for the session result.
 
-        Only a run is gated: plan and ask finish clean whatever the tree looks
-        like (finish_planning and the ask answer both emit all_passed=True), and
-        preflight still INFERS a verify command for a plan that never runs one,
-        so grounding on the tree there would report failure against their own
-        events."""
+        Only a run is gated. `failed` claims an observed red, so an execution where no verify
+        ran or edits landed after the last green reads `unverified`.
+
+        Args:
+            verdict: The run's verify bookkeeping.
+
+        Returns:
+            The verification word.
+        """
         if self.mode != "run":
             return "not_applicable"
         green = self.tree_green(verdict)

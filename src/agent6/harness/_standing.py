@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The run's standing goal: the never-passing task a run returns to when
-its ordinary work runs out. `Standing` answers whether a soft end (a
-finish_session, the settled family, a quiet turn) converts into re-entry,
-with the nudge that re-enters, and applies that conversion to a turn's
-stops. The goal itself is set by `run --standing` or `/standing`
-(`OperatorTasks.set_standing`)."""
+"""Re-enter the run's standing goal when its ordinary work runs out.
+
+A standing goal is the never-passing task set by `run --standing` or `/standing`
+(`OperatorTasks.set_standing`). `Standing` decides whether a soft end (a finish_session,
+the settled family, a quiet turn) converts into re-entry and applies that to a turn's stops.
+"""
 
 from __future__ import annotations
 
@@ -24,8 +24,15 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class Standing:
-    """The run's standing goal, read from the graph; `patience` is
-    `[harness].standing_patience`."""
+    """Read the run's standing goal from the graph and convert soft ends into re-entry.
+
+    Attributes:
+        curator: The task graph, or None when the run has none.
+        patience: `[harness].standing_patience`, the fruitless re-entries allowed; -1 is unbounded.
+        budget_remaining: The fraction of the budget left, or None without a tracker.
+        log: The run's text logger.
+        emit: The run's event emitter.
+    """
 
     curator: GraphCurator | None
     patience: int
@@ -34,7 +41,7 @@ class Standing:
     emit: Callable[..., None]
 
     def task(self) -> tuple[str, str] | None:
-        """The ready standing task's (id, title), if this run has one."""
+        """Return the ready standing task's (id, title), or None when the run has none."""
         if self.curator is None:
             return None
         nodes = self.curator.nodes()
@@ -44,15 +51,21 @@ class Standing:
         return None
 
     def absorb(self, state: LoopState, *, reason: str, iteration: int) -> str | None:
-        """The standing-goal conversion for a soft end: the nudge text to
-        inject when the run should re-enter the standing task instead of
-        ending, else None. None when there is no ready standing task, when
-        the budget is spent (the hard bounds always win), or once
-        `[harness].standing_patience` fruitless re-entries (no executed
-        tool call since the last one) are used up. At the default (-1) a
-        fruitless round never ends the run by itself: the nudge escalates
-        to "dig deeper or try a different approach" instead, and the run
-        ends on its budget, iteration cap, or an operator stop."""
+        """Convert a soft end into re-entry of the standing task.
+
+        A re-entry with no executed tool call since the last one is fruitless; past `patience`
+        of them the end is honoured. At the default (-1) the nudge escalates instead and the run
+        ends on its budget, its iteration cap or an operator stop.
+
+        Args:
+            state: The execution's state.
+            reason: The soft end being converted.
+            iteration: The turn the conversion happens at.
+
+        Returns:
+            The nudge that re-enters the task, or None when the run ends: no ready standing
+            task, a spent budget, or the patience used up.
+        """
         st = self.task()
         if st is None:
             return None
@@ -80,11 +93,15 @@ class Standing:
     def absorb_soft_stop(
         self, state: LoopState, turn: TurnState, conversation: Conversation
     ) -> None:
-        """A standing task converts the soft out-of-work endings into
-        re-entry: the pending stop flag is cleared and the standing nudge
-        joins the conversation. Faults (tool_error), the loop guard, and
-        every hard bound still end the run; the absorb itself refuses on
-        spent budget or a spin."""
+        """Clear a turn's soft stop and put the re-entry nudge in the conversation.
+
+        A hard stop in the same turn (a fault, the loop guard, a bound) ends the run regardless.
+
+        Args:
+            state: The execution's state.
+            turn: The turn whose stops are judged.
+            conversation: The conversation the nudge joins.
+        """
         soft = next((stop.soft for stop in turn.stops if stop.soft), None)
         if soft is None or any(not stop.soft for stop in turn.stops):
             return

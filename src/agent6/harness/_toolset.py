@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The tool surface each loop mode exposes to the model.
+"""Build the tool surface each mode exposes to the model.
 
-Builds the ToolDefinition list from the dispatcher's availability plus the
-mode's extras (run / plan / ask / machine / agent), and the read-only review
-surface shared by the in-loop panel and `agent6 review`.
+The list comes from the dispatcher's availability plus the mode's extras; the read-only review
+surface is shared by the in-loop panel and `agent6 review`.
 """
 
 from __future__ import annotations
@@ -26,9 +25,7 @@ from agent6.tools.schema import (
     wire_schema,
 )
 
-# The ONLY tools an explore-tier reviewer may use: read-only navigation, no
-# edits/commits/run_command/dag/finish. Enforced both by what we expose AND by
-# the dispatch wrapper (defense in depth).
+# The only tools a reviewer may use, enforced by the exposed list and by the dispatch wrapper.
 READONLY_REVIEW_TOOLS = frozenset(
     {
         "read_file",
@@ -49,34 +46,29 @@ def tool_definitions(
     *,
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
 ) -> list[ToolDefinition]:
-    """Build the tool list exposed to the loop: the mode's surface
-    (`schema.mode_tools`, which the dispatcher also enforces as its
-    backstop) filtered by what the dispatcher actually allows (e.g.
-    run_command may be disabled)."""
+    """Build the tool list the loop exposes in a mode.
+
+    Args:
+        dispatcher: The run's dispatcher, whose availability filters the mode's surface.
+        mode: The loop mode.
+
+    Returns:
+        The tool definitions, with MCP tools appended in the editing modes only.
+    """
     available = set(dispatcher.available_tool_names())
     surface = mode_tools(mode)
     out: list[ToolDefinition] = []
     for cls in (*surface.base, *surface.extras):
         if cls.TOOL_NAME not in available and cls not in surface.extras:
-            # Extras (finish_session/finish_planning, run_metric_command,
-            # the task tools, ask_user, use_skill) are always exposed even
-            # though they're not in ALL_TOOLS.
-            continue
+            continue  # the extras are exposed without being in ALL_TOOLS
         if dispatcher.tool_is_withheld(cls.TOOL_NAME):
             continue
         if cls in DAG_TOOLS and not dispatcher.dag_available:
-            # No curator (a machine agent state): every DAG call errors.
-            continue
+            continue  # no curator: every task-graph call errors
         if cls.TOOL_NAME == RunMetricInput.TOOL_NAME and not dispatcher.metric_configured():
-            # No [harness.metric]: the tool can only answer "no metric
-            # configured", which the model cannot fix. Hidden like use_skill
-            # below and run_verify_command in the dispatcher.
-            continue
+            continue  # no metric: the tool could only answer that none is configured
         if cls.TOOL_NAME == UseSkillInput.TOOL_NAME and not dispatcher.skills_available():
-            # No installed/enabled skills (or [skills].enabled off): hide the
-            # tool rather than offer one that can only error, matching the
-            # LSP-gating pattern.
-            continue
+            continue  # no skills: the tool could only error
         out.append(
             ToolDefinition(
                 name=cls.TOOL_NAME,
@@ -84,12 +76,7 @@ def tool_definitions(
                 input_schema=wire_schema(cls),
             )
         )
-    # Any MCP tools the dispatcher's manager discovered get
-    # appended verbatim -- in run mode ONLY. MCP tools are arbitrary external
-    # capabilities agent6 cannot classify as read-only, so the read-only modes
-    # (plan/ask/machine/agent) must not offer them at all; the dispatcher
-    # refuses mcp__* in those modes as the backstop. Names already carry the
-    # `mcp__<server>__` prefix so they can never collide with built-ins.
+    # MCP tools cannot be classified as read-only, so only an editing mode offers them.
     if session_kind(mode).edits:
         for desc in dispatcher.mcp_descriptors():
             schema = dict(desc.input_schema)
@@ -107,11 +94,15 @@ def tool_definitions(
 def build_readonly_review_tools(
     dispatcher: ToolDispatcher,
 ) -> tuple[list[ToolDefinition], ReviewDispatch]:
-    """Read-only tool surface for explore-tier review seats: the navigation tools
-    *dispatcher* exposes filtered to `READONLY_REVIEW_TOOLS`, plus a dispatch
-    wrapper that REFUSES anything outside the allowlist (so a reviewer can never
-    edit, commit, run a command, or mutate the task graph). Shared by the in-loop
-    panel and the post-hoc `agent6 review` path."""
+    """Build the read-only tool surface a review seat gets.
+
+    Args:
+        dispatcher: The run's dispatcher.
+
+    Returns:
+        The navigation tools in `READONLY_REVIEW_TOOLS`, and a dispatch wrapper that refuses
+        every other tool.
+    """
     tools = [t for t in tool_definitions(dispatcher, mode="run") if t.name in READONLY_REVIEW_TOOLS]
 
     def dispatch(name: str, tool_input: dict[str, Any]) -> ToolResult:

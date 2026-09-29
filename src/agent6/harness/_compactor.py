@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The context compaction driver: tier 1 elides old tool results (deduped,
-gisted, the old thinking dropped) at `CompactionSettings.drop_at_chars`;
-tier 2 summarises the elided history with the summariser model and
-restarts the conversation from the task plus the summary at
-`summarise_at_chars`, or on the operator's request. The pure rules live in
-`_compaction`; this object does the calls, the DAG check-off and the
-events, and the loop calls `compact` once per turn before the provider
-call."""
+"""The context compaction driver.
+
+Tier 1 elides old tool results (deduped, gisted, the old thinking dropped)
+at `CompactionSettings.drop_at_chars`; tier 2 summarises the elided history
+with the summariser model and restarts the conversation from the task plus
+the summary at `summarise_at_chars`, or on the operator's request. The pure
+rules live in `_compaction`; this object does the calls, the DAG check-off
+and the events. The loop calls `compact` once per turn before the provider
+call.
+"""
 
 from __future__ import annotations
 
@@ -49,19 +51,28 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class Compactor:
-    """The compaction driver for one run: its settings, the worker's provider
-    (the summariser when none is configured), the task DAG it checks off,
-    and the run's bridge, log and event callables."""
+    """The compaction driver for one run.
+
+    Attributes:
+        settings: The compaction thresholds and the summariser seat.
+        provider: The worker's provider, the summariser when none is configured.
+        curator: The task DAG the check-off writes to; None when no DAG is wired.
+        mode: The run mode.
+        dag_available: The DAG tools are wired, so the restart notice says so.
+        decisions: The operator's rulings block for the restart notice, read fresh.
+        compact_requested: The operator's manual compaction request, or None.
+        compact_clear: Consumes the manual request.
+        log: The run log line sink.
+        emit: The run event sink.
+        emit_graph_snapshot: Re-snapshots the graph after a check-off.
+    """
 
     settings: CompactionSettings
     provider: Provider
     curator: GraphCurator | None
     mode: Literal["run", "plan", "ask", "agent"]
-    # DAG tools are wired: the restart notice tells the model so.
     dag_available: bool
-    # The operator's rulings block for the restart notice, read fresh.
     decisions: Callable[[], str]
-    # The operator's manual compaction request and its consumption.
     compact_requested: Callable[[], str | None]
     compact_clear: Callable[[], None]
     log: Callable[[str], None]
@@ -71,24 +82,26 @@ class Compactor:
     def compact(
         self, conversation: Conversation, state: LoopState, *, prefix_chars: int = 0
     ) -> bool:
-        """Tiered compaction. Returns True iff a tier-2 summarise-and-restart
-        actually replaced the history (so the caller can re-surface the
-        current-task banner the restart wiped); False otherwise.
+        """Run tiered compaction over the conversation, in place.
 
-        Tier 1 (cheap): drop old tool_result blocks once cumulative content
-        exceeds `CompactionSettings.drop_at_chars`.
+        Tier 1 drops old tool_result blocks once their content exceeds
+        `drop_at_chars`. Tier 2 fires once the whole post-elision context (text,
+        tool_use inputs, surviving results) crosses `summarise_at_chars`: the
+        elided history is summarised and the conversation restarts from the task
+        plus the summary. A summariser error or an empty summary leaves the
+        tier-1-elided conversation as it is. An operator compact request forces
+        tier 2 past the thresholds and is consumed here, so one request is one
+        compaction.
 
-        Tier 2 (expensive): once the WHOLE post-elision context (text +
-        tool_use inputs + surviving tool_results, via `context_chars`)
-        crosses `CompactionSettings.summarise_at_chars`, summarise the elided history
-        into a compact progress block and restart the conversation from
-        (original task + summary). Fail-safe: if
-        summarisation errors or returns nothing, the conversation is left
-        untouched (tier-1 elision already ran) and the run continues.
+        Args:
+            conversation: The loop's history.
+            state: The run's loop state; the tier-2 floor lives on it.
+            prefix_chars: The system prompt and tool definitions' size, counted
+                with the conversation against the tier-2 threshold.
 
-        An operator compact request (`compact_requested`, the TUI's
-        "Compact now") forces tier 2 regardless of the size thresholds; the
-        marker is consumed here so one request means one compaction.
+        Returns:
+            True when a tier-2 restart replaced the history, so the caller
+            re-surfaces the focus banner the restart wiped.
         """
         forced = self.compact_requested()
         if forced is not None:
@@ -110,8 +123,7 @@ class Compactor:
         if self.settings.keep_thinking_turns > 0 and (
             n_deduped or n_elided or context_chars(conversation) > self.settings.drop_at_chars
         ):
-            # Same cache-bundling rule as dedup: only at tier-1 pressure
-            # moments, never as a rolling per-iteration rewrite.
+            # As with dedup: only at tier-1 pressure, never as a rolling per-turn rewrite.
             n_turns, n_chars = strip_old_thinking(
                 conversation, keep_turns=self.settings.keep_thinking_turns
             )
@@ -137,36 +149,34 @@ class Compactor:
                 paths=list(stats.gist_paths),
                 demoted_paths=list(stats.demoted_paths),
             )
-        # Measure the WHOLE post-elision request, not just tool_results: tier 1
-        # already bounded those, so re-measuring them could never cross the
-        # larger tier-2 threshold -- and the window bounds the request, so the
-        # system prompt and the tool definitions count too
-        # (`request_prefix_chars`).
+        # The whole request: tier 1 bounded the results alone, and the window bounds the
+        # prefix too.
         total = context_chars(conversation) + prefix_chars
-        # Tier 2 needs at least an original-task turn plus enough history
-        # to be worth summarising; below that a restart would lose more than
-        # it saves. The growth floor (see LoopState.tier2_floor_chars) keeps
-        # a restart that lands near the threshold from summarising every
-        # other iteration; a forced (operator) compaction bypasses it.
+        # Below four turns a restart loses more than it saves; a forced compaction skips
+        # the growth floor.
         over = total > self.settings.summarise_at_chars and total >= state.tier2_floor_chars
         if (forced is not None or over) and len(conversation) > 3:
             return self.summarise_and_restart(
                 conversation, state, focus=forced or "", prefix_chars=prefix_chars
             )
         if forced is not None:
-            # The request was consumed above (one request, one compaction), so a
-            # silent return would drop it: the front-end has already told the
-            # operator it "applies before the next model call", and the focus
-            # text is gone. Say the floor refused it.
+            # The request was consumed above, so the refusal is said, not silent.
             self.log("LOOP: manual compaction skipped: too little history to summarise")
             self.emit("loop.compact.refused", reason="too little history to summarise")
         return False
 
     def distill_gists(self, requests: tuple[GistRequest, ...]) -> dict[str, str]:
-        """Distill about-to-be-elided file reads into one-line gists with the
-        summariser model (same seat as tier-2). Fail-safe: any provider error
-        returns {} and every victim gets the bare placeholder, so gisting can
-        slow a drop event but never break one."""
+        """Distill about-to-be-elided file reads into one-line gists.
+
+        The summariser seat does the call. A provider error returns {} and every
+        victim gets the bare placeholder, so gisting never breaks a drop.
+
+        Args:
+            requests: The reads about to be elided.
+
+        Returns:
+            Path to gist for every path the model answered.
+        """
         provider = self.settings.summariser or self.provider
         files = "\n\n".join(f"=== FILE {r.path} ===\n{r.content}" for r in requests)
         self.emit("loop.compact.gist.call", files=len(requests))
@@ -192,30 +202,35 @@ class Compactor:
         focus: str = "",
         prefix_chars: int = 0,
     ) -> bool:
-        """Replace the history with (original task + a model-written progress
-        summary), in place. The loop only calls this at the top of an
-        iteration, where the history is balanced (every `tool_use` already
-        has its `tool_result`), so the restart can drop the middle without
-        orphaning a tool-call pairing. Returns True iff the history was
-        actually replaced; False on every fail-safe path (the tier-1-elided
-        context is kept and the run continues).
+        """Replace the history with the task plus a model-written summary, in place.
+
+        The loop calls this at the top of an iteration, where every `tool_use`
+        has its `tool_result`, so the restart drops the middle without orphaning
+        a pairing.
+
+        Args:
+            conversation: The loop's history.
+            state: The run's loop state.
+            focus: The operator's focus text for the summary, "" for none.
+            prefix_chars: The system prompt and tool definitions' size, counted
+                into the next tier-2 floor.
+
+        Returns:
+            True when the history was replaced; False on every fail-safe path,
+            where the tier-1-elided context is kept.
         """
         provider = self.settings.summariser or self.provider
         turns = conversation.turns
-        # The verbatim tail survives the restart, so the summary covers only
-        # what is actually dropped (pi's keepRecentTokens shape).
+        # The verbatim tail survives the restart; the summary covers only what is dropped.
         tail_start = recent_tail_start(turns, self.settings.keep_recent_chars)
         if tail_start <= 1:
-            # A cap that swallows the whole history would make the restart
-            # grow the context instead of shrinking it; keep nothing.
+            # A tail holding the whole history would grow the context; keep nothing.
             tail_start = len(turns)
         transcript = format_transcript_tail(
             turns[1:tail_start], max_messages=len(conversation), max_chars=60_000
         )
-        # The DAG is agent6's compaction memory: at each restart we ask the
-        # summariser to check off finished tasks and surface newly-found ones, so
-        # task state stays accurate across compaction without depending on the
-        # worker calling update_task (which weak models rarely do).
+        # The summariser checks off finished tasks and surfaces new ones, so task state
+        # stays accurate without the worker calling update_task.
         open_tasks = open_subtasks(self.curator.nodes()) if self.curator is not None else []
         if open_tasks:
             task_lines = "\n".join(f"- {tid}: {title}" for tid, title in open_tasks)
@@ -241,9 +256,8 @@ class Compactor:
         if state.pins:
             pin_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(state.pins, start=1))
             pins_req = PINS_NO_RESTATE_CLAUSE + pin_lines
-        # The previous restart's summary rides at the HEAD of the post-restart
-        # history, which the tail-clipped transcript above drops first, so it
-        # is carried out-of-band, like pins.
+        # The previous summary heads the history, which the clipped transcript drops
+        # first, so it is carried out-of-band like pins.
         prior_req = ""
         for turn in conversation.turns:
             for item in getattr(turn, "items", ()):
@@ -271,8 +285,7 @@ class Compactor:
                 temperature=0.0,
             )
         except (ProviderError, BudgetExceededError) as exc:
-            # Fail-safe: keep the current (tier-1-elided) context. A real
-            # budget exhaustion is re-detected by the next provider call.
+            # A real budget exhaustion is re-detected by the next provider call.
             self.log(f"  tier-2 summarise failed: {exc}; keeping current context")
             self.emit("loop.compact.summarise.failed", error=str(exc)[:200])
             return False
@@ -281,8 +294,7 @@ class Compactor:
         if not summary:
             self.emit("loop.compact.summarise.failed", error="empty summary")
             return False
-        # Apply the check-off only after the stripped narrative passed the
-        # fail-safe, so bookkeeping alone can neither mutate the DAG nor erase history.
+        # Only after the narrative passed: bookkeeping alone never mutates the DAG.
         if open_tasks:
             self.apply_checkoff(
                 raw, valid_ids={tid for tid, _ in open_tasks}, root_id=state.root_task_id
@@ -297,10 +309,7 @@ class Compactor:
             + summary,
             keep=turns[tail_start:],
         )
-        # The floor is measured the way the trigger is (the whole request, prefix
-        # included): computed on the conversation alone it would sit below the
-        # total from the moment the restart finishes, so tier 2 would re-fire on
-        # the next iteration and paraphrase away the tail it just kept.
+        # Measured as the trigger is, prefix included, or tier 2 re-fires next iteration.
         state.tier2_floor_chars = int((context_chars(conversation) + prefix_chars) * 1.25)
         self.emit(
             "loop.compact.summarise.done",
@@ -313,9 +322,16 @@ class Compactor:
     def apply_checkoff(
         self, summary_text: str, *, valid_ids: set[str], root_id: str | None
     ) -> None:
-        """Parse the summariser's ```checkoff block and apply it to the curator:
-        mark completed tasks passed, queue newly-discovered ones under the
-        run's root. Best-effort: a curator hiccup must never break the run."""
+        """Apply the summariser's checkoff block to the curator, best-effort.
+
+        Completed tasks are marked passed, discovered ones queued under the run's
+        root; a curator refusal skips that item.
+
+        Args:
+            summary_text: The summariser's raw reply.
+            valid_ids: The open task ids the summariser was shown.
+            root_id: The parent for discovered tasks.
+        """
         if self.curator is None:
             return
         completed, new_tasks = parse_checkoff(summary_text)
@@ -323,8 +339,7 @@ class Compactor:
         if not completed and not new_tasks:
             return
         passed = queued = 0
-        # One try per write: a refusal (a container with unresolved children, a
-        # retired task) or a write error skips that item, never the rest.
+        # One try per write: a refusal or a write error skips that item, never the rest.
         for cid in completed:
             try:
                 self.curator.update_status(
@@ -347,8 +362,6 @@ class Compactor:
                 continue
             queued += 1
         if passed or queued:
-            # What LANDED, not what the summariser asked for: the cap above and
-            # a refused status (a container with unresolved children) both make the
-            # request bigger than the change.
+            # What landed, not what the summariser asked for.
             self.log(f"LOOP: compaction check-off -- passed {passed}, queued {queued}")
             self.emit_graph_snapshot()

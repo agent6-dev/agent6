@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Test files nearest a set of changed paths, for the scoped verify fallback:
-when the full gate overruns its budget, these are the tests most likely to
-judge the change. Pure path heuristics over the worktree; no git, no config.
+"""Find the test files nearest a set of changed paths.
+
+The scoped verify fallback runs these when the full gate overruns its budget. Pure path
+heuristics over the worktree: no git, no config.
 """
 
 from __future__ import annotations
@@ -10,16 +11,23 @@ from __future__ import annotations
 from pathlib import Path
 
 _TEST_DIR_NAMES = ("tests", "test")
-# Directories never scanned for tests (vendored trees and envs are large and
-# judge nothing).
+# Vendored trees and envs are large and judge nothing.
 _SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", ".eggs"}
 _SCAN_CAP = 4000
 
 
 def diff_changed_paths(diff: str) -> tuple[str, ...]:
-    """The b-side paths of a unified diff's `diff --git a/x b/y` lines, in
-    order, deduplicated. Deleted files still appear (their b-side names the
-    old path); the caller's existence checks drop them."""
+    """Return the b-side paths of a unified diff's `diff --git` lines, in order, deduplicated.
+
+    A deleted file still appears (its b-side names the old path); the caller's existence
+    checks drop it.
+
+    Args:
+        diff: The unified diff text.
+
+    Returns:
+        The repo-relative paths.
+    """
     seen: dict[str, None] = {}
     for ln in diff.splitlines():
         if ln.startswith("diff --git ") and " b/" in ln:
@@ -28,11 +36,18 @@ def diff_changed_paths(diff: str) -> tuple[str, ...]:
 
 
 def is_bare_pytest(command: tuple[str, ...]) -> bool:
-    """True when appending test paths to *command* selects them: some token
-    is `pytest` (or ends in `/pytest`) and every token after it is an option.
-    A `sh -c` script binds appended paths as $0/$1 with the script unchanged,
-    and a command that already names a path (`pytest tests`) unions the two,
-    so neither takes a selection."""
+    """Return whether appending test paths to the command selects them.
+
+    True when some token is `pytest` (or ends in `/pytest`) and every token after it is an
+    option. A `sh -c` script binds appended paths as $0 and $1 with the script unchanged, and a
+    command that already names a path unions the two, so neither takes a selection.
+
+    Args:
+        command: The verify command's argv.
+
+    Returns:
+        Whether the command takes a selection.
+    """
     for i, tok in enumerate(command):
         if tok == "pytest" or tok.endswith("/pytest"):
             return all(t.startswith("-") for t in command[i + 1 :])
@@ -45,9 +60,15 @@ def _is_test_file(rel: Path) -> bool:
 
 
 def _candidates_for(rel: Path) -> list[Path]:
-    """Conventional homes for the tests of one changed source file, most
-    specific first: siblings, a tests dir beside it, then a mirrored or flat
-    layout under each ancestor's tests dir."""
+    """Return the conventional homes for one changed source file's tests, most specific first.
+
+    Args:
+        rel: The changed source file, repo-relative.
+
+    Returns:
+        Siblings, a tests dir beside it, then a mirrored or flat layout under each ancestor's
+        tests dir.
+    """
     stem = rel.stem
     parent = rel.parent
     out = [
@@ -65,11 +86,19 @@ def _candidates_for(rel: Path) -> list[Path]:
 
 
 def _scan_test_dirs(root: Path, sources: list[Path]) -> list[Path]:
-    """Name-matched test files under any test dir beside the changed sources
-    or their ancestors (pandas keeps tests at pandas/tests, not the root),
-    bounded: catches layouts the conventions above miss, dropped path
-    segments included (pandas/tests/indexes for pandas/core/indexes).
-    Scans at most _SCAN_CAP entries; a larger tree yields what was seen."""
+    """Return the name-matched test files under the test dirs beside the sources or their ancestors.
+
+    Catches the layouts the conventions miss, dropped path segments included
+    (pandas/tests/indexes for pandas/core/indexes). Scans at most `_SCAN_CAP` entries; a larger
+    tree yields what was seen.
+
+    Args:
+        root: The repository root.
+        sources: The changed source files, repo-relative.
+
+    Returns:
+        The matching test files, repo-relative.
+    """
     hits: list[Path] = []
     budget = _SCAN_CAP
     stems = {s.stem for s in sources}
@@ -101,14 +130,22 @@ def _scan_test_dirs(root: Path, sources: list[Path]) -> list[Path]:
 
 
 def nearest_test_paths(root: Path, changed: tuple[str, ...], *, cap: int = 20) -> tuple[str, ...]:
-    """Repo-relative test files most likely to judge the changed paths:
-    changed test files themselves, conventional siblings/mirrors of each
-    changed .py source, then name matches under the repo's test dirs.
-    Existing files only, deduplicated in that order, at most *cap*. A changed
-    helper or conftest under a tests dir is neither run nor mirrored. Name
-    matches only: a test directory named for the module (tests/frame/ for
-    core/frame.py) is not found, and a same-stem test elsewhere
-    (plotting/test_frame.py) is picked."""
+    """Return the test files most likely to judge the changed paths.
+
+    Changed test files themselves, then the conventional siblings and mirrors of each changed
+    .py source, then name matches under the repo's test dirs: existing files only, deduplicated
+    in that order. A changed helper or conftest under a tests dir is neither run nor mirrored.
+    Name matches only: a test directory named for the module (tests/frame/ for core/frame.py)
+    is not found, and a same-stem test elsewhere (plotting/test_frame.py) is picked.
+
+    Args:
+        root: The repository root.
+        changed: The changed paths, repo-relative.
+        cap: The most paths returned.
+
+    Returns:
+        The repo-relative test paths.
+    """
     picked: dict[str, None] = {}
     sources: list[Path] = []
     for c in changed:

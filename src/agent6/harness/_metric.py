@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Metric-driven optimisation helpers for the agent loop.
+"""Score a metric run and decide when it plateaus or may finish.
 
-For runs with a configured [harness.metric], the loop measures a continuous
-score after each verified step and feeds the trajectory back to the worker.
-This module owns the pure pieces of that: the `MetricSample` record, parsing a
-score and the unmet thresholds out of metric output, deciding whether a sample
-is a new best / at a provable ceiling, formatting the feedback block, the
-plateau and ceiling stops (`metric_plateau`) and the early-finish gate
-(`metric_early_finish`). The loop decides when to measure.
+For a run with a `[harness.metric]`, the loop measures a score after each verified step and
+feeds the trajectory back to the worker. This module holds the pure pieces: the sample record,
+the score and threshold parsing, the feedback block, the plateau stop and the early-finish gate.
+The loop decides when to measure.
 """
 
 from __future__ import annotations
@@ -26,6 +23,21 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class MetricSample:
+    """One metric reading.
+
+    Attributes:
+        label: The sample's name in the feedback block.
+        score: The parsed score, or None when the output held none.
+        returncode: The metric command's exit code, or None when it did not run.
+        sha: The commit the reading covers, or "".
+        error: Why the reading failed, or "".
+        stdout_tail: The command's last stdout bytes.
+        stderr_tail: The command's last stderr bytes.
+        targets: The unmet thresholds parsed from the output (`extract_metric_targets`).
+        at_ceiling: Whether the output reported the score as a maxed-out fraction
+            (`metric_at_fraction_ceiling`).
+    """
+
     label: str
     score: float | None
     returncode: int | None
@@ -33,18 +45,12 @@ class MetricSample:
     error: str = ""
     stdout_tail: str = ""
     stderr_tail: str = ""
-    # Comparison thresholds parsed from the metric command output (e.g.
-    # `assert cycles() < 1487` lines); they point the worker at the next
-    # unmet target rather than a vague "go faster". See
-    # `extract_metric_targets`.
     targets: tuple[float, ...] = ()
-    # True when the grader reported the score as a maxed-out fraction
-    # (`SCORE: 27/27`): the metric is at its provable ceiling and cannot
-    # be improved. See `metric_at_fraction_ceiling`.
     at_ceiling: bool = False
 
 
 def coerce_metric_score(value: Any) -> float | None:
+    """Return a number as a float, or None for a bool or a non-number."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int | float):
@@ -52,13 +58,8 @@ def coerce_metric_score(value: Any) -> float | None:
     return None
 
 
-# A comparison operator followed by a numeric literal, e.g. the
-# `< 1487` in `assert cycles() < 1487`. Underscores in the literal
-# (Python int separators) are tolerated and stripped.
-# (?<![-=<>!]) rejects the '>' inside '->' / '=>' arrows (and the tail of
-# '>>' / '!>'): a grader progress log like 'epoch 2 -> 27.0' would otherwise
-# be captured as a threshold, fabricating an unmeetable 'drive the metric
-# above <current>' directive from the grader's own echo of the score.
+# An operator and a numeric literal, as in `assert cycles() < 1487`; underscores are tolerated.
+# The lookbehind rejects the `>` of an arrow (`epoch 2 -> 27.0`): a score echo, not a target.
 METRIC_TARGET_RE = re.compile(r"(?<![-=<>!])(<=|>=|<|>)\s*([0-9][0-9_]*(?:\.[0-9]+)?)")
 
 
@@ -67,14 +68,17 @@ def extract_metric_targets(
     *,
     goal: Literal["minimize", "maximize"],
 ) -> tuple[float, ...]:
-    """Pull threshold numbers out of metric-command output.
+    """Pull the threshold numbers out of metric-command output.
 
-    For `goal="minimize"` we want upper bounds the score must get
-    *under* (`<` / `<=` thresholds); for `"maximize"` we want lower
-    bounds it must get *over* (`>` / `>=`). Benchmarks commonly print
-    these as `assert <expr> < N` lines (one per unmet speed tier), so
-    extracting them turns "go faster" into a concrete next target.
-    Order-preserving and de-duplicated.
+    A `minimize` goal takes the `<` and `<=` bounds, a `maximize` goal the `>` and `>=` bounds.
+    Benchmarks print these as `assert <expr> < N` lines, one per unmet tier.
+
+    Args:
+        text: The metric command's output.
+        goal: The metric's direction.
+
+    Returns:
+        The thresholds in order of appearance, deduplicated.
     """
     wanted = {"<", "<="} if goal == "minimize" else {">", ">="}
     seen: set[float] = set()
@@ -97,13 +101,20 @@ def next_metric_target(
     current: float | None,
     goal: Literal["minimize", "maximize"],
 ) -> float | None:
-    """The nearest threshold the current score has not yet met. A target is
-    met only when the score is STRICTLY beyond it in the improving direction:
-    equality stays unmet, matching a strict `assert x < N` (and holding the
-    conservative reading for a `<=` bound). Returns the largest
-    not-yet-undercut `<` bound (minimize) or the smallest not-yet-exceeded
-    `>` bound (maximize); None when all are met or there is nothing to aim
-    at."""
+    """Return the nearest threshold the current score has not met.
+
+    A target is met only when the score is strictly beyond it in the improving direction,
+    matching a strict `assert x < N`.
+
+    Args:
+        targets: The parsed thresholds.
+        current: The latest score, or None.
+        goal: The metric's direction.
+
+    Returns:
+        The largest `<` bound not yet undercut (minimize) or the smallest `>` bound not yet
+        exceeded (maximize); None when all are met or there is nothing to aim at.
+    """
     if not targets or current is None:
         return None
     if goal == "minimize":
@@ -113,33 +124,28 @@ def next_metric_target(
     return min(unmet) if unmet else None
 
 
-# A fraction in metric output, e.g. the `27/27` in `SCORE: 27/27`. A
-# maxed-out fraction means the metric is at its provable ceiling. See
-# `metric_at_fraction_ceiling`.
+# A fraction in metric output, as the `27/27` in `SCORE: 27/27`.
 METRIC_FRACTION_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)")
 
 
 def metric_at_fraction_ceiling(text: str, score: float, *, pattern: str) -> bool:
-    """True if `text` reports `score` as a maxed-out `X/Y` fraction.
+    """Return whether the text reports the score as a maxed-out `X/Y` fraction.
 
-    Many graders print a bounded score as `X/Y` (`SCORE: 27/27`,
-    `passed 27/27`). When the numerator equals both the parsed score and
-    the denominator, the metric is provably at its ceiling: no further edit
-    can push it higher. Detecting this lets a `maximize` run stop cleanly
-    instead of treating the unbeatable plateau as a local optimum worth
-    spending the rest of the budget pivoting away from. Conservative: only
-    fires on an exact `score/score` match, so partial scores (`26/27`)
-    and unbounded metrics (raw cycle counts, which never print a
-    denominator) are unaffected.
+    Graders print a bounded score as `SCORE: 27/27`: a numerator equal to both the parsed score
+    and the denominator puts the metric at its provable ceiling. Only fractions on the line the
+    score pattern matched count, so a progress bar's `100/100` elsewhere cannot latch it.
 
-    `pattern` is the metric score regex (`[harness.metric].pattern`, the
-    one the score was parsed with): only fractions on the line of the score
-    match count, so an incidental fraction elsewhere in the output (a tqdm
-    `100/100` in stderr) cannot latch the ceiling for the run.
+    Args:
+        text: The metric command's output.
+        score: The parsed score.
+        pattern: The `[harness.metric].pattern` regex the score was parsed with.
+
+    Returns:
+        Whether the score is at its ceiling; a bad pattern reads as no score line.
     """
     try:
         m = re.search(pattern, text)
-    except re.error:  # mirror parse_metric_score: a bad pattern means no score line
+    except re.error:  # as parse_metric_score: a bad pattern means no score line
         return False
     if m is None:
         return False
@@ -162,6 +168,7 @@ def metric_is_better(
     incumbent: float,
     goal: Literal["minimize", "maximize"],
 ) -> bool:
+    """Return whether the candidate beats the incumbent in the goal's direction."""
     if goal == "minimize":
         return candidate < incumbent
     return candidate > incumbent
@@ -172,6 +179,7 @@ def best_metric_sample(
     *,
     goal: Literal["minimize", "maximize"],
 ) -> MetricSample | None:
+    """Return the best parsed sample, or None when none parsed."""
     parsed = [sample for sample in samples if sample.score is not None]
     if not parsed:
         return None
@@ -185,6 +193,7 @@ def best_metric_sample(
 
 
 def format_metric_sample(sample: MetricSample) -> str:
+    """Return one sample rendered as a feedback line."""
     score = "unparsed" if sample.score is None else f"{sample.score:g}"
     parts = [f"{sample.label}: score={score}"]
     if sample.returncode is not None:
@@ -197,6 +206,7 @@ def format_metric_sample(sample: MetricSample) -> str:
 
 
 def metric_goal(metric_cfg: Any) -> Literal["minimize", "maximize"] | None:
+    """Return the metric config's goal, or None without a metric."""
     goal = getattr(metric_cfg, "goal", None)
     if goal in ("minimize", "maximize"):
         return goal
@@ -208,6 +218,7 @@ def format_metric_feedback(
     *,
     goal: Literal["minimize", "maximize"],
 ) -> str:
+    """Return the feedback block the model reads after a reading."""
     latest = history[-1]
     best = best_metric_sample(history, goal=goal)
     previous_best = best_metric_sample(history[:-1], goal=goal)
@@ -249,30 +260,21 @@ def format_metric_feedback(
     return "\n".join(lines)
 
 
-# How many plateau notices a run in its final budget slice gets before the
-# loop ends it. The detector fires the first time a verified metric ties the
-# prior best, and a tie with budget to spare is not an end.
+# Plateau notices a run in its final budget slice gets before the loop ends it.
 METRIC_PLATEAU_PATIENCE = 3
 
-# A metric plateau only becomes a terminal condition once the run has
-# entered its final budget slice. While more than this fraction of the
-# token budget remains, a plateau is treated as a local optimum worth
-# pivoting away from rather than a reason to quit: stopping with most of
-# the budget unspent leaves measurable gains (and money) on the table.
-# Only consulted when a real BudgetTracker is wired in; with no budget
-# signal the loop falls back to the fixed `METRIC_PLATEAU_PATIENCE`.
+# A plateau ends the run only once at most this fraction of the token budget remains.
+# With no budget signal the loop falls back to `METRIC_PLATEAU_PATIENCE` alone.
 METRIC_PLATEAU_STOP_BELOW_BUDGET = 0.25
 
-# The plateau notice states the fact and the budget; the loop ends a run on
-# a plateau only below METRIC_PLATEAU_STOP_BELOW_BUDGET.
+# The notice states the fact and the budget; only the final slice ends a run on a plateau.
 METRIC_PLATEAU_NUDGE = (
     "[harness plateau] The recent verified edits did not improve the metric;"
     " {budget}. The best commit stands."
 )
 
 
-# An early finish_session on an optimisation run is deferred, a bounded
-# number of times, so the notice states the deferral and its bound.
+# An early finish_session on an optimisation run is deferred a bounded number of times.
 METRIC_EARLY_FINISH_PATIENCE = 3
 METRIC_FINISH_NUDGE = (
     "[harness budget] finish_session deferred: this is an optimisation run with"
@@ -283,8 +285,14 @@ METRIC_FINISH_NUDGE = (
 
 
 def metric_plateau_nudge(budget_remaining: float | None) -> str:
-    """The plateau notice with the run's remaining budget (unknown with no
-    tracker wired in)."""
+    """Return the plateau notice with the run's remaining budget.
+
+    Args:
+        budget_remaining: The fraction of the budget left, or None with no tracker wired in.
+
+    Returns:
+        The notice text.
+    """
     budget = (
         f"{budget_remaining:.0%} of the budget remains"
         if budget_remaining is not None
@@ -299,6 +307,16 @@ def metric_plateau_summary(
     goal: Literal["minimize", "maximize"],
     min_parsed_samples: int = 5,
 ) -> str | None:
+    """Return the plateau summary when the latest parsed reading only ties the prior best.
+
+    Args:
+        history: The run's samples.
+        goal: The metric's direction.
+        min_parsed_samples: The fewest parsed samples before a tie counts.
+
+    Returns:
+        The summary, or None before the threshold or when the latest reading differs.
+    """
     parsed = [sample for sample in history if sample.score is not None]
     if len(parsed) < min_parsed_samples:
         return None
@@ -319,11 +337,15 @@ def metric_plateau_summary(
 
 @dataclass(slots=True)
 class MetricGuard:
-    """A metric run's readings and its two patience counters: `plateau_nudges_used`
-    counts final-slice plateau nudges, `finish_nudges_used` early finishes
-    rejected while runway remains. `tree` is the worktree the metric was
-    last sampled on (one reading per state of the tree); `denied` withholds
-    the automatic metric for the rest of the run after the operator's no."""
+    """A metric run's readings and its patience counters.
+
+    Attributes:
+        history: The run's samples.
+        tree: The worktree state the metric was last sampled on, one reading per state.
+        denied: Whether the operator's no withholds the automatic metric for the rest of the run.
+        plateau_nudges_used: Final-slice plateau notices delivered.
+        finish_nudges_used: Early finishes rejected while runway remained.
+    """
 
     history: list[MetricSample] = field(default_factory=list)
     tree: str = ""
@@ -332,24 +354,30 @@ class MetricGuard:
     finish_nudges_used: int = 0
 
     def rearm(self) -> None:
-        """A standing goal absorbed the plateau stop: its patience starts over."""
+        """Restart the plateau patience once a standing goal absorbed the stop."""
         self.plateau_nudges_used = 0
 
     def at_ceiling(self) -> bool:
-        """Whether any verified sample reached the metric's provable ceiling
-        (`SCORE: 27/27`): a metric that cannot improve, so an early finish is
-        honoured and the nudging stops."""
+        """Return whether any verified sample reached the metric's provable ceiling."""
         return any(sample.at_ceiling for sample in self.history)
 
 
 def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge | Stop | None:
-    """The metric run's end. A verified reading that only ties the best
-    (`turn.metric_plateau_finish`) draws the plateau notice while the run
-    has runway; in the final budget slice (or with no budget signal) the
-    notice counts against `METRIC_PLATEAU_PATIENCE`, and past it the run
-    stops. A metric at its provable ceiling stops at once: nothing is left
-    to find. The stop is an ending the end gates judge and a standing task
-    may absorb; its end grounds on the tree like a finish_session does."""
+    """Decide the metric run's end after a reading that only ties the best.
+
+    While the run has runway the tie draws the plateau notice; in the final budget slice, or
+    with no budget signal, the notice counts against `METRIC_PLATEAU_PATIENCE`, and past it the
+    run stops. A metric at its ceiling stops at once. The stop is an ending the end gates judge
+    and a standing task may absorb.
+
+    Args:
+        turn: The turn's state; `metric_plateau_finish` carries the tie.
+        state: The loop state holding the metric guard.
+        ctx: The turn's context: budget, open tasks.
+
+    Returns:
+        The nudge, the stop, or None when this turn's reading is not a tie.
+    """
     finish = turn.metric_plateau_finish
     if finish is None:
         return None
@@ -377,9 +405,7 @@ def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
         )
     if in_final_slice and guard.plateau_nudges_used >= METRIC_PLATEAU_PATIENCE:
         return Stop(end, soft="metric_plateau", declared="metric_plateau", log=log)
-    # Patience counts final-slice notices only: a tie with runway left is a
-    # local optimum to pivot from, and counting it would end the run the
-    # moment the budget crossed the threshold.
+    # Patience counts final-slice notices only; a tie with runway left is a local optimum to leave.
     if in_final_slice:
         guard.plateau_nudges_used += 1
     budget_note = "n/a" if remaining is None else f"{remaining:.0%} left"
@@ -399,13 +425,20 @@ def metric_plateau(turn: TurnState, state: LoopState, ctx: TurnContext) -> Nudge
 
 
 def metric_early_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-    """The metric run's early-finish rule over a finish_session or a silent
-    finish (`turn.ending`). An optimisation run is asked to keep going up to
-    its cap, so while runway remains above the final budget slice an early
-    finish is rejected `METRIC_EARLY_FINISH_PATIENCE` times; a metric at its
-    ceiling, a run in the final slice, or no budget signal at all (the
-    worker's own judgement stands, so a finish can never deadlock) lets it
-    through."""
+    """Refuse an early finish on an optimisation run while runway remains.
+
+    Above the final budget slice an early finish is rejected `METRIC_EARLY_FINISH_PATIENCE`
+    times. A metric at its ceiling, a run in the final slice, or no budget signal lets it
+    through, so a finish can never deadlock.
+
+    Args:
+        turn: The turn's state; `ending` names the finish call or the silent finish.
+        state: The loop state holding the metric guard.
+        ctx: The turn's context: mode, metric, budget.
+
+    Returns:
+        The refusal, or None when the finish goes through.
+    """
     if ctx.mode != "run" or not ctx.metric or state.metric.at_ceiling():
         return None
     remaining = ctx.budget_remaining()

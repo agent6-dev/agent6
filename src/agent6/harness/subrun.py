@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Subordinate-run mechanics: clone a disposable lane workspace, import a
-finished lane's branch and run dir back into the origin, and join a
-subordinate branch into the current branch.
+"""Clone a lane's workspace and import its finished branch and run dir.
 
-Pure git plumbing over `agent6.git_ops` -- no LLM, no UI, no process
-spawning. `app.parallel` drives a `LaneSpawner` over these.
+Git plumbing over `agent6.git_ops`, with no model, UI or process spawning; `app.parallel`
+drives a `LaneSpawner` over it.
 """
 
 from __future__ import annotations
@@ -22,13 +20,19 @@ from agent6.sessions.layout import bucket_dir
 
 
 class SubrunError(Exception):
-    """Subordinate-run mechanics (clone/import/join) failed."""
+    """A lane clone or import failed."""
 
 
 @dataclass(frozen=True, slots=True)
 class LaneSpec:
-    """One subordinate lane to run: its own workspace clone, run id, and
-    route (None = the worker's own)."""
+    """Name one lane to run.
+
+    Attributes:
+        lane: The lane's index in its group.
+        session_id: The lane's session id.
+        workdir: The lane's workspace clone.
+        route: The lane's model route, None for the worker's own.
+    """
 
     lane: int
     session_id: str
@@ -38,8 +42,15 @@ class LaneSpec:
 
 @dataclass(frozen=True, slots=True)
 class LaneResult:
-    """Outcome of running a lane: where its run state lives, its branch, and
-    whether it succeeded (`error` set on failure)."""
+    """Record the outcome of one lane.
+
+    Attributes:
+        spec: The lane run.
+        session_dir: Where its run state lives.
+        branch: Its branch.
+        ok: Whether it succeeded.
+        error: Why it failed, "" on success.
+    """
 
     spec: LaneSpec
     session_dir: Path
@@ -50,48 +61,52 @@ class LaneResult:
 
 @dataclass(frozen=True, slots=True)
 class LaneTask:
-    """One lane to dispatch: the task text and an optional per-lane
-    `[provider/]model` text (`None` = the worker's own route; the dispatcher
-    resolves the text against the config). The coordinator expands each
-    `/parallel` segment into these (spec=3 -> three, one per list entry)."""
+    """Name one lane to dispatch, as the coordinator expands a `/parallel` segment.
+
+    Attributes:
+        task: The lane's task text.
+        model: The lane's `[provider/]model` text, None for the worker's own route.
+        pins: The operator's pins, passed beside the task so the lane's manifest task stays clean.
+    """
 
     task: str
     model: str | None
-    # Operator pins delivered OUT-OF-BAND of the task (the spawner's --pin
-    # channel): folding one into `task` would make it the lane's manifest
-    # user_task, so every listing would lead with the pin header.
     pins: tuple[str, ...] = ()
 
 
 class LaneSpawner(Protocol):
-    def __call__(self, spec: LaneSpec, task: str) -> LaneResult: ...
+    """Run one lane to its end."""
+
+    def __call__(self, spec: LaneSpec, task: str) -> LaneResult:
+        """Run the lane on the task and return its result."""
+        ...
 
 
 class GroupLaneSpawner(Protocol):
-    """Dispatch a sibling group of subordinate lanes and return their results in
-    dispatch order (one `LaneResult` per `LaneTask` in *lanes*).
+    """Run a group of sibling lanes to their end and import each into the coordinator's repo.
 
-    One call is synchronous-complete: clone + spawn each lane on its own model,
-    await them all to terminal, and import each finished branch + run dir into the
-    coordinator's repo. All spawn/await/import machinery is `app.parallel`'s
-    (over the front-end's `LaneRuntime`); the coordinator loop supplies only
-    the per-lane tasks
-    and a *group* id (`p<seq>`), so `harness` never imports ui. On a lane that
-    failed to start, is still running at teardown, or whose import was refused,
-    that lane's `LaneResult.ok` is False and the coordinator's repo is left
-    untouched for it."""
+    One call clones, spawns, awaits and imports every lane; `app.parallel` owns that machinery
+    and the coordinator supplies the tasks and the group id (`p<seq>`). A lane that failed to
+    start, outlived the teardown or was refused at import has `ok` False and leaves the
+    coordinator's repo untouched.
+    """
 
     def __call__(
         self, lanes: list[LaneTask], group: str, *, at: str | None = None
-    ) -> list[LaneResult]: ...
+    ) -> list[LaneResult]:
+        """Run the lanes as one group, from the commit `at` when given, in dispatch order."""
+        ...
 
 
 def clone_workspace(origin: Path, dest: Path) -> None:
-    """Clone *origin* into *dest*, a disposable lane workspace.
+    """Clone the origin repo into a disposable lane workspace.
 
-    Plain `git clone` on a filesystem path (git's local-clone optimization:
-    hardlinks same-filesystem, copies cross-device). Raises SubrunError on
-    failure, e.g. *dest* already exists or *origin* is not a repo.
+    Args:
+        origin: The repo to clone.
+        dest: The workspace path, which must not exist.
+
+    Raises:
+        SubrunError: When the clone fails.
     """
     try:
         clone_repo(origin, dest)
@@ -106,16 +121,23 @@ def import_run(
     lane_session_dir: Path,
     origin_state: Path,
 ) -> Path:
-    """Land a finished lane's *branch* in *origin* and move `lane_session_dir`
-    under `<origin_state>/sessions/runs/`. Returns the imported run dir.
+    """Land a finished lane's branch in the origin and move its run dir under the origin's state.
 
-    Refuses (SubrunError) to overwrite an existing branch in *origin* or an
-    existing run dir at the destination -- checked before either the fetch or
-    the move, so a refusal touches neither.
+    Both refusals are checked before the fetch or the move, so a refusal touches neither. A lane
+    that never committed has no branch to land; its record imports all the same.
 
-    A lane that never committed has no branch to land, and its record imports
-    all the same, so the reason it stopped stays reachable under
-    `<origin_state>/runs/`.
+    Args:
+        origin: The coordinator's repo.
+        lane_repo: The lane's workspace clone.
+        branch: The lane's branch.
+        lane_session_dir: The lane's run dir.
+        origin_state: The origin's state dir.
+
+    Returns:
+        The imported run dir.
+
+    Raises:
+        SubrunError: When the branch or run dir already exists in the origin, or the fetch fails.
     """
     if branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")

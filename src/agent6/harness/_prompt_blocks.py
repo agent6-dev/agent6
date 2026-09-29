@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Typed assembly of the agent-loop system prompt.
+"""Assemble the system prompt from the `agent6.prompts.loop` block templates.
 
-The helpers that fill the pure `agent6.prompts.loop` block templates with a
-run's config + repo summary + memory + skills. These stay in the harness
-layer because their signatures need agent6 types (`Config`, `RepoSummary`,
-`ResolvedSkills`); the leaf `agent6.prompts` package holds only the
-dependency-free text they render.
+The fillers take a run's config, repo summary, memory and skills. They live in the harness
+layer because their signatures need agent6 types; the leaf `agent6.prompts` package holds only
+the text they render.
 """
 
 from __future__ import annotations
@@ -52,11 +50,18 @@ from agent6.skills import ResolvedSkills
 
 
 def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
-    """The <memory> block: the MEMORY.md index verbatim, capped.
+    """Render the <memory> block: the MEMORY.md index verbatim, capped.
 
-    Run mode always renders the header (it carries the write mechanics); the
-    read-only modes render only when something is recorded. The files hold
-    the depth; the index is the recall surface.
+    Run mode always renders the header, which carries the write mechanics; the read-only modes
+    render only when something is recorded.
+
+    Args:
+        index: The MEMORY.md text.
+        memory_dir_path: The memory directory, as the model names it.
+        mode: The run mode.
+
+    Returns:
+        The block, or "" for a read-only mode with nothing recorded.
     """
     body = clipped_index(index)
     if mode != "run" and not body:
@@ -77,8 +82,15 @@ def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
 
 
 def decisions_block(text: str, decisions_path: str) -> str:
-    """The <decisions> block: the operator's recorded rulings, verbatim,
-    newest last; empty when none are recorded."""
+    """Render the <decisions> block: the operator's recorded rulings, newest last.
+
+    Args:
+        text: The rulings file's text.
+        decisions_path: The rulings file, as the model names it.
+
+    Returns:
+        The block, or "" when none are recorded.
+    """
     body = text.strip()
     if not body:
         return ""
@@ -96,11 +108,19 @@ SKILL_ALWAYS_MAX_CHARS = 24000
 
 
 def initial_instructions(mode: str, run_commands: str, *, has_gate: bool) -> str:
-    """The operational header on the first user message, derived from the
-    mode's REAL tool surface (tools/schema.py): ask has no edit or finish
-    tools and answers by prose; a `run_commands = "no"` run has no verify
-    gate to run, and neither does a gateless run (`has_gate` false), so
-    `run_verify_command` is named only where the tool exists."""
+    """Return the operational header of the first user message.
+
+    Derived from the mode's real tool surface (tools/schema.py): ask has no edit or finish
+    tools and answers in prose; `run_verify_command` is named only where the tool exists.
+
+    Args:
+        mode: The run mode.
+        run_commands: The `[sandbox].run_commands` setting.
+        has_gate: Whether the run has a verify command.
+
+    Returns:
+        The header line.
+    """
     if mode == "plan":
         return "The task is above; `finish_planning` ends the pass with the plan markdown."
     if mode == "agent":
@@ -122,8 +142,14 @@ def initial_instructions(mode: str, run_commands: str, *, has_gate: bool) -> str
 
 
 def skills_block(resolved: ResolvedSkills) -> str:
-    """Render the skills system-prompt parts: full text for `always` skills,
-    a bounded one-line-per-skill index for the rest. Empty when no skills."""
+    """Render the skills prompt parts: the full text of `always` skills, then a bounded index.
+
+    Args:
+        resolved: The resolved skills.
+
+    Returns:
+        The parts, or "" without skills.
+    """
     if not resolved.enabled and not resolved.always:
         return ""
     parts: list[str] = []
@@ -154,11 +180,18 @@ def skills_block(resolved: ResolvedSkills) -> str:
 
 
 def repo_priors_block(repo: RepoSummary) -> str:
-    """Render the <repo-priors> block: the repo header line, the top-level
-    listing, the repo map, AGENTS.md and the recent commits. Outside a git
-    repository (`agent6 ask` runs anywhere) the header names the situation
-    so the model doesn't reach for git history or a tracked-file map that
-    isn't there."""
+    """Render the <repo-priors> block.
+
+    The repo header line, the top-level listing, AGENTS.md, the repo map and the recent
+    commits. Outside a git repository the header says so, so the model does not reach for
+    history or a tracked-file map.
+
+    Args:
+        repo: The repository summary.
+
+    Returns:
+        The block.
+    """
     repo_map_block = ""
     if repo.repo_map:
         repo_map_block = f"Repo map (tracked files grouped by directory):\n{repo.repo_map}\n\n"
@@ -170,8 +203,7 @@ def repo_priors_block(repo: RepoSummary) -> str:
         )
     else:
         repo_line = "Directory (not a git repository; no branch, history, or tracked-file map)."
-    # No AGENTS.md -> no section: an "(empty)" header is noise on every repo
-    # that has none.
+    # No AGENTS.md, no section: an "(empty)" header is noise.
     agents_block = (
         f"AGENTS.md (project conventions):\n{repo.agents_md}\n\n" if repo.agents_md else ""
     )
@@ -185,9 +217,14 @@ def repo_priors_block(repo: RepoSummary) -> str:
 
 
 def _plan_budget_line(config: Config) -> str:
-    """The plan-percent sentence when any role rides a subscription
-    provider; empty otherwise (a line about a meter that cannot bind
-    would misdirect)."""
+    """Return the plan-percent sentence when any role rides a subscription provider.
+
+    Args:
+        config: The run's config.
+
+    Returns:
+        The sentence, or "" when no meter binds.
+    """
     roles = (config.models.worker, config.models.reviewer, config.models.planner)
     if not any(plan_metered(config.providers.get(rm.provider)) for rm in roles if rm is not None):
         return ""
@@ -200,12 +237,20 @@ def _plan_budget_line(config: Config) -> str:
 
 
 def _commit_rule(config: Config, *, has_gate: bool, commands_allowed: bool) -> str:
-    """The commit fact the run prompt states. Auto-commit is the agent6-control
-    chain: under `[git].control = "model"` nothing commits automatically and
-    the model owns the record; with `commit_per_step` off nothing commits at
-    all. Under agent6 control the WHEN is whether a gate judges each step:
-    each passing verify when it does, each editing step when it does not (a
-    gateless run, or a gate the harness runs at finish)."""
+    """Return the commit fact the run prompt states.
+
+    Under `[git].control = "model"` nothing commits automatically; with `commit_per_step` off
+    nothing commits at all. Under agent6 control the chain commits each passing verify when a
+    gate judges each step, else each editing step.
+
+    Args:
+        config: The run's config.
+        has_gate: Whether the run has a verify command.
+        commands_allowed: Whether the model may run commands.
+
+    Returns:
+        The rule text.
+    """
     if config.git.control == "model":
         return MODEL_GIT_RULE if commands_allowed else MODEL_GIT_RULE_NO_COMMANDS
     if not config.git.commit_per_step:
@@ -230,16 +275,28 @@ def build_system_prompt(
     protected_paths: bool = False,
     dag_available: bool = True,
 ) -> str:
-    """Assemble the system prompt from static blocks + run-specific context.
+    """Assemble the system prompt from the static blocks and the run's context.
 
-    The whole system prompt is sent on every turn but gets cached by the
-    Anthropic prompt-caching machinery. Per-turn cost after the first call is
-    ~10% of full input rate for the cached prefix.
+    The whole prompt is sent on every turn and cached by the provider's prompt caching. Plan
+    mode swaps the base block; the verify, budget and repository blocks append unchanged. The
+    metric block is run-mode only.
 
-    `mode="plan"` swaps the base block for the planning-mode prompt; the
-    verify, budget and repository blocks below are appended unchanged so the
-    planner sees the same project context an executor would. The metric block
-    is run-mode only (the other modes do not expose `run_metric_command`).
+    Args:
+        config: The run's config.
+        repo: The repository summary.
+        mode: The run mode.
+        memory_index: The MEMORY.md text.
+        memory_dir_path: The memory directory, as the model names it.
+        decisions: The rulings file's text.
+        decisions_path: The rulings file, as the model names it.
+        skills: The resolved skills, or None.
+        isolation: The jail level.
+        commands_allowed: Whether the model may run commands; None reads the config.
+        protected_paths: Whether hardened isolation carves protect paths.
+        dag_available: Whether the run has a curator.
+
+    Returns:
+        The prompt text.
     """
     base = (
         ASK_SYSTEM_PROMPT_BASE
@@ -250,45 +307,32 @@ def build_system_prompt(
         if mode == "plan"
         else SYSTEM_PROMPT_BASE
     )
-    # ADVANCED override: replace run-mode's static base with an operator-supplied
-    # file. The dynamic blocks below (verify/metric/budget/repo-priors) still
-    # append, so repo context + budget awareness are preserved. The file is
-    # validated to exist at config-load time; run startup warns if it omits the
-    # core tool names. Scoped to run mode -- the worker is what operators tune.
+    # `[prompt].system_prompt_file` replaces run mode's static base; dynamic blocks still append.
     override = config.prompt.system_prompt_file
     if mode == "run" and override:
         base = Path(override).expanduser().read_text(encoding="utf-8")
-    # Fill the DAG-rules sentinel (present only in the run-mode default base).
-    # On an override file the sentinel is absent, so this is a no-op there.
-    # "auto" is pinned to on/off by the CLI (resolve_decompose) before the
-    # harness starts; an unresolved "auto" reaching here (bench/embedders)
-    # conservatively renders the optional block.
+    # The DAG-rules sentinel exists only in the run-mode default base; an override file has none.
+    # "auto" is pinned before the harness starts; an unresolved "auto" renders the optional block.
     # A run with no curator (a machine agent state) has no DAG tools to teach.
     dag_block = dag_rules_block(config.prompt.decompose == "on") if dag_available else ""
     base = base.replace("__DAG_RULES_BLOCK__", dag_block)
     patch_only = mode == "run" and os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1"
     if patch_only:
         base = base.replace(APPLY_EDIT_RULE, "")
-    # The hardened filesystem caveat is real only under hardened with protect
-    # paths to carve around (`protected_paths`); elsewhere stating it would
-    # misdirect the model.
+    # The hardened filesystem caveat is real only under hardened with protect paths carved around.
     carved = isolation == "hardened" and protected_paths
     hardened_rule = HARDENED_FS_RULE.replace(
         "__CREATE_HINT__", CREATE_HINT_PATCH_ONLY if patch_only else CREATE_HINT
     )
     base = base.replace("__HARDENED_FS_RULE__", hardened_rule if carved else "")
-    # The .git read-only bind exists under strict with protect_git on
-    # (policy.py), and in a fork's linked worktree under any jail: its `.git`
-    # is a pointer file into the repository's, which the execution grants read-only.
+    # `.git` is read-only under strict with protect_git, and in a fork's worktree under any jail.
     # Elsewhere (hardened, none) the claim would be false.
     git_read_only = (isolation == "strict" and config.sandbox.protect_git) or (
         isolation != "none" and (repo.root / ".git").is_file()
     )
     base = base.replace("__GIT_PROTECT_RULE__", GIT_PROTECT_RULE if git_read_only else "")
-    # `run_commands = "no"` withholds every command tool, the gate included, so
-    # a run under it is gateless whatever is configured: every block and rule
-    # below reads the ONE answer, and the caller's (a resumed run whose
-    # operator denied commands for the session) wins over the configured value.
+    # `run_commands = "no"` withholds every command tool: gateless whatever the config says.
+    # The caller's answer (a resumed run whose operator denied commands) wins over the config.
     allowed = config.sandbox.run_commands != "no" if commands_allowed is None else commands_allowed
     has_gate = bool(config.harness.verify_command) and allowed
     base = base.replace("__PLAN_VERIFY_RULE__", PLAN_VERIFY_RULE if has_gate else "")
@@ -300,12 +344,7 @@ def build_system_prompt(
     )
     parts = [base]
 
-    # When the bench harness sets
-    # `AGENT6_DISABLE_APPLY_EDIT=1`, apply_edit is filtered out of the
-    # tool list. Tell the model so it doesn't try to call a tool that's
-    # been removed and waste turns on the resulting `Unknown tool` errors.
-    # Plan mode already filters both apply_edit and apply_patch, so the
-    # patch-only banner does not apply.
+    # The model is told when apply_edit is filtered out (`AGENT6_DISABLE_APPLY_EDIT=1`).
     if patch_only:
         parts.append(
             "<patch-only-mode>\n"
@@ -316,10 +355,7 @@ def build_system_prompt(
             "</patch-only-mode>\n"
         )
 
-    # Machine-authoring and machine `agent`-state modes have no verify/metric/
-    # repo context: those blocks reference tools they aren't given (run_verify /
-    # run_metric) and the repo prior only tempts them to spelunk. They just need
-    # the budget cap + their base prompt.
+    # Machine agent states get only the budget cap and their base prompt.
     if mode == "agent":
         parts.append(
             V2_BUDGET_BLOCK_TEMPLATE.format(
@@ -344,8 +380,7 @@ def build_system_prompt(
             V2_VERIFY_BLOCK_TEMPLATE.format(
                 argv=json.dumps(verify_argv),
                 timeout_s=config.harness.verify_timeout_s,
-                # The harness runs the gate in run mode only; plan and ask
-                # leave every run to the model, and have no finish_session.
+                # The harness runs the gate in run mode only.
                 when=V2_VERIFY_WHEN[
                     config.harness.verify_when if mode == "run" else "never"
                 ].format(retries=config.harness.verify_retries),
@@ -355,10 +390,7 @@ def build_system_prompt(
     else:
         parts.append(V2_NO_VERIFY_BLOCK)
 
-    # Run mode only: plan/ask do not expose `run_metric_command`, and the
-    # "harness automatically runs this metric" behaviour is the run loop's.
-    # `run_commands = "no"` withholds the tool, and a block describing a tool
-    # the model does not have is one it cannot act on.
+    # Run mode with commands allowed only: elsewhere the model has no run_metric_command.
     if mode == "run" and config.harness.metric is not None and allowed:
         m = config.harness.metric
         parts.append(
@@ -385,16 +417,13 @@ def build_system_prompt(
 
     parts.append(repo_priors_block(repo))
 
-    # Repo memory, after the repo priors. Empty for machine/agent (returned
-    # above) and for plan/ask with nothing recorded.
+    # Repo memory, after the repo priors; empty for plan and ask with nothing recorded.
     if memory_part := memory_block(memory_index, memory_dir_path, mode=mode):
         parts.append(memory_part)
     if decisions_part := decisions_block(decisions, decisions_path):
         parts.append(decisions_part)
 
-    # Operator-installed skills, last: `always` full texts + the on-demand
-    # index. The caller resolves discovery + [skills.state]; None or an empty
-    # resolution renders nothing.
+    # Operator-installed skills, last: `always` full texts plus the on-demand index.
     if skills is not None and (skills_part := skills_block(skills)):
         parts.append(skills_part)
 

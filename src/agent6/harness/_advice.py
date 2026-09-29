@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""What the loop's advisors and finish gates answer with, and what they
-read: a `Nudge` (a notice for the model, recorded), a `Stop` (an end of the
-run), a `Refusal` (a finish handed back), the frozen `TurnContext` of run
-facts and the guards' config knobs. The advisors live in `_guards`
-and `_metric`, the gates in `_finish_gates`; the loop applies their
-answers."""
+"""What an advisor or a finish gate answers with, and the turn facts it reads.
+
+A `Nudge` is a notice for the model, a `Stop` an end of the run, a `Refusal` a
+finish handed back; `TurnContext` is the frozen set of run facts and guard
+knobs. The advisors live in `_guards` and `_metric`, the gates in
+`_finish_gates`; the loop applies their answers.
+"""
 
 from __future__ import annotations
 
@@ -23,9 +24,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class Nudge:
-    """What an advisor says to the model this turn, and how the harness
-    records it: the notice text, the event (with its fields) and the log
-    line; "" skips the event or the line."""
+    """What an advisor says to the model this turn, and how the harness records it.
+
+    Attributes:
+        text: The notice the model reads.
+        event: The event recorded with it; "" records none.
+        fields: The event's fields.
+        log: The log line; "" writes none.
+    """
 
     text: str
     event: str = ""
@@ -35,14 +41,22 @@ class Nudge:
 
 @dataclass(frozen=True, slots=True)
 class Stop:
-    """An advisor's decision to end the run, honoured once the turn's results
-    and snapshot are on disk (`Harness._turn_stop_checks`): `end` composes
-    what `_finish` records, called then so it reads the run as the end gates
-    left it; `log` is the line written then. `soft` names the reason a
-    standing task's re-entry nudge carries when it absorbs the stop ("" = a
-    hard stop nothing converts); `declared` names the ending the end gates
-    judge as soon as the stop is decided ("" = a fault no gate judges). The
-    event is emitted when the stop is decided."""
+    """An advisor's decision to end the run.
+
+    The loop honours it once the turn's results and snapshot are on disk
+    (`Harness._turn_stop_checks`); the event is emitted when the stop is decided.
+
+    Attributes:
+        end: Composes what `_finish` records, called at the stop so it reads the run
+            as the end gates left it.
+        soft: The reason a standing task's re-entry nudge carries when it absorbs the
+            stop; "" is a hard stop nothing converts.
+        declared: The ending the end gates judge as soon as the stop is decided; "" is
+            a fault no gate judges.
+        event: The event recorded when the stop is decided; "" records none.
+        fields: The event's fields.
+        log: The log line written at the stop; "" writes none.
+    """
 
     end: Callable[[], End]
     soft: str = ""
@@ -54,28 +68,27 @@ class Stop:
 
 @dataclass(frozen=True, slots=True)
 class TurnContext:
-    """The run facts an advisor reads, built once per turn. A fact that can
-    move within the turn (a harness verify can deny or un-adopt the gate,
-    an edit moves the tree) is a zero-arg callable read where it is needed."""
+    """The run facts an advisor reads, built once per turn.
+
+    A fact that can move within the turn (a harness verify can deny or un-adopt
+    the gate, an edit moves the tree) is a zero-argument callable read where it
+    is needed.
+    """
 
     mode: Literal["run", "plan", "ask", "agent"]
     iteration: int
     # The execution's first iteration: a turn allowance counts from it.
     execution_start: int
-    # `[harness]`'s guard knobs: the empty-turn nudge cap, the repeated-call
-    # kill threshold and the stagnation notice delay.
+    # `[harness]`'s guard knobs: the empty-turn nudge cap, the kill threshold, the notice delay.
     went_quiet_max_nudges: int
     loop_guard_kill_threshold: int
     stagnation_notice_after_s: float
-    # `[harness].verify_when` and `verify_retries`: what the red-gate return
-    # rule reads (`verify_command` moves mid-run and is a callable below).
+    # `[harness].verify_when` and `verify_retries`, read by the red-gate return rule.
     verify_when: Literal["finish", "step", "never"]
     verify_retries: int
-    # A machine agent state's finish contract: the problems with a finish
-    # payload (empty = conforms); None leaves finishes ungated.
+    # A machine agent state's finish contract: the problems with a payload; None gates nothing.
     finish_validator: Callable[[dict[str, Any] | None], list[str]] | None
-    # A metric goal is configured: the plateau and ceiling rules own the
-    # run's end, and the plain-run guards stand down.
+    # A metric goal is configured: the plateau and ceiling rules own the run's end.
     metric: bool
     # A memory store is wired, so the memory nudges apply.
     memory_wired: bool
@@ -86,46 +99,44 @@ class TurnContext:
     budget_remaining: Callable[[], float | None]
     operator_wait_s: Callable[[], float]
     open_subtasks: Callable[[], list[tuple[str, str]]]
-    # The before-finish panel over an end declared on the turn (named by the
-    # ending it judges): True when it rejected the end. Sits once per turn;
-    # it records its own verdict.
+    # The before-finish panel over the turn's declared end: True when it rejected the end.
     end_rejected: Callable[[TurnState, str], bool]
-    # The standing goal's re-entry nudge for a soft end (the reason and the
-    # iteration), or None when the run may end; it records the re-entry.
+    # The standing goal's re-entry nudge for a soft end, or None when the run may end.
     standing_absorb: Callable[[str, int], str | None]
 
 
-# An advisor: one heuristic over the turn, the run state and the context,
-# answering with what to say, a decision to end the run, or nothing.
+# An advisor: one heuristic over the turn, answering with a nudge, a stop or nothing.
 Advisor = Callable[["TurnState", "LoopState", TurnContext], Nudge | Stop | None]
-# A before-call advisor speaks before the turn exists: its nudge goes to the
-# conversation ahead of the provider call.
+# A before-call advisor's nudge goes to the conversation ahead of the provider call.
 BeforeCallAdvisor = Callable[["LoopState", TurnContext], Nudge | None]
 
 
 @dataclass(frozen=True, slots=True)
 class Refusal(Nudge):
-    """A finish gate's answer, the same record as a nudge: the loop revokes
-    the end it answers and the model gets `text` (or nothing, when the
-    findings reach it another way), with the event and the log line
-    recorded."""
+    """A finish gate's answer: the loop revokes the end and the model gets the text.
+
+    An empty `text` means the findings reach the model another way.
+    """
 
 
-# A finish gate: one rule a finish_session must satisfy, judged over a turn
-# that called it; a Refusal hands the finish back.
+# A finish gate: one rule a finish must satisfy; a Refusal hands the finish back.
 Gate = Callable[["TurnState", "LoopState", TurnContext], Refusal | None]
 
 
 def open_subtasks(nodes: Mapping[str, TaskNode]) -> list[tuple[str, str]]:
-    """The worker's own subtasks still open: `(id, title)` pairs. Only
-    SUBTASKS (parent_id is not None) count: the auto-root is pending until
-    the run ends, so counting it would deadlock every gate. A standing task
-    is not unfinished work: it gates the finish via its own re-entry, never
-    via the capped nudge.
+    """Return the worker's own subtasks still open, as (id, title) pairs.
 
-    A task the operator queued carries that in its title: both consumers are
-    prose the operator or the model reads (the end receipt, the finish
-    deferral), and an end over one of those is worth naming as theirs."""
+    Only subtasks count: the root is pending until the run ends, so counting it
+    would deadlock every gate. A standing task gates the finish through its own
+    re-entry, never through the capped nudge. A task the operator queued says so
+    in its title, since the receipt and the deferral are read as prose.
+
+    Args:
+        nodes: The task graph's nodes by id.
+
+    Returns:
+        The open subtasks in graph order, titles clipped to 120 characters.
+    """
     out: list[tuple[str, str]] = []
     for nid, node in nodes.items():
         if node.parent_id is None or node.status not in OPEN_STATUSES or node.standing:
@@ -136,8 +147,15 @@ def open_subtasks(nodes: Mapping[str, TaskNode]) -> list[tuple[str, str]]:
 
 
 def with_open_tasks(summary: str, open_tasks: Sequence[tuple[str, str]]) -> str:
-    """*summary* with the open subtasks named, when an end went through over
-    them (the gate's cap): the receipt says what was left."""
+    """Return the summary with the open subtasks named, so the receipt says what was left.
+
+    Args:
+        summary: The end's summary.
+        open_tasks: The (id, title) pairs `open_subtasks` returned.
+
+    Returns:
+        The summary, with a count and the titles appended when any task is open.
+    """
     if not open_tasks:
         return summary
     titles = ", ".join(title for _tid, title in open_tasks)

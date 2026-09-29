@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The metric readings of a run with a `[harness.metric]`: the sample a
-`run_metric_command` result becomes (the model's own call, or the harness's
-after a green verify), the feedback block the model reads, and the plateau
-summary. The pure rules live in `_metric`; this object does the call and
-the events, and the loop decides when to measure."""
+"""Take the metric readings of a run with a `[harness.metric]`.
+
+A `run_metric_command` result, the model's own call or the harness's after a green verify,
+becomes a sample with its event and the feedback block the model reads. The pure rules live
+in `_metric`; the loop decides when to measure.
+"""
 
 from __future__ import annotations
 
@@ -31,8 +32,15 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class MetricSampler:
-    """`settings` is `[harness.metric]`; `enabled` is run mode (plan and ask
-    never sample); `dispatcher` runs the harness's own `run_metric_command`."""
+    """The run's metric sampler.
+
+    Attributes:
+        settings: The `[harness.metric]` table, or None without a metric.
+        enabled: Run mode; plan and ask never sample.
+        dispatcher: Runs the harness's own `run_metric_command`.
+        log: The run's text logger.
+        emit: The run's event sink.
+    """
 
     settings: MetricConfig | None
     enabled: bool
@@ -59,8 +67,18 @@ class MetricSampler:
         label: str,
         sha: str,
     ) -> str | None:
-        """A `run_metric_command` result as the run's next sample, with its
-        event; the feedback block for the model, or None without a metric."""
+        """Record a `run_metric_command` result as the run's next sample and emit its event.
+
+        Args:
+            history: The run's samples so far; the new one is appended.
+            result: The command's result.
+            iteration: The turn the reading belongs to.
+            label: The sample's name in the feedback block.
+            sha: The commit the reading covers, or "".
+
+        Returns:
+            The feedback block for the model, or None without a metric.
+        """
         goal = self.goal
         if goal is None or self.settings is None:
             return None
@@ -74,8 +92,7 @@ class MetricSampler:
             stdout_tail=result.stdout[-500:],
             stderr_tail=result.stderr[-500:],
             targets=extract_metric_targets(combined, goal=goal),
-            # Only an X/Y ceiling reported on the score-match line counts, so
-            # an incidental "100/100" progress bar elsewhere cannot latch it.
+            # Only an X/Y ceiling on the score line counts, never a progress bar elsewhere.
             at_ceiling=goal == "maximize"
             and score is not None
             and metric_at_fraction_ceiling(combined, score, pattern=self.settings.pattern),
@@ -92,11 +109,20 @@ class MetricSampler:
         return format_metric_feedback(history, goal=goal)
 
     def auto_feedback(self, state: LoopState, *, iteration: int, sha: str) -> str | None:
-        """The harness's own reading after a green verify, as feedback text;
-        a failed reading is a sample with its error, and a denied one also
-        withholds the automatic metric for the rest of the run. An
-        unexecutable operator command raises through, as the model's own call
-        would."""
+        """Take the harness's own reading after a green verify.
+
+        A failed reading is a sample with its error; a denied one also withholds the automatic
+        metric for the rest of the run. An unexecutable operator command raises through, as the
+        model's own call would.
+
+        Args:
+            state: The loop state holding the metric history and the denial flag.
+            iteration: The turn the reading belongs to.
+            sha: The commit the reading covers, or "".
+
+        Returns:
+            The feedback block for the model, or None when this run does not measure.
+        """
         goal = self.goal
         if not self.active or goal is None:
             return None
@@ -127,7 +153,7 @@ class MetricSampler:
         )
 
     def plateau_finish(self, history: list[MetricSample]) -> str | None:
-        """The plateau summary for this run, when it measures."""
+        """Return the plateau summary for this run, or None when it does not measure."""
         goal = self.goal
         if not self.active or goal is None:
             return None

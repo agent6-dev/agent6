@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Harness package: built-in deterministic state machines."""
+"""Run the agent loop over a session.
+
+`Harness` (`loop.py`) drives one execution: the provider calls, the tool dispatch, the guards
+and gates, and the snapshot a resume re-enters; the sibling `_name` modules hold its helpers.
+`system_prompt_for` and `model_exchange_for` expose the run's first exchange to
+`agent6 prompt show`.
+"""
 
 from __future__ import annotations
 
@@ -38,19 +44,22 @@ def system_prompt_for(
     *,
     state_dir: Path | None = None,
 ) -> str:
-    """Assemble the exact system prompt agent6 would send for *root* + *config*
-    in *mode*. Public entry point for `agent6 prompt show` and tooling; the
-    `<repo-priors>` block is the run loop's own (`load_repo_summary`).
+    """Assemble the exact system prompt a run would send for this root, config and mode.
 
-    The memory index and installed skills are loaded on
-    the loop's own rules (none of the first two in machine/agent modes, skills
-    in run mode only): omitting them would print "(none recorded yet)" for
-    an operator checking what future runs actually receive. *state_dir* is
-    the per-repo state dir those live under, injected by the caller exactly as
-    the loop's is."""
+    The memory index, the decisions and the installed skills load on the loop's own rules:
+    no recall in agent mode, skills in run mode only.
+
+    Args:
+        config: The run's config.
+        root: The repo root.
+        mode: The loop mode.
+        state_dir: The per-repo state dir the memory and decisions live under.
+
+    Returns:
+        The system prompt text.
+    """
     repo = load_repo_summary(root)
-    # Machine and agent modes assemble without repo context, so neither half of
-    # per-repo recall applies: one gate, not one per block.
+    # Agent mode assembles without repo context: one gate for every recall block.
     recall = None if mode == "agent" else state_dir
     return build_system_prompt(
         config=config,
@@ -67,17 +76,21 @@ def system_prompt_for(
 
 @dataclass(frozen=True, slots=True)
 class ModelExchange:
-    """Everything the model receives on a run's first call, for `agent6 prompt
-    show`: the system prompt, the tool definitions (name, description, input
-    schema; the API's `tools` field), and the first user message's operational
-    header (the task text follows it). MCP tools are discovered at run start
-    and are not part of this static picture."""
+    """Hold everything the model receives on a run's first call, for `agent6 prompt show`.
+
+    Attributes:
+        mode: The loop mode.
+        system: The system prompt.
+        tools: The tool definitions, the API's `tools` field.
+        first_message: The first user message with a placeholder for the task text.
+        mcp_pending: Whether enabled MCP servers add tools at run start, unseen here.
+    """
 
     mode: str
     system: str
     tools: tuple[ToolDefinition, ...]
     first_message: str
-    mcp_pending: bool  # [mcp].enabled with servers: their tools join at run start
+    mcp_pending: bool
 
 
 def model_exchange_for(
@@ -87,11 +100,20 @@ def model_exchange_for(
     *,
     state_dir: Path | None = None,
 ) -> ModelExchange:
-    """The exact exchange a run here would open with: `system_prompt_for` plus
-    the tool list the loop builds (`tool_definitions` over a dispatcher on this
-    config, so `run_commands = "no"`, a missing gate, `network = "host"`, and
-    the installed skills withhold exactly what they withhold in a run) and the
-    first message header."""
+    """Build the exact exchange a run here would open with.
+
+    The tool list comes from a dispatcher on this config, so what a run withholds is withheld
+    here too.
+
+    Args:
+        config: The run's config.
+        root: The repo root.
+        mode: The loop mode.
+        state_dir: The per-repo state dir.
+
+    Returns:
+        The system prompt, the tools and the first message.
+    """
     system = system_prompt_for(config, root, mode, state_dir=state_dir)
     dispatcher = ToolDispatcher(
         root=root,
@@ -114,9 +136,7 @@ def model_exchange_for(
 
 
 def _shown_isolation(config: Config) -> IsolationLevel:
-    """The level a run here would resolve, for prompt display; an explicit
-    setting this host cannot honor shows as "none" rather than refusing a
-    read-only preview."""
+    """Return the isolation level a run here would resolve, "none" when the host cannot honor it."""
     try:
         return resolve_isolation(config.sandbox.isolation, detect())
     except IsolationUnavailableError:
@@ -126,8 +146,7 @@ def _shown_isolation(config: Config) -> IsolationLevel:
 def _installed_skills(
     root: Path, config: Config, mode: Literal["run", "plan", "ask", "agent"]
 ) -> ResolvedSkills | None:
-    """The loop's `_load_skills` rules: run mode only, and nothing installed
-    renders no block."""
+    """Return the skills the loop would show: run mode only, None when nothing is installed."""
     if mode != "run":
         return None
     resolved = ToolDispatcher(root=root, config=config).resolved_skills()

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The turns that say nothing: the nudges a prose turn with no tool call and
-an empty turn draw (`QuietGuard` holds their counters), each one function
-answering with a `Nudge` the loop puts in the conversation."""
+"""Answer the turns that say nothing with a nudge.
+
+`QuietGuard` holds the counters; each function answers one kind of quiet turn with the
+`Nudge` the loop puts in the conversation, or None when the turn stands.
+"""
 
 from __future__ import annotations
 
@@ -24,18 +26,19 @@ from agent6.providers import ProviderResponse
 if TYPE_CHECKING:
     from agent6.harness._loop_state import LoopState
 
-# An early prose turn on an untouched tree is a stall, not a finish, for
-# this many iterations; a later prose finish is honoured.
+# An early prose turn on an untouched tree is a stall for this many iterations, then a finish.
 SILENT_NO_WORK_UNTIL = 3
 
 
 @dataclass(slots=True)
 class QuietGuard:
-    """The turns that say nothing: an empty turn draws a nudge up to the cap
-    per streak (`went_quiet_nudges_used`, reset by any non-empty turn); an
-    early prose turn on an untouched tree draws `SILENT_NO_WORK_PATIENCE`
-    nudges; a prose turn ending on a question draws one nudge to call
-    ask_user."""
+    """Count the nudges the quiet turns of one execution drew.
+
+    Attributes:
+        went_quiet_nudges_used: Nudges the streak of empty turns drew; any other turn resets it.
+        silent_no_work_nudges_used: Nudges early prose turns on an untouched tree drew.
+        question_nudged: Whether the once-per-run nudge for a prose turn ending on a question fired.
+    """
 
     went_quiet_nudges_used: int = 0
     silent_no_work_nudges_used: int = 0
@@ -43,11 +46,18 @@ class QuietGuard:
 
 
 def silent_no_work(state: LoopState, ctx: TurnContext) -> Nudge | None:
-    """A prose turn with no tool call on an untouched tree within the first
-    `SILENT_NO_WORK_UNTIL` iterations of a run is a stall (a chat-tuned model
-    answering the problem statement in prose), steered back to the tools up
-    to `SILENT_NO_WORK_PATIENCE` times; a run that read its fill and answers
-    in prose is a legitimate implicit finish."""
+    """Steer an early prose turn on an untouched tree back to the tools.
+
+    A prose turn within the first `SILENT_NO_WORK_UNTIL` iterations of a run that edited nothing
+    is a stall, nudged up to `SILENT_NO_WORK_PATIENCE` times; a later prose turn is a finish.
+
+    Args:
+        state: The execution's state.
+        ctx: The turn's context.
+
+    Returns:
+        The nudge, or None when the turn stands as a finish.
+    """
     quiet = state.quiet
     if not (
         ctx.mode == "run"
@@ -70,9 +80,18 @@ def silent_no_work(state: LoopState, ctx: TurnContext) -> Nudge | None:
 
 
 def question_in_prose(state: LoopState, ctx: TurnContext, text: str) -> Nudge | None:
-    """A run's prose turn that ends on a question reaches nobody: once per
-    run, the model is told to call ask_user or finish_session; asking again
-    is accepted as the finish, so a stubborn model cannot loop the run."""
+    """Tell the model once per run that a question in prose reaches nobody.
+
+    A second question is accepted as the finish, so a stubborn model cannot loop the run.
+
+    Args:
+        state: The execution's state.
+        ctx: The turn's context.
+        text: The turn's prose.
+
+    Returns:
+        The nudge to call ask_user or finish_session, or None.
+    """
     if ctx.mode != "run" or state.quiet.question_nudged or not ends_with_question(text):
         return None
     state.quiet.question_nudged = True
@@ -85,11 +104,18 @@ def question_in_prose(state: LoopState, ctx: TurnContext, text: str) -> Nudge | 
 
 
 def went_quiet(state: LoopState, ctx: TurnContext, resp: ProviderResponse) -> Nudge | None:
-    """An empty turn (no text, no tool call) is answered with a nudge up to
-    the cap per streak (any non-empty turn refills it); a turn that spent
-    its whole output budget on reasoning gets the starved wording. None once
-    the cap is spent: the run ends as went_quiet unless a standing goal or a
-    watching operator continues it."""
+    """Nudge an empty turn, up to the cap per streak.
+
+    A turn that spent its whole output budget on reasoning gets the starved wording.
+
+    Args:
+        state: The execution's state.
+        ctx: The turn's context, which carries the cap.
+        resp: The empty response.
+
+    Returns:
+        The nudge, or None once the cap is spent and the run ends as went_quiet.
+    """
     cap = ctx.went_quiet_max_nudges
     quiet = state.quiet
     if quiet.went_quiet_nudges_used >= cap:

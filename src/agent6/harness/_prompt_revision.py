@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The optional pre-loop prompt-revision pass.
+"""Revise the task once before the first worker call.
 
-Before the worker loop starts, the reviser model can rewrite a terse task into
-an explicit one and surface clarifying questions. This module holds the parse
-of its output, the repo-context block fed to it, the effective-task assembly,
-and the small text helpers they use. The loop owns running the reviser call.
+The reviser model rewrites a terse task into an explicit one and surfaces clarifying
+questions. This module parses its output, builds the repo-context block it reads and folds the
+revision with the original; `revise_prompt` runs the call.
 """
 
 from __future__ import annotations
@@ -20,20 +19,22 @@ from agent6.kinds import RepoSummary
 from agent6.prompts.revision import PROMPT_REVISION_SYSTEM_PROMPT
 from agent6.providers import Provider, ProviderError
 
-# One leading list marker ("- ", "* ", "1. ", "2) "). A charset lstrip would
-# also eat leading digits of the question itself ("- 32-bit ..." -> "bit ...").
-# The numeric marker requires trailing whitespace so a bare decimal that opens a
-# question keeps it ("0.5s latency budget OK?" must not become "5s ...").
+# One leading list marker; the numeric form needs trailing whitespace so "0.5s" keeps its digits.
 _LIST_MARKER_RE = re.compile(r"^\s*(?:[-*]|\d+[.)]\s)\s*")
 
 
 @dataclass(frozen=True, slots=True)
 class RevisionSettings:
-    """The one-shot prompt revision before the first worker call
-    (`prompt.revise_prompt`): `reviser` (the reviewer role) rewrites the
-    task once, with no tools and no iteration, at `temperature` and within
-    `max_tokens`; `interactive` hands the original, the revision and the
-    reviser's questions to `selector` for the operator to choose."""
+    """The `[prompt].revise_prompt` settings.
+
+    Attributes:
+        reviser: The reviewer role's provider; None when the pass is off.
+        mode: Off, automatic, or interactive (the operator chooses).
+        temperature: The reviser call's temperature.
+        max_tokens: The reviser call's output cap.
+        selector: In interactive mode, takes the original, the revision and the questions and
+            returns the operator's choice, or None when they quit.
+    """
 
     reviser: Provider | None = None
     mode: Literal["off", "auto", "interactive"] = "off"
@@ -44,25 +45,45 @@ class RevisionSettings:
 
 @dataclass(frozen=True, slots=True)
 class PromptRevision:
+    """The reviser's answer: the rewritten task and up to three clarifying questions."""
+
     revised_task: str
     clarifying_questions: tuple[str, ...] = ()
 
 
 class PromptRevisionError(Exception):
-    """Raised when the optional prompt-revision pass cannot produce a task."""
+    """The revision pass could not produce a task."""
 
 
-class PromptRevisionDeclined(PromptRevisionError):  # noqa: N818  # a signal, not an error  # a signal, not an error
-    """The operator quit at the interactive choice: their stop, not a failure."""
+class PromptRevisionDeclined(PromptRevisionError):  # noqa: N818  # a signal, not an error
+    """The operator quit at the interactive choice."""
 
 
 def clip_text(text: str, max_chars: int) -> str:
+    """Clip text to at most `max_chars`, marking the cut.
+
+    Args:
+        text: The text.
+        max_chars: The cap, including the marker.
+
+    Returns:
+        The text, or its head with a truncation marker.
+    """
     if len(text) <= max_chars:
         return text
     return text[: max(0, max_chars - 40)].rstrip() + "\n...[truncated for prompt revision]"
 
 
 def tag_body(text: str, tag: str) -> str:
+    """Return the stripped body of the first `<tag>...</tag>` pair in the text, or "".
+
+    Args:
+        text: The text to search.
+        tag: The tag's name.
+
+    Returns:
+        The body between the tags, or "" when either tag is missing.
+    """
     start_tag = f"<{tag}>"
     end_tag = f"</{tag}>"
     start = text.find(start_tag)
@@ -76,6 +97,15 @@ def tag_body(text: str, tag: str) -> str:
 
 
 def parse_prompt_revision(text: str) -> PromptRevision:
+    """Parse the reviser's reply.
+
+    Args:
+        text: The reply; a `<revised_task>` body, else the whole text, plus an optional
+            `<clarifying_questions>` list.
+
+    Returns:
+        The revision, with at most three questions.
+    """
     revised = tag_body(text, "revised_task") if "<revised_task>" in text else text.strip()
     questions_raw = tag_body(text, "clarifying_questions")
     questions: list[str] = []
@@ -88,13 +118,20 @@ def parse_prompt_revision(text: str) -> PromptRevision:
 
 
 def format_prompt_revision_context(repo: RepoSummary) -> str:
+    """Return the repo-context block the reviser reads, clipped to 20,000 characters.
+
+    Args:
+        repo: The repository summary.
+
+    Returns:
+        The header, top-level listing, AGENTS.md, repo map and recent commits, each clipped.
+    """
     if repo.is_git:
         repo_line = (
             f"Repository: branch={repo.branch}, head={repo.head_sha[:12]}, files={repo.file_count}"
         )
     else:
-        # Same degrade as the worker prompt: outside git a fake empty header
-        # would send the model after branch and history that do not exist.
+        # Outside git a fake empty header would send the model after a history that does not exist.
         repo_line = "Directory (not a git repository; no branch, history, or tracked-file map)."
     parts = [
         repo_line,
@@ -110,6 +147,15 @@ def format_prompt_revision_context(repo: RepoSummary) -> str:
 
 
 def format_effective_task(raw_task: str, revision: PromptRevision) -> str:
+    """Fold the revision with the original task, the original authoritative.
+
+    Args:
+        raw_task: The task as the operator gave it.
+        revision: The reviser's answer.
+
+    Returns:
+        The task text the worker gets.
+    """
     pieces = [
         "Revised task prompt:",
         revision.revised_task,
@@ -138,11 +184,24 @@ def revise_prompt(
     log: Callable[[str], None],
     emit: Callable[..., None],
 ) -> str:
-    """The task the worker gets: *user_task* as given, or its one-shot
-    revision by the reviser (`RevisionSettings.mode`), folded with the
-    original (`format_effective_task`); in interactive mode the operator
-    chooses. Raises `PromptRevisionError` when the reviser is missing or
-    fails, `PromptRevisionDeclined` when the operator quits the choice."""
+    """Return the task the worker gets: the task as given, or its one-shot revision.
+
+    In interactive mode the operator chooses between the two.
+
+    Args:
+        settings: The revision settings; mode `off` returns the task as given.
+        user_task: The task as the operator gave it.
+        repo: The repository summary the reviser reads.
+        log: The run's text logger.
+        emit: The run's event sink.
+
+    Returns:
+        The task as given, or the revision folded with the original.
+
+    Raises:
+        PromptRevisionError: The reviser is missing, failed, or returned no task.
+        PromptRevisionDeclined: The operator quit the interactive choice.
+    """
     if settings.mode == "off":
         return user_task
     if settings.reviser is None:

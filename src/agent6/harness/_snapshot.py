@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Session end and resume: the SessionResult the harness returns, the
-ResumeError it raises, and the provider-agnostic resume snapshot written before
-each LLM call (load here; the loop owns saving it)."""
+"""Hold a session's end and the snapshot a resume re-enters.
+
+`SessionResult` is what the harness returns and `SessionSnapshot` the provider-agnostic state
+written before each provider call; the loop saves it and `load_session_snapshot` loads it.
+"""
 
 from __future__ import annotations
 
@@ -15,9 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-# Every way a session can end, run, plan and ask alike. Typed so a new outcome
-# must be declared here before a SessionResult can carry it; the SessionResult
-# docstring says what each means and where it is constructed.
+# Every way a session can end; `SessionResult` says what each means.
 SessionEndReason = Literal[
     "finish_session",
     "finish_planning",
@@ -51,75 +51,56 @@ SessionEndReason = Literal[
 ]
 
 
-# Whether the verify gate was green when the run ended, on its own axis: a
-# deliberate finish and a verified one are different facts.
-# `failed` means a red gate was OBSERVED (the last verify ran and failed);
-# `unverified` means a gate exists but no observation covers the final tree
-# (no verify ran this execution, or edits landed after the last green).
-# `not_applicable` covers both a gateless session (no verify_command) and one
-# that stopped before any verdict existed.
+# The gate's word at the end: `failed` is an observed red, `unverified` a tree no verdict covers.
 Verification = Literal["passed", "failed", "unverified", "not_applicable"]
 
 
 @dataclass(frozen=True, slots=True)
 class SessionResult:
-    """Final state of a session.
+    """Hold the final state of a session.
 
-    `reason` values (constructed in loop.py unless noted):
-      finish_session        - agent called the finish_session tool explicitly.
-      finish_planning   - plan-mode agent called the finish_planning tool.
-      answered          - ask mode: the final prose is the answer.
-      interrupted       - KeyboardInterrupt (the app layer).
-      crashed           - the loop escaped with a fault (the app layer).
-      steer_exit        - /exit at the pause menu: stop and leave.
-      silent_finish     - agent emitted text but no tool_use (talking).
-      went_quiet        - agent emitted neither text nor tool_use.
-      budget_exhausted  - BudgetTracker raised; partial progress kept.
-      provider_error    - ProviderError after retry; loop aborted.
-      metric_plateau    - metric run tied prior best after enough samples.
-      verify_settled    - verify passed and the worker stopped making changes.
-      settled           - a quiet finish nothing verified: no gate existed, an
-                          adopted one never passed, or edits landed after the
-                          last green (all_passed stays False).
-      no_progress       - the same verify failure survived ten consecutive
-                          runs and two harness interventions; stopped to save
-                          the remaining budget (resumable).
-      tool_error_stuck  - the same tool call failed with the identical error
-                          eight times through two interventions; stopped to
-                          save the remaining budget (resumable).
-      verify_command_unexecutable - operator verify/metric command cannot run
-                          in the jail; the model cannot fix operator config.
-      loop_guard_killed - identical tool call repeated past the kill threshold.
-      interactive_stop  - operator chose "stop" at the REPL after_auto_commit hook.
-      steer_abort       - operator stopped the run: `agent6 stop`, a
-                          front-end's stop, or "abort" at a steering prompt
-                          ends it mid-call, at the step boundary, or while
-                          parked, whichever the marker reaches first; a quit
-                          at the interactive revise_prompt choice ends it
-                          before the worker loop starts.
-      undone            - operator sent /undo; the execution ended after forking a
-                          child at the state before their last message.
-      detached          - operator chose "detach"; the CLI respawns a detached
-                          `resume` to continue the run in the background.
-      prompt_revision_failed - revise_prompt failed before the worker loop.
-      plan_unreadable   - plan mode could not re-read plan.md; parked with
-                          the remedy in the summary (resumable).
-      max_iterations    - hit max_iterations cap without finish.
-      ask_repl_empty    - interactive ask session ended with no question asked
-                          (ui/cli/_ask.py).
-      gate_stale        - the worker finished over a red gate it says no longer
-                          matches the task (it tests behaviour this run changed,
-                          or cannot run at all) and proposed a replacement. The
-                          gate is UNCHANGED and the run does not pass; the
-                          operator decides.
-      gate_red_at_base  - the gate is red, and it was ALREADY red before this
-                          run touched anything (a verify ran against an
-                          unmodified tree and failed). "Your run failed" and
-                          "your change broke nothing new" are different facts.
-      no_lane_result    - a `run --parallel` fan-out: no lane produced a
-                          rankable result (exit 1; app/parallel.py).
-      no_lane_passed    - a `run --parallel` fan-out: gates ran and no lane's
-                          went green (exit 4; app/parallel.py).
+    The end reasons, constructed by the loop unless a layer is named:
+        finish_session: the model called finish_session.
+        finish_planning: the model called finish_planning in plan mode.
+        answered: the final prose of an ask session is the answer.
+        interrupted: a KeyboardInterrupt (the app layer).
+        crashed: the loop escaped with a fault (the app layer).
+        steer_exit: /exit at the pause menu.
+        silent_finish: the model sent text and no tool call.
+        went_quiet: the model sent neither text nor a tool call.
+        budget_exhausted: the budget tracker raised; partial progress is kept.
+        provider_error: a provider error survived the retry.
+        metric_plateau: a metric run tied its prior best after enough samples.
+        verify_settled: the gate passed and the worker stopped changing the tree.
+        settled: a quiet finish nothing verified: no gate, an adopted one that never passed,
+            or edits after the last green.
+        no_progress: the same verify failure outlived the no-progress ladder (resumable).
+        tool_error_stuck: the same tool error outlived the tool-error ladder (resumable).
+        verify_command_unexecutable: the operator's verify or metric command cannot run in the jail.
+        loop_guard_killed: an identical tool call repeated past the kill threshold.
+        interactive_stop: the operator chose stop at the after-commit hook.
+        steer_abort: the operator stopped the run, mid-call, at a step boundary or while parked.
+        undone: the operator sent /undo; a child was forked at the state before their message.
+        detached: the operator chose detach; the CLI respawns a detached resume.
+        prompt_revision_failed: revise_prompt failed before the worker loop.
+        plan_unreadable: plan mode could not re-read plan.md (resumable).
+        max_iterations: the iteration cap was hit without a finish.
+        ask_repl_empty: an interactive ask session ended with no question (the CLI).
+        gate_stale: the worker finished over a red gate it declares stale, with a replacement
+            proposed; the gate is unchanged and the run does not pass.
+        gate_red_at_base: the gate was red before the run touched anything.
+        no_lane_result: no lane of a fan-out produced a rankable result (the app layer).
+        no_lane_passed: no lane of a fan-out went green (the app layer).
+
+    Attributes:
+        completed: Whether the model stopped deliberately; never whether the work verified.
+        reason: The end reason.
+        summary: The end's summary text.
+        iterations: The turns run.
+        tool_calls: The tool calls made.
+        finish_payload: The finish tool's payload, when any.
+        stale_gate: The replacement gate the worker proposed; recorded, never acted on.
+        verified: The gate's word, the same fact `session.end.all_passed` carries.
     """
 
     completed: bool
@@ -128,26 +109,31 @@ class SessionResult:
     iterations: int
     tool_calls: int
     finish_payload: dict[str, Any] | None = None
-    # The replacement gate the worker proposed, when it finished declaring the
-    # configured one stale. Recorded and surfaced; never acted on.
     stale_gate: str = ""
-    # The SAME fact `session.end.all_passed` carries, on the result the app layer
-    # reads: `completed` means the agent stopped deliberately, never that the
-    # work verified.
     verified: Verification = "not_applicable"
 
 
 @dataclass(frozen=True, slots=True)
 class End:
-    """A decision to end the run, as `Harness._finish` records it: the
-    checkpoint of a dirty worktree first (an operator's stop skips it, so
-    whoever takes over keeps the choice to discard), the `session.end` event,
-    then the result. `verdict` is what the event's `all_passed` carries:
-    `failed` (False), `grounded` (the final tree's verify tri-state, with the
-    verdict's `scoped`) or `passed` (True, with `scoped` as given); a clean
-    verdict passes the pending root tasks first, and `roots` forces that for a
-    failed one. `event=False` writes no event (a detach: the caller respawns
-    the run). `fields` ride on the event."""
+    """Record a decision to end the run, as `Harness._finish` applies it.
+
+    The finish checkpoints a dirty worktree first, writes the `session.end` event, then returns
+    the result.
+
+    Attributes:
+        reason: The end reason.
+        summary: The end's summary text.
+        completed: Whether the model stopped deliberately.
+        verdict: What the event's `all_passed` carries: `failed`, `grounded` on the final tree's
+            verify state, or `passed`.
+        checkpoint: Whether to checkpoint a dirty worktree; an operator's stop keeps the choice.
+        event: Whether to write the event; a detach writes none, the caller respawns the run.
+        roots: Whether to pass the pending root tasks; None passes them on a clean verdict only.
+        scoped: Whether a scoped gate certified the tree, for a `passed` verdict.
+        finish_payload: The finish tool's payload, when any.
+        stale_gate: The replacement gate the worker proposed.
+        fields: Extra fields on the event.
+    """
 
     reason: SessionEndReason
     summary: str
@@ -163,30 +149,56 @@ class End:
 
 
 class ResumeError(Exception):
-    """Raised when resume cannot proceed (missing/corrupt snapshot)."""
+    """A resume cannot proceed: the snapshot is missing or corrupt."""
 
 
-# Bump on ANY change to the persisted shape below. An in-flight run written by an
-# older agent6 then refuses to resume/fork loudly (see load_session_snapshot) rather
-# than parsing into a half-populated run. Finished runs never need a snapshot, so
-# they keep rendering across the bump.
+# Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
 SNAPSHOT_VERSION = 4
 
 
 class SessionSnapshot(BaseModel):
-    """The persisted state of an in-flight session: what `resume` re-enters and what
-    `fork` clones. The loop advances `loop_state.json` (the latest pointer) at
-    every safe boundary (before each LLM call and after each iteration's tools
-    land) and writes `checkpoints/<NNNN>.json` once per turn at the pre-call
-    boundary: the state turn NNNN's provider call consumes, so a crash resumes
-    from the last safe point and `fork --at-turn` has one meaning.
-    Provider-agnostic (anthropic-shaped `messages`): the OpenAI
-    provider translates per call, so its transcript can't seed a cross-provider
-    resume.
+    """Hold the persisted state of an in-flight session, what a resume re-enters and a fork clones.
 
-    On-disk JSON crossing a process + trust boundary, so pydantic owns the shape.
-    `extra="forbid"` plus a bumped `version` mean a snapshot from before a
-    state-format change is refused loudly, never coerced into a partial run.
+    The loop advances `loop_state.json` at every safe boundary (before each provider call and
+    after each turn's tools land) and writes `checkpoints/<NNNN>.json` once per turn before the
+    call, so `fork --at-turn` has one meaning. The messages are anthropic-shaped, so an OpenAI
+    transcript cannot seed a resume. Every field added since version 1 has an additive default
+    that reads as "nothing observed".
+
+    Attributes:
+        version: The snapshot format, refused when it is not `SNAPSHOT_VERSION`.
+        system: The frozen system prompt.
+        messages: The conversation.
+        tool_calls: The tool calls made so far.
+        next_iteration: The turn the snapshot's provider call runs.
+        root_task_id: The task graph's root, when the run has one.
+        original_task: The exact task text the run launched with; the manifest holds a
+            truncated display twin.
+        verify_command: The gate the run resolved, () when gateless; a resume reuses it rather
+            than inferring again.
+        review_rejections_total: The before-finish panel's rejection count, which disarms it.
+        verify_ever_passed: Whether any verify passed.
+        verify_ever_failed: Whether any verify failed.
+        gateless_ever_edited: Whether a gateless run edited the tree.
+        metric_best_score: The best metric score, when a metric is configured.
+        metric_at_ceiling: Whether the metric reached its ceiling.
+        last_verify_ok: The last verify's result, carried only onto a clean tree at `head_sha`.
+        edited_since_verify: Whether the tree changed after the last verify.
+        baseline_ok: Whether the gate passed on the base commit, which a resume never moves.
+        verify_scoped: Whether the full gate overran its timeout; a fact about the suite, so it
+            carries unconditionally.
+        memory_written: Whether the worker wrote a memory fact; the nudges are once per run.
+        memory_flip_nudged: Whether the memory flip nudge fired.
+        memory_finish_nudged: Whether the memory finish nudge fired.
+        ok_tool_calls: The executed dispatches, for the standing spin guard.
+        standing_tools_mark: The dispatch count at the last standing re-entry, -1 before any.
+        standing_fruitless: The fruitless standing re-entries in a row.
+        parallel_groups_dispatched: The /parallel groups dispatched, run-lifetime because lane
+            ids embed the group number.
+        pins: The operator's /pin texts, re-injected after every context restart.
+        head_sha: The chain tip at this turn, "" when git was unreadable; a fork cuts here and a
+            resume checks it for divergence.
+        graph_version: The task graph version a fork rebuilds by replay, 0 when unreadable.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -197,82 +209,46 @@ class SessionSnapshot(BaseModel):
     tool_calls: int
     next_iteration: int
     root_task_id: str | None
-    # The exact task string the run launched with. Resume re-enters with it
-    # verbatim, instead of recovering a truncated copy out of messages[0].
-    # SessionManifest.user_task is the DISPLAY twin (truncated [:4000]); this is
-    # engine state -- never read one where the other is meant.
     original_task: str
-    # The verify command the original run resolved (possibly inferred): resume
-    # reuses it rather than re-inferring (which could flip and diverge from the
-    # frozen system prompt's verify/no-verify block). `()` = the run was gateless.
     verify_command: tuple[str, ...]
-    # Completion-relevant bookkeeping, so the metric / verify-settled stop logic
-    # doesn't regress across a resume. A compact metric *summary* (best score +
-    # at-ceiling flag), not the full history: all `MetricGuard.at_ceiling` and the
-    # plateau seed need. review_rejections_total keeps the anti-stall gate-disarm.
     review_rejections_total: int = 0
     verify_ever_passed: bool = False
     verify_ever_failed: bool = False
     gateless_ever_edited: bool = False
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
-    # The last verify observation, so a resumed execution is not born amnesiac:
-    # without it a green finish resumed and finished untouched reads
-    # "unverified". Carried into the new execution only when
-    # head_sha still matches a clean worktree (see _carry_verify_verdict);
-    # baseline_ok is about the BASE commit, which resume never moves. Additive
-    # defaults: an older snapshot loads as "nothing observed", exactly its truth.
     last_verify_ok: bool | None = None
     edited_since_verify: bool = False
     baseline_ok: bool | None = None
-    # The full gate overran verify_timeout_s: harness gates run scoped until
-    # a full run passes. A fact about the suite, not the tree, so a resumed
-    # execution carries it unconditionally instead of burning the timeout again.
     verify_scoped: bool = False
-    # Memory nudges and their finish deferral are once per run, not once per
-    # resume execution. Carry both what the worker wrote and which notices fired.
     memory_written: bool = False
     memory_flip_nudged: bool = False
     memory_finish_nudged: bool = False
-    # Executed-dispatch count for the standing spin guard (0 on old snapshots:
-    # one extra re-entry at most, then the mark resyncs).
     ok_tool_calls: int = 0
-    # Standing-goal re-entry bookkeeping (see LoopState). Additive: an old
-    # snapshot restores the never-absorbed default and a fresh streak.
     standing_tools_mark: int = -1
     standing_fruitless: int = 0
-    # /parallel groups dispatched so far. Run-lifetime, not execution-lifetime: lane
-    # ids and their imported branches embed the group number
-    # (`<run>-p<N>-l<i>`), so a resume that restarted at p1 rebuilt a prior
-    # group's exact ids and collided on its clone dirs / branches.
     parallel_groups_dispatched: int = 0
-    # Operator /pin instructions, re-injected verbatim after every tier-2
-    # restart. Run-lifetime like the group counter above (additive default:
-    # a snapshot written before pins existed loads with none).
     pins: tuple[str, ...] = ()
-    # Fork extras: the run's chain tip and curator graph_version at this turn
-    # (head_sha falls back to HEAD only where there is no chain).
-    # `fork --at-turn N` cuts the branch at head_sha; graph_version names
-    # the exact past graph the fork REBUILDS via replay (see app/fork.py).
-    # Best-effort at write time: "" / 0 when git/curator was unreadable. Plain
-    # resume reads head_sha (its divergence guard) only.
     head_sha: str = ""
     graph_version: int = 0
 
 
 def _load_state_object(path: Path, what: str) -> dict[str, Any]:
-    """Read a state JSON file and require the top-level shape to be an object.
+    """Read a state JSON file whose top level must be an object.
 
-    Valid JSON that is null, a list, or a scalar (a truncated or tampered state
-    file) would otherwise reach `raw.get(...)` / `raw[...]` and surface as an
-    `AttributeError`/`TypeError` traceback the callers do not catch. Failing
-    with a clean `ValueError` routes it to the same loud message as a version
-    mismatch or a JSON decode error."""
+    Args:
+        path: The file.
+        what: The file's name in errors.
+
+    Returns:
+        The parsed object.
+
+    Raises:
+        ValueError: When the file is not valid JSON or its top level is not an object.
+    """
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        # The likeliest corruption of all (a snapshot torn by a full disk or a
-        # power loss) names the path like its siblings below.
         raise ValueError(f"unreadable {what} at {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError(
@@ -282,12 +258,18 @@ def _load_state_object(path: Path, what: str) -> dict[str, Any]:
 
 
 def load_session_snapshot(path: Path) -> SessionSnapshot:
-    """Load a persisted run-state snapshot (`loop_state.json` or a checkpoint).
+    """Load a snapshot, `loop_state.json` or a checkpoint.
 
-    Refuses a snapshot from before the current `SNAPSHOT_VERSION` loudly: an
-    in-flight run started before a state-format change predates this format and
-    cannot be resumed or forked. Raises `ValueError` on any bad shape (fail
-    loudly); `resume`/`fork` map it to a friendly refusal."""
+    Args:
+        path: The snapshot file.
+
+    Returns:
+        The snapshot.
+
+    Raises:
+        ValueError: When the snapshot predates `SNAPSHOT_VERSION` or has a bad shape; resume
+            and fork turn it into a refusal.
+    """
     raw = _load_state_object(path, "run-state snapshot")
     version = raw.get("version")
     if version != SNAPSHOT_VERSION:
@@ -301,18 +283,18 @@ def load_session_snapshot(path: Path) -> SessionSnapshot:
         raise ValueError(f"malformed run-state snapshot at {path}: {exc}") from exc
 
 
-# The mid-turn-crash marker. Written beside the snapshot BEFORE a turn's
-# tools dispatch and deleted only AFTER the after-tools snapshot advanced, so
-# a crash in the dispatch->snapshot window leaves a marker whose iteration
-# equals the turn resume would re-run: the one case where replay may repeat a
-# non-idempotent side effect. A clean stop deletes it; a crash mid-snapshot
-# leaves a STALE marker (iteration < next_iteration) resume clears silently.
+# Written before a turn's tools dispatch and deleted after the snapshot advances past them.
 TURN_IN_FLIGHT_NAME = "turn_in_flight.json"
 
 
 def write_turn_marker(path: Path, iteration: int, tools: tuple[str, ...]) -> None:
-    """Best-effort: a marker that cannot be written must not fail the turn
-    (the write exists to improve a crash's recovery, not to gate progress)."""
+    """Write the marker; a failed write never fails the turn.
+
+    Args:
+        path: The marker file.
+        iteration: The turn whose tools are about to run.
+        tools: The tool names of the turn.
+    """
     with contextlib.suppress(OSError):
         path.write_text(
             json.dumps({"iteration": iteration, "tools": list(tools)}), encoding="utf-8"
@@ -320,10 +302,14 @@ def write_turn_marker(path: Path, iteration: int, tools: tuple[str, ...]) -> Non
 
 
 def read_turn_marker(path: Path) -> tuple[int, tuple[str, ...]] | None:
-    """The marker's (iteration, tool names), or None when absent/unreadable
-    (an unreadable marker reads as absent: the recovery it improves is
-    best-effort, and refusing a resume over a corrupt marker would invert
-    the feature's point)."""
+    """Return the marker's (iteration, tool names), or None when it is absent or unreadable.
+
+    Args:
+        path: The marker file.
+
+    Returns:
+        The turn whose tools may have run and their names, or None.
+    """
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -337,5 +323,6 @@ def read_turn_marker(path: Path) -> tuple[int, tuple[str, ...]] | None:
 
 
 def clear_turn_marker(path: Path) -> None:
+    """Delete the marker when present."""
     with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)

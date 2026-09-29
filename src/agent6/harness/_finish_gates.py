@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The finish gates: what a finish_session must satisfy before the loop
-honours it, what an end is called, and the words each refusal carries. The
-loop runs a gate list in order over the turn that declared an end and
-applies the first `Refusal` (`Harness._refuse`): `FINISH_GATES` over a
-finish_session, `END_GATES` over an end the harness declares (settled, a
-plateau), `SILENT_END_GATES` over a silent finish; `turn.ending` names the
-end the gates judge."""
+"""The finish gates: what an end must satisfy, what it is called, its refusals.
+
+The loop runs a gate list in order over the turn that declared an end and
+applies the first `Refusal`: `FINISH_GATES` over a finish_session,
+`END_GATES` over an end the harness declares (settled, a plateau),
+`SILENT_END_GATES` over a silent finish. `turn.ending` names the end judged.
+"""
 
 from __future__ import annotations
 
@@ -29,11 +29,16 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class FinishCall:
-    """A dispatched finish_session or finish_planning call, as the model
-    sent it; the finish gates may revoke it. `payload` is finish_session's
-    `result`, `stale_gate` its claim that the configured gate is stale, and
-    `plan_markdown` finish_planning's plan, with the summary folded under a
-    title-only one (`plan_salvaged`)."""
+    """A dispatched finish call as the model sent it; the finish gates may revoke it.
+
+    Attributes:
+        kind: finish_session or finish_planning.
+        summary: The model's summary.
+        payload: finish_session's `result`.
+        stale_gate: finish_session's claim that the configured gate is stale.
+        plan_markdown: finish_planning's plan.
+        plan_salvaged: The summary was folded under a title-only plan.
+    """
 
     kind: Literal["finish_session", "finish_planning"]
     summary: str
@@ -44,18 +49,24 @@ class FinishCall:
 
     @classmethod
     def parse(cls, name: str, tool_input: Any) -> FinishCall | None:
-        """The finish a dispatched tool call declares; None for any other
-        tool. Schema validation guaranteed the fields when the dispatcher
-        dispatched the call, but the raw tool_input is what the model sent,
-        so a malformed call still parses."""
+        """Return the finish a dispatched tool call declares.
+
+        The raw tool_input is what the model sent, so a malformed call still
+        parses.
+
+        Args:
+            name: The tool's name.
+            tool_input: The model's input to the tool.
+
+        Returns:
+            The call, or None for any other tool.
+        """
         fields = tool_input if isinstance(tool_input, dict) else {}
         summary = str(fields.get("summary", "(no summary)"))
         if name == FinishSessionInput.TOOL_NAME:
             raw_result = fields.get("result")
             if isinstance(raw_result, str):
-                # Weak models routinely STRINGIFY the structured result; one
-                # tolerant parse here, schema validation downstream stays
-                # strict about content.
+                # A stringified result parses here; schema validation stays strict.
                 try:
                     raw_result = json.loads(raw_result)
                 except ValueError:
@@ -68,10 +79,8 @@ class FinishCall:
             )
         if name == FinishPlanningInput.TOOL_NAME:
             plan_md = str(fields.get("plan_markdown", ""))
-            # Weak models leave plan_markdown a bare title and put the plan in
-            # `summary`, a stub `--from` would have to re-derive: the summary
-            # folds under the title. The review gate judged the content; this
-            # only rescues field misuse.
+            # A plan left in `summary` under a bare title folds under it; the review
+            # gate judged the content.
             salvaged = _plan_is_title_only(plan_md) and len(summary) > len(plan_md)
             if salvaged:
                 title = next((ln for ln in plan_md.splitlines() if ln.strip()), "# Plan")
@@ -81,8 +90,14 @@ class FinishCall:
 
 
 def _plan_is_title_only(plan_md: str) -> bool:
-    """True when plan_markdown has no body: only heading lines (`# ...`) and
-    blanks."""
+    """Return whether the plan has no body: only heading lines and blanks.
+
+    Args:
+        plan_md: The plan markdown.
+
+    Returns:
+        True when no line is prose.
+    """
     return not any(
         line.strip() and not line.lstrip().startswith("#") for line in plan_md.splitlines()
     )
@@ -90,11 +105,17 @@ def _plan_is_title_only(plan_md: str) -> bool:
 
 @dataclass(slots=True)
 class FinishGates:
-    """The finish gates' counters: the open-task refusals sent
-    (`TASK_FINISH_PATIENCE` caps them), the red finish certifications
-    returned (`verify_retries` caps them), the before-finish panel's
-    consecutive rejections (its cap lets the end through) and its run-total
-    (persisted; past `max_total_rejections` the gate disarms to advisory)."""
+    """The finish gates' counters.
+
+    Attributes:
+        task_nudges_used: Open-task refusals sent; `TASK_FINISH_PATIENCE` caps them.
+        verify_retries_used: Red finish certifications returned; `verify_retries`
+            caps them.
+        review_consecutive: The before-finish panel's consecutive rejections; its
+            cap lets the end through.
+        review_total: The panel's run-total, persisted; past
+            `max_total_rejections` the gate disarms to advisory.
+    """
 
     task_nudges_used: int = 0
     verify_retries_used: int = 0
@@ -103,12 +124,19 @@ class FinishGates:
 
 
 def task_finish_nudge(open_tasks: Sequence[tuple[str, str]], gates: FinishGates) -> str | None:
-    """The nudge to re-prompt with instead of finishing while the worker's
-    own subtasks are open; None lets the end through. Capped by
-    `TASK_FINISH_PATIENCE`, as the review gate is: after that many refusals
-    the end goes through and its receipt names the open tasks
-    (`with_open_tasks`), so a worker that neither closes nor retires a task
-    cannot bounce the loop for the whole budget."""
+    """Return the nudge to re-prompt with while the worker's own subtasks are open.
+
+    After `TASK_FINISH_PATIENCE` refusals the end goes through and its receipt
+    names the open tasks, so a worker that neither closes nor retires a task
+    cannot bounce the loop for the whole budget.
+
+    Args:
+        open_tasks: The (id, title) pairs still open.
+        gates: The counters; the nudge count advances here.
+
+    Returns:
+        The nudge, or None to let the end through.
+    """
     if not open_tasks:
         return None
     if gates.task_nudges_used >= TASK_FINISH_PATIENCE:
@@ -131,12 +159,22 @@ def red_gate_returns(
     *,
     gate_present: bool,
 ) -> bool:
-    """Whether a red gate is the model's to fix, so an end over it goes back:
-    a gate exists and is the harness's to run, was not red before the run
-    touched anything (or this run has since made it green), was not denied
-    or withheld by the operator, and returns are left. One answer for
-    finish_session and the ends the harness declares, so neither can hand
-    back a gate the model cannot run."""
+    """Return whether a red gate is the model's to fix, so an end over it goes back.
+
+    One answer for finish_session and the ends the harness declares, so neither
+    hands back a gate the model cannot run.
+
+    Args:
+        verify_when: `[harness].verify_when`.
+        verify_retries: `[harness].verify_retries`.
+        verify: The run's verify verdict.
+        gates: The finish gates' counters.
+        gate_present: A gate exists and is the harness's to run.
+
+    Returns:
+        True when the gate exists, was not red before the run touched anything
+        (or this run has since made it green), and returns are left.
+    """
     return (
         verify_when != "never"
         and gate_present
@@ -146,8 +184,14 @@ def red_gate_returns(
 
 
 def contract_refusal(problems: Sequence[str]) -> str:
-    """The notice a finish_session whose `result` violates the machine
-    state's output_schema returns with."""
+    """Return the notice a finish_session with a `result` off the schema returns with.
+
+    Args:
+        problems: The validator's findings.
+
+    Returns:
+        The refusal text.
+    """
     return (
         "finish_session refused: "
         + "; ".join(problems)
@@ -158,12 +202,22 @@ def contract_refusal(problems: Sequence[str]) -> str:
 def finish_reason(
     kind: SessionEndReason, *, stale_gate: str, tree_green: bool | None, verify: VerifyVerdict
 ) -> SessionEndReason:
-    """What a finish is called. `gate_stale` needs a gate that is actually
-    RED: green means it passed, and `tree_green` is None on a gateless run,
-    where no gate can be stale. `gate_red_at_base` outranks a plain finish
-    over red: the gate was failing before this run touched anything, so a
-    red end is not this run's failure; only ever from an observation, never
-    a guess."""
+    """Return what a finish is called.
+
+    `gate_stale` needs a gate that is red: green means it passed, and a gateless
+    run has none to be stale. `gate_red_at_base` outranks a plain finish over
+    red, since the gate was failing before this run touched anything; it comes
+    from an observation, never a guess.
+
+    Args:
+        kind: The end as declared.
+        stale_gate: The model's claim that the gate is stale, "" for none.
+        tree_green: The gate's verdict on the tree, None on a gateless run.
+        verify: The run's verify verdict.
+
+    Returns:
+        The end reason.
+    """
     if kind == "finish_session" and tree_green is False:
         if stale_gate:
             return "gate_stale"
@@ -173,11 +227,20 @@ def finish_reason(
 
 
 def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-    """A finish_session whose `result` does not satisfy the machine state's
-    output_schema returns to the model with the problems, so the retry
-    happens in-execution instead of the execution ending failed over correct work.
-    Unbounded on purpose: the budget and iteration backstops end a model
-    that never conforms, and the engine records that truthfully."""
+    """Return a finish_session whose `result` is off the machine state's schema.
+
+    The retry happens in-execution instead of the execution ending failed over
+    correct work. Uncapped: the budget and iteration backstops end a model that
+    never conforms.
+
+    Args:
+        turn: The turn that declared the end.
+        state: The run's loop state.
+        ctx: The turn's facts.
+
+    Returns:
+        The refusal with the problems, or None.
+    """
     if ctx.finish_validator is None:
         return None
     problems = ctx.finish_validator(turn.finish.payload if turn.finish is not None else None)
@@ -192,14 +255,31 @@ def finish_contract(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refu
 
 
 def review_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-    """The before-finish panel over the turn's end: a rejection revokes it,
-    the findings reaching the model with the turn's notices."""
+    """Sit the before-finish panel over the turn's end.
+
+    Args:
+        turn: The turn that declared the end.
+        state: The run's loop state.
+        ctx: The turn's facts.
+
+    Returns:
+        An empty refusal on a rejection, since the findings reach the model
+        with the turn's notices; else None.
+    """
     return Refusal("") if ctx.end_rejected(turn, turn.ending or "finish_session") else None
 
 
 def open_tasks_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-    """A run's finish_session waits while the worker's own subtasks are open
-    (`task_finish_nudge`, capped)."""
+    """Hold a run's end while the worker's own subtasks are open, capped.
+
+    Args:
+        turn: The turn that declared the end.
+        state: The run's loop state.
+        ctx: The turn's facts.
+
+    Returns:
+        The refusal naming the open tasks, or None.
+    """
     if ctx.mode != "run":
         return None
     nudge = task_finish_nudge(ctx.open_subtasks(), state.gates)
@@ -222,10 +302,20 @@ def open_tasks_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Re
 
 
 def verify_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-    """A run's finish over a tree the gate did not certify returns to the
-    model `verify_retries` times (`red_gate_returns`), then stands: reported
-    finished, never passed. A gate that was red before the run touched
-    anything is not the model's to fix, so it is never returned."""
+    """Return a run's end over a tree the gate did not certify.
+
+    The end returns `verify_retries` times, then stands: reported finished,
+    never passed. A gate that was red before the run touched anything is not
+    the model's to fix, so it is never returned.
+
+    Args:
+        turn: The turn that declared the end.
+        state: The run's loop state.
+        ctx: The turn's facts.
+
+    Returns:
+        The refusal with the red notice, or None.
+    """
     if not (
         ctx.mode == "run"
         and ctx.tree_green() is False
@@ -252,10 +342,19 @@ def verify_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusa
 
 
 def memory_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-    """The memory write-side backstop: a run's first finish_session after a
-    recovery from a red verify to green, with nothing recorded in the memory
-    store, is deferred once; the nudge asks for the root cause or an
-    immediate re-finish (see `_nudges` for the measurement behind it)."""
+    """Defer once a run's first finish after a red-to-green recovery with no memory write.
+
+    The nudge asks for the root cause or an immediate re-finish; `_nudges` holds
+    the measurement behind it.
+
+    Args:
+        turn: The turn that declared the end.
+        state: The run's loop state.
+        ctx: The turn's facts.
+
+    Returns:
+        The refusal, or None.
+    """
     if not (
         ctx.mode == "run"
         and ctx.memory_wired
@@ -275,19 +374,26 @@ def memory_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusa
 
 
 def standing_finish(turn: TurnState, state: LoopState, ctx: TurnContext) -> Refusal | None:
-    """While a ready standing task exists, a run's finish_session re-enters
-    it instead of ending the run (uncapped: the goal is deliberate; the
-    absorb refuses on spent budget or a spin, so the finish then stands)."""
+    """Re-enter a ready standing task instead of ending the run.
+
+    Uncapped, since the goal is deliberate; the absorb refuses on spent budget
+    or a spin, so the finish then stands.
+
+    Args:
+        turn: The turn that declared the end.
+        state: The run's loop state.
+        ctx: The turn's facts.
+
+    Returns:
+        The re-entry nudge as a refusal, or None.
+    """
     if ctx.mode != "run":
         return None
     nudge = ctx.standing_absorb("finish_session", turn.iteration)
     return None if nudge is None else Refusal(nudge)
 
 
-# The gates over a finish_session, in precedence order.
-# One precedence for every end: the contract, then the verify certification
-# (a red tree returns the end before the panel sits), the panel, the metric
-# rule, the open tasks, the memory backstop, the standing goal.
+# One precedence for every end: a red tree returns the end before the panel sits.
 FINISH_GATES: tuple[Gate, ...] = (
     finish_contract,
     verify_finish,
@@ -297,8 +403,7 @@ FINISH_GATES: tuple[Gate, ...] = (
     memory_finish,
     standing_finish,
 )
-# An end the harness declares has no payload to check; its memory backstop
-# and standing re-entry are judged where the end is decided.
+# A harness-declared end has no payload; its memory and standing rules sit at the stop.
 END_GATES: tuple[Gate, ...] = (verify_finish, review_finish, open_tasks_finish)
 # A silent finish is a finish the model wrote in prose: the metric rule applies.
 SILENT_END_GATES: tuple[Gate, ...] = (

@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A read-only review of one finished session's record: one provider call,
-markdown out.
+"""Review one finished session's record in one provider call, markdown out.
 
-Used by `agent6 sessions review`. The record is folded from the session's
-journal into a `RunDigest` the reviewer role reads: what the operator asked
-and corrected, how the tools and the verify gate answered, how the run ended,
-which memory facts it wrote, and the conversation's tail. Nothing is written
-back; the operator turns a candidate into `agent6 memory add` or an AGENTS.md
-line.
+`agent6 sessions review` uses it. The journal folds into a `RunDigest` the reviewer reads;
+nothing is written back, the operator turns a candidate into `agent6 memory add` or an
+AGENTS.md line.
 """
 
 from __future__ import annotations
@@ -26,8 +22,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.tools.sessions import conversation
 from agent6.viewmodel import summarize_session_dir
 
-# The harness's own interventions: each one is a place the run needed help,
-# so the review names them with their counts.
+# The harness's own interventions, named with their counts.
 _NOTICE_EVENTS = (
     "loop.no_progress.nudge",
     "loop.tool_error.nudge",
@@ -41,8 +36,7 @@ _NOTICE_EVENTS = (
     "loop.memory_finish.gated",
     "loop.sandbox_tool_unreachable",
 )
-# What one digest carries of the journal: enough to judge the run, bounded
-# so the reviewer call fits any configured model.
+# The caps that keep the digest within any configured model's window.
 _STEERS_MAX = 20
 _STEER_CHARS = 500
 _DECISIONS_MAX = 20
@@ -57,22 +51,55 @@ class RunReviewError(Exception):
     """The run-review call failed to produce a response."""
 
 
-# The gate word, `LogScan.verify_verdict`'s rule in words: a plan, an ask or
-# an end nothing gated; a green final tree; this execution's own red verify; and
-# everything else, a journal with no end included.
+# `LogScan.verify_verdict`'s rule: ungated, a green final tree, this execution's own red, the rest.
 VerifyWord = Literal["not gated", "passed", "failed", "unverified"]
 
 
 @dataclass(frozen=True, slots=True)
 class VerifyRun:
+    """Hold one verify run as the digest shows it.
+
+    Attributes:
+        exit_code: The gate's exit code.
+        duration_s: How long the gate ran.
+        tail: The clipped stderr, else stdout.
+    """
+
     exit_code: int
     duration_s: float
-    tail: str  # stderr, else stdout, clipped
+    tail: str
 
 
 @dataclass(frozen=True, slots=True)
 class RunDigest:
-    """One session's record as the reviewer reads it."""
+    """Hold one session's record as the reviewer reads it.
+
+    Each list shows at most its cap; the `_total` counts are the journal's own.
+
+    Attributes:
+        session_id: The session id.
+        mode: The session's mode.
+        task: The task text.
+        status: The session's status.
+        end_reason: The session's end reason, "" when it has none.
+        verify: The gate word.
+        iterations: The iteration count, None when the journal has no end.
+        tool_calls: The tool calls made.
+        tool_errors: The tool calls that failed.
+        cost_usd: The session's cost.
+        steers: The operator's steers.
+        decisions: The (question, answer) rulings recorded.
+        verify_runs: The last verify runs.
+        errors_by_tool: The (tool, count) failures, most common first.
+        first_errors: The first failures as "[tool] summary".
+        notices: The (notice, count) harness interventions.
+        memory_wrote: The memory facts this session wrote.
+        memory_index: The repo's memory index, shown to every run.
+        conversation: The conversation's tail.
+        steers_total: The steers the journal holds.
+        decisions_total: The decisions the journal holds.
+        verify_total: The verify runs the journal holds.
+    """
 
     session_id: str
     mode: str
@@ -85,21 +112,20 @@ class RunDigest:
     tool_errors: int
     cost_usd: float
     steers: tuple[str, ...] = ()
-    decisions: tuple[tuple[str, str], ...] = ()  # (question, answer)
+    decisions: tuple[tuple[str, str], ...] = ()
     verify_runs: tuple[VerifyRun, ...] = ()
     errors_by_tool: tuple[tuple[str, int], ...] = ()
-    first_errors: tuple[str, ...] = ()  # "[tool] summary"
+    first_errors: tuple[str, ...] = ()
     notices: tuple[tuple[str, int], ...] = ()
     memory_wrote: tuple[str, ...] = ()
-    memory_index: str = ""  # the repo's MEMORY.md index, what every run is shown
+    memory_index: str = ""
     conversation: str = ""
-    # The journal's own counts; a list above shows at most its cap of them.
     steers_total: int = 0
     decisions_total: int = 0
     verify_total: int = 0
 
     def render(self) -> str:
-        """The digest as the text the reviewer is given."""
+        """Return the digest rendered as the text the reviewer is given."""
         lines = [
             f"session {self.session_id} ({self.mode}): {self.task}",
             f"ended: {self.end_reason or self.status}; verify {self.verify};"
@@ -137,7 +163,7 @@ class RunDigest:
 
 
 def _shown(shown: Sized, total: int) -> str:
-    """`N` or `N, M more not shown`: the cap named, never silent."""
+    """Return the count shown, naming how many more the journal holds."""
     left = total - len(shown)
     return f"{len(shown)}, {left} more not shown" if left > 0 else str(len(shown))
 
@@ -145,8 +171,17 @@ def _shown(shown: Sized, total: int) -> str:
 def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     layout: SessionLayout, *, max_chars: int = CONVERSATION_MAX_CHARS
 ) -> RunDigest:
-    """Fold *layout*'s journal into a digest. Tolerant like every journal
-    reader: a torn line is skipped, a missing journal reads as no events."""
+    """Fold a session's journal into a digest.
+
+    A torn line is skipped and a missing journal reads as no events.
+
+    Args:
+        layout: The session's layout.
+        max_chars: The cap on the conversation tail.
+
+    Returns:
+        The digest.
+    """
     summary = summarize_session_dir(layout.session_dir)
     steers: list[str] = []
     decisions: list[tuple[str, str]] = []
@@ -157,9 +192,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     tool_calls = 0
     end_reason = ""
     all_passed: bool | None = None
-    execution_rc: int | None = (
-        None  # this execution's last verify exit, reset at a resume (as the listing scan does)
-    )
+    execution_rc: int | None = None  # this execution's last verify exit, reset at a resume
     iterations: int | None = None
     try:
         raw = layout.logs_path.read_text(errors="replace")
@@ -205,11 +238,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
             passed = event.get("all_passed")
             all_passed = passed if isinstance(passed, bool) else None
             iterations = _int(event.get("iterations")) if "iterations" in event else iterations
-    # The listing scan's rule (`LogScan.verify_verdict`): a plan's and an
-    # ask's end carries all_passed=True with nothing gating it; a run's end
-    # says None when no gate judged it, True when the final tree was green,
-    # False when it was red, stale or never judged; "failed" only on this
-    # execution's own red verify.
+    # `LogScan.verify_verdict`'s rule: "failed" only on this execution's own red verify.
     if summary.mode != "run" or (end_reason and all_passed is None):
         verify = "not gated"
     elif all_passed is True:
@@ -249,12 +278,22 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
 def run_review(
     provider: Provider, *, digest: str, agents_md: str = "", max_tokens: int = 4096
 ) -> str:
-    """Ask the reviewer model to review a run from its *digest*. Returns
-    markdown text."""
+    """Ask the reviewer model to review a run from its digest.
+
+    Args:
+        provider: The reviewer's provider.
+        digest: The rendered digest.
+        agents_md: The repo's AGENTS.md, given whole so a candidate line is judged against it.
+        max_tokens: The output cap of the call.
+
+    Returns:
+        The review as markdown.
+
+    Raises:
+        RunReviewError: When the call fails or returns nothing.
+    """
     parts: list[str] = []
     if agents_md.strip():
-        # Whole, like the code review's copy: a candidate AGENTS.md line is
-        # judged against the rules the file already states.
         parts.append(f"AGENTS.md:\n{agents_md.strip()}")
     parts.append(f"RUN RECORD:\n{digest}")
     try:
@@ -272,10 +311,12 @@ def run_review(
 
 
 def _clip(text: str, limit: int) -> str:
+    """Return the text clipped to the limit, with the cut marked."""
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def _int(value: object) -> int:
+    """Return the value as an int, 0 when it is not one."""
     try:
         return int(value)  # pyright: ignore[reportArgumentType]
     except (TypeError, ValueError):

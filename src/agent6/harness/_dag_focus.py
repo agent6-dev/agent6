@@ -1,17 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""surface-current-task: the DAG focus frontier and its directives.
+"""The DAG focus frontier and its directives.
 
-Pure helpers over the curator's nodes dict. The loop keeps a small/weak
-worker on ONE task at a time: each turn it computes the current task -- the
-curator cursor while it still points at a focusable subtask (the worker's
-explicit choice wins), else the first dependency-satisfied open subtask in creation
-order -- advances the cursor to it, and injects a focus banner when the focus
-first appears, changes, or was wiped by a tier-2 restart. The banner survives
-tier-1 elision, so the worker keeps seeing it between those events without
-re-appending every turn. Only SUBTASKS are focus candidates, mirroring the
-finish-gate: the always-pending auto-root is the whole job, not a unit of
-work to surface.
+Pure helpers over the curator's nodes dict. The loop keeps the worker on one
+task at a time: each turn it computes the current task (the curator cursor
+while it points at a focusable subtask, else the first dependency-satisfied
+open subtask in creation order), advances the cursor to it, and injects a
+focus banner when the focus first appears, changes, or was wiped by a tier-2
+restart. The banner survives tier-1 elision. Only subtasks are focus
+candidates, as in the finish gate: the always-pending root is the whole job.
 """
 
 from __future__ import annotations
@@ -19,40 +16,31 @@ from __future__ import annotations
 from agent6.graph.models import TaskNode, queued_by_operator
 from agent6.graph.order import is_focusable_subtask, ready_subtask, tree_order
 
-# Tool names that mutate the task DAG; after one runs the loop re-snapshots the
-# graph (graph.update event) so a live viewer can render the worker's task
-# breakdown.
+# After one of these runs the loop re-snapshots the graph (the graph.update event).
 DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task"})
 
 
-# Anti-grind: a weak model on a vague/oversized task can stay on one DAG task for
-# many turns, reading without ever marking it done, decomposing it, or trying to
-# finish -- so neither the finish-gate (fires on a finish attempt) nor went_quiet
-# (it is busy) catches it. Every this-many consecutive turns on the SAME task with
-# no forward motion (cursor advance / mark-done / decompose, any of which changes
-# the focus and resets the count), fire a nudge offering split / pass / skip. It
-# re-fires periodically (one nudge is easy to ignore) but caps at
-# STUCK_NUDGE_MAX per task so it cannot nag forever; generous so a
-# model making normal progress (which changes focus well before this) never sees it.
+# A model that stays on one task this many turns without a focus change is nudged to
+# split, pass or skip it; the nudge re-fires up to STUCK_NUDGE_MAX times per task.
 STUCK_ON_TASK_AFTER = 20
 STUCK_NUDGE_MAX = 3
 
 
 def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
-    """First focusable subtask (open, deps satisfied, no open child), in the
-    order the task tree shows: depth-first through each parent's `children`
-    list. That list is what every renderer and `list_tasks` display, so a
-    reordered or positionally-inserted child executes where it appears.
+    """Return the first focusable subtask in the order the task tree shows.
 
-    Roots (and any node an ancestor does not reach, e.g. a stale parent
-    reference) fall back to id order, which is the run's own count, so that is
-    creation order even on a resumed run, where the nodes dict arrives in
-    filesystem order.
+    Focusable is open, dependencies satisfied, no open child; the order is
+    depth-first through each parent's `children` list, so a reordered child
+    executes where every renderer displays it. Roots and unreachable nodes fall
+    back to id order, which is creation order even on a resumed run. When
+    nothing ordinary is ready, the first ready standing task is the fallback.
 
-    When nothing ordinary is ready, the first ready STANDING task is the
-    fallback: ordinary pending work always outranks it, so a run drains real
-    tasks first and returns to the standing goal when the queue empties.
-    Returns None when nothing at all is ready."""
+    Args:
+        nodes: The task graph's nodes by id.
+
+    Returns:
+        The subtask's id, or None when nothing is ready.
+    """
     for nid in tree_order(nodes):
         if is_focusable_subtask(nodes, nodes[nid]):
             return nid
@@ -64,10 +52,19 @@ def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
 
 
 def current_task_id(nodes: dict[str, TaskNode], cursor: str | None) -> str | None:
-    """The subtask to focus on now: the curator cursor when it still points at a
-    focusable subtask (a decomposed parent does NOT qualify -- its leaves do, so
-    a split moves focus forward), else the first ready subtask. None when no
-    subtask is focusable."""
+    """Return the subtask to focus on now.
+
+    The curator cursor wins while it points at a focusable subtask (a decomposed
+    parent does not qualify, its leaves do, so a split moves focus forward); else
+    the first ready subtask.
+
+    Args:
+        nodes: The task graph's nodes by id.
+        cursor: The curator cursor, or None.
+
+    Returns:
+        The subtask's id, or None when no subtask is focusable.
+    """
     if cursor is not None:
         node = nodes.get(cursor)
         if node is not None and is_focusable_subtask(nodes, node):
@@ -76,12 +73,20 @@ def current_task_id(nodes: dict[str, TaskNode], cursor: str | None) -> str | Non
 
 
 def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False) -> str:
-    """The per-turn focus directive naming the current task and its acceptance."""
+    """Return the focus directive naming the current task and its acceptance.
+
+    Args:
+        task_id: The current task's id.
+        node: The current task.
+        decompose: True invites child subtasks under a task without children.
+
+    Returns:
+        The banner text.
+    """
     title = node.title.strip() or "(untitled)"
     lines = [f"[harness focus] Current task ({task_id}): {title}"]
     if queued_by_operator(node):
-        # Queued by the operator mid-run, so the wording is theirs and the
-        # whole text is the spec (the title is only its first line).
+        # The operator's whole text is the spec; the title is only its first line.
         if (queued := node.rationale.strip()) and queued != title:
             lines.append(queued)
         lines.append(
@@ -95,8 +100,7 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
     if paths:
         lines.append("Relevant paths: " + ", ".join(paths[:8]))
     if node.standing:
-        # A standing task never passes (the curator refuses `passed`) and it is
-        # the operator's own goal, so it refuses every retirement.
+        # The curator refuses `passed` and every retirement on a standing task.
         lines.append(
             "This is a standing task: it never passes, so do not mark it passed;"
             " only the operator retires it. Work a round on it now, add_task each"
@@ -111,8 +115,7 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
             " moved to the next task. If you find unrelated work, add_task it"
             " instead of switching to it now."
         )
-    # Decompose runs plan recursively: invite a finer plan for a task that turns
-    # out large, at the point the model has the most context to plan it.
+    # Decompose runs plan recursively: a task that turns out large gets a finer plan.
     if decompose and not node.children:
         lines.append(
             "If this task is itself large or multi-step, add child subtasks under"
@@ -122,10 +125,19 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
 
 
 def stuck_on_task_nudge(task_id: str, node: TaskNode, turns: int) -> str:
-    """The anti-grind directive: the model has spent `turns` turns on one task
-    without concluding it; offer the three ways to record progress. Never
-    for a standing task: it concludes nothing by design, and two of the three
-    moves are refused on it."""
+    """Return the nudge offering the three ways to record progress on a stuck task.
+
+    Never for a standing task: it concludes nothing by design, and two of the
+    three moves are refused on it.
+
+    Args:
+        task_id: The current task's id.
+        node: The current task.
+        turns: The consecutive turns spent on it.
+
+    Returns:
+        The nudge text.
+    """
     title = node.title.strip() or "(untitled)"
     return (
         f"[harness] You have spent {turns} turns on the current task"
@@ -140,12 +152,21 @@ def stuck_on_task_nudge(task_id: str, node: TaskNode, turns: int) -> str:
 
 
 def initial_dag_hint(root_id: str | None, mode: str, decompose: bool) -> str:
-    """The DAG hint appended to the first user message, only for modes whose
-    tool surface HAS the DAG tools (run, plan; see tools/schema.py): ask wires
-    a curator too, but exposes no `add_task`, so a hint there names a tool the
-    model cannot call. The decompose-first directive is RUN-MODE ONLY -- it
-    references the run-only `<decompose-first>` system block and tells the
-    worker to edit."""
+    """Return the DAG hint appended to the first user message.
+
+    Only run and plan expose the DAG tools (tools/schema.py); ask wires a curator
+    but no `add_task`, so a hint there would name a tool the model cannot call.
+    The decompose-first directive is run-mode only: it references the run-only
+    `<decompose-first>` system block and tells the worker to edit.
+
+    Args:
+        root_id: The DAG root task id, or None when no DAG is wired.
+        mode: The run mode.
+        decompose: True asks for the plan before the first edit.
+
+    Returns:
+        The hint, "" when the mode has no DAG tools.
+    """
     if root_id is None or mode not in ("run", "plan"):
         return ""
     if mode == "run" and decompose:

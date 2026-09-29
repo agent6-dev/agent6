@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The tasks the operator gives a run: the root task a fresh run starts on,
-the standing goal (`run --standing`, `/standing`) and what `/task` and
-`/retire` queue for the graph. Every write lands in the graph and nothing
-enters the conversation: the turn in flight never sees a queued request,
-and the next turn's focus banner names the work."""
+"""Write the tasks the operator gives a run to its task graph.
+
+The root task a fresh run starts on, the standing goal (`run --standing`, `/standing`) and
+what `/task` and `/retire` queue. Nothing enters the conversation: the turn in flight never
+sees a queued request, and the next turn's focus banner names the work.
+"""
 
 from __future__ import annotations
 
@@ -29,10 +30,19 @@ from agent6.task_text import task_headline
 
 @dataclass(frozen=True, slots=True)
 class OperatorTasks:
-    """The operator's writes to the run's task graph. `take_requests` is the
-    bridge's queue (`/task`, `/standing`, `/retire`, or `agent6 steer` with
-    the same words); `revision` is `[prompt].revise_prompt`, applied to a
-    queued task as to the initial one; `root` is the repository."""
+    """The operator's writes to the run's task graph.
+
+    Attributes:
+        curator: The graph, or None for a run without one.
+        take_requests: The bridge's queue: `/task`, `/standing`, `/retire`, or `agent6 steer`
+            with the same words.
+        revision: The `[prompt].revise_prompt` settings, applied to a queued task as to the
+            initial one.
+        root: The repository.
+        log: The run's text logger.
+        emit: The run's event sink.
+        emit_graph_snapshot: Publishes the graph after a write.
+    """
 
     curator: GraphCurator | None
     take_requests: Callable[[], list[OperatorRequest]]
@@ -43,9 +53,16 @@ class OperatorTasks:
     emit_graph_snapshot: Callable[[], None]
 
     def take(self, root_task_id: str | None) -> bool:
-        """Apply what the operator asked since the last turn boundary, in the
-        order asked; True when anything landed. A refused request is logged
-        and emitted (`loop.request.refused`), and the rest still land."""
+        """Apply what the operator asked since the last turn boundary, in the order asked.
+
+        A refused request is logged and emitted (`loop.request.refused`); the rest still land.
+
+        Args:
+            root_task_id: The run's root task, or None before the graph is seeded.
+
+        Returns:
+            Whether anything landed.
+        """
         if self.curator is None or root_task_id is None:
             return False
         landed = False
@@ -72,9 +89,16 @@ class OperatorTasks:
         return landed
 
     def seed_root(self, user_task: str) -> str | None:
-        """The run's root task, the user's task itself: the model's
-        `add_task` calls with `parent_id=None` attach under it. None without
-        a curator, or when the graph refused the write."""
+        """Seed the run's root task, the user's task itself.
+
+        The model's `add_task` calls with `parent_id=None` attach under it.
+
+        Args:
+            user_task: The task as the operator gave it.
+
+        Returns:
+            The root's id, or None without a curator or when the graph refused the write.
+        """
         if self.curator is None:
             return None
         # TaskNodeDraft.title has min_length=1: "(run)" when the task is blank.
@@ -94,10 +118,14 @@ class OperatorTasks:
             return None
 
     def seed_standing(self, root_id: str, goal: str) -> None:
-        """The operator's `run --standing` goal, set as `/standing` sets one.
-        Only a fresh run seeds one, so there is never a second to weigh
-        against it; `/standing` is what changes the goal of a run already
-        going."""
+        """Seed the operator's `run --standing` goal, as `/standing` sets one.
+
+        Only a fresh run seeds one; `/standing` changes the goal of a run already going.
+
+        Args:
+            root_id: The run's root task.
+            goal: The goal's text; blank seeds nothing.
+        """
         goal = goal.strip()
         if not goal or self.curator is None:
             return
@@ -107,11 +135,15 @@ class OperatorTasks:
             self.log(f"LOOP: standing goal not seeded: {exc}")
 
     def queue(self, root_id: str, text: str) -> None:
-        """A queued task lands as the root's last ordinary child, so the run
-        reaches it once the open work drains. The title stays the operator's
-        own first line even when the revision rewrites the body, so the task
-        tree reads in their words; the whole text is the rationale, so a long
-        spec survives whole."""
+        """Queue a task as the root's last ordinary child, reached once the open work drains.
+
+        The title stays the operator's own first line even when the revision rewrites the body,
+        so the task tree reads in their words; the whole text is the rationale.
+
+        Args:
+            root_id: The run's root task.
+            text: The task as the operator typed it.
+        """
         title = task_headline(text)[:200] or text.strip()[:200]
         spec = self._revised(text)
         node = self._graph.add_subtask(
@@ -128,10 +160,14 @@ class OperatorTasks:
         self.emit("loop.task.queued", id=node.id, title=title)
 
     def retire(self, task_id: str) -> None:
-        """Obsolete rather than skipped: the operator decided the work no
-        longer applies. Their route is the curator itself, so a task they
-        queued is retirable here even though `update_task` refuses it to the
-        model."""
+        """Retire a task the operator no longer wants: obsolete, not skipped.
+
+        The route is the curator itself, so a task the operator queued is retirable here even
+        though `update_task` refuses it to the model.
+
+        Args:
+            task_id: The task to retire.
+        """
         node = self._graph.update_status(
             UpdateStatusIntent(id=task_id, new_status="obsolete", note="retired by the operator")
         )
@@ -139,10 +175,15 @@ class OperatorTasks:
         self.emit("loop.task.retired", id=node.id, title=node.title)
 
     def set_standing(self, root_id: str, goal: str) -> None:
-        """Typing a goal means "this is the goal now", so the one it replaces
-        is retired rather than kept beside it. Retired, not made ordinary: a
-        goal reads as an activity ("keep hunting for defects"), and an ordinary
-        task of that shape is worked once and marked passed."""
+        """Set the standing goal, retiring the one it replaces.
+
+        Retired, not made ordinary: a goal reads as an activity ("keep hunting for defects"),
+        and an ordinary task of that shape is worked once and marked passed.
+
+        Args:
+            root_id: The run's root task.
+            goal: The goal's text.
+        """
         curator = self._graph
         for node in curator.nodes().values():
             if node.standing and node.status in OPEN_STATUSES:
@@ -163,18 +204,28 @@ class OperatorTasks:
 
     @property
     def _graph(self) -> GraphCurator:
+        """The curator, for a write that needs one.
+
+        Raises:
+            CuratorError: The run has no task graph.
+        """
         if self.curator is None:
             raise CuratorError("this run has no task graph")
         return self.curator
 
     def _revised(self, text: str) -> str:
-        """A queued task through `[prompt].revise_prompt`, when the operator
-        turned it on: the same one-shot pass the initial task gets, which folds
-        the revision with the original and marks the original authoritative.
+        """Run a queued task through `[prompt].revise_prompt` when the operator turned it on.
 
-        Nobody is at a terminal at a turn boundary, so `interactive` revises the
-        way `auto` does, and a failed pass keeps the text as written: a queued
-        task is never lost to a reviser that could not answer."""
+        The same one-shot pass the initial task gets. Nobody is at a terminal at a turn
+        boundary, so `interactive` revises the way `auto` does; a failed pass keeps the text as
+        written.
+
+        Args:
+            text: The task as the operator typed it.
+
+        Returns:
+            The revised text folded with the original, or the text unchanged.
+        """
         if self.revision.mode == "off":
             return text
         try:

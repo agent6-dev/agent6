@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The loop's one path to the provider, and the classification around it.
+"""Call the provider under a bounded retry.
 
-`ProviderCaller` runs `provider.call` under a bounded retry. The predicates and
-constants classify one response or status in isolation (which HTTP statuses are
-permanent, how long an upstream Retry-After is honored, the hint for a fatal
-error, the empty tool call that earns a blind retry, the reasoning that starved
-a turn), so they stay unit-testable without a Harness.
+`ProviderCaller` runs `provider.call`; the predicates and constants classify one response or
+status on their own, so they test without a `Harness`.
 """
 
 from __future__ import annotations
@@ -27,29 +24,25 @@ from agent6.providers import (
     output_cap_truncated,
 )
 
-# Statuses a blind retry of the same request can outlive: a timeout (408), a
-# conflict (409), too early (425), a rate limit (429) and every 5xx fall through
-# to the normal backoff; every other 3xx and 4xx fails fast.
+# A timeout (408), a conflict (409), too early (425), a rate limit (429) and every 5xx retry.
 NON_RETRYABLE_HTTP_STATUSES = frozenset(set(range(300, 500)) - {408, 409, 425, 429})
 
-# Upper bound on how long we honor an upstream Retry-After hint. A 429/503 often
-# carries Retry-After: <seconds>; we wait at least that long (the provider's own
-# backoff is usually shorter and just exhausts the retries before the window
-# clears), but never longer than this so a buggy/hostile header can't hang a run.
+# The longest wait an upstream Retry-After header earns, so a hostile header cannot hang a run.
 RETRY_AFTER_CEILING_S = 120.0
 
-# Finish/stop reasons that promise a tool call. A response carrying one of these
-# but with NO tool_use and NO text is self-contradictory and gets retried (see
-# is_empty_tool_call_response).
+# The stop reasons that promise a tool call.
 TOOL_CALL_STOP_REASONS = frozenset({"tool_calls", "tool_use"})
 
 
 def provider_error_hint(status_code: int | None, provider: str = "") -> str:
-    """A short, actionable suffix for a fatal provider error, or "".
+    """Return the next step for a credential or quota status, "" for any other.
 
-    The raw upstream body (e.g. a 401 JSON blob) tells a user nothing about how
-    to fix it. Map the common credential/quota statuses to a next step, naming
-    the failing *provider*'s config key when known.
+    Args:
+        status_code: The HTTP status of the fatal error.
+        provider: The failing provider's name, for its config key.
+
+    Returns:
+        A sentence to append to the error, or "".
     """
     if status_code in (401, 403):
         return (
@@ -62,14 +55,17 @@ def provider_error_hint(status_code: int | None, provider: str = "") -> str:
 
 
 def is_empty_tool_call_response(resp: Any) -> bool:
-    """A self-contradictory provider response: the finish/stop reason says the
-    model stopped to make a tool call, but no tool_use and no text came back.
+    """Return whether the stop reason promises a tool call that no tool_use or text delivers.
 
-    Seen on GLM via OpenRouter after a tier-2 context restart (~50% of turns):
-    finish_reason=tool_calls with an empty payload. A blind retry recovers it
-    about half the time; without one the loop counts it as went_quiet and the run
-    dies at the first compaction. Excludes stop_reason=="length" (deterministic
-    reasoning starvation, handled separately with its own nudge)."""
+    A blind retry recovers such a response about half the time; a `length` stop is reasoning
+    starvation instead, with its own nudge.
+
+    Args:
+        resp: The provider response.
+
+    Returns:
+        True for the self-contradictory shape.
+    """
     return (
         str(getattr(resp, "stop_reason", "")) in TOOL_CALL_STOP_REASONS
         and not resp.tool_uses
@@ -78,9 +74,14 @@ def is_empty_tool_call_response(resp: Any) -> bool:
 
 
 def reasoning_starvation(resp: ProviderResponse) -> int:
-    """The reasoning characters of a turn the output cap cut with billed
-    output, 0 otherwise. In the went-quiet handler the count tells a starved
-    reasoner (its whole budget went to thinking) from a model that gave up."""
+    """Return the reasoning characters of a turn the output cap cut, 0 for any other turn.
+
+    Args:
+        resp: The provider response.
+
+    Returns:
+        The count, which tells a starved reasoner from a model that gave up.
+    """
     if not output_cap_truncated(resp) or resp.output_tokens <= 0:
         return 0
     reasoning_chars = 0
@@ -94,15 +95,16 @@ def reasoning_starvation(resp: ProviderResponse) -> int:
 
 @dataclass(frozen=True, slots=True)
 class CallSettings:
-    """The worker call's knobs. A transient ProviderError (an overload, a
-    dropped connection, a gateway 502) is retried `retry_count` times with
-    full-jittered exponential backoff from `retry_delay_s`, capped at
-    `retry_max_delay_s`; permanent statuses and a spent budget fail fast; 0
-    disables retrying. `temperature` pins sampling for every call (None
-    leaves each provider its default). `per_call_max_tokens` caps one turn's
-    output, sized for reasoning plus a tool call on a reasoning model;
-    `metric_task_max_tokens` replaces it on a metric-optimisation run, whose
-    large single-turn edits a tight cap truncates mid-apply."""
+    """Hold the worker call's knobs.
+
+    Attributes:
+        retry_count: Retries of a transient provider error; 0 disables retrying.
+        retry_delay_s: The first backoff delay, doubled per attempt with full jitter.
+        retry_max_delay_s: The backoff cap.
+        temperature: The sampling temperature for every call; None leaves each provider its own.
+        per_call_max_tokens: One turn's output cap, sized for reasoning plus a tool call.
+        metric_task_max_tokens: The output cap on a metric run, whose single-turn edits are large.
+    """
 
     retry_count: int = 4
     retry_delay_s: float = 2.0
@@ -114,17 +116,23 @@ class CallSettings:
 
 @dataclass(frozen=True, slots=True)
 class ProviderCaller:
-    """`provider.call` under a bounded retry: `retry_count + 1` attempts at most.
+    """Call the provider with at most `retry_count + 1` attempts.
 
-    Two retry paths share that budget. A transient `ProviderError` (a 529, a
-    502, a socket timeout) backs off exponentially with full jitter, waiting
-    at least the upstream Retry-After capped at `RETRY_AFTER_CEILING_S`; a
-    permanent one (`fatal`, or a status in `NON_RETRYABLE_HTTP_STATUSES`)
-    re-raises at once, since the same request cannot succeed. An empty
-    tool-call response (`is_empty_tool_call_response`) is re-asked after a
-    short fixed delay, and when every attempt is empty the last is returned
-    for the loop's went-quiet handler. An abort, an interrupt and
-    `BudgetExceededError` are never retried.
+    A transient `ProviderError` backs off with full jitter, waiting at least the upstream
+    Retry-After; a permanent one re-raises at once. An empty tool-call response is re-asked
+    after a short delay, and when every attempt is empty the last is returned for the
+    went-quiet handler. An abort, an interrupt and `BudgetExceededError` are never retried.
+
+    Attributes:
+        provider: The provider called.
+        retry_count: Retries of a transient error.
+        retry_delay_s: The first backoff delay.
+        retry_max_delay_s: The backoff cap.
+        temperature: The sampling temperature, None for the provider's default.
+        should_abort: Whether an operator stop is pending.
+        should_interrupt: Whether an operator steer is pending.
+        log: The run's text logger.
+        emit: The run's event emitter.
     """
 
     provider: Provider
@@ -144,6 +152,22 @@ class ProviderCaller:
         tools: list[ToolDefinition],
         max_tokens: int,
     ) -> ProviderResponse:
+        """Call the provider under the retry.
+
+        Args:
+            system: The system prompt.
+            messages: The conversation.
+            tools: The tool definitions.
+            max_tokens: The output cap.
+
+        Returns:
+            The first usable response, or the last empty one.
+
+        Raises:
+            ProviderError: A permanent error, or a transient one after the last attempt.
+            ProviderAborted: An operator stop.
+            ProviderInterrupted: An operator steer.
+        """
         attempts = max(1, self.retry_count + 1)
         attempt = 1
         while True:
@@ -197,9 +221,18 @@ class ProviderCaller:
             attempt += 1
 
     def _backoff(self, attempt: int, retry_after_s: float | None) -> float:
-        """Exponential backoff with full jitter (floored at half), capped at
-        `retry_max_delay_s`; never shorter than an upstream Retry-After, itself
-        capped at `RETRY_AFTER_CEILING_S` so a hostile header cannot hang a run."""
+        """Return the delay before the next attempt.
+
+        Exponential with full jitter floored at half, capped at `retry_max_delay_s`, and never
+        shorter than the upstream Retry-After capped at `RETRY_AFTER_CEILING_S`.
+
+        Args:
+            attempt: The attempt that failed, from 1.
+            retry_after_s: The upstream Retry-After hint, when any.
+
+        Returns:
+            The delay in seconds.
+        """
         capped = min(self.retry_delay_s * 2 ** (attempt - 1), self.retry_max_delay_s)
         delay = capped * random.uniform(0.5, 1.0)  # noqa: S311
         if retry_after_s is not None:

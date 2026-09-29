@@ -1,15 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Review-panel seat call + sequential orchestration.
+"""Run the review panel's seats.
 
-A *seat* is one adversarial reviewer: a single grounded LLM call over the diff
-(+ verify result) that returns a structured `ReviewVerdict`. `run_panel` runs
-the seats and folds them with the pure `aggregate_verdicts` (in `_panel`).
-The grounding that prevents false blocks is enforced in the aggregator; this
-module asks each model for findings in a parseable shape.
-
-Network calls live here (each seat takes an injected `Provider`); the pure
-grounding/aggregation stays in `_panel` so it is testable without the network.
+A seat is one reviewer: a grounded call over the diff and verify result that returns a
+`ReviewVerdict`. The network calls live here; the grounding and aggregation stay in `_panel`,
+testable without a provider.
 """
 
 from __future__ import annotations
@@ -54,9 +49,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class CritiqueResult:
-    """The in-loop panel's verdict the trigger logic consumes: the findings
-    text injected for the worker, and whether the panel is satisfied
-    (`satisfied=False` only when a blocking decision mode rejects)."""
+    """Hold the panel's verdict as the triggers consume it.
+
+    Attributes:
+        text: The findings text injected for the worker.
+        satisfied: False only when a blocking decision mode rejects.
+    """
 
     text: str
     satisfied: bool
@@ -68,11 +66,14 @@ ReviewDispatch = Callable[[str, dict[str, Any]], ToolResult]
 
 @dataclass(frozen=True, slots=True)
 class ReviewSeat:
-    """One panel seat: a persona stance bound to a provider/model.
+    """Bind one persona to a provider and model.
 
-    `tier` is "diff" (a single grounded call over the diff) or "explore" (a
-    read-only tool-using mini-loop that investigates the broader repo first);
-    typed as the config's `ReviewTier` Literal, the vocabulary's one owner."""
+    Attributes:
+        persona: The reviewer's stance.
+        model: The model name, for events.
+        provider: The provider called.
+        tier: `diff` for one call over the diff, `explore` for a read-only tool loop first.
+    """
 
     persona: str
     model: str
@@ -82,15 +83,23 @@ class ReviewSeat:
 
 @dataclass(frozen=True, slots=True)
 class ReviewSettings:
-    """The in-loop review panel, as the run configures it (`[review]`). The
-    panel runs at `trigger` (on a verify failure, before a finish, or every
-    `period` iterations; `off` never) over the run diff, with one call per
-    seat, and its findings return to the model on the next user turn.
-    `decision` gates only for veto/quorum; `advisory` just injects the
-    findings. `max_total_rejections` blocks disarm the gate to advisory for
-    the rest of the run, and after `max_consecutive_rejections` back-to-back
-    before-finish rejections the next finish is accepted (with the review
-    still injected), so neither can stall the run; 0 disables the latter."""
+    """Hold the in-loop review panel's settings, from `[review]`.
+
+    The findings return to the model on the next user turn whatever the decision mode.
+
+    Attributes:
+        trigger: When the panel sits: on a verify failure, before a finish, or every `period`
+            iterations; `off` never.
+        period: The iterations between periodic panels.
+        seats: The seats.
+        decision: `advisory` only injects the findings; `veto` and `quorum` can reject an end.
+        quorum: The blocks a `quorum` rejection needs.
+        max_total_rejections: The blocks after which the gate disarms to advisory for the run.
+        budget_fraction: The remaining budget fraction below which the panel is skipped.
+        concurrency: The seat calls run at once.
+        max_consecutive_rejections: The back-to-back rejections after which the next end is
+            accepted; 0 disables the cap.
+    """
 
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
     period: int = 10
@@ -146,11 +155,14 @@ def _coerce_findings(raw: object) -> tuple[Finding, ...]:
 
 
 def _no_verdict_error(resp: ProviderResponse) -> str:
-    """Why a seat produced no verdict JSON, in the reviewer's own terms: the
-    output cap ate the answer, the reviewer returned nothing to parse, or what
-    it returned would not parse: a generic "unparseable reviewer output" over
-    the first two would blame the parser for the provider's own truncation or
-    error."""
+    """Return why a seat produced no verdict JSON: the output cap, no content, or junk.
+
+    Args:
+        resp: The seat's response.
+
+    Returns:
+        The error text for the abstaining verdict.
+    """
     if output_cap_truncated(resp):
         detail = (
             "before emitting any content (likely all reasoning)"
@@ -163,10 +175,7 @@ def _no_verdict_error(resp: ProviderResponse) -> str:
             " raise max_tokens or use a model with more output headroom"
         )
     if not resp.text.strip():
-        # No content at all: an upstream error, or a reasoning model that spent
-        # its whole budget in the reasoning channel. Naming the reasoning it
-        # DID produce separates the two, and a seat that only ever thinks is
-        # the operator's to re-route.
+        # The reasoning produced tells a starved reasoner from an upstream error.
         thought = sum(
             len(str(block.get("thinking") or ""))
             for block in (resp.raw.get("content") or [])
@@ -183,8 +192,18 @@ def _no_verdict_error(resp: ProviderResponse) -> str:
 def structured_review(
     provider: Provider, ctx: ReviewContext, *, seat: str, model: str, max_tokens: int = 1500
 ) -> ReviewVerdict:
-    """Run one seat. Returns a ReviewVerdict; any failure (provider error, junk
-    output) yields an ABSTAINING verdict (`error` set) -- never a false pass."""
+    """Run one diff-tier seat.
+
+    Args:
+        provider: The seat's provider.
+        ctx: The review context, with the seat's persona.
+        seat: The seat's name.
+        model: The model name, for the verdict.
+        max_tokens: The output cap of the call.
+
+    Returns:
+        The seat's verdict; a provider error or junk output abstains with `error` set.
+    """
     system = REVIEW_SYSTEM_PROMPT.format(persona=ctx.persona or "general correctness")
     try:
         resp = provider.call(
@@ -229,10 +248,22 @@ def explore_review(
     max_tokens: int = 2000,
     deadline_s: float = 90.0,
 ) -> ReviewVerdict:
-    """A read-only tool-using reviewer: a bounded mini-loop where the seat may
-    call read-only tools to investigate the repo, then emits a ReviewVerdict.
-    Tools are an explicit read-only allowlist enforced by the caller's dispatch;
-    any failure (provider error, deadline, no verdict within max_iters) ABSTAINS."""
+    """Run one explore-tier seat: a bounded loop of read-only tool calls, then a verdict.
+
+    Args:
+        provider: The seat's provider.
+        ctx: The review context, with the seat's persona.
+        seat: The seat's name.
+        model: The model name, for the verdict.
+        tools: The read-only tools offered.
+        dispatch: The dispatch that refuses every other tool.
+        max_iters: The provider calls allowed.
+        max_tokens: The output cap of each call.
+        deadline_s: The wall-clock budget.
+
+    Returns:
+        The seat's verdict; a provider error, the deadline or no verdict in time abstains.
+    """
     system = EXPLORE_REVIEW_SYSTEM_PROMPT.format(persona=ctx.persona or "general correctness")
     messages: list[dict[str, Any]] = [{"role": "user", "content": _build_user_message(ctx)}]
     start = time.monotonic()
@@ -255,10 +286,7 @@ def explore_review(
                     seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp)
                 )
             return _verdict_from_obj(obj, seat, model)
-        # On the last allowed iteration, a verdict emitted ALONGSIDE tool calls
-        # still counts (don't waste the investigation by abstaining). With no
-        # verdict, skip the dispatches: no model call follows to consume their
-        # results, so executing them only spends tool time on an abstention.
+        # On the last iteration a verdict beside tool calls counts; without one no tool runs.
         if i == max_iters - 1:
             obj = extract_json(resp.text, prefer=("verdict", "findings"))
             if obj is not None and ("verdict" in obj or "findings" in obj):
@@ -291,11 +319,21 @@ def run_panel(
     tools: list[ToolDefinition] | None = None,
     dispatch: ReviewDispatch | None = None,
 ) -> PanelResult:
-    """Run every seat and aggregate. Each seat sees the same context with its own
-    persona substituted. With `concurrency > 1` the seat calls run on a thread
-    pool (the shared budget tracker + transcript sink are both lock-protected, and
-    each seat has its own provider); results stay in seat order, so the merged
-    verdict is deterministic regardless of how the calls interleave."""
+    """Run every seat over the same context and aggregate the verdicts in seat order.
+
+    Args:
+        seats: The seats.
+        ctx: The review context; each seat gets its own persona substituted.
+        decision: The decision mode.
+        quorum: The blocks a `quorum` rejection needs.
+        panel_id: The panel's id, for the result.
+        concurrency: The seat calls run at once.
+        tools: The read-only tools for explore seats.
+        dispatch: The read-only dispatch for explore seats.
+
+    Returns:
+        The aggregated panel result.
+    """
 
     def _run(s: ReviewSeat) -> ReviewVerdict:
         seat_ctx = replace(ctx, persona=s.persona)
@@ -317,14 +355,23 @@ def _run_seats_concurrently(
     run_seat: Callable[[ReviewSeat], ReviewVerdict],
     concurrency: int,
 ) -> list[ReviewVerdict]:
-    """Run the seat calls on daemon threads; results stay in seat order.
+    """Run the seat calls on daemon threads, results in seat order.
 
-    Deliberately not a ThreadPoolExecutor: its workers are non-daemon and
-    joined at interpreter exit, and an in-flight seat call is a non-streaming
-    provider POST with no abort hook -- Ctrl-C on `agent6 review` would hang
-    until every in-flight AND queued seat finished.
-    Daemon threads die with the process, and the timeout-polling wait lets
-    KeyboardInterrupt land promptly on the main thread."""
+    A thread pool's workers are joined at exit and a seat call has no abort hook, so Ctrl-C
+    would wait for every seat; daemon threads die with the process and the polling wait lets
+    KeyboardInterrupt land.
+
+    Args:
+        seats: The seats.
+        run_seat: The call that runs one seat.
+        concurrency: The seat calls run at once.
+
+    Returns:
+        One verdict per seat.
+
+    Raises:
+        RuntimeError: When a thread ended with neither a verdict nor an error.
+    """
     slots: list[ReviewVerdict | None] = [None] * len(seats)
     errors: list[BaseException] = []
     gate = threading.Semaphore(min(concurrency, len(seats)))
@@ -365,8 +412,7 @@ __all__ = [
 ]
 
 
-# The before-finish panel's rejection, by the ending it rejected; the
-# findings follow.
+# The before-finish panel's rejection by the ending it rejected; the findings follow.
 REVIEW_REJECTED = {
     "finish_session": (
         "The review panel rejected your finish_session call. Address the"
@@ -391,12 +437,16 @@ REVIEW_REJECTED = {
 
 @dataclass(frozen=True, slots=True)
 class Reviewer:
-    """The in-loop review panel for one run: its settings, the run's chain
-    (the diff it grounds on, the AGENTS.md it reads), the read-only tools an
-    explore seat gets, and the run's budget, log and event callables.
-    `critique` runs the panel over the run diff; `triggers` is the
-    observe-only schedule; `end_rejected` the before-finish panel over an
-    end, True when it rejected it."""
+    """Sit the in-loop review panel for one run.
+
+    Attributes:
+        settings: The panel's settings.
+        chain: The run's chain: the diff the panel grounds on and the AGENTS.md it reads.
+        review_tools: Builds the read-only tools and dispatch an explore seat gets.
+        budget_remaining: The fraction of the budget left, or None without a tracker.
+        log: The run's text logger.
+        emit: The run's event emitter.
+    """
 
     settings: ReviewSettings
     chain: RunChain
@@ -406,13 +456,13 @@ class Reviewer:
     emit: Callable[..., None]
 
     def triggers(self, state: LoopState, turn: TurnState) -> None:
-        """The observe-only review triggers (before_finish, which can revoke an
-        end, is `end_rejected`):
+        """Sit the observe-only panels: after a verify failure, or every `period` iterations.
 
-          on_verify_fail - the verify just failed; surface a critique
-                           alongside the failure so the worker has a second
-                           opinion before its next edit.
-          periodic       - every ReviewSettings.period iterations.
+        The before-finish panel, which can revoke an end, is `end_rejected`.
+
+        Args:
+            state: The execution's state.
+            turn: The turn, which receives the findings text.
         """
         if (
             self.settings.trigger == "on_verify_fail"
@@ -432,15 +482,19 @@ class Reviewer:
                 turn.review_text = critique.text
 
     def end_rejected(self, state: LoopState, turn: TurnState, *, ending: str) -> bool:
-        """The before-finish panel over an end (`finish_session`, a silent
-        finish, or the settled stop or metric plateau the harness declares):
-        True when the panel rejected it
-        and the run carries on with the findings injected. After
-        `ReviewSettings.max_consecutive_rejections` back-to-back rejections the end
-        goes through (findings still injected) so the worker can't bounce
-        indefinitely. False when there is no panel or it approved. One turn
-        can declare two ends (a finish a gate revokes, then the plateau or
-        settled stop): the panel sits once and its verdict covers both."""
+        """Sit the before-finish panel over an end, once per turn.
+
+        After `max_consecutive_rejections` back-to-back rejections the end goes through with the
+        findings injected. A turn that declares two ends gets one verdict for both.
+
+        Args:
+            state: The execution's state.
+            turn: The turn, which receives the findings text.
+            ending: The end declared, a key of `REVIEW_REJECTED`.
+
+        Returns:
+            True when the panel rejected the end and the run carries on.
+        """
         if turn.end_rejected is None:
             turn.end_rejected = self._judge_end(state, turn, ending=ending)
         return turn.end_rejected
@@ -479,29 +533,29 @@ class Reviewer:
         return False
 
     def available(self) -> bool:
-        """A second opinion is available: the review panel has seats. Gates
-        every in-loop review trigger."""
+        """Return whether the panel has seats; every in-loop trigger gates on it."""
         return bool(self.settings.seats)
 
     def critique(self, state: LoopState, *, trigger: str, iteration: int) -> CritiqueResult | None:
-        """Run the grounded review panel over the run diff. Returns a
-        `CritiqueResult` (`satisfied=False` only when the panel BLOCKS and
-        the gate is still armed). Per-seat + panel events are emitted in seat
-        order; the per-run rejection counter decays on a pass and disarms the gate
-        once it hits the cap so a gating panel can never stall the run."""
+        """Run the panel over the run diff.
+
+        The before-finish rejection counter decays on a pass and disarms the gate at its cap, so
+        a gating panel cannot stall the run.
+
+        Args:
+            state: The execution's state.
+            trigger: What called the panel, for the events.
+            iteration: The current turn.
+
+        Returns:
+            The critique, `satisfied` False only when the panel blocks and the gate is armed;
+            None when the panel was skipped (no diff, a scarce budget, a spent budget).
+        """
         diff = self.chain.diff_since_base()
         if not diff.strip():
-            # No diff to ground against (nothing changed, or base_sha missing on a
-            # pre-field resume). Can't review -> approve, but make the skip visible
-            # so a "gate didn't run" is never silent.
             self.emit("loop.review.skipped", iteration=iteration, trigger=trigger, reason="no_diff")
             return None
-        # Skip the panel once the run's remaining token budget falls below
-        # ReviewSettings.budget_fraction: reviewing is most expensive (esp. explore-tier
-        # seats) exactly when budget is scarcest, and a skipped panel is
-        # approve-and-proceed (the before_finish gate only blocks on an explicit
-        # unsatisfied critique, so returning None here lets finish through). This
-        # is the sole read site for ReviewSettings.budget_fraction.
+        # A skipped panel approves: the gate blocks only on an explicit unsatisfied critique.
         remaining = self.budget_remaining()
         if remaining is not None and remaining < self.settings.budget_fraction:
             self.emit(
@@ -512,15 +566,12 @@ class Reviewer:
                 remaining=round(remaining, 3),
             )
             return None
-        # on_verify_fail/periodic never gate (advisory text only); only
-        # before_finish consumes .satisfied + the rejection counter.
+        # Only the before-finish panel gates.
         decision: ReviewDecision = (
             self.settings.decision if trigger == "before_finish" else "advisory"
         )
         ctx = ReviewContext(
             task=state.original_task,
-            # The same text the run prompt injects (repo root's file included on
-            # a subdirectory start), so review and worker see one set of conventions.
             agents_md=agents_md_text(self.chain.root),
             diff=diff,
             verify_ok=state.verify.last_ok,
@@ -577,10 +628,7 @@ class Reviewer:
                 state.gates.review_total += 1
             else:
                 state.gates.review_total = max(0, state.gates.review_total - 1)
-        # An all-abstain panel reviewed nothing: name that in the critique text
-        # (the model reads it) instead of "No blocking findings.". The gate still
-        # lets the finish through -- a panel must never deadlock a run -- so
-        # `satisfied` is unchanged.
+        # An all-abstain panel reviewed nothing and says so; it still lets the end through.
         if panel_is_inconclusive(result):
             text = inconclusive_note(result)
         else:

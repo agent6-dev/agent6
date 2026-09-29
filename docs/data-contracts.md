@@ -14,7 +14,7 @@ Every card is generated from the module and class docstrings, so edit those rath
 
 The loop-owned conversation: typed turns over the provider wire.
 
-**Conversation** &mdash; Mutable container of frozen turns plus the rolling cache-mark pair.
+**Conversation** &mdash; The history as frozen turns plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
 - **Read by:** harness/{_compaction, _compactor, _loop_state, _operator, _parallel_dispatch, _standing, _verify_gate}
@@ -36,9 +36,9 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 
 [`agent6.harness._snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/_snapshot.py) &middot; pydantic model
 
-Session end and resume: the SessionResult the harness returns, the ResumeError it raises, and the provider-agnostic resume snapshot written before each LLM call (load here; the loop owns saving it).
+Hold a session's end and the snapshot a resume re-enters.
 
-**SessionSnapshot** &mdash; The persisted state of an in-flight session: what `resume` re-enters and what `fork` clones.
+**SessionSnapshot** &mdash; Hold the persisted state of an in-flight session, what a resume re-enters and a fork clones.
 
 - **Written by:** harness/loop
 - **Read by:** app/{_execution, fork, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}

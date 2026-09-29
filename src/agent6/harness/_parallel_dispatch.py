@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`/parallel` steer dispatch: `ParallelDispatcher` owns the policy (when to
-cut lanes, the DAG stamps, the events, the injected group spawner) over the
-Harness-free pieces below: expanding a segment into lanes, joining one
-returned lane's branch, and reducing lane outcomes to the DAG stamp and the
-summary message the model continues with. Unit-testable without a Harness.
+"""Dispatch a `/parallel` steer.
+
+`ParallelDispatcher` owns the policy: when to cut lanes, the DAG stamps, the events, the
+injected group spawner. The functions below expand a segment into lanes, join one lane's
+branch and reduce lane outcomes to the DAG stamp and the summary message, without a Harness.
 """
 
 from __future__ import annotations
@@ -37,11 +37,15 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class LaneJoin:
-    """Per-lane outcome of a `/parallel` dispatch, for the summary + events.
+    """One lane's outcome in a `/parallel` dispatch.
 
-    `status` is one of "joined" (branch merged, `sha` set), "conflict"
-    (imported but the merge conflicted; the branch exists locally for a manual
-    merge), or "failed" (the lane never produced an importable branch).
+    Attributes:
+        session_id: The lane's session.
+        branch: The lane's branch.
+        status: "joined" (merged, `sha` set), "conflict" (imported, the merge conflicted, the
+            branch exists locally) or "failed" (no importable branch).
+        sha: The merge commit, or "".
+        detail: The failure's reason, or "".
     """
 
     session_id: str
@@ -52,20 +56,20 @@ class LaneJoin:
 
 
 def segment_lanes(seg: Segment, pins: Sequence[str] = (), *, limit: int) -> list[LaneTask]:
-    """Expand one segment into its lanes: `parse_spec` maps the spec to one
-    model per lane (`None` = the worker model). Raises DirectiveError on a
-    bad spec (zero lanes, empty model list, more than *limit* lanes --
-    `[parallel].max_lanes`, refused before the list is built).
+    """Expand one segment into its lanes, one model per lane.
 
-    Operator *pins* ride on every lane OUT-OF-BAND of the task. `/pin`
-    promises an instruction "stays binding for the rest of the run", and a
-    lane is work done for that run whose branch is merged back into the
-    coordinator's -- so a lane that never saw the pin could violate a
-    standing instruction and have it land anyway. Folded into the task text
-    they would become the lane's manifest user_task (every listing and the
-    judge's brief leading with the pin header); the spawner's --pin channel seeds
-    the lane's own pin state instead, which renders the same block a restart
-    re-shows.
+    A bad spec (zero lanes, an empty model list, more than the limit) raises `DirectiveError`
+    from `parse_spec`. Operator pins ride on every lane out of band: the spawner's `--pin`
+    channel seeds the lane's own pin state, so a lane never lands work that violates a
+    standing instruction, and the task text stays the lane's manifest task.
+
+    Args:
+        seg: The segment.
+        pins: The operator's pins.
+        limit: `[parallel].max_lanes`.
+
+    Returns:
+        The lanes; a model of None is the worker model.
     """
     lane_pins = tuple(pins)
     models = parse_spec(seg.spec, limit=limit)
@@ -81,12 +85,22 @@ def join_lane_result(
     identity: CommitIdentity | None,
     also_branch: str | None,
 ) -> LaneJoin:
-    """Join one returned lane's branch onto the coordinator's chain at *ref*
-    (`chain_merge`: HEAD and the operator's checkout stay untouched; the
-    worktree gains the lane's files). A failed lane (nothing imported) or a
-    conflicted merge yields a non-"joined" status; a clean merge yields
-    "joined" with the sha. Never raises; DAG stamping is the segment's (see
-    `segment_stamp`)."""
+    """Join one returned lane's branch onto the coordinator's chain.
+
+    `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the lane's
+    files. Never raises; the DAG stamp is the segment's (`segment_stamp`).
+
+    Args:
+        root: The repository root.
+        res: The lane's result.
+        ref: The chain ref the merge lands on.
+        fallback_parent: The parent an unborn ref merges onto, or None.
+        identity: The merge commit's identity, or None for the repo's.
+        also_branch: A checked-out branch to move with the ref, or None.
+
+    Returns:
+        "joined" with the sha, "conflict", or "failed" for a lane that imported nothing.
+    """
     rid = res.spec.session_id
     if not res.ok:
         return LaneJoin(rid, res.branch, "failed", "", res.error)
@@ -108,11 +122,17 @@ def join_lane_result(
 
 
 def segment_stamp(lanes: list[LaneJoin]) -> tuple[NodeStatus, str, str]:
-    """Reduce one segment's lane joins to its DAG stamp ``(status, note,
-    sha)``. A single-lane segment stamps plainly (passed with the
-    join sha, or failed). A multi-lane segment passes when any lane joined --
-    recording the LAST joined sha -- and the note names every lane; else it
-    fails. NodeStatus has no "blocked", so a conflict counts as not-joined."""
+    """Reduce one segment's lane joins to its DAG stamp.
+
+    A segment passes when any lane joined, recording the last joined sha; the note names every
+    lane. A conflict counts as not joined.
+
+    Args:
+        lanes: The segment's joins.
+
+    Returns:
+        The status, the note and the sha ("" when failed).
+    """
     joined = [j for j in lanes if j.status == "joined"]
     note = "; ".join(lane_note(j) for j in lanes)
     if joined:
@@ -121,6 +141,7 @@ def segment_stamp(lanes: list[LaneJoin]) -> tuple[NodeStatus, str, str]:
 
 
 def lane_note(j: LaneJoin) -> str:
+    """Return one lane's outcome as a DAG note line."""
     if j.status == "joined":
         return f"{j.session_id} joined at {j.sha[:12]}"
     if j.status == "conflict":
@@ -129,15 +150,13 @@ def lane_note(j: LaneJoin) -> str:
 
 
 def summary_text(group: str, lanes: list[LaneJoin]) -> str:
-    """ONE user message summarizing every lane's outcome so the model
-    continues informed (joined sha, conflict-to-resolve, or failure reason)."""
+    """Return the one user message summarizing every lane's outcome."""
     lines = [f"[parallel] group {group} complete ({len(lanes)} lane(s)):"]
     for j in lanes:
         if j.status == "joined":
             lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}")
         elif j.status == "conflict":
-            # Git is agent6's in this run (and `.git` is read-only in the jail),
-            # so the merge is the operator's to finish, not the model's.
+            # Git is agent6's in this run and `.git` is read-only in the jail: the operator merges.
             lines.append(
                 f"  - {j.session_id} ({j.branch}): CONFLICT -- branch imported but the merge"
                 f" conflicted. It exists locally for the operator (`git merge {j.branch}`);"
@@ -149,9 +168,33 @@ def summary_text(group: str, lanes: list[LaneJoin]) -> str:
     return "\n".join(lines)
 
 
+def spawn_lanes(
+    spawner: GroupLaneSpawner, lanes: list[LaneTask], group: str, *, at: str | None
+) -> list[LaneResult]:
+    """Run the lanes through the spawner and check the result count.
+
+    Args:
+        spawner: The ui-side group spawner.
+        lanes: The lanes to run.
+        group: The group's name.
+        at: The commit the lanes are cut from, or None for HEAD.
+
+    Returns:
+        One result per lane, in order.
+
+    Raises:
+        SubrunError: The spawner returned a result count other than the lane count.
+    """
+    results = spawner(lanes, group, at=at)
+    if len(results) != len(lanes):
+        raise SubrunError(
+            f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
+        )
+    return results
+
+
 def parallel_parent_id(curator: GraphCurator | None, root_task_id: str | None) -> str | None:
-    """Parent for a dispatched subtask: the curator cursor when it points at
-    an open node, else the run root."""
+    """Return the parent for a dispatched subtask: the cursor's open node, else the run root."""
     if curator is None:
         return root_task_id
     return current_task_id(curator.nodes(), curator.cursor()) or root_task_id
@@ -160,8 +203,18 @@ def parallel_parent_id(curator: GraphCurator | None, root_task_id: str | None) -
 def add_parallel_node(
     curator: GraphCurator | None, task: str, parent_id: str | None, *, log: Callable[[str], None]
 ) -> str | None:
-    """Add a steering-created DAG node for one dispatched task; None when no
-    curator is wired or the add fails (the dispatch still proceeds)."""
+    """Add a steering-created DAG node for one dispatched task.
+
+    Args:
+        curator: The graph, or None.
+        task: The task text; its first line is the title.
+        parent_id: The parent node, or None.
+        log: The run's text logger.
+
+    Returns:
+        The node's id, or None when no curator is wired or the add failed; the dispatch
+        proceeds either way.
+    """
     if curator is None:
         return None
     title = next((ln.strip() for ln in task.splitlines() if ln.strip()), "")[:200]
@@ -191,8 +244,18 @@ def stamp_parallel_node(
     sha: str = "",
     log: Callable[[str], None],
 ) -> None:
-    """Record a dispatched node's outcome: its join sha (when given) then its
-    final status. Best-effort: a curator hiccup must not break the run."""
+    """Record a dispatched node's join sha, when given, then its final status.
+
+    A curator fault is logged, never raised.
+
+    Args:
+        curator: The graph, or None.
+        node_id: The node, or None.
+        status: The final status.
+        note: The status note.
+        sha: The join sha, or "".
+        log: The run's text logger.
+    """
     if curator is None or node_id is None:
         return
     try:
@@ -217,10 +280,21 @@ def stamp_segment_node(
 
 @dataclass(frozen=True, slots=True)
 class ParallelDispatcher:
-    """The coordinator's side of a `/parallel` group: cut lanes from the chain
-    tip, run them through the injected spawner, join each branch back and
-    tell the model once. `save_snapshot` is the loop's resume-snapshot
-    writer, called before the group blocks."""
+    """The coordinator's side of a `/parallel` group.
+
+    Cuts lanes from the chain tip, runs them through the injected spawner, joins each branch
+    back and tells the model once.
+
+    Attributes:
+        chain: The run's commit chain.
+        curator: The graph, or None.
+        max_lanes: `[parallel].max_lanes`.
+        lane_spawner: The ui-side group spawner, or None where dispatch is unavailable.
+        save_snapshot: The loop's resume-snapshot writer, called before the group blocks.
+        log: The run's text logger.
+        emit: The run's event sink.
+        emit_graph_snapshot: Publishes the graph after a write.
+    """
 
     chain: RunChain
     curator: GraphCurator | None
@@ -238,17 +312,20 @@ class ParallelDispatcher:
         state: LoopState,
         segments: list[Segment],
     ) -> None:
-        """Dispatch a `/parallel` sibling group at the steer boundary: clone the
-        coordinator's committed HEAD into one isolated lane per expanded lane
-        (a segment with spec=3 -> three lanes of that task; spec=m1,m2 -> one lane
-        per model), run them via the injected group spawner, join each branch back
-        in dispatch order, and inject ONE summary so the model continues informed.
-        Runs synchronously -- no provider calls happen while the group is in
-        flight, so the run's budget is untouched by the wait.
+        """Dispatch a `/parallel` sibling group at the steer boundary.
 
-        Never ends the run: an unavailable spawner, a bad spec, a dirty tree it
-        cannot auto-commit, a spawner fault, a failed lane, or a join conflict
-        each answer the steer with a message and continue."""
+        Clones the coordinator's committed HEAD into one lane per expanded lane, runs them
+        through the spawner, joins each branch back in dispatch order and injects one summary.
+        Runs synchronously: no provider call happens while the group is in flight. Never ends
+        the run: an unavailable spawner, a bad spec, a dirty tree, a spawner fault, a failed
+        lane or a join conflict each answer the steer and continue.
+
+        Args:
+            conversation: The run's conversation.
+            iteration: The iteration just completed.
+            state: The loop state.
+            segments: The directive's segments, one DAG node each.
+        """
         if self.lane_spawner is None:
             self.feedback(
                 conversation,
@@ -256,15 +333,14 @@ class ParallelDispatcher:
             )
             return
         try:
-            # One DAG node per SEGMENT (task); its lanes join under it.
+            # One DAG node per segment; its lanes join under it.
             lanes_cap = self.max_lanes
             per_segment = [segment_lanes(seg, state.pins, limit=lanes_cap) for seg in segments]
         except DirectiveError as exc:
             self.feedback(conversation, f"bad /parallel spec: {exc}; nothing dispatched.")
             return
         lanes = [lane for seg_lanes in per_segment for lane in seg_lanes]
-        # Lanes cut from the chain tip only: chain-commit a changed tree first,
-        # and refuse (rather than dispatch stale work) if it will not come clean.
+        # Lanes cut from the chain tip only: commit a changed tree first, or refuse stale work.
         if not self.ensure_clean(iteration):
             self.feedback(
                 conversation,
@@ -275,20 +351,13 @@ class ParallelDispatcher:
 
         state.parallel_groups_dispatched += 1
         group = f"p{state.parallel_groups_dispatched}"
-        # Persist the bump BEFORE the group blocks. This runs inside the
-        # operator boundary, which is after the iteration's snapshot and before
-        # the next one, so the counter would otherwise live only in memory for
-        # the entire group: a crash there would resume with the stale count
-        # and the next /parallel would re-use this group's id, colliding with
-        # its lane clones and branches.
+        # Persisted before the group blocks: a crash there would reuse this group's id on resume.
         self.save_snapshot(state, conversation.to_wire(), next_iteration=iteration + 1)
         self.log(
             f"PARALLEL: dispatching group {group} "
             f"({len(lanes)} lane(s) across {len(segments)} task(s))"
         )
-        # Lane ids do not exist until the spawner names them; the dispatched
-        # event carries the truth it has (per-segment tasks + group), and
-        # joined/failed name the real per-lane ids from each LaneResult.
+        # Lane ids exist only once the spawner names them; joined and failed carry the real ids.
         self.emit(
             "loop.parallel.dispatched",
             group=group,
@@ -303,19 +372,11 @@ class ParallelDispatcher:
             self.emit_graph_snapshot()
 
         try:
-            # Lanes cut from the run's chain tip, which ensure_clean
-            # just made current; blocks, no provider calls meanwhile.
-            results = self.lane_spawner(lanes, group, at=self.chain.tip() or None)
-            if len(results) != len(lanes):
-                raise SubrunError(
-                    f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
-                )
+            # Blocks until the group returns; no provider call meanwhile.
+            results = spawn_lanes(self.lane_spawner, lanes, group, at=self.chain.tip() or None)
         except Exception as exc:
-            # The spawner is an injected ui-side callback (clones, thread pool,
-            # detached spawns); any fault it leaks -- OSError, SubrunError, a
-            # result-count mismatch -- must answer the steer, never abort the
-            # run. Everything after this point is never-raising by construction
-            # (join_lane_result and stamp_parallel_node catch their own faults).
+            # The spawner is an injected ui-side callback; any fault it leaks answers the steer.
+            # Everything after this point never raises: the join and the stamp catch their own.
             self.log(f"PARALLEL: group {group} dispatch failed: {exc}")
             for nid in node_ids:
                 stamp_parallel_node(
@@ -333,16 +394,11 @@ class ParallelDispatcher:
             )
             return
 
-        # The spawner names the group `<coordinator>-<group>` and stamps that on
-        # every lane's manifest, so it is the id `sessions compare` takes. Read
-        # it back off a lane (each is `<group id>-l<n>`, the derivation
-        # `run_parallel` uses too) rather than printing the local counter, which
-        # names no group on disk.
+        # The spawner stamps the group name `<coordinator>-<group>` on each lane's manifest.
+        # Read it back off a lane (`<group id>-l<n>`): it is the id `sessions compare` takes.
         group = results[0].spec.session_id.rsplit("-l", 1)[0] if results else group
 
-        # Join every lane sequentially in dispatch order (a merge mutates the one
-        # workspace, so joins can never run concurrently), then stamp one DAG node
-        # per segment from its lanes' joins.
+        # Joins run in order, since a merge mutates the one workspace; then one stamp per segment.
         lanes = [
             join_lane_result(
                 self.chain.root,
@@ -378,10 +434,16 @@ class ParallelDispatcher:
         conversation.notice(summary_text(group, lanes))
 
     def ensure_clean(self, iteration: int) -> bool:
-        """True when the chain tip carries the worktree's content, so lanes cut
-        from it see current work. Changed content is chain-committed first;
-        returns whether it came clean (with commit_per_step off, a changed
-        tree cannot be captured and dispatch is refused)."""
+        """Chain-commit a changed tree so lanes cut from the tip see current work.
+
+        With `commit_per_step` off a changed tree cannot be captured, and dispatch is refused.
+
+        Args:
+            iteration: The iteration just completed, for the checkpoint subject.
+
+        Returns:
+            Whether the chain tip carries the worktree's content.
+        """
         if not self.chain.dirty():
             return True
         if not self.chain.per_step:

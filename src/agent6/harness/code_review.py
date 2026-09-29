@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Standalone freeform code review: one provider call, markdown out.
+"""Review a diff in one provider call, markdown out.
 
-Used by `agent6 review`. Freeform (no Step / acceptance criterion), emitting
-markdown text rather than a structured verdict. Read-only: given a diff plus
-optional context, it returns a human-readable review.
+`agent6 review` uses it: a freeform, read-only review with no structured verdict.
 """
 
 from __future__ import annotations
@@ -52,12 +50,24 @@ def code_review(
     extra_context: str = "",
     max_tokens: int = 2048,
 ) -> str:
-    """Ask the reviewer model to critique *diff*. Returns markdown text."""
+    """Ask the reviewer model to critique the diff.
+
+    Args:
+        provider: The reviewer's provider.
+        diff: The diff under review.
+        agents_md: The repo's AGENTS.md, given whole so no rule under review is clipped.
+        recent_log: The recent commit log.
+        extra_context: Extra text for the reviewer.
+        max_tokens: The output cap of the call.
+
+    Returns:
+        The review as markdown.
+
+    Raises:
+        CodeReviewError: When the call fails or returns nothing.
+    """
     parts: list[str] = []
     if agents_md.strip():
-        # Whole, like the run prompt's copy: the reviewer checks against the
-        # same conventions the worker saw, and a clipped tail could hide the
-        # very rule under review.
         parts.append(f"AGENTS.md:\n{agents_md.strip()}")
     if recent_log.strip():
         parts.append(f"RECENT COMMITS:\n{recent_log.strip()[:2000]}")

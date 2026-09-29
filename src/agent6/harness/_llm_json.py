@@ -15,8 +15,16 @@ from typing import Any
 
 
 def balanced_objects(text: str) -> list[str]:
-    """Every top-level balanced `{...}` span in *text* (brace depth,
-    honoring string literals + escapes)."""
+    """Return every top-level balanced `{...}` span in the text.
+
+    Brace depth honours string literals and escapes.
+
+    Args:
+        text: The reply to scan.
+
+    Returns:
+        The spans in order of appearance.
+    """
     spans: list[str] = []
     depth = 0
     start: int | None = None
@@ -45,8 +53,15 @@ def balanced_objects(text: str) -> list[str]:
 
 
 def extract_json(text: str, *, prefer: tuple[str, ...]) -> dict[str, Any] | None:
-    """The LAST balanced object carrying any *prefer* key, else the last
-    parseable dict, else None."""
+    """Return the last balanced object carrying any preferred key.
+
+    Args:
+        text: The reply to scan.
+        prefer: The keys the caller expects.
+
+    Returns:
+        That object, else the last parseable dict, else None.
+    """
     objs: list[dict[str, Any]] = []
     for span in balanced_objects(text):
         try:

@@ -1,16 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Structured compare judge over parallel-run candidates.
+"""Rank the candidate lanes of a parallel run.
 
-One LLM call ranks N candidate lane runs -- same task, independent diffs --
-best first, with a rationale. Mirrors `harness/_review.structured_review`'s
-request/parse shape (strict JSON, tolerant of fences/prose), but unlike a
-review seat's silent abstain, a compare needs one authoritative order: it
-retries once on a malformed reply (unparseable JSON, a provider error, or a
-ranking that doesn't name exactly the candidate session_ids) and raises
-`JudgeError` on the second failure. `mechanical_ranking` is the
-network-free fallback callers use when no reviewer model is configured or the
-judge call raises.
+One provider call ranks the lanes (same task, independent diffs) best first with a rationale.
+A compare needs one authoritative order, so a malformed reply is retried once and the second
+failure raises `JudgeError`; `mechanical_ranking` is the network-free fallback.
 """
 
 from __future__ import annotations
@@ -50,9 +44,7 @@ class CompareVerdict(BaseModel):
     rationale: str
 
 
-# Per-candidate diff cap in the judge prompt. Oversized diffs are truncated and
-# marked (the prompt tells the judge to read every diff, so a silent cut would
-# make the transcript and the judge dishonest about what was compared).
+# Per-candidate diff cap in the judge prompt; a cut is marked, since the judge reads every diff.
 _DIFF_CAP = 60_000
 
 
@@ -74,7 +66,7 @@ def _build_user_message(candidates: list[CandidateBrief]) -> str:
 
 
 def _parse_verdict(obj: dict[str, Any], session_ids: set[str]) -> CompareVerdict | None:
-    """None if `ranking` isn't a list of strings naming exactly `session_ids`."""
+    """Return the verdict, or None unless `ranking` names exactly `session_ids`."""
     ranking_raw = obj.get("ranking")
     if not isinstance(ranking_raw, list) or not all(isinstance(r, str) for r in ranking_raw):
         return None
@@ -88,12 +80,22 @@ def _parse_verdict(obj: dict[str, Any], session_ids: set[str]) -> CompareVerdict
 def compare(
     provider: Provider, model: str, candidates: list[CandidateBrief], *, max_tokens: int = 1500
 ) -> CompareVerdict:
-    """One structured call to *model* via *provider*: rank *candidates* best
-    first with a rationale.
+    """Rank the candidates best first with a rationale, in one structured call.
 
-    Retries once on a failed attempt (provider error, unparseable JSON, or a
-    ranking that doesn't name exactly the candidate session_ids); raises
-    `JudgeError` on the second failure -- never a guessed order.
+    A failed attempt (a provider error, a spent judge budget, unparseable JSON, a ranking that
+    does not name exactly the candidate session_ids) is retried once.
+
+    Args:
+        provider: The judge's provider.
+        model: The judge model, named in errors.
+        candidates: The lanes to rank.
+        max_tokens: The output cap of the call.
+
+    Returns:
+        The judge's verdict.
+
+    Raises:
+        JudgeError: On no candidates, or on the second failed attempt.
     """
     if not candidates:
         raise JudgeError("compare called with no candidates")
@@ -111,13 +113,7 @@ def compare(
             last_err = f"provider ({model}): {exc}"
             continue
         except BudgetExceededError as exc:
-            # The judge's tracker seeds max_usd from the run's own USD limit,
-            # and every provider raises BudgetExceededError from its up-front
-            # budget.check(). Escaping here would crash the whole --parallel
-            # compare step AFTER the expensive fan-out (no winner stamp, no
-            # ranked report) instead of the documented degrade: treat it like
-            # any judge failure so the second miss raises JudgeError and
-            # rank() falls back to mechanical ranking.
+            # A spent budget is a judge failure like any other: the caller degrades to mechanical.
             last_err = f"judge budget exhausted ({model}): {exc}"
             continue
         obj = extract_json(resp.text, prefer=("ranking",))
@@ -133,9 +129,7 @@ def compare(
 
 
 def mechanical_ranking(candidates: list[CandidateBrief]) -> tuple[str, ...]:
-    """Deterministic fallback ranking: verify-pass first, then lower cost.
-    Stable within ties (Python's sort is stable, so equal candidates keep
-    their input order)."""
+    """Return the candidates ranked verify-pass first, then by lower cost, stable within ties."""
     ranked = sorted(candidates, key=lambda c: (c.verify_ok is not True, c.cost_usd))
     return tuple(c.session_id for c in ranked)
 

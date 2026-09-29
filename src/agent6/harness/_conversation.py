@@ -2,38 +2,26 @@
 # Copyright 2026 Eric Lesiuta
 """The loop-owned conversation: typed turns over the provider wire.
 
-`Conversation` owns the loop's history as typed turns, one shape for every
-consumer (compaction, cache roll, transcript tail), and produces the
-Anthropic-wire `list[dict]` only at the boundary:
+`Conversation` holds the history as typed turns, one shape for every
+consumer, and produces the Anthropic-wire dict list only at the boundary.
+`to_wire` builds the list providers and snapshots take, with `cache_control`
+stamped from the mark positions and assistant blocks verbatim, so thinking
+blocks and unknown block types round-trip. `from_wire` accepts exactly the
+shapes the loop writes and fails loudly on anything else.
 
-- `to_wire()` builds the exact dict list providers and resume snapshots
-  take: same keys, same order, `cache_control` stamped from the mark
-  positions. Assistant blocks are the verbatim tuple the provider returned,
-  so thinking blocks / signatures / unknown block types round-trip untouched.
-- `from_wire()` is the one guarded parser (snapshot load): it accepts
-  exactly the shapes the loop writes and reproduces them byte-for-byte, and
-  it fails loudly on anything else.
+Pair safety is structural: a `tool_use` turn can only be followed by
+`results` covering exactly its ids, `pop_quiet_assistant` removes only a
+turn with no tool calls, `restart` keeps whole turns, and compaction
+rewrites result content in place. No operation strands a `tool_use`.
 
-Pair safety is structural: a `tool_use` turn can only be
-followed by `results()` covering exactly its ids, `pop_quiet_assistant`
-removes only a turn with no tool calls, `restart` keeps whole turns, and
-compaction rewrites result *content* in place via `set_result_content`. No
-operation can strand a `tool_use` without its `tool_result`.
-
-Rolling cache breakpoints (`roll_cache_marks`): Anthropic prompt caching
-bills a request's prefix up to a `cache_control` breakpoint at 0.1x once
-cached (1.25x to write). The provider marks the system prompt and the tool
-list, but the conversation dominates input tokens in a long run and grows
-every turn: without a breakpoint near the tail, each turn re-bills the whole
-history at full price (quadratic in run length). The roll keeps exactly two
-marks: the previous call's position (the guaranteed cache hit) and the final
-block of the last user turn (the write the next call's hit lands on), for
-4 breakpoints total with the provider's two static ones, Anthropic's
-per-request maximum. Marks persist through `to_wire()` into resume
-snapshots, so continuity survives crash-resume; tier-1 elision rewrites old
-blocks and costs one 1.25x re-write on the next call, and the rolling pair
-keeps caching from there. OpenAI-format providers rebuild content
-block-by-block and never forward the field.
+Rolling cache breakpoints: Anthropic bills a request's prefix up to a
+`cache_control` breakpoint at 0.1x once cached (1.25x to write), and the
+conversation dominates input tokens in a long run. The roll keeps two marks,
+the previous call's position (the guaranteed hit) and the last user turn's
+final block (the next write), for four breakpoints with the provider's two
+static ones, Anthropic's per-request maximum. Marks persist into resume
+snapshots; tier-1 elision costs one re-write on the next call. OpenAI-format
+providers never forward the field.
 """
 
 from __future__ import annotations
@@ -50,8 +38,11 @@ _EPHEMERAL = {"type": "ephemeral"}
 class ToolUse:
     """One tool call from an assistant turn, parsed once from the raw blocks.
 
-    `input` is whatever the provider parsed (both providers guarantee a
-    dict in practice); the dispatcher's schema validation owns its shape.
+    Attributes:
+        id: The provider's tool_use id.
+        name: The tool's name.
+        input: Whatever the provider parsed; the dispatcher's schema validation
+            owns its shape.
     """
 
     id: str
@@ -61,9 +52,14 @@ class ToolUse:
 
 @dataclass(frozen=True, slots=True)
 class ToolResultItem:
-    """One tool_result block. `for_call` is the ToolUse it answers, paired
-    at construction, so compaction never rebuilds an id index. In-memory
-    only: the wire carries `tool_use_id`."""
+    """One tool_result block.
+
+    Attributes:
+        tool_use_id: The id the wire carries.
+        content: The result text.
+        for_call: The ToolUse it answers, paired at construction so compaction
+            never rebuilds an id index; in-memory only.
+    """
 
     tool_use_id: str
     content: str
@@ -72,27 +68,41 @@ class ToolResultItem:
 
 @dataclass(frozen=True, slots=True)
 class Notice:
-    """Harness/operator text injected as (or into) a user turn: the initial
-    task, nudges, critiques, steering, the tier-2 restart summary."""
+    """Harness or operator text in a user turn.
+
+    The initial task, nudges, critiques, steering and the tier-2 restart summary
+    are notices.
+
+    Attributes:
+        text: The text.
+    """
 
     text: str
 
 
 @dataclass(frozen=True, slots=True)
 class AssistantTurn:
-    """One assistant message. `raw_content` is the verbatim block tuple the
-    provider returned (exact round-trip; tool_use IDs, thinking blocks and
-    unknown block types survive untouched); `tool_uses` is its parsed
-    tool_use view."""
+    """One assistant message.
+
+    Attributes:
+        raw_content: The verbatim block tuple the provider returned; tool_use ids,
+            thinking blocks and unknown block types round-trip untouched.
+        tool_uses: The parsed tool_use view of those blocks.
+    """
 
     raw_content: tuple[Any, ...]
     tool_uses: tuple[ToolUse, ...]
 
     def is_substantive(self) -> bool:
-        """True when the turn carries visible text or a tool call. A turn
-        that is neither (empty, or thinking-only reasoning starvation) is
-        dead context: Anthropic rejects empty assistant content and strict
-        OpenAI-compatible backends 400 on the translation."""
+        """Return whether the turn carries visible text or a tool call.
+
+        An empty or thinking-only turn is dead context: Anthropic rejects empty
+        assistant content and strict OpenAI-compatible backends refuse the
+        translation.
+
+        Returns:
+            True when a text block has content or a tool_use block is present.
+        """
         return any(
             isinstance(b, dict)
             and (
@@ -105,8 +115,11 @@ class AssistantTurn:
 
 @dataclass(frozen=True, slots=True)
 class UserTurn:
-    """One user message: tool results and/or notices, in wire order
-    (canonically results first, notices after; see Conversation.results)."""
+    """One user message.
+
+    Attributes:
+        items: Tool results and notices in wire order, results first.
+    """
 
     items: tuple[ToolResultItem | Notice, ...]
 
@@ -127,18 +140,25 @@ def _result_ids(turn: UserTurn) -> list[str]:
 
 
 def _results_first[T](items: Sequence[T], *, key: Callable[[T], object] = lambda it: it) -> list[T]:
-    """Stable partition of a user turn's items: tool_results first (keeping
-    their order), notices after."""
+    """Return the items with tool results first and notices after, each in order.
+
+    Args:
+        items: A user turn's items, or pairs the key maps to an item.
+        key: Reads the item from an element.
+
+    Returns:
+        The stable partition.
+    """
     return sorted(items, key=lambda it: isinstance(key(it), Notice))
 
 
 class Conversation:
-    """Mutable container of frozen turns plus the rolling cache-mark pair.
+    """The history as frozen turns plus the rolling cache-mark pair.
 
     Marks are (turn index, item index) positions into user turns; `to_wire`
-    stamps `cache_control` there. They live here (not on the frozen items)
-    because breakpoint placement is a wire concern that moves as the tail
-    grows, while the turns themselves are history.
+    stamps `cache_control` there. They live here rather than on the items
+    because breakpoint placement moves as the tail grows, while the turns are
+    history.
     """
 
     __slots__ = ("_marks", "_turns")
@@ -151,8 +171,7 @@ class Conversation:
 
     @property
     def turns(self) -> tuple[Turn, ...]:
-        # A copy, not the live list: pair safety is structural only if no
-        # caller can append around the guarded mutators.
+        """The turns, as a copy: no caller appends around the guarded mutators."""
         return tuple(self._turns)
 
     def __len__(self) -> int:
@@ -168,7 +187,17 @@ class Conversation:
             )
 
     def assistant(self, raw_blocks: Any) -> AssistantTurn:
-        """Append the assistant turn exactly as the provider returned it."""
+        """Append the assistant turn exactly as the provider returned it.
+
+        Args:
+            raw_blocks: The provider's content blocks.
+
+        Returns:
+            The appended turn.
+
+        Raises:
+            ValueError: A previous turn's tool calls have no results yet.
+        """
         self._require_no_open_call("an assistant turn")
         blocks = tuple(raw_blocks)
         turn = AssistantTurn(raw_content=blocks, tool_uses=_parse_tool_uses(blocks))
@@ -176,12 +205,19 @@ class Conversation:
         return turn
 
     def results(self, items: Sequence[ToolResultItem | Notice]) -> None:
-        """Append the user turn answering the preceding tool_use turn. The
-        result items must cover exactly its tool_use ids, in order; notices
-        are carried AFTER the results. The wire requires a user message to
-        LEAD with its tool_result blocks: a text block first reads as a
-        tool_use with no result and the provider refuses the request, so the
-        order is canonicalized here rather than trusted per call site."""
+        """Append the user turn answering the preceding tool_use turn.
+
+        The wire requires a user message to lead with its tool_result blocks, so
+        notices are moved after the results here rather than trusted per call
+        site.
+
+        Args:
+            items: The results, covering exactly the pending tool_use ids in
+                order, plus any notices.
+
+        Raises:
+            ValueError: The result ids do not answer the pending tool_use ids.
+        """
         prev = self._turns[-1] if self._turns else None
         want = [tu.id for tu in prev.tool_uses] if isinstance(prev, AssistantTurn) else []
         turn = UserTurn(items=tuple(_results_first(items)))
@@ -193,7 +229,11 @@ class Conversation:
         self._turns.append(turn)
 
     def notice(self, text: str) -> None:
-        """Append harness/operator text as its own user turn."""
+        """Append harness or operator text as its own user turn.
+
+        Args:
+            text: The notice.
+        """
         self._append_notices((Notice(text),))
 
     def _append_notices(self, items: tuple[ToolResultItem | Notice, ...]) -> None:
@@ -201,9 +241,11 @@ class Conversation:
         self._turns.append(UserTurn(items=items))
 
     def pop_quiet_assistant(self) -> None:
-        """Drop a trailing non-substantive assistant turn (went-quiet repair).
-        Such a turn has no tool_uses by definition, so no pair can split; a
-        substantive tail or a non-assistant tail is left alone."""
+        """Drop a trailing non-substantive assistant turn.
+
+        Such a turn has no tool_uses, so no pair can split; any other tail is left
+        alone.
+        """
         if (
             self._turns
             and isinstance(last := self._turns[-1], AssistantTurn)
@@ -212,14 +254,18 @@ class Conversation:
             self._turns.pop()
 
     def restart(self, summary_text: str, keep: Sequence[Turn] = ()) -> None:
-        """Tier-2 restart: keep the initial turn, replace everything after it
-        with one summary notice plus the verbatim *keep* tail (the most recent
-        turns, already balanced). Marks outside the kept turns are dropped
-        (the blocks they pointed at are gone).
+        """Replace everything after the initial turn with a summary notice and a tail.
 
-        *keep* must not lead with a tool_result user turn: it would answer an
-        assistant turn the restart just summarised away, and an unanswered
-        pairing is a provider refusal.
+        Marks outside the kept turns are dropped with their blocks.
+
+        Args:
+            summary_text: The restart notice.
+            keep: The most recent turns, already balanced. A tail leading with
+                tool results would answer a turn the restart summarised away.
+
+        Raises:
+            ValueError: The first turn is a tool_use turn, or the tail leads with
+                tool results.
         """
         first = self._turns[0]
         if isinstance(first, AssistantTurn) and first.tool_uses:
@@ -230,9 +276,19 @@ class Conversation:
         self._marks = [m for m in self._marks if m[0] == 0]
 
     def strip_thinking(self, turn_idx: int) -> int:
-        """Drop thinking blocks from one assistant turn, rebuilding it in
-        place; returns chars removed (0 when it had none). tool_use blocks
-        survive verbatim, so pairing is untouched."""
+        """Drop the thinking blocks from one assistant turn, in place.
+
+        The tool_use blocks survive verbatim, so pairing is untouched.
+
+        Args:
+            turn_idx: The assistant turn's index.
+
+        Returns:
+            The characters removed, 0 when the turn had no thinking.
+
+        Raises:
+            ValueError: The index names a user turn.
+        """
         turn = self._turns[turn_idx]
         if not isinstance(turn, AssistantTurn):
             raise ValueError("strip_thinking targets an assistant turn")
@@ -254,8 +310,18 @@ class Conversation:
         return removed
 
     def set_result_content(self, turn_idx: int, item_idx: int, content: str) -> None:
-        """Rewrite one tool_result's content in place (tier-1 elision). The
-        id and pairing are untouched, so the wire stays balanced."""
+        """Rewrite one tool_result's content in place.
+
+        The id and pairing are untouched, so the wire stays balanced.
+
+        Args:
+            turn_idx: The user turn's index.
+            item_idx: The result's index in the turn.
+            content: The new content.
+
+        Raises:
+            ValueError: The position is not a tool_result in a user turn.
+        """
         turn = self._turns[turn_idx]
         if not isinstance(turn, UserTurn):
             raise ValueError("set_result_content targets a user turn")
@@ -269,38 +335,37 @@ class Conversation:
     # ---- rolling cache breakpoints --------------------------------------
 
     def roll_cache_marks(self) -> None:
-        """Advance the rolling pair (see module docstring): keep the newest
-        existing mark (the previous call's write position, now the guaranteed
-        hit) and mark the final item of the newest user turn (the new write).
+        """Advance the rolling cache-mark pair.
+
+        The newest existing mark stays (the previous call's write, the guaranteed hit)
+        and the final item of the newest user turn is marked (the new write).
         Idempotent, so a crash-resume re-issuing the same call keeps its
-        positions; safe after compaction (positions survive content rewrites,
-        and `restart` already dropped any that lost their block)."""
+        positions; positions survive content rewrites.
+        """
         target: tuple[int, int] | None = None
         for t_idx in range(len(self._turns) - 1, -1, -1):
             turn = self._turns[t_idx]
-            # Only user-turn items carry positional marks. The loop always
-            # rolls with a user turn at the tail; assistant raw blocks are
-            # verbatim history and are never stamped.
+            # Assistant raw blocks are verbatim history and are never stamped.
             if isinstance(turn, UserTurn) and turn.items:
                 target = (t_idx, len(turn.items) - 1)
                 break
         if target is None:
             self._marks = []
             return
-        # _marks is in message order, so its newest non-target entry is the
-        # previous call's breakpoint: the position whose prefix the cache
-        # already holds. Keeping it (rather than the newest mark, which is the
-        # target itself when nothing was appended, e.g. a crash-resume
-        # re-issuing the same call) makes the roll idempotent.
+        # The newest non-target mark is the previous call's breakpoint; the newest mark
+        # is the target itself when nothing was appended.
         prev = next((m for m in reversed(self._marks) if m != target), None)
         self._marks = ([prev] if prev is not None else []) + [target]
 
     # ---- the wire boundary ----------------------------------------------
 
     def to_wire(self) -> list[dict[str, Any]]:
-        """The provider/snapshot message list: fresh dicts for user turns
-        (with `cache_control` stamped at the mark positions), the verbatim
-        raw blocks for assistant turns."""
+        """Return the provider and snapshot message list.
+
+        Returns:
+            Fresh dicts for user turns with `cache_control` stamped at the mark
+            positions, the verbatim raw blocks for assistant turns.
+        """
         marks = set(self._marks)
         out: list[dict[str, Any]] = []
         for t_idx, turn in enumerate(self._turns):
@@ -325,13 +390,21 @@ class Conversation:
 
     @classmethod
     def from_wire(cls, messages: Sequence[Any]) -> Conversation:
-        """Parse a persisted message list (resume/fork snapshot load). Accepts
-        exactly the shapes the loop writes and raises ValueError loudly on
-        every other shape (a snapshot this loop cannot have written). A turn
-        in canonical order round-trips byte-for-byte through `to_wire`; a
-        non-canonical one (a notice ahead of its results) is healed on load,
-        its notice moved after the results and each mark kept on its own
-        block, so that snapshot is resumable."""
+        """Parse a persisted message list.
+
+        A turn in canonical order round-trips byte-for-byte through `to_wire`; a
+        notice ahead of its results is moved after them on load, each mark kept
+        on its own block.
+
+        Args:
+            messages: The snapshot's message list.
+
+        Returns:
+            The conversation with its marks.
+
+        Raises:
+            ValueError: A message has a shape this loop cannot have written.
+        """
         conv = cls()
         marks: list[tuple[int, int]] = []
         for t_idx, msg in enumerate(messages):
@@ -352,9 +425,7 @@ class Conversation:
             for i_idx, block in enumerate(content):
                 item = _parse_user_block(block, pending, where=f"{where} block {i_idx}")
                 parsed.append((item, _block_mark(block, where=f"{where} block {i_idx}")))
-            # Canonicalize BEFORE recording mark positions, so a healed
-            # pre-canonical snapshot (notice ahead of its results) keeps each
-            # mark on the block it was stamped on.
+            # Canonicalize before recording positions, so each mark stays on its block.
             parsed = _results_first(parsed, key=lambda pair: pair[0])
             for i_idx, (_, marked) in enumerate(parsed):
                 if marked:
@@ -369,7 +440,18 @@ class Conversation:
 
 
 def _block_mark(block: dict[str, Any], *, where: str) -> bool:
-    """Whether a parsed user block carries the (validated) cache mark."""
+    """Return whether a user block carries the cache mark.
+
+    Args:
+        block: The wire block.
+        where: The block's position, for the error.
+
+    Returns:
+        True when the block is marked.
+
+    Raises:
+        ValueError: The mark is not the ephemeral one.
+    """
     if "cache_control" not in block:
         return False
     if block["cache_control"] != _EPHEMERAL:
@@ -378,9 +460,21 @@ def _block_mark(block: dict[str, Any], *, where: str) -> bool:
 
 
 def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> ToolResultItem | Notice:
-    """One user-turn wire block -> its typed item. `pending` is the
-    preceding assistant turn's unanswered tool_uses; results consume it in
-    order (Conversation.results re-validates the full pairing)."""
+    """Return the typed item for one user-turn wire block.
+
+    Args:
+        block: The wire block.
+        pending: The preceding assistant turn's unanswered tool_uses; a result
+            consumes the first.
+        where: The block's position, for the error.
+
+    Returns:
+        The notice or the result.
+
+    Raises:
+        ValueError: The block is not a plain text or tool_result block, or answers
+            a tool_use out of order.
+    """
     if not isinstance(block, dict):
         raise ValueError(f"malformed conversation: {where} is not a block object")
     keys = set(block) - {"cache_control"}
@@ -409,10 +503,18 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
 def format_transcript_tail(
     turns: Sequence[Turn], *, max_messages: int = 6, max_chars: int = 6000
 ) -> str:
-    """Render the last few turns as a plain-text transcript for a
-    summariser call. Tool calls / results are shown as compact summaries;
-    long payloads are truncated so the call stays cheap. Assistant thinking
-    blocks are skipped."""
+    """Render the last few turns as a plain-text transcript for a summariser call.
+
+    Tool calls and results are clipped, and thinking blocks are skipped.
+
+    Args:
+        turns: The turns to render, newest last.
+        max_messages: How many of the newest turns to render.
+        max_chars: The cap, applied from the end.
+
+    Returns:
+        The transcript.
+    """
     parts: list[str] = []
     for turn in turns[-max_messages:]:
         if isinstance(turn, AssistantTurn):
@@ -438,9 +540,17 @@ def format_transcript_tail(
 
 
 def last_assistant_prose(conversation: Conversation) -> str:
-    """The text of the newest assistant turn, for pairing a steer with the
-    question it answers. Harness notices after it (the question nudge) do
-    not hide it; a tool result does ("": the model went on working)."""
+    """Return the text of the newest assistant turn, for pairing a steer with it.
+
+    Harness notices after it do not hide it; a tool result does, since the
+    model went on working.
+
+    Args:
+        conversation: The loop's history.
+
+    Returns:
+        The text, "" when a tool result follows the turn or there is none.
+    """
     for turn in reversed(conversation.turns):
         if isinstance(turn, AssistantTurn):
             return "".join(
