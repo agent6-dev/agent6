@@ -123,7 +123,7 @@ def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str])
         json.loads(line)["params"]["update"]["content"]["text"]
         for line in wire.getvalue().decode().splitlines()
     ]
-    assert texts == ["[agent6] a status line", "[agent6] a note"]
+    assert texts == ["[agent6] a status line\n", "[agent6] a note\n"]  # each ends its line
     assert said == ["a status line", "[agent6] a note"]
 
 

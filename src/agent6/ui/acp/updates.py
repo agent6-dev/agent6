@@ -83,7 +83,8 @@ def updates_for(
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)
         return [
             _update(
-                acp_session_id, {"sessionUpdate": "agent_message_chunk", "content": _text(text)}
+                acp_session_id,
+                {"sessionUpdate": "agent_message_chunk", "content": _text(text + "\n")},
             )
         ]
     if item.kind == "tool":
@@ -126,10 +127,14 @@ def ending(item: transcript.TranscriptItem) -> str:
 
 
 def message_update(acp_session_id: str, text: str) -> dict[str, Any]:
-    """Return one line of agent6's own prose as a `session/update`, marked as its own."""
+    """Return one line of agent6's own prose as a `session/update`, marked as its own.
+
+    The chunk ends its line: an editor appends chunks as they come, and the model's next
+    words would otherwise start on the notice's line.
+    """
     return _update(
         acp_session_id,
-        {"sessionUpdate": "agent_message_chunk", "content": _text(f"[agent6] {text}")},
+        {"sessionUpdate": "agent_message_chunk", "content": _text(f"[agent6] {text}\n")},
     )
 
 
