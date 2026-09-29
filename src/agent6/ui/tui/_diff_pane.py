@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The dashboard's diff pane: a step picker and a cumulative toggle over the
-latest commit's patch, the verify output, a selected step's patch, or the
-commits made while a selected task was in focus."""
+"""The dashboard's diff pane.
+
+A step picker and a cumulative toggle over the latest commit's patch, the verify
+output, a selected step's patch, or the commits made while a selected task was
+in focus.
+"""
 
 from __future__ import annotations
 
@@ -22,17 +25,18 @@ from agent6.viewmodel.state import SessionState
 
 
 class DiffPane(ScrollPane):
-    """`step_sel` is the selected step's sha ("" = latest), `cumulative` the
-    toggle; a change posts `StepChanged`, since the header's task count and
-    cost are as of the selected step too."""
+    """The diff pane; a picker change posts `StepChanged`, since the header follows the step.
+
+    Attributes:
+        step_sel: The selected step's sha; "" for the latest commit.
+        cumulative: Whether the patch runs from the session's base to the step.
+    """
 
     DEFAULT_CSS = """
-    /* The step picker and the cumulative toggle share a picker row; the compact
-       toggle's focus border would make it three lines. */
+    /* The picker and the toggle share a row; a focus border would make it three lines. */
     DiffPane #diff-cumulative { margin-left: 2; background: transparent; }
     DiffPane #diff-cumulative:focus { border: none; }
-    /* The body fills the pane so long content scrolls; it is selectable text,
-       so the pointer shows an I-beam over it. */
+    /* The body fills the pane so long content scrolls; selectable text shows an I-beam. */
     DiffPane #diff-body { width: 1fr; height: auto; pointer: text; }
     """
 
@@ -40,6 +44,7 @@ class DiffPane(ScrollPane):
         """The selected step or the cumulative toggle changed."""
 
     def __init__(self, session_dir: Path, *, id: str) -> None:
+        """Bind the pane to a session dir."""
         super().__init__(id=id)
         self._session_dir = session_dir
         self.step_sel = ""
@@ -48,6 +53,11 @@ class DiffPane(ScrollPane):
         self._rendered: tuple[object, ...] | None = None  # the inputs last painted
 
     def compose(self) -> ComposeResult:
+        """Lay out the pane.
+
+        Yields:
+            The picker row and the body.
+        """
         with PickerRow(id="diff-nav"):
             yield Picker(
                 [("latest commit", "")],
@@ -60,14 +70,17 @@ class DiffPane(ScrollPane):
         yield Static("", id="diff-body")
 
     def git_control(self) -> str:
+        """Return the manifest's `git_control`; "agent6" when the manifest is unreadable."""
         with contextlib.suppress(ManifestError):
             return read_manifest(self._session_dir).git_control
         return "agent6"
 
     def sync_nav(self, s: SessionState) -> None:
-        """The step selector lists the run's commits (newest first) behind
-        "latest commit"; hidden while nothing is committed, and under
-        `[git].control = "model"` the pane says so (no chain to select from)."""
+        """Refresh the step selector from the state's commits, newest first.
+
+        Hidden while nothing is committed, and under `[git].control = "model"`, which
+        has no chain to select from.
+        """
         nav = self.query_one("#diff-nav", PickerRow)
         if self.git_control() == "model" or not s.steps:
             nav.display = False
@@ -91,6 +104,7 @@ class DiffPane(ScrollPane):
         return commit_diff(Path.cwd(), sha) or "(no diff)"
 
     def on_select_changed(self, event: Select.Changed) -> None:
+        """Follow the step picker."""
         if event.select.id != "diff-step":
             return
         event.stop()
@@ -99,14 +113,14 @@ class DiffPane(ScrollPane):
         self.post_message(self.StepChanged())
 
     def _sync_cumulative(self) -> None:
-        """Cumulative applies to a chosen step: with "latest commit" picked the
-        box is off and disabled, as the web's is."""
+        """Disable and clear the cumulative box unless a step is chosen, as the web does."""
         box = self.query_one("#diff-cumulative", Checkbox)
         box.disabled = not self.step_sel
         if not self.step_sel and box.value:
             box.value = False
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Follow the cumulative toggle."""
         if event.checkbox.id != "diff-cumulative":
             return
         event.stop()
@@ -114,10 +128,16 @@ class DiffPane(ScrollPane):
         self.post_message(self.StepChanged())
 
     def render_state(self, s: SessionState, *, sel: str | None, filt: str) -> None:
-        """Paint the pane for the state: *sel* is the task the panes are
-        filtered to (None = the live view), *filt* its border-title suffix.
-        Built as rich Text, so a diff or verify body (which holds brackets) is
-        never parsed as markup. Skipped whenever none of its inputs changed."""
+        """Paint the pane for the state, skipping when none of its inputs changed.
+
+        Built as rich Text, so a diff or verify body holding brackets is never parsed
+        as markup.
+
+        Args:
+            s: The session's fold.
+            sel: The task the panes are filtered to; None for the live view.
+            filt: The border title's suffix for the filter.
+        """
         self.sync_nav(s)
         key = (sel, s.recent_diffs, s.last_verify, s.latest_diff, self.step_sel, self.cumulative)
         if self._rendered is not None and all(
@@ -151,8 +171,7 @@ class DiffPane(ScrollPane):
             else:
                 dt.append("(no commits during the selected task yet)", style="dim")
             return dt
-        # A running or failed verify takes precedence so a failure is never
-        # hidden behind a stale passing diff. A passed verify yields to the diff.
+        # A running or failed verify outranks the diff, so a failure never hides behind a stale one.
         if verify is not None and verify.exit_code is None:
             dt.append("verify running: ", style="bold")
             dt.append(clip_cell(" ".join(verify.cmd), 200) + "\n")
@@ -175,9 +194,13 @@ class DiffPane(ScrollPane):
 
 
 def append_colored_diff(dt: Text, patch: str, *, cap: int = 0) -> None:
-    """Append a unified diff with +/- line coloring (no markup parsing). With
-    *cap*, clip to it and mark the cut, so a truncated patch never reads as the
-    whole one (the pane is a preview; `sessions diff` prints the full patch)."""
+    """Append a unified diff with its lines coloured, without markup parsing.
+
+    Args:
+        dt: The text to append to.
+        patch: The unified diff.
+        cap: Clip the patch to this many characters and mark the cut; 0 for no cap.
+    """
     shown = patch if not cap or len(patch) <= cap else patch[:cap]
     for line in shown.splitlines():
         if line.startswith("+") and not line.startswith("+++ "):

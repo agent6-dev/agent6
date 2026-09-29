@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The TUI config viewer/editor: a thin renderer over the shared config
-view-model (`viewmodel.config_view.build_config_view`) and the shared edit
-path (`config.write.set_config_value` / `unset_config_value`). All config
-logic lives in those layers, so this page and the web editor never drift.
+"""The config page: a renderer over the shared config view and the shared edit path.
 
-Discoverability is driven by one action registry (:data:`CONFIG_ACTIONS`): the
-same list generates the on-screen action bar (clickable + keyboard-navigable
-buttons), the footer's labels and the command-palette descriptions; the keys
-are `ui.keymap.SCREEN_KEYS`' and the menus name the actions.
+The config logic lives in `viewmodel.config_view` and `config.write`, so this page
+and the web editor never drift. One registry, `CONFIG_ACTIONS`, feeds the footer
+labels and the palette descriptions; the keys are the keymap's.
 """
 
 from __future__ import annotations
@@ -78,28 +74,29 @@ from agent6.viewmodel.config_view import (
 
 @dataclass(frozen=True, slots=True)
 class Action:
-    """A user action, reachable three ways from one definition: a labelled
-    button (mouse + Tab/Enter), a footer entry (its key is `SCREEN_KEYS`'),
-    and a command-palette entry. The help overlay lists them all."""
+    """A page action, reachable from the footer, the menus and the command palette.
+
+    Attributes:
+        id: The action name the handler `action_<id>` answers to.
+        label: The footer word.
+        description: The palette's help text.
+    """
 
     id: str
     label: str
     description: str
 
 
-# The single source of truth for every Config-page action.
+# The one registry of the page's actions.
 CONFIG_ACTIONS: tuple[Action, ...] = (
     Action("search", "Filter", "Filter settings by name"),
     Action("toggle_modified", "Modified only", "Show only settings a config layer set"),
     Action("edit", "Edit", "Edit the selected setting (dropdown for choices)"),
     Action("add_provider", "Add provider…", "Add a [providers.<name>] entry via a form"),
-    # Labels match the home/run footers: "Refresh" (not "Reload"), "Help" (not
-    # "Help / keys"); Reset, which unsets a setting, is "Unset".
+    # The labels match the home and run footers.
     Action("reset", "Unset", "Unset the selected setting in its source config layer"),
     Action("reload", "Refresh", "Re-read config from disk"),
-    # View-menu / palette only, like the home hub: the live-preview Theme…
-    # picker stays reachable from the config Ctrl+P palette (the built-in
-    # "Theme" is filtered out app-wide).
+    # Menu and palette only; the built-in "Theme" is filtered out app-wide.
     Action("choose_theme", "Theme…", "Choose a colour theme"),
     Action("help", "Help", "Show all actions and shortcuts"),
     Action("close", "Back", "Back to the hub"),
@@ -107,25 +104,24 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
 
 
 def _columns(settings: Iterable[ConfigSetting]) -> tuple[tuple[str, int], ...]:
-    """The (label, width) columns the single pinned header and every section
-    table share, so the sections align under that one header; the setting
-    column fits the longest key."""
+    """Return the (label, width) columns the pinned header and every section table share."""
     setting = max((len(_leaf(s)) for s in settings), default=7)
     return (("setting", setting), ("value", 28), ("source", 12))
 
 
 def _leaf(s: ConfigSetting) -> str:
-    """The key under its section, as a row shows it."""
+    """Return the key under its section, as a row shows it."""
     return s.key.split(".", 1)[1] if "." in s.key else s.key
 
 
 class _NavTable(DataTable[str]):
-    """A settings table whose arrow nav doesn't dead-end at the section edge: at
-    the bottom row, Down moves to the next section's header; at the top row, Up
-    moves to this section's header. With the headers themselves arrow-navigable
-    (see ConfigScreen._nav_sections), the whole config reads as one list."""
+    """A settings table whose arrow keys hand off to the section headers at its edges.
+
+    With the headers arrow-navigable too, the whole config reads as one list.
+    """
 
     def action_cursor_down(self) -> None:
+        """Move down, or hand off to the next section's header at the bottom row."""
         if self.cursor_row >= self.row_count - 1:
             self._hand_off(1)
         else:
@@ -133,6 +129,7 @@ class _NavTable(DataTable[str]):
             self._keep_in_view()
 
     def action_cursor_up(self) -> None:
+        """Move up, or hand off to this section's header at the top row."""
         if self.cursor_row <= 0:
             self._hand_off(-1)
         else:
@@ -140,10 +137,12 @@ class _NavTable(DataTable[str]):
             self._keep_in_view()
 
     def _keep_in_view(self) -> None:
+        """Scroll the page just enough to show the cursor row."""
         if isinstance(self.screen, ConfigScreen):
             self.screen.scroll_focused_into_view()
 
     def _hand_off(self, direction: int) -> None:
+        """Pass the arrow at an edge to the screen's section navigation."""
         screen = self.screen
         section = self.id[4:] if self.id else ""
         if isinstance(screen, ConfigScreen):
@@ -151,10 +150,7 @@ class _NavTable(DataTable[str]):
 
 
 def _provider_preset_base_url(key: str) -> str:
-    """The preset base_url for a `providers.<name>.base_url` setting whose
-    `<name>` is a known provider (else ""). Lets the single-setting editor
-    offer e.g. openrouter.ai instead of the generic api.openai.com that
-    `config._default_base_url` fills in for any unset openai-format provider."""
+    """Return the preset base_url for a known provider's `base_url` setting, else ""."""
     parts = key.split(".")
     if len(parts) == 3 and parts[0] == "providers" and parts[2] == "base_url":
         return PROVIDER_DEFAULTS.get(parts[1], {}).get("base_url", "")
@@ -162,12 +158,13 @@ def _provider_preset_base_url(key: str) -> str:
 
 
 class _FormModal[ResultT](ModalScreen[ResultT]):
-    """Shared form-modal keys. One vertical ↑↓ chain: ChoiceField hands off at
-    its own edges; Inputs and action items release ↑↓ here so it flows through
-    them too. ←/→ stay text-editing keys inside an Input and move between the
-    flat action items; an activated ActionItem dispatches to `action_<id>`."""
+    """The form modals' shared keys: one vertical arrow chain, and left and right over the actions.
+
+    An activated ActionItem dispatches to `action_<id>`.
+    """
 
     def on_key(self, event: events.Key) -> None:
+        """Move between fields and actions with the arrow keys."""
         focused = self.focused
         if event.key in ("left", "right") and isinstance(focused, ActionItem):
             actions = list(self.query(ActionItem))
@@ -183,20 +180,18 @@ class _FormModal[ResultT](ModalScreen[ResultT]):
 
     @on(ActionItem.Activated)
     def _action_activated(self, event: ActionItem.Activated) -> None:
+        """Dispatch an activated action item to its handler."""
         getattr(self, f"action_{event.action}")()
 
 
 class EditModal(_FormModal[tuple[str, str, bool] | None]):
-    """Edit one setting with a natural terminal chooser: a [x]/[ ] list (↑↓ select
-    as they move) for enum choices and bools -- with an inline "custom" row for
-    values the choices don't cover, a text box otherwise. The action row (Save
-    · Unset override · Cancel) is flat text, ←/→ navigable + clickable. Returns
-    `(action, value, to_repo)` (action "save"/"unset") or None on cancel."""
+    """Edit one setting: a chooser for choices and bools, a text box otherwise.
 
-    # No enter->save: Space/Enter on a chooser selects the highlighted option, so
-    # Enter must not also save (you'd save while just picking). Save via the Save
-    # action (Enter on it / click). A plain text field still saves on Enter
-    # (Input.Submitted) since there's nothing to "select" there.
+    The result is `(action, value, to_repo)` with the action "save" or "unset", or
+    None on cancel.
+    """
+
+    # No Enter to save: Enter on a chooser selects the highlighted option.
     BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel")]
     CSS = (
         FORM_CSS
@@ -222,27 +217,30 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
         super().__init__()
         self._setting = setting
         self._done = False
-        # For big open lists (model ids): the cached suggestions to show now, and
-        # an optional (blocking) fetch to refresh them from the live listing.
+        # For a big open list (model ids): the cached suggestions now, a blocking fetch after.
         self._typeahead = typeahead
         self._fetch = fetch
 
     def on_mount(self) -> None:
-        self.query_one("#edit-value").focus()  # arrows work immediately
+        """Focus the value field and start the suggestion fetch."""
+        self.query_one("#edit-value").focus()
         if self._fetch is not None:
             self.run_worker(self._fetch_worker, thread=True)
 
     def _fetch_worker(self) -> None:
+        """Fetch the live suggestions off the UI thread."""
         models = self._fetch() if self._fetch else []
         if models:
             self.app.call_from_thread(self._apply_suggestions, models)
 
     def _apply_suggestions(self, models: list[str]) -> None:
+        """Replace the typeahead's suggestions."""
         field = self.query("#edit-value").first()
         if isinstance(field, TypeaheadField):
             field.set_suggestions(models)
 
     def compose(self) -> ComposeResult:
+        """Yield the title, the description, the value field, the target and the actions."""
         s = self._setting
         with VerticalScroll(id="edit-box"):
             yield Static(f"Edit {s.key}", id="edit-title")
@@ -253,14 +251,10 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                 )
             )
             if s.description:
-                # What the leaf means, as the docs table and the web editor
-                # say it; Text, never markup (a description names `[git]`).
+                # Text, never markup: a description names `[git]`.
                 yield Static(Text(plain_description(s.description)), id="edit-description")
-            # The display formatter (_fmt) renders lists unquoted ([uv, run,
-            # pytest]): friendly in the table, but not valid TOML, so an
-            # untouched Save of a list/dict field fails revalidation ("Input
-            # should be a valid tuple"). Prefill the edit box with the exact
-            # inverse of parse_cli_value instead; scalars stay bare.
+            # The table's display form of a list is not valid TOML, so the box is prefilled with
+            # the exact inverse of parse_cli_value; scalars stay bare.
             raw = s.value if s.value is not None else s.default
             current = (
                 raw
@@ -272,7 +266,6 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                 )
             )
             if self._typeahead is not None:
-                # Big open list (e.g. model ids): type to narrow over suggestions.
                 yield TypeaheadField(
                     "" if s.value is None else current,
                     self._typeahead,
@@ -280,7 +273,6 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                     classes="edit-gap",
                 )
             elif s.choices is not None:
-                # Inline custom row: pick "custom" and type the value right there.
                 yield ChoiceField(
                     tuple(s.choices),
                     current,
@@ -297,9 +289,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                 )
             else:
                 initial = "" if s.value is None else current
-                # A known provider whose base_url is still the generic default
-                # (api.openai.com, filled by _default_base_url): offer its preset
-                # host so an unset openrouter/ollama is one Save from correct.
+                # A known provider still on the generic default gets its preset host offered.
                 if not s.modified and (preset_url := _provider_preset_base_url(s.key)):
                     initial = preset_url
                 yield Input(
@@ -321,44 +311,49 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
             )
 
     def _new_value(self) -> str:
+        """Return the field's value as the TOML text the writer takes."""
         field = self.query_one("#edit-value")
         value = field.value if isinstance(field, (ChoiceField, TypeaheadField, Input)) else ""
         return format_toml_value(value) if self._setting.py_type == "str" else value
 
     @on(Input.Submitted)
     def _input_submitted(self, event: Input.Submitted) -> None:
-        focus_neighbor(event.input, 1)  # Enter in a text field advances (like Tab/↓)
+        """Advance from a text field on Enter, like Tab."""
+        focus_neighbor(event.input, 1)
 
     def action_save(self) -> None:
+        """Return the save, once; Enter may reach both an action item and Submitted."""
         if self._done:
-            return  # one save (Enter may also reach an action item / Submitted)
+            return
         self._done = True
         to_repo = self.query_one("#edit-target", ChoiceField).index == 1
         self.dismiss(("save", self._new_value(), to_repo))
 
     def action_unset(self) -> None:
+        """Return the unset."""
         if not self._done:
             self._done = True
             self.dismiss(("unset", "", False))
 
     def action_cancel(self) -> None:
+        """Return None for a cancel."""
         self.dismiss(None)
 
     def on_click(self, event: events.Click) -> None:
-        if event.widget is self:  # click on the backdrop (outside the dialog) = cancel
+        """Cancel on a click outside the dialog."""
+        if event.widget is self:
             self.action_cancel()
 
 
 class ProviderModal(_FormModal[None]):
-    """Add a `[providers.<name>]` entry via a form instead of hand-editing a
-    TOML dict: dropdowns for the fixed-choice fields (api_format, deployment,
-    from the schema) and inputs for the free ones (name, base_url, api_key_env).
-    base_url/auth default from the format+deployment when blank, so a minimal
-    entry needs only a name + format. Writes + validates on Add (errors stay in
-    the form to fix); the page reloads after."""
+    """Add a `[providers.<name>]` entry through a form.
 
-    # No enter->add (Space/Enter selects a chooser option); add via the Add action
-    # or Enter in a text field (Input.Submitted).
+    Choosers for the fixed-choice fields, inputs for the free ones; base_url and
+    auth default from the format and deployment when blank. Add writes and
+    validates, and an error stays in the form to fix.
+    """
+
+    # No Enter to add: Enter on a chooser selects the highlighted option.
     BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel")]
     CSS = (
         FORM_CSS
@@ -376,17 +371,18 @@ class ProviderModal(_FormModal[None]):
     def __init__(self, repo_root: Path) -> None:
         super().__init__()
         self._repo = repo_root
-        self._autofilled_baseurl = ""  # the base_url we last prefilled (never clobber a typed one)
+        self._autofilled_baseurl = ""  # the last prefilled base_url; a typed one is never replaced
 
     def on_mount(self) -> None:
+        """Focus the name field."""
         self.query_one("#prov-name", Input).focus()
 
     def compose(self) -> ComposeResult:
+        """Yield the title, the fields, the target and the actions."""
         choices = provider_choices()
         with VerticalScroll(id="prov-box"):
             yield Static("Add provider", id="prov-title")
-            # Split at the sentence boundary: one line is wider than the box
-            # (74 cells inside) and would word-wrap mid-phrase.
+            # Split at the sentence: one line is wider than the box.
             yield Static(
                 Text(
                     "A [providers.<name>] block.\n"
@@ -430,20 +426,21 @@ class ProviderModal(_FormModal[None]):
             )
 
     def _selected(self, widget_id: str, fallback: str) -> str:
+        """Return a chooser's value, or the fallback when it has none."""
         field = self.query_one(widget_id, ChoiceField)
         return field.value or fallback
 
     @on(Input.Submitted)
     def _input_submitted(self, event: Input.Submitted) -> None:
-        focus_neighbor(event.input, 1)  # Enter in a text field advances (like Tab/↓)
+        """Advance from a text field on Enter, like Tab."""
+        focus_neighbor(event.input, 1)
 
     @on(Input.Changed, "#prov-name")
     def _prefill_from_preset(self, event: Input.Changed) -> None:
-        """Typing a known provider name prefills its api_format + base_url (parity
-        with `agent6 connect`) so e.g. 'openrouter' lands on openrouter.ai rather
-        than the api.openai.com fallback in config._default_base_url. Visible and
-        editable; only overwrites a base_url we ourselves autofilled (or a blank
-        one), never a URL the user typed."""
+        """Prefill a known provider's api_format and base_url, as `agent6 connect` does.
+
+        Only a blank or autofilled base_url is overwritten, never a typed one.
+        """
         preset = PROVIDER_DEFAULTS.get(event.value.strip())
         baseurl = self.query_one("#prov-baseurl", Input)
         if preset is None:
@@ -457,6 +454,7 @@ class ProviderModal(_FormModal[None]):
             baseurl.value = self._autofilled_baseurl
 
     def action_add(self) -> None:
+        """Write and validate the entry; an error stays in the form."""
         name = self.query_one("#prov-name", Input).value.strip()
         if not name:
             self.notify("Enter a provider name.", severity="warning")
@@ -480,22 +478,22 @@ class ProviderModal(_FormModal[None]):
             err = str(exc)  # an unwritable config file is a form error, not a crash
         if err:
             self.notify(f"Invalid: {err}", severity="error", timeout=8.0)
-            return  # stay in the form so the user can fix it
+            return
         self.notify(f"Set provider '{name}'.")
         self.dismiss(None)
 
     def action_cancel(self) -> None:
+        """Close the form."""
         self.dismiss(None)
 
     def on_click(self, event: events.Click) -> None:
-        if event.widget is self:  # click on the backdrop (outside the dialog) = cancel
+        """Cancel on a click outside the dialog."""
+        if event.widget is self:
             self.action_cancel()
 
 
 class ConfigScreen(ScreenChrome, Screen[None]):
-    """Full config viewer/editor: collapsible per-section tables, search, a
-    modified-only filter, provenance, edit and unset, each reachable by
-    button, key, or the command palette."""
+    """The config viewer and editor: per-section tables, a filter, provenance, edit and unset."""
 
     CSS = """
     ConfigScreen { layers: base dropdown; background: $surface; }
@@ -569,11 +567,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             ),
         ),
     )
-    # Footer order: page actions first, then the meta tail Help, Back, Menu,
-    # the same order as the home/run footers (the root hub shows Quit in that
-    # slot instead, since it is the only screen that quits on q). Config is one
-    # level below the hub, so q (like Esc) backs out; q is typeable in #search,
-    # where the focused Input eats it first.
+    # Page actions first, then Help and Back, the order of the home and run footers.
     FOOTER: ClassVar = tuple(
         (a.id, a.label)
         for a in CONFIG_ACTIONS
@@ -594,27 +588,23 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self._modified_only = False
 
     def palette_commands(self) -> Iterator[PaletteCommand]:
-        """The menu actions with CONFIG_ACTIONS' descriptions as their help
-        (the menu title alone says less than the registry does)."""
+        """Yield the menu actions with the registry's descriptions as their help."""
         descriptions = {a.id: a.description for a in CONFIG_ACTIONS}
         for label, handler, menu_title in menu_palette_commands(self, self.MENUS):
             action = next((i.action for m in self.MENUS for i in m.items if i.label == label), "")
             yield label, handler, descriptions.get(action, menu_title)
 
     def compose(self) -> ComposeResult:
-        # Load the view first so the (fixed) set of sections is known, then
-        # compose one Collapsible+DataTable per section up front. Reloads only
-        # repopulate rows: the section structure never needs remounting.
+        """Yield the menu bar, the filter row, the pinned header and one table per section.
+
+        The sections are fixed once the view loads; a reload only repopulates rows.
+        """
         self._rebuild_view()
-        yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <path>"
-        # One slim row: the inline filter on the left, the count (+ "modified
-        # only" tag) on the right. No separate pop-up search box.
+        yield MenuBar(self.MENUS)
         with Horizontal(id="topbar"):
             yield Input(placeholder="/  filter settings…", id="search")
             yield Static("", id="status")
-        # One column header, pinned above the scroll (the per-section tables hide
-        # theirs and share these fixed column widths, so everything lines up under
-        # this single header instead of repeating "setting value source").
+        # One pinned column header; the section tables hide theirs and share its widths.
         with Vertical(id="config-card"):
             yield DataTable(id="col-header")
             with VerticalScroll(id="settings"):
@@ -626,18 +616,21 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         yield Footer()
 
     def _sections(self) -> tuple[str, ...]:
+        """Return the view's sections, in order."""
         return self._view.sections if self._view is not None else ()
 
     def _rebuild_view(self) -> None:
+        """Load the effective config and build the view over it."""
         eff = load_effective(self.repo_root, self.config_path)
         self._eff = eff
         self._view = build_config_view(eff, resolved=resolved_config_values(eff.config))
 
     def _reload(self) -> bool:
-        # Every interactive re-read funnels through here. An external hand-edit
-        # can invalidate the on-disk config while the page is open; keep the
-        # last-good view and point at the fix instead of crashing the TUI out
-        # of the action handler (the hub's open guard documents that intent).
+        """Re-read the config and repaint; a config invalid on disk keeps the last-good view.
+
+        Returns:
+            Whether the re-read succeeded.
+        """
         try:
             self._rebuild_view()
         except ConfigError as exc:
@@ -652,8 +645,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         return True
 
     def on_mount(self) -> None:
-        # The single pinned header carries the column labels; section tables hide
-        # theirs but share the exact same fixed widths so they line up under it.
+        """Set the shared columns, fill the rows and focus the first table."""
         header = self.query_one("#col-header", DataTable)
         header.show_cursor = False
         header.can_focus = False
@@ -667,21 +659,19 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             for label, width in columns:
                 table.add_column(label, width=width)
         self._refresh()
-        # Show "agent6 — config · <repo>" in the menu-bar title for this screen.
         self.app.sub_title = f"config · {self.repo_root.name}"
-        # Focus the first section table (a _NavTable), not the pinned col-header
-        # (which is can_focus=False): opening config shouldn't look like a menu
-        # is half-activated. Alt+letter still reaches the menu bar.
         tables = list(self.query(_NavTable))
         if tables:
             tables[0].focus()
 
     def _matches(self, s: ConfigSetting, query: str) -> bool:
+        """Return whether a setting passes the filter box and the modified-only toggle."""
         if self._modified_only and not s.modified:
             return False
         return query in s.key.lower() if query else True
 
     def _refresh(self) -> None:
+        """Repopulate every section's rows from the view through the filters."""
         if self._view is None:
             return
         focused = self.focused
@@ -705,13 +695,10 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             for s in rows:
                 leaf = _leaf(s)
                 src = s.source + (" *" if s.modified else "")
-                # Values/keys may carry brackets (lists, regexes) -> render as
-                # Text so they are never parsed as Rich markup.
+                # Text, never markup: a value or key may carry brackets.
                 table.add_row(Text(leaf), Text(display_value(s)), Text(src), key=s.key)
-            # Pin each table to its full row count so it never scrolls internally,
-            # so only #settings scrolls. (DataTable's height:auto otherwise gets clamped
-            # to the viewport in a short window, giving a table scrollbar and the
-            # config scrollbar: a double scrollbar.)
+            # Pinned to its row count so only #settings scrolls; height:auto clamps to the
+            # viewport in a short window and gives a second scrollbar.
             table.styles.height = max(1, len(rows))
             self.query_one(f"#sec-{section}", Collapsible).display = bool(rows)
             shown += len(rows)
@@ -721,6 +708,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             self._focus_first_setting()
 
     def _current_setting(self) -> ConfigSetting | None:
+        """Return the setting under the focused table's cursor."""
         focused = self.focused
         if isinstance(focused, DataTable) and focused.id and focused.id.startswith("tbl-"):
             section = focused.id[4:]
@@ -730,58 +718,59 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 return rows[row]
         return None
 
-    # --- continuous arrow nav across section headers + their rows -----------
-
     def _ordered_sections(self) -> list[str]:
-        """Sections with a visible (non-empty) Collapsible, in display order."""
+        """Return the sections with a visible Collapsible, in display order."""
         return [s for s in self._sections() if self.query_one(f"#sec-{s}", Collapsible).display]
 
     def _section_has_rows(self, section: str) -> bool:
+        """Return whether the section is expanded with rows to step into."""
         col = self.query_one(f"#sec-{section}", Collapsible)
         return not col.collapsed and self.query_one(f"#tbl-{section}", _NavTable).row_count > 0
 
     def _focus_title(self, section: str) -> None:
+        """Focus a section's header, scrolling it into view by one row."""
         col = self.query_one(f"#sec-{section}", Collapsible)
         title = next(iter(col.query("CollapsibleTitle")), None)
         if title is not None:
-            title.focus(scroll_visible=False)  # we do the (minimal) scroll ourselves
-            self.scroll_focused_into_view(title)  # pass it: .focused updates async
+            title.focus(scroll_visible=False)
+            self.scroll_focused_into_view(title)  # passed: .focused updates async
 
     def _focus_table(self, section: str, *, top: bool) -> None:
+        """Focus a section's table at its top or bottom row."""
         table = self.query_one(f"#tbl-{section}", _NavTable)
         table.move_cursor(row=0 if top else table.row_count - 1)
         table.focus(scroll_visible=False)
         self.scroll_focused_into_view(table)
 
     def scroll_focused_into_view(self, target: Widget | None = None) -> None:
-        """Scroll #settings just enough to show *target* (the focused row: a table
-        cursor or a section header). Pass the target explicitly when you've just
-        focused it: Widget.focus() updates self.focused asynchronously, so reading
-        it here would scroll the old row. Textual's focus auto-scroll brings the
-        whole section into view (jumps at edges); this scrolls a single row."""
+        """Scroll the settings just enough to show one row, a table cursor or a section header.
+
+        Textual's focus auto-scroll brings a whole section into view and jumps at the edges.
+
+        Args:
+            target: The row just focused; `focus()` updates `self.focused` asynchronously,
+                so reading it here would scroll the old row.
+        """
         settings = self.query_one("#settings", VerticalScroll)
         focused = target if target is not None else self.focused
         if focused is None:
             return
         if isinstance(focused, _NavTable):
-            screen_y = focused.region.y + focused.cursor_row  # header hidden -> row 0 at top
+            screen_y = focused.region.y + focused.cursor_row  # the header is hidden
         elif isinstance(focused.parent, Collapsible):
-            # The first visible section's header is the topmost row. scroll_to_region
-            # won't pull that last row flush to the top (it leaves it ~1 line off, so
-            # Up off the first setting reads as skipping the header): pin to home.
+            # scroll_to_region leaves the topmost header a line off the top: pin to home.
             first = next((c for c in self.query("#settings Collapsible") if c.display), None)
             if focused.parent is first:
                 settings.scroll_home(animate=False)
                 return
-            screen_y = focused.region.y  # a focused CollapsibleTitle
+            screen_y = focused.region.y
         else:
             return
         content_y = screen_y - settings.region.y + settings.scroll_offset.y
         settings.scroll_to_region(Region(0, content_y, 1, 1), animate=False)
 
     def nav_from_table(self, section: str, direction: int) -> None:
-        """A table edge handed off nav: Down -> next section's header; Up -> this
-        section's own header (so the header sits between the two sections)."""
+        """Take an arrow from a table's edge: Down to the next header, Up to this section's."""
         order = self._ordered_sections()
         if section not in order:
             return
@@ -793,8 +782,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             self._focus_title(section)
 
     def _nav_from_title(self, section: str, direction: int) -> None:
-        """Arrow on a section header: Down -> into its rows (or the next header
-        if it's collapsed/empty); Up -> the previous section's rows (or header)."""
+        """Take an arrow on a header: Down into its rows, Up to the previous section's."""
         order = self._ordered_sections()
         if section not in order:
             return
@@ -810,20 +798,17 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 self._focus_table(prev, top=False)
             else:
                 self._focus_title(prev)
-        else:  # Up at the topmost header -> back to the filter box
+        else:  # Up at the topmost header goes back to the filter box
             self.query_one("#search", Input).focus()
 
     def on_key(self, event: events.Key) -> None:
+        """Step Down out of the filter box; on a header, arrows flow through and Space toggles."""
         focused = self.focused
-        # Down steps out of the filter box into the settings (keeping the filter).
         if isinstance(focused, Input) and focused.id == "search":
             if event.key == "down":
                 self._focus_first_setting()
                 event.stop()
             return
-        # On a focused section header (a CollapsibleTitle under our #sec-* block),
-        # Up/Down flow through the sections and Space toggles it (Enter already
-        # does, built-in).
         parent = getattr(focused, "parent", None)
         if not (isinstance(parent, Collapsible) and parent.id and parent.id.startswith("sec-")):
             return
@@ -834,14 +819,12 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             parent.collapsed = not parent.collapsed
             event.stop()
 
-    # --- actions (one handler per registry entry; button + key both land here)
-
     def action_search(self) -> None:
-        self.query_one("#search", Input).focus()  # the inline filter box
+        """Focus the filter box."""
+        self.query_one("#search", Input).focus()
 
     def _focus_first_setting(self) -> None:
-        """Focus the first visible section's first row (used to step out of the
-        filter box into the settings)."""
+        """Focus the first visible section's first row, or its header."""
         order = self._ordered_sections()
         if order:
             first = order[0]
@@ -853,46 +836,53 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             self.query_one("#search", Input).focus()
 
     def _cancel_search(self) -> bool:
-        """Esc in/with an active filter clears it and drops back to the settings;
-        returns True so Esc backs out of the filter before it closes the page."""
+        """Clear an active filter and drop back to the settings.
+
+        Returns:
+            Whether there was a filter to back out of; False lets Esc close the page.
+        """
         box = self.query_one("#search", Input)
         if not box.value and (self.focused is not box or not self._ordered_sections()):
-            return False  # nothing to back out of -> Esc closes the page
+            return False
         box.value = ""
         self._refresh()
         self._focus_first_setting()
         return True
 
     def action_toggle_modified(self) -> None:
+        """Flip the modified-only filter."""
         self._modified_only = not self._modified_only
         self._refresh()
 
     def action_reload(self) -> None:
+        """Re-read the config from disk."""
         if self._reload():
             self.notify("Config reloaded.")
 
     def action_quit(self) -> None:
-        # The menu's "Quit" (^Q) quits the whole app. On a Screen `quit` isn't
-        # built-in and doesn't bubble, so call exit() directly. (q backs out
-        # instead, see action_close; only the root hub quits on q.)
+        """Quit the app; `quit` is not built into a Screen."""
         self.app.exit()
 
     def action_close(self) -> None:
-        # Esc backs out of an open search/filter first; only then leaves the page.
+        """Back out of an active filter first, then leave the page."""
         if self._cancel_search():
             return
         self.dismiss(None)
 
     def action_add_provider(self) -> None:
+        """Open the provider form and reload after it."""
+
         def reload_config(_: None) -> None:
             self._reload()
 
         self.app.push_screen(ProviderModal(self.repo_root), reload_config)
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
-        self.action_edit()  # Enter / double-click a setting row edits it
+        """Edit the row on Enter or a double click."""
+        self.action_edit()
 
     def action_edit(self) -> None:
+        """Open the editor on the selected setting and write its result."""
         setting = self._current_setting()
         if setting is None:
             self.notify(
@@ -917,9 +907,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 self.notify(f"Set {setting.key}")
                 self._reload()
 
-        # A model-id field gets a type-to-narrow picker over the provider's
-        # models (the cache now, refreshed live in a worker); everything else
-        # the plain edit, with the view's choices as its picker.
+        # A model-id field gets a typeahead over the provider's models, cached now and live after.
         eff = self._eff
         provider = model_role_provider(eff, setting.key) if eff is not None else None
         if provider is not None and eff is not None:
@@ -933,6 +921,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self.app.push_screen(modal, _done)
 
     def action_reset(self) -> None:
+        """Unset the selected setting."""
         setting = self._current_setting()
         if setting is None:
             self.notify("Select a setting first.", severity="warning")
@@ -940,10 +929,11 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self._unset(setting)
 
     def _unset(self, setting: ConfigSetting) -> None:
-        """Remove *setting* from the layer that set it, and say so."""
-        # "Already at its default" is only truthful when it IS the default; a
-        # leaf from any other layer (a preset's synthesized [presets.<name>], a
-        # `--config` file) is modified but outside the two files an unset writes.
+        """Remove the setting from the layer that set it, and say so.
+
+        A leaf from a preset or a `--config` file is modified but outside the two
+        files an unset writes.
+        """
         if not setting.modified:
             self.notify(f"{setting.key} is already at its default.")
             return
@@ -968,8 +958,10 @@ class ConfigScreen(ScreenChrome, Screen[None]):
 
     @on(Input.Changed, "#search")
     def _on_search(self) -> None:
+        """Refilter as the box changes."""
         self._refresh()
 
     @on(Input.Submitted, "#search")
     def _on_search_submit(self) -> None:
-        self._focus_first_setting()  # Enter steps into the settings (keeps filter)
+        """Step into the settings on Enter, keeping the filter."""
+        self._focus_first_setting()

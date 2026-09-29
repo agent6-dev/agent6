@@ -1,16 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A slim, universal menu bar for the TUI: classic `File / Edit / View / Help`
-titles with a mnemonic letter, each opening a dropdown of actions (with their
-shortcut keys shown). One widget, reused on every screen: each screen passes
-its own :class:`Menu` list. Selecting an item runs the host screen's
-`action_<id>` (falling back to app actions), dispatched by the bar itself, so
-the menu, the buttons, the key bindings, and the command palette all reach the
-same handlers and never drift.
+"""The menu bar every screen shares.
 
-Every action is therefore reachable by mouse (click a title, click an item), by
-keyboard (`Alt+<letter>` opens a menu; arrows + Enter pick; Esc closes), and
-by name in the command palette.
+Titles with a mnemonic letter, each opening a dropdown of actions with their
+shortcut keys. Selecting an item runs the host screen's `action_<id>`, else the
+app's, so the menu, the key bindings and the command palette reach the same
+handlers. Every action is reachable by mouse, by `Alt+<letter>` and the arrows,
+and by name in the palette.
 """
 
 from __future__ import annotations
@@ -42,27 +38,33 @@ from agent6.ui.keymap import SCREEN_KEYS
 
 @dataclass(frozen=True, slots=True)
 class MenuItem:
-    """One menu row. Its key, if any, is `ui.keymap.SCREEN_KEYS`' for the
-    action; `priority` makes that binding fire before the focused widget (a
-    composer that would otherwise take the key)."""
+    """One menu row; its key, if any, is `ui.keymap.SCREEN_KEYS`' for the action.
+
+    Attributes:
+        label: The row's text.
+        action: Dispatched as `action_<action>` on the host screen, else the app.
+        priority: The binding fires before the focused widget, such as a composer.
+    """
 
     label: str
-    action: str  # dispatched as action_<action> on the host screen/app
+    action: str
     priority: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class Menu:
-    title: str  # e.g. "File"; its first letter is the Alt mnemonic
+    """One menu; the title's first letter is its Alt mnemonic."""
+
+    title: str
     items: tuple[MenuItem, ...]
 
     @property
     def mnemonic(self) -> str:
+        """The title's first letter, lower case."""
         return self.title[0].lower()
 
 
-# The View items every screen that scrolls a long body offers; the run views
-# bind them priority (the composer has the focus), the event log plain.
+# The View items of every screen that scrolls a long body; the run views bind them priority.
 SCROLL_ITEMS: tuple[MenuItem, ...] = (
     MenuItem("Scroll ↑ a page", "page_up", priority=True),
     MenuItem("Scroll ↓ a page", "page_down", priority=True),
@@ -74,14 +76,18 @@ SCROLL_ITEMS: tuple[MenuItem, ...] = (
 def menu_bindings(
     screen: str, menus: tuple[Menu, ...], *, footer: tuple[tuple[str, str], ...] = ()
 ) -> list[Binding]:
-    """A screen's bindings from its menus and `SCREEN_KEYS[screen]`, spread
-    into its BINDINGS: *footer* names the actions the footer shows, in its
-    order and with its labels (every other keyed action binds hidden), then
-    the menu openers, Alt+<mnemonic> per menu and F10 for the first (the
-    classic, terminal-robust menu key; some terminals eat Alt+f). Once open,
-    Left/Right switch menus and arrows/Enter pick. A comma in the table joins
-    an action's aliases: the first key carries the footer entry, which names
-    them all."""
+    """Return a screen's bindings from its menus and `SCREEN_KEYS[screen]`.
+
+    A comma in the key table joins an action's aliases: the first key carries the
+    footer entry, which names them all. The menu openers come last: `Alt+<mnemonic>`
+    per menu, and F10 for the first, since some terminals eat Alt+f.
+
+    Args:
+        screen: The screen's name in the key table.
+        menus: The screen's menus.
+        footer: The actions the footer shows, in its order, with their labels; every
+            other keyed action binds hidden.
+    """
     keys = SCREEN_KEYS[screen]
     shown = dict(footer)
     items = {it.action: it for m in menus for it in m.items}
@@ -110,8 +116,6 @@ def menu_bindings(
         )
     binds.extend(Binding(f"alt+{m.mnemonic}", f"menu('{m.mnemonic}')", show=False) for m in menus)
     if menus:
-        # Shown in the footer: the discoverable, terminal-robust way to reach the
-        # menus (Alt isn't bindable on its own, and some terminals eat Alt+f).
         binds.append(Binding("f10", f"menu('{menus[0].mnemonic}')", "Menu", show=True))
     return binds
 
@@ -126,7 +130,7 @@ _KEY_NAMES = {
     "end": "End",
     "space": "Space",
     "tab": "Tab",
-    "backtab": "⇧Tab",  # the terminal name for Shift+Tab
+    "backtab": "⇧Tab",
     "up": "↑",
     "down": "↓",
     "left": "←",
@@ -138,27 +142,31 @@ _MODIFIERS = {"ctrl": "^", "shift": "⇧", "alt": "Alt+", "super": "Super+"}
 
 
 def _key_label(key: str) -> str:
-    """A compact display for one key, keeping the footer's casing so the menu, help,
-    and footer match: n, ^c, ⇧Enter, Alt+f, PgDn, Esc. A bare capital letter stays
-    capital (so g and G stay distinct)."""
+    """Return the compact display of one key, as the footer shows it: n, ^c, ⇧Enter, PgDn.
+
+    A capital letter stays capital, so g and G stay distinct.
+    """
     if key in _KEY_NAMES:
         return _KEY_NAMES[key]
     parts = key.split("+")
     prefix = "".join(_MODIFIERS.get(p, "") for p in parts[:-1])
-    last = _KEY_NAMES.get(parts[-1], parts[-1])  # preserve case
+    last = _KEY_NAMES.get(parts[-1], parts[-1])
     return f"{prefix}{last}"
 
 
 def action_keys(source: object) -> dict[str, str]:
-    """Map each bound `action` to its shortcut label(s) from the active bindings,
-    the single source of truth, so the menu bar, the help page, and the footer all
-    show the same keys and can't drift from the actual key bindings. Multiple keys on
-    one action (e.g. PageDown + Ctrl+End, or Shift+Enter + Ctrl+J) are joined:
-    'PgDn / ^End'. `source` may be an App (its current screen is used) or a Screen."""
+    """Return each bound action's shortcut labels from the active bindings.
+
+    The one source the menu bar, the help page and the footer read, so they never
+    drift; several keys on one action are joined, as in "PgDn / ^End".
+
+    Args:
+        source: A screen, or an app (its current screen is used).
+    """
     screen = source if isinstance(source, Screen) else getattr(source, "screen", source)
     labels: dict[str, list[str]] = {}
     for key, active in getattr(screen, "active_bindings", {}).items():
-        if "super" in key:  # Cmd on macOS; textual adds it beside Ctrl but it's noise on Linux
+        if "super" in key:  # textual adds Cmd beside Ctrl; noise on Linux
             continue
         label = _key_label(key)
         seen = labels.setdefault(active.binding.action, [])
@@ -168,6 +176,7 @@ def action_keys(source: object) -> dict[str, str]:
 
 
 def _title_text(menu: Menu) -> Text:
+    """Return the menu title with its mnemonic underlined."""
     t = Text()
     t.append(menu.title[0], style="underline bold")
     t.append(menu.title[1:])
@@ -177,23 +186,25 @@ def _title_text(menu: Menu) -> Text:
 def _menu_options(
     items: tuple[MenuItem, ...], keys: dict[str, str], screen: object
 ) -> list[Option]:
-    """Dropdown rows with labels left-aligned and shortcut keys right-aligned to a
-    common edge, so the keys line up in a column. The shortcut comes from the live
-    key bindings (`keys` = action -> label, possibly several joined).
+    """Return the dropdown rows, labels left-aligned and keys right-aligned to one edge.
 
-    An item whose `check_action` reads False or None is disabled, exactly like
-    its key binding: a click must not reach an action the footer already greys
-    out (Merge/Delete on a live run), since `MenuBar` dispatches straight to the
-    handler with no check of its own."""
+    An item whose `check_action` reads False or None is disabled, like its key
+    binding: the bar dispatches straight to the handler with no check of its own.
+
+    Args:
+        items: The menu's rows.
+        keys: Each action's shortcut label, from the live bindings.
+        screen: The host screen, asked `check_action`.
+    """
     checker = getattr(screen, "check_action", None)
     labels = [keys.get(it.action, "") for it in items]
     label_w = max((len(it.label) for it in items), default=0)
     key_w = max((len(k) for k in labels), default=0)
-    width = label_w + 2 + key_w  # 2-space minimum gap between the two columns
+    width = label_w + 2 + key_w
     opts: list[Option] = []
     for it, key in zip(items, labels, strict=True):
         t = Text(it.label)
-        if key:  # pad so the key's right edge lands at `width`
+        if key:
             t.pad_right(width - len(it.label) - len(key))
             t.append(key, style="dim")
         disabled = checker is not None and not checker(it.action, ())
@@ -204,10 +215,15 @@ def _menu_options(
 def _footer_only_rows(
     source: object, menus: tuple[Menu, ...], keys: dict[str, str]
 ) -> tuple[tuple[str, str], ...]:
-    """(description, shortcut) for each visible footer binding no menu item covers,
-    so the help page lists every advertised shortcut even when a screen binds keys
-    outside its menus. Menu openers (F10 / Alt+letter) are excluded: the page's own
-    footer line covers them."""
+    """Return a description and shortcut per visible footer binding no menu item covers.
+
+    The menu openers are excluded: the help page's own footer line covers them.
+
+    Args:
+        source: A screen, or an app (its current screen is used).
+        menus: The screen's menus.
+        keys: Each action's shortcut label.
+    """
     screen = source if isinstance(source, Screen) else getattr(source, "screen", source)
     covered = {it.action for m in menus for it in m.items}
     rows: list[tuple[str, str]] = []
@@ -215,32 +231,30 @@ def _footer_only_rows(
         binding = active.binding
         if not binding.show or binding.action in covered or binding.action.startswith("menu("):
             continue
-        covered.add(binding.action)  # multi-key actions land once, keys already joined
+        covered.add(binding.action)  # a multi-key action lands once
         rows.append((binding.description or binding.action, keys.get(binding.action, "")))
     return tuple(rows)
 
 
 class HelpScreen(Screen[None]):
-    """A full-screen keys & actions page generated from a screen's menus and its
-    live key bindings, so it is always complete and accurate: every menu action
-    with its shortcut, every visible footer binding a menu doesn't cover, and the
-    screen's extra interaction hints. Sections flow into up-to-3 centered columns
-    and reflow when the terminal resizes. Esc/q (or ? again) closes."""
+    """The keys and actions page, generated from a screen's menus and live bindings.
+
+    Every menu action with its shortcut, every visible footer binding a menu does
+    not cover, and the screen's hints, flowed into up to three centred columns that
+    reflow on a resize.
+    """
 
     BINDINGS: ClassVar = [Binding("escape,q,question_mark,f1", "dismiss", "Close", show=False)]
     CSS = """
     HelpScreen { background: $surface; }
     #help-title { dock: top; height: 1; padding: 0 1; background: $panel; text-style: bold; }
     #help-foot { dock: bottom; height: 1; padding: 0 1; background: $panel; color: $text-muted; }
-    /* The column block is centered as one unit (auto width inside the
-       centering scroll container). */
+    /* The column block is centred as one auto-width unit. */
     #help-scroll { height: 1fr; padding: 1 2; align-horizontal: center; }
     #help-columns { width: auto; height: auto; }
-    /* Columns hug their content; the Statics must be width:auto too (their 1fr
-       default collapses to 0 inside an auto-width parent). Symmetric margins =
-       a 6-cell gap between columns and 3 outside, so centering stays true. */
+    /* The Statics need width:auto too: their 1fr default collapses inside an auto-width parent. */
     .help-col { width: auto; height: auto; margin: 0 3; }
-    .help-col Static { width: auto; pointer: text; }  /* selectable: I-beam */
+    .help-col Static { width: auto; pointer: text; }
     .help-menu { text-style: bold; color: $accent; padding-top: 1; }
     """
 
@@ -252,22 +266,27 @@ class HelpScreen(Screen[None]):
         title: str = "Keys & actions",
         hints: tuple[str, ...] = (),
     ) -> None:
-        """*source* is the screen (or app) whose live bindings the page reflects;
-        *hints* are extra interaction lines the bindings can't express (widget-level
-        keys like the steer bar's Enter/Ctrl-J, or picker navigation)."""
+        """Build the page.
+
+        Args:
+            menus: The screen's menus.
+            source: The screen, or app, whose live bindings the page reflects.
+            title: The page's title line.
+            hints: Interaction lines the bindings cannot express, such as widget keys.
+        """
         super().__init__()
         self._menus = menus
         self._title = title
         self._hints = hints
-        self._keys = action_keys(source)  # action -> live shortcut label(s)
+        self._keys = action_keys(source)
         self._extra = _footer_only_rows(source, menus, self._keys)
 
     def _shortcut(self, it: MenuItem) -> str:
+        """Return the item's shortcut label, or ""."""
         return self._keys.get(it.action, "")
 
     def _sections(self) -> list[tuple[Text, list[tuple[str, str]]]]:
-        """(heading, rows) per section: one per menu (mnemonic underlined, matching
-        the menu bar), then footer-only bindings, then the interaction hints."""
+        """Return a heading and rows per section: each menu, the footer-only keys, the hints."""
         sections = [
             (_title_text(m), [(it.label, self._shortcut(it)) for it in m.items])
             for m in self._menus
@@ -279,11 +298,13 @@ class HelpScreen(Screen[None]):
         return sections
 
     def _columns(self) -> list[list[Static]]:
-        """Pack the sections into columns of roughly equal height, preserving
-        reading order (down a column, then the next). Sections stay whole: the
-        column breaks land on the section boundaries closest to the ideal split
-        points. Within a column the keys right-align to a shared edge, like the
-        menu dropdowns."""
+        """Pack the sections whole into columns of roughly equal height, in reading order.
+
+        Within a column the keys right-align to a shared edge, like the dropdowns.
+
+        Returns:
+            The rendered lines per column.
+        """
         sections = self._sections()
         sizes = [len(rows) + 1 for _, rows in sections]  # +1 per heading
         total = sum(sizes)
@@ -300,8 +321,7 @@ class HelpScreen(Screen[None]):
         out: list[list[Static]] = []
         for col_sections in packed:
             rows = [r for _, section_rows in col_sections for r in section_rows]
-            # Only rows with a key set the alignment edge, so a long keyless
-            # hint line can't push the whole column's keys far from their labels.
+            # Only keyed rows set the edge, so a long hint line cannot push the keys away.
             label_w = max((len(label) for label, key in rows if key), default=0)
             key_w = max((len(key) for _, key in rows), default=0)
             right = label_w + 2 + key_w
@@ -310,7 +330,7 @@ class HelpScreen(Screen[None]):
                 lines.append(Static(heading, classes="help-menu"))
                 for label, key in section_rows:
                     line = Text(label)
-                    if key:  # pad so the key's right edge lands at `right`
+                    if key:
                         line.pad_right(right - len(label) - len(key))
                         line.append(key, style="dim")
                     lines.append(Static(line))
@@ -318,6 +338,11 @@ class HelpScreen(Screen[None]):
         return out
 
     def compose(self) -> ComposeResult:
+        """Lay out the page.
+
+        Yields:
+            The title, the columns and the footer line.
+        """
         yield Static(self._title, id="help-title")
         with VerticalScroll(id="help-scroll"), Horizontal(id="help-columns"):
             for column in self._columns():
@@ -329,55 +354,50 @@ class HelpScreen(Screen[None]):
         )
 
     def _focus_scroll(self) -> None:
-        self.query_one("#help-scroll", VerticalScroll).focus()  # PgUp/PgDn scroll at once
+        """Focus the scroll container, so the page keys scroll at once."""
+        self.query_one("#help-scroll", VerticalScroll).focus()
 
     def on_mount(self) -> None:
+        """Focus the scroll container."""
         self._focus_scroll()
 
     def on_resize(self) -> None:
-        # Reflow: the column count is computed from the width at compose time,
-        # so a terminal resize rebuilds the page (cheap: a few dozen Statics).
-        # Recompose replaces #help-scroll; without a refocus, focus stays on the
-        # detached old instance, whose binding chain does not reach this screen,
-        # so Esc/q/? stop closing the page.
+        """Rebuild the columns for the new width, then refocus the new scroll container."""
+        # Left on the detached old container, focus's binding chain would not reach this screen.
         self.refresh(recompose=True)
         self.call_after_refresh(self._focus_scroll)
 
 
 class _MenuTitle(Static):
-    """One clickable title in the bar. Clicking opens (or toggles/switches) its
-    menu; each title carries its own mnemonic because events.Click has no
-    `.widget` to say which was hit. Titles are deliberately not focusable: a
-    click on one then can't blur the open dropdown, so toggling is a race-free
-    state check, and Tab moves to real content (closing any open menu) instead
-    of hopping between titles. Keyboard opening is Alt+<letter> (menu_bindings)
-    or the command palette; the open dropdown owns arrows/Enter/Left/Right."""
+    """One clickable title in the bar; a click opens, toggles or switches its menu.
+
+    Not focusable: a click then cannot blur the open dropdown, so toggling is a
+    race-free state check, and Tab moves to real content instead of hopping
+    between titles.
+    """
 
     def __init__(self, menu: Menu) -> None:
+        """Create the title for a menu."""
         super().__init__(_title_text(menu), classes="menu-title", id=f"menu-{menu.mnemonic}")
         self.mnemonic = menu.mnemonic
 
     def _bar(self) -> MenuBar:
+        """Return the bar this title sits in."""
         bar = self.parent
         assert isinstance(bar, MenuBar)
         return bar
 
     def on_click(self) -> None:
-        # Titles aren't focusable, so the click didn't blur the open dropdown;
-        # open() toggles (clicking the open title shuts it), switches, or opens.
+        """Open, toggle or switch to this menu."""
         self._bar().open(self.mnemonic)
 
 
 class _Dropdown(OptionList):
-    """The open menu's item list; closes on Esc or focus loss. Carries the
-    mnemonic of the menu it belongs to so the bar can toggle it, and a callback
-    so a pick reaches the bar (it's mounted on the *screen*, not the bar, so its
-    messages don't bubble through the bar).
+    """The open menu's item list; closes on Esc or focus loss.
 
-    The styling lives here, not on MenuBar: the dropdown is mounted on the
-    screen, outside MenuBar's subtree, so MenuBar's rules wouldn't beat
-    OptionList's own defaults (full-width, tall border). `overlay: screen` lifts
-    it out of the screen's layout so it sizes to its content and floats.
+    Mounted on the screen, not the bar, so a pick reaches the bar through a
+    callback and the styling lives here, where it beats `OptionList`'s defaults.
+    `overlay: screen` lifts it out of the layout so it sizes to its content.
     """
 
     DEFAULT_CSS = """
@@ -391,50 +411,47 @@ class _Dropdown(OptionList):
     BINDINGS: ClassVar = [Binding("escape", "close", "Close", show=False)]
 
     def __init__(self, *options: Option, mnemonic: str, on_pick: Callable[[str], None]) -> None:
+        """Create the list for a menu, with the callback a pick reaches the bar through."""
         super().__init__(*options)
         self.mnemonic = mnemonic
         self._on_pick = on_pick
 
     def _bar(self) -> MenuBar:
+        """Return the screen's menu bar."""
         return self.screen.query_one(MenuBar)
 
     def action_close(self) -> None:
-        self._bar().close_menu()  # focus returns to the content underneath
+        """Close the menu; focus returns to the content underneath."""
+        self._bar().close_menu()
 
     def on_blur(self) -> None:
-        # Close only if I'm still the bar's open menu: a genuine dismiss (Tab to
-        # content, click away). If a switch already replaced me (bar._open is now
-        # another menu), I'm a stale dropdown being removed, so don't close the
-        # new one. Routed through close_menu() so the -open highlight clears too.
+        """Close on a genuine dismiss, never when a switch already replaced this dropdown."""
         bar = self._bar()
         if bar.is_open(self.mnemonic):
             bar.close_menu()
 
     def on_key(self, event: events.Key) -> None:
-        # Left/Right switch to the adjacent menu (classic menu-bar feel); the
-        # OptionList itself only uses Up/Down/Enter, so these are free.
+        """Switch to the adjacent menu on Left or Right, keys the list does not use."""
         if event.key in ("left", "right"):
             event.stop()
             self._bar().open_adjacent(self.mnemonic, 1 if event.key == "right" else -1)
 
     @on(OptionList.OptionSelected)
     def _picked(self, event: OptionList.OptionSelected) -> None:
+        """Hand the pick to the bar and close."""
         action = event.option.id
         if action:
             self._on_pick(action)
-        self._bar().close_menu()  # clears the dropdown + the title's -open highlight
+        self._bar().close_menu()
 
 
 class MenuBar(Horizontal):
-    """The single top row: the menu titles on the left, and the app title +
-    context (`agent6 — <path>`) filling the rest on the right. Replaces a
-    separate Header row entirely: one row, no clock, no command-palette icon
-    (the palette is in the Help menu, the footer, and Ctrl+P)."""
+    """The top row: the menu titles on the left, the app title and context on the right."""
 
     DEFAULT_CSS = """
     MenuBar { height: 1; width: 1fr; background: $panel; color: $text; }
     MenuBar > .menu-title { height: 1; width: auto; padding: 0 1; }
-    MenuBar > .menu-title:hover { background: $primary 30%; }  /* $boost is transparent */
+    MenuBar > .menu-title:hover { background: $primary 30%; }
     MenuBar > .menu-title.-open { background: $primary; text-style: bold; }
     MenuBar > .app-title {
         width: 1fr; height: 1; content-align: right middle; color: $text-muted;
@@ -443,20 +460,15 @@ class MenuBar(Horizontal):
     """
 
     class Selected(Message):
-        """An item was chosen. The bar handles its own message
-        (:meth:`on_menu_bar_selected`); the message hop, rather than a direct
-        call from the dropdown's pick handler, lets the dropdown finish
-        closing before the action runs."""
+        """An item was chosen; the message hop lets the dropdown finish closing first."""
 
         def __init__(self, action: str) -> None:
+            """Name the action."""
             self.action = action
             super().__init__()
 
     async def on_menu_bar_selected(self, event: Selected) -> None:
-        # One dispatcher for every screen: the host screen's action_<id> first,
-        # then app-level built-ins (quit, command_palette); await coroutines.
-        # The menu, the key bindings, and the command palette all reach the
-        # same handlers, so the surfaces cannot diverge.
+        """Run the host screen's handler for the action, else the app's."""
         event.stop()
         handler = getattr(self.screen, f"action_{event.action}", None) or getattr(
             self.app, f"action_{event.action}", None
@@ -467,73 +479,66 @@ class MenuBar(Horizontal):
                 await result
 
     def __init__(self, menus: tuple[Menu, ...]) -> None:
+        """Create the bar for a screen's menus."""
         super().__init__()
         self._menus = menus
-        # The currently-open menu (or None). Tracking it in state, rather than
-        # inferring from focus/DOM, lets a dropdown's on_blur tell "I'm being
-        # dismissed" from "I'm being replaced by a switch", with no async race.
+        # Held as state, not inferred from focus, so a dropdown's blur can tell a dismiss from a
+        # switch without a race.
         self._open: str | None = None
-        # The widget that had focus before the menu was opened, so closing the
-        # dropdown returns focus there. Without this, removing the focused
-        # dropdown lets textual's _reset_focus fall to the last focusable widget
-        # in the chain, which then auto-scrolls a scroll container, such as the
-        # config settings pane, to the bottom to reveal it.
+        # Closing returns focus here; otherwise textual's reset falls to the last focusable
+        # widget and auto-scrolls its container to reveal it.
         self._restore_focus: Widget | None = None
 
     def compose(self) -> ComposeResult:
+        """Lay out the bar.
+
+        Yields:
+            A title per menu, then the app title.
+        """
         for m in self._menus:
             yield _MenuTitle(m)
-        yield Static("", classes="app-title")  # app title + path, right-aligned
+        yield Static("", classes="app-title")
 
     def on_mount(self) -> None:
-        # Mirror the app's title/sub_title into the bar's right side, live.
+        """Mirror the app's title and sub-title into the bar, live."""
         self.watch(self.app, "title", self._refresh_title, init=False)
         self.watch(self.app, "sub_title", self._refresh_title, init=False)
         self._refresh_title()
 
     def _refresh_title(self, *_: object) -> None:
+        """Repaint the app title as text, never markup: the sub-title carries a typed task."""
         app = self.app
         parts = [p for p in (app.title, app.sub_title) if p]
-        # Text, never markup: the subtitle carries the task the user typed.
         self.query_one(".app-title", Static).update(Text(" — ".join(parts)))
 
     def open(self, mnemonic: str) -> None:
-        """Open the menu *mnemonic* (a single letter). Opening the menu that is
-        already open toggles it shut."""
+        """Open a menu by mnemonic; opening the one already open toggles it shut."""
         was_open = self._open
-        # Tear down any open dropdown without restoring focus yet (the dispatch
-        # below decides). No menu open -> nothing to tear down anyway.
-        self._teardown()
+        self._teardown()  # keeps the saved focus: a switch reuses it
         if was_open is None:
-            # Opening fresh from content: remember where focus was so closing
-            # returns it there (a switch keeps the earlier-saved widget).
             focused = self.screen.focused
             if focused is not None and not isinstance(focused, _Dropdown):
                 self._restore_focus = focused
         if was_open == mnemonic:
-            self.close_menu()  # toggle: same menu was open -> close + restore focus
+            self.close_menu()
             return
         menu = next((m for m in self._menus if m.mnemonic == mnemonic), None)
         if menu is None:
-            self.close_menu()  # unknown menu: nothing to open, restore focus
+            self.close_menu()
             return
         self._open = mnemonic
-        # Float the dropdown on the screen, pinned one row below its title.
-        # `overlay: screen` lifts it out of layout; absolute_offset places it.
-        # (The 1-row bar clips it to one row; the title Static is not a
-        # container, so it suppresses the title's own text; a plain screen offset
-        # anchors it at the bottom.) No fixed id: remove() is async, so a re-open
-        # could mount a second one before the first is gone (DuplicateIds).
+        # Floated on the screen one row below its title: the one-row bar would clip it. No fixed
+        # id, since remove() is async and a re-open could mount a second one first.
         title = self.query_one(f"#menu-{mnemonic}", _MenuTitle)
         opts = _menu_options(menu.items, action_keys(self.screen), self.screen)
         dd = _Dropdown(*opts, mnemonic=mnemonic, on_pick=self._dispatch)
         self.screen.mount(dd)
         dd.absolute_offset = Offset(title.region.x, title.region.y + 1)
-        title.add_class("-open")  # keep the open menu's title highlighted
+        title.add_class("-open")
         dd.focus()
 
     def is_open(self, mnemonic: str) -> bool:
-        """Whether *mnemonic*'s menu is the one currently open."""
+        """Return whether the menu with the mnemonic is the open one."""
         return self._open == mnemonic
 
     @property
@@ -542,28 +547,21 @@ class MenuBar(Horizontal):
         return self._open is not None
 
     def open_adjacent(self, mnemonic: str, step: int) -> None:
-        """Switch the open menu to the one *step* places left/right (wrapping)."""
+        """Switch the open menu to the one a number of places left or right, wrapping."""
         order = [m.mnemonic for m in self._menus]
         if mnemonic in order:
             self.open(order[(order.index(mnemonic) + step) % len(order)])
 
     def close_menu(self) -> None:
-        """Close any open dropdown, return focus to the opener, and un-highlight
-        all titles."""
+        """Close any open dropdown, return focus to the opener and clear the title highlights."""
         self._teardown()
         self._restore_focus = None
 
     def _teardown(self) -> None:
-        """Remove any open dropdown (returning focus to the opener) and clear the
-        open-title highlights, keeping _restore_focus so a menu *switch* can
-        reuse it. Callers that are truly closing clear it themselves."""
+        """Remove any open dropdown and clear the highlights, keeping the saved focus."""
         self._open = None
-        # Move focus back to the opener before removing the dropdown: with the
-        # dropdown unfocused, textual's _reset_focus on its removal is a no-op,
-        # so it won't fall to the last focusable widget and auto-scroll a scroll
-        # container (e.g. config #settings) to the bottom. Use set_focus, not
-        # Widget.focus (which defers via call_later, leaving the dropdown
-        # focused at removal time).
+        # Focus moves back before the removal, through set_focus (Widget.focus defers), so
+        # textual's reset on the removal is a no-op.
         restore = self._restore_focus
         if restore is not None and restore.is_attached and self.screen.focused is not restore:
             self.screen.set_focus(restore, scroll_visible=False)
@@ -572,4 +570,5 @@ class MenuBar(Horizontal):
             t.remove_class("-open")
 
     def _dispatch(self, action: str) -> None:
+        """Post the pick as a `Selected` message."""
         self.post_message(self.Selected(action))

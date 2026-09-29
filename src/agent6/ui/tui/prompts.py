@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Prompt dispatch for a TUI view over a session's fold: one modal per
-unanswered question (every view docks its approvals as a row), its answer
-written to that session's file bridge, and the claim every surface takes a
-prompt through. Shared by the run views and the machine watch view."""
+"""Prompt dispatch for a TUI view over a session's fold.
+
+One modal per unanswered question (approvals dock as a row instead), its answer
+written to the session's file bridge, and the claim every surface takes a prompt
+through. Shared by the run views and the machine watch view.
+"""
 
 from __future__ import annotations
 
@@ -19,22 +21,27 @@ from agent6.viewmodel.state import SessionState
 
 
 class PromptDispatcher:
-    """Pops each pending prompt once, keyed by (session dir, prompt id): a
-    session boundary restarts the id counters (`reset`), and a machine's next
-    agent state has its own dir. An answer submitted once *answerable* turns
-    false (the worker died mid-modal) is dropped with the *lost* warning
-    instead of written to a file nobody polls."""
+    """Pop each pending prompt once, keyed by session dir and prompt id.
+
+    A session boundary restarts the id counters (`reset`); a machine's next agent
+    state has its own dir. An answer submitted once `answerable` turns false (the
+    worker died mid-modal) is dropped with the `lost` warning instead of written
+    to a file nobody polls.
+    """
 
     def __init__(self, app: App[Any], *, answerable: Callable[[], bool], lost: str) -> None:
+        """Bind the dispatcher to the app, its liveness check and the lost-answer text."""
         self._app = app
         self._answerable = answerable
         self._lost = lost
         self._seen: set[str] = set()
 
     def reset(self) -> None:
+        """Forget every claimed prompt, at a session boundary."""
         self._seen.clear()
 
     def dispatch(self, session_dir: Path, state: SessionState) -> None:
+        """Push a modal for each unanswered, unclaimed question in the state."""
         for qp in state.pending_questions:
             if not qp.answered and self.claim(session_dir, qp.id):
                 self._app.push_screen(
@@ -43,9 +50,18 @@ class PromptDispatcher:
                 )
 
     def claim(self, session_dir: Path, prompt_id: str) -> bool:
-        """True the first time a surface takes a prompt (a modal pushed, an
-        inline answer given); every surface asks here, so a prompt answered on
-        one screen never reopens on another before its answer event folds."""
+        """Claim a prompt for one surface.
+
+        Every surface asks here, so a prompt answered on one screen never reopens
+        on another before its answer event folds.
+
+        Args:
+            session_dir: The prompt's session.
+            prompt_id: The prompt's id within it.
+
+        Returns:
+            True the first time, False once claimed.
+        """
         key = f"{session_dir}|{prompt_id}"
         if key in self._seen:
             return False
@@ -53,6 +69,7 @@ class PromptDispatcher:
         return True
 
     def seen(self, session_dir: Path, prompt_id: str) -> bool:
+        """Return whether the prompt was claimed."""
         return f"{session_dir}|{prompt_id}" in self._seen
 
     def _on_question(

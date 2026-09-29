@@ -1,17 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Copy-to-clipboard primitives for the TUI, framework-agnostic.
+"""Copy-to-clipboard primitives for the TUI, with no textual import.
 
-Over SSH the only route to the operator's local clipboard is OSC 52 through the
-terminal (a remote xclip/wl-copy would hit the server's non-existent clipboard).
-byobu/tmux swallow a bare app OSC 52 unless configured, so we offer wrapped
-variants and tmux's own set-buffer. `resolve_method("auto")` picks a sane
-default per environment; the operator can pin one via the `copy_method` UI
-preference (see `settings`).
-
-Pure string/subprocess helpers only: no textual import, so the conversation view
-and any dashboard card can reuse them. The Textual-coupled paths (suspend to the
-native terminal, pager) live in the view.
+Over SSH the only route to the operator's clipboard is OSC 52 through the
+terminal; tmux and screen swallow a bare one unless configured, so wrapped
+variants and tmux's own `set-buffer` exist beside it. `resolve_method("auto")`
+picks per environment; the `copy_method` UI preference pins one.
 """
 
 from __future__ import annotations
@@ -35,23 +29,36 @@ COPY_METHODS: tuple[CopyMethod, ...] = (
 
 
 def osc52_sequence(text: str, *, wrap: str) -> str:
-    """An OSC 52 clipboard-set escape. `wrap="tmux"`/`"screen"` wraps it for
-    that multiplexer's passthrough so it reaches the outer terminal instead of
-    being swallowed; `wrap=""` is the bare sequence."""
+    """Return an OSC 52 clipboard-set escape.
+
+    Args:
+        text: The text to put on the clipboard.
+        wrap: "tmux" or "screen" wraps it for that multiplexer's passthrough; "" is bare.
+
+    Returns:
+        The escape sequence.
+    """
     b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
     seq = f"\x1b]52;c;{b64}\x07"
-    if wrap == "tmux":  # tmux DCS passthrough: double every inner ESC, wrap in DCS
+    if wrap == "tmux":  # DCS passthrough with every inner ESC doubled
         return "\x1bPtmux;" + seq.replace("\x1b", "\x1b\x1b") + "\x1b\\"
-    if wrap == "screen":  # GNU screen passthrough (long payloads would need chunking)
+    if wrap == "screen":  # a long payload would need chunking
         return "\x1bP" + seq + "\x1b\\"
     return seq
 
 
 def mux_passthrough(seq: str) -> str:
-    """Wrap a terminal escape for the active multiplexer's passthrough (tmux DCS
-    with doubled inner ESCs; GNU screen DCS), else return it bare. Inside tmux
-    the outer terminal additionally needs `allow-passthrough on` (off by
-    default since tmux 3.3)."""
+    """Wrap a terminal escape for the active multiplexer's passthrough, else return it bare.
+
+    Inside tmux the outer terminal also needs `allow-passthrough on` (off by default
+    since tmux 3.3).
+
+    Args:
+        seq: The escape sequence.
+
+    Returns:
+        The sequence, wrapped for tmux or screen when one is active.
+    """
     if os.environ.get("TMUX"):
         return "\x1bPtmux;" + seq.replace("\x1b", "\x1b\x1b") + "\x1b\\"
     if os.environ.get("STY"):
@@ -60,21 +67,37 @@ def mux_passthrough(seq: str) -> str:
 
 
 def resolve_method(pref: str) -> str:
-    """The concrete method for *pref* (from the `copy_method` UI pref, so any
-    string); `"auto"` chooses per environment, anything else passes through."""
+    """Return the concrete copy method for a preference.
+
+    Args:
+        pref: The `copy_method` UI preference, any string.
+
+    Returns:
+        The preference itself, or for "auto" the method chosen for this environment.
+    """
     if pref != "auto":
         return pref
     if os.environ.get("TMUX"):
-        return "tmux-buffer"  # tmux emits the OSC 52 itself, the most reliable path
+        return "tmux-buffer"  # tmux emits the OSC 52 itself
     if os.environ.get("STY"):
-        return "osc52-screen"  # screen: its own DCS wrap (set-buffer is tmux-only)
+        return "osc52-screen"
     return "osc52"
 
 
 def emit_clipboard(text: str, method: str, write: Callable[[str], None]) -> str:
-    """Copy *text* using a concrete *method*. *write* emits a raw terminal escape
-    (the caller supplies the driver write); the `tmux-buffer` method shells to
-    `tmux set-buffer -w` instead. Returns a short human status."""
+    """Copy text to the clipboard by a concrete method.
+
+    Args:
+        text: The text to copy.
+        method: A resolved method, never "auto".
+        write: Emits a raw terminal escape; the driver's write.
+
+    Returns:
+        A short status naming the route taken.
+
+    Raises:
+        subprocess.CalledProcessError: `tmux set-buffer` failed.
+    """
     if method == "tmux-buffer":
         subprocess.run(["tmux", "set-buffer", "-w", text], check=True)
         return "via tmux set-buffer -w"
@@ -84,7 +107,7 @@ def emit_clipboard(text: str, method: str, write: Callable[[str], None]) -> str:
 
 
 def write_transcript_file(text: str) -> Path:
-    """Write *text* to a temp file and return its path (for the write-to-file copy)."""
+    """Return the path of a new temp file holding the text."""
     fd, name = tempfile.mkstemp(prefix="agent6-transcript-", suffix=".txt")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(text)

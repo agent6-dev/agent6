@@ -1,21 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""UI-only preferences for the TUI (theme, copy method).
+"""The TUI's own preferences: the theme and the copy method.
 
-Stored in `<global-config-dir>/ui.toml`, a sibling of `config.toml` and
-`secrets.toml`, not part of the agent config. A theme or a copy method is a
-viewer preference, not agent behavior, so it must never go through the config
-schema or the (shareable, per-repo) config layers. This module is the whole
-contract:
-
-    get_theme() / save_theme(name)
-    get_copy_method() / save_copy_method(name)
-
-Everything is best-effort: a missing, unreadable, or corrupt `ui.toml` degrades
-to the default, since a UI preference must never break the TUI. Writes are
-atomic and `chown`-ed back to the real user under sudo (same idiom as
-`secrets.py`); there's deliberately no `tomli_w` dependency, the writer is a
-tiny hand-rolled serializer for the one flat `[ui]` table.
+Stored in `<global-config-dir>/ui.toml`, beside `config.toml`, never in the agent
+config: a viewer preference is not agent behaviour and never goes through the
+shareable config layers. Everything is best-effort, since a preference must never
+break the TUI: a missing or corrupt file reads as the defaults, and a failed save
+is swallowed. Writes are atomic and chowned back to the real user under sudo.
 """
 
 from __future__ import annotations
@@ -37,7 +28,7 @@ DEFAULT_COPY_METHOD = "auto"
 
 
 def load_ui_settings(user: RealUser | None = None) -> dict[str, Any]:
-    """Read `ui.toml`; `{}` if absent, unreadable, or corrupt (never raises)."""
+    """Return the parsed `ui.toml`, or {} when absent, unreadable or corrupt."""
     path = ui_settings_path(user)
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
@@ -46,15 +37,14 @@ def load_ui_settings(user: RealUser | None = None) -> dict[str, Any]:
 
 
 def get_theme(default: str = DEFAULT_THEME) -> str:
-    """The persisted theme name, or *default* when unset/invalid."""
+    """Return the persisted theme name, or the default when unset."""
     ui = load_ui_settings().get("ui")
     name = ui.get("theme") if isinstance(ui, dict) else None
     return name if isinstance(name, str) and name else default
 
 
 def _save_ui_key(key: str, value: str, user: RealUser | None = None) -> None:
-    """Persist `[ui].<key> = value` atomically. Best-effort: a failed save is
-    swallowed so a viewer preference can never break the UI."""
+    """Persist one `[ui]` key atomically; a failed save is swallowed."""
     user = user or effective_user()
     path = ui_settings_path(user)
     data = load_ui_settings(user)
@@ -65,37 +55,34 @@ def _save_ui_key(key: str, value: str, user: RealUser | None = None) -> None:
     data["ui"] = ui
     try:
         mkdir_for_real_user(path.parent, user)
-        # atomic_write uses mkstemp (unpredictable name, O_EXCL): a pre-planted
-        # `ui.toml.tmp` symlink cannot redirect this write. A fixed `.tmp` +
-        # write_text (O_CREAT|O_TRUNC) would follow such a symlink, and this
-        # path can run under sudo (it chowns to the real user): an
-        # arbitrary-file truncate-as-root primitive.
+        # mkstemp (O_EXCL, unpredictable name): a planted `ui.toml.tmp` symlink cannot redirect
+        # the write, which can run as root under sudo; a fixed `.tmp` would follow it.
         atomic_write(path, _render_ui_toml(data))
         chown_to_real_user(path.parent, user)
         chown_to_real_user(path, user)
     except OSError:
-        pass  # a viewer preference is not worth a crash
+        pass
 
 
 def save_theme(name: str, user: RealUser | None = None) -> None:
-    """Persist `[ui].theme = name` (best-effort)."""
+    """Persist the theme name."""
     _save_ui_key("theme", name, user)
 
 
 def get_copy_method(default: str = DEFAULT_COPY_METHOD) -> str:
-    """The persisted copy method, or *default* when unset/invalid."""
+    """Return the persisted copy method, or the default when unset."""
     ui = load_ui_settings().get("ui")
     name = ui.get("copy_method") if isinstance(ui, dict) else None
     return name if isinstance(name, str) and name else default
 
 
 def save_copy_method(name: str, user: RealUser | None = None) -> None:
-    """Persist `[ui].copy_method = name` (best-effort)."""
+    """Persist the copy method."""
     _save_ui_key("copy_method", name, user)
 
 
 def _render_ui_toml(data: dict[str, Any]) -> str:
-    """Render the flat `[ui]` table back to TOML (no `tomli_w` dependency)."""
+    """Return the flat `[ui]` table as TOML; a hand serializer, so no `tomli_w` dependency."""
     lines = ["# agent6 UI preferences (theme, etc.). Written by the TUI.", ""]
     ui = data.get("ui")
     if isinstance(ui, dict) and ui:

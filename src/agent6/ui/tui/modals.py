@@ -1,17 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Modal screens for the agent6 TUI: approval (y/n), steer (free text),
-question (selectable options + free text), and history search (pick a past
-message to edit).
+"""The TUI's modal screens: confirm, steer, question, history search and the read-only views.
 
-These are pure textual widgets, they take a prompt and `dismiss()` a result.
-The app wires the result back through the file bridge (see frontend.approval); nothing
-here touches the harness, so any other front-end can drop them in or replace
-them.
-
-Unlike the theme/edit/provider/help overlays, these consequential prompts have
-no backdrop-click-to-close: an accidental click outside must not silently
-approve/deny/answer, so dismissal is explicit (buttons / keys) only.
+Each takes a prompt and dismisses a result; the app wires the result to the file
+bridge. A consequential prompt closes only by a key or a button, never a backdrop
+click, so an accidental click cannot answer it.
 """
 
 from __future__ import annotations
@@ -29,14 +22,7 @@ from textual.widgets import Button, Input, Static, TextArea
 from agent6.ui.tui.widgets import TypeaheadField
 from agent6.viewmodel.state import Question
 
-# The answer letters, the CLI prompt's, on every surface: y allow, a allow all
-# (this session), n deny, d deny all. The run views answer inline (composer.ApprovalRow);
-# this dialog is the machine watch's, which has no composer to answer beside.
-
-# Uniform arrow-key focus navigation for every consequential modal: Tab already
-# moves focus; these make the arrows do the same, so the dialogs navigate the way
-# the rest of the TUI does. left/right in a focused Input still move the cursor
-# (the Input consumes them), so only up/down bubble to focus there.
+# The arrows move focus like Tab; a focused Input consumes left and right for its cursor.
 _ARROW_NAV = (
     Binding("down", "app.focus_next", "next", show=False),
     Binding("up", "app.focus_previous", "prev", show=False),
@@ -45,13 +31,9 @@ _ARROW_NAV = (
 )
 
 
-# Modal frames pin a static round $accent (focused) border: a modal always owns
-# focus, so it always shows the focused accent; the $primary<->$accent
-# resting/focus toggle is only for non-modal cards where focus actually moves.
+# A modal's frame is the focused accent border: a modal always owns the focus.
 class ConfirmModal(ModalScreen[bool]):
-    """A generic yes/no confirmation (title + body). y confirms; n / Esc / q cancel.
-    No backdrop-click dismissal, matching the other consequential modals. Defaults
-    focus to Cancel so an accidental Enter is safe."""
+    """A yes/no confirmation; focus defaults to Cancel, so an accidental Enter is safe."""
 
     DEFAULT_CSS = """
     ConfirmModal { align: center middle; }
@@ -74,44 +56,52 @@ class ConfirmModal(ModalScreen[bool]):
         Binding("n", "cancel", "No", show=True),
         Binding("N", "cancel", "No", show=False),
         Binding("escape", "cancel", "No", show=False),
-        # The footer under the modal reads "Esc/q Back" on every page that opens one.
-        Binding("q", "cancel", "No", show=False),
+        Binding("q", "cancel", "No", show=False),  # the footer under a modal reads "Esc/q Back"
     ]
 
     def __init__(self, title: str, body: str, *, confirm_label: str = "Confirm") -> None:
+        """Create the dialog with its title, body and the confirm button's label."""
         super().__init__()
         self._title = title
         self._body = body
         self._confirm_label = confirm_label
 
     def compose(self) -> ComposeResult:
+        """Lay out the dialog.
+
+        Yields:
+            The text and the two buttons.
+        """
         with Container(id="confirm-box"):
             text = Text()
             text.append(f"{self._title}\n\n", style="bold")
-            text.append(self._body)  # plain append: never parsed as markup
+            text.append(self._body)  # never parsed as markup
             yield Static(text)
             with Horizontal(id="confirm-buttons"):
                 yield Button(f"{self._confirm_label} (y)", id="yes", variant="success")
                 yield Button("Cancel (n)", id="no", variant="error")
 
     def on_mount(self) -> None:
-        self.query_one("#no", Button).focus()  # default to the safe choice
+        """Focus Cancel."""
+        self.query_one("#no", Button).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Dismiss with the button's answer."""
         self.dismiss(event.button.id == "yes")
 
     def action_confirm(self) -> None:
+        """Dismiss with yes."""
         self.dismiss(True)
 
     def action_cancel(self) -> None:
+        """Dismiss with no."""
         self.dismiss(False)
 
 
 class SteerModal(ModalScreen[str]):
-    """Steer the run: inject a multi-line instruction, or continue as-is. Stopping
-    is a separate action: this dialog never stops the run.
+    """Steer the run with a multi-line instruction, or continue as is.
 
-    Result string: "" = continue, anything else = the steering instruction.
+    The result is the instruction, or "" to continue; the dialog never stops the run.
     """
 
     DEFAULT_CSS = """
@@ -133,16 +123,19 @@ class SteerModal(ModalScreen[str]):
         *_ARROW_NAV,
         Binding("ctrl+s", "send", "Send", show=False),
         Binding("escape", "cont", "Continue", show=False),
-        # The same undo key the composer bar has (ctrl+z is the app's Detach).
-        Binding("ctrl+underscore", "undo_text", "Undo", show=False),
+        Binding("ctrl+underscore", "undo_text", "Undo", show=False),  # the composer's undo key
     ]
 
     def compose(self) -> ComposeResult:
+        """Lay out the dialog.
+
+        Yields:
+            The text, the input and the two buttons.
+        """
         with Container(id="steer-box"):
             body = Text()
             body.append("Steer this run\n\n", style="bold")
-            # Split at the clause boundary so a narrow terminal (the box is 80%
-            # wide) never wraps mid-phrase.
+            # Split at the clause, so a narrow terminal never wraps mid-phrase.
             body.append("Type an instruction (multi-line) then Send it,\nor Continue as-is.")
             yield Static(body)
             yield TextArea(id="steer-input", soft_wrap=True)
@@ -151,31 +144,32 @@ class SteerModal(ModalScreen[str]):
                 yield Button("Continue", id="continue", variant="success")
 
     def on_mount(self) -> None:
+        """Focus the input."""
         self.query_one("#steer-input", TextArea).focus()
 
     def _text(self) -> str:
+        """Return the typed instruction, stripped."""
         return self.query_one("#steer-input", TextArea).text.strip()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Send or continue, by the button."""
         self.dismiss(self._text() if event.button.id == "send" else "")
 
     def action_send(self) -> None:
+        """Dismiss with the instruction."""
         self.dismiss(self._text())
 
     def action_cont(self) -> None:
+        """Dismiss with continue."""
         self.dismiss("")
 
     def action_undo_text(self) -> None:
+        """Undo the last edit."""
         self.query_one("#steer-input", TextArea).undo()
 
 
 class ToolCallDetailModal(ModalScreen[None]):
-    """Read-only detail of one tool-call row: the full args + summary the inline
-    table truncates to fit its columns. Informational, so clicking the backdrop
-    closes it (unlike the consequential approval/steer modals). The text areas are
-    read-only but selectable, so a long command, path, or payload can be copied.
-    Esc closes; the args area is focused so arrow/page keys scroll it at once.
-    """
+    """The full args and summary of one tool call, selectable; Esc or the backdrop closes."""
 
     DEFAULT_CSS = """
     ToolCallDetailModal { align: center middle; }
@@ -187,19 +181,18 @@ class ToolCallDetailModal(ModalScreen[None]):
     #toolcall-box TextArea {
         height: auto; max-height: 24; border: round $primary; background: $surface;
     }
-    /* Read-only: no caret, which would read as an editable field. */
+    /* No caret: it would read as an editable field. */
     #toolcall-box TextArea .text-area--cursor { background: transparent; color: $foreground; }
     """
 
     BINDINGS: ClassVar = [
-        Binding("escape", "close", "Close", show=True),
-        # enter/q also close, but the focused read-only TextArea may swallow them;
-        # Esc is the one that always bubbles, so it is the advertised key.
+        Binding("escape", "close", "Close", show=True),  # the one key the text area never swallows
         Binding("enter", "close", "Close", show=False),
         Binding("q", "close", "Close", show=False),
     ]
 
     def __init__(self, name: str, ok: bool | None, args: str, summary: str) -> None:
+        """Create the view for a tool call's name, verdict, args and summary."""
         super().__init__()
         self._name = name
         self._ok = ok
@@ -207,6 +200,11 @@ class ToolCallDetailModal(ModalScreen[None]):
         self._summary = summary or "(no summary)"
 
     def compose(self) -> ComposeResult:
+        """Lay out the view.
+
+        Yields:
+            The header, then the args and the summary, each labelled.
+        """
         status = "… in flight" if self._ok is None else ("✓ ok" if self._ok else "✗ failed")
         with Vertical(id="toolcall-box"):
             header = Text()
@@ -219,19 +217,21 @@ class ToolCallDetailModal(ModalScreen[None]):
             yield TextArea(self._summary, read_only=True, soft_wrap=True, id="tc-summary")
 
     def on_mount(self) -> None:
+        """Focus the args, so the page keys scroll them at once."""
         self.query_one("#tc-args", TextArea).focus()
 
     def on_click(self, event: events.Click) -> None:
-        if event.widget is self:  # click on the backdrop (outside the box) = close
+        """Close on a click outside the box."""
+        if event.widget is self:
             self.dismiss(None)
 
     def action_close(self) -> None:
+        """Close."""
         self.dismiss(None)
 
 
 class TextModal(ModalScreen[None]):
-    """A titled read-only text view (`/restate`, `/shells`), selectable.
-    Informational, so Esc and the backdrop close it."""
+    """A titled read-only text view, selectable; Esc or the backdrop closes."""
 
     DEFAULT_CSS = """
     TextModal { align: center middle; }
@@ -242,7 +242,7 @@ class TextModal(ModalScreen[None]):
     #text-box TextArea {
         height: auto; max-height: 32; border: round $primary; background: $surface;
     }
-    /* Read-only: no caret, which would read as an editable field. */
+    /* No caret: it would read as an editable field. */
     #text-box TextArea .text-area--cursor { background: transparent; color: $foreground; }
     """
 
@@ -252,29 +252,37 @@ class TextModal(ModalScreen[None]):
     ]
 
     def __init__(self, title: str, text: str) -> None:
+        """Create the view for a title and its text."""
         super().__init__()
         self._title = title
         self._text = text
 
     def compose(self) -> ComposeResult:
+        """Lay out the view.
+
+        Yields:
+            The title and the text.
+        """
         with Vertical(id="text-box"):
             yield Static(Text(self._title, style="bold"))
             yield TextArea(self._text, read_only=True, soft_wrap=True, id="text-view")
 
     def on_mount(self) -> None:
+        """Focus the text."""
         self.query_one("#text-view", TextArea).focus()
 
     def on_click(self, event: events.Click) -> None:
+        """Close on a click outside the box."""
         if event.widget is self:
             self.dismiss(None)
 
     def action_close(self) -> None:
+        """Close."""
         self.dismiss(None)
 
 
 class TextInputModal(ModalScreen[str | None]):
-    """A one-line text prompt (title + input). Enter submits the text; Esc
-    dismisses with None (cancelled). Used for the machine `poke` message box."""
+    """A one-line text prompt; Enter submits the text, Esc dismisses with None."""
 
     DEFAULT_CSS = """
     TextInputModal { align: center middle; }
@@ -288,31 +296,41 @@ class TextInputModal(ModalScreen[str | None]):
     BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel", show=False)]
 
     def __init__(self, title: str, placeholder: str = "") -> None:
+        """Create the prompt with its title and the input's placeholder."""
         super().__init__()
         self._title = title
         self._placeholder = placeholder
 
     def compose(self) -> ComposeResult:
+        """Lay out the prompt.
+
+        Yields:
+            The title and the input.
+        """
         with Container(id="ti-box"):
             yield Static(Text(self._title, style="bold"))
             yield Input(placeholder=self._placeholder, id="ti-input")
 
     def on_mount(self) -> None:
+        """Focus the input."""
         self.query_one("#ti-input", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Dismiss with the text."""
         self.dismiss(event.value)
 
     def action_cancel(self) -> None:
+        """Dismiss with None."""
         self.dismiss(None)
 
 
 class HistorySearchModal(ModalScreen[str | None]):
-    """Ctrl-R: pick one of this session's past messages to edit and resend.
-    Type to narrow, ↓/↑ highlight, Enter keeps the highlighted match (the
-    typed text when none is highlighted); Esc or a backdrop click cancels.
-    Picking is never consequential (sending still takes Enter in the composer),
-    so unlike the consequential prompts above, the backdrop closes it."""
+    """Pick one of the session's past messages to edit and resend.
+
+    Enter keeps the highlighted match, or the typed text when none is; Esc or the
+    backdrop cancels, since a pick is not consequential: sending still takes Enter
+    in the composer.
+    """
 
     DEFAULT_CSS = """
     HistorySearchModal { align: center middle; }
@@ -330,34 +348,45 @@ class HistorySearchModal(ModalScreen[str | None]):
     ]
 
     def __init__(self, entries: list[str]) -> None:
+        """Create the search over the past messages."""
         super().__init__()
         self._entries = entries
 
     def compose(self) -> ComposeResult:
+        """Lay out the search.
+
+        Yields:
+            The title, the typeahead field and the hint.
+        """
         with Container(id="hs-box"):
             yield Static(Text("Search past messages", style="bold"))
             yield TypeaheadField("", self._entries, id="hs-field")
             yield Static("↑↓ highlight · Enter fills the composer · Esc closes", id="hs-hint")
 
     def on_mount(self) -> None:
+        """Focus the field."""
         self.query_one("#hs-field", TypeaheadField).focus()
 
     def on_click(self, event: events.Click) -> None:
-        if event.widget is self:  # click on the backdrop (outside the box) = cancel
+        """Cancel on a click outside the box."""
+        if event.widget is self:
             self.dismiss(None)
 
     def action_submit(self) -> None:
+        """Dismiss with the field's value, or None when empty."""
         self.dismiss(self.query_one("#hs-field", TypeaheadField).value or None)
 
     def action_cancel(self) -> None:
+        """Dismiss with None."""
         self.dismiss(None)
 
 
 class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
-    """An `ask_user` prompt: one or more related questions the operator answers
-    together and reviews before submitting. Each question has an answer field; its
-    option buttons fill that field (or type free text). Submit (Ctrl+S) returns all
-    answers aligned to the questions; Esc submits empties (the agent gets defaults).
+    """An `ask_user` prompt: related questions answered together and submitted at once.
+
+    Each question has an answer field its option buttons fill. Submit returns the
+    answers aligned to the questions; Esc submits empties, so the agent gets its
+    defaults.
     """
 
     DEFAULT_CSS = """
@@ -368,9 +397,7 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
     }
     #question-list { height: auto; }
     .q-text { margin-top: 1; text-style: bold; }
-    /* One-row pieces, like the config dialogs and the pickers: options are flat
-       chips (a click fills the answer field under them), each answer a flat
-       field, Submit a flat action. */
+    /* One-row pieces, like the config dialogs: flat option chips, flat fields, a flat action. */
     .q-opts { height: auto; margin-top: 1; }
     #question-box .q-opts Button {
         width: auto; min-width: 0; height: 1; margin: 0 1 0 0; padding: 0 1;
@@ -400,12 +427,19 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
     def __init__(
         self, question_id: str, questions: tuple[Question, ...], *, from_harness: bool = False
     ) -> None:
+        """Create the prompt for a question id and its questions."""
         super().__init__()
         self.question_id = question_id
         self.questions = questions
         self.from_harness = from_harness
 
     def compose(self) -> ComposeResult:
+        """Lay out the prompt.
+
+        Yields:
+            The header, then per question its text, its option chips and its answer
+            field, then Submit and the hint.
+        """
         multi = len(self.questions) > 1
         with Vertical(id="question-box"):
             head = Text()
@@ -419,11 +453,10 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
                     body = Text()
                     if multi:
                         body.append(f"{qi + 1}. ", style="bold")
-                    body.append(q.question)  # plain append: never parsed as markup
+                    body.append(q.question)  # never parsed as markup
                     yield Static(body, classes="q-text")
                     if q.options:
-                        # Buttons carry Text so an option with '[...]' can't crash
-                        # markup parsing; pressing one fills that answer field.
+                        # Text labels, so an option holding brackets is not parsed as markup.
                         with Horizontal(classes="q-opts"):
                             for oi, opt in enumerate(q.options):
                                 yield Button(Text(opt), id=f"opt-{qi}-{oi}", compact=True)
@@ -436,18 +469,20 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
             yield Static("Enter next field · Ctrl+S submit · Esc skip", id="question-hint")
 
     def on_mount(self) -> None:
+        """Focus the first answer field."""
         self.query_one("#ans-0", Input).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Submit, or fill a question's field with the pressed option."""
         bid = event.button.id or ""
         if bid == "question-submit":
             self.action_submit()
-        elif bid.startswith("opt-"):  # opt-{qi}-{oi}: fill that question's field
+        elif bid.startswith("opt-"):
             _, qi, oi = bid.split("-")
             self.query_one(f"#ans-{qi}", Input).value = self.questions[int(qi)].options[int(oi)]
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        # Enter advances to the next field, or submits on the last one.
+        """Advance to the next field on Enter, or submit from the last one."""
         idx = int((event.input.id or "ans-0").removeprefix("ans-"))
         if idx + 1 < len(self.questions):
             self.query_one(f"#ans-{idx + 1}", Input).focus()
@@ -455,10 +490,12 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
             self.action_submit()
 
     def action_submit(self) -> None:
+        """Dismiss with every answer, stripped."""
         answers = tuple(
             self.query_one(f"#ans-{qi}", Input).value.strip() for qi in range(len(self.questions))
         )
         self.dismiss(answers)
 
     def action_skip(self) -> None:
+        """Dismiss with an empty answer per question."""
         self.dismiss(tuple("" for _ in self.questions))

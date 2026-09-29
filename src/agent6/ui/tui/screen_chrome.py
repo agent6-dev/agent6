@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""What every screen with a menu bar shares: the palette source over its
-menus, and the actions each menu bar offers (open a menu by mnemonic, the
-help page, the theme and copy-method pickers)."""
+"""What every screen with a menu bar shares.
+
+The palette source over its menus, and the actions each menu bar offers: open a
+menu by mnemonic, the help page, the theme and copy-method pickers.
+"""
 
 from __future__ import annotations
 
@@ -21,11 +23,19 @@ PaletteCommand = tuple[str, Callable[[], Any], str]  # (label, runnable, help)
 
 
 def menu_palette_commands(screen: Screen[Any], menus: tuple[Menu, ...]) -> Iterator[PaletteCommand]:
-    """(label, runnable, help) per menu action of *screen*, for the Ctrl+P
-    palette: the same registry as the menu bar and the key bindings, so the
-    surfaces never drift. The handler is the screen's, else the app's (a run
-    view's Run menu resolves on the Agent6TUI host); the palette opener and
-    Quit are textual's own."""
+    """Yield the Ctrl+P palette commands for a screen's menus.
+
+    The same registry as the menu bar and the key bindings, so the surfaces never
+    drift. The handler is the screen's, else the app's; the palette opener and
+    Quit are textual's own.
+
+    Args:
+        screen: The screen whose actions the handlers resolve on.
+        menus: The screen's menus.
+
+    Yields:
+        A label, runnable and help text per menu action.
+    """
     for menu in menus:
         for item in menu.items:
             if item.action in ("command_palette", "quit"):
@@ -38,8 +48,7 @@ def menu_palette_commands(screen: Screen[Any], menus: tuple[Menu, ...]) -> Itera
 
 
 class MenuCommands(Provider):
-    """The one Ctrl+P palette provider: hits are the screen's
-    `palette_commands()` (a `ScreenChrome` screen, or any screen defining it)."""
+    """The one Ctrl+P palette provider; hits are the screen's `palette_commands()`."""
 
     def _commands(self) -> Iterator[PaletteCommand]:
         source = getattr(self.screen, "palette_commands", None)
@@ -48,10 +57,12 @@ class MenuCommands(Provider):
         return iter(cast(Iterator[PaletteCommand], source()))
 
     async def discover(self) -> Hits:
+        """Yield every command for the empty query."""
         for name, runnable, help_text in self._commands():
             yield DiscoveryHit(name, runnable, help=help_text)
 
     async def search(self, query: str) -> Hits:
+        """Yield the commands whose label matches the query, scored."""
         matcher = self.matcher(query)
         for name, runnable, help_text in self._commands():
             score = matcher.match(name)
@@ -60,24 +71,33 @@ class MenuCommands(Provider):
 
 
 class ScreenChrome:
-    """Mix into a Screen (before Screen in the bases) that composes a MenuBar.
-    The screen declares `MENUS` (or overrides `menus()` for per-instance
-    menus); `HELP_TITLE` and `HELP_HINTS` feed its help page."""
+    """The mixin for a screen that composes a `MenuBar`; listed before `Screen` in the bases.
+
+    The screen declares `MENUS` or overrides `menus()` for per-instance menus;
+    `HELP_TITLE` and `HELP_HINTS` feed its help page.
+    """
 
     MENUS: ClassVar[tuple[Menu, ...]] = ()
     HELP_TITLE: ClassVar[str] = "agent6 — keys & actions"
     HELP_HINTS: ClassVar[tuple[str, ...]] = ()
 
     def menus(self) -> tuple[Menu, ...]:
+        """Return the screen's menus."""
         return self.MENUS
 
     def palette_commands(self) -> Iterator[PaletteCommand]:
+        """Return the palette commands over the screen's menus."""
         return menu_palette_commands(cast(Screen[Any], self), self.menus())
 
     def close_open_list(self) -> bool:
-        """Close the open menu or dropdown list, if any, and say whether one
-        was open. A screen's Esc binding has priority, so it fires before the
-        list's own: Back calls this first, and leaves only when nothing closed."""
+        """Close the open menu or dropdown list, if any.
+
+        A screen's Esc binding fires before the list's own, so Back calls this
+        first and leaves only when nothing closed.
+
+        Returns:
+            Whether one was open.
+        """
         screen = cast(Screen[Any], self)
         bar = screen.query_one(MenuBar)
         if bar.opened:
@@ -91,16 +111,20 @@ class ScreenChrome:
         return False
 
     def action_menu(self, mnemonic: str) -> None:
+        """Open the menu with the mnemonic."""
         cast(Screen[Any], self).query_one(MenuBar).open(mnemonic)
 
     def action_help(self) -> None:
+        """Push the help page."""
         screen = cast(Screen[Any], self)
         screen.app.push_screen(
             HelpScreen(self.menus(), screen, title=self.HELP_TITLE, hints=self.HELP_HINTS)
         )
 
     def action_choose_theme(self) -> None:
+        """Push the theme picker."""
         open_theme_picker(cast(Screen[Any], self).app)
 
     def action_choose_copy_method(self) -> None:
+        """Push the copy-method picker."""
         open_copy_method_picker(cast(Screen[Any], self).app)

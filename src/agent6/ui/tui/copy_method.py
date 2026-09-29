@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The copy-method picker: a small View-menu chooser for how the TUI copies to the
-clipboard, mirroring the theme picker.
+"""The copy-method picker, a View-menu chooser mirroring the theme picker.
 
-The choice (`auto` | `osc52` | `osc52-tmux` | `osc52-screen` |
-`tmux-buffer`) is a viewer
-preference in `ui.toml` (never the agent config). `auto` resolves per
-environment; the hint shows what it resolves to right now. Selecting persists
-immediately, matching the theme picker.
+The choice is a viewer preference in `ui.toml`, never the agent config; `auto`
+resolves per environment and the hint shows what it resolves to. Selecting
+persists at once.
 """
 
 from __future__ import annotations
@@ -22,7 +19,7 @@ try:
     from textual.containers import Vertical, VerticalScroll
     from textual.screen import ModalScreen
     from textual.widgets import Static
-except ImportError as e:  # pragma: no cover - clear runtime message
+except ImportError as e:  # pragma: no cover
     raise SystemExit("The TUI needs textual: pip install 'agent6[tui]'") from e
 
 from agent6.ui.tui import clipboard
@@ -36,8 +33,7 @@ def open_copy_method_picker(app: App[Any]) -> None:
 
 
 class CopyMethodPicker(ModalScreen[None]):
-    """Pick how copy reaches the clipboard. Selecting persists to ui.toml at once
-    (like the theme picker); Enter or Esc close."""
+    """Pick how copy reaches the clipboard; selecting persists, Enter or Esc close."""
 
     BINDINGS: ClassVar = [
         Binding("escape", "cancel", "Close"),
@@ -58,9 +54,15 @@ class CopyMethodPicker(ModalScreen[None]):
     )
 
     def on_mount(self) -> None:
+        """Focus the choice list."""
         self.query_one(ChoiceField).focus(scroll_visible=False)
 
     def compose(self) -> ComposeResult:
+        """Lay out the picker.
+
+        Yields:
+            The title, the choice list and the hint.
+        """
         choices = tuple(clipboard.COPY_METHODS)
         current = get_copy_method()
         if current not in choices:
@@ -70,8 +72,7 @@ class CopyMethodPicker(ModalScreen[None]):
             yield Static("Copy method", id="copy-title")
             with VerticalScroll(id="copy-scroll"):
                 yield ChoiceField(choices, current, id="copy-list")
-            # Hand-split at phrase boundaries: the box is 58 cells inside, so one
-            # long line would word-wrap mid-phrase.
+            # Split by hand: the box is 58 cells inside, so one line would wrap mid-phrase.
             yield Static(
                 Text(
                     "how the TUI copies to your clipboard\n"
@@ -84,14 +85,17 @@ class CopyMethodPicker(ModalScreen[None]):
 
     @on(ChoiceField.Changed)
     def _save(self, event: ChoiceField.Changed) -> None:
-        save_copy_method(event.field.value)  # persist immediately, like the theme picker
+        save_copy_method(event.field.value)
 
     def action_confirm(self) -> None:
+        """Close the picker."""
         self.dismiss(None)
 
     def action_cancel(self) -> None:
+        """Close the picker."""
         self.dismiss(None)
 
     def on_click(self, event: events.Click) -> None:
+        """Close on a click outside the box."""
         if event.widget is self:
             self.action_cancel()

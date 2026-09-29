@@ -1,26 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A full-screen, scrollable view of one run's logs.jsonl (current or past).
+"""A full-screen, scrollable view of one session's `logs.jsonl`.
 
-The dashboard's live log pane is a small sliding window that snaps to the
-bottom on every new line, so a fast run "plays through" with no way to scroll
-back. `LogScreen` reads a run's whole logs.jsonl, renders each structural event
-with the same one-line formatter the dashboard uses (so the two read
-identically), and lets the operator scroll, select and copy freely. It is
-read-only; reload re-reads the file (a live run keeps appending).
-
-Two deliberate choices:
-- Ephemeral streaming deltas are skipped (see STREAM_DELTA_EVENTS): a reasoning
-  model emits thousands of contentless `role.thinking_delta` events, which are
-  noise in an audit log (the reasoning itself is in the conversation view). So
-  are the loop-side mirrors (LOG_NOISE_EVENTS), as in the dashboard's log tail.
-- The body is a `Static` inside a `VerticalScroll`, not a `RichLog`. A `RichLog`
-  renders as line Strips, which the framework's text selection can't extract, so
-  its text is not copyable; a `Static` renders as `Content` and is selectable.
-
-Chrome matches every other screen: the File/View/Help menu bar (its shortcuts
-drawn from the live bindings), the same PgUp/PgDn + Ctrl+Home/End scroll keys as
-the conversation view, and Esc/q back.
+The dashboard's log pane is a sliding window that snaps to the bottom, so a fast
+run plays through with no way back. This screen renders the whole file with the
+dashboard's one-line formatter, follows a live file, and lets the operator
+scroll, select and copy. Streaming deltas and the loop-side mirrors are skipped,
+as in the dashboard's tail. The body is a `Static` in a `VerticalScroll`, not a
+`RichLog`: a `RichLog` renders as line strips, which text selection cannot
+extract.
 """
 
 from __future__ import annotations
@@ -49,7 +37,7 @@ from agent6.viewmodel.tail import LogTail
 
 
 class LogScreen(ScreenChrome, Screen[None]):
-    """Scrollable, read-only, selectable log of a single run (live or finished)."""
+    """The scrollable, read-only, selectable log of one session, live or finished."""
 
     CSS = """
     LogScreen { background: $surface; }
@@ -70,6 +58,7 @@ class LogScreen(ScreenChrome, Screen[None]):
     BINDINGS: ClassVar = menu_bindings("event log", MENUS, footer=FOOTER)
 
     def __init__(self, logs_path: Path, *, title: Callable[[], str]) -> None:
+        """Bind the screen to a log file and the callable naming its session."""
         super().__init__()
         self._logs_path = logs_path
         self._title = title
@@ -77,15 +66,20 @@ class LogScreen(ScreenChrome, Screen[None]):
         self._text = Text()
 
     def compose(self) -> ComposeResult:
-        yield MenuBar(self.MENUS)  # top row: menus + "agent6 — <run>", like every screen
+        """Lay out the screen.
+
+        Yields:
+            The menu bar, the scrollable body and the footer.
+        """
+        yield MenuBar(self.MENUS)
         with VerticalScroll(id="logview-scroll"):
-            yield Static(id="logview-body")  # renders as Content -> its text is selectable
+            yield Static(id="logview-body")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.app.sub_title = self._title()  # show the run in the menu bar's title
+        """Load the file and keep following it; a resume appends to the same file."""
+        self.app.sub_title = self._title()
         self._reload()
-        # Follow live: a resume appends to the same file, so keep reading.
         self.set_interval(0.5, self._poll)
 
     def _scroll(self) -> VerticalScroll:
@@ -115,23 +109,29 @@ class LogScreen(ScreenChrome, Screen[None]):
         if not self._append(self._tail.read()):
             return
         self.query_one("#logview-body", Static).update(self._text)
-        if at_bottom:  # sticky bottom: hold position if the operator scrolled up
+        if at_bottom:  # hold the position when the operator scrolled up
             scroll.scroll_end(animate=False)
 
     def action_reload(self) -> None:
+        """Re-read the file from the start."""
         self._reload()
 
     def action_page_up(self) -> None:
-        self._scroll().scroll_page_up(animate=False)  # instant: animation reads as lag
+        """Scroll a page up; instant, since animation reads as lag."""
+        self._scroll().scroll_page_up(animate=False)
 
     def action_page_down(self) -> None:
+        """Scroll a page down."""
         self._scroll().scroll_page_down(animate=False)
 
     def action_scroll_top(self) -> None:
+        """Scroll to the first line."""
         self._scroll().scroll_home(animate=False)
 
     def action_scroll_bottom(self) -> None:
+        """Scroll to the last line."""
         self._scroll().scroll_end(animate=False)
 
     def action_close(self) -> None:
+        """Return to the previous screen."""
         self.dismiss()

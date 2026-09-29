@@ -1,16 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""TUI theming: the branded themes (`agent6-dark` / `agent6-light`) plus
-four extra built-ins (`alice`, `snow`, `rose`, `grimm`), a
-live-previewing picker (every registered theme, sorted alphabetically) reachable
-from the View menu, and the wiring that loads the saved theme on startup and
-persists any change.
+"""TUI theming: the built-in themes, the live-previewing picker and the saved choice.
 
-Design: keep one quiet accent for focus and a calm, low-contrast resting state
-(the lazygit/openapi-tui feel). All widget CSS across the TUI already uses
-Textual theme variables ($primary, $accent, $surface, $panel, $text…), so
-switching the theme re-skins everything for free: this module only chooses the
-palettes and remembers the choice (in `ui.toml`, never the agent config).
+One quiet accent for focus and a calm, low-contrast resting state. Every widget's
+CSS uses textual's theme variables, so switching the theme re-skins everything;
+this module only chooses the palettes and remembers the choice in `ui.toml`,
+never the agent config.
 """
 
 from __future__ import annotations
@@ -32,7 +27,7 @@ try:
     from textual.scrollbar import ScrollBar, ScrollBarRender
     from textual.theme import Theme
     from textual.widgets import Static
-except ImportError as e:  # pragma: no cover - clear runtime message
+except ImportError as e:  # pragma: no cover
     raise SystemExit(
         "The TUI theme support needs textual, a required dependency; reinstall agent6."
     ) from e
@@ -42,16 +37,14 @@ from agent6.ui.tui.settings import DEFAULT_THEME, get_theme, save_theme
 from agent6.ui.tui.widgets import FORM_CSS, ChoiceField
 from agent6.viewmodel.format import StatusLevel, status_level
 
-# Branded defaults: a deep, low-saturation dark and a soft light, both with a
-# green focus accent over a blue selection primary.
+# The branded pair: a deep, low-saturation dark and a soft light.
 AGENT6_DARK = Theme(
     name="agent6-dark",
-    primary="#7AA2F7",  # selection / cursor / resting card borders
-    secondary="#9ECE6A",  # green; no agent6 widget styles it directly (textual palette slot)
-    accent="#06F5F3",  # focus borders, button/action text, key hints: a vivid neon cyan
+    primary="#7AA2F7",  # selection, cursor, resting card borders
+    secondary="#9ECE6A",  # a textual palette slot no agent6 widget styles directly
+    accent="#06F5F3",  # focus borders, action text, key hints
     foreground="#C0CAF5",
-    # Near-black teal (the cyan brand's neutral): screen < card < panel, so
-    # tables/panels read as raised surfaces over an almost-black background.
+    # Near-black teal, screen < card < panel, so panels read as raised surfaces.
     background="#0f1414",
     surface="#161c1c",
     panel="#1e2626",
@@ -59,15 +52,12 @@ AGENT6_DARK = Theme(
     warning="#E0AF68",
     error="#F7768E",
     dark=True,
-    # The footer: warm amber keys + neutral labels (reads more "modern" than
-    # green keys on lavender text).
     variables={
-        "footer-key-foreground": "#FFA62B",
+        "footer-key-foreground": "#FFA62B",  # warm amber keys, neutral labels
         "footer-foreground": "#E0E0E0",
         "footer-description-foreground": "#E0E0E0",
-        # Scrollbar tracks default to near-black (#000002); match the surface so the
-        # track meshes with its panel (only the thumb shows) instead of a black gap.
-        "scrollbar-background": "#161c1c",  # == surface
+        # Tracks default to near-black; matching the surface leaves only the thumb showing.
+        "scrollbar-background": "#161c1c",
         "scrollbar-background-hover": "#161c1c",
         "scrollbar-background-active": "#161c1c",
         "scrollbar-corner-color": "#161c1c",
@@ -88,16 +78,15 @@ AGENT6_LIGHT = Theme(
     error="#C0392B",
     dark=False,
     variables={
-        "footer-key-foreground": "#C2410C",  # warm orange keys, readable on light
-        "scrollbar-background": "#EAECF2",  # == surface, so tracks mesh (see agent6-dark)
+        "footer-key-foreground": "#C2410C",
+        "scrollbar-background": "#EAECF2",  # the surface, as in agent6-dark
         "scrollbar-background-hover": "#EAECF2",
         "scrollbar-background-active": "#EAECF2",
         "scrollbar-corner-color": "#EAECF2",
     },
 )
 
-# Extra built-ins: two light storybook palettes (alice, snow) and two dark
-# (rose, grimm).
+# Two light storybook palettes (alice, snow) and two dark (rose, grimm).
 ALICE = Theme(
     name="alice",
     primary="#D3A129",
@@ -190,27 +179,26 @@ GRIMM = Theme(
     },
 )
 
-# Restyle textual's built-in command palette (Ctrl+P) to match our dialogs: a
-# rounded $accent-framed $surface card, not the default flat $panel-darken box with
-# black keyline borders. Add to an App's CSS (the palette is pushed on the App).
-# Targets textual-internal ids (#--input etc.), so revisit if textual changes them.
+# The command palette restyled as a dialog; added to an App's CSS, since the palette is pushed
+# on the App. Targets textual-internal ids.
 PALETTE_CSS = """
 CommandPalette > Vertical { background: $surface; border: round $accent; }
 CommandPalette #--input { border: none; background: $panel; }
 CommandPalette #--input.--list-visible { border: none; }
 """
 
-# The upstream render_bar signature's defaults, as module singletons (B008).
+# The upstream render_bar defaults, as module singletons.
 _SCROLLBAR_BACK = Color.parse("#555555")
 _SCROLLBAR_BAR = Color.parse("bright_magenta")
 
 
 class ThinScrollBarRender(ScrollBarRender):
-    """Horizontal scrollbar thumbs at half cell height: a terminal cell is about
-    twice as tall as it is wide, so textual's full-cell horizontal thumb reads
-    twice as heavy as a one-cell-wide vertical bar. The thumb body is a lower
-    half-block band with quadrant end caps for half-cell granularity; vertical
-    bars keep the default rendering."""
+    """Horizontal scrollbar thumbs at half cell height; vertical bars keep the default.
+
+    A terminal cell is about twice as tall as it is wide, so a full-cell horizontal
+    thumb reads twice as heavy as a vertical one. The thumb is a lower half-block
+    band with quadrant end caps for half-cell granularity.
+    """
 
     @classmethod
     def render_bar(
@@ -224,6 +212,11 @@ class ThinScrollBarRender(ScrollBarRender):
         back_color: Color = _SCROLLBAR_BACK,
         bar_color: Color = _SCROLLBAR_BAR,
     ) -> Segments:
+        """Render the bar; the upstream signature.
+
+        Returns:
+            The bar's segments.
+        """
         if vertical or not (window_size and size and virtual_size and size != virtual_size):
             return super().render_bar(
                 size=size,
@@ -259,8 +252,7 @@ class ThinScrollBarRender(ScrollBarRender):
         return Segments([*segments, Segment.line()] * thickness, new_lines=False)
 
 
-# The Rich style for each `viewmodel.format.status_level`; the CLI's SGR map
-# and the web's pill classes are the sibling palettes.
+# The Rich style per status level; the CLI's SGR map and the web's pill classes are its siblings.
 STATUS_LEVEL_STYLE: dict[StatusLevel, str] = {
     "ok": "green",
     "info": "#b48ead",  # mauve, matching the web pill
@@ -272,15 +264,16 @@ STATUS_LEVEL_STYLE: dict[StatusLevel, str] = {
 
 
 def status_style(status: str) -> str:
-    """The Rich style a status word renders in, on every TUI surface."""
+    """Return the Rich style a status word renders in, on every TUI surface."""
     return STATUS_LEVEL_STYLE[status_level(status)]
 
 
 class PlainNotify:
-    """Mix into an App (before App in the bases): notifications carry text,
-    never markup. Every toast here relays a message assembled elsewhere (a
-    refusal naming `[git].dirty_tree`, a path, an error), and textual's
-    default markup parse eats the bracketed parts ("set .dirty_tree=stash")."""
+    """The App mixin whose notifications carry text, never markup.
+
+    Every toast relays a message assembled elsewhere, and textual's markup parse
+    would eat a bracketed part such as `[git].dirty_tree`.
+    """
 
     def notify(
         self,
@@ -291,6 +284,7 @@ class PlainNotify:
         timeout: float | None = None,
         markup: bool = False,
     ) -> None:
+        """Show a toast, with markup off by default."""
         App.notify(
             cast(App[Any], self),
             message,
@@ -302,26 +296,26 @@ class PlainNotify:
 
 
 class MuxPointerShapes:
-    """Mix into an App (before App in the bases): re-emits the kitty
-    pointer-shape OSC (`ESC ] 22 ; <shape> BEL`) wrapped for tmux/screen
-    passthrough. textual writes it bare, which a multiplexer swallows (as it
-    swallows a bare OSC 52 copy), so the I-beam over text never reaches the
-    outer terminal under byobu."""
+    """The App mixin that wraps the pointer-shape escape for a multiplexer's passthrough.
+
+    textual writes the kitty OSC 22 bare, which tmux and screen swallow, so the
+    I-beam over text never reaches the outer terminal.
+    """
 
     def _set_pointer_shape(self, shape: str) -> None:
+        """Emit the pointer-shape escape through the driver, wrapped."""
         driver = getattr(self, "_driver", None)
         if driver is not None:
             driver.write(mux_passthrough(f"\x1b]22;{shape}\x07"))
 
 
 def setup_theme(app: App[Any]) -> None:
-    """Register the built-in themes, apply the saved one, and persist changes.
+    """Register the built-in themes, apply the saved one, and persist every change.
 
-    Call from `App.on_mount`. Subscribing to `theme_changed_signal` means every
-    path that changes the theme (the View>Theme picker, the built-in Ctrl+P
-    "change theme" palette) is remembered, with no extra wiring.
-    Also installs the half-height horizontal scrollbar renderer (a class-level
-    hook, so one assignment restyles every bar in the process)."""
+    Called from `App.on_mount`. The `theme_changed_signal` subscription remembers a
+    change from any path, the picker or the command palette. Also installs the
+    half-height horizontal scrollbar renderer, a class-level hook over every bar.
+    """
     ScrollBar.renderer = ThinScrollBarRender
     for theme in (AGENT6_DARK, AGENT6_LIGHT, ALICE, SNOW, ROSE, GRIMM):
         if theme.name not in app.available_themes:
@@ -332,15 +326,15 @@ def setup_theme(app: App[Any]) -> None:
 
 
 def open_theme_picker(app: App[Any]) -> None:
-    """Push the theme picker (the View>Theme handler)."""
+    """Push the theme picker."""
     app.push_screen(ThemePicker())
 
 
 class ThemePicker(ModalScreen[None]):
-    """A small, live-previewing theme chooser: the same `[x]`/`[ ]` chooser
-    the config dialogs use. Arrow through to preview; the previewed theme is kept
-    on close (Enter or Esc both just dismiss). The choice is persisted by
-    `setup_theme`'s signal hook, so nothing here writes to disk directly."""
+    """A live-previewing theme chooser; Enter and Esc both keep the previewed theme.
+
+    `setup_theme`'s signal hook persists the choice, so nothing here writes to disk.
+    """
 
     BINDINGS: ClassVar = [
         Binding("escape", "cancel", "Cancel"),
@@ -362,25 +356,24 @@ class ThemePicker(ModalScreen[None]):
     )
 
     def on_mount(self) -> None:
-        # Focus without auto-scroll so the list opens at the top (focusing a list
-        # taller than the dialog would otherwise scroll it).
+        """Focus the list without scrolling it, so it opens at the top."""
         self.query_one(ChoiceField).focus(scroll_visible=False)
 
     def compose(self) -> ComposeResult:
+        """Lay out the picker over every registered theme, sorted.
+
+        Yields:
+            The title, the choice list and the hint.
+        """
         current = self.app.theme
-        # Every registered theme, sorted alphabetically (includes ansi-dark/-light,
-        # the "transparent" terminal-native options). The active one is guaranteed
-        # present, so the chooser always opens on a real selection.
         names = sorted(self.app.available_themes)
         if current not in names:
             names.insert(0, current)
         with Vertical(id="theme-box"):
             yield Static("Theme", id="theme-title")
-            # Just the scrollable list, no button below (a button adds a
-            # cross-scroll focus stop). Close with Esc or a click outside.
-            with VerticalScroll(id="theme-scroll"):
+            with VerticalScroll(id="theme-scroll"):  # no button: it would add a focus stop
                 yield ChoiceField(tuple(names), current, id="theme-list")
-            # Two balanced lines: the 44-wide box would wrap one line mid-phrase.
+            # Two lines: the 44-wide box would wrap one mid-phrase.
             yield Static(
                 Text("↑↓ highlight · Space select\nEsc or click outside closes", style="dim"),
                 id="theme-hint",
@@ -388,16 +381,17 @@ class ThemePicker(ModalScreen[None]):
 
     @on(ChoiceField.Changed)
     def _preview(self, event: ChoiceField.Changed) -> None:
-        self.app.theme = event.field.value  # apply the selected theme (live)
+        self.app.theme = event.field.value
 
     def action_confirm(self) -> None:
-        self.dismiss(None)  # Enter: keep the applied theme + close
+        """Close, keeping the previewed theme."""
+        self.dismiss(None)
 
     def action_cancel(self) -> None:
-        self.dismiss(None)  # Esc: just close, keeping whatever was previewed
+        """Close, keeping the previewed theme."""
+        self.dismiss(None)
 
     def on_click(self, event: events.Click) -> None:
-        # Click on the backdrop (outside the dialog) = close, like Esc. A mouse +
-        # key-swallowing-terminal alternative to Esc.
+        """Close on a click outside the box."""
         if event.widget is self:
             self.action_cancel()

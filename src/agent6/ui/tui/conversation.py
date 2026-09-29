@@ -1,20 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A full-screen, scrollable view of a run's LLM conversation (current or past).
+"""The conversation view: a run's transcript, live-following and selectable.
 
-The companion to `LogScreen`: it folds the same `logs.jsonl` stream through
-the shared `TranscriptFold` into the conversation (assistant reasoning and
-text, every tool call with its result, commits, and the verdict) with the same
-glyphs the CLI stream uses.
-
-Completed turns scroll in the main pane; a docked live pane at the bottom streams
-the turn in progress, since a reasoning model can think for 30-60s before
-producing a tool call and the view would otherwise look frozen.
-
-The scrollback is a `Static` in a `VerticalScroll` (not a `RichLog`): a
-`RichLog` renders as line Strips, which the framework's text selection cannot
-extract, so its text is not copyable; a `Static` renders as `Content` and is
-selectable, matching the live pane, which is already a `Static`.
+The log folds through the shared `TranscriptFold` with the glyphs the CLI stream
+uses. Completed turns scroll in the main pane; a docked live pane streams the turn
+in progress, since a reasoning model can think for a minute before its first tool
+call. The scrollback is `Static` chunks, not a `RichLog`: a `RichLog` renders as
+line strips the text selection cannot extract.
 """
 
 from __future__ import annotations
@@ -75,10 +67,8 @@ if TYPE_CHECKING:
     from agent6.ui.tui.app import Agent6TUI
 
 _LIVE_TAIL = 1600  # chars of the in-progress turn kept in the live pane
-# Sealed-chunk size for the transcript body. The body is a sequence of Static
-# chunks, not one widget: appending to a single Static re-wraps the whole
-# transcript every poll (185ms at ~1800 lines, and growing: the live-run input
-# lag), while only the small tail chunk ever changes here.
+# The sealed-chunk size: one Static re-wraps the whole transcript every poll (185ms at
+# ~1800 lines), while only the tail chunk ever changes.
 _CHUNK_LINES = 200
 
 # The single detail shortcut cycles through these in order.
@@ -90,12 +80,11 @@ _DETAIL_CYCLE: dict[DetailLevel, DetailLevel] = {
 
 
 def _tail(text: str, n: int) -> str:
+    """Return the last n chars of the text, with an ellipsis when it was cut."""
     return text if len(text) <= n else "…" + text[-n:]
 
 
-# Semantic style name -> Rich style. The CLI has the sibling ANSI map; both skins
-# render item_lines(), so the structure and which element is coloured live in one
-# place (transcript_style) and can't drift.
+# Semantic style name to Rich style; the CLI has the sibling ANSI map over the same lines.
 _STYLE_RICH: dict[StyleName, str] = {
     "thinking": "#6C7086",
     "think-marker": "blue",
@@ -120,7 +109,7 @@ _STYLE_RICH: dict[StyleName, str] = {
 
 
 def _rich_line(line: Line) -> Text:
-    """One styled line of item_lines() as a Rich Text (the TUI skin)."""
+    """Return one styled line of item_lines() as a Rich Text."""
     text = Text()
     for chunk, style in line:
         text.append(chunk, style=_STYLE_RICH[style] or None)
@@ -128,26 +117,25 @@ def _rich_line(line: Line) -> Text:
 
 
 def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text]:
-    """The TUI skin over the shared item_lines(): one Rich Text per line, mapping
-    each span's semantic style, with a blank line after the item for spacing."""
+    """Return an item's lines as Rich Texts, with a blank line after the item."""
     lines = item_lines(item, detail=detail)
     if not lines:
         return []
     out = [_rich_line(line) for line in lines]
-    out.append(Text(""))  # one blank line after the item
+    out.append(Text(""))
     return out
 
 
-# What Enter in the composer does: steer a live session, resume a finished
-# one with a follow-up, or start a new session from a draft.
-
-
 def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
-    """The empty-conversation placeholder, naming the state the session is in.
+    """Return the empty-conversation placeholder, naming the state the session is in.
 
-    The dashboard says which state a run is in, so this placeholder does too:
-    a crashed run and a run that never started must not both read as an
-    ordinary empty one, on the default screen of `agent6 tui`.
+    A crashed run and a run that never started must not both read as an ordinary
+    empty one.
+
+    Args:
+        word: The session's status word.
+        detail: The status reason.
+        ended: The session is known to have ended.
     """
     state, action = dead_run_note(word, detail)
     if state:
@@ -158,9 +146,7 @@ def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
 
 
 class _ChromeStatic(Static):
-    """A Static that never joins a text selection, so dragging over the title or
-    the live pane doesn't grab their text (or stall the auto-scroll) mid-select.
-    Only the transcript body (the `.conv-chunk` Statics) is selectable/copyable."""
+    """A Static that never joins a text selection; only the transcript body is copyable."""
 
     ALLOW_SELECT = False
 
@@ -169,10 +155,7 @@ _JUMP_LABEL = "↓ bottom · Ctrl+End"
 
 
 class _JumpButton(Static):
-    """A small floating jump-to-bottom pill: shown while the transcript is
-    scrolled up; click -- or Ctrl+End -- snaps back to the live tail. Floats
-    on the dropdown layer (the _Dropdown recipe), so it never displaces the
-    layout."""
+    """The floating jump-to-bottom pill, shown while the transcript is scrolled up."""
 
     ALLOW_SELECT = False
     DEFAULT_CSS = """
@@ -185,13 +168,14 @@ class _JumpButton(Static):
     """
 
     def on_click(self) -> None:
+        """Snap the screen back to the live tail."""
         handler = getattr(self.screen, "action_scroll_bottom", None)
         if callable(handler):
             handler()
 
 
 class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
-    """Scrollable, live-following, selectable LLM conversation for a single run."""
+    """The run app's main screen: the transcript over a composer bar."""
 
     CSS = """
     ConversationScreen { background: $surface; }
@@ -206,9 +190,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     #conv-input { display: none; }
     """
 
-    # The composer bar owns plain letters + Enter, so the keys here are
-    # modified keys and Esc, and they are priority bindings (they fire before
-    # the bar). `?` opens help when the focus is not in the bar.
+    # The composer owns plain letters and Enter, so these are modified keys, Esc, and priority.
     _VIEW_ITEMS: ClassVar = (
         MenuItem("Detail: hidden / collapsed / expanded", "cycle_detail", priority=True),
         *SCROLL_ITEMS,
@@ -271,12 +253,15 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         routes: list[str] | None = None,
         prompts: PromptDispatcher | None = None,
     ) -> None:
-        """The run app's main screen: Esc leaves the app, Ctrl+D toggles the
-        dashboard. *presets* and *routes* are the config presets and the
-        `provider/model` routes a resume may continue under (the row above
-        the composer). *prompts* is the host's dispatcher, the one record
-        of which prompts a surface already took (a modal on another screen,
-        this screen's row)."""
+        """Build the screen over a log.
+
+        Args:
+            logs_path: The session's log.
+            title: The menu-bar subtitle for a view word, called at stamp time.
+            presets: The config presets a resume may continue under.
+            routes: The `provider/model` routes a resume may continue under.
+            prompts: The host's dispatcher, the one record of which prompts a surface took.
+        """
         super().__init__()
         self._logs_path = logs_path
         self._prompts = prompts
@@ -286,15 +271,13 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._detail: DetailLevel = "collapsed"  # one shortcut cycles hidden/collapsed/expanded
         self._tail = LogTail(logs_path)
         self._fold = TranscriptFold()
-        self._content = Text()  # the whole transcript (copy + anchor bookkeeping)
-        self._item_starts: list[int] = []  # logical start line of each rendered item (anchor)
-        self._content_lines = 0  # total logical lines in _content
-        # The not-yet-sealed tail of the transcript: the only widget content the
-        # live appends re-render (see _CHUNK_LINES).
+        self._content = Text()  # the whole transcript, for copy and anchors
+        self._item_starts: list[int] = []  # the logical start line of each rendered item
+        self._content_lines = 0
+        # The unsealed tail: the only widget content the live appends re-render.
         self._tail_text = Text()
         self._tail_lines = 0
-        # Tool calls in flight, by call_id: the live pane shows them until the
-        # settled item lands in the scrollback (which is append-only).
+        # Tool calls in flight by call_id; the live pane shows them until the settled item lands.
         self._pending: dict[str, TranscriptItem] = {}
         self._approval: tuple[str, str, bool] | None = None  # (id, prompt, standing)
         self._approval_done: str | None = None
@@ -305,37 +288,34 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
 
     @property
     def _host(self) -> Agent6TUI:
-        """The Agent6TUI that mounts this screen: its fold, dir status and
-        prompt dispatcher are the one record every run view reads."""
+        """The app that mounts this screen; its fold and dir status are the one record."""
         return cast("Agent6TUI", self.app)
 
     def compose(self) -> ComposeResult:
-        yield MenuBar(self.MENUS)  # top row: menus + "agent6 — <run>", like every screen
+        """Yield the menu bar, the transcript with its live pane, the composer and the footer."""
+        yield MenuBar(self.MENUS)
         with Vertical(id="conv-main"):
             with VerticalScroll(id="conv-scroll"):
-                # The transcript body: sealed chunks are mounted above this
-                # active tail as the log grows (each renders as Content ->
-                # selectable; only the tail is ever re-rendered).
+                # Sealed chunks mount above this tail as the log grows; only the tail re-renders.
                 yield Static(id="conv-tail", classes="conv-chunk")
-            yield _ChromeStatic("", id="conv-live")  # chrome: not part of a selection
+            yield _ChromeStatic("", id="conv-live")
         yield Static(id="conv-approval", classes="conv-chunk")  # the open approval, inline
         yield SteerSuggest(id="conv-suggest")  # command hints while typing `/…`
         yield ResumeOptions(self._presets, self._routes, id="conv-resume")  # while resuming
-        yield SteerInput(id="conv-input")  # the composer: steer a live run, resume a finished one
-        yield _JumpButton(_JUMP_LABEL, id="conv-jump")  # floats; shown when scrolled up
-        yield Footer()  # Footer is ALLOW_SELECT=False in textual already
+        yield SteerInput(id="conv-input")
+        yield _JumpButton(_JUMP_LABEL, id="conv-jump")
+        yield Footer()
 
     def on_mount(self) -> None:
-        self.app.sub_title = self._title("conversation")  # run context in the menu bar
+        """Stamp the title, fold the log and start the poll."""
+        self.app.sub_title = self._title("conversation")
         self._reload()
         self._timer = self.set_interval(0.3, self._poll)
-        # The jump pill follows the scroll position (mouse wheel included) and
-        # content growth (the poll calls _sync_jump too).
+        # The jump pill follows the scroll position; the poll calls _sync_jump on growth.
         self.watch(self._scroll(), "scroll_y", self._sync_jump, init=False)
 
     def _sync_jump(self, *_: object) -> None:
-        """Show the jump-to-bottom pill while scrolled up, pinned to the scroll
-        area's bottom-right corner (an overlay: never part of the layout)."""
+        """Show the jump-to-bottom pill while scrolled up, pinned to the scroll area's corner."""
         with contextlib.suppress(NoMatches):
             jump = self.query_one("#conv-jump", _JumpButton)
             scroll = self._scroll()
@@ -350,29 +330,36 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 )
 
     def on_screen_suspend(self) -> None:
-        # Hidden behind the dashboard (or another pushed screen): stop polling.
+        """Stop polling while another screen covers this one."""
         if self._timer is not None:
             self._timer.pause()
 
     def on_screen_resume(self) -> None:
-        # Back on top (a dashboard toggle, or a viewer above was closed):
-        # re-stamp the title the covering screen may have changed, catch up on
-        # events that landed while hidden, and resume the poll.
+        """Re-stamp the title, catch up on events that landed while covered, resume the poll."""
         self.app.sub_title = self._title("conversation")
         if self._timer is not None:
             self._poll()
             self._timer.resume()
 
     def _scroll(self) -> VerticalScroll:
+        """Return the transcript's scroll container."""
         return self.query_one("#conv-scroll", VerticalScroll)
 
     def _append(self, item: TranscriptItem) -> bool:
+        """Append a settled item to the transcript and the tail; a call in flight waits.
+
+        Args:
+            item: The item the fold produced.
+
+        Returns:
+            Whether any line was written.
+        """
         if item.kind == "tool":
             if item.ok is None:
                 self._pending[item.call_id] = item
                 return False
             self._pending.pop(item.call_id, None)
-        self._item_starts.append(self._content_lines)  # where this item begins (for the anchor)
+        self._item_starts.append(self._content_lines)
         wrote = False
         for line in _item_renderables(item, detail=self._detail):
             self._content.append_text(line)
@@ -385,12 +372,11 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         return wrote
 
     def _tail_widget(self) -> Static:
+        """Return the unsealed tail chunk's widget."""
         return self.query_one("#conv-tail", Static)
 
     def _flush_tail(self) -> None:
-        """Push the tail chunk to its widget, sealing it into an immutable chunk
-        above once it is big enough -- so a growing transcript never re-renders
-        more than the last ~_CHUNK_LINES lines."""
+        """Push the tail to its widget, sealing it into a chunk above once it is big enough."""
         tail = self._tail_widget()
         tail.update(self._tail_text)
         if self._tail_lines >= _CHUNK_LINES:
@@ -401,14 +387,14 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             tail.update(self._tail_text)
 
     def _track_event(self, event: dict[str, object]) -> None:
-        """What this screen keeps of an event beyond the fold: the open
-        approval as last rendered here, so an answer given here is not
-        re-offered on a reload before the worker journals it, and the
-        streaming buffers of the turn in flight."""
+        """Keep what this screen tracks beyond the fold: the open approval and the live buffers.
+
+        The approval as last rendered here keeps an answer given here from being
+        re-offered on a reload before the worker journals it.
+        """
         etype = event.get("type")
         if etype in SESSION_START_EVENTS:
-            # An unanswered approval belongs to the execution that ended; the new
-            # execution re-asks it if needed.
+            # An unanswered approval belongs to the execution that ended.
             self._approval = None
             self._approval_done = None
         if etype == "approval.prompt":
@@ -431,9 +417,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             self._live_text.append(str(event.get("text", "")))
 
     def _open_approval(self) -> ApprovalPrompt | None:
-        """The approval awaiting an answer, from the host's fold (one fold,
-        whatever fed it): an execution boundary the host folded withdraws what this
-        screen last rendered."""
+        """Return the approval awaiting an answer, from the host's fold."""
         state = self._host.state
         if self._approval is not None:
             aid = self._approval[0]
@@ -443,18 +427,20 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         return self.open_approval(state)
 
     def approval_dir(self) -> Path:
+        """Return the session dir the answer file is written under."""
         return self._logs_path.parent
 
     def approval_live(self) -> bool:
+        """Return whether the run can read an answer."""
         return self._host_live()
 
     def approval_answered(self, verdict: str) -> None:
+        """Collapse the answered approval and repaint it."""
         self._note_answered(verdict)
         self._render_approval()
 
     def _note_answered(self, verdict: str) -> None:
-        """Collapse the open approval to one dim line: *verdict* and the
-        command it judged."""
+        """Collapse the open approval to one dim line: the verdict and the command it judged."""
         if self._approval is None:
             return
         head, payload = approval_parts(self._approval[1])
@@ -462,18 +448,17 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._approval = None
 
     def _render_approval(self) -> None:
-        """The open approval as a conversation-tail item (the command under
-        judgment, fixed-width) with the answer row docked above the composer;
-        after the answer the item collapses to one dim line until the next
-        model turn."""
+        """Render the open approval as a tail item with the answer row docked above the composer.
+
+        After the answer the item collapses to one dim line until the next model turn.
+        """
         item = self.query_one("#conv-approval", Static)
         current = self._open_approval()
         live = self._host_live()
         self.sync_approval(current if live else None)
         if current is not None:
             self._approval = (current.id, current.prompt, current.standing)
-            # The run died with the prompt open: the fact stays visible, the
-            # key row (whose answer would reach nothing) does not.
+            # On a dead run the fact stays visible; the key row, whose answer reaches nothing, goes.
             note = "approval needed" if live else "approval pending when the run ended"
             item.update(approval_text(current.prompt, note, dim=not live))
             item.display = True
@@ -487,20 +472,16 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             item.display = False
 
     def _render_live(self) -> None:
+        """Repaint the live pane: the approval, the calls in flight, or the streaming turn."""
         self._render_approval()
         live = self.query_one("#conv-live", Static)
         if not self._host_live():
-            # The deltas of the turn a killed worker never finished sit in the
-            # buffers forever (only role.call/role.result clear them), so this
-            # pane would keep saying "thinking…" over a corpse, on the primary
-            # view, which carries no status label to contradict it.
+            # A killed worker's deltas sit in the buffers forever; the pane would say thinking.
             live.display = False
             self._settle_dead()
             return
         if self._host_waiting():
-            # Blocked on the operator (an approval or a question is open): the
-            # model is not thinking and no tool is running, so the pulse that
-            # says so would lie under the very modal asking.
+            # Blocked on the operator: a thinking pulse would lie under the very prompt asking.
             live.display = True
             live.update(
                 Text(
@@ -531,8 +512,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         if not think and not text:
             body.append(f"{spinner_frame(self._spin)} working… ", style="bold cyan")
         if think:
-            # Always show the live "thinking…" indicator (feedback that a turn is
-            # working); stream the reasoning itself only when expanded (muted grey).
+            # The thinking indicator always shows; the reasoning streams only when expanded.
             body.append(f"{spinner_frame(self._spin)} thinking… ", style="bold cyan")
             if self._detail == "expanded":
                 body.append(_tail(think, _LIVE_TAIL), style="#6C7086")
@@ -544,9 +524,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         live.update(body)
 
     def _settle_dead(self) -> None:
-        """The calls a dead worker left in flight never return: settle them
-        into the scrollback (the fold's rule, applied here because the host's
-        worker probe is what knows)."""
+        """Settle the calls a dead worker left in flight into the scrollback."""
         if not self._pending:
             return
         wrote = False
@@ -556,7 +534,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             self._flush_tail()
 
     def _reload(self) -> None:
-        """Re-read the whole log from scratch (mount, reload, detail cycle)."""
+        """Re-read the whole log from scratch: on mount, a reload, a detail cycle."""
         self._tail = LogTail(self._logs_path)
         self._fold = TranscriptFold()
         self._content = Text()
@@ -565,7 +543,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._tail_text = Text()
         self._tail_lines = 0
         self._pending = {}
-        self.query(".conv-sealed").remove()  # rebuilt below by _flush_tail
+        self.query(".conv-sealed").remove()
         self._live_think.clear()
         self._live_text.clear()
         wrote = False
@@ -578,17 +556,12 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         if wrote:
             self._flush_tail()
         elif items and self._detail == "hidden":
-            # A conversation of reasoning and tool calls alone renders no line at
-            # the "hidden" level; the placeholder for an empty conversation would
-            # lie over it. (A call still in flight renders no sealed line at any
-            # level and shows in the live pane.)
+            # Reasoning and tool calls alone render no line at this level; the empty placeholder
+            # would lie over them.
             note = "(reasoning and tool calls are hidden at this detail level; Ctrl+T shows them)"
             self._tail_widget().update(Text(note, style="dim italic"))
         else:
             # Past tense only when the host positively knows the session ended.
-            # `_host_live`'s event-derived fallback is False before the first
-            # event, so using it here would promise nothing to a run that has
-            # not started streaming yet: the same lie, inverted.
             ended = not self._host.session_controllable()
             word, detail = self._host.dir_status
             empty = empty_conversation_note(word, detail, ended=ended)
@@ -599,28 +572,20 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._focus_default()
 
     def _at_bottom(self, scroll: VerticalScroll) -> bool:
-        """Following the log: at the bottom within a small tolerance, so a one-line
-        layout nudge (the live pane or steer bar resizing) keeps follow mode, while
-        a deliberate scroll up of more than that drops it."""
+        """Return whether the view follows the log: at the bottom within a one-line nudge."""
         return scroll.max_scroll_y - scroll.scroll_y <= 2.0
 
     def _poll(self) -> None:
-        """Append newly-completed turns (sticking to the bottom unless scrolled
-        up) and refresh the live in-progress pane."""
+        """Append the newly completed turns, keeping the bottom, and refresh the live pane."""
         if self._host.model_call_in_flight():
             self._spin += 1
         self._render_approval()
         new_events = self._tail.read()
         if not new_events:
-            # The host's fold may have advanced after this screen's independent
-            # tail read, so refresh shared context and liveness even without a
-            # local event. The composer must agree with the dashboard within
-            # one poll.
+            # The host's fold may have advanced; the composer must agree with it within one poll.
             self._sync_input()
-            # No data this tick, but a live run's pane must keep moving: the
-            # spinner is the only sign of life between events. Same follow
-            # discipline as the data path: a pane repaint can resize the
-            # viewport and drop bottom-follow on a quiet tick.
+            # The spinner is the only sign of life between events; a repaint can resize the
+            # viewport, so the follow is re-pinned as on the data path.
             if self._host_live():
                 scroll = self._scroll()
                 following = self._at_bottom(scroll)
@@ -629,7 +594,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                     scroll.scroll_end(animate=False)
             return
         scroll = self._scroll()
-        following = self._at_bottom(scroll)  # before this frame's layout changes
+        following = self._at_bottom(scroll)
         wrote = False
         for event in new_events:
             self._track_event(event)
@@ -639,36 +604,28 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             self._flush_tail()
         self._render_live()
         self._sync_input()
-        # Re-pin after the live pane / steer bar have (re)sized this frame: growing
-        # them shrinks the scroll viewport and would otherwise nudge us off the exact
-        # bottom, silently dropping follow mode even when nothing new was appended.
+        # Re-pin after the live pane and the bar resized: growing them nudges off the bottom.
         if following:
             scroll.scroll_end(animate=False)
         self._sync_jump()
 
     def _host_waiting(self) -> bool:
-        """Whether the run is blocked on the operator, per the host's dir
-        status ("waiting")."""
+        """Return whether the run is blocked on the operator, per the host's dir status."""
         return self._host.dir_status[0] == "waiting"
 
     def _host_live(self) -> bool:
-        """Whether the run is still live, per the host's dir status, which
-        knows a dead worker and a parked run where the event stream alone
-        would not."""
+        """Return whether the run is live per the host's dir status, which knows a dead worker."""
         return self._host.session_controllable()
 
     def _sync_input(self) -> None:
-        """Show the composer bar (steer when live, continue when finished) and
-        keep its labels matching the run's state: the host's dir status and
-        context readout, so a typed steer never goes to a run that no longer
-        reads it."""
+        """Show the composer bar in the run's mode, steer when live and resume when finished."""
         with contextlib.suppress(NoMatches):
             bar = self.query_one("#conv-input", SteerInput)
             if not bar.display:  # a same-value write still costs a relayout
                 bar.display = True
             mode: ComposerMode = "steer" if self._host_live() else "resume"
             self.query_one("#conv-resume", ResumeOptions).show(mode == "resume")
-            if not bar.policy:  # folded once: the manifest does not change mid-run
+            if not bar.policy:  # the manifest does not change mid-run
                 bar.policy = session_policy(self._logs_path.parent).short()
             bar.set_mode(
                 mode=mode,
@@ -678,39 +635,33 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             )
 
     def refresh_liveness(self) -> None:
-        """Relabel the composer for a liveness change that came with no event
-        to poll (the host's dir-status probe: a worker died, a parked run got
-        resumed) -- called by the Agent6TUI host, covered or not, so the two
-        run views can never disagree about the bar's mode."""
+        """Relabel the composer for a liveness change with no event, covered or not."""
         self._sync_input()
         with contextlib.suppress(NoMatches):
             self._render_live()
 
     def focus_bar(self) -> None:
-        """Focus the composer bar (an external steer request routes here
-        instead of popping a dialog)."""
+        """Focus the composer bar."""
         with contextlib.suppress(NoMatches):
             self.query_one("#conv-input", SteerInput).focus()
 
     def _focus_default(self) -> None:
-        """Open with the composer bar focused (type to steer a live run, or a
-        follow-up to resume a finished one, immediately); without a bar the
-        scrollback takes focus for keyboard nav."""
+        """Focus the composer bar, or the scrollback when there is none."""
         with contextlib.suppress(NoMatches):
             self.query_one("#conv-input", SteerInput).focus()
             return
         self._scroll().focus()
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
-        """A line typed into the composer bar: the host routes it (a live
-        steer or a resume by its dir status, the slash commands by their
-        parse)."""
+        """Hand a composer line to the host, which routes it by the run's state."""
         self._host.submit_instruction(message.text)
 
     def action_history_search(self) -> None:
+        """Open the prompt history search over the composer."""
         open_history_search(self, self.query_one("#conv-input", SteerInput), self._logs_path)
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        """Refresh the command hints as the composer's text changes."""
         if event.text_area.id != "conv-input":
             return
         with contextlib.suppress(NoMatches):
@@ -718,25 +669,21 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 event.text_area.text, mode="steer" if self._host_live() else "resume"
             )
 
-    # -- copy ---------------------------------------------------------------
     def _emit(self, seq: str) -> None:
-        """Write a raw terminal escape (an OSC 52 clipboard-set) through the driver."""
+        """Write a raw terminal escape (an OSC 52 clipboard set) through the driver."""
         driver = self.app._driver  # pyright: ignore[reportPrivateUsage]
         if driver is not None:
             driver.write(seq)
 
     def _selected_or_all(self) -> tuple[str, str]:
-        """The current transcript-body selection if any, else the whole transcript."""
+        """Return the body selection or the whole transcript, with the word naming which."""
         body_selection = self._body_selection()
         if body_selection and body_selection.strip():
             return body_selection, "selection"
         return self._content.plain, "whole transcript"
 
     def _body_selection(self) -> str | None:
-        """Selected text from the transcript body only (its chunk Statics, in
-        document order), so a drag that strays over the footer or live pane
-        never copies their text: Textual's screen-wide get_selected_text() would
-        otherwise include them (they are chrome)."""
+        """Return the selected text from the transcript body's chunks only, in order."""
         parts: list[str] = []
         for chunk in self.query(".conv-chunk"):
             selection = self.selections.get(chunk)
@@ -748,14 +695,15 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         return "\n".join(parts) if parts else None
 
     def get_selected_text(self) -> str | None:
-        """Textual's copy entry point, restricted to the transcript body."""
+        """Return the selection for textual's copy, restricted to the transcript body."""
         return self._body_selection()
 
     def _copy_text(self, text: str, *, method: str) -> str:
-        """Copy *text* using the resolved *method*; returns a short status."""
+        """Return a short status after copying the text by the resolved method."""
         return clipboard.emit_clipboard(text, clipboard.resolve_method(method), self._emit)
 
     def action_copy(self) -> None:
+        """Copy the selection or the whole transcript by the configured method."""
         text, what = self._selected_or_all()
         if not text:
             self.notify("nothing to copy yet")
@@ -768,12 +716,12 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self.notify(f"copied {what} ({status})")
 
     def action_write_file(self) -> None:
+        """Write the whole transcript to a file."""
         path = clipboard.write_transcript_file(self._content.plain)
         self.notify(f"wrote transcript to {path}")
 
     def action_suspend_copy(self) -> None:
-        """Drop to the native terminal, print the text (scroll + select + copy with
-        the terminal, which always works), Enter to return."""
+        """Drop to the terminal and print the text to select and copy there; Enter returns."""
         text, what = self._selected_or_all()
         with self.app.suspend():
             print(f"\n===== COPY BELOW ({what}): select and copy in your terminal =====\n")
@@ -783,7 +731,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 input()
 
     def action_pager(self) -> None:
-        """Open the text in $PAGER (scroll + select + copy natively)."""
+        """Open the text in $PAGER."""
         text, _ = self._selected_or_all()
         pager = os.environ.get("PAGER") or "less"
         cmd = [pager, "-R"] if Path(pager).name.startswith("less") else [pager]
@@ -796,21 +744,19 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                     input()
 
     def action_reload(self) -> None:
+        """Re-read the log."""
         self._reload()
 
     def action_view_logs(self) -> None:
-        """Open the raw event log of this run (the audit-log companion view)."""
+        """Open the run's raw event log."""
         self.app.push_screen(LogScreen(self._logs_path, title=lambda: self._title("logs")))
 
     def action_cycle_detail(self) -> None:
-        """Cycle the transcript's detail level (hidden -> collapsed -> expanded), keeping
-        the block at the top of the viewport anchored across the re-render."""
+        """Cycle the detail level, keeping the block at the top of the viewport anchored."""
         self._reload_keeping_place(lambda: setattr(self, "_detail", _DETAIL_CYCLE[self._detail]))
 
     def _item_visual_starts(self) -> list[int]:
-        """The visual (wrapped) row where each rendered item begins, at the current
-        body width. One pass over the content, so it is cheap enough for a
-        user-initiated re-render even on a long transcript."""
+        """Return the wrapped row where each rendered item begins, at the current body width."""
         width = max(1, self._tail_widget().content_size.width)
         starts: list[int] = []
         visual = 0
@@ -819,15 +765,19 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             while nxt < len(self._item_starts) and self._item_starts[nxt] == logical:
                 starts.append(visual)
                 nxt += 1
-            visual += max(1, -(-line.cell_len // width))  # ceil(cell_len / width)
+            visual += max(1, -(-line.cell_len // width))
         starts.extend([visual] * (len(self._item_starts) - nxt))
         return starts
 
     def _reload_keeping_place(self, flip: Callable[[], None]) -> None:
-        """Apply *flip*, re-render, and restore the reading position: pinned to the
-        bottom if we were following, else anchored to the block that was at the top of
-        the viewport (kept at the same viewport offset across the re-render, so a block
-        expanding above doesn't carry your place away)."""
+        """Apply the flip, re-render and restore the reading position.
+
+        Pinned to the bottom when following, else anchored to the block at the top of
+        the viewport, at the same offset, so a block expanding above keeps the place.
+
+        Args:
+            flip: The change to apply before the re-render.
+        """
         scroll = self._scroll()
         following = self._at_bottom(scroll)
         top = scroll.scroll_y
@@ -835,32 +785,37 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         anchor = bisect.bisect_right(old_visual, top) - 1 if old_visual else -1
         offset = top - old_visual[anchor] if 0 <= anchor < len(old_visual) else 0.0
         flip()
-        self._reload()  # rebuilds _content + _item_starts, ending scrolled to the bottom
+        self._reload()
         if following or not (0 <= anchor < len(self._item_starts)):
             return
         self._scroll().scroll_to(y=self._item_visual_starts()[anchor] + offset, animate=False)
 
     def action_scroll_top(self) -> None:
+        """Scroll to the top."""
         self._scroll().scroll_home(animate=False)
 
     def action_scroll_bottom(self) -> None:
+        """Scroll to the live tail."""
         self._scroll().scroll_end(animate=False)
 
     def action_page_up(self) -> None:
-        self._scroll().scroll_page_up(animate=False)  # instant: animation reads as lag
+        """Scroll one page up; instant, since animation reads as lag."""
+        self._scroll().scroll_page_up(animate=False)
 
     def action_page_down(self) -> None:
+        """Scroll one page down."""
         self._scroll().scroll_page_down(animate=False)
 
     def action_close(self) -> None:
+        """Close an open list, else leave the run view through the host."""
         if self.close_open_list():
             return
-        # Back means leave the run view entirely: the host's to_hub exits
-        # with the back-to-hub code.
         self._host.action_to_hub()
 
     def action_quit_hub(self) -> None:
+        """Leave the view and the hub through the host."""
         self._host.action_quit_hub()
 
     def action_toggle_dashboard(self) -> None:
+        """Flip to the dashboard through the host."""
         self._host.action_toggle_dashboard()

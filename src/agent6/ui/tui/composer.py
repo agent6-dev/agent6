@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The composer every conversation surface shares: the steer input and its
-mode labels, the slash-command suggestions, the resume preset picker, the
-history search, and the inline approval row."""
+"""The composer every conversation surface shares.
+
+The steer input and its mode labels, the slash-command suggestions, the resume
+picker row, the history search, and the inline approval row.
+"""
 
 from __future__ import annotations
 
@@ -50,13 +52,14 @@ ComposerMode = Literal["steer", "resume", "start", "draft"]
 def composer_labels(
     mode: ComposerMode, *, continue_as: str = "", needs_new_work: bool = False
 ) -> tuple[str, str]:
-    """(border title, key hint) for the composer.
+    """Return the composer's border title and key hint for a mode.
 
     One conversation view serves runs, plans and asks, so it says "session".
-    *continue_as* names the fork an undone run continues as (Enter resumes that
-    session); *needs_new_work* is a run the agent finished green, which a bare
-    resume has nothing to do for (the web composer asks the same question);
-    *draft* is the machine description the create dialog takes.
+
+    Args:
+        mode: The composer's mode.
+        continue_as: The fork an undone run continues as; Enter resumes that session.
+        needs_new_work: The agent finished green, so a bare resume has nothing to do.
     """
     if mode == "steer":
         return ("steer this session (/pin, /compact [focus])", "Enter sends · Ctrl-J newline")
@@ -72,15 +75,19 @@ def composer_labels(
 
 
 def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, str]]:
-    """The steer directives matching the composer's first word while it is
-    still being typed (`/…`, no whitespace yet): (command, help) rows, empty
-    for ordinary text. A resume composer withholds `LIVE_RUN_COMMANDS`; a
-    draft offers only /parallel (the fan-out is the one directive a start
-    understands)."""
+    """Return the (command, help) rows matching a `/…` first word still being typed.
+
+    A resume composer withholds the live-run commands, a start offers only
+    /parallel, and a draft offers none.
+
+    Args:
+        text: The composer's text.
+        mode: The composer's mode.
+    """
     if not text.startswith("/") or any(ch.isspace() for ch in text):
         return []
     if mode == "draft":
-        return []  # a machine description takes no directives
+        return []
     if mode == "start":
         offered = {c: h for c, h in STEER_COMMANDS.items() if c == "/parallel"}
     elif mode == "resume":
@@ -91,11 +98,15 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
 
 
 def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
-    """Tab in a composer: the completed command word, or None when Tab should
-    keep its focus-move meaning. A unique match completes with a trailing
-    space; several matches advance to their longest common prefix, returning
-    *text* unchanged when there is no progress so Tab never yanks focus away
-    mid-command."""
+    """Return the Tab completion of a command word, or None when Tab keeps its focus meaning.
+
+    A unique match completes with a trailing space; several advance to their common
+    prefix, or return the text unchanged so Tab never moves the focus mid-command.
+
+    Args:
+        text: The composer's text.
+        mode: The composer's mode.
+    """
     rows = steer_suggestion_rows(text, mode=mode)
     if not rows:
         return None
@@ -106,10 +117,7 @@ def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
 
 
 class SteerSuggest(Static):
-    """The command hints above a composer (the run views' analogue of the
-    hub's model-suggestion line): one row per matching steer directive while
-    the first word is being typed, hidden otherwise. Tab in the composer
-    completes (see SteerInput.on_key)."""
+    """The command hints above a composer: one row per matching directive, else hidden."""
 
     ALLOW_SELECT = False
     DEFAULT_CSS = """
@@ -117,6 +125,7 @@ class SteerSuggest(Static):
     """
 
     def show_for(self, text: str, *, mode: ComposerMode) -> None:
+        """Show the rows matching the composer's text, or hide the line."""
         rows = steer_suggestion_rows(text, mode=mode)
         body: Text | None = None
         if rows:
@@ -129,7 +138,7 @@ class SteerSuggest(Static):
         self.show_text(body)
 
     def show_text(self, body: Text | None) -> None:
-        """Show *body* as the hint line, or hide the line for None."""
+        """Show the body as the hint line, or hide the line for None."""
         if body is not None:
             self.update(body)
         show = body is not None
@@ -141,22 +150,23 @@ _INPUT_MAX_ROWS = 6  # the steer bar grows to this many rows, then scrolls inter
 
 
 class ResumeHost(Protocol):
-    """What a resume row reads and writes on its host app (`Agent6TUI`)."""
+    """What a resume row reads and writes on its host app."""
 
     resume_preset: str
     resume_model: str
 
-    def resume_defaults(self, preset: str) -> tuple[str, str]: ...
+    def resume_defaults(self, preset: str) -> tuple[str, str]:
+        """Return the no-flag labels for the preset and the model under a preset."""
+        ...
 
 
 class ResumeOptions(PickerRow):
-    """The row above a resume composer: the config preset and the model the
-    next execution continues under (`agent6 resume --preset`, `--model`). Both
-    change only between executions, so the row shows only while the composer
-    resumes; the choices live on the host app, so the conversation and the
-    dashboard composers agree. Each first entry adds no flag and names what
-    the resume runs under (`ResumeHost.resume_defaults`), relabelled when the
-    row reappears and, for the model, when the preset pick changes."""
+    """The row above a resume composer: the preset and the model the next execution runs under.
+
+    Shown only while the composer resumes; the picks live on the host app, so both
+    run views agree. Each first entry adds no flag and names what the resume runs
+    under, relabelled when the row reappears and when the preset pick changes.
+    """
 
     DEFAULT_CSS = """
     ResumeOptions { display: none; padding: 0 1; }
@@ -167,9 +177,10 @@ class ResumeOptions(PickerRow):
         self._presets = presets
         self._routes = routes
         self._labels = ("", "")
-        self._labelled: str | None = None  # the preset pick the labels name; None = stale
+        self._labelled: str | None = None  # the preset pick the labels name; None when stale
 
     def compose(self) -> ComposeResult:
+        """Yield the two labelled pickers."""
         host = self._host()
         self._labels, self._labelled = host.resume_defaults(host.resume_preset), host.resume_preset
         yield Static("continue under preset", classes="picker-label")
@@ -178,13 +189,16 @@ class ResumeOptions(PickerRow):
         yield Picker(self._options(1), value="", allow_blank=False, id="resume-model")
 
     def _host(self) -> ResumeHost:
+        """Return the app the picks live on."""
         return cast(ResumeHost, self.app)
 
     def _options(self, index: int) -> list[tuple[str, str]]:
+        """Return a picker's options: the no-flag label, then the choices."""
         choices = self._routes if index else self._presets
         return [(self._labels[index], ""), *((c, c) for c in choices)]
 
     def on_select_changed(self, event: Select.Changed) -> None:
+        """Write a pick to the host; a preset pick relabels the model."""
         host, value = self._host(), str(event.value)
         if event.select.id == "resume-model":
             host.resume_model = value
@@ -193,19 +207,19 @@ class ResumeOptions(PickerRow):
             self._relabel()
 
     def show(self, shown: bool) -> None:
+        """Show or hide the row; shown, it relabels and syncs after the refresh."""
         if self.display != shown:
             self.display = shown
-        if not shown:  # an execution is running: it may pin a preset or a model
+        if not shown:  # a running execution may pin a preset or a model
             self._labelled = None
         else:
-            # After the refresh: on the first paint the Selects are not mounted
-            # yet, and a value written before the mount leaves a label blank.
-            # Relabel after an execution, or after the other view's row moved the pick.
+            # After the refresh: a value written before the Selects mount leaves a label blank.
             if self._labelled != self._host().resume_preset:
                 self.call_after_refresh(self._relabel)
             self.call_after_refresh(self._sync)
 
     def _relabel(self) -> None:
+        """Rename the no-flag entries for the host's preset pick."""
         host = self._host()
         if self._labelled == host.resume_preset:
             return
@@ -218,6 +232,7 @@ class ResumeOptions(PickerRow):
         self._sync()
 
     def _sync(self) -> None:
+        """Move the pickers to the host's picks."""
         host = self._host()
         with self.prevent(Select.Changed):
             for wanted, picker_id, choices in (
@@ -229,9 +244,7 @@ class ResumeOptions(PickerRow):
                     picker.value = wanted
 
 
-# The run-control menu, shared verbatim by the two run views (this primary
-# conversation and the dashboard) so they cannot drift. Every action resolves on
-# the Agent6TUI app (the menu bar's dispatcher falls back to app actions).
+# The run-control menu both run views share; every action resolves on the app.
 RUN_MENU = Menu(
     "Run",
     (
@@ -248,9 +261,7 @@ RUN_MENU = Menu(
 )
 
 
-# How the row paints each answer (`ui.keymap` owns the keys and the words; the
-# colour is this surface's alone): allow green, deny red, the scoped pair dimmer
-# than the plain one it widens.
+# The row's colour per answer; the keymap owns the keys and the words.
 _ANSWER_STYLES: dict[str, str] = {
     "yes": "bold green",
     "session": "green",
@@ -259,8 +270,7 @@ _ANSWER_STYLES: dict[str, str] = {
 }
 
 
-# A run view lists these in its own BINDINGS (textual merges bindings only from
-# DOM classes, so a mixin cannot carry them) and mixes in ApprovalKeys.
+# A run view lists these in its own BINDINGS; textual takes bindings only from DOM classes.
 APPROVAL_KEY_BINDINGS: tuple[Binding, ...] = tuple(
     Binding(entry.key, f"answer('{entry.answer}')", entry.label, show=False)
     for entry in APPROVAL_ANSWERS
@@ -268,26 +278,25 @@ APPROVAL_KEY_BINDINGS: tuple[Binding, ...] = tuple(
 
 
 class ApprovalKeys:
-    """Mix into a view of a session (before its Screen base), with
-    APPROVAL_KEY_BINDINGS in its BINDINGS. The open approval docks as an
-    ApprovalRow before the widget `APPROVAL_DOCK_BEFORE` names, its letters
-    answer from anywhere on the screen except a text field, and the answer is
-    written through `deliver_answer`. The host supplies `approval_dir` and
-    `approval_live`, and may extend `approval_answered`.
+    """The approval row's lifecycle, mixed into a session view before its Screen base.
 
-    Tab out of the composer and the keys work wherever the focus lands (the
-    transcript, a pane); keep tabbing and each answer is a tab stop of its own,
-    where Enter answers it. The composer keeps every letter it is given."""
+    The view lists APPROVAL_KEY_BINDINGS in its BINDINGS. The open approval docks as
+    an `ApprovalRow` before the widget `APPROVAL_DOCK_BEFORE` names; its letters
+    answer from any focus but a text field, and each answer is a tab stop where
+    Enter answers. The host supplies `approval_dir` and `approval_live`.
+
+    Attributes:
+        APPROVAL_DOCK_BEFORE: The selector the row mounts before.
+        APPROVAL_FOCUS_AFTER: Where the focus goes after an answer from the row; "" keeps it.
+        APPROVAL_ROW_SHOWS_PROMPT: The row carries the command when the screen shows it nowhere.
+        APPROVAL_LOST: The notice for an answer to a run that no longer takes one.
+        APPROVAL_ROW_HINT: The row's hint on reaching the keys.
+    """
 
     APPROVAL_DOCK_BEFORE: ClassVar[str] = ""
-    # Where the focus goes after an answer given from the row, so the next
-    # approval answers too; "" leaves it on the row.
     APPROVAL_FOCUS_AFTER: ClassVar[str] = ""
-    # The row carries the command when the screen shows it nowhere else.
     APPROVAL_ROW_SHOWS_PROMPT: ClassVar[bool] = True
-    # What an answer to a run that no longer takes one says.
     APPROVAL_LOST: ClassVar[str] = "the run is gone: the answer reached nothing"
-    # The row's hint on reaching the keys: a screen with a composer names it.
     APPROVAL_ROW_HINT: ClassVar[str] = "(Tab out of the bar for the keys; or click)"
 
     _prompts: PromptDispatcher | None = None
@@ -296,20 +305,18 @@ class ApprovalKeys:
     _answered_from_row: bool = False  # the focus stayed on the approval
 
     def approval_dir(self) -> Path:
-        """The session dir an answer is written to."""
+        """Return the session dir an answer is written to."""
         raise NotImplementedError
 
     def approval_live(self) -> bool:
-        """Whether the run still takes an answer, read at the answer."""
+        """Return whether the run still takes an answer, read at the answer."""
         raise NotImplementedError
 
     def approval_answered(self, verdict: str) -> None:
-        """After a written answer ("allowed", "denied", "answered elsewhere")."""
+        """Follow up a written answer: "allowed", "denied" or "answered elsewhere"."""
 
     def open_approval(self, state: SessionState) -> ApprovalPrompt | None:
-        """The approval this view answers now: the oldest unanswered one it has
-        not answered already (an answer given here is not re-offered before the
-        worker journals it)."""
+        """Return the oldest unanswered approval this view has not answered already."""
         prompts = self._prompts
         if prompts is None:
             return open_approval_of(state)
@@ -317,11 +324,15 @@ class ApprovalKeys:
         return open_approval_of(state, taken=lambda aid: prompts.seen(session_dir, aid))
 
     def sync_approval(self, current: ApprovalPrompt | None) -> None:
-        """One row per open approval, docked; none when nothing is open (the
-        host passes None for a run that takes no answer). A new id gets a
-        fresh row: a resumed execution reuses prompt ids, and the old row may still
-        be unmounting. When the last answer came from the row and the composer
-        never took the focus back, the focus goes to this row too."""
+        """Dock one row for the open approval, or none.
+
+        A new id gets a fresh row, since a resumed execution reuses prompt ids and the
+        old row may still be unmounting. After an answer from the row, the focus goes
+        to the next row too.
+
+        Args:
+            current: The open approval; None for none, or a run that takes no answer.
+        """
         screen = cast(Screen[Any], self)
         if current is None:
             if self._row is not None:
@@ -342,11 +353,10 @@ class ApprovalKeys:
             self._row.call_after_refresh(self._row.focus_answers)
 
     def on_approval_row_answered(self, message: ApprovalRow.Answered) -> None:
-        """An answer, from a label's click or its key."""
+        """Deliver an answer from a label's click or its key."""
         if self._row is None:
             return
-        # Answering from the row keeps the focus out of the composer, so the
-        # next approval answers too.
+        # Answered from the row, the focus stays out of the composer for the next approval.
         self._answered_from_row = self._row.holds_focus()
         screen = cast(Screen[Any], self)
         verdict = deliver_answer(
@@ -366,9 +376,11 @@ class ApprovalKeys:
                 screen.query_one(self.APPROVAL_FOCUS_AFTER).focus()
 
     def action_answer(self, answer: str) -> None:
+        """Answer the open approval from a key."""
         cast(Screen[Any], self).post_message(ApprovalRow.Answered(answer))
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Return whether an answer key is live: a row offers it and no text field has focus."""
         if action != "answer":
             return True
         screen = cast(Screen[Any], self)
@@ -379,14 +391,13 @@ class ApprovalKeys:
 
 
 class SteerInput(TextArea):
-    """The bottom composer bar: a TextArea that submits on Enter (Ctrl+J /
-    Shift+Enter insert a newline instead) and grows with its content up to
-    _INPUT_MAX_ROWS. Two modes (set_mode): steer a live run, or type the
-    follow-up instruction a finished run is resumed with. An open approval
-    never takes the keys while the focus is in the text: its letters answer
-    from any other focus."""
+    """The composer bar: submits on Enter, Ctrl+J inserts a newline, grows with its content.
 
-    ALLOW_MAXIMIZE = False  # a full-screen composer is never what Maximize means
+    Its mode says what Enter does: steer a live run, resume a finished one, start
+    or draft. An open approval's letters never answer while the focus is here.
+    """
+
+    ALLOW_MAXIMIZE = False
 
     # One style for every screen's composer; a screen adds only its placement.
     DEFAULT_CSS = f"""
@@ -398,21 +409,24 @@ class SteerInput(TextArea):
     """
 
     BINDINGS: ClassVar = [
-        # TextArea's own undo stack; ctrl+z is the app's Detach (see Agent6TUI).
+        # TextArea's own undo; ctrl+z is the app's Detach.
         Binding("ctrl+underscore", "undo", "Undo", show=False),
     ]
 
     class Submitted(Message):
+        """A line the operator sent."""
+
         def __init__(self, text: str) -> None:
             self.text = text
             super().__init__()
 
     def on_mount(self) -> None:
+        """Label for the mode and size to the content."""
         self.set_mode(mode=self.mode)
         self._resize()
 
-    policy = ""  # viewmodel.session_policy(...).short(), set once the run dir is known
-    mode: ComposerMode = "steer"  # which directives apply (see steer_suggestion_rows)
+    policy = ""  # the session policy's short form, set once the run dir is known
+    mode: ComposerMode = "steer"
 
     def set_mode(
         self,
@@ -422,20 +436,19 @@ class SteerInput(TextArea):
         continue_as: str = "",
         needs_new_work: bool = False,
     ) -> None:
-        """Relabel for the session's state: steering (live), resuming
-        (finished; *continue_as* names the fork an undone run resumes as,
-        *needs_new_work* a run finished green), or starting (a draft), plus the
-        context-window fill when known, right where you type. Only writes on
-        a real change: this runs on every heartbeat, and same-value style
-        writes still cost a refresh."""
+        """Relabel the bar for the session's state; a same-value write still costs a refresh.
+
+        Args:
+            mode: What Enter does.
+            ctx_pct: The context-window fill, when known.
+            continue_as: The fork an undone run resumes as.
+            needs_new_work: The run finished green, so a bare resume has nothing to do.
+        """
         self.mode = mode
         title, keys = composer_labels(mode, continue_as=continue_as, needs_new_work=needs_new_work)
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
-        # The run's policy sits where the eye already goes for status, from the
-        # same fold the CLI banner and the web header read.
         policy = f"{self.policy} · " if self.policy else ""
-        # Border titles are markup: `[focus]` in a label or a bracket in a
-        # model id would vanish (or crash) unescaped.
+        # Border titles are markup: a bracket in a label or a model id would vanish unescaped.
         title = escape(title)
         subtitle = escape(f"{policy}{ctx}{keys}")
         if self.border_title != title:
@@ -444,6 +457,7 @@ class SteerInput(TextArea):
             self.border_subtitle = subtitle
 
     def on_key(self, event: events.Key) -> None:
+        """Submit on Enter, insert a newline on Ctrl+J, complete a command on Tab."""
         if event.key == "enter":
             event.prevent_default()
             event.stop()
@@ -457,7 +471,7 @@ class SteerInput(TextArea):
             self.insert("\n")
         elif event.key == "tab":
             completed = complete_steer(self.text, mode=self.mode)
-            if completed is not None:  # else Tab keeps its focus-move meaning
+            if completed is not None:
                 event.prevent_default()
                 event.stop()
                 if completed != self.text:
@@ -465,21 +479,29 @@ class SteerInput(TextArea):
                     self.move_cursor(self.document.end)
 
     def on_text_area_changed(self, _event: TextArea.Changed) -> None:
+        """Grow or shrink with the content."""
         self._resize()
 
     def _resize(self) -> None:
+        """Set the height to the line count plus the border, only on a real change."""
         rows = min(max(self.document.line_count, 1), _INPUT_MAX_ROWS)
-        height = rows + 2  # + the rounded border
+        height = rows + 2
         current = self.styles.height
-        if current is None or current.value != height:  # only relayout on a real change
+        if current is None or current.value != height:
             self.styles.height = height
 
 
 def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path) -> None:
-    """Ctrl-R on a composer: pick one of this session's past messages (the
-    task, then every steer, journal-read, so resumes and other surfaces' steers
-    appear) into *field* for editing. Newest first, flattened to one
-    line each, repeats collapsed: the same list every surface's search shows."""
+    """Pick one of the session's past messages into the composer for editing.
+
+    The task, then every steer, read from the journal; newest first, one line
+    each, repeats collapsed, the same list every surface's search shows.
+
+    Args:
+        screen: The screen the modal is pushed over.
+        field: The composer to fill.
+        logs_path: The session's log.
+    """
     if not field.display:
         screen.notify("this view has no composer to fill", severity="warning")
         return
@@ -499,8 +521,13 @@ def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path)
 
 
 def approval_text(prompt: str, note: str = "approval needed", *, dim: bool = False) -> Text:
-    """`? <head>: <note>` over the payload's lines: the command under
-    judgment, as every view shows it. Dim for one nobody can answer."""
+    """Return `? <head>: <note>` over the payload's lines, the command as every view shows it.
+
+    Args:
+        prompt: The approval's prompt.
+        note: The words after the head.
+        dim: Nobody can answer this one.
+    """
     head, payload = approval_parts(prompt)
     if dim:
         body = Text(f"? {head}: {note}", style="dim")
@@ -513,8 +540,7 @@ def approval_text(prompt: str, note: str = "approval needed", *, dim: bool = Fal
 
 
 class _AnswerLabel(Static, can_focus=True):
-    """One answer of the row: `[key] label`. A click answers from any focus;
-    Tab reaches it and Enter or Space answers, like a button."""
+    """One answer of the row, `[key] label`: a click answers, and Enter or Space when focused."""
 
     BINDINGS: ClassVar = [
         Binding("enter", "answer", "Answer", show=False),
@@ -526,20 +552,20 @@ class _AnswerLabel(Static, can_focus=True):
         self.answer = answer
 
     def on_click(self) -> None:
+        """Answer on a click."""
         self.post_message(ApprovalRow.Answered(self.answer))
 
     def action_answer(self) -> None:
+        """Answer on Enter or Space."""
         self.post_message(ApprovalRow.Answered(self.answer))
 
 
 class ApprovalRow(Vertical):
-    """The open approval, docked above the composer: the command under judgment
-    (when the screen does not show it itself) over the answers.
+    """The open approval docked above the composer: the command, when carried, over the answers.
 
-    Nothing here takes focus: the composer keeps it, and a message typed as an
-    approval arrives is a message. Tab (or a click) moves focus into the row,
-    where every answer is a tab stop and its key answers; answering leaves the
-    focus there, so the next approval is answerable at once."""
+    Nothing here takes the focus; Tab or a click moves it in, where every answer is
+    a tab stop, and answering leaves it there for the next approval.
+    """
 
     DEFAULT_CSS = """
     ApprovalRow { height: auto; padding: 0 1; background: $surface; }
@@ -550,6 +576,8 @@ class ApprovalRow(Vertical):
     """
 
     class Answered(Message):
+        """An answer chosen on the row."""
+
         def __init__(self, answer: str) -> None:
             super().__init__()
             self.answer = answer
@@ -567,6 +595,7 @@ class ApprovalRow(Vertical):
         self._hint = hint
 
     def compose(self) -> ComposeResult:
+        """Yield the command, when carried, and the answers the prompt offers."""
         if self._prompt:
             yield Static(approval_text(self._prompt))
         with Horizontal(id="approval-answers"):
@@ -578,8 +607,7 @@ class ApprovalRow(Vertical):
             yield Static(Text(self._hint, style="dim"))
 
     def offers(self, answer: str) -> bool:
-        """Whether this prompt offers *answer*: a prompt with no scope offers
-        no session answer, so its letter is the letter it is."""
+        """Return whether the prompt offers the answer; no scope means no session answer."""
         scoped = {e.answer for e in APPROVAL_ANSWERS if e.standing}
         return self._standing or answer not in scoped
 
@@ -590,6 +618,7 @@ class ApprovalRow(Vertical):
             labels.first().focus()
 
     def holds_focus(self) -> bool:
+        """Return whether the focus is on the row or one of its answers."""
         screen = self.screen if self.is_attached else None
         focused = screen.focused if screen is not None else None
         return focused is not None and (focused is self or self in focused.ancestors)
@@ -605,10 +634,20 @@ def deliver_answer(
     live: bool = True,
     lost: str = ApprovalKeys.APPROVAL_LOST,
 ) -> str:
-    """Write an approval answer a row collected, notify the screen, and say what
-    happened: "allowed", "denied", "answered elsewhere", or "" for a run that
-    can no longer take it (*lost* is the notice). One owner, so every view
-    answers alike."""
+    """Write an approval answer and notify the screen; one owner, so every view answers alike.
+
+    Args:
+        screen: The screen to notify.
+        session_dir: The dir the answer file is written under.
+        prompt_id: The approval's id.
+        answer: The answer word.
+        prompts: The dispatcher that records the claim, when there is one.
+        live: The run still takes an answer.
+        lost: The notice when it does not.
+
+    Returns:
+        "allowed", "denied", "answered elsewhere", or "" for a run that no longer takes it.
+    """
     if not live:
         screen.notify(lost, severity="warning")
         return ""

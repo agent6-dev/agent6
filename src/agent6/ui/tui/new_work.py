@@ -2,12 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """The conversation view before there is a conversation.
 
-`n` on the hub opens it: the same chrome as a run's conversation (menu bar,
-transcript pane, composer bar, footer), with the transcript pane empty and a
-mode + preset + model row above the composer. Enter starts the run / plan / ask
-detached and hands the located session to the live view; a start refusal
-renders where the transcript will be, selectable, and the typed text stays in
-the composer to fix and resend.
+The hub's `n` opens it: a run's chrome with the transcript pane empty and a
+mode, preset and model row above the composer. Enter starts the session
+detached and hands it to the live view; a refusal renders where the transcript
+will be, and the typed text stays in the composer to fix and resend.
 """
 
 from __future__ import annotations
@@ -41,9 +39,17 @@ _INTRO = (
 
 
 def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> Text | None:
-    """The suggestion line for a `/parallel` spec fragment under the caret:
-    matching `provider/model` routes (prefix matches first), or None when the
-    caret is not in a spec token or there is nothing to offer."""
+    """Return the suggestion line for a `/parallel` spec fragment under the caret.
+
+    Args:
+        models: The routes the config can run.
+        text: The composer's text.
+        limit: How many matches to show.
+
+    Returns:
+        The matching routes, prefix matches first; None when the caret is not in a
+        spec token or there is nothing to offer.
+    """
     frag = spec_fragment(text)
     if frag is None or not models:
         return None
@@ -59,12 +65,12 @@ def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> Text |
 
 
 class NewWorkScreen(ScreenChrome, Screen[None]):
-    """Type a task, pick a mode, a preset and a model, Enter starts it (see the
-    module docstring). Lives in the hub app: a located session dir is the
-    hub's return value, and the run view opens on it. The preset and model
-    pickers open on the config's own choice, named, which adds no flag; any
-    other pick rides as `--preset` / `--model`. A mode or preset change
-    re-resolves the model's config default and resets the model to it."""
+    """Type a task, pick a mode, a preset and a model; Enter starts it.
+
+    Lives in the hub app: the located session dir is the hub's return value. The
+    preset and model pickers open on the config's own choice, which adds no flag;
+    any other pick rides as `--preset` or `--model`.
+    """
 
     CSS = """
     NewWorkScreen { background: $surface; }
@@ -108,6 +114,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         presets: list[str] | None = None,
         routes: list[str] | None = None,
     ) -> None:
+        """Bind the screen to the repo, its config and the preset and route choices."""
         super().__init__()
         self.repo_cwd = repo_cwd
         self.config_path = config_path
@@ -116,9 +123,14 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         self._starting = False
 
     def compose(self) -> ComposeResult:
+        """Lay out the screen.
+
+        Yields:
+            The menu bar, the notice pane, the suggestion line, the picker row, the
+            composer and the footer.
+        """
         yield MenuBar(self.MENUS)
-        # can_focus=False: the empty pane is no tab stop, so Tab reaches the
-        # pickers as the intro says.
+        # The empty pane is no tab stop, so Tab reaches the pickers as the intro says.
         with Vertical(id="draft-main"), VerticalScroll(id="draft-scroll", can_focus=False):
             yield Static(Text(_INTRO, style="dim italic"), id="draft-notice")
         yield SteerSuggest(id="draft-suggest")
@@ -142,41 +154,43 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        """Focus the composer in start mode."""
         self.app.sub_title = "new session"
         bar = self.query_one("#draft-input", SteerInput)
         bar.set_mode(mode="start")
         bar.focus()
 
     def _model_options(self, route: str) -> list[tuple[str, str]]:
-        """The model picker's rows: *route*, the config default, then every
-        route the config can run."""
+        """Return the model picker's rows: the config default, then every route."""
         return [(default_label(route), ""), *((r, r) for r in self._routes)]
 
     @on(Select.Changed, "#draft-mode")
     @on(Select.Changed, "#draft-preset")
     def _follow_route(self) -> None:
-        """The model picker follows a mode or preset change: it resets to the
-        config default for the pair, named with the route the config resolves
-        (`none` on a config error or an unset role)."""
+        """Reset the model picker to the config default for the mode and preset."""
         mode = str(self.query_one("#draft-mode", Select).value)
         preset = str(self.query_one("#draft-preset", Select).value)
         route = default_route(self.repo_cwd, self.config_path, mode, preset)
         self.query_one("#draft-model", Select).set_options(self._model_options(route))
 
     def action_close(self) -> None:
+        """Close an open list, else return to the hub."""
         if not self.close_open_list():
             self.dismiss(None)
 
     def action_quit_hub(self) -> None:
+        """Quit the hub."""
         self.app.exit(None)
 
     @on(TextArea.Changed, "#draft-input")
     def _on_task_changed(self, event: TextArea.Changed) -> None:
+        """Refresh the model suggestions under the caret."""
         self.query_one("#draft-suggest", SteerSuggest).show_text(
             model_suggestions(self._routes, event.text_area.text)
         )
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
+        """Start the session with the picked mode, preset and model."""
         if self._starting:
             return
         mode = str(self.query_one("#draft-mode", Select).value)
@@ -188,10 +202,11 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
 
     @work(thread=True, exclusive=True)
     def _start(self, app: App[object], mode: str, task: str, preset: str, model: str) -> None:
-        """Spawn detached and locate the session, off the UI thread: the locate
-        waits for the run's first event, which can take seconds. *app* is bound
-        on the UI thread: a screen dismissed mid-spawn has no parent to reach it
-        through."""
+        """Spawn the session detached and locate it, off the UI thread.
+
+        The locate waits for the first event, which can take seconds. The app is
+        passed in: a screen dismissed mid-spawn has no parent to reach it through.
+        """
         session_dir, err = spawn_new_work(
             self.repo_cwd, mode, task, preset=preset, model=model, config_path=self.config_path
         )
@@ -205,8 +220,7 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         if not self.is_attached:  # left mid-spawn: no composer to hand the text back to
             self.app.notify(err or "could not start", severity="error", timeout=8.0)
             return
-        # The refusal is the conversation so far: selectable, and above the
-        # text it refused, which is back in the composer to fix and resend.
+        # The refusal renders selectable, above the text it refused, back in the composer.
         self._notice(Text(err or "could not start", style="bold red"))
         with contextlib.suppress(NoMatches):
             bar = self.query_one("#draft-input", SteerInput)

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The run dashboard screen: the panes, their key bindings and menus, and the
-coalesced repaint of the app's folded SessionState. `Agent6TUI` (`app.py`)
-owns the data plane and pushes this screen."""
+"""The run dashboard: the panes, their keys and menus, and the coalesced repaint.
+
+`Agent6TUI` owns the data plane and pushes this screen.
+"""
 
 from __future__ import annotations
 
@@ -77,8 +78,7 @@ from agent6.viewmodel.tail import tail_events
 if TYPE_CHECKING:
     from agent6.ui.tui.app import Agent6TUI
 
-# How many recent tool calls the inline table shows. The RowSelected handler maps
-# a visual row back through the same window, so both must use this one value.
+# The tool calls the inline table shows; the RowSelected handler maps rows through the same window.
 _TOOL_TABLE_ROWS = 20
 
 # Below this terminal height the dashboard is compact: one pane row at a time.
@@ -87,10 +87,11 @@ _PANE_ROWS = ("head", "tools", "body")
 
 
 class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
-    """The run dashboard panes: task graph, live stream, tool table, log window,
-    diff/verify, and the composer bar. Presentation only: it renders the app's
-    folded SessionState and dispatches run control back through the app (see the
-    module docstring)."""
+    """The dashboard panes: tasks, the live stream, the tool table, the log, the diff, the composer.
+
+    Presentation only: it renders the app's folded state and sends run control back
+    through the app.
+    """
 
     CSS = """
     /* Top row: the task graph is usually a few nodes, so it stays compact beside
@@ -151,9 +152,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         "Pickers: ↑↓ highlight · Space selects",
     )
 
-    # The composer bar is the default focus, so (exactly like the conversation
-    # view) the keys are modified keys and Esc, as priority bindings. `?` opens
-    # help when the focus is not in the bar.
+    # The composer holds the focus, so the keys are modified keys and Esc, as priority bindings.
     MENUS: ClassVar = (
         Menu(
             "File",
@@ -162,7 +161,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 MenuItem("Quit", "quit_hub", priority=True),
             ),
         ),
-        RUN_MENU,  # shared verbatim with the primary conversation view
+        RUN_MENU,
         Menu(
             "View",
             (
@@ -199,14 +198,18 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
 
     @property
     def diff(self) -> DiffPane:
+        """The diff pane."""
         return self.query_one("#diff", DiffPane)
 
     def on_diff_pane_step_changed(self, _event: DiffPane.StepChanged) -> None:
+        """Repaint for the newly selected step."""
         self.render_state()
 
     def _details_state(self, s: SessionState) -> tuple[SessionState, str]:
-        """The state the task tree and the cost line show: live, or as of the
-        selected step (folded once per selection from the log)."""
+        """Return the state the task tree and the cost line show, and its "as of" suffix.
+
+        Live, or as of the selected step, folded once per selection from the log.
+        """
         sha = self.diff.step_sel
         if not sha:
             return s, ""
@@ -229,47 +232,35 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._presets = presets if presets is not None else []
         self._routes = routes if routes is not None else []
         self._prompts = prompts
-        # Select a task in the #plan tree to filter tools/log/diff to it; re-select
-        # to clear. _log_filter tracks what the RichLog currently shows so a filter
-        # change forces one full re-render (it is append-only otherwise).
+        # A task selected in the tree filters the tools, the log and the diff to it.
         self._selected_task_id: str | None = None
-        self._log_filter: str | None = None
+        self._log_filter: str | None = None  # what the append-only log shows; a change re-renders
         self._last_log_count = 0
         self._visible_tools: tuple[ToolCallView, ...] = ()  # the tool rows on screen now
-        # What each pane last rendered (strong refs; the fold's replace() keeps
-        # untouched fields identical, so `is` says "nothing to redo"). Rebuilding
-        # the tree/table/diff on every structural event would be most of a
-        # burst's cost.
+        # What each pane last rendered: the fold keeps untouched fields identical, so `is` says
+        # nothing to redo, and a burst never rebuilds the tree and table per event.
         self._rendered_tree: tuple[object, ...] | None = None
         self._rendered_tools: tuple[object, object] | None = None
         self._step_state: tuple[str, SessionState] | None = None  # the fold as of the step
 
     @property
     def _tui(self) -> Agent6TUI:
-        # Only Agent6TUI pushes this screen.
+        """The app; only Agent6TUI pushes this screen."""
         return cast("Agent6TUI", self.app)
 
-    # --- layout -------------------------------------------------------
-
     def compose(self) -> ComposeResult:
-        yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <run>"
+        """Yield the menu bar, the header, the three pane rows, the composer and the footer."""
+        yield MenuBar(self.MENUS)
         yield RunHeader()
         yield Static("", id="summary")  # compact only: the folded rows in one line
         with Horizontal(id="head"):
             yield Tree("tasks", id="plan")
             with ScrollPane(id="stream"):
                 yield Static("", id="stream-body")
-        # cursor_type="row": the whole row highlights and Enter opens its full
-        # detail (the columns truncate long args/summaries; see RowSelected).
         yield DataTable(id="tools", cursor_type="row")
         with Horizontal(id="body"):
-            # markup=False: log lines contain raw tool args like `args=[a,b]` which
-            # Rich would otherwise try to parse as markup and crash. auto_scroll off:
-            # _render does sticky-bottom itself (snap to the newest line only when the
-            # operator is already at the bottom).
-            # max_lines == the state log window: a burst that outruns the window
-            # between coalesced paints evicts the pre-burst lines, so the inline
-            # pane stays a gapless recent window (Full log is the history).
+            # markup=False: raw tool args would parse as markup. auto_scroll off: render_state
+            # keeps the bottom itself. max_lines is the state's window, so the pane stays gapless.
             yield RichLog(
                 id="log",
                 highlight=False,
@@ -285,31 +276,33 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         yield Footer()
 
     def on_resize(self, _event: events.Resize) -> None:
+        """Go compact below the row threshold."""
         self.set_class(self.size.height < _COMPACT_ROWS, "-compact")
         self._show_pane_row()
 
     def on_descendant_focus(self, _event: events.DescendantFocus) -> None:
+        """Unfold the focused pane's row when compact."""
         self._show_pane_row()
 
     def approval_dir(self) -> Path:
+        """Return the session dir."""
         return self._tui.session_dir
 
     def approval_live(self) -> bool:
+        """Return whether the run takes an answer."""
         return self._tui.session_controllable()
 
     def approval_answered(self, verdict: str) -> None:
+        """Repaint the row after an answer."""
         self._render_approval()
 
     def _render_approval(self) -> None:
-        """The open approval, docked above the composer: the row the
-        conversation shows, carrying the command too, since the dashboard has
-        no transcript to carry it. Never a modal: nothing takes the focus."""
+        """Dock the open approval's row, carrying the command since no transcript does."""
         tui = self._tui
         self.sync_approval(self.open_approval(tui.state) if tui.session_controllable() else None)
 
     def _show_pane_row(self) -> None:
-        """The row a compact dashboard unfolds: the one holding focus, else the
-        log and diff."""
+        """Unfold the row holding the focus, else the log and diff, when compact."""
         focused = self.focused
         row = "body"
         for name in ("head", "tools"):
@@ -320,22 +313,22 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             self.set_class(name == row, f"-show-{name}")
 
     def on_mount(self) -> None:
+        """Set the tool columns, hide the diff for an ask or a plan, paint and focus the bar."""
         self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
-        # An ask or a plan never commits: the log pane takes the diff pane's width.
         self.diff.display = self._tui.mode not in ("ask", "plan")
-        self.render_state()  # initial paint; later paints are coalesced in the app's tick
-        # Like the conversation: open ready to type (Tab moves out to the panes).
+        self.render_state()  # later paints are coalesced in the app's tick
         self.query_one("#dash-input", SteerInput).focus()
 
-    # --- actions ------------------------------------------------------
-
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
+        """Hand a composer line to the app."""
         self._tui.submit_instruction(message.text)
 
     def action_history_search(self) -> None:
+        """Open the prompt history search over the composer."""
         open_history_search(self, self.query_one("#dash-input", SteerInput), self._tui.logs_path)
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        """Refresh the command hints as the composer's text changes."""
         if event.text_area.id != "dash-input":
             return
         with contextlib.suppress(NoMatches):
@@ -345,20 +338,21 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             )
 
     def action_toggle_dashboard(self) -> None:
+        """Flip to the conversation through the app."""
         self._tui.action_toggle_dashboard()
 
     def action_to_hub(self) -> None:
+        """Close an open list, else leave the run view through the app."""
         if self.close_open_list():
             return
         self._tui.action_to_hub()
 
     def action_quit_hub(self) -> None:
+        """Leave the view and the hub through the app."""
         self._tui.action_quit_hub()
 
     def action_copy(self) -> None:
-        """Copy the mouse selection via the copy_method preference (the same
-        Ctrl+C the conversation has; textual's built-in copy would emit a bare
-        OSC 52, which multiplexers like tmux swallow)."""
+        """Copy the mouse selection by the configured method; a bare OSC 52 is swallowed by tmux."""
         text = self.get_selected_text()
         if not text or not text.strip():
             self.notify("nothing selected")
@@ -379,67 +373,60 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self.notify(f"copied selection ({status})")
 
     def _scroll_target(self) -> Widget:
-        """The pane the shared scroll keys drive: the focused scrollable if any
-        (Tab reaches every pane), else the log, the dashboard's main scrollback."""
+        """Return the pane the scroll keys drive: the focused scrollable, else the log."""
         focused = self.focused
         if isinstance(focused, (ScrollView, ScrollableContainer)):
             return focused
         return self.query_one("#log", RichLog)
 
     def action_page_up(self) -> None:
-        self._scroll_target().scroll_page_up(animate=False)  # instant, like the viewers
+        """Scroll the target pane one page up; instant, like the viewers."""
+        self._scroll_target().scroll_page_up(animate=False)
 
     def action_page_down(self) -> None:
+        """Scroll the target pane one page down."""
         self._scroll_target().scroll_page_down(animate=False)
 
     def action_scroll_top(self) -> None:
+        """Scroll the target pane to the top."""
         self._scroll_target().scroll_home(animate=False)
 
     def action_scroll_bottom(self) -> None:
+        """Scroll the target pane to the bottom."""
         self._scroll_target().scroll_end(animate=False)
 
     def action_focus_next_pane(self) -> None:
-        # Local action wrapping the App's framework action so it resolves from a
-        # menu item / palette entry (a namespaced `app.focus_next` does not).
+        """Focus the next pane; a local action, so a menu item can name it."""
         self.app.action_focus_next()
 
     def action_focus_prev_pane(self) -> None:
+        """Focus the previous pane."""
         self.app.action_focus_previous()
 
     def action_fullscreen(self) -> None:
-        """Maximize the focused pane; Esc (or the action again) restores it."""
+        """Maximize the focused pane, or restore it."""
         if self.maximized is not None:
             self.minimize()
         elif self.focused is not None and self.focused.allow_maximize:
             self.maximize(self.focused)
 
     def action_view_logs(self) -> None:
-        """Open the full, scrollable log of this run: the inline #log pane is a
-        small sliding window, this is the whole history, scroll-anchored. (l again
-        inside the view closes it: LogScreen binds l -> close.)"""
+        """Open the whole log; the inline pane is a sliding window."""
         self.app.push_screen(
             LogScreen(self._tui.logs_path, title=lambda: self._tui.screen_title("logs"))
         )
 
     def on_screen_resume(self) -> None:
-        # The conversation stamps its own sub_title; re-stamp ours when the
-        # toggle (or a closing viewer) brings the dashboard back on top, and
-        # repaint the light parts (the composer's mode and preset picker can
-        # have moved while the conversation was on top).
+        """Re-stamp the title and repaint the light parts on coming back on top."""
         self.app.sub_title = self._tui.run_title()
         with contextlib.suppress(NoMatches):
             self.render_heartbeat()
 
-    # --- command palette ---------------------------------------------
-
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Enter on a tool-calls row opens its full args + summary in a modal (the
-        columns truncate long values). Map the visual row back through the same
-        window the table was built from; ignore an out-of-range index from a race
-        with a rebuild."""
+        """Open a tool row's full args and summary in a modal on Enter."""
         if event.data_table.id != "tools":
             return
-        window = self._visible_tools  # exactly the rows on screen (task filter applied)
+        window = self._visible_tools
         if 0 <= event.cursor_row < len(window):
             tc = window[event.cursor_row]
             self.app.push_screen(
@@ -447,26 +434,19 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             )
 
     def on_tree_node_selected(self, event: Tree.NodeSelected[str | None]) -> None:
-        """Task-filter click handler for the #plan tree (see __init__'s notes)."""
+        """Filter the panes to the selected task; selecting it again clears the filter."""
         if event.control.id != "plan":
             return
         tid = event.node.data
         if not isinstance(tid, str):
             return
         self._selected_task_id = None if tid == self._selected_task_id else tid
-        self.render_state()  # a selection, not an event: re-render with the new filter now
-
-    # --- rendering ---------------------------------------------------
+        self.render_state()
 
     def render_heartbeat(self) -> None:
-        """The cheap once-a-second repaint: the top status line, the composer
-        bar's labels, and the live stream pane. The full pane rebuild
-        (render_state) runs only when events actually arrive: rebuilding the
-        task tree and tool table every heartbeat would be pure idle churn."""
+        """Repaint the light parts: the header, the composer's labels and the stream pane."""
         tui = self._tui
         s = tui.state
-        # Relabel every paint: mode flips on finished, and the context readout
-        # in the subtitle moves with the run.
         mode: ComposerMode = "steer" if tui.session_controllable() else "resume"
         self.query_one("#dash-input", SteerInput).set_mode(
             mode=mode,
@@ -490,15 +470,16 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             folded.truncate(width or 200, overflow="ellipsis")
             self.query_one("#summary", Static).update(folded)
 
-        # Live reasoning / response pane. Built as rich Text so model output is
-        # never parsed as markup.
+        # Rich Text, so model output is never parsed as markup.
         self.query_one("#stream-body", Static).update(self._stream_story(s, active=active))
 
     def _stream_story(self, s: SessionState, *, active: bool) -> Text:
-        """What the stream pane says: the end story for a finished run, live
-        deltas or the working heartbeat while active, and a truthful line for
-        every dead state (stale/parked/created) -- never "(waiting for the
-        model…)" over a run no model will ever touch."""
+        """Return the stream pane's text: the end story, the live deltas, or the dead state.
+
+        Args:
+            s: The folded state.
+            active: A model call is in flight.
+        """
         tui = self._tui
         role = s.last_role
         st = Text()
@@ -509,9 +490,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             and (role.streamed_thinking or role.streamed_text)
         )
         if s.finished:
-            # The end story, not a stale "idle": how it ended + the closing
-            # summary, and a plan's deliverable (the CLI prints plan.md at the
-            # end; the web shows it in its plan.md card).
+            # How it ended, the closing summary, and a plan's deliverable.
             word, reason = tui.dir_status
             st.append(status_label(word, reason) + "\n", style=f"bold {status_style(word)}")
             if s.finish_summary and s.end_reason in ("", "finish_session", "finish_planning"):
@@ -528,15 +507,12 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         elif tui.dir_status[0] == "waiting":
             st.append(status_label(*tui.dir_status), style="bold yellow")
         elif active and role is not None:
-            # No live deltas: the in-flight model is thinking.
             spinner = spinner_frame(tui.spin)
             secs = tui.seconds_since_event()
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
         elif tui.dir_status[0] == "starting":
             st.append("starting", style=f"bold {status_style('starting')}")
         elif (dead := dead_run_note(*tui.dir_status))[0]:
-            # No model is coming. The composer below has focus and Enter
-            # resumes; there is no plain-letter shortcut to point at.
             st.append(dead[0] + "\n", style=f"bold {status_style(tui.dir_status[0])}")
             st.append(dead[1], style="dim")
         else:
@@ -544,20 +520,16 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         return st
 
     def render_state(self) -> None:  # noqa: PLR0912
+        """Repaint every pane, rebuilding the tree and table only when their inputs changed."""
         self.render_heartbeat()
         tui = self._tui
         s = tui.state
 
-        # A task selected in the #plan tree filters tools/log/diff to it. sel=None
-        # is the unfiltered live view; the border titles show which task when set.
         sel = self._selected_task_id
         sel_title = next((t.title for t in s.tasks if t.id == sel), "") if sel else ""
         # A border title is markup; the task title is the model's or the user's.
         filt = f" · task: {escape(sel_title[:28])}" if sel else ""
 
-        # Task DAG: the worker's live add_task/update_task breakdown (graph.update
-        # snapshots), indented by depth, cursor marked. Rebuilt only when the
-        # tasks tuple (or the selection highlight) actually changed.
         ds, as_of = self._details_state(s)
         if self._rendered_tree is None or not (
             self._rendered_tree[0] is ds.tasks
@@ -570,12 +542,11 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             tree.border_title = f"tasks{as_of}" if as_of else ""
             for tv in ds.tasks:
                 indent = "  " * tv.depth
-                # The id leads the line: it is what `/retire` takes; the glyph
-                # is the view's, the cursor's task drawn as in progress.
+                # The id leads the line: it is what `/retire` takes.
                 label = Text(f"{tv.short_id:>3} {indent}{tv.glyph} {tv.title}")
                 if tv.note:
                     label.append(f"  {tv.note}", style="dim italic")
-                if tv.id == sel:  # the task the panes are filtered to
+                if tv.id == sel:
                     label.stylize("bold reverse")
                 tree.root.add_leaf(label, data=tv.id)
             tree.root.expand()
@@ -598,13 +569,8 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 )
             table.border_title = f"tools{filt}" if sel else ""
 
-        # Log. Diff on the monotonic log_count, not len(log_tail): log_tail is a
-        # sliding window, so a length-based diff freezes once it saturates.
-        # Sticky-bottom: only snap to the newest line if the operator was already
-        # at the bottom, so scrolling up to read holds position. End (pane focused) / Full
-        # log jump back to the live tail. A filter change forces one full
-        # re-render (the RichLog is append-only, so it cannot re-window itself
-        # incrementally).
+        # The diff is on the monotonic log_count: log_tail is a sliding window, so a length diff
+        # freezes once it saturates. The bottom is kept only when the operator was there.
         log = self.query_one("#log", RichLog)
         log.border_title = f"log{filt}" if sel else ""
         if sel != self._log_filter:

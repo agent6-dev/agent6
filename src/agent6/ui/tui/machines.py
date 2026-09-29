@@ -1,13 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `agent6 tui` Machines page: browse, view, run, and create state machines.
+"""The Machines page: browse, view, run, watch and create state machines.
 
-A separate page from the run hub (machines are not runs). Like the hub's run
-actions, it never drives a machine in-process: Run and Create shell out to
-`agent6 machine run|create` (detached). View is the one in-process step: it
-parses the .asm.toml via agent6.machine to show the machine's structure,
-validation, and graph, which is why ui depends on agent6.machine for this page
-(see tach.toml).
+Run and Create shell out to `agent6 machine run|create`, detached; View parses the
+machine file in-process, the one reason ui depends on `agent6.machine`.
 """
 
 from __future__ import annotations
@@ -98,8 +94,7 @@ _VERB_ACTIONS: dict[str, MachineVerb] = {"steer": "steer", "poke": "poke", "stop
 
 
 def _list_drafts(agent6_dir: Path) -> list[Path]:
-    """Machine-create draft dirs (newest first). Each holds the watchable
-    logs.jsonl + prompt.txt + the authored candidate."""
+    """Return the machine-create draft dirs, newest first."""
     drafts = bucket_dir(agent6_dir, "machines")
     if not drafts.is_dir():
         return []
@@ -109,12 +104,13 @@ def _list_drafts(agent6_dir: Path) -> list[Path]:
 
 
 def _discrete_log_line(evt: dict[str, object], *, in_flight: bool = False) -> Text | None:
-    """A compact line for a non-streaming agent-log event (tool calls, role start),
-    or None to skip it. Thinking/text deltas are accumulated separately.
+    """Return a compact line for a non-streaming agent-log event, or None to skip it.
 
-    Only the turn still *in_flight* is marked "thinking…": the screen replays
-    the whole state log on open, where a finished turn's role.call would
-    otherwise read as live."""
+    Args:
+        evt: The event.
+        in_flight: The turn is still open; only then is a role.call marked as thinking,
+            since a replayed finished turn would otherwise read as live.
+    """
     t = evt.get("type")
     if t == "role.call":
         mark = " thinking…" if in_flight else ""
@@ -131,25 +127,19 @@ def _discrete_log_line(evt: dict[str, object], *, in_flight: bool = False) -> Te
     return None
 
 
-# Answer submitted after the machine stopped mid-modal: the state's loop has
-# exited, so the per-state answer file has no reader; a poke wakes a waiting one.
+# An answer submitted after the machine stopped: the per-state answer file has no reader.
 _ANSWER_LOST = (
     "machine is not running; the answer reached nothing (poke it to wake a waiting machine)"
 )
 
 
 class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
-    """Live view of a running (or finished) machine: the state overview with the
-    current state marked, each transition as it lands, and the active agent
-    state's reasoning streamed from its per-state logs.jsonl, the in-TUI
-    equivalent of `agent6 attach`. Polls every 0.5s.
+    """The live view of a machine: its states, each transition, the agent state's reasoning.
 
-    Interactive: while open it registers as an answer front-end (a frontends/ claim on
-    the instance dir), so the current agent state's `run_command` approvals dock
-    as the run views' answer row (above the footer) and its `ask_user` questions
-    pop as modals; `s` steers that state, `m` sends a message (a poke payload)
-    to a waiting machine, and a `machine.notify` (or the machine's completion)
-    fires a desktop + in-app notification."""
+    Polls every 0.5s. While open it is an answer front-end for the instance: the
+    current agent state's approvals dock as the run views' answer row and its
+    questions pop as modals; the machine's notifies and its end notify too.
+    """
 
     HELP_TITLE: ClassVar = "agent6 machine — keys & actions"
     MENUS: ClassVar = (
@@ -201,19 +191,18 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._spec = spec
         self._journal = MachineJournal(instance_dir)
         self._cursor = MachineWatchCursor()
-        self._pending = ""  # accumulated thinking/answer text, flushed in readable chunks
+        self._pending = ""  # thinking and answer text, flushed in readable chunks
         self._ended = False
-        # Every verb's refusal, read once per poll: the footer, the keys and
-        # the prompt gate paint from the same reading.
+        # Every verb's refusal, read once per poll: the footer, the keys and the prompt gate agree.
         self._refusals = machine_verb_refusals(self._root, self._root.name)
-        # The newest state log, folded incrementally: the refusals and the
-        # prompt dispatch read one fold per poll.
+        # The newest state log, folded incrementally, one fold per poll.
         self._execution_fold = NewestExecutionFold()
         self._prompts = PromptDispatcher(self.app, answerable=self._answerable, lost=_ANSWER_LOST)
         self._end_notified = False
         self._steer_open = False
 
     def compose(self) -> ComposeResult:
+        """Yield the menu bar, the header, the state table beside the log, and the footer."""
         yield MenuBar(self.MENUS)
         yield Static(id="mw-head")
         with Horizontal():
@@ -222,19 +211,16 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        """Fill the state table, claim the instance as a front-end, seed the cursor and poll."""
         table = self.query_one("#mw-states", DataTable)
         table.add_column(" ", key="mark")
         table.add_column("state", key="state")
         table.add_column("kind", key="kind")
         for name, state in self._spec.states.items():
             table.add_row("", name, state.kind, key=name)
-        # Register as the answer front-end on the instance dir: a machine agent
-        # state's approval/question/steer prompts bridge here while we watch. Seed
-        # notification history so past notifies are not re-announced on open. The
-        # dir may not exist yet (watching a just-spawned run), so create it first.
+        # The dir may not exist yet when watching a just-spawned run.
         mkdir_for_real_user(self._root)
-        # Per-process claim file: nothing to defend or re-assert, concurrent
-        # web/TUI watchers each hold their own.
+        # A per-process claim; concurrent web and TUI watchers each hold their own.
         register_frontend(self._root, os.getpid())
         try:
             events = self._journal.read()
@@ -242,33 +228,29 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             events = []  # the first poll surfaces the corruption in the header
         seeded = fold_machine(self._spec, events)
         self._cursor.seed_notifications(seeded)
-        # An end that predates the open is history, not news (same as the web's
-        # endedNotified seed); a machine ending while watched still announces.
+        # An end that predates the open is history, not news.
         self._end_notified = seeded.ended is not None
         self._poll()
         self._poll_timer = self.set_interval(0.5, self._poll)
 
     def on_unmount(self) -> None:
-        # Drop only our own front-end claim; concurrent watchers keep theirs.
+        """Drop this process's front-end claim."""
         unregister_frontend(self._root, os.getpid())
 
     def _current_state_dir(self) -> Path | None:
-        """The current agent state's per-state dir (where its answer files live)."""
+        """Return the current agent state's dir, where its answer files live."""
         log = newest_state_log(self._root)
         return log.parent if log is not None else None
 
     def action_close(self) -> None:
-        # Standalone `agent6 attach <machine> --tui` mounts this directly on the
-        # app's base screen, so there is nothing to pop back to; exit instead.
+        """Pop the screen, or exit when `agent6 attach --tui` mounted it on the base screen."""
         if len(self.app.screen_stack) > 2:
             self.app.pop_screen()
         else:
             self.app.exit()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        # Every machine verb stays named in the footer, dimmed where the one
-        # viewmodel gate refuses it (the web disables the same buttons); a
-        # dimmed key still shows its refusal (on_key).
+        """Return None to dim a verb's footer key where the viewmodel gate refuses it."""
         del parameters
         verb = _VERB_ACTIONS.get(action)
         if verb is None or not self._refusals[verb]:
@@ -285,10 +267,7 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._explain_refusal(verb)
 
     def on_click(self, event: events.Click) -> None:
-        """A dimmed footer key's click shows its refusal; the footer answers a
-        disabled key with the bell alone. A key the footer still paints as lit
-        (it skips its rebuild while the terminal is unfocused) is its own
-        simulated keypress, which on_key answers."""
+        """Show a dimmed footer key's refusal on click; the footer alone would only ring."""
         widget = event.widget
         action = getattr(widget, "action", None)
         if widget is None or not widget.has_class("-disabled") or not isinstance(action, str):
@@ -298,11 +277,12 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             self._explain_refusal(verb)
 
     def _explain_refusal(self, verb: MachineVerb) -> None:
+        """Notify the verb's refusal; a stop's is a note, not a warning."""
         severity: SeverityLevel = "information" if verb == "stop" else "warning"
         self.app.notify(self._refusals[verb], severity=severity, timeout=6.0)
 
     def _verb_for_key(self, key: str) -> MachineVerb | None:
-        """The machine verb *key* is bound to, from BINDINGS, the one owner."""
+        """Return the machine verb the key is bound to in BINDINGS."""
         for binding in self.BINDINGS:
             if isinstance(binding, Binding) and binding.key == key:
                 return _VERB_ACTIONS.get(binding.action)
@@ -316,18 +296,15 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             self.refresh_bindings()
 
     def _steerable(self) -> bool:
-        """A steer only reaches an open agent state (the poll's refusals): the
-        render's liveness and the prompt dispatch read this."""
+        """Return whether a steer reaches an open agent state, per the poll's refusals."""
         return not self._refusals["steer"]
 
     def _answerable(self) -> bool:
-        """Read fresh at submit, as a steer's and a poke's gates are: the worker
-        can die while a prompt is up."""
+        """Return whether an answer reaches the worker, read fresh since it can die mid-prompt."""
         return not machine_verb_refusal(self._root, self._root.name, "answer")
 
     def action_steer(self) -> None:
-        """Steer the current agent state: drop a request marker + open the steer
-        box; the state picks it up at its next safe boundary. No-op if none runs."""
+        """Drop a steer request and open the steer box for the current agent state."""
         ok, refusal = verb_answer(self._root, self._root.name, "steer")
         if not ok or refusal:
             self.app.notify(refusal, severity="warning", timeout=6.0)
@@ -344,10 +321,10 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self.app.push_screen(SteerModal(), self._on_steer(state_dir))
 
     def _on_steer(self, state_dir: Path) -> Callable[[str | None], None]:
+        """Return the steer modal's callback, which re-reads the gate before writing."""
+
         def cb(answer: str | None) -> None:
             self._steer_open = False
-            # The worker can die while the modal is open: the gate is re-read
-            # at submit, so nothing lands in a dead state dir.
             refusal = machine_verb_refusal(self._root, self._root.name, "steer")
             if refusal:
                 self.app.notify(refusal, severity="warning", timeout=6.0)
@@ -357,8 +334,7 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         return cb
 
     def action_stop(self) -> None:
-        """Ask the running machine to park at its next transition boundary
-        (the durable stop marker; the instance stays resumable)."""
+        """Ask the machine to park at its next transition; the instance stays resumable."""
         ok, answer = verb_answer(self._root, self._root.name, "stop")
         if not ok:
             self.app.notify(answer, severity="warning", timeout=6.0)
@@ -370,8 +346,7 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self.app.notify("stop requested; the machine parks at its next boundary", timeout=4.0)
 
     def action_poke(self) -> None:
-        """Send a message to a waiting machine (a poke payload the next tool
-        reads); an ended machine refuses with the CLI's words."""
+        """Open the message box for a waiting machine."""
         ok, refusal = verb_answer(self._root, self._root.name, "poke")
         if not ok or refusal:
             self.app.notify(refusal, severity="warning", timeout=6.0)
@@ -381,10 +356,9 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         )
 
     def _on_poke(self, message: str | None) -> None:
+        """Write the poke, re-reading the gate since the wait can close while the modal is open."""
         if message is None:
             return
-        # The wait can close while the modal is open: re-read the gate at
-        # submit, so no signal is left for a wait that is not there.
         refusal = machine_verb_refusal(self._root, self._root.name, "poke")
         if refusal:
             self.app.notify(refusal, severity="warning", timeout=6.0)
@@ -397,39 +371,35 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self.app.notify("poked", timeout=3.0)
 
     def _flush_pending(self) -> None:
+        """Write the accumulated thinking and answer text as one dim line."""
         text = self._pending.strip()
         self._pending = ""
         if text:
             self.query_one("#mw-log", RichLog).write(Text(f"  {text}", style="dim"))
 
     def _poll(self) -> None:
+        """Fold the journal and repaint the header, the markers, the log, the prompts."""
         if self._ended:
             return
         try:
             events = self._journal.read()
             ms = fold_machine(self._spec, events)
         except JournalError as exc:
-            # A corrupt journal line must not crash the screen every poll tick;
-            # show it and keep polling (an append may heal or end the run).
+            # Shown and kept polling: an append may heal or end the run.
             self.query_one("#mw-head", Static).update(Text(f"journal unreadable: {exc}"))
             return
 
-        # One probe of the dir per poll feeds the header, the footer and the
-        # keys. The footer follows every verb's edge, not just the _ended one:
-        # a park or a worker death flips a verb with no MachineEnd, a wait can
-        # close while steer stays refused, and a lit key otherwise offers a
-        # verb nothing reads.
+        # One probe per poll feeds the header, the footer and the keys; a park or a worker death
+        # flips a verb with no MachineEnd, so the footer follows every verb's edge.
         self._execution_fold.refresh(self._root)
         probes = probe_instance(self._root, ms, execution=self._execution_fold.execution())
         self._set_refusals(probes.refusals(self._root.name, ms))
-        # Header + state-table markers. A parked (--exit-on-wait) instance reads
-        # "waiting", not "running", so a paused machine never looks busy.
+        # A parked instance reads "waiting", so a paused machine never looks busy.
         if ms.ended is not None:
             status = f"ended: {ms.ended.status} ({ms.ended.reason})"
         else:
             status = f"{probes.status_word(ms)} · {ms.current}"
-        # A machine runs unattended against the USD ceiling, so the header
-        # carries its spend.
+        # A machine runs unattended against the USD ceiling, so the header carries its spend.
         spend, _in_flight = machine_spend(events, self._root, alive=worker_is_alive(self._root))
         cost = format_usd(spend.usd, partial=spend.partial)
         self.query_one("#mw-head", Static).update(
@@ -443,35 +413,29 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             mark = s.mark
             table.update_cell(s.name, "mark", mark)
 
-        # Mark ended before rendering the log so a terminal instance's final
-        # agent state doesn't render a live "thinking…" line.
+        # Ended before the log renders, so the final agent state shows no live thinking line.
         if ms.ended is not None and not self._ended:
-            self._ended = True  # the refusals above already dim every verb
-        # Liveness for the render + prompt gate.
+            self._ended = True
         live = not self._ended and self._steerable()
 
         log = self.query_one("#mw-log", RichLog)
-        # New transitions.
         for t in self._cursor.new_transitions(ms):
             self._flush_pending()
             log.write(Text(t.line, style="bold"))
 
-        # The current agent state's reasoning (switch logs as states change).
         newest, switched = self._cursor.advance_log(self._root)
         if switched:
             self._flush_pending()
             if newest is not None:
                 log.write(Text(f"-- agent state: {newest.parent.name} --", style="cyan bold"))
         self._render_log_lines(log, live=live)
-        self._flush_pending()  # show partial reasoning each tick
+        self._flush_pending()
 
         self._dispatch_notifications(ms)
         self._dispatch_prompts(live=live)
 
     def _dispatch_notifications(self, ms: MachineState) -> None:
-        """Pop an in-app + desktop notification for each new machine.notify, and
-        once for the machine's completion. Dedup by identity (not a count) since
-        ms.notifications is a sliding window."""
+        """Notify each new machine.notify in-app and on the desktop, and the end once."""
         for n in self._cursor.new_notifications(ms):
             sev: SeverityLevel = (
                 "warning" if n.level == "warn" else "error" if n.level == "error" else "information"
@@ -490,14 +454,11 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             desktop_notify(f"agent6: {ms.machine} {ended.status}", ended.reason)
 
     def _dispatch_prompts(self, *, live: bool) -> None:
-        """Dock the current agent state's open approval and pop a modal per
-        pending question, the answers written back to that state's dir.
+        """Dock the agent state's open approval and pop a modal per pending question.
 
-        Only while the machine is running: a parked/stopped/ended instance's
-        newest agent state is finished, so the fold still carries an unanswered
-        prompt but nothing would poll the answer. Offering a live-looking
-        Allow/Deny (a destructive-command approval among them) over a dead
-        machine is the machine twin of the run views' liveness gate."""
+        Only while the machine runs: a parked or ended instance's fold still carries an
+        unanswered prompt, but nothing would poll the answer.
+        """
         state_log = self._execution_fold.log
         if not live or state_log is None:
             self.sync_approval(None)
@@ -508,20 +469,16 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
             prompts.dispatch(state_log.parent, self._execution_fold.state)
 
     def approval_dir(self) -> Path:
-        """The newest agent state's dir."""
+        """Return the newest agent state's dir."""
         state_log = self._execution_fold.log
         return state_log.parent if state_log is not None else self._root
 
     def approval_live(self) -> bool:
-        """Read fresh at the answer, as a steer's and a poke's gates are: the
-        worker can die while the row is up."""
+        """Return whether an answer reaches the worker, read fresh at the answer."""
         return self._answerable()
 
     def _render_log_lines(self, log: RichLog, *, live: bool) -> None:
-        """Render new complete lines of the current state log: accumulate
-        thinking/answer text in self._pending, write discrete events (tool
-        calls) inline. The byte-offset cursor (partial trailing lines stay
-        unconsumed) lives in MachineWatchCursor."""
+        """Render the state log's new complete lines: deltas accumulate, discrete events write."""
         batch: list[dict[str, object]] = []
         for raw in self._cursor.read_log_lines():
             try:
@@ -530,8 +487,7 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 continue
             if isinstance(evt, dict):
                 batch.append(evt)
-        # The last unclosed role.call in the batch is the only turn that can be
-        # in flight, and only on a live instance.
+        # The last unclosed role.call is the only turn that can be in flight.
         open_call = -1
         for i, evt in enumerate(batch):
             if evt.get("type") == "role.call":
@@ -550,9 +506,14 @@ class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
 
 
 def machine_detail_text(path: Path) -> str:
-    """A read-only text view of a parsed machine: name, initial, states, validation,
-    and the mermaid graph. On a load error, the error itself (so the page never
-    crashes on a half-written file)."""
+    """Return a parsed machine as text: name, initial, states, validation and the graph.
+
+    Args:
+        path: The machine file.
+
+    Returns:
+        The text, or the load error itself so a half-written file never crashes the page.
+    """
     try:
         spec = load_machine(path)
     except (MachineError, OSError) as exc:
@@ -563,8 +524,7 @@ def machine_detail_text(path: Path) -> str:
         "",
         f"states ({len(spec.states)}):",
     ]
-    # `state.kind` (agent/tool/wait/branch/terminal): the user word the watch
-    # screen and the web detail already show, not the internal class name.
+    # `state.kind` is the user word the watch screen and the web detail show.
     lines.extend(f"  {name}  ({state.kind})" for name, state in spec.states.items())
     problems = validate_semantics(spec)
     lines.append("")
@@ -578,7 +538,7 @@ def machine_detail_text(path: Path) -> str:
 
 
 class MachineDetailScreen(Screen[None]):
-    """Read-only view of one parsed machine (structure + validation + graph)."""
+    """The read-only view of one parsed machine."""
 
     CSS = """
     MachineDetailScreen { background: $surface; }
@@ -599,21 +559,23 @@ class MachineDetailScreen(Screen[None]):
         self._path = path
 
     def compose(self) -> ComposeResult:
+        """Yield the title, the scrollable text and the footer."""
         yield Static(f"machine · {self._path.name}", id="machine-detail-title")
         with VerticalScroll(id="machine-detail-body"):
             yield Static(Text(machine_detail_text(self._path)))  # plain Text: no markup parsing
         yield Footer()
 
     def on_mount(self) -> None:
+        """Focus the text for keyboard scrolling."""
         self.query_one("#machine-detail-body", VerticalScroll).focus()
 
     def action_close(self) -> None:
+        """Close the view."""
         self.dismiss()
 
 
 class CreateMachineModal(ModalScreen[str]):
-    """Prompt for a natural-language task to author a machine. Result: the task text
-    (or "" if cancelled)."""
+    """Ask for the task a machine is authored from; the result is the text, "" on cancel."""
 
     CSS = (
         FORM_CSS
@@ -633,6 +595,7 @@ class CreateMachineModal(ModalScreen[str]):
     BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel", show=False)]
 
     def compose(self) -> ComposeResult:
+        """Yield the box: the heading, the composer and the hint."""
         with Container(id="create-box"):
             text = Text()
             text.append("Create a machine\n\n", style="bold")
@@ -644,20 +607,22 @@ class CreateMachineModal(ModalScreen[str]):
             )
 
     def on_mount(self) -> None:
+        """Put the composer in draft mode and focus it."""
         bar = self.query_one("#create-input", SteerInput)
         bar.set_mode(mode="draft")
         bar.focus()
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
+        """Return the task text."""
         self.dismiss(message.text.strip())
 
     def action_cancel(self) -> None:
+        """Return "" for a cancel."""
         self.dismiss("")
 
 
 class MachinesScreen(ScreenChrome, Screen[None]):
-    """List authored state machines; view (parsed), run, or create them. Run/Create
-    shell out to the CLI (detached); View parses in-process."""
+    """The list of authored machines and their instances, with view, run, watch and create."""
 
     CSS = (
         PALETTE_CSS
@@ -673,7 +638,6 @@ class MachinesScreen(ScreenChrome, Screen[None]):
     """
     )
     MENUS: ClassVar = (
-        # File/<page>/View/Help, the same shape as the hub and the dashboard.
         Menu(
             "File",
             (
@@ -722,26 +686,26 @@ class MachinesScreen(ScreenChrome, Screen[None]):
 
     def __init__(self, agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> None:
         super().__init__()
-        self.agent6_dir = agent6_dir  # per-repo state dir; machine-create drafts live under it
+        self.agent6_dir = agent6_dir  # the per-repo state dir; drafts live under it
         self.repo_cwd = repo_cwd
         self.config_path = config_path
         self._machines: list[MachineRow] = []
 
     def compose(self) -> ComposeResult:
+        """Yield the menu bar, the table and the footer."""
         yield MenuBar(self.MENUS)
         yield DataTable(id="machines")
         yield Footer()
 
     def on_mount(self) -> None:
+        """Set the table's columns and load the rows."""
         table = self.query_one("#machines", DataTable)
         table.cursor_type = "row"
         table.add_columns("machine", "status", "state", "updated", "states", "spec", "file")
         self._reload()
 
     def _reload(self) -> None:
-        """The rows `agent6 machine` lists (`app.machine.listing.machine_rows`):
-        each instance's status and current state joined with its authored
-        file's validity, then the files no instance ran."""
+        """Fill the table with the rows `agent6 machine` lists and count them in the title."""
         table = self.query_one("#machines", DataTable)
         table.clear()
         self._machines = machine_rows(self.repo_cwd, self.agent6_dir)
@@ -749,7 +713,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
             status = (
                 Text(status_label(row.status, row.reason), style=status_style(row.status))
                 if row.status
-                else Text("-")  # a file no instance ran, like its empty state and updated cells
+                else Text("-")  # a file no instance ran
             )
             table.add_row(
                 Text(row.name),
@@ -761,8 +725,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
                 Text(row.file.name if row.file is not None else "-"),
             )
         table.show_cursor = table.row_count > 0
-        # The count in the title (the hub does the same); an empty table alone
-        # reads as still loading, so say none exist and what draws one.
+        # An empty table alone reads as still loading, so the title says none exist.
         n = len(self._machines)
         tally = (
             "no machines yet (c creates one)" if not n else f"{n} machine{'' if n == 1 else 's'}"
@@ -770,23 +733,22 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         self.app.sub_title = f"machines · {self.repo_cwd.name} · {tally}"
 
     def _selected_row(self) -> MachineRow | None:
+        """Return the row under the cursor."""
         table = self.query_one("#machines", DataTable)
         if self._machines and 0 <= table.cursor_row < len(self._machines):
             return self._machines[table.cursor_row]
         return None
 
     def _selected(self) -> Path | None:
-        """The selected row's authored file; None for a row without one (an
-        instance whose file is gone: watchable, not viewable or runnable)."""
+        """Return the selected row's authored file; None when the instance's file is gone."""
         row = self._selected_row()
         return row.file if row is not None else None
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Grey out the row actions on a page with no selectable row: View and
-        Run need an authored file, Watch a row with an instance, and all three
-        were silent no-ops the footer still offered. None, not False: False
-        also HIDES the key, and a key missing from the footer reads as a
-        capability this page does not have."""
+        """Return None to dim a row action with no fitting row; False would hide the key.
+
+        View and Run need an authored file, Watch an instance.
+        """
         del parameters
         if action in ("view", "run"):
             return True if self._selected() is not None else None
@@ -796,21 +758,21 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         return True
 
     def on_data_table_row_highlighted(self, _event: DataTable.RowHighlighted) -> None:
-        # The row actions act on the selection, and Textual re-asks
-        # `check_action` only on a bindings refresh.
+        """Re-ask check_action for the new selection."""
         self.refresh_bindings()
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
-        # Enter on a row opens the parsed view (the DataTable consumes Enter, so the
-        # screen's binding never fires; handle the row event itself, like the hub).
+        """Open the parsed view on Enter, which the table consumes before any binding."""
         self.action_view()
 
     def action_view(self) -> None:
+        """Open the selected machine's parsed view."""
         path = self._selected()
         if path is not None:
             self.app.push_screen(MachineDetailScreen(path))
 
     def action_run(self) -> None:
+        """Confirm, then run the selected machine detached and watch it."""
         path = self._selected()
         if path is None:
             return
@@ -826,6 +788,8 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         )
 
     def _on_run_confirm(self, path: Path) -> Callable[[bool | None], None]:
+        """Return the confirm's callback, which loads the spec and spawns the run."""
+
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
                 return
@@ -840,15 +804,16 @@ class MachinesScreen(ScreenChrome, Screen[None]):
 
     @work(thread=True)
     def _spawn_machine_run(self, app: App[object], path: Path, instance: Path) -> None:
-        """Spawn `machine run` detached, off the UI thread: the confirm waits
-        for the child to own the instance (a second or more on a real run).
-        *app* is bound on the UI thread: a screen dismissed mid-spawn has no
-        parent to reach it through.
+        """Spawn `machine run` detached, off the UI thread, and report back.
 
-        Started = the child wrote its own pid as the instance worker.pid (it
-        does so right after taking the machine lock). A refusal (lock held,
-        network refusal, bad bundle) exits nonzero before that and its stderr
-        surfaces here instead of a watch screen on nothing."""
+        Started means the child wrote its pid as the instance's worker.pid, right after
+        taking the machine lock; a refusal exits before that and its stderr lands here.
+
+        Args:
+            app: The app, bound on the UI thread; a screen dismissed mid-spawn has no parent.
+            path: The machine file.
+            instance: The instance dir the child claims.
+        """
         err = spawn_and_confirm(
             [*agent6_argv(self.config_path), "machine", "run", str(path)],
             self.repo_cwd,
@@ -857,15 +822,14 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         app.call_from_thread(self._machine_run_started, path, err)
 
     def _machine_run_started(self, path: Path, err: str) -> None:
+        """Open the watch on the started run, or show the refusal."""
         if err:
             self.app.notify(err, severity="error", timeout=8.0)
             return
-        self._open_watch(path)  # follow it live (it runs detached regardless)
+        self._open_watch(path)
 
     def action_watch(self) -> None:
-        """Open the live watch view for the selected machine's instance (whether it
-        is currently running or has finished); an instance whose authored file
-        is gone is watched from the source it recorded."""
+        """Open the watch on the selected instance, from the file or the source it recorded."""
         row = self._selected_row()
         if row is None or not row.status:
             return
@@ -876,6 +840,7 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         self._open_watch(instance / "machine.asm.toml")
 
     def _open_watch(self, path: Path) -> None:
+        """Push the watch screen for the machine at the path."""
         try:
             spec = load_machine(path)
         except MachineError as exc:
@@ -885,20 +850,25 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         self.app.push_screen(MachineWatchScreen(instance, spec))
 
     def action_create(self) -> None:
+        """Ask for a task and author a machine from it."""
         self.app.push_screen(CreateMachineModal(), self._on_create)
 
     def _on_create(self, task: str | None) -> None:
+        """Spawn the create for a non-empty task."""
         if task:
             self._spawn_machine_create(self.app, task)
 
     @work(thread=True)
     def _spawn_machine_create(self, app: App[object], task: str) -> None:
-        """Spawn `agent6 machine create` detached, off the UI thread (the locate
-        waits on the authoring run's first event), then open the dashboard on
-        the draft it produces so the authoring agent's reasoning + tool calls
-        are watchable live, exactly like a run. The create keeps running
-        detached, so quitting the dashboard is safe. *app* is bound on the UI
-        thread: a screen dismissed mid-spawn has no parent to reach it through."""
+        """Spawn `machine create` detached, off the UI thread, and report the draft dir.
+
+        The hub then opens the dashboard on the draft, so the authoring run is
+        watchable live; the create keeps running detached.
+
+        Args:
+            app: The app, bound on the UI thread; a screen dismissed mid-spawn has no parent.
+            task: What the machine should do.
+        """
         draft_dir, error = spawn_and_locate(
             [*agent6_argv(self.config_path), "machine", "create", "--", task],
             self.repo_cwd,
@@ -908,26 +878,29 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         app.call_from_thread(self._machine_created, draft_dir, error)
 
     def _machine_created(self, draft_dir: Path | None, error: str) -> None:
+        """Hand the draft dir to the hub loop, which opens the dashboard on it."""
         if draft_dir is not None:
-            self.app.exit(draft_dir)  # the hub loop opens the dashboard on it
+            self.app.exit(draft_dir)
         else:
             self.app.notify(
                 error or "Could not start machine create.", severity="error", timeout=8.0
             )
 
     def action_refresh(self) -> None:
+        """Reload the rows."""
         self._reload()
 
     def action_quit(self) -> None:
+        """Quit the app."""
         self.app.exit()
 
     def action_close(self) -> None:
+        """Return to the hub."""
         self.dismiss()
 
 
 class _MachineWatchApp(PlainNotify, MuxPointerShapes, App[None]):
-    """One-screen host for `agent6 attach <machine> --tui`: the same live machine
-    view the Machines page opens, runnable straight from the CLI."""
+    """The one-screen host `agent6 attach <machine> --tui` runs the watch view in."""
 
     CSS = (
         PALETTE_CSS
@@ -946,9 +919,11 @@ class _MachineWatchApp(PlainNotify, MuxPointerShapes, App[None]):
         self._spec = spec
 
     def on_mount(self) -> None:
-        setup_theme(self)  # apply the saved theme before the first paint
+        """Apply the saved theme and push the watch screen."""
+        setup_theme(self)
         self.push_screen(MachineWatchScreen(self._instance, self._spec))
 
 
 def run_machine_watch_tui(instance_dir: Path, spec: MachineSpec) -> int:
+    """Return the exit code of the watch view run over an instance."""
     return _MachineWatchApp(instance_dir, spec).run() or 0
